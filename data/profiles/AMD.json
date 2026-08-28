@@ -1,0 +1,126 @@
+{
+  "ticker": "AMD",
+  "default_year": "2023",
+  "profiles": {
+    "2019": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 10.0,
+            "in_table": true
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 21,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "AMD-FY2019",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:08+00:00"
+    },
+    "2020": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 10.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 21,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "AMD-FY2020",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:28+00:00"
+    },
+    "2021": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 10.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 22,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "AMD-FY2021",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:09+00:00"
+    },
+    "2022": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 10.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 22,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "AMD-FY2022",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:29+00:00"
+    },
+    "2023": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 10.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 23,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "AMD-FY2023",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:10+00:00"
+    }
+  }
+}

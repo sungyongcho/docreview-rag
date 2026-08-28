@@ -1,0 +1,622 @@
+[
+  {
+    "id": "m3c-01",
+    "question": "AMD의 매출총이익률은 2018 회계연도에서 2019 회계연도까지 어떻게 변화했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2019",
+        "source_sha256": "45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+        "start_char": 643376,
+        "end_char": 644582
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Gross margin increased from 38% to 43%, a rise of 5 percentage points.",
+    "note": "Year-over-year percentage comparison in an MD&A table. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-02",
+    "question": "Amazon Web Services의 G4ad 인스턴스에는 어떤 AMD 제품이 사용되며, 이 인스턴스는 어떤 워크로드를 위해 설계되었습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2020",
+        "source_sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
+        "start_char": 251043,
+        "end_char": 251333
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "AMD EPYC processors and the AMD Radeon Pro V520 GPU power G4ad, which was designed for virtual workstations, game streaming, and graphics rendering.",
+    "note": "Named-product retrieval from narrative business disclosure. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-03",
+    "question": "AMD는 TSMC와 관련하여 어떤 구체적인 7nm 공급 위험을 밝혔습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2021",
+        "source_sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "start_char": 358705,
+        "end_char": 358908
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "AMD said that insufficient TSMC wafer supply at 7 nm or smaller nodes could materially harm its business.",
+    "note": "Concrete supplier-concentration risk with a process node and consequence. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-04",
+    "question": "AMD는 Xilinx 인수와 관련하여 총 이전대가와 영업권을 각각 얼마로 인식했습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 1521761,
+        "end_char": 1522518
+      },
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 1522875,
+        "end_char": 1524006
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Total purchase consideration was $48.793 billion and goodwill was $22.784 billion.",
+    "note": "Two acquisition-accounting values in separate answer-bearing table rows. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-05",
+    "question": "2022 회계연도에 AMD의 Data Center 부문 순매출은 Client 부문 순매출과 비교해 어떠했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 659886,
+        "end_char": 660328
+      },
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 661285,
+        "end_char": 661525
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Data Center revenue was $6.043 billion and Client revenue was $6.201 billion, so Client was $158 million higher.",
+    "note": "Same-year segment comparison using two answer-bearing table rows. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-06",
+    "question": "AMD가 2023 회계연도에 선언한 주당 분기 현금배당금은 얼마입니까?",
+    "category": "absent",
+    "facet": "policy",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No declared quarterly cash-dividend amount was found in the immutable corpus; the negative remains pending author approval. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-07",
+    "question": "2023 회계연도 AMD의 연구개발비는 얼마였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2023",
+        "source_sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+        "start_char": 756006,
+        "end_char": 756419
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "$5.872 billion.",
+    "note": "Exact-number retrieval from a multi-year financial statement table. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-08",
+    "question": "인텔은 2019년에 배당과 자사주 매입을 통해 얼마의 현금을 주주에게 환원했으며, 향후 어떤 자사주 매입 계획을 발표했습니까?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2019",
+        "source_sha256": "9a7c79b6f02ac47f313dcf23020ae16d8fe7d82f8feeb0c51fc63e1d31f48474",
+        "start_char": 680567,
+        "end_char": 680782
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Intel paid $5.6 billion in dividends, repurchased $13.6 billion in shares, and announced an expected $20.0 billion repurchase over 15 to 18 months.",
+    "note": "Capital-allocation policy with three values in narrative text. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-09",
+    "question": "인텔의 2020 회계연도 매출 중 미국 외 지역 판매와 홍콩을 포함한 중국 청구액이 차지한 비중은 각각 얼마입니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2020",
+        "source_sha256": "455d47c6c6fbf103cadef13a2959d795b4149ab297a451df95bbe6f393a08123",
+        "start_char": 1368372,
+        "end_char": 1368574
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Sales outside the United States accounted for 79% of revenue, and China including Hong Kong contributed 26%.",
+    "note": "Geographic-concentration risk grounded in two explicit percentages. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-10",
+    "question": "2021 회계연도에 인텔이 운영한 상업용 양자컴퓨팅 구독 서비스의 명칭은 무엇입니까?",
+    "category": "absent",
+    "facet": "factual",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No commercial quantum-computing subscription service was found in the immutable corpus; the negative remains pending author approval. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-11",
+    "question": "인텔의 IOTG와 Mobileye 매출은 2020년 대비 2021 회계연도에 각각 얼마나 증가했으며, Mobileye의 증가를 이끈 요인은 무엇입니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2021",
+        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
+        "start_char": 841700,
+        "end_char": 841926
+      },
+      {
+        "doc_id": "INTC-FY2021",
+        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
+        "start_char": 842076,
+        "end_char": 842266
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "IOTG increased $991 million and Mobileye increased $419 million; Mobileye's increase reflected improved vehicle production, COVID-19 recovery, and greater ADAS adoption.",
+    "note": "Two business-line changes plus a disclosed causal explanation. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-12",
+    "question": "인텔의 순매출과 매출총이익률은 2021 회계연도에서 2022 회계연도까지 어떻게 변화했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2022",
+        "source_sha256": "997ea49fc960f6763f4b530793f32f2bb5f2aff8f2a5d82af1f002a4adf58b4b",
+        "start_char": 852452,
+        "end_char": 854271
+      },
+      {
+        "doc_id": "INTC-FY2022",
+        "source_sha256": "997ea49fc960f6763f4b530793f32f2bb5f2aff8f2a5d82af1f002a4adf58b4b",
+        "start_char": 859259,
+        "end_char": 861539
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Net revenue fell from $79.024 billion to $63.054 billion, while gross margin fell from 55.4% to 42.6%.",
+    "note": "Two-metric year-over-year comparison in separate table rows. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-13",
+    "question": "인텔이 언급한 사이드채널 취약점 변종의 이름은 무엇이며, 인텔은 왜 해당 위험이 계속되는 것으로 설명했습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2023",
+        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
+        "start_char": 1136671,
+        "end_char": 1136951
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Intel cited Spectre and Meltdown and said that additional categories and variants had been and were expected to keep being identified.",
+    "note": "Security-risk retrieval with named variants and an explanation of persistence. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-14",
+    "question": "2023 회계연도 인텔의 연구개발비는 얼마였으며, 순매출에서 차지하는 비중은 몇 퍼센트였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2023",
+        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
+        "start_char": 779047,
+        "end_char": 779979
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "$16.046 billion, representing 29.6% of net revenue.",
+    "note": "Exact amount and normalized percentage in one table row. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-15",
+    "question": "마이크론은 2020 회계연도에 어떤 재고자산 평가 및 원가흐름 정책을 적용했습니까?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2020",
+        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
+        "start_char": 1667389,
+        "end_char": 1667465
+      },
+      {
+        "doc_id": "MU-FY2020",
+        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
+        "start_char": 1668198,
+        "end_char": 1668302
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Inventories were carried at the lower of average cost or net realizable value, and amounts were removed on an average-cost basis.",
+    "note": "Two exact accounting-policy sentences in one filing section. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-16",
+    "question": "마이크론의 GDDR6 및 GDDR6X 제품은 어디에 사용되었으며, 마이크론은 GDDR6X의 차별점으로 무엇을 제시했습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2021",
+        "source_sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
+        "start_char": 430572,
+        "end_char": 431033
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "They were used in game consoles, PC graphics cards, and GPU-based data-center solutions; GDDR6X used innovative signal-transmission technology for very high speed and bandwidth.",
+    "note": "Product-and-use-case retrieval from narrative business disclosure. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-17",
+    "question": "마이크론의 2022 회계연도 DRAM 및 NAND 매출은 각각 얼마였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "MU-FY2022",
+        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
+        "start_char": 2174465,
+        "end_char": 2175478
+      },
+      {
+        "doc_id": "MU-FY2022",
+        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
+        "start_char": 2178112,
+        "end_char": 2178920
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DRAM revenue was $22.386 billion and NAND revenue was $7.811 billion.",
+    "note": "Two exact product-revenue rows with distinct source spans. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-18",
+    "question": "중국 CAC는 마이크론 제품에 대한 심사 이후 무엇을 금지했으며, 마이크론은 어떤 판매 채널이 영향을 받았다고 밝혔습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 468317,
+        "end_char": 468762
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Critical information infrastructure operators in China could not purchase Micron products; affected revenue included direct and distributor sales to mainland China and Hong Kong customers, plus some outside-China customers.",
+    "note": "Geopolitical-risk case with a named regulator, prohibition, and channel impact. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-19",
+    "question": "마이크론의 매출과 매출총이익은 2022 회계연도에서 2023 회계연도까지 어떻게 변화했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 641759,
+        "end_char": 643237
+      },
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 647826,
+        "end_char": 649590
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Revenue fell from $30.758 billion to $15.540 billion, while gross margin moved from $13.898 billion (45%) to a $1.416 billion loss (-9%).",
+    "note": "Comparison across a sharp reversal, including negative table values. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-20",
+    "question": "마이크론이 2024 회계연도에 보고한 랜섬웨어 지급액은 얼마입니까?",
+    "category": "absent",
+    "facet": "risk",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No ransomware payment amount was found in the immutable corpus; the negative remains pending author approval. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-21",
+    "question": "마이크론 이사회는 사이버보안 위험에 대한 감독을 어떤 방식으로 수행했습니까?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2024",
+        "source_sha256": "1d3523d9d69f031f8b83008b18f47a9210a001d488112d348b50ce4e3a129ba7",
+        "start_char": 590152,
+        "end_char": 590488
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "The full Board monitored strategic cyber-risk exposure and administered oversight directly as a whole and through the Security Committee.",
+    "note": "Concise Item 1C governance lookup with exact oversight roles. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-22",
+    "question": "엔비디아의 매출과 매출총이익률은 2019 회계연도에서 2020 회계연도까지 어떻게 변화했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2020",
+        "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "start_char": 558289,
+        "end_char": 560408
+      },
+      {
+        "doc_id": "NVDA-FY2020",
+        "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "start_char": 560663,
+        "end_char": 562314
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Revenue fell 7%, from $11.716 billion to $10.918 billion, while gross margin increased 80 basis points from 61.2% to 62.0%.",
+    "note": "A declining dollar metric paired with an improving percentage metric. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-23",
+    "question": "Mellanox 인터커넥트가 포함된 엔비디아 플랫폼은 무엇이며, 엔비디아는 인수 이후 어떤 새로운 프로세서 종류를 발표했습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2021",
+        "source_sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "start_char": 261163,
+        "end_char": 261677
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Mellanox interconnects were included in DGX, HGX, and EGX; NVIDIA announced the data processing unit (DPU), supported by DOCA.",
+    "note": "Acquisition-to-product linkage using uncommon retrieval terms. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-24",
+    "question": "NVIDIA Grace는 무엇이며, 엔비디아가 구축하려 한 기후 대응 슈퍼컴퓨터는 무엇입니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 517875,
+        "end_char": 517933
+      },
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 518063,
+        "end_char": 518174
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Grace was NVIDIA's first Arm-based data-center CPU; Earth-2 was the planned AI supercomputer for addressing climate change.",
+    "note": "Two exact product-announcement fragments from one narrative paragraph. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-25",
+    "question": "2022 회계연도 엔비디아의 연구개발비는 얼마였으며, 2021 회계연도 대비 얼마나 증가했습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 581971,
+        "end_char": 583747
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "$5.268 billion, up $1.344 billion from $3.924 billion.",
+    "note": "Exact amount and absolute delta in one table row. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-26",
+    "question": "2023 회계연도에 중국을 대상으로 한 미국의 신규 수출 허가 요건은 엔비디아의 어떤 제품에 영향을 미쳤습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2023",
+        "source_sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+        "start_char": 446717,
+        "end_char": 447097
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "The requirements affected A100 and H100 integrated circuits, DGX and other systems or boards containing them, A100X, and future circuits or systems meeting specified performance thresholds.",
+    "note": "Export-control risk with exact model names and future-product thresholds. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-27",
+    "question": "엔비디아 이사회가 2024 회계연도에 승인한 임직원 의무 비밀번호 변경 주기는 얼마입니까?",
+    "category": "absent",
+    "facet": "policy",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No Board-approved employee password-rotation interval was found in the immutable corpus; the negative remains pending author approval. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-28",
+    "question": "2024 회계연도 엔비디아의 매출과 순이익은 각각 얼마였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2024",
+        "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "start_char": 745773,
+        "end_char": 746412
+      },
+      {
+        "doc_id": "NVDA-FY2024",
+        "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "start_char": 775222,
+        "end_char": 775871
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Revenue was $60.922 billion and net income was $29.760 billion.",
+    "note": "Two exact fiscal-year financial statement values in separate rows. Korean twin of the EN case.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  }
+]
