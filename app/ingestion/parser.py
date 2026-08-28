@@ -8,7 +8,8 @@ import re
 from typing import Literal
 import warnings
 
-from bs4 import BeautifulSoup, NavigableString, Tag, XMLParsedAsHTMLWarning
+from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
+from bs4.element import NavigableString
 
 from app.ingestion.xref import (
     assign_items,
@@ -42,11 +43,11 @@ class Block:
 
 @dataclass
 class Section:
-    """One SEC filing section and its extracted blocks and provenance."""
+    """One filing section and its extracted blocks and provenance."""
 
-    part: str | None  # "I".."IV"
-    item: str | None  # "1A"
-    canonical_title: str  # SEC canonical title
+    part: str | None  # top-level division of the filing: "I".."IV" in a 10-K
+    item: str | None  # section code within that division: "1A"
+    canonical_title: str  # title as the registry's own section list spells it
     reported_title: str  # title used by the filing
     blocks: list[Block] = field(default_factory=list)
     status: ItemStatus = "parsed"
@@ -59,16 +60,22 @@ class Section:
 
 @dataclass
 class ParsedFiling:
-    """Top-level output contract containing the complete parse of one filing."""
+    """Top-level output contract containing the complete parse of one filing.
+
+    Identity names the registry that published the filing and that registry's own keys,
+    so a filing from another registry fills this contract without renaming a field.
+    Reading a filing out of DART instead of EDGAR changes the values, not the shape.
+    """
 
     doc_id: str  # "NVDA-FY2024"
-    ticker: str
-    cik: str
-    form: str
+    registry: str  # publishing registry: "sec", "dart"
+    issuer: str  # issuer symbol used in doc_id: "NVDA"
+    issuer_id: str  # registry key for the issuer: SEC CIK, DART corp_code
+    filing_id: str  # registry key for this filing: SEC accession, DART rcept_no
+    form: str  # filing type as the registry names it: "10-K"
     filing_date: str
     report_period: str
     fiscal_year: int
-    accession: str
     source_url: str
     source_length: int = 0  # Unicode code points in the canonical decoded source
     source_sha256: str = ""  # SHA-256 of the exact source bytes
@@ -182,6 +189,15 @@ CORE_THIN_BLOCKS = 20  # fewer blocks means a core Item has no body
 CORE_THIN_COUNT = 2  # this many thin core Items indicate TOC headings were selected (B10)
 XREF_THIN_BLOCKS = 5  # thin-section threshold for xref filings
 XREF_THIN_RATIO = 0.3  # fail when thin sections exceed this ratio
+
+
+def doc_id(entry: dict) -> str:
+    """Return the document ID derived from an EDGAR manifest entry.
+
+    The ``"{issuer}-FY{year}"`` shape is the contract; reading it out of these particular
+    manifest keys is EDGAR-specific, so another registry supplies its own reader.
+    """
+    return f"{entry['ticker']}-FY{entry['report_date'][:4]}"
 
 
 def read_source(path: str | Path) -> str:
@@ -951,23 +967,23 @@ def build_profile(soup: BeautifulSoup, blocks: list[Tag], doc_id: str) -> dict:
 PROFILES = Path("data/profiles")
 
 
-def load_profile(ticker: str, year: int) -> dict | None:
+def load_profile(issuer: str, year: int) -> dict | None:
     """Return a year-specific profile, falling back to the default, or None if absent."""
-    path = PROFILES / f"{ticker}.json"
+    path = PROFILES / f"{issuer}.json"
     if not path.exists():
         return None
     data = json.loads(path.read_text())
     return data["profiles"].get(str(year)) or data["profiles"].get(data["default_year"])
 
 
-def save_profile(ticker: str, year: int, profile: dict) -> None:
+def save_profile(issuer: str, year: int, profile: dict) -> None:
     """Persist a year-specific profile and refresh default-year tracking."""
     PROFILES.mkdir(parents=True, exist_ok=True)
-    path = PROFILES / f"{ticker}.json"
+    path = PROFILES / f"{issuer}.json"
     data = (
         json.loads(path.read_text())
         if path.exists()
-        else {"ticker": ticker, "default_year": str(year), "profiles": {}}
+        else {"issuer": issuer, "default_year": str(year), "profiles": {}}
     )
     data["profiles"][str(year)] = profile
     data["default_year"] = max(data["profiles"], key=int)
@@ -1079,22 +1095,25 @@ def parse_filing(entry: dict) -> tuple[ParsedFiling, dict]:
     tuple[ParsedFiling, dict]
         Parsed filing object and effective profile.
     """
-    ticker, year = entry["ticker"], int(entry["report_date"][:4])
-    doc_id = f"{ticker}-FY{year}"
+    issuer, year = entry["ticker"], int(entry["report_date"][:4])
+    document = doc_id(entry)
     raw = read_source(entry["file"])
     soup = normalize(raw)
     blocks = leaf_blocks(soup)
     offsets = line_offsets(raw)
 
+    # This mapping is the EDGAR-specific half: manifest keys on the right, neutral
+    # contract on the left. A DART reader writes its own mapping and stops here.
     out = ParsedFiling(
-        doc_id=doc_id,
-        ticker=ticker,
-        cik=str(entry.get("cik", "")),
-        form="10-K",
+        doc_id=document,
+        registry=entry.get("registry", "sec"),
+        issuer=issuer,
+        issuer_id=str(entry.get("cik", "")),
+        filing_id=entry.get("accession", ""),
+        form=entry.get("form", "10-K"),
         filing_date=entry.get("filing_date", ""),
         report_period=entry.get("report_date", ""),
         fiscal_year=year,
-        accession=entry.get("accession", ""),
         source_url=entry.get("url", ""),
         source_length=len(raw),
         source_sha256=source_digest(raw),
@@ -1102,26 +1121,26 @@ def parse_filing(entry: dict) -> tuple[ParsedFiling, dict]:
         n_chars=sum(len(b.get_text(" ", strip=True)) for b in blocks),
     )
 
-    profile = load_profile(ticker, year)
+    profile = load_profile(issuer, year)
     bootstrapped = profile is None
     out.profile_used = "saved"
     if bootstrapped:
-        profile = build_profile(soup, blocks, doc_id)
+        profile = build_profile(soup, blocks, document)
         out.profile_used = "bootstrap"
 
     sections, index = segment(soup, blocks, profile["segmentation"], offsets, len(raw))
     problems = validate(sections, profile, index) if sections else ["no sections"]
 
     if bootstrapped and not problems:
-        save_profile(ticker, year, profile)
+        save_profile(issuer, year, profile)
 
     if problems:
         # On failure, relearn from this filing and store only this year after success (F4).
-        relearned = build_profile(soup, blocks, doc_id)
+        relearned = build_profile(soup, blocks, document)
         r_sections, r_index = segment(soup, blocks, relearned["segmentation"], offsets, len(raw))
         r_problems = validate(r_sections, relearned, r_index) if r_sections else ["no sections"]
         if not r_problems:
-            save_profile(ticker, year, relearned)  # save only a successful profile
+            save_profile(issuer, year, relearned)  # save only a successful profile
             profile, sections, index, problems = relearned, r_sections, r_index, r_problems
             out.profile_used = "relearned"
 
@@ -1175,9 +1194,8 @@ if __name__ == "__main__":
             soup = normalize(read_source(entry["file"]))
             blocks = leaf_blocks(soup)
             tables = [b for b in blocks if b.name == "table"]
-            doc_id = f"{entry['ticker']}-FY{entry['report_date'][:4]}"
             print(
-                f"{doc_id:12} blocks {len(blocks):5,}  table blocks {len(tables):4}  "
+                f"{doc_id(entry):12} blocks {len(blocks):5,}  table blocks {len(tables):4}  "
                 f"document tables {len(soup.find_all('table')):4}"
             )
             continue

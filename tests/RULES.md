@@ -130,19 +130,19 @@ Do not arbitrarily assign a cross-module test to `parser/` or `xref/`.
 Name a common-level test file after the behavior scope it protects:
 
 ```text
-test_<behavior_scope>.py
+test_<NN>_<behavior_scope>.py
 ```
 
-Use two or three concise lowercase words separated with underscores. Python test files
-use snake case, not kebab case.
+`NN` must be a two-digit number local to that common test level. Number these files
+in tutorial order without continuing the numbering from a nested implementation-module
+directory. Use two or three concise lowercase words for the behavior scope, separated
+with underscores. Python test files use snake case, not kebab case.
 
 Examples:
 
 ```text
-test_segmentation_routing.py
-test_corpus_parsing.py
-test_profile_lifecycle.py
-test_xref_page_join.py
+test_01_request_routing.py
+test_02_pipeline_lifecycle.py
 ```
 
 Do not combine a generic test category such as `regression`, `integration`, or `full`
@@ -150,47 +150,66 @@ with an implementation filename when that name does not describe the tested beha
 
 ---
 
-## 5. Golden and corpus tests use behavior-scope names
+## 5. Package-level behavior tests share one local sequence
 
-Tests that validate assembled behavior against shared corpus data or fixed golden baselines are regression tests rather than direct implementation-file tests.
+Every behavior-scope test at a package's common test level participates in the same
+package-local numbering sequence. The kind of fixture, input data, or baseline used
+by a test does not create an exception or a separate sequence.
 
-Their filenames still describe the protected behavior rather than the test category or
-implementation filename:
+Use:
 
 ```text
-test_corpus_parsing.py
-test_profile_lifecycle.py
-test_xref_page_join.py
+tests/<area>/test_<NN>_<behavior_scope>.py
 ```
 
-These files do not receive sequence numbers because they do not correspond to one implementation module or one step within that module.
-
-Shared regression resources remain separate:
+Do not use:
 
 ```text
-tests/ingestion/
-├── golden.py
+tests/<area>/test_<behavior_scope>.py
+tests/<area>/test_regression_<behavior_scope>.py
+```
+
+Number files according to the order in which their behavior is introduced in the
+tutorial or implementation path. Keep the sequence local to that package; it does not
+continue a nested implementation-module sequence.
+
+This sequence covers behavior-scope files only, meaning the cross-module files of
+rule 4. A file that tests one implementation module keeps the rule 1 name
+`test_<implementation>.py`, is not a behavior-scope file, and takes no number:
+
+```text
+tests/<area>/
+├── test_tables.py             # rule 1: app/<area>/tables.py
+├── test_xref.py               # rule 1: app/<area>/xref.py
+├── test_01_<first_behavior>.py
+└── test_02_<second_behavior>.py
+```
+
+Test infrastructure is not part of the sequence because it does not contain tests:
+
+```text
+tests/<area>/
 ├── conftest.py
-├── test_corpus_parsing.py
-├── test_profile_lifecycle.py
-└── test_xref_page_join.py
+├── golden.py
+├── support.py
+└── test_01_<behavior_scope>.py
 ```
 
-Do not create a separate corpus file for every small behavior. Group assembled tests
-by a major responsibility or lifecycle boundary so the suite remains easy to
+Do not create a separate package-level file for every small behavior. Group assembled
+tests by a major responsibility or lifecycle boundary so the suite remains easy to
 navigate and maintain.
 
 Prefer a small number of cohesive files such as:
 
 ```text
-tests/ingestion/
-├── test_corpus_parsing.py
-├── test_profile_lifecycle.py
-└── test_xref_page_join.py
+tests/<area>/
+├── test_01_<first_behavior>.py
+├── test_02_<second_behavior>.py
+└── test_03_<third_behavior>.py
 ```
 
-Split a corpus or assembled-behavior file only when its tests have a materially
-different fixture lifecycle, implementation boundary, or execution cost.
+Split a package-level behavior file only when its tests have a materially different
+fixture lifecycle, implementation boundary, or execution cost.
 
 Inside a combined file, separate behavior groups with one short English
 `#` comment. Do not use decorative multi-line comment banners.
@@ -217,11 +236,12 @@ One implementation module, multiple ordered test files
     → <module>/test_<NN>_<feature>.py
 
 Multiple implementation modules / assembled behavior
-    → common test level as test_<behavior_scope>.py
-
-Corpus + golden baseline regression
-    → common test level named after the protected behavior
+    → common test level as test_<NN>_<behavior_scope>.py
 ```
+
+A number marks a behavior scope, never an implementation module. `test_tables.py` and
+`test_05_table_rendering.py` coexist: the first covers `tables.py` on its own, the
+second covers the corpus pipeline that ends in it.
 
 If an existing test file mixes responsibilities, split or relocate individual tests as necessary rather than preserving the old file boundary.
 
@@ -258,6 +278,23 @@ Output text includes:
 
 Do not redefine the same fixture, helper function, test-data builder, or constant in
 multiple test files.
+
+Before writing new setup code, inspect the nearest applicable `conftest.py` and
+`support.py`. Reuse an existing fixture, builder, helper, or constant when it already
+expresses the required test setup. Do not create a local replacement merely to keep a
+test file self-contained.
+
+A test function should normally contain only:
+
+- scenario-specific input or setup
+- the behavior invocation
+- assertions for that behavior
+
+Do not build general fixtures, reusable parsers, module-loading shims, repeated data
+construction loops, or large shared datasets inside a test function unless the setup
+is genuinely unique to that single test and extracting it would make the test harder
+to understand. Do not reproduce production logic inside tests to calculate the
+expected result.
 
 Place shared pytest fixtures in the nearest common `conftest.py` that contains every
 test using them.

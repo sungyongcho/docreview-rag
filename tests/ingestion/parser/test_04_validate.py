@@ -55,12 +55,11 @@ def test_validate_catches_count_missing_items_duplicates_and_order(
     assert "2" in missing and "23" in missing
     assert "7" in missing and "8" in missing
     assert any("1A" in problem for problem in duplicate)
-    assert parser_module.validate(
-        _sections(parser_module, ["1", "1A", "7", "8"]), ordered_profile
-    ) == []
-    assert parser_module.validate(
-        _sections(parser_module, ["7", "1", "1A", "8"]), ordered_profile
+    assert (
+        parser_module.validate(_sections(parser_module, ["1", "1A", "7", "8"]), ordered_profile)
+        == []
     )
+    assert parser_module.validate(_sections(parser_module, ["7", "1", "1A", "8"]), ordered_profile)
 
 
 def test_validate_rejects_perfect_structure_without_body_content(
@@ -130,5 +129,3 @@ def test_classify_sections_leaves_real_content_parsed(parser_module: ModuleType)
     parser_module.classify_sections([section])
 
     assert section.status == "parsed"
-
-

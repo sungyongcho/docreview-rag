@@ -1,5 +1,5 @@
 {
-  "ticker": "NVDA",
+  "issuer": "NVDA",
   "default_year": "2024",
   "profiles": {
     "2020": {

@@ -18,6 +18,7 @@ from tests.ingestion.golden import (
 
 # Block extraction regression
 
+
 def test_corpus_block_counts_match_golden(blocks_by_doc: dict[str, tuple]) -> None:
     """Keep leaf-block and table counts stable across all 20 corpus documents."""
     actual = {
@@ -31,7 +32,9 @@ def test_corpus_block_counts_match_golden(blocks_by_doc: dict[str, tuple]) -> No
 
     assert actual == BLOCKS
 
+
 # Segmentation and learned-rule regression
+
 
 def test_corpus_segmentation_types_match_golden(parsed: dict) -> None:
     """Keep the expected numbered or xref strategy for every corpus document."""
@@ -41,9 +44,7 @@ def test_corpus_segmentation_types_match_golden(parsed: dict) -> None:
 def test_every_corpus_document_parses_without_warnings(parsed: dict) -> None:
     """Require all 20 filings to finish with parsed status and no validation warning."""
     failed = {
-        doc: result.warnings
-        for doc, result in parsed.items()
-        if result.parse_status != "parsed"
+        doc: result.warnings for doc, result in parsed.items() if result.parse_status != "parsed"
     }
     assert failed == {}
 
@@ -108,7 +109,9 @@ def test_corpus_cover_and_toc_are_dropped_before_item1(parsed: dict) -> None:
     assert first.block_index is not None and first.block_index > 0
     assert "Securities registered pursuant" not in body
 
+
 # Section-status regression
+
 
 @pytest.mark.parametrize("item, expected", sorted(STATUS_NVDA_FY2024.items()))
 def test_nvda_fy2024_section_statuses_match_golden(
@@ -123,14 +126,14 @@ def test_nvda_fy2024_section_statuses_match_golden(
 
 def test_nvda_fy2024_item15_contains_the_financial_statement_body(parsed: dict) -> None:
     """Require Item 15 to contain the body and tables omitted from referenced Item 8."""
-    section = next(
-        section for section in parsed["NVDA-FY2024"].sections if section.item == "15"
-    )
+    section = next(section for section in parsed["NVDA-FY2024"].sections if section.item == "15")
 
     assert sum(len(block.text) for block in section.blocks) > NVDA_FY2024_ITEM15_MIN_CHARS
     assert sum(block.kind == "table" for block in section.blocks) > 30
 
+
 # Coverage regression
+
 
 def _measure(parser_module: ModuleType, result) -> tuple[int, int]:
     body = sum(len(block.text) for section in result.sections for block in section.blocks)
@@ -163,7 +166,9 @@ def test_parsed_result_carries_the_original_measurements(
         assert result.n_chars == sum(len(block.get_text(" ", strip=True)) for block in blocks)
         assert result.n_blocks == len(blocks)
 
+
 # SEC Item boundaries and source-position regression
+
 
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
 def test_no_extra_sec_items(doc: str, parser_module: ModuleType, parsed: dict) -> None:

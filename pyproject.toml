@@ -138,6 +138,11 @@ convention = "numpy"
 # pyright / Pylance
 # Single source of truth for type checking. Both Pylance (editor) and basedpyright (CLI)
 # read this section. Do not set typeCheckingMode in .vscode/settings.json to avoid duplication.
+[tool.coverage.report]
+# Report a module even when its directory has no __init__.py. Without this,
+# coverage silently drops such files instead of showing them at 0%.
+include_namespace_packages = true
+
 [tool.pyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.14"

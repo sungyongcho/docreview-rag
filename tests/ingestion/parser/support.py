@@ -16,8 +16,7 @@ def build_numbered_body(gap: int = 0) -> str:
         weight = 700 if index == len(NUMBERED_ITEMS) - 1 else 800
         size = 10 if index == len(NUMBERED_ITEMS) - 1 else 12
         parts.append(
-            f'<p style="font-weight: {weight}; font-size: {size}pt">'
-            f"Item {item}. Section {item}</p>"
+            f'<p style="font-weight: {weight}; font-size: {size}pt">Item {item}. Section {item}</p>'
         )
         parts.extend("<p>Body text</p>" for _ in range(gap))
     return "".join(parts)

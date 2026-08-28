@@ -3,11 +3,12 @@
 from importlib import import_module
 import json
 from pathlib import Path
-import sys
 from types import ModuleType
 from unittest.mock import patch
 
 import pytest
+
+from app.ingestion.parser import doc_id
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,14 +16,12 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture(scope="session")
 def parser_module() -> ModuleType:
     """Import the parser module from the repository source tree."""
-    sys.path.insert(0, str(_REPOSITORY_ROOT))
     return import_module("app.ingestion.parser")
 
 
 @pytest.fixture(scope="session")
 def xref_module() -> ModuleType:
     """Import the xref module from the repository source tree."""
-    sys.path.insert(0, str(_REPOSITORY_ROOT))
     return import_module("app.ingestion.xref")
 
 
@@ -33,11 +32,6 @@ def manifest() -> list[dict]:
     if not path.exists():
         pytest.skip("data/corpus/manifest.json is required for corpus regression tests")
     return json.loads(path.read_text())
-
-
-def doc_id(entry: dict) -> str:
-    """Return the parser document ID derived from the report-period year."""
-    return f"{entry['ticker']}-FY{entry['report_date'][:4]}"
 
 
 @pytest.fixture(scope="session")

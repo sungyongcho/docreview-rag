@@ -1,5 +1,5 @@
 {
-  "ticker": "MU",
+  "issuer": "MU",
   "default_year": "2024",
   "profiles": {
     "2020": {

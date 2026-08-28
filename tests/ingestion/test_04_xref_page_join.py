@@ -16,10 +16,7 @@ def corpus_xref_tables(
     blocks_by_doc: dict[str, tuple],
 ) -> dict[str, tuple]:
     """Locate the xref and TOC tables once for each Intel corpus filing."""
-    return {
-        doc: xref_module.find_tables(blocks_by_doc[doc][0])
-        for doc in INTC_DOCS
-    }
+    return {doc: xref_module.find_tables(blocks_by_doc[doc][0]) for doc in INTC_DOCS}
 
 
 @pytest.mark.parametrize("doc", INTC_DOCS)

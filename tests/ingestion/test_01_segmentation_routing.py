@@ -28,8 +28,6 @@ def _xref_body() -> str:
     )
 
 
-
-
 def test_detect_segmentation_uses_number_then_xref_then_undefined(
     parser_module: ModuleType,
 ) -> None:

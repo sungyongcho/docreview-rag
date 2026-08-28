@@ -1,5 +1,5 @@
 {
-  "ticker": "INTC",
+  "issuer": "INTC",
   "default_year": "2019",
   "profiles": {
     "2019": {
