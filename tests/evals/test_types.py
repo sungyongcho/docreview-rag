@@ -9,6 +9,7 @@ from app.evals.types import GoldenCase, GoldenSpan
 
 
 def _answer(**overrides: Any) -> GoldenSpan:
+    """Build a valid answer span with optional replacements."""
     values: dict[str, Any] = {
         "doc_id": "TEST-FY2024",
         "source_sha256": "a" * 64,
@@ -20,6 +21,7 @@ def _answer(**overrides: Any) -> GoldenSpan:
 
 
 def _case(**overrides: Any) -> GoldenCase:
+    """Build a valid positive case with optional replacements."""
     values: dict[str, Any] = {
         "id": "m3c-01",
         "question": "What fact is disclosed?",

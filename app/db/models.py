@@ -170,7 +170,7 @@ class EvalResult(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     suite: Mapped[str] = mapped_column(String(128), nullable=False)
     config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    metrics: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    metrics: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False)
     raw_artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
