@@ -115,24 +115,23 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
             )
 
         assert result.component_rankings.vector[0] == 1
-        # The extent-distance normalization penalizes repeating one pair, so the
-        # lexical leg prefers the single tight mention over the double one. Fusion
-        # still puts chunk 1 first because the vector leg agrees with it.
-        assert result.component_rankings.lexical[0] == 3
+        # The relaxed parse is a disjunction, so cover density rewards the chunk that
+        # carries the pair twice; chunk 2 matches neither term and is not ranked at all.
+        assert result.component_rankings.lexical == (1, 3)
         assert result.hits[0].chunk_id == 1
         assert result.hits[0].citation == "NVDA FY2024 Item 7"
         assert result.hits[0].source_sha256 == "a" * 64
 
         # A partial match must still retrieve. No chunk contains "unobtainium", so
         # the unrelaxed AND parse would have matched nothing at all; the relaxed
-        # disjunction ranks by how much of the query each chunk covers instead.
+        # disjunction ranks every chunk that covers any part of the query.
         async with AsyncSession(bind=connection, expire_on_commit=False) as session:
             partial = await lexical_search(
                 session,
                 "research expense unobtainium inventory obligations",
                 3,
             )
-        assert [hit.chunk_id for hit in partial] == [3, 1, 2]
+        assert [hit.chunk_id for hit in partial] == [1, 3, 2]
         return True, ""
     finally:
         if connection is not None:
