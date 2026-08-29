@@ -10,8 +10,8 @@ from app.llm.schemas import ProviderResult
 from app.observability.types import StepTrace, WorkflowNode
 
 
-def step_trace_from_provider_result(
-    result: ProviderResult[BaseModel],
+def step_trace_from_provider_result[OutputT: BaseModel](
+    result: ProviderResult[OutputT],
     *,
     step: int,
     node: WorkflowNode,
@@ -20,8 +20,9 @@ def step_trace_from_provider_result(
 
     Parameters
     ----------
-    result : ProviderResult[BaseModel]
-        Typed provider result for the call.
+    result : ProviderResult[OutputT]
+        Typed provider result for the call. ``ProviderResult`` is invariant in its
+        output type, so the parameter is generic rather than widened to ``BaseModel``.
     step : int
         Positive provider-step number.
     node : WorkflowNode

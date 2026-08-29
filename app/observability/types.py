@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import math
-from typing import Annotated, Literal, Self
+from types import MappingProxyType
+from typing import Annotated, Final, Literal, Self
 
 from pydantic import Field, JsonValue, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
@@ -19,9 +21,32 @@ from app.llm.schemas import (
 
 WorkflowNode = Literal["retrieve", "grade", "check", "report"]
 RunStatus = Literal["ok", "budget_exceeded", "schema_rejected", "error"]
+BudgetResource = Literal["iterations", "input_tokens", "output_tokens", "wall_clock_s"]
 JsonObject = dict[str, JsonValue]
 
 RunId = Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")]
+
+_PACING_RESOURCES: tuple[BudgetResource, ...] = ("iterations", "wall_clock_s")
+_PROVIDER_RESOURCES: tuple[BudgetResource, ...] = (
+    "iterations",
+    "input_tokens",
+    "output_tokens",
+    "wall_clock_s",
+)
+
+# A node is refused only on the resources it can actually consume. `retrieve` and
+# `report` issue no provider call, so blocking them on token exhaustion cannot prevent
+# any spend — it only discards work the run has already paid for. Declaring the draw per
+# node means a fifth node must state its resource class instead of silently inheriting
+# the wrong one.
+NODE_BUDGET_RESOURCES: Final[Mapping[WorkflowNode, tuple[BudgetResource, ...]]] = MappingProxyType(
+    {
+        "retrieve": _PACING_RESOURCES,
+        "grade": _PROVIDER_RESOURCES,
+        "check": _PROVIDER_RESOURCES,
+        "report": _PACING_RESOURCES,
+    }
+)
 
 
 class StepTrace(StrictSchema):

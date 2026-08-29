@@ -4,17 +4,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
-from decimal import Decimal
+from functools import cache
 import json
 import time
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Protocol, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFormatTextJSONSchemaConfigParam
 from pydantic import BaseModel, ValidationError
 
 from app.llm.schemas import (
-    BudgetExceeded,
     CompletionFailure,
     Prompt,
     ProviderBudget,
@@ -33,9 +32,11 @@ class _ResponsesAPI(Protocol):
 
     def create(self, **kwargs: object) -> Awaitable[object]:
         """Send one request to the Responses API."""
+        ...
 
     def parse(self, **kwargs: object) -> Awaitable[object]:
         """Send one request whose output the SDK parses into a schema."""
+        ...
 
 
 class _OpenAIClient(Protocol):
@@ -44,6 +45,7 @@ class _OpenAIClient(Protocol):
     @property
     def responses(self) -> _ResponsesAPI:
         """Expose the Responses surface the adapter calls."""
+        ...
 
 
 def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -125,75 +127,6 @@ def _repair_prompt(prompt: Prompt, raw_output: str, errors: Sequence[str]) -> Pr
     )
 
 
-def _budget_failure(
-    budget: ProviderBudget,
-    *,
-    input_tokens: int,
-    output_tokens: int,
-    estimated_cost_usd: Decimal,
-    attempts: int,
-    inclusive: bool = False,
-    schema_errors: tuple[str, ...] = (),
-) -> BudgetExceeded | None:
-    """Return the first hard limit the accumulated provider usage has reached.
-
-    Parameters
-    ----------
-    budget : ProviderBudget
-        Hard token and cost limits for this completion.
-    input_tokens : int
-        Accumulated input-token usage.
-    output_tokens : int
-        Accumulated output-token usage.
-    estimated_cost_usd : Decimal
-        Accumulated estimated cost.
-    attempts : int
-        Number of provider requests represented by the evidence.
-    inclusive : bool
-        Treat a limit reached exactly as exhausted. A completed attempt is judged
-        exclusively, because spending the whole allowance is allowed; asking whether
-        another request may start is judged inclusively, because the next request
-        needs capacity left over.
-    schema_errors : tuple[str, ...]
-        Validation failure that the blocked repair would have addressed.
-
-    Returns
-    -------
-    BudgetExceeded | None
-        Typed evidence for the first exhausted limit, otherwise ``None``.
-
-    Notes
-    -----
-    A zero-priced deterministic provider never exhausts a zero cost ceiling, so the
-    inclusive cost boundary applies only when at least one token price is positive.
-    """
-
-    def reached(used: int | Decimal, limit: int | Decimal) -> bool:
-        return used >= limit if inclusive else used > limit
-
-    def failure(
-        which: Literal["input_tokens", "output_tokens", "estimated_cost_usd"],
-        used: int | Decimal,
-        limit: int | Decimal,
-    ) -> BudgetExceeded:
-        return BudgetExceeded(
-            which=which,
-            used=used,
-            limit=limit,
-            attempts=attempts,
-            schema_errors=schema_errors,
-        )
-
-    if reached(input_tokens, budget.max_input_tokens):
-        return failure("input_tokens", input_tokens, budget.max_input_tokens)
-    if reached(output_tokens, budget.max_output_tokens):
-        return failure("output_tokens", output_tokens, budget.max_output_tokens)
-    priced = budget.pricing.input_per_million_usd > 0 or budget.pricing.output_per_million_usd > 0
-    if (priced or not inclusive) and reached(estimated_cost_usd, budget.max_cost_usd):
-        return failure("estimated_cost_usd", estimated_cost_usd, budget.max_cost_usd)
-    return None
-
-
 class LLMProvider(ABC):
     """One async provider boundary for structured, budgeted completion calls."""
 
@@ -263,14 +196,18 @@ class LLMProvider(ABC):
 
         def failed(failure: CompletionFailure) -> ProviderResult[OutputT]:
             """Close the completion over whatever evidence has accumulated so far."""
-            return self._failed_result(
-                failure,
-                raw_outputs=raw_outputs,
-                request_ids=request_ids,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                request_time_ms=total_request_time_ms,
-                budget=budget,
+            return ProviderResult(
+                status=failure.status,
+                parsed=None,
+                refusal=failure,
+                metadata=self._metadata(
+                    raw_outputs=raw_outputs,
+                    request_ids=request_ids,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    request_time_ms=total_request_time_ms,
+                    budget=budget,
+                ),
             )
 
         for attempt in (1, 2):
@@ -306,11 +243,6 @@ class LLMProvider(ABC):
                 request_ids.append(raw.request_id)
             total_input_tokens += raw.input_tokens
             total_output_tokens += raw.output_tokens
-            estimated_cost = budget.pricing.estimate(
-                total_input_tokens,
-                total_output_tokens,
-            )
-
             if raw.refusal is not None:
                 return failed(
                     ProviderRefusal(
@@ -320,11 +252,9 @@ class LLMProvider(ABC):
                     )
                 )
 
-            if failure := _budget_failure(
-                budget,
+            if failure := budget.exhausted_by(
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
-                estimated_cost_usd=estimated_cost,
                 attempts=attempt,
             ):
                 return failed(failure)
@@ -332,11 +262,9 @@ class LLMProvider(ABC):
             parsed, errors = _parse_output(raw.output_text, schema)
             if parsed is None:
                 if attempt == 1:
-                    if failure := _budget_failure(
-                        budget,
+                    if failure := budget.exhausted_by(
                         input_tokens=total_input_tokens,
                         output_tokens=total_output_tokens,
-                        estimated_cost_usd=estimated_cost,
                         attempts=1,
                         inclusive=True,
                         schema_errors=errors,
@@ -381,33 +309,6 @@ class LLMProvider(ABC):
             request_ids=tuple(request_ids),
             llm_output=raw_outputs[-1],
             raw_outputs=tuple(raw_outputs),
-        )
-
-    def _failed_result[OutputT: BaseModel](
-        self,
-        failure: CompletionFailure,
-        *,
-        raw_outputs: Sequence[str],
-        request_ids: Sequence[str],
-        input_tokens: int,
-        output_tokens: int,
-        request_time_ms: float,
-        budget: ProviderBudget,
-    ) -> ProviderResult[OutputT]:
-        """Attach accumulated metadata to one typed completion failure."""
-        metadata = self._metadata(
-            raw_outputs=raw_outputs,
-            request_ids=request_ids,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            request_time_ms=request_time_ms,
-            budget=budget,
-        )
-        return ProviderResult(
-            status=failure.status,
-            parsed=None,
-            refusal=failure,
-            metadata=metadata,
         )
 
 
@@ -483,6 +384,20 @@ def _strict_schema(node: object, path: str) -> None:
             _strict_schema(node[keyword], f"{path}.{keyword}")
 
 
+@cache
+def _strict_schema_json(schema: type[BaseModel]) -> str:
+    """Build one strict JSON schema, cached per model class.
+
+    ``model_json_schema`` is neither cached by pydantic nor cheap, and every request
+    rebuilds the same payload for the same class. Caching the serialized form rather
+    than the dictionary keeps each caller's copy independent of the cache entry. Key
+    order is preserved because ``required`` is a positional copy of ``properties``.
+    """
+    json_schema = schema.model_json_schema()
+    _strict_schema(json_schema, "$")
+    return json.dumps(json_schema, allow_nan=False, ensure_ascii=False)
+
+
 def strict_response_format(schema: type[BaseModel]) -> ResponseFormatTextJSONSchemaConfigParam:
     """Return the strict ``text.format`` payload that constrains decoding to one schema.
 
@@ -507,12 +422,10 @@ def strict_response_format(schema: type[BaseModel]) -> ResponseFormatTextJSONSch
     ValueError
         If the generated JSON schema uses a construct strict mode cannot enforce.
     """
-    json_schema = schema.model_json_schema()
-    _strict_schema(json_schema, "$")
     return {
         "type": "json_schema",
         "name": schema.__name__,
-        "schema": json_schema,
+        "schema": json.loads(_strict_schema_json(schema)),
         "strict": True,
     }
 

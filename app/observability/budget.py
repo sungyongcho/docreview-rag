@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from app.observability.types import (
+    NODE_BUDGET_RESOURCES,
     Budget,
+    BudgetResource,
     RunReport,
     StepTrace,
     WorkflowNode,
@@ -13,8 +13,6 @@ from app.observability.types import (
     derived_totals,
     validate_elapsed_seconds,
 )
-
-BudgetResource = Literal["iterations", "input_tokens", "output_tokens", "wall_clock_s"]
 
 
 def pre_node_budget_guard(
@@ -59,7 +57,9 @@ def pre_node_budget_guard(
     Notes
     -----
     This is the only workflow-budget enforcement point and runs immediately before a
-    node. Equality blocks entry because no capacity remains.
+    node. Equality blocks entry because no capacity remains. Only the resources
+    ``NODE_BUDGET_RESOURCES`` declares for the node are checked, so a node that issues
+    no provider call is never refused for token exhaustion it cannot add to.
     """
     elapsed = validate_elapsed_seconds(elapsed_seconds)
     trace_values = tuple(steps)
@@ -78,7 +78,11 @@ def pre_node_budget_guard(
     }
 
     exhausted: BudgetResource | None = next(
-        (resource for resource in limits if observed[resource] >= limits[resource]),
+        (
+            resource
+            for resource in NODE_BUDGET_RESOURCES[node]
+            if observed[resource] >= limits[resource]
+        ),
         None,
     )
     if exhausted is None:

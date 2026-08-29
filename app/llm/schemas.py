@@ -96,6 +96,75 @@ class ProviderBudget(StrictSchema):
     max_cost_usd: NonNegativeDecimal
     pricing: TokenPricing
 
+    def exhausted_by(
+        self,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        attempts: int,
+        inclusive: bool = False,
+        schema_errors: tuple[str, ...] = (),
+    ) -> BudgetExceeded | None:
+        """Return the first hard limit the accumulated usage has reached.
+
+        Parameters
+        ----------
+        input_tokens : int
+            Accumulated input-token usage.
+        output_tokens : int
+            Accumulated output-token usage.
+        attempts : int
+            Number of provider requests the evidence represents.
+        inclusive : bool
+            Treat a limit reached exactly as exhausted. A completed attempt is judged
+            exclusively, because spending the whole allowance is allowed; asking whether
+            another request may start is judged inclusively, because the next request
+            needs capacity left over.
+        schema_errors : tuple[str, ...]
+            Validation failure that a blocked repair would have addressed.
+
+        Returns
+        -------
+        BudgetExceeded | None
+            Typed evidence for the first exhausted limit, otherwise ``None``.
+
+        Notes
+        -----
+        This is the single definition of provider-budget exhaustion. Both the provider
+        boundary and the workflow's pre-call gate ask it, so neither can drift into
+        admitting a call the other would refuse. A zero-priced provider never exhausts a
+        zero cost ceiling, so the inclusive cost boundary applies only when at least one
+        token price is positive.
+        """
+        spent = self.pricing.estimate(input_tokens, output_tokens)
+
+        def reached(used: int | Decimal, limit: int | Decimal) -> bool:
+            """Compare one usage against its limit on the requested boundary."""
+            return used >= limit if inclusive else used > limit
+
+        def failure(
+            which: Literal["input_tokens", "output_tokens", "estimated_cost_usd"],
+            used: int | Decimal,
+            limit: int | Decimal,
+        ) -> BudgetExceeded:
+            """Build the typed evidence for one exhausted limit."""
+            return BudgetExceeded(
+                which=which,
+                used=used,
+                limit=limit,
+                attempts=attempts,
+                schema_errors=schema_errors,
+            )
+
+        if reached(input_tokens, self.max_input_tokens):
+            return failure("input_tokens", input_tokens, self.max_input_tokens)
+        if reached(output_tokens, self.max_output_tokens):
+            return failure("output_tokens", output_tokens, self.max_output_tokens)
+        priced = self.pricing.input_per_million_usd > 0 or self.pricing.output_per_million_usd > 0
+        if (priced or not inclusive) and reached(spent, self.max_cost_usd):
+            return failure("estimated_cost_usd", spent, self.max_cost_usd)
+        return None
+
 
 class ChunkRelevance(StrictSchema):
     """One source chunk graded for relevance by a structured LLM call."""
