@@ -14,6 +14,7 @@ from app.db.models import Base
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.lexical import lexical_search
 from app.retrieval.service import retrieve
+from tests.live_postgres import live_postgres_unavailable
 
 
 async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
@@ -139,9 +140,10 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
         await engine.dispose()
 
 
+@pytest.mark.live_postgres
 def test_live_postgres_runs_vector_lexical_and_rrf_end_to_end():
     """Run exact vector, lexical, and fused retrieval against PostgreSQL."""
     database_url = make_url(get_settings().database_url)
     reachable, detail = asyncio.run(_exercise_live_postgres(database_url))
     if not reachable:
-        pytest.skip(f"PostgreSQL retrieval prerequisites are unavailable: {detail}")
+        live_postgres_unavailable(f"retrieval prerequisites are unavailable: {detail}")

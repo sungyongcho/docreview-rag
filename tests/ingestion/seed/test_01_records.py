@@ -66,7 +66,7 @@ def test_document_record_rejects_invalid_parser_and_item_statuses():
 
 @pytest.mark.parametrize("item_index", [["bad"], {"item": "1"}])
 def test_document_record_rejects_non_object_item_index_entries(
-    item_index: list[str] | dict[str, str]
+    item_index: list[str] | dict[str, str],
 ) -> None:
     """Reject item indexes whose entries are not JSON objects."""
     filing = sample_filing()
@@ -194,6 +194,7 @@ def test_parse_seed_filings_validates_count_before_parsing():
 
 def test_parse_once_batch_exactly_matches_build_seed_batch():
     """Keep parse-once and combined batch construction equivalent."""
+
     def parser(entry):
         return sample_filing(entry["doc_id"]), {}
 

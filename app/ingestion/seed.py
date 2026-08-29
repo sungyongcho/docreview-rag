@@ -482,6 +482,20 @@ async def persist_seed_batch(
     return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 
 
+async def _persist_seed_batch_with_bm25_stats(
+    session: AsyncSession,
+    batch: SeedBatch,
+    *,
+    chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
+) -> SeedResult:
+    """Persist one corpus batch, then rebuild its invalidated BM25 statistics."""
+    from app.retrieval.bm25 import backfill_term_stats
+
+    result = await persist_seed_batch(session, batch, chunk_batch_size=chunk_batch_size)
+    await backfill_term_stats(session)
+    return result
+
+
 async def seed_corpus(
     session: AsyncSession,
     manifest_path: Path | None = None,
@@ -489,26 +503,46 @@ async def seed_corpus(
     expected_documents: int | None = EXPECTED_DOCUMENTS,
     chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
 ) -> SeedResult:
-    """Prepare the corpus in a worker thread and persist it atomically.
+    """Prepare and persist the corpus, then rebuild BM25 statistics.
 
-    Database writes remain on the caller's event loop.
+    Database writes remain on the caller's event loop. Corpus persistence and
+    statistic rebuild each own a separate transaction.
     """
     batch = await asyncio.to_thread(
         prepare_seed_batch,
         manifest_path,
         expected_documents=expected_documents,
     )
-    return await persist_seed_batch(session, batch, chunk_batch_size=chunk_batch_size)
+    return await _persist_seed_batch_with_bm25_stats(
+        session,
+        batch,
+        chunk_batch_size=chunk_batch_size,
+    )
+
+
+async def _run_cli(args: argparse.Namespace) -> None:
+    """Execute optional schema creation and one seed-plus-statistics operation."""
+    from app.db.bootstrap import bootstrap_schema
+    from app.db.session import Session, engine
+
+    batch = prepare_seed_batch(args.manifest, expected_documents=args.expected_documents)
+    if args.create_schema:
+        await bootstrap_schema(engine)
+    async with Session() as session:
+        result = await _persist_seed_batch_with_bm25_stats(
+            session,
+            batch,
+            chunk_batch_size=args.chunk_batch_size,
+        )
+    print(f"Committed {result.documents} documents and {result.chunks} chunks.")
 
 
 def main() -> None:
-    """Run optional schema bootstrap and one atomic seed operation."""
+    """Run optional schema bootstrap, corpus persistence, and statistics rebuild."""
 
     def _arguments() -> argparse.Namespace:
         """Parse seed CLI arguments."""
-        parser = argparse.ArgumentParser(
-            description="Upsert parsed filing chunks into PostgreSQL."
-        )
+        parser = argparse.ArgumentParser(description="Upsert parsed filing chunks into PostgreSQL.")
         parser.add_argument("--manifest", type=Path, help="Path to the corpus manifest JSON file.")
         parser.add_argument(
             "--expected-documents",
@@ -528,22 +562,6 @@ def main() -> None:
             help="Create missing tables before seeding; this does not migrate existing tables.",
         )
         return parser.parse_args()
-
-    async def _run_cli(args: argparse.Namespace) -> None:
-        """Execute optional schema creation and one atomic seed transaction."""
-        from app.db.bootstrap import bootstrap_schema
-        from app.db.session import Session, engine
-
-        batch = prepare_seed_batch(args.manifest, expected_documents=args.expected_documents)
-        if args.create_schema:
-            await bootstrap_schema(engine)
-        async with Session() as session:
-            result = await persist_seed_batch(
-                session,
-                batch,
-                chunk_batch_size=args.chunk_batch_size,
-            )
-        print(f"Committed {result.documents} documents and {result.chunks} chunks.")
 
     asyncio.run(_run_cli(_arguments()))
 

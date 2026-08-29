@@ -12,63 +12,16 @@ from sqlalchemy import Select, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Chunk
-from app.retrieval._sql import apply_filters, hit_columns, hit_order_by
+from app.retrieval._sql import (
+    TEXT_SEARCH_CONFIG,
+    apply_filters,
+    hit_columns,
+    hit_order_by,
+    relaxed_websearch_query as _relaxed_websearch_query,
+)
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
 TS_RANK_NORMALIZATION = 4 | 1
-TEXT_SEARCH_CONFIG = "english"
-
-
-def _websearch_tokens(query: str) -> tuple[str, ...]:
-    """Split web-search input on unquoted whitespace without rejecting malformed quotes."""
-    tokens: list[str] = []
-    start = 0
-    length = len(query)
-    while start < length:
-        while start < length and query[start].isspace():
-            start += 1
-        if start == length:
-            break
-
-        end = start
-        quoted = False
-        while end < length:
-            character = query[end]
-            if character == '"':
-                quoted = not quoted
-            elif character.isspace() and not quoted:
-                break
-            end += 1
-        tokens.append(query[start:end])
-        start = end
-    return tuple(tokens)
-
-
-def _relaxed_websearch_query(query: str) -> str:
-    """Build one relaxed web-search expression from raw query text.
-
-    Parameters
-    ----------
-    query : str
-        Raw web-search text containing terms, phrases, OR tokens, or exclusions.
-
-    Returns
-    -------
-    str
-        Expression with positive operands ORed and exclusions distributed.
-
-    Notes
-    -----
-    Quoted phrases remain intact, and PostgreSQL parses the final expression only once.
-    """
-    terms = tuple(token for token in _websearch_tokens(query) if token.casefold() != "or")
-    positives = tuple(token for token in terms if not (token.startswith("-") and len(token) > 1))
-    exclusions = tuple(token for token in terms if token.startswith("-") and len(token) > 1)
-    if not positives:
-        return query
-
-    suffix = f" {' '.join(exclusions)}" if exclusions else ""
-    return " OR ".join(f"{positive}{suffix}" for positive in positives)
 
 
 def lexical_statement(

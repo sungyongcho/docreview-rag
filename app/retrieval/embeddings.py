@@ -260,6 +260,13 @@ def get_embedding_provider(
     configured = settings or get_settings()
     if configured.embedding_provider == "deterministic":
         return DeterministicEmbeddingProvider(configured.embed_dim)
+    if configured.embedding_provider == "sbert":
+        from app.retrieval.sbert import SentenceTransformerEmbeddingProvider
+
+        return SentenceTransformerEmbeddingProvider(
+            model=configured.sbert_model,
+            dimensions=configured.embed_dim,
+        )
     api_key = configured.openai_api_key.get_secret_value() if configured.openai_api_key else None
     return OpenAIEmbeddingProvider(
         model=configured.embedding_model,

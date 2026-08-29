@@ -1,6 +1,7 @@
 """Retrieval service composition and command-output tests."""
 
 import asyncio
+import math
 from typing import cast
 
 from pydantic import ValidationError
@@ -144,6 +145,10 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
         ({"k": -3}, "positive"),
         ({"k": 3, "candidate_k": 2}, "at least k"),
         ({"rrf_k": 0}, "positive"),
+        ({"bm25_k1": math.inf}, "finite positive"),
+        ({"bm25_k1": math.nan}, "finite positive"),
+        ({"bm25_b": math.inf}, "finite number"),
+        ({"bm25_b": math.nan}, "finite number"),
     ],
 )
 def test_service_rejects_invalid_requests_before_provider_or_hybrid_search(
@@ -283,3 +288,25 @@ def test_cli_acceptance_arguments_and_payload_keep_component_scores_private():
     assert isinstance(component_rankings, dict)
     assert component_rankings == {"vector": [1, 2], "lexical": [1]}
     assert set(component_rankings) == {"vector", "lexical"}
+
+
+@pytest.mark.parametrize(
+    ("flag", "value", "message"),
+    [
+        ("--bm25-k1", "0", "--bm25-k1 must be a finite positive number"),
+        ("--bm25-k1", "-1", "--bm25-k1 must be a finite positive number"),
+        ("--bm25-k1", "nan", "--bm25-k1 must be a finite positive number"),
+        ("--bm25-k1", "inf", "--bm25-k1 must be a finite positive number"),
+        ("--bm25-b", "-0.1", "--bm25-b must be a finite number between 0 and 1"),
+        ("--bm25-b", "1.1", "--bm25-b must be a finite number between 0 and 1"),
+        ("--bm25-b", "nan", "--bm25-b must be a finite number between 0 and 1"),
+        ("--bm25-b", "inf", "--bm25-b must be a finite number between 0 and 1"),
+    ],
+)
+def test_cli_rejects_invalid_bm25_overrides_during_argument_parsing(capsys, flag, value, message):
+    """Reject invalid BM25 overrides before command execution can touch the database."""
+    with pytest.raises(SystemExit) as exc_info:
+        cli.arguments(["--query", "market risk", flag, value, "--rebuild-bm25-stats"])
+
+    assert exc_info.value.code == 2
+    assert message in capsys.readouterr().err

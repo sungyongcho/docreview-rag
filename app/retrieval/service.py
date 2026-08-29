@@ -4,13 +4,22 @@ Both database components share one ``AsyncSession`` sequentially, native scores 
 inside their retrieval lanes, and optional reranking changes only the final hit scores.
 """
 
+import math
 import re
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import (
+    DEFAULT_BM25_B,
+    DEFAULT_BM25_IDF,
+    DEFAULT_BM25_K1,
+    BM25Idf,
+    LexicalRanker,
+)
 from app.db.models import DIM
+from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, hybrid_search
 from app.retrieval.lexical import lexical_search
@@ -20,23 +29,12 @@ from app.retrieval.vector import vector_search
 
 RankedChunkId = Annotated[StrictInt, Field(gt=0)]
 ScoreStage = Literal["rrf", "reranker"]
+LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
 RESEARCH_AND_DEVELOPMENT = re.compile(r"\bR\s*&\s*D\b", flags=re.IGNORECASE)
 
 
 def normalize_query(query: str) -> str:
-    """Expand the common R&D abbreviation for both retrieval components.
-
-    Parameters
-    ----------
-    query : str
-        Validated user query shared by vector and lexical retrieval.
-
-    Returns
-    -------
-    str
-        Original query when no ampersand is present, otherwise the query with
-        R&D spelling variants expanded to ``research development``.
-    """
+    """Expand R&D variants without changing unrelated ampersands."""
     if "&" not in query:
         return query
     return RESEARCH_AND_DEVELOPMENT.sub("research development", query)
@@ -81,6 +79,10 @@ async def retrieve(
     filters: RetrievalFilters | None = None,
     rrf_k: int = DEFAULT_RRF_K,
     reranker: RerankProvider | None = None,
+    lexical_ranker: LexicalRanker = "ts_rank_cd",
+    bm25_k1: float = DEFAULT_BM25_K1,
+    bm25_b: float = DEFAULT_BM25_B,
+    bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
 ) -> RetrievalResult:
     """Run vector then lexical search through one session and fuse their ranks.
 
@@ -102,6 +104,14 @@ async def retrieve(
         Positive reciprocal-rank-fusion constant.
     reranker : RerankProvider | None, optional
         Optional second-stage scorer for the fused candidate list.
+    lexical_ranker : LexicalRanker, optional
+        Explicit lexical algorithm. PostgreSQL ``ts_rank_cd`` is the stable default.
+    bm25_k1 : float, optional
+        Positive BM25 term-frequency saturation.
+    bm25_b : float, optional
+        BM25 length normalization in the inclusive range ``[0, 1]``.
+    bm25_idf : BM25Idf, optional
+        BM25 inverse-document-frequency variant.
 
     Returns
     -------
@@ -111,7 +121,7 @@ async def retrieve(
     Raises
     ------
     ValueError
-        If the query or limits are invalid, or embedding dimensions do not match.
+        If query, limits, lexical settings, or embedding dimensions are invalid.
 
     Notes
     -----
@@ -129,6 +139,15 @@ async def retrieve(
         raise ValueError("candidate_k must be at least k")
     if rrf_k <= 0:
         raise ValueError("rrf_k must be positive")
+
+    if lexical_ranker not in LEXICAL_RANKERS:
+        raise ValueError("lexical_ranker must be 'ts_rank_cd' or 'bm25'")
+    if not math.isfinite(bm25_k1) or bm25_k1 <= 0:
+        raise ValueError("bm25_k1 must be a finite positive number")
+    if not math.isfinite(bm25_b) or not 0 <= bm25_b <= 1:
+        raise ValueError("bm25_b must be a finite number between 0 and 1")
+    if bm25_idf not in BM25_IDF_VARIANTS:
+        raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
 
     normalized_query = normalize_query(query)
 
@@ -163,13 +182,24 @@ async def retrieve(
         component_k: int,
         component_filters: RetrievalFilters,
     ) -> list[ChunkHit]:
-        """Retrieve PostgreSQL full-text candidates through the shared session."""
-        hits = await lexical_search(
-            session,
-            component_query,
-            component_k,
-            component_filters,
-        )
+        """Retrieve candidates with the configured lexical ranker."""
+        if lexical_ranker == "bm25":
+            hits = await bm25_search(
+                session,
+                component_query,
+                component_k,
+                component_filters,
+                k1=bm25_k1,
+                b=bm25_b,
+                idf=bm25_idf,
+            )
+        else:
+            hits = await lexical_search(
+                session,
+                component_query,
+                component_k,
+                component_filters,
+            )
         lexical_hits.extend(hits)
         return hits
 

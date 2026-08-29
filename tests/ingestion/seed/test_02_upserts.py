@@ -1,7 +1,8 @@
 """PostgreSQL statement and transaction tests without a live database."""
 
+import argparse
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -121,15 +122,17 @@ def test_persist_seed_batch_rejects_nonpositive_batch_size():
 
 
 def test_seed_corpus_offloads_preparation_before_persisting(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Run blocking corpus preparation through ``asyncio.to_thread``."""
     batch = sample_batch()
     expected = seed.SeedResult(documents=1, chunks=2)
     to_thread = AsyncMock(return_value=batch)
     persist = AsyncMock(return_value=expected)
+    rebuild = AsyncMock()
     monkeypatch.setattr(asyncio, "to_thread", to_thread)
     monkeypatch.setattr(seed, "persist_seed_batch", persist)
+    monkeypatch.setattr("app.retrieval.bm25.backfill_term_stats", rebuild)
 
     session = object()
     result = asyncio.run(seed.seed_corpus(session, expected_documents=1, chunk_batch_size=7))
@@ -141,3 +144,45 @@ def test_seed_corpus_offloads_preparation_before_persisting(
         expected_documents=1,
     )
     persist.assert_awaited_once_with(session, batch, chunk_batch_size=7)
+    rebuild.assert_awaited_once_with(session)
+
+
+def test_seed_cli_uses_the_same_seed_plus_statistics_wrapper(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Route the CLI through the high-level persistence and BM25 rebuild boundary."""
+    import app.db.bootstrap as bootstrap
+    import app.db.session as db_session
+
+    batch = sample_batch()
+    session = object()
+    prepare = MagicMock(return_value=batch)
+    persist_with_stats = AsyncMock(return_value=seed.SeedResult(documents=1, chunks=2))
+    create_schema = AsyncMock()
+
+    class SessionContext:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, _exc_type, _exc, _traceback):
+            return None
+
+    monkeypatch.setattr(seed, "prepare_seed_batch", prepare)
+    monkeypatch.setattr(seed, "_persist_seed_batch_with_bm25_stats", persist_with_stats)
+    monkeypatch.setattr(bootstrap, "bootstrap_schema", create_schema)
+    monkeypatch.setattr(db_session, "Session", SessionContext)
+    engine = object()
+    monkeypatch.setattr(db_session, "engine", engine)
+    args = argparse.Namespace(
+        manifest=None,
+        expected_documents=1,
+        chunk_batch_size=7,
+        create_schema=True,
+    )
+
+    asyncio.run(seed._run_cli(args))
+
+    prepare.assert_called_once_with(None, expected_documents=1)
+    create_schema.assert_awaited_once_with(engine)
+    persist_with_stats.assert_awaited_once_with(session, batch, chunk_batch_size=7)
+    assert capsys.readouterr().out == "Committed 1 documents and 2 chunks.\n"

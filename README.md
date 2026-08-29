@@ -1,5 +1,20 @@
 ## docreview-rag-agent
 
+### Local PostgreSQL
+
+빠른 테스트는 데이터베이스 없이 실행하고, PostgreSQL 통합 테스트는 Compose의
+`db` 서비스를 명시적으로 시작한 뒤 실행합니다.
+
+```bash
+uv run pytest -m "not live_postgres"
+docker compose up -d db
+uv run pytest -m live_postgres --require-live-postgres
+docker compose stop db
+```
+
+포트 변경, 상태 확인, 데이터 보존 및 삭제 방법은
+[Docker Compose로 로컬 PostgreSQL 실행](deploy/docker-compose.md)을 참고합니다.
+
 ### implementation order
 재배치 비교표 (zero 완성본 기준)
 
@@ -27,4 +42,3 @@ M5 — Serving: M5.1 → M5.4 → M5.2 → M5.3
 M9 — Agent: M9.1 → M9.2 → M9.3 → M9.4 → M9.5 → M9.6
 M6 — Demo: (M6.1 + M6.2) → M6.3
 M7 — Deployment: M7.1 → M7.2 → M7.3
-

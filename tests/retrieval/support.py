@@ -1,13 +1,26 @@
 """Shared retrieval test payloads and SQL helpers."""
 
+import sys
+from types import ModuleType
 from typing import Any
 
+import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.ingestion.chunk import compose_index_text
 from app.retrieval.types import ChunkHit
 
 SOURCE_SHA256 = "a" * 64
+
+
+def fake_sentence_transformers(
+    monkeypatch: pytest.MonkeyPatch,
+    **attributes: object,
+) -> None:
+    """Expose fake encoders through the optional third-party module name."""
+    module = ModuleType("sentence_transformers")
+    module.__dict__.update(attributes)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
 
 
 class NoOpTransaction:

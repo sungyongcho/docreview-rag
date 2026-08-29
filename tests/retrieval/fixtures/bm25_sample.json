@@ -1,0 +1,139 @@
+{
+  "description": "Five-document sample corpus for the M2.9 BM25 tutorial. Tokens are already stemmed and stop-word free, so a reference implementation needs no analyzer and every number can be reproduced by hand. Both published idf variants are recorded because they disagree on this corpus: 'risk' appears in all five documents, so Robertson scores it negatively and inverts the ranking, while Lucene floors it at just above zero. Every token is its own English snowball stem, so feeding the token list straight into to_tsvector('english', ...) reproduces this corpus exactly.",
+  "query": [
+    "market",
+    "risk"
+  ],
+  "duplicate_query": [
+    "market",
+    "risk",
+    "market"
+  ],
+  "k1": 1.2,
+  "b": 0.75,
+  "documents": [
+    {
+      "id": "d1",
+      "text": "Market risk increased. Risk exposure widened.",
+      "tokens": [
+        "risk",
+        "market",
+        "risk"
+      ],
+      "dl": 3
+    },
+    {
+      "id": "d2",
+      "text": "Market risk includes volatility in interest rates.",
+      "tokens": [
+        "risk",
+        "market",
+        "volatil",
+        "interest",
+        "rate"
+      ],
+      "dl": 5
+    },
+    {
+      "id": "d3",
+      "text": "Risk. Risk. Risk. Risk. Risk. Risk.",
+      "tokens": [
+        "risk",
+        "risk",
+        "risk",
+        "risk",
+        "risk",
+        "risk"
+      ],
+      "dl": 6
+    },
+    {
+      "id": "d4",
+      "text": "Market risk and market conditions drove a goodwill impairment charge this fiscal year.",
+      "tokens": [
+        "risk",
+        "market",
+        "market",
+        "goodwil",
+        "impair",
+        "charg",
+        "fiscal",
+        "year"
+      ],
+      "dl": 8
+    },
+    {
+      "id": "d5",
+      "text": "Revenue recognition of deferred revenue carries risk.",
+      "tokens": [
+        "risk",
+        "revenu",
+        "recogn"
+      ],
+      "dl": 3
+    }
+  ],
+  "corpus_stats": {
+    "n_documents": 5,
+    "avgdl": 5.0,
+    "df": {
+      "charg": 1,
+      "fiscal": 1,
+      "goodwil": 1,
+      "impair": 1,
+      "interest": 1,
+      "market": 3,
+      "rate": 1,
+      "recogn": 1,
+      "revenu": 1,
+      "risk": 5,
+      "volatil": 1,
+      "year": 1
+    }
+  },
+  "expected_scores": {
+    "d1": 0.7793,
+    "d2": 0.626,
+    "d3": 0.1556,
+    "d4": 0.704,
+    "d5": 0.104
+  },
+  "expected_scores_b0": {
+    "d1": 0.6586,
+    "d2": 0.626,
+    "d3": 0.1595,
+    "d4": 0.8281,
+    "d5": 0.087
+  },
+  "expected_scores_duplicate_query": {
+    "d1": 0.7793,
+    "d2": 0.626,
+    "d3": 0.1556,
+    "d4": 0.704,
+    "d5": 0.104
+  },
+  "idf": {
+    "lucene": {
+      "market": 0.539,
+      "risk": 0.087
+    },
+    "robertson": {
+      "market": -0.3365,
+      "risk": -2.3979
+    }
+  },
+  "expected_scores_robertson": {
+    "d1": -4.1174,
+    "d2": -2.7344,
+    "d3": -4.2889,
+    "d4": -2.3212,
+    "d5": -2.867
+  },
+  "expected_scores_robertson_b0": {
+    "d1": -3.6336,
+    "d2": -2.7344,
+    "d3": -4.3961,
+    "d4": -2.8605,
+    "d5": -2.3979
+  }
+}

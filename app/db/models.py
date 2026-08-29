@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     Computed,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     String,
@@ -101,4 +102,61 @@ class Chunk(Base):
             name="ck_chunks_source_sha256_format",
         ),
         Index("ix_chunks_tsv", "content_tsv", postgresql_using="gin"),
+    )
+
+
+class ChunkTerm(Base):
+    """One lexeme and its frequency inside one chunk."""
+
+    __tablename__ = "chunk_terms"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
+    )
+    lexeme: Mapped[str] = mapped_column(Text, primary_key=True)
+    tf: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("tf > 0", name="ck_chunk_terms_tf_positive"),
+        Index("ix_chunk_terms_lexeme", "lexeme"),
+    )
+
+
+class ChunkLength(Base):
+    """Total lexeme occurrences in one chunk."""
+
+    __tablename__ = "chunk_lengths"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
+    )
+    dl: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (CheckConstraint("dl > 0", name="ck_chunk_lengths_positive"),)
+
+
+class LexemeStat(Base):
+    """Number of chunks containing one lexeme."""
+
+    __tablename__ = "lexeme_stats"
+
+    lexeme: Mapped[str] = mapped_column(Text, primary_key=True)
+    df: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (CheckConstraint("df > 0", name="ck_lexeme_stats_df_positive"),)
+
+
+class BM25CorpusStat(Base):
+    """One-row corpus metadata proving that BM25 statistics are current."""
+
+    __tablename__ = "bm25_corpus_stats"
+
+    singleton_id: Mapped[int] = mapped_column(primary_key=True)
+    n: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    avgdl: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("singleton_id = 1", name="ck_bm25_corpus_stats_singleton"),
+        CheckConstraint("n > 0", name="ck_bm25_corpus_stats_n_positive"),
+        CheckConstraint("avgdl > 0", name="ck_bm25_corpus_stats_avgdl_positive"),
     )

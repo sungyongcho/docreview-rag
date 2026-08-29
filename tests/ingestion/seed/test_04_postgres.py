@@ -11,6 +11,7 @@ from sqlalchemy.pool import NullPool
 from app.config import get_settings
 from app.ingestion import seed
 from tests.ingestion.seed.support import sample_batch
+from tests.live_postgres import live_postgres_unavailable
 
 
 async def _database_is_reachable(database_url: str) -> tuple[bool, str]:
@@ -129,9 +130,10 @@ async def _exercise_rerun(module) -> None:
         await engine.dispose()
 
 
+@pytest.mark.live_postgres
 def test_postgresql_rerun_keeps_row_counts_stable():
     """Preserve rows and embeddings across idempotent PostgreSQL reruns."""
     reachable, detail = asyncio.run(_database_is_reachable(get_settings().database_url))
     if not reachable:
-        pytest.skip(f"PostgreSQL is unavailable: {detail}")
+        live_postgres_unavailable(detail)
     asyncio.run(_exercise_rerun(seed))

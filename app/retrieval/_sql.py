@@ -9,6 +9,65 @@ from app.db.models import Chunk, Document
 from app.retrieval.types import RetrievalFilters
 
 TIE_BREAK_COLLATION = "C"
+TEXT_SEARCH_CONFIG = "english"
+
+
+def websearch_tokens(query: str) -> tuple[str, ...]:
+    """Split web-search input on unquoted whitespace without rejecting malformed quotes."""
+    tokens: list[str] = []
+    start = 0
+    length = len(query)
+    while start < length:
+        while start < length and query[start].isspace():
+            start += 1
+        if start == length:
+            break
+
+        end = start
+        quoted = False
+        while end < length:
+            character = query[end]
+            if character == '"':
+                quoted = not quoted
+            elif character.isspace() and not quoted:
+                break
+            end += 1
+        tokens.append(query[start:end])
+        start = end
+    return tuple(tokens)
+
+
+def positive_websearch_text(query: str) -> str:
+    """Return only positive operands for lexical score-term extraction."""
+    terms = tuple(token for token in websearch_tokens(query) if token.casefold() != "or")
+    return " ".join(token for token in terms if not (token.startswith("-") and len(token) > 1))
+
+
+def relaxed_websearch_query(query: str) -> str:
+    """Build one relaxed web-search expression from raw query text.
+
+    Parameters
+    ----------
+    query : str
+        Raw web-search text containing terms, phrases, OR tokens, or exclusions.
+
+    Returns
+    -------
+    str
+        Expression with positive operands ORed and exclusions distributed.
+
+    Notes
+    -----
+    Quoted phrases remain intact, and PostgreSQL parses the final expression only once.
+    """
+    terms = tuple(token for token in websearch_tokens(query) if token.casefold() != "or")
+    positives = tuple(token for token in terms if not (token.startswith("-") and len(token) > 1))
+    exclusions = tuple(token for token in terms if token.startswith("-") and len(token) > 1)
+    if not positives:
+        return query
+
+    suffix = f" {' '.join(exclusions)}" if exclusions else ""
+    return " OR ".join(f"{positive}{suffix}" for positive in positives)
 
 
 def filter_predicates(filters: RetrievalFilters) -> tuple[ColumnElement[bool], ...]:

@@ -83,6 +83,12 @@ dev = [
 ]
 
 
+[tool.pytest.ini_options]
+markers = [
+    "live_postgres: executes SQL against the configured live PostgreSQL database",
+]
+
+
 [tool.ruff]
 line-length = 100
 target-version = "py314" # python 3.14
