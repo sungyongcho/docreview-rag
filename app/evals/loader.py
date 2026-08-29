@@ -2,14 +2,13 @@
 
 from collections import defaultdict
 from collections.abc import Iterable
-import json
 from pathlib import Path
 import re
-from typing import Any
 
 from bs4 import BeautifulSoup
 from pydantic import TypeAdapter, ValidationError
 
+from app.evals.artifacts import read_strict_json
 from app.evals.types import GoldenCase, GoldenSpan
 from app.ingestion.parser import doc_id, read_source, source_digest
 
@@ -24,68 +23,41 @@ class GoldenDataError(ValueError):
     """A golden file or its cited source snapshot violates the golden-data contract."""
 
 
-def _read_json(path: Path) -> object:
-    """Read one UTF-8 JSON file, rejecting duplicate keys instead of merging them.
-
-    Parameters
-    ----------
-    path : Path
-        JSON file to read.
-
-    Returns
-    -------
-    object
-        Parsed JSON value; callers narrow the expected root type themselves.
-
-    Raises
-    ------
-    GoldenDataError
-        If the file cannot be read as UTF-8 JSON or contains a duplicate key.
-
-    Notes
-    -----
-    Duplicate keys are only visible in the ``object_pairs_hook`` before pairs
-    merge into a dictionary; after parsing the loss would be silent.
-    """
-
-    def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        """Merge pairs into a dict, failing on any repeated key."""
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise GoldenDataError(f"duplicate JSON key: {key}")
-            result[key] = value
-        return result
-
-    try:
-        return json.loads(
-            path.read_text(encoding="utf-8"),
-            object_pairs_hook=_reject_duplicate_keys,
-        )
-    except GoldenDataError:
-        raise
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise GoldenDataError(f"cannot read valid UTF-8 JSON from {path}: {exc}") from exc
+def normalized_question(question: str) -> str:
+    """Return the casefolded single-space form every duplicate check compares."""
+    return " ".join(question.casefold().split())
 
 
-def _validate_unique_cases(cases: Iterable[GoldenCase]) -> None:
-    """Reject id, question, and answer-identity duplicates across one suite.
+def validate_unique_cases(
+    cases: Iterable[GoldenCase],
+    *,
+    error: type[Exception] = GoldenDataError,
+    label: str = "golden case",
+) -> None:
+    """Reject id, question, and answer-identity duplicates across one batch.
 
     Parameters
     ----------
     cases : Iterable[GoldenCase]
-        Every case in the loaded suite, checked as one batch.
+        Every case in the batch, checked as one unit.
+    error : type[Exception]
+        Exception class raised on a collision, so a batch of unadmitted
+        candidates fails in its own domain rather than the golden one.
+    label : str
+        Noun naming the batch's members in each message.
 
     Raises
     ------
-    GoldenDataError
+    error
         If two cases share an id, a casefolded whitespace-normalized question,
         or one exact answer-span identity.
 
     Notes
     -----
     Span identity is compared across cases; duplicates inside one case are
-    already rejected by ``GoldenCase`` itself.
+    already rejected by ``GoldenCase`` itself. Candidate intake reuses this scan
+    because a candidate that would violate suite uniqueness after promotion has
+    to fail before promotion, not after.
     """
     ids: set[str] = set()
     questions: set[str] = set()
@@ -93,17 +65,17 @@ def _validate_unique_cases(cases: Iterable[GoldenCase]) -> None:
 
     for case in cases:
         if case.id in ids:
-            raise GoldenDataError(f"duplicate golden case id: {case.id}")
+            raise error(f"duplicate {label} id: {case.id}")
         ids.add(case.id)
 
-        normalized = " ".join(case.question.casefold().split())
+        normalized = normalized_question(case.question)
         if normalized in questions:
-            raise GoldenDataError(f"duplicate normalized question: {case.question}")
+            raise error(f"duplicate normalized {label} question: {case.question}")
         questions.add(normalized)
 
         for answer in case.answers:
             if answer.identity in answer_identities:
-                raise GoldenDataError(f"duplicate answer span identity in {case.id}")
+                raise error(f"duplicate answer span identity in {case.id}")
             answer_identities.add(answer.identity)
 
 
@@ -170,7 +142,7 @@ def _manifest_sources(manifest_path: Path) -> dict[str, Path]:
     The registry-specific manifest keys stay inside the adapter that derives
     ``doc_id``; this loader only checks the neutral id shape it returns.
     """
-    payload = _read_json(manifest_path)
+    payload = read_strict_json(manifest_path, error=GoldenDataError)
     if not isinstance(payload, list):
         raise GoldenDataError("corpus manifest root must be a JSON array")
 
@@ -294,7 +266,7 @@ def load_golden_cases(
     then source I/O and hashing.
     """
     golden_path = Path(path)
-    payload = _read_json(golden_path)
+    payload = read_strict_json(golden_path, error=GoldenDataError)
     if not isinstance(payload, list):
         raise GoldenDataError(f"golden file root must be a JSON array: {golden_path}")
     try:
@@ -302,6 +274,6 @@ def load_golden_cases(
     except ValidationError as exc:
         raise GoldenDataError(f"invalid golden cases in {golden_path}: {exc}") from exc
 
-    _validate_unique_cases(cases)
+    validate_unique_cases(cases)
     validate_golden_sources(cases, manifest_path)
     return cases

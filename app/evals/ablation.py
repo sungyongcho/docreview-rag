@@ -14,6 +14,7 @@ from app.config import (
     LexicalRanker,
 )
 from app.evals.arms import LEXICAL_RANKERS, RetrievalStrategy, resolve_bm25_parameters
+from app.evals.reporting import markdown_table
 from app.evals.retrieval_eval import RetrievalEvaluation, write_evaluation_artifact
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
@@ -200,23 +201,34 @@ class AblationReport:
         Rows retain ``outcomes`` order and artifact paths are rendered as stored; this
         method does not sort outcomes or verify that their paths exist.
         """
-        lines = [
-            "| Config | Chunk target | Retrieval | Lexical ranker | Recall@k | Hit rate@k "
-            "| MRR | P95 ms | Raw |",
-            "|---|---:|---|---|---:|---:|---:|---:|---|",
-        ]
-        for outcome in self.outcomes:
-            score = outcome.evaluation.score
-            lines.append(
-                "| "
-                f"{outcome.config.name} | {outcome.config.target_text_chars} | "
-                f"{outcome.config.strategy} | {outcome.config.lexical_ranker or '-'} | "
-                f"{score.recall_at_k:.6f} | "
-                f"{score.hit_rate_at_k:.6f} | {score.mrr:.6f} | "
-                f"{outcome.evaluation.latency.p95_ms:.3f} | "
-                f"[{outcome.artifact_path.name}]({outcome.artifact_path.as_posix()}) |"
-            )
-        return "\n".join(lines)
+        return markdown_table(
+            [
+                "Config",
+                "Chunk target",
+                "Retrieval",
+                "Lexical ranker",
+                "Recall@k",
+                "Hit rate@k",
+                "MRR",
+                "P95 ms",
+                "Raw",
+            ],
+            ["left", "right", "left", "left", "right", "right", "right", "right", "left"],
+            [
+                [
+                    outcome.config.name,
+                    str(outcome.config.target_text_chars),
+                    outcome.config.strategy,
+                    outcome.config.lexical_ranker or "-",
+                    f"{outcome.evaluation.score.recall_at_k:.6f}",
+                    f"{outcome.evaluation.score.hit_rate_at_k:.6f}",
+                    f"{outcome.evaluation.score.mrr:.6f}",
+                    f"{outcome.evaluation.latency.p95_ms:.3f}",
+                    f"[{outcome.artifact_path.name}]({outcome.artifact_path.as_posix()})",
+                ]
+                for outcome in self.outcomes
+            ],
+        )
 
 
 def experiment_matrix(
