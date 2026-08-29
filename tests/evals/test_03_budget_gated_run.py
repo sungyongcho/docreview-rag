@@ -125,7 +125,7 @@ def test_a_shortened_budget_run_is_not_assessed_against_the_full_query_limit(mon
 
     query_budget = _budget(result)["query_budget"]
 
-    assert query_budget["query_count"] == 20
+    assert query_budget["latency"]["query_count"] == 20
     assert query_budget["budget_seconds"] == 9.0
 
 

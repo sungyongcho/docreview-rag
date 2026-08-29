@@ -55,7 +55,7 @@ def test_200_query_budget_measures_exact_boundary_without_storing_fake_results()
     assert calls[:3] == [("q1", 5), ("q2", 5), ("q1", 5)]
     assert result.total_seconds == 90.0
     assert result.passed
-    assert result.p95_ms == 450.0
+    assert result.latency.p95_ms == 450.0
 
 
 def test_query_budget_fails_only_after_the_explicit_limit():
@@ -239,6 +239,7 @@ def test_budget_artifact_records_the_arm_the_query_budget_ran_on():
         "rrf_k": 60,
     }
     assert payload["query_budget"]["passed"] is True
+    assert payload["query_budget"]["latency"]["query_count"] == 4
     assert payload["indexing"]["measured_multi_target_work_seconds"] == 60.0
 
 

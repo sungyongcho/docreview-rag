@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 import time
 from typing import Any
@@ -18,10 +17,10 @@ from app.evals.measurement import Clock, LatencySummary, latency_summary
 from app.evals.regression import (
     BaselineComparison,
     RegressionTolerances,
+    canonical_config,
     compare_against_baseline,
     latest_comparable_baseline,
     persist_eval_result,
-    serialize_config,
 )
 from app.evals.scoring import CaseScore, SuiteScore, score_case, score_suite
 from app.evals.types import GoldenCase
@@ -170,17 +169,6 @@ class PersistedEvaluation:
         }
 
 
-def _canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize an experiment configuration through canonical JSON.
-
-    Raises
-    ------
-    ValueError
-        If the mapping has non-string keys, non-finite numbers, or non-JSON values.
-    """
-    return json.loads(serialize_config(config))
-
-
 def _golden_provenance(cases: Sequence[GoldenCase]) -> GoldenProvenance:
     """Validate and summarize the review state of one golden suite.
 
@@ -297,7 +285,7 @@ async def evaluate_retriever(
     return RetrievalEvaluation(
         suite=suite,
         recorded_at=recorded_at or datetime.now(UTC),
-        config=_canonical_config(config),
+        config=canonical_config(config),
         provenance=provenance,
         score=score_suite(scores),
         latency=latency_summary(latencies),

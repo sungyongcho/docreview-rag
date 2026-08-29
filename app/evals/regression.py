@@ -220,8 +220,18 @@ def serialize_config(config: Mapping[str, Any]) -> str:
         raise ValueError("config must contain only finite JSON values") from exc
 
 
-def _canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the canonical dict form produced by a serialization round trip."""
+def canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the canonical dict form produced by a serialization round trip.
+
+    Reading and writing a run both narrow through here, so a config fingerprint is
+    decided in exactly one place; a second copy of this round trip would let one
+    caller judge comparability by a rule the other no longer applies.
+
+    Raises
+    ------
+    ValueError
+        If the mapping has non-string keys, non-finite numbers, or non-JSON values.
+    """
     value = json.loads(serialize_config(config))
     return cast(dict[str, Any], value)
 
@@ -242,7 +252,7 @@ def _comparable_config(config: Mapping[str, Any], scoring: Mapping[str, float]) 
     """
     if SCORING_CONFIG_KEY in config:
         raise ValueError(f"config must not define the reserved {SCORING_CONFIG_KEY!r} key")
-    return _canonical_config({**config, SCORING_CONFIG_KEY: dict(scoring)})
+    return canonical_config({**config, SCORING_CONFIG_KEY: dict(scoring)})
 
 
 def _validated_metrics(metrics: Mapping[str, float]) -> dict[str, float]:

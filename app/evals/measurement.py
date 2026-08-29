@@ -18,7 +18,7 @@ type Clock = Callable[[], int]
 INDEXING_BUDGET_SECONDS = 300.0
 QUERY_BUDGET_COUNT = 200
 QUERY_BUDGET_SECONDS = 90.0
-BUDGET_ARTIFACT_SCHEMA_VERSION = 2
+BUDGET_ARTIFACT_SCHEMA_VERSION = 3
 
 
 def query_budget_seconds(query_count: int) -> float:
@@ -58,18 +58,16 @@ class LatencySummary:
 class QueryBudgetMeasurement:
     """Wall-clock evidence for a sequential repeated-query budget.
 
-    ``passed`` follows the inclusive total-time boundary, and the latency
-    distribution behind that decision is preserved alongside it.
+    ``passed`` follows the inclusive total-time boundary, and the distribution
+    behind that decision is held as the :class:`LatencySummary` that produced it
+    rather than copied out of it, so a measure added there reaches this evidence
+    instead of being dropped by a field-by-field transcription.
     """
 
-    query_count: int
     total_seconds: float
     budget_seconds: float
     passed: bool
-    mean_ms: float
-    p50_ms: float
-    p95_ms: float
-    max_ms: float
+    latency: LatencySummary
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,14 +258,10 @@ async def measure_query_budget(
     summary = latency_summary(latencies)
     total_seconds = summary.total_ms / 1_000
     return QueryBudgetMeasurement(
-        query_count=query_count,
         total_seconds=total_seconds,
         budget_seconds=resolved_budget,
         passed=total_seconds <= resolved_budget,
-        mean_ms=summary.mean_ms,
-        p50_ms=summary.p50_ms,
-        p95_ms=summary.p95_ms,
-        max_ms=summary.max_ms,
+        latency=summary,
     )
 
 
