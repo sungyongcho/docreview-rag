@@ -1,6 +1,7 @@
-"""SQLAlchemy models for source-cited filing chunks and evaluation runs."""
+"""SQLAlchemy models for filing chunks, evaluation runs, and workflow runs."""
 
 from datetime import datetime
+from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -191,4 +193,84 @@ class EvalResult(Base):
             name="ck_eval_results_raw_artifact_path_nonempty",
         ),
         Index("ix_eval_results_suite_created_at", "suite", "created_at"),
+    )
+
+
+class Run(Base):
+    """One persisted workflow result, including its structured failure outcome."""
+
+    __tablename__ = "runs"
+
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    iterations: Mapped[int] = mapped_column(nullable=False)
+    total_requests: Mapped[int] = mapped_column(nullable=False)
+    total_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_time_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    node_path: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    report: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ok', 'budget_exceeded', 'schema_rejected', 'error')",
+            name="ck_runs_status",
+        ),
+        CheckConstraint("iterations >= 0", name="ck_runs_iterations_nonnegative"),
+        CheckConstraint("total_requests >= 0", name="ck_runs_requests_nonnegative"),
+        CheckConstraint("total_input_tokens >= 0", name="ck_runs_input_tokens_nonnegative"),
+        CheckConstraint("total_output_tokens >= 0", name="ck_runs_output_tokens_nonnegative"),
+        CheckConstraint("total_time_seconds >= 0", name="ck_runs_time_nonnegative"),
+        CheckConstraint("btrim(system_prompt) <> ''", name="ck_runs_system_prompt_nonempty"),
+        CheckConstraint("jsonb_typeof(node_path) = 'array'", name="ck_runs_node_path_array"),
+        CheckConstraint(
+            "report IS NULL OR jsonb_typeof(report) = 'object'",
+            name="ck_runs_report_object",
+        ),
+        Index("ix_runs_status_created_at", "status", "created_at"),
+    )
+
+
+class Trace(Base):
+    """One raw provider step belonging to a persisted workflow run."""
+
+    __tablename__ = "traces"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("runs.run_id", ondelete="CASCADE"), nullable=False
+    )
+    step: Mapped[int] = mapped_column(nullable=False)
+    node: Mapped[str] = mapped_column(String(32), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    api_url: Mapped[str] = mapped_column(Text, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    estimated_cost_usd: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    request_time_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    llm_output: Mapped[str] = mapped_column(Text, nullable=False)
+    retries: Mapped[int] = mapped_column(nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "step", name="uq_traces_run_step"),
+        CheckConstraint("step > 0", name="ck_traces_step_positive"),
+        CheckConstraint(
+            "node IN ('retrieve', 'grade', 'check', 'report')",
+            name="ck_traces_node",
+        ),
+        CheckConstraint("btrim(model_name) <> ''", name="ck_traces_model_name_nonempty"),
+        CheckConstraint("btrim(api_url) <> ''", name="ck_traces_api_url_nonempty"),
+        CheckConstraint("input_tokens >= 0", name="ck_traces_input_tokens_nonnegative"),
+        CheckConstraint("output_tokens >= 0", name="ck_traces_output_tokens_nonnegative"),
+        CheckConstraint("estimated_cost_usd >= 0", name="ck_traces_cost_nonnegative"),
+        CheckConstraint("request_time_ms >= 0", name="ck_traces_time_nonnegative"),
+        CheckConstraint("retries >= 0", name="ck_traces_retries_nonnegative"),
     )

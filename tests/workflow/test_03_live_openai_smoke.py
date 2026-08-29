@@ -8,10 +8,9 @@ import pytest
 
 from app.llm.provider import OpenAILLMProvider
 from app.llm.schemas import ProviderBudget, TokenPricing
+from app.observability.types import Budget
 from app.retrieval.types import ChunkHit
-from tests.support import need, optional_module
-
-OBS = optional_module(os.getenv("OBSERVABILITY_MODULE", "app.observability"))
+from tests.support import need
 
 LIVE_ENABLED = os.getenv("RUN_OPENAI_WORKFLOW_LIVE") == "1"
 LIVE_MODEL = os.getenv("OPENAI_WORKFLOW_MODEL")
@@ -25,7 +24,6 @@ LIVE_KEY = os.getenv("OPENAI_API_KEY")
 def test_opt_in_live_openai_workflow_smoke(G):
     """Run one real workflow against OpenAI when the opt-in flags are set."""
     need(G, "WorkflowRequest", "run_workflow")
-    need(OBS, "Budget")
     assert LIVE_MODEL is not None
     assert LIVE_KEY is not None
     context = "ACME FY2024 · Item 7"
@@ -59,7 +57,7 @@ def test_opt_in_live_openai_workflow_smoke(G):
     request = G.WorkflowRequest(
         run_id="run-live-smoke",
         query="How much did revenue increase?",
-        budget=OBS.Budget(),
+        budget=Budget(),
         provider_budget=provider_budget,
     )
     provider = OpenAILLMProvider(model_name=LIVE_MODEL, api_key=LIVE_KEY)

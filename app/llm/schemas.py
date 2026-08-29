@@ -28,6 +28,7 @@ def _reject_blank(value: str) -> str:
 NonBlank = Annotated[StrictStr, Field(min_length=1), AfterValidator(_reject_blank)]
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
+NonNegativeFloat = Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
 NonNegativeDecimal = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 AnswerLabel = Literal["SUPPORTED", "NOT_IN_DOCS"]
 ProviderStatus = Literal[
@@ -217,7 +218,7 @@ class ProviderMetadata(StrictSchema):
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
     estimated_cost_usd: NonNegativeDecimal
-    request_time_ms: Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
+    request_time_ms: NonNegativeFloat
     retries: Annotated[StrictInt, Field(ge=0, le=1)]
     request_ids: tuple[NonBlank, ...]
     llm_output: StrictStr

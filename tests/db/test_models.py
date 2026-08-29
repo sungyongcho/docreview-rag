@@ -2,7 +2,7 @@
 
 from sqlalchemy import CheckConstraint, Computed, DateTime, Table, UniqueConstraint
 
-from app.db.models import Chunk, Document, EvalResult
+from app.db.models import Chunk, Document, EvalResult, Run, Trace
 
 
 def test_document_schema_persists_snapshot_and_filing_metadata():
@@ -130,3 +130,61 @@ def test_eval_result_schema_persists_complete_run_provenance():
         "ck_eval_results_raw_artifact_path_nonempty",
     } <= checks
     assert {index.name for index in table.indexes} == {"ix_eval_results_suite_created_at"}
+
+
+def test_database_models_match_run_and_trace_mapping_contracts():
+    """Match the run and trace tables to the mapping the report persists."""
+    run_table = Run.__table__
+    trace_table = Trace.__table__
+    assert isinstance(run_table, Table)
+    assert isinstance(trace_table, Table)
+    run_columns = run_table.columns
+    trace_columns = trace_table.columns
+
+    assert set(run_columns.keys()) == {
+        "run_id",
+        "status",
+        "iterations",
+        "total_requests",
+        "total_input_tokens",
+        "total_output_tokens",
+        "total_time_seconds",
+        "system_prompt",
+        "node_path",
+        "report",
+        "created_at",
+    }
+    assert {
+        "run_id",
+        "step",
+        "node",
+        "model_name",
+        "api_url",
+        "input_tokens",
+        "output_tokens",
+        "estimated_cost_usd",
+        "request_time_ms",
+        "llm_output",
+        "retries",
+        "error",
+    } <= set(trace_columns.keys())
+    unique_columns = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in trace_table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    checks = {
+        constraint.name
+        for table in (run_table, trace_table)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    assert ("run_id", "step") in unique_columns
+    assert {
+        "ck_runs_status",
+        "ck_traces_node",
+        "ck_traces_step_positive",
+        "ck_traces_cost_nonnegative",
+    } <= checks
+    # The unique constraint on (run_id, step) already carries a btree index.
+    assert {index.name for index in trace_table.indexes} == set()

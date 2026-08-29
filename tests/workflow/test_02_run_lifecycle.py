@@ -2,14 +2,13 @@
 
 import asyncio
 from decimal import Decimal
-import os
 
 from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
+from app.observability.persistence import report_to_records
+from app.observability.types import Budget
 from app.retrieval.types import ChunkHit
-from tests.support import need, optional_module
-
-OBS = optional_module(os.getenv("OBSERVABILITY_MODULE", "app.observability"))
+from tests.support import need
 
 SOURCE_SHA256 = "b" * 64
 
@@ -74,11 +73,10 @@ def _provider(responses):
 def _request(G, *, budget=None, provider_budget=None):
     """Build one workflow request with optional replacements."""
     need(G, "WorkflowRequest")
-    need(OBS, "Budget")
     return G.WorkflowRequest(
         run_id="run-integration",
         query="How much did revenue increase?",
-        budget=budget or OBS.Budget(),
+        budget=budget or Budget(),
         provider_budget=provider_budget
         or ProviderBudget(
             max_input_tokens=1_000,
@@ -109,7 +107,6 @@ def _retriever_with(hits):
 def test_successful_runner_follows_all_nodes_and_preserves_raw_traces(G):
     """Visit every node once and keep each raw provider trace."""
     need(G, "run_workflow")
-    need(OBS, "report_to_records")
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     check = (
         '{"label":"SUPPORTED","answer":"Revenue increased by ten percent.",'
@@ -136,7 +133,7 @@ def test_successful_runner_follows_all_nodes_and_preserves_raw_traces(G):
     assert result.total_input_tokens == 20
     assert result.report["label"] == "SUPPORTED"
     assert result.report["citations"][0]["chunk_id"] == 1
-    run, traces = OBS.report_to_records(result)
+    run, traces = report_to_records(result)
     assert run.report == result.report
     assert tuple(trace.llm_output for trace in traces) == (grade, check)
 
@@ -199,7 +196,7 @@ def test_zero_budget_refuses_before_retrieval(G):
         calls += 1
         return [_hit()]
 
-    zero = OBS.Budget(
+    zero = Budget(
         max_iterations=0,
         max_input_tokens=0,
         max_output_tokens=0,
@@ -226,7 +223,7 @@ def test_cumulative_tokens_block_check_before_a_second_provider_call(G):
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     provider = _provider([_raw(grade, input_tokens=5, output_tokens=1)])
     retriever = _retriever_with([_hit()])
-    budget = OBS.Budget(
+    budget = Budget(
         max_iterations=6,
         max_input_tokens=5,
         max_output_tokens=100,
@@ -272,7 +269,7 @@ def test_provider_allowance_subtracts_prior_tokens_before_check(G):
             output_per_million_usd=Decimal("0"),
         ),
     )
-    workflow_budget = OBS.Budget(
+    workflow_budget = Budget(
         max_iterations=6,
         max_input_tokens=2_000,
         max_output_tokens=1_000,
