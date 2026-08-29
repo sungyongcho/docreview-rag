@@ -1,6 +1,9 @@
+import hashlib
 from types import ModuleType
 
 import pytest
+
+from tests.ingestion.chunk.support import source_text, tokens
 
 
 def test_leaf_blocks_returns_expected_block_counts(parser_module: ModuleType) -> None:
@@ -97,14 +100,69 @@ def test_read_source_preserves_crlf_for_source_offsets(
     parser_module: ModuleType,
     tmp_path,
 ) -> None:
-    """Keep production source bytes intact when calculating character offsets."""
+    """Keep CRLF, Unicode offsets, and the source digest bound to exact bytes."""
     path = tmp_path / "crlf.html"
-    path.write_bytes(b"<html>\r\n<p>First</p>\r\n<p>Second</p>\r\n</html>")
+    source_bytes = "<html>\r\n<p>First</p>\r\n<p>café</p>\r\n</html>".encode()
+    path.write_bytes(source_bytes)
 
     raw = parser_module.read_source(path)
     soup = parser_module.normalize(raw)
     offsets = parser_module.line_offsets(raw)
     second = soup.find_all("p")[1]
+    start = raw.index("café")
+    end = start + len("café")
 
     assert "\r\n" in raw
-    assert parser_module.source_pos(second, offsets) == raw.index("<p>Second</p>")
+    assert parser_module.source_pos(second, offsets) == raw.index("<p>café</p>")
+    assert raw[start:end] == "café"
+    assert parser_module.source_digest(raw) == hashlib.sha256(source_bytes).hexdigest()
+    assert len(source_bytes) > len(raw)
+
+
+def test_all_body_blocks_have_valid_spans(corpus) -> None:
+    """Require ordered, non-overlapping source spans for every parsed body block."""
+    for document, (filing, raw) in corpus.items():
+        for section in filing.sections:
+            previous_end = -1
+            for block in section.blocks:
+                assert block.source_pos is not None, f"{document}: missing block start"
+                assert block.end_pos is not None, f"{document}: missing block end"
+                assert 0 <= block.source_pos < block.end_pos <= len(raw)
+                assert block.source_pos >= previous_end, (
+                    f"{document}: block overlaps the previous source span"
+                )
+                previous_end = block.end_pos
+
+
+def test_filing_coordinates_are_bound_to_the_source_snapshot(
+    corpus,
+    parser_module: ModuleType,
+) -> None:
+    """Bind filing length and SHA-256 coordinates to the canonical source."""
+    for filing, raw in corpus.values():
+        assert filing.source_length == len(raw)
+        assert filing.source_sha256 == parser_module.source_digest(raw)
+
+
+def test_text_block_round_trip(corpus) -> None:
+    """Keep each paragraph and heading grounded in its parser source slice."""
+    for document, (filing, raw) in corpus.items():
+        for section in filing.sections:
+            for block in section.blocks:
+                if block.kind == "table" or not block.text:
+                    continue
+                actual = tokens(source_text(raw, block.source_pos, block.end_pos))
+                expected = tokens(block.text)
+                assert expected == actual[: len(expected)], (
+                    f"{document}: block text does not begin at its cited source span"
+                )
+
+
+def test_table_block_span_contains_a_table(corpus) -> None:
+    """Require every parser table block span to contain its source table."""
+    for document, (filing, raw) in corpus.items():
+        for section in filing.sections:
+            for block in section.blocks:
+                if block.kind == "table":
+                    cited = raw[block.source_pos : block.end_pos].lower()
+                    assert "<table" in cited, f"{document}: table citation misses its table"

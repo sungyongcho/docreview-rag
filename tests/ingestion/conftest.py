@@ -1,4 +1,4 @@
-"""Fixtures for parser-only ingestion unit tests."""
+"""Shared ingestion fixtures for parser and downstream corpus tests."""
 
 from importlib import import_module
 import json
@@ -74,3 +74,16 @@ def parsed(
             result, _profile = parser_module.parse_filing(entry)
             out[doc_id(entry)] = result
         return out
+
+
+@pytest.fixture(scope="session")
+def corpus(manifest, parsed, parser_module) -> dict[str, tuple]:
+    """Pair parsed filings with the exact canonical source text they cite."""
+    entries = {doc_id(entry): entry for entry in manifest}
+    return {
+        document: (
+            filing,
+            parser_module.read_source(_REPOSITORY_ROOT / entries[document]["file"]),
+        )
+        for document, filing in parsed.items()
+    }
