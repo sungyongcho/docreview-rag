@@ -1,4 +1,4 @@
-"""SQLAlchemy models for source-cited filing chunks."""
+"""SQLAlchemy models for source-cited filing chunks and evaluation runs."""
 
 from datetime import datetime
 
@@ -159,4 +159,36 @@ class BM25CorpusStat(Base):
         CheckConstraint("singleton_id = 1", name="ck_bm25_corpus_stats_singleton"),
         CheckConstraint("n > 0", name="ck_bm25_corpus_stats_n_positive"),
         CheckConstraint("avgdl > 0", name="ck_bm25_corpus_stats_avgdl_positive"),
+    )
+
+
+class EvalResult(Base):
+    """One persisted evaluation run used as a comparable regression baseline."""
+
+    __tablename__ = "eval_results"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    suite: Mapped[str] = mapped_column(String(128), nullable=False)
+    config: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    metrics: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    raw_artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("btrim(suite) <> ''", name="ck_eval_results_suite_nonempty"),
+        CheckConstraint(
+            "jsonb_typeof(config) = 'object'",
+            name="ck_eval_results_config_object",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(metrics) = 'object'",
+            name="ck_eval_results_metrics_object",
+        ),
+        CheckConstraint(
+            "btrim(raw_artifact_path) <> ''",
+            name="ck_eval_results_raw_artifact_path_nonempty",
+        ),
+        Index("ix_eval_results_suite_created_at", "suite", "created_at"),
     )

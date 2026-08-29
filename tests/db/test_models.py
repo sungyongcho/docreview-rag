@@ -1,8 +1,8 @@
 """SQLAlchemy schema contract tests that require no running database."""
 
-from sqlalchemy import CheckConstraint, Computed, Table, UniqueConstraint
+from sqlalchemy import CheckConstraint, Computed, DateTime, Table, UniqueConstraint
 
-from app.db.models import Chunk, Document
+from app.db.models import Chunk, Document, EvalResult
 
 
 def test_document_schema_persists_snapshot_and_filing_metadata():
@@ -96,3 +96,37 @@ def test_chunk_identity_and_validation_constraints_are_declared():
         "ck_chunks_span_order",
         "ck_chunks_source_sha256_format",
     } <= checks
+
+
+def test_eval_result_schema_persists_complete_run_provenance():
+    """Persist suite, config, metrics, artifact path, and creation time."""
+    table = EvalResult.__table__
+    assert isinstance(table, Table)
+    columns = table.columns
+
+    assert set(columns.keys()) == {
+        "id",
+        "suite",
+        "config",
+        "metrics",
+        "raw_artifact_path",
+        "created_at",
+    }
+    assert columns.id.primary_key
+    assert columns.created_at.server_default is not None
+    created_at_type = columns.created_at.type
+    assert isinstance(created_at_type, DateTime)
+    assert created_at_type.timezone is True
+    assert all(not columns[name].nullable for name in columns.keys())
+    checks = {
+        constraint.name
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    assert {
+        "ck_eval_results_suite_nonempty",
+        "ck_eval_results_config_object",
+        "ck_eval_results_metrics_object",
+        "ck_eval_results_raw_artifact_path_nonempty",
+    } <= checks
+    assert {index.name for index in table.indexes} == {"ix_eval_results_suite_created_at"}
