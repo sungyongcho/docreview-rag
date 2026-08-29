@@ -5,6 +5,8 @@ from typing import Literal, Self
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+EmbeddingProviderName = Literal["openai", "deterministic"]
+
 
 class Settings(BaseSettings):
     """Runtime settings for corpus persistence and vector storage."""
@@ -13,7 +15,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://filing:filing@localhost:5432/filing"
     corpus_dir: Path = Path("data/corpus")
-    embedding_provider: Literal["openai", "deterministic"] = "deterministic"
+    embedding_provider: EmbeddingProviderName = "deterministic"
     embedding_model: str = "text-embedding-3-small"
     embed_dim: Literal[384] = 384
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
