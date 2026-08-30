@@ -15,6 +15,7 @@ exception context.
 from __future__ import annotations
 
 import asyncio
+import codecs
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -55,6 +56,12 @@ CORP_CODE_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9]{8}$")
 XML_DECLARATION_RE: Final[re.Pattern[str]] = re.compile(
     r"(<\?xml[^>]*?encoding\s*=\s*[\"'])([^\"']+)([\"'])", re.I
 )
+# Normalized codec names (``codecs.lookup(...).name``) a declaration is trusted to
+# claim — the UTF-8 and EUC-KR/CP949 families DART actually serves. A permissive
+# single-byte codec such as ISO-8859-1 decodes any byte sequence without error, so
+# honoring an arbitrary declared name would turn EUC-KR bytes into mojibake that
+# passes the strict check and gets digest-blessed as canonical.
+DECLARED_ENCODINGS: Final[frozenset[str]] = frozenset({"utf-8", "utf-8-sig", "cp949", "euc_kr"})
 # Separators ``str.splitlines`` breaks on but ``HTMLParser`` does not. They are counted
 # rather than removed: the count belongs in the manifest as evidence that source
 # offsets and line numbers still agree.
@@ -431,8 +438,10 @@ def decode_source(raw: bytes) -> tuple[str, str]:
     """Decode an archived member strictly, returning the text and the encoding used.
 
     Candidates are tried in order: a UTF-8 BOM, the encoding the XML declaration
-    names, UTF-8, then CP949 as a superset of EUC-KR. Every attempt is strict —
-    a replacement character would be corpus corruption that the source digest would
+    names when it resolves into ``DECLARED_ENCODINGS``, UTF-8, then CP949 as a
+    superset of EUC-KR. A declared encoding outside that set is skipped, not fatal —
+    the remaining candidates still get their turn. Every attempt is strict — a
+    replacement character would be corpus corruption that the source digest would
     then bless as canonical.
 
     Raises
@@ -443,13 +452,18 @@ def decode_source(raw: bytes) -> tuple[str, str]:
     candidates: list[str] = ["utf-8-sig"] if raw[:3] == b"\xef\xbb\xbf" else []
     declared = XML_DECLARATION_RE.search(raw[:400].decode("latin-1", errors="replace"))
     if declared is not None:
-        candidates.append(declared.group(2))
+        try:
+            resolved = codecs.lookup(declared.group(2)).name
+        except LookupError:
+            resolved = None
+        if resolved in DECLARED_ENCODINGS:
+            candidates.append(declared.group(2))
     candidates += ["utf-8", "cp949"]
 
     for encoding in candidates:
         try:
             return raw.decode(encoding), encoding
-        except UnicodeDecodeError, LookupError:
+        except UnicodeDecodeError:
             continue
     raise DartArchiveError("no strict decoding succeeded for the selected member")
 
@@ -458,17 +472,25 @@ def canonicalize(text: str) -> tuple[str, int]:
     r"""Return the exact text archived on disk and its exotic-separator count.
 
     Only two things change, and both are reversible in meaning rather than content:
-    line endings become ``\\n``, and the XML declaration is restamped as UTF-8 because
-    after transcoding the declared encoding would otherwise be a lie. Nothing is
-    whitespace-collapsed, entity-expanded, or re-serialized, so a character offset
-    into this text still names what a reader sees.
+    line endings become ``\\n``, and the document's own leading XML declaration is
+    restamped as UTF-8 because after transcoding the declared encoding would otherwise
+    be a lie. Nothing is whitespace-collapsed, entity-expanded, or re-serialized, so
+    a character offset into this text still names what a reader sees.
 
     The returned count is the number of separators ``str.splitlines`` breaks on but
     ``HTMLParser`` does not; it belongs in the manifest as evidence, not as a reason
     to rewrite the source.
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = XML_DECLARATION_RE.sub(r"\1utf-8\3", normalized, count=1)
+    # The restamp is confined to a leading declaration's own ``<?xml ...?>`` span.
+    # Substituting over the whole text would hit the first declaration-shaped substring
+    # anywhere in the body — quoted filing content — and silently edit it before the
+    # digest is computed.
+    if normalized.startswith("<?xml"):
+        end = normalized.find("?>")
+        if end != -1:
+            head = XML_DECLARATION_RE.sub(r"\1utf-8\3", normalized[: end + 2], count=1)
+            normalized = head + normalized[end + 2 :]
     exotic = sum(normalized.count(character) for character in EXOTIC_SEPARATORS)
     return normalized, exotic
 

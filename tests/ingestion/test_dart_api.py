@@ -127,6 +127,7 @@ def test_non_zip_body_reports_the_dart_status():
 
 
 def test_parse_corp_codes_maps_each_requested_stock_code():
+    """Map every requested stock code to its registry corp code."""
     archive = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
 
     found = parse_corp_codes(archive, stock_codes=("005930", "000660"))
@@ -136,6 +137,7 @@ def test_parse_corp_codes_maps_each_requested_stock_code():
 
 
 def test_parse_corp_codes_rejects_a_missing_stock_code():
+    """Refuse to continue when a requested stock code has no entry."""
     archive = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
 
     with pytest.raises(DartApiError, match="123456"):
@@ -143,6 +145,7 @@ def test_parse_corp_codes_rejects_a_missing_stock_code():
 
 
 def test_parse_corp_codes_rejects_a_broken_archive():
+    """Reject an archive the registry response could not produce."""
     with pytest.raises(DartArchiveError):
         parse_corp_codes(b"not a zip", stock_codes=("005930",))
 
@@ -192,6 +195,7 @@ def test_fetch_annual_report_rows_treats_no_data_as_typed_failure():
 
 
 def test_fetch_annual_report_rows_rejects_a_malformed_corp_code():
+    """Reject a corp code that cannot address a filing."""
     with pytest.raises(ValueError, match="eight digits"):
         run(
             fetch_annual_report_rows(
@@ -225,6 +229,7 @@ def test_select_annual_report_picks_the_single_period_match():
 
 
 def test_select_annual_report_refuses_zero_matches():
+    """Refuse a selection with no annual report rather than guessing."""
     with pytest.raises(DartApiError, match="no 사업보고서"):
         select_annual_report([QUARTERLY], corp_code="00126380", fiscal_year=2024)
 
@@ -238,6 +243,7 @@ def test_select_annual_report_refuses_two_matches():
 
 
 def test_select_annual_report_refuses_a_malformed_receipt_number():
+    """Refuse a receipt number that cannot address a document."""
     broken = dict(ANNUAL, rcept_no="123")
 
     with pytest.raises(DartApiError, match="malformed receipt number"):
@@ -248,6 +254,7 @@ def test_select_annual_report_refuses_a_malformed_receipt_number():
 
 
 def test_fetch_document_archive_hashes_exactly_what_was_served():
+    """Hash the served bytes themselves, so the digest pins the response."""
     payload = zip_bytes({f"{RCEPT_NO}.xml": b"<DOCUMENT/>"})
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -262,6 +269,7 @@ def test_fetch_document_archive_hashes_exactly_what_was_served():
 
 
 def test_fetch_document_archive_rejects_an_error_body():
+    """Reject an error payload instead of archiving it as a filing."""
     error = json.dumps({"status": "014", "message": "파일이 존재하지 않습니다"}).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -273,6 +281,7 @@ def test_fetch_document_archive_rejects_an_error_body():
 
 
 def test_fetch_document_archive_rejects_a_malformed_receipt_number():
+    """Reject a malformed receipt number before any request."""
     with pytest.raises(ValueError, match="fourteen digits"):
         run(fetch_document_archive(httpx.AsyncClient(), api_key=API_KEY, rcept_no="20250311"))
 
@@ -281,6 +290,7 @@ def test_fetch_document_archive_rejects_a_malformed_receipt_number():
 
 
 def test_select_primary_member_picks_the_report_by_exact_name():
+    """Select the report member by its exact archive name."""
     archive = zipfile.ZipFile(
         io.BytesIO(
             zip_bytes(
@@ -297,6 +307,7 @@ def test_select_primary_member_picks_the_report_by_exact_name():
 
 
 def test_select_primary_member_lists_members_when_the_report_is_absent():
+    """Name every member when the expected report is absent."""
     archive = zipfile.ZipFile(io.BytesIO(zip_bytes({f"{RCEPT_NO}_00760.xml": b"attachment"})))
 
     with pytest.raises(DartArchiveError, match=f"{RCEPT_NO}_00760.xml"):
@@ -316,6 +327,7 @@ def test_member_names_recovers_cp949_names_mangled_through_cp437():
 
 
 def test_decode_source_honours_the_declared_encoding():
+    """Decode the source with the encoding the document declares."""
     raw = '<?xml version="1.0" encoding="euc-kr"?><doc>한글</doc>'.encode("cp949")
 
     text, encoding = decode_source(raw)
@@ -324,12 +336,34 @@ def test_decode_source_honours_the_declared_encoding():
     assert encoding == "euc-kr"
 
 
+def test_decode_source_ignores_a_permissive_declared_encoding():
+    """A declared ISO-8859-1 decodes any bytes, so the CP949 fallback must win instead."""
+    raw = '<?xml version="1.0" encoding="ISO-8859-1"?><doc>사업보고서</doc>'.encode("cp949")
+
+    text, encoding = decode_source(raw)
+
+    assert "사업보고서" in text
+    assert encoding == "cp949"
+
+
+def test_decode_source_skips_an_unknown_declared_encoding():
+    """A declared name ``codecs.lookup`` rejects falls through without raising."""
+    raw = '<?xml version="1.0" encoding="no-such-codec"?><doc>한글</doc>'.encode("cp949")
+
+    text, encoding = decode_source(raw)
+
+    assert "한글" in text
+    assert encoding == "cp949"
+
+
 def test_decode_source_rejects_undecodable_bytes():
+    """Reject bytes the declared encoding cannot decode."""
     with pytest.raises(DartArchiveError, match="no strict decoding"):
         decode_source(b"\xff\xfe\xff\xff\x80\x80")
 
 
 def test_canonicalize_normalizes_newlines_and_restamps_the_declaration():
+    """Normalize newlines and restamp the declaration for a stable source."""
     text = '<?xml version="1.0" encoding="euc-kr"?>\r\n<doc>a\rb\x0cc</doc>'
 
     normalized, exotic = canonicalize(text)
@@ -337,6 +371,27 @@ def test_canonicalize_normalizes_newlines_and_restamps_the_declaration():
     assert 'encoding="utf-8"' in normalized
     assert "\r" not in normalized
     assert exotic == 1  # the form feed survives and is counted, not removed
+
+
+def test_canonicalize_leaves_a_declaration_quoted_in_the_body_alone():
+    """With no encoding in the leading declaration, quoted body content stays intact."""
+    quoted = '<?xml version="1.0" encoding="euc-kr"?>'
+    text = f'<?xml version="1.0"?>\n<doc>{quoted}</doc>'
+
+    normalized, _ = canonicalize(text)
+
+    assert normalized == text
+
+
+def test_canonicalize_restamps_only_the_leading_declaration():
+    """A declaration quoted in the body is content, not the document's own stamp."""
+    quoted = '<?xml version="1.0" encoding="euc-kr"?>'
+    text = f'<?xml version="1.0" encoding="euc-kr"?>\n<doc>{quoted}</doc>'
+
+    normalized, _ = canonicalize(text)
+
+    assert normalized.startswith('<?xml version="1.0" encoding="utf-8"?>')
+    assert quoted in normalized
 
 
 # --- archive_document end to end ---
@@ -376,6 +431,7 @@ def test_archive_document_writes_utf8_and_records_matching_identity(tmp_path):
 
 
 def test_archive_document_rejects_a_broken_archive(tmp_path):
+    """Reject a broken archive rather than storing an unreadable filing."""
     document = DocumentArchive(RCEPT_NO, b"not a zip", hashlib.sha256(b"not a zip").hexdigest())
     report = AnnualReport(RCEPT_NO, "00126380", "삼성전자", "사업보고서 (2024.12)", "20250311")
     issuer = CorpCode("00126380", "삼성전자", "005930")

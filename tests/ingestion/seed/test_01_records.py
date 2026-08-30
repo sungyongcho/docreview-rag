@@ -305,3 +305,13 @@ def test_registry_chunker_applies_the_registry_chunk_target():
 
     assert len(dart_text) == 3  # each 400-char pair exceeds the 600 budget
     assert len(sec_text) == 2  # two paragraphs fit the 1200 budget, the third flushes
+
+
+def test_chunk_record_mirrors_the_database_lexical_text_check():
+    """Reject the shapes the ck_chunks_lexical_text_language CHECK would reject."""
+    _document, chunks = seed.filing_records(sample_filing(), sample_chunks())
+
+    with pytest.raises(ValueError, match="lexical_text is required"):
+        replace(chunks[0], lexical_text="")  # en row: '' is NOT NULL in SQL terms
+    with pytest.raises(ValueError, match="lexical_text is blank"):
+        replace(chunks[0], language="ko", lexical_text="   ")

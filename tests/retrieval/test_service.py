@@ -334,7 +334,7 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
 
     korean = asyncio.run(
         service.retrieve(
-            object(),
+            cast(AsyncSession, object()),
             "AMD의 매출총이익률은 어떻게 변화했습니까?",
             provider=Provider(),
             k=2,
@@ -351,7 +351,7 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
     events.clear()
     english = asyncio.run(
         service.retrieve(
-            object(),
+            cast(AsyncSession, object()),
             "How did AMD's gross margin change?",
             provider=Provider(),
             k=2,
@@ -381,7 +381,8 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     monkeypatch.setattr(service, "vector_search", vector)
     monkeypatch.setattr(service, "lexical_search", lexical)
 
-    result = asyncio.run(service.retrieve(object(), "AMD의 매출은?", provider=Provider(), k=2))
+    session = cast(AsyncSession, object())
+    result = asyncio.run(service.retrieve(session, "AMD의 매출은?", provider=Provider(), k=2))
 
     # The service holds no opinion of its own: it never reads Settings, so an arm
     # measured here cannot inherit a query path its recorded config does not name.

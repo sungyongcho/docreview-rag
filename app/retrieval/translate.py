@@ -27,7 +27,6 @@ TRANSLATE_SYSTEM_PROMPTS: dict[str, str] = {
         "input does not contain."
     ),
 }
-TRANSLATE_SYSTEM_PROMPT = TRANSLATE_SYSTEM_PROMPTS["en"]
 
 
 class QueryTranslationError(RuntimeError):
@@ -53,7 +52,7 @@ async def translate_query(
     *,
     llm_provider: LLMProvider,
     provider_budget: ProviderBudget,
-    target_language: QueryLanguage = "en",
+    target_language: str = "en",
 ) -> QueryTranslation:
     """Translate one query into the corpus language through an injected provider.
 

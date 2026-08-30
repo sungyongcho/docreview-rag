@@ -463,6 +463,37 @@ def _table_node(table: str | Tag | None) -> Tag | None:
     return node if isinstance(node, Tag) else None
 
 
+def is_unit_caption(text: str) -> bool:
+    """Whether the stripped text is exactly one DART unit annotation."""
+    return bool(UNIT_CAPTION_RE.match(text.strip()))
+
+
+def render_table(table: str | Tag | None) -> tuple[list[str], str]:
+    """Render one table into ``(captions, markdown)`` from a single parse.
+
+    ``markdown`` is exactly what :func:`table_to_markdown` returns: when the table
+    has data rows its unit captions stay prepended inline. ``captions`` is non-empty
+    only for a caption-only table — the case :func:`table_captions` reports — which
+    renders no markdown of its own. A chunker that needs both answers per table can
+    therefore call this once instead of running the parse pipeline twice.
+    """
+    node = _table_node(table)
+    if node is None:
+        return [], ""
+    captions, grid = split_unit_captions(drop_empty(to_grid(node)))
+    grid = drop_empty(grid)
+    if not grid:
+        # A caption-only table: nothing renders, so the annotations travel out
+        # for the caller to attach to the table that follows.
+        return captions, ""
+    markdown = to_markdown(merge_unit_columns(grid))
+    if not markdown:
+        return [], ""
+    if captions:
+        markdown = "\n".join([*captions, markdown])
+    return [], markdown
+
+
 def table_captions(table: str | Tag | None) -> list[str]:
     """Return the unit annotations of a caption-only table.
 
@@ -471,11 +502,7 @@ def table_captions(table: str | Tag | None) -> list[str]:
     returned for the caller to carry into the next table's context; a table that has
     data rows keeps its captions inline and returns nothing here.
     """
-    node = _table_node(table)
-    if node is None:
-        return []
-    captions, rest = split_unit_captions(drop_empty(to_grid(node)))
-    return captions if not drop_empty(rest) else []
+    return render_table(table)[0]
 
 
 def table_to_markdown(table: str | Tag | None) -> str:
@@ -501,20 +528,7 @@ def table_to_markdown(table: str | Tag | None) -> str:
     filing, and normalizing here would be irreversible; query-side normalization
     should be handled outside this function.
     """
-    node = _table_node(table)
-    if node is None:
-        return ""
-    grid = drop_empty(to_grid(node))
-    if not grid:
-        return ""
-    captions, grid = split_unit_captions(grid)
-    grid = drop_empty(grid)
-    if not grid:
-        return ""
-    markdown = to_markdown(merge_unit_columns(grid))
-    if not markdown:
-        return ""
-    return "\n".join([*captions, markdown]) if captions else markdown
+    return render_table(table)[1]
 
 
 if __name__ == "__main__":  # pragma: no cover - eyeball helper

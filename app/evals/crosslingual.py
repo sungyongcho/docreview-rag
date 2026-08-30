@@ -45,6 +45,8 @@ from app.evals.retrieval_eval import (
     write_evaluation_artifact,
 )
 from app.evals.types import GoldenCase
+from app.ingestion.registry import REGISTRIES, registry_for
+from app.ingestion.seed import DEFAULT_MANIFEST_NAME, EXPECTED_DOCUMENTS
 from app.llm.provider import LLMProvider
 from app.llm.schemas import ProviderBudget
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
@@ -60,32 +62,59 @@ ProviderChoice = Literal["deterministic", "openai", "sbert", "sbert-multi"]
 CROSSLINGUAL_SUITE: Final[str] = "m8-crosslingual-v1"
 DART_CROSSLINGUAL_SUITE: Final[str] = "m10-dart-crosslingual-v1"
 
-# Keep the selected chunk target fixed so the matrix measures only embedding space,
-# retrieval strategy, query language, and query handling.
+# Kept for the committed EDGAR artifacts: the matrix measures only embedding space,
+# retrieval strategy, query language, and query handling at this fixed target.
 CROSSLINGUAL_TARGET_TEXT_CHARS: Final[int] = 1200
 
-# One measured corpus per command run. A profile binds everything that changes with
-# the corpus — registry, corpus language, golden twins, manifest, and the measured
-# chunk target — so a run cannot pair one corpus's suite with another's index.
-CORPUS_PROFILES: Final[dict[str, dict[str, Any]]] = {
-    "edgar": {
-        "registry": "sec",
-        "language": "en",
-        "suite": CROSSLINGUAL_SUITE,
-        "golden": None,  # DEFAULT_GOLDEN_PATH / KO_GOLDEN_PATH
-        "manifest_name": "manifest.json",
-        "expected_documents": 20,
-        "target_text_chars": CROSSLINGUAL_TARGET_TEXT_CHARS,
-    },
-    "dart": {
-        "registry": "dart",
-        "language": "ko",
-        "suite": DART_CROSSLINGUAL_SUITE,
-        "golden": "dart",
-        "manifest_name": "dart-manifest.json",
-        "expected_documents": 2,
-        "target_text_chars": 600,
-    },
+DART_GOLDEN_PATH: Final[Path] = DEFAULT_GOLDEN_PATH.parent / "dart_retrieval.json"
+DART_KO_GOLDEN_PATH: Final[Path] = DEFAULT_GOLDEN_PATH.parent / "dart_retrieval_ko.json"
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusProfile:
+    """One measured corpus per command run.
+
+    A profile binds everything that changes with the corpus — suite, golden twins,
+    manifest, and document count — while the corpus language and chunk target are
+    read from the registry adapter, so retuning ``Registry.chunk_target`` cannot
+    leave this matrix measuring a corpus the seeding path no longer produces.
+    """
+
+    registry: str
+    suite: str
+    golden: Path
+    ko_golden: Path
+    manifest_name: str
+    expected_documents: int
+
+    @property
+    def language(self) -> str:
+        """Return the corpus language the registry publishes in."""
+        return registry_for(self.registry).language
+
+    @property
+    def target_text_chars(self) -> int:
+        """Return the registry's measured chunk target."""
+        return registry_for(self.registry).chunk_target
+
+
+CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
+    "edgar": CorpusProfile(
+        registry="sec",
+        suite=CROSSLINGUAL_SUITE,
+        golden=DEFAULT_GOLDEN_PATH,
+        ko_golden=KO_GOLDEN_PATH,
+        manifest_name=DEFAULT_MANIFEST_NAME,
+        expected_documents=EXPECTED_DOCUMENTS,
+    ),
+    "dart": CorpusProfile(
+        registry="dart",
+        suite=DART_CROSSLINGUAL_SUITE,
+        golden=DART_GOLDEN_PATH,
+        ko_golden=DART_KO_GOLDEN_PATH,
+        manifest_name="dart-manifest.json",
+        expected_documents=2,
+    ),
 }
 DETERMINISTIC_EMBEDDING_MODEL: Final[str] = "token-hash-384"
 PROVIDER_CHOICES: Final[tuple[ProviderChoice, ...]] = (
@@ -131,7 +160,6 @@ class CrosslingualArm:
     strategy: RetrievalStrategy
     language: QueryLanguage
     corpus_registry: str = "sec"
-    corpus_language: QueryLanguage = "en"
     handling: QueryHandling = "direct"
     lexical_ranker: LexicalRanker | None = None
     bm25_k1: float | None = None
@@ -154,10 +182,8 @@ class CrosslingualArm:
             raise ValueError(f"unsupported retrieval strategy: {self.strategy}")
         if self.language not in LANGUAGE_CHOICES:
             raise ValueError(f"unsupported query language: {self.language}")
-        if self.corpus_registry not in {"sec", "dart"}:
+        if self.corpus_registry not in REGISTRIES:
             raise ValueError(f"unsupported corpus registry: {self.corpus_registry}")
-        if self.corpus_language not in LANGUAGE_CHOICES:
-            raise ValueError(f"unsupported corpus language: {self.corpus_language}")
         if self.handling not in HANDLING_CHOICES:
             raise ValueError(f"unsupported query handling: {self.handling}")
         if self.strategy == "vector":
@@ -198,6 +224,11 @@ class CrosslingualArm:
             parts.append(self.handling)
         parts.append(self.language)
         return "-".join(parts)
+
+    @property
+    def corpus_language(self) -> str:
+        """Return the corpus language, owned by the registry the arm measures."""
+        return registry_for(self.corpus_registry).language
 
     @property
     def sort_key(self) -> tuple[int, int, int, str]:
@@ -476,13 +507,12 @@ def make_crosslingual_retriever(
     filters: RetrievalFilters | None = None,
 ) -> Retriever:
     """Bind direct, routed, or translated handling to the shared retriever factory."""
-    if arm.handling == "translated" and (llm_provider is None or provider_budget is None):
-        raise ValueError("translated handling requires an LLM provider and a budget")
-    if arm.corpus_language == "ko" and (filters is None or not filters.languages):
-        # The Korean corpus is reached through the language filter: it is what makes
-        # the service tokenize the lexical query the way the rows were indexed.
+    if filters is None or not filters.languages:
+        # Every arm pins its corpus language: the filter is what selects the lexical
+        # tokenization the rows were indexed with, and it keeps an arm from silently
+        # retrieving the other corpus should one database ever hold both.
         base = filters.model_dump() if filters is not None else {}
-        filters = RetrievalFilters.model_validate({**base, "languages": ("ko",)})
+        filters = RetrievalFilters.model_validate({**base, "languages": (arm.corpus_language,)})
     bound = make_retriever(
         session,
         strategy=arm.strategy,
@@ -500,13 +530,17 @@ def make_crosslingual_retriever(
     )
     if arm.handling != "translated":
         return bound
+    if llm_provider is None or provider_budget is None:
+        raise ValueError("translated handling requires an LLM provider and a budget")
+    bound_llm_provider = llm_provider
+    bound_provider_budget = provider_budget
 
     async def translated(query: str, k: int) -> Sequence[ChunkHit]:
-        """Translate the query to English first, recording what was actually sent."""
+        """Translate into the corpus language first, recording what was sent."""
         translation = await translate_query(
             query,
-            llm_provider=llm_provider,
-            provider_budget=provider_budget,
+            llm_provider=bound_llm_provider,
+            provider_budget=bound_provider_budget,
             target_language=arm.corpus_language,
         )
         if translation_log is not None:
@@ -633,6 +667,7 @@ def gate_verdict(
     persisted: Sequence[tuple[CrosslingualArm, PersistedEvaluation]],
     *,
     enabled: bool,
+    require_baseline: bool = False,
 ) -> dict[str, Any]:
     """Combine parity and per-language regression into one gate verdict.
 
@@ -655,13 +690,19 @@ def gate_verdict(
     """
     parity_passed = all(assessment.passed for _, assessment in gated)
     regression_passed = all(result.passed for _, result in persisted) if persisted else None
+    # A missing baseline passes by default (there is nothing to regress against),
+    # but it is reported by name so a silently reset history is visible in every
+    # verdict, and --require-baseline turns it into a failure.
+    first_runs = [arm.name for arm, result in persisted if result.comparison is None]
+    baseline_ok = not (require_baseline and first_runs)
     return {
         "enabled": enabled,
         "parity_arms": [arm.name for arm, _ in gated],
         "regression_arms": [arm.name for arm, _ in persisted],
+        "regression_first_runs": first_runs,
         "parity_passed": parity_passed,
         "regression_passed": regression_passed,
-        "passed": parity_passed and regression_passed is not False,
+        "passed": parity_passed and regression_passed is not False and baseline_ok,
     }
 
 
@@ -712,6 +753,11 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Exit nonzero when a shipping arm fails the ko/en recall parity floor.",
     )
+    parser.add_argument(
+        "--require-baseline",
+        action="store_true",
+        help="Fail the gate when a persisted arm has no comparable stored baseline.",
+    )
     parsed = parser.parse_args(argv)
     # Rejected here rather than inside CrosslingualArm, so an inconsistent depth cannot
     # fail after the provider is built and both golden suites are loaded.
@@ -719,18 +765,11 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--candidate-k must be at least -k")
     profile = CORPUS_PROFILES[parsed.corpus]
     if parsed.suite is None:
-        parsed.suite = profile["suite"]
-    golden_dir = DEFAULT_GOLDEN_PATH.parent
+        parsed.suite = profile.suite
     if parsed.golden is None:
-        parsed.golden = (
-            golden_dir / "dart_retrieval.json"
-            if profile["golden"] == "dart"
-            else DEFAULT_GOLDEN_PATH
-        )
+        parsed.golden = profile.golden
     if parsed.ko_golden is None:
-        parsed.ko_golden = (
-            golden_dir / "dart_retrieval_ko.json" if profile["golden"] == "dart" else KO_GOLDEN_PATH
-        )
+        parsed.ko_golden = profile.ko_golden
     return parsed
 
 
@@ -742,7 +781,7 @@ def build_arms(
 ) -> tuple[CrosslingualArm, ...]:
     """Expand parsed axes into sorted arms with explicit BM25 provenance."""
     resolved = settings if settings is not None else get_settings()
-    profile = CORPUS_PROFILES[getattr(args, "corpus", "edgar")]
+    profile = CORPUS_PROFILES[args.corpus]
     languages = list(dict.fromkeys(args.languages))
     strategies = list(dict.fromkeys(args.strategies))
     handlings = list(dict.fromkeys(args.handling))
@@ -764,8 +803,7 @@ def build_arms(
                         embedding_model=embedding_model,
                         strategy=strategy,
                         language=language,
-                        corpus_registry=profile["registry"],
-                        corpus_language=profile["language"],
+                        corpus_registry=profile.registry,
                         handling=handling,
                         lexical_ranker=ranker,
                         bm25_k1=bm25[0],
@@ -774,7 +812,7 @@ def build_arms(
                         translator_model=(
                             args.translator_model if handling == "translated" else None
                         ),
-                        target_text_chars=profile["target_text_chars"],
+                        target_text_chars=profile.target_text_chars,
                         k=args.k,
                         candidate_k=args.candidate_k,
                         rrf_k=args.rrf_k,
@@ -847,7 +885,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     )
     provider = get_embedding_provider(settings)
     profile = CORPUS_PROFILES[args.corpus]
-    manifest_path = settings.corpus_dir / str(profile["manifest_name"])
+    manifest_path = settings.corpus_dir / profile.manifest_name
     suite = load_bilingual_suites(args.golden, args.ko_golden, manifest_path=manifest_path)
     arms = build_arms(args, embedding_model, settings=settings)
     # Refused here, not after the matrix has been measured: the answer depends only on
@@ -870,12 +908,12 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     coverage: list[LexicalCoverage] = []
     translations = TranslationLog()
     try:
-        target_text_chars = int(profile["target_text_chars"])
+        target_text_chars = profile.target_text_chars
         batch = build_chunking_batch(
             target_text_chars,
             settings=settings,
-            manifest_name=str(profile["manifest_name"]),
-            expected_documents=int(profile["expected_documents"]),
+            manifest_name=profile.manifest_name,
+            expected_documents=profile.expected_documents,
         )
         async with temporary_corpus_session(
             engine,
@@ -894,11 +932,10 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 bm25_b=settings.bm25_b if probe_bm25 else None,
                 bm25_idf=settings.bm25_idf if probe_bm25 else None,
                 candidate_k=args.candidate_k,
-                # On the Korean corpus the probe must tokenize the way the rows were
-                # indexed, exactly as the measured arms do.
-                filters=(
-                    RetrievalFilters(languages=("ko",)) if profile["language"] == "ko" else None
-                ),
+                # The probe pins the corpus language exactly as the measured arms
+                # do: the filter selects the lexical tokenization the rows were
+                # indexed with.
+                filters=RetrievalFilters(languages=(profile.language,)),
             )
             for language in dict.fromkeys(args.languages):
                 coverage.append(
@@ -964,7 +1001,12 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
             # The arm name is carried alongside it, so a failing verdict names the
             # slice that failed instead of leaving a positional join to the reader.
             "persisted": [{"arm": arm.name} | result.to_dict() for arm, result in persisted],
-            "gate": gate_verdict(gated, persisted, enabled=bool(args.gate)),
+            "gate": gate_verdict(
+                gated,
+                persisted,
+                enabled=bool(args.gate),
+                require_baseline=bool(args.require_baseline),
+            ),
         }
     finally:
         await engine.dispose()

@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.ingestion.parser import doc_id, parse_filing
+from app.ingestion.edgar import doc_id, parse_filing
 from app.ingestion.registry import (
     DEFAULT_REGISTRY,
     REGISTRIES,

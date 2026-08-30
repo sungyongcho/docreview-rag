@@ -92,3 +92,37 @@ def test_caption_only_table_annotates_the_next_table_chunk(C):
     assert chunks[0].kind == "table"
     assert "(단위 : 백만원)" in chunks[0].context_header
     assert "| 매출액 | 300,870 |" in chunks[0].body
+
+
+def test_caption_paragraph_annotates_the_next_table_chunk(C):
+    """A paragraph that is nothing but a unit caption becomes the table's context."""
+    heading = Block("heading", "재무 현황", level=2, source_pos=10, end_pos=30)
+    caption = Block("paragraph", "(단위 : 백만원)", source_pos=30, end_pos=60)
+    data = Block(
+        "table",
+        "",
+        html="<table><tr><td>매출액</td><td>300,870</td></tr>"
+        "<tr><td>영업이익</td><td>32,725</td></tr></table>",
+        source_pos=60,
+        end_pos=300,
+    )
+    chunks = C.chunk_filing(build_filing([heading, caption, data]))
+
+    assert len(chunks) == 1
+    assert chunks[0].kind == "table"
+    # The caption must not break the heading run: both reach the table's context.
+    assert "재무 현황" in chunks[0].context_header
+    assert "(단위 : 백만원)" in chunks[0].context_header
+    assert "(단위 : 백만원)" not in chunks[0].body
+
+
+def test_caption_paragraph_without_a_table_is_dropped(C):
+    """A caption paragraph followed by narrative vanishes; the narrative still chunks."""
+    caption = Block("paragraph", "(단위 : 백만원)", source_pos=10, end_pos=40)
+    para = Block("paragraph", "Revenue grew this year.", source_pos=40, end_pos=120)
+    chunks = C.chunk_filing(build_filing([caption, para]))
+
+    assert len(chunks) == 1
+    assert chunks[0].kind == "text"
+    assert "Revenue grew this year." in chunks[0].body
+    assert all("(단위 : 백만원)" not in chunk.content for chunk in chunks)

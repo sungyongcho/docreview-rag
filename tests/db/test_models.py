@@ -2,7 +2,18 @@
 
 from sqlalchemy import CheckConstraint, Computed, DateTime, Table, UniqueConstraint
 
-from app.db.models import Chunk, Document, EvalResult, Run, Trace
+from app.db.models import (
+    CONTENT_TSV_SQL,
+    LEXICAL_TEXT_CHECK_SQL,
+    BM25CorpusStat,
+    Chunk,
+    Document,
+    EvalResult,
+    LexemeStat,
+    Run,
+    Trace,
+)
+from app.retrieval.korean import lexical_plan
 
 
 def test_document_schema_persists_snapshot_and_filing_metadata():
@@ -192,3 +203,26 @@ def test_database_models_match_run_and_trace_mapping_contracts():
     } <= checks
     # The unique constraint on (run_id, step) already carries a btree index.
     assert {index.name for index in trace_table.indexes} == set()
+
+
+def test_index_sql_constants_agree_with_the_lexical_plans():
+    """Pin the shared SQL to the plan table so the two dispatches cannot drift."""
+    korean = lexical_plan("ko")
+    english = lexical_plan("en")
+
+    assert f"to_tsvector('{korean.text_search_config}'" in CONTENT_TSV_SQL
+    assert f"to_tsvector('{english.text_search_config}'" in CONTENT_TSV_SQL
+    assert "language = 'ko'" in CONTENT_TSV_SQL
+    assert LEXICAL_TEXT_CHECK_SQL == "(language = 'ko') = (lexical_text IS NOT NULL)"
+
+
+def test_bm25_statistics_are_partitioned_by_corpus_language():
+    """Both derived statistic tables key on the chunk's corpus language."""
+    lexeme_columns = LexemeStat.__table__.columns
+    corpus_columns = BM25CorpusStat.__table__.columns
+
+    assert [column.name for column in lexeme_columns if column.primary_key] == [
+        "language",
+        "lexeme",
+    ]
+    assert [column.name for column in corpus_columns if column.primary_key] == ["language"]

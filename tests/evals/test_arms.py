@@ -2,15 +2,19 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
+from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, LexicalRanker
 from app.evals import arms
-from app.evals.arms import make_retriever, resolve_bm25_parameters
+from app.evals.arms import RetrievalStrategy, make_retriever, resolve_bm25_parameters
+from app.retrieval.embeddings import EmbeddingProvider
+from app.retrieval.types import RetrievalFilters
 
 
-class _Provider:
+class _Provider(EmbeddingProvider):
     """Embedding provider stub that records the queries it is asked to embed."""
 
     dimensions = 384
@@ -18,10 +22,14 @@ class _Provider:
     def __init__(self, seen=None):
         self.seen = seen
 
-    async def embed_query(self, query):
+    async def embed_documents(self, texts):
+        """Embed each text as a zero vector; the arms only ever embed queries."""
+        return [[0.0] * self.dimensions for _ in texts]
+
+    async def embed_query(self, text):
         """Record the normalized query and return a zero vector."""
         if self.seen is not None:
-            self.seen.append(query)
+            self.seen.append(text)
         return [0.0] * self.dimensions
 
 
@@ -29,7 +37,7 @@ def test_every_retrieval_strategy_receives_the_same_normalized_query(monkeypatch
     """Normalize the query identically on every retrieval path."""
     queries = []
 
-    async def lexical_search(_session, query, _k, _filters):
+    async def lexical_search(_session, query, _k, _filters, *, text_search_config):
         queries.append(query)
         return []
 
@@ -46,11 +54,12 @@ def test_every_retrieval_strategy_receives_the_same_normalized_query(monkeypatch
     monkeypatch.setattr(arms, "vector_search", vector_search)
     monkeypatch.setattr(arms, "retrieve", retrieve)
     provider = _Provider(queries)
+    session = cast(AsyncSession, object())
 
     retrievers = (
-        make_retriever(object(), strategy="lexical", provider=None, lexical_ranker="ts_rank_cd"),
-        make_retriever(object(), strategy="vector", provider=provider),
-        make_retriever(object(), strategy="hybrid", provider=provider, lexical_ranker="ts_rank_cd"),
+        make_retriever(session, strategy="lexical", provider=None, lexical_ranker="ts_rank_cd"),
+        make_retriever(session, strategy="vector", provider=provider),
+        make_retriever(session, strategy="hybrid", provider=provider, lexical_ranker="ts_rank_cd"),
     )
     for retriever in retrievers:
         asyncio.run(retriever("NVDA 2024 R&D", 1))
@@ -62,7 +71,7 @@ def test_bm25_parameters_are_identical_in_lexical_and_hybrid_paths(monkeypatch):
     """Pass one BM25 parameter set unchanged to both lexical and hybrid retrieval."""
     calls = []
 
-    async def bm25_search(_session, query, _k, _filters, *, k1, b, idf):
+    async def bm25_search(_session, query, _k, _filters, *, k1, b, idf, text_search_config):
         calls.append(("lexical", query, k1, b, idf))
         return []
 
@@ -81,11 +90,12 @@ def test_bm25_parameters_are_identical_in_lexical_and_hybrid_paths(monkeypatch):
     monkeypatch.setattr(arms, "bm25_search", bm25_search)
     monkeypatch.setattr(arms, "retrieve", retrieve)
     settings = {"bm25_k1": 1.5, "bm25_b": 0.4, "bm25_idf": "robertson"}
+    session = cast(AsyncSession, object())
     lexical = make_retriever(
-        object(), strategy="lexical", provider=None, lexical_ranker="bm25", **settings
+        session, strategy="lexical", provider=None, lexical_ranker="bm25", **settings
     )
     hybrid = make_retriever(
-        object(), strategy="hybrid", provider=_Provider(), lexical_ranker="bm25", **settings
+        session, strategy="hybrid", provider=_Provider(), lexical_ranker="bm25", **settings
     )
 
     asyncio.run(lexical("R & D spending", 1))
@@ -107,7 +117,10 @@ def test_a_non_bm25_hybrid_arm_forwards_no_bm25_values(monkeypatch):
 
     monkeypatch.setattr(arms, "retrieve", retrieve)
     hybrid = make_retriever(
-        object(), strategy="hybrid", provider=_Provider(), lexical_ranker="ts_rank_cd"
+        cast(AsyncSession, object()),
+        strategy="hybrid",
+        provider=_Provider(),
+        lexical_ranker="ts_rank_cd",
     )
 
     asyncio.run(hybrid("research", 1))
@@ -125,8 +138,9 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
         return SimpleNamespace(hits=())
 
     monkeypatch.setattr(arms, "retrieve", retrieve)
+    session = cast(AsyncSession, object())
     routed = make_retriever(
-        object(),
+        session,
         strategy="hybrid",
         provider=_Provider(),
         lexical_ranker="ts_rank_cd",
@@ -137,17 +151,21 @@ def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatc
     assert seen["route_by_language"] is True
 
     unrouted = make_retriever(
-        object(), strategy="hybrid", provider=_Provider(), lexical_ranker="ts_rank_cd"
+        session, strategy="hybrid", provider=_Provider(), lexical_ranker="ts_rank_cd"
     )
     asyncio.run(unrouted("AMD의 매출은?", 1))
     assert seen["route_by_language"] is False
 
     # Routing chooses between two components, so a single-lane arm carrying the flag
     # would be labelled with a query path it never takes.
-    for strategy, ranker in (("lexical", "ts_rank_cd"), ("vector", None)):
+    single_lane: tuple[tuple[RetrievalStrategy, LexicalRanker | None], ...] = (
+        ("lexical", "ts_rank_cd"),
+        ("vector", None),
+    )
+    for strategy, ranker in single_lane:
         with pytest.raises(ValueError, match="routing requires the hybrid strategy"):
             make_retriever(
-                object(),
+                session,
                 strategy=strategy,
                 provider=_Provider(),
                 lexical_ranker=ranker,
@@ -183,7 +201,7 @@ def test_a_bm25_arm_is_rejected_before_it_can_be_bound(values):
         resolve_bm25_parameters("bm25", k1, b, idf)
     with pytest.raises(ValueError):
         make_retriever(
-            object(),
+            cast(AsyncSession, object()),
             strategy="lexical",
             provider=None,
             lexical_ranker="bm25",
@@ -237,19 +255,61 @@ def test_bm25_values_are_rejected_on_an_arm_that_runs_no_bm25_query(lexical_rank
 def test_a_mislabeled_arm_is_rejected_at_bind_time(kwargs, message):
     """Reject every mislabeled arm before it can touch a provider or the database."""
     with pytest.raises(ValueError, match=message):
-        make_retriever(object(), **kwargs)
+        make_retriever(cast(AsyncSession, object()), **kwargs)
 
 
 def test_a_bound_arm_rejects_a_deeper_per_call_hit_count(monkeypatch):
     """Refuse a per-call ``k`` the bound candidate depth cannot cover."""
 
-    async def lexical_search(_session, _query, _k, _filters):
+    async def lexical_search(_session, _query, _k, _filters, *, text_search_config):
         raise AssertionError("depth validation must run before retrieval")
 
     monkeypatch.setattr(arms, "lexical_search", lexical_search)
     retriever = make_retriever(
-        object(), strategy="lexical", provider=None, lexical_ranker="ts_rank_cd", candidate_k=3
+        cast(AsyncSession, object()),
+        strategy="lexical",
+        provider=None,
+        lexical_ranker="ts_rank_cd",
+        candidate_k=3,
     )
 
     with pytest.raises(ValueError, match="candidate_k must be at least k"):
         asyncio.run(retriever("research", 4))
+
+
+def test_lexical_lane_tokenizes_for_the_filtered_corpus_language(monkeypatch):
+    """A ko language filter sends bigram tokens under the Korean configuration."""
+    calls = []
+
+    async def lexical_search(_session, query, _k, _filters, *, text_search_config):
+        calls.append((query, text_search_config))
+        return []
+
+    monkeypatch.setattr(arms, "lexical_search", lexical_search)
+    retriever = make_retriever(
+        cast(AsyncSession, object()),
+        strategy="lexical",
+        provider=None,
+        lexical_ranker="ts_rank_cd",
+        filters=RetrievalFilters(languages=("ko",)),
+    )
+    asyncio.run(retriever("삼성전자 매출", 1))
+
+    assert calls == [("삼성 성전 전자 매출", "simple")]
+
+
+def test_lexical_lane_keeps_the_english_configuration_without_a_filter(monkeypatch):
+    """No language filter keeps the committed English query path."""
+    calls = []
+
+    async def lexical_search(_session, query, _k, _filters, *, text_search_config):
+        calls.append((query, text_search_config))
+        return []
+
+    monkeypatch.setattr(arms, "lexical_search", lexical_search)
+    retriever = make_retriever(
+        cast(AsyncSession, object()), strategy="lexical", provider=None, lexical_ranker="ts_rank_cd"
+    )
+    asyncio.run(retriever("NVDA revenue", 1))
+
+    assert calls == [("NVDA revenue", "english")]

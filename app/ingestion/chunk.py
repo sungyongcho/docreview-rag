@@ -6,7 +6,7 @@ from typing import Literal
 
 from app.ingestion.parser import Block, ParsedFiling, Section
 from app.ingestion.registry import section_label
-from app.ingestion.tables import table_captions, table_to_markdown
+from app.ingestion.tables import is_unit_caption, render_table
 
 ChunkKind = Literal["text", "table"]
 
@@ -103,22 +103,24 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
     """Group blocks without crossing source groups, headings, or tables.
 
     Paragraphs join up to the soft target but never split. Consecutive headings become
-    context, tables remain standalone, and blank paragraphs are ignored.
+    context, tables remain standalone, blank paragraphs are ignored, and a paragraph
+    that is nothing but a unit caption becomes the next table's context.
     """
     units: list[Unit] = []
     pending: list[Block] = []
     pending_chars = 0
-    # Unit annotations harvested from caption-only tables. They describe exactly the
-    # next table, so anything that intervenes — a heading, a paragraph, a new source
-    # group, or the annotated table itself — clears them; letting one live longer
-    # stamps a wrong monetary scale onto every later table under the same heading.
+    # Unit annotations harvested from caption-only tables and caption paragraphs.
+    # They describe exactly the next table, so anything that intervenes — a heading,
+    # a non-caption paragraph, a new source group, or the annotated table itself —
+    # clears them; letting one live longer stamps a wrong monetary scale onto every
+    # later table under the same heading.
     pending_captions: list[str] = []
     narrative_headings: list[str] = []
     heading_run = False
     active_group: int | None = None
     target_chars = config.target_text_chars
     add_unit = units.append
-    to_markdown = table_to_markdown
+    render = render_table
     strip = str.strip
     heading_kind = "heading"
     table_kind = "table"
@@ -161,7 +163,7 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
 
         if block.kind == table_kind:
             flush_pending()
-            markdown = to_markdown(block.html)
+            captions, markdown = render(block.html)
             if markdown:
                 heading = " · ".join([*narrative_headings, *pending_captions]) or None
                 add_unit(Unit(table_kind, markdown, [block], heading))
@@ -170,13 +172,25 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
                 continue
             # A caption-only table annotates the one table that follows it, so its
             # unit travels as context instead of being dropped with the empty markdown.
-            for caption in table_captions(block.html):
+            for caption in captions:
                 if caption not in pending_captions:
                     pending_captions.append(caption)
             continue
 
         text = block.text
         if not strip(text):
+            continue
+        if is_unit_caption(text):
+            # DART's dominant caption form is a bare paragraph line right before the
+            # data table. Buffered as narrative it dangles at the end of a text chunk
+            # and never reaches that table, so it travels as pending caption context
+            # instead. The heading run stays open because a caption sitting between a
+            # heading and its table must not break the run. When a non-caption
+            # paragraph or a heading follows instead, the clearing rules below drop
+            # the caption entirely — the same fate a dangling caption-only table meets.
+            caption = strip(text)
+            if caption not in pending_captions:
+                pending_captions.append(caption)
             continue
         heading_run = False
         pending_captions = []
@@ -297,7 +311,7 @@ if __name__ == "__main__":  # pragma: no cover - manual inspection helper
     if entry is None:
         known = ", ".join(sorted(resolve_registry(i).doc_id(i) for i in manifest))
         raise SystemExit(f"unknown doc {args.doc!r}; known documents: {known}")
-    with patch("app.ingestion.parser.save_profile"):
+    with patch("app.ingestion.edgar.save_profile"):
         parsed, _ = resolve_registry(entry).parse(entry)
     selected = [chunk for chunk in chunk_filing(parsed) if not args.kind or chunk.kind == args.kind]
     for chunk in selected[: args.limit]:

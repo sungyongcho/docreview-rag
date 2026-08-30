@@ -2,12 +2,14 @@
 
 import asyncio
 from decimal import Decimal
+from typing import Any, cast
 
 from pydantic import ValidationError
 import pytest
 
 from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
+from app.retrieval.language import QueryLanguage
 from app.retrieval.translate import (
     QueryTranslation,
     QueryTranslationError,
@@ -76,12 +78,14 @@ def test_translation_contract_rejects_blank_extra_and_unknown_languages():
     with pytest.raises(ValidationError):
         QueryTranslation(translated_query="   ", source_language="ko")
     with pytest.raises(ValidationError):
-        QueryTranslation(translated_query=ENGLISH_QUERY, source_language="fr")
+        QueryTranslation(translated_query=ENGLISH_QUERY, source_language=cast(QueryLanguage, "fr"))
     with pytest.raises(ValidationError):
-        QueryTranslation(
-            translated_query=ENGLISH_QUERY,
-            source_language="ko",
-            confidence=0.9,
+        QueryTranslation.model_validate(
+            {
+                "translated_query": ENGLISH_QUERY,
+                "source_language": "ko",
+                "confidence": 0.9,
+            }
         )
 
 
@@ -144,4 +148,4 @@ def test_translation_never_reaches_a_network_provider():
         translate(provider)
     assert len(provider.prompts) == 2
     with pytest.raises(TypeError):
-        asyncio.run(translate_query(KOREAN_QUERY))
+        asyncio.run(cast(Any, translate_query)(KOREAN_QUERY))

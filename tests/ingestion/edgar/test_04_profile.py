@@ -1,3 +1,5 @@
+"""Per-issuer profile selection and its fallback across fiscal years."""
+
 import json
 from pathlib import Path
 from types import ModuleType
@@ -9,29 +11,29 @@ SAMPLE = {
 
 
 def test_missing_profile_returns_none(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     isolated_profiles: Path,
 ) -> None:
     """Use None to signal that a filing year still needs profile bootstrapping."""
-    assert parser_module.load_profile("ZZZZ", 2024) is None
+    assert edgar_module.load_profile("ZZZZ", 2024) is None
 
 
 def test_profile_save_load_roundtrip(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     isolated_profiles: Path,
 ) -> None:
     """Return the same complete profile that was persisted for a year."""
-    parser_module.save_profile("TEST", 2024, SAMPLE)
-    assert parser_module.load_profile("TEST", 2024) == SAMPLE
+    edgar_module.save_profile("TEST", 2024, SAMPLE)
+    assert edgar_module.load_profile("TEST", 2024) == SAMPLE
 
 
 def test_profile_year_keys_are_strings_and_sorted(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     isolated_profiles: Path,
 ) -> None:
     """Store JSON year keys as ascending strings regardless of insertion order."""
     for year in (2023, 2019, 2021):
-        parser_module.save_profile("TEST", year, SAMPLE)
+        edgar_module.save_profile("TEST", year, SAMPLE)
 
     data = json.loads((isolated_profiles / "TEST.json").read_text())
 
@@ -39,25 +41,24 @@ def test_profile_year_keys_are_strings_and_sorted(
 
 
 def test_unknown_year_falls_back_to_the_newest_profile(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     isolated_profiles: Path,
 ) -> None:
     """Fall back to the newest learned year rather than the first bootstrap year.
 
-    Layouts evolve forward, and an old exceptional filing should not remain the
-    permanent default for later unseen years.
+    Layouts evolve forward, so an old exceptional filing must not become the default.
     """
-    parser_module.save_profile("TEST", 2019, {**SAMPLE, "learned_from": "old"})
-    parser_module.save_profile("TEST", 2023, {**SAMPLE, "learned_from": "new"})
-    parser_module.save_profile("TEST", 2020, {**SAMPLE, "learned_from": "older"})
+    edgar_module.save_profile("TEST", 2019, {**SAMPLE, "learned_from": "old"})
+    edgar_module.save_profile("TEST", 2023, {**SAMPLE, "learned_from": "new"})
+    edgar_module.save_profile("TEST", 2020, {**SAMPLE, "learned_from": "older"})
     data = json.loads((isolated_profiles / "TEST.json").read_text())
 
     assert data["default_year"] == "2023"
-    assert parser_module.load_profile("TEST", 1999)["learned_from"] == "new"
+    assert edgar_module.load_profile("TEST", 1999)["learned_from"] == "new"
 
 
 def test_each_profile_year_is_self_contained(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     isolated_profiles: Path,
 ) -> None:
     """Keep each year complete so loading requires no merge semantics."""
@@ -66,16 +67,16 @@ def test_each_profile_year_is_self_contained(
         "validation": {"expected_items": 21},
     }
     second = {"segmentation": {"type": "xref"}, "validation": {"must_have": ["8"]}}
-    parser_module.save_profile("TEST", 2019, first)
-    parser_module.save_profile("TEST", 2023, second)
+    edgar_module.save_profile("TEST", 2019, first)
+    edgar_module.save_profile("TEST", 2023, second)
 
-    assert parser_module.load_profile("TEST", 2019) == first
-    assert parser_module.load_profile("TEST", 2023) == second
-    assert "rules" not in parser_module.load_profile("TEST", 2023)["segmentation"]
+    assert edgar_module.load_profile("TEST", 2019) == first
+    assert edgar_module.load_profile("TEST", 2023) == second
+    assert "rules" not in edgar_module.load_profile("TEST", 2023)["segmentation"]
 
 
 def test_failed_bootstrap_profile_is_not_saved(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     isolated_profiles: Path,
     tmp_path: Path,
 ) -> None:
@@ -88,7 +89,7 @@ def test_failed_bootstrap_profile_is_not_saved(
         "file": str(source),
     }
 
-    result, profile = parser_module.parse_filing(entry)
+    result, profile = edgar_module.parse_filing(entry)
 
     assert result.profile_used == "bootstrap"
     assert result.parse_status == "needs_profile_update"

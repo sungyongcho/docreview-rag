@@ -222,8 +222,8 @@ def parse_dart_filing(entry: dict[str, Any]) -> tuple[ParsedFiling, dict[str, An
     ------
     DartParseError
         If the entry names another registry, the source cannot be read as UTF-8, the
-        source no longer matches the digest or length the manifest recorded, line
-        offsets disagree with the source, or no numbered division is present.
+        source no longer matches the digest or length the manifest recorded, or no
+        numbered division is present.
     """
     registry = str(entry.get("registry", ""))
     if registry != "dart":
@@ -275,7 +275,7 @@ def _verify_source_identity(entry: Mapping[str, Any], raw: str) -> None:
     Raises
     ------
     DartParseError
-        If length, digest, or newline-derived line offsets disagree with the file.
+        If the file's length or digest disagrees with the manifest entry.
     """
     expected_length = entry.get("source_length")
     if isinstance(expected_length, int) and expected_length != len(raw):
@@ -289,8 +289,6 @@ def _verify_source_identity(entry: Mapping[str, Any], raw: str) -> None:
         and expected_digest != source_digest(raw)
     ):
         raise DartParseError(f"{entry['file']} does not match the manifest source digest")
-    if len(line_offsets(raw)) != raw.count("\n") + 1:
-        raise DartParseError(f"{entry['file']} produced untrustworthy line offsets")
 
 
 def dart_doc_id(entry: Mapping[str, Any]) -> str:

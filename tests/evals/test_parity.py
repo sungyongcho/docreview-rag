@@ -1,5 +1,7 @@
 """Cross-language parity ratios and fail-closed gate tests."""
 
+from typing import cast
+
 import pytest
 
 from app.evals.parity import (
@@ -85,7 +87,7 @@ def evaluation(
     suite: str = "m8-crosslingual-v1",
     k: int = 5,
     **config_changes,
-) -> object:
+) -> RetrievalEvaluation:
     """Build one artifact-shaped evaluation with chosen aggregate metrics."""
     cases = tuple(
         CaseEvaluation(
@@ -234,7 +236,7 @@ def test_assess_parity_validates_its_own_inputs_and_floor():
     with pytest.raises(ValueError, match=r"\(0, 1\]"):
         assess_parity(english, korean, min_recall_ratio=1.5)
     with pytest.raises(TypeError, match="RetrievalEvaluation"):
-        assess_parity(object(), korean)
+        assess_parity(cast(RetrievalEvaluation, object()), korean)
 
 
 def test_language_regression_tolerance_allows_more_than_one_flipped_case():

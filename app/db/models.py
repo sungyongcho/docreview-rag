@@ -25,6 +25,20 @@ from app.config import get_settings
 
 DIM = get_settings().embed_dim
 
+# One authoritative copy of the language-dispatched index SQL. The evaluation
+# corpus renders its temporary chunks table from these same strings, so the
+# tsvector a measured arm searches is the tsvector the live table computes.
+# The config must be a literal inside each branch: a runtime text-to-regconfig
+# cast is only stable, and PostgreSQL requires generation expressions to be
+# immutable.
+CONTENT_TSV_SQL = (
+    "CASE WHEN language = 'ko' "
+    "THEN to_tsvector('simple', coalesce(lexical_text, index_text)) "
+    "ELSE to_tsvector('english', index_text) END"
+)
+LEXICAL_TEXT_CHECK_SQL = "(language = 'ko') = (lexical_text IS NOT NULL)"
+LANGUAGE_FORMAT_CHECK_SQL = "language ~ '^[a-z]{2}$'"
+
 
 class Base(DeclarativeBase):
     """Declarative base for application tables."""
@@ -92,15 +106,7 @@ class Chunk(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
     content_tsv: Mapped[str] = mapped_column(
         TSVECTOR,
-        # The config must be a literal inside each branch: a runtime text-to-regconfig
-        # cast is only stable, and PostgreSQL requires generation expressions to be
-        # immutable.
-        Computed(
-            "CASE WHEN language = 'ko' "
-            "THEN to_tsvector('simple', coalesce(lexical_text, index_text)) "
-            "ELSE to_tsvector('english', index_text) END",
-            persisted=True,
-        ),
+        Computed(CONTENT_TSV_SQL, persisted=True),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -111,11 +117,8 @@ class Chunk(Base):
         UniqueConstraint("doc_id", "ordinal", name="uq_doc_ordinal"),
         CheckConstraint("ordinal >= 0", name="ck_chunks_ordinal_nonnegative"),
         CheckConstraint("kind IN ('text', 'table')", name="ck_chunks_kind"),
-        CheckConstraint("language ~ '^[a-z]{2}$'", name="ck_chunks_language_format"),
-        CheckConstraint(
-            "(language = 'ko') = (lexical_text IS NOT NULL)",
-            name="ck_chunks_lexical_text_language",
-        ),
+        CheckConstraint(LANGUAGE_FORMAT_CHECK_SQL, name="ck_chunks_language_format"),
+        CheckConstraint(LEXICAL_TEXT_CHECK_SQL, name="ck_chunks_lexical_text_language"),
         CheckConstraint("start_char >= 0", name="ck_chunks_start_nonnegative"),
         CheckConstraint("end_char > start_char", name="ck_chunks_span_order"),
         CheckConstraint(
@@ -157,10 +160,16 @@ class ChunkLength(Base):
 
 
 class LexemeStat(Base):
-    """Number of chunks containing one lexeme."""
+    """Number of chunks in one corpus language containing one lexeme.
+
+    Document frequency is partitioned by language because the two corpora share
+    one chunks table but are tokenized differently; a global count would let the
+    English corpus deflate the IDF of lexemes both corpora carry.
+    """
 
     __tablename__ = "lexeme_stats"
 
+    language: Mapped[str] = mapped_column(String(8), primary_key=True)
     lexeme: Mapped[str] = mapped_column(Text, primary_key=True)
     df: Mapped[int] = mapped_column(nullable=False)
 
@@ -168,16 +177,20 @@ class LexemeStat(Base):
 
 
 class BM25CorpusStat(Base):
-    """One-row corpus metadata proving that BM25 statistics are current."""
+    """Per-language corpus metadata proving that BM25 statistics are current.
+
+    One row per corpus language in the chunks table; the invalidation trigger
+    deletes every row, so an empty table means the statistics are stale.
+    """
 
     __tablename__ = "bm25_corpus_stats"
 
-    singleton_id: Mapped[int] = mapped_column(primary_key=True)
+    language: Mapped[str] = mapped_column(String(8), primary_key=True)
     n: Mapped[int] = mapped_column(BigInteger, nullable=False)
     avgdl: Mapped[float] = mapped_column(Float, nullable=False)
 
     __table_args__ = (
-        CheckConstraint("singleton_id = 1", name="ck_bm25_corpus_stats_singleton"),
+        CheckConstraint(LANGUAGE_FORMAT_CHECK_SQL, name="ck_bm25_corpus_stats_language_format"),
         CheckConstraint("n > 0", name="ck_bm25_corpus_stats_n_positive"),
         CheckConstraint("avgdl > 0", name="ck_bm25_corpus_stats_avgdl_positive"),
     )

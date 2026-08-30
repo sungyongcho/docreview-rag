@@ -3,8 +3,11 @@
 import asyncio
 import json
 from types import SimpleNamespace
+from typing import Any, cast
 
+from pydantic import SecretStr
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.evals import arms, crosslingual
@@ -13,6 +16,7 @@ from app.evals.crosslingual import (
     CROSSLINGUAL_SUITE,
     CROSSLINGUAL_TARGET_TEXT_CHARS,
     CrosslingualArm,
+    ProviderChoice,
     TranslationLog,
     arguments,
     arm_comparison_markdown,
@@ -28,10 +32,14 @@ from app.evals.crosslingual import (
     twin_query_alignment,
 )
 from app.evals.identity import artifact_filename
+from app.evals.parity import ParityAssessment
+from app.evals.retrieval_eval import PersistedEvaluation
 from app.evals.types import GoldenCase, GoldenCategory, GoldenSpan
+from app.llm.provider import LLMProvider, OpenAILLMProvider
+from app.llm.schemas import ProviderBudget
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.sbert import MULTILINGUAL_SBERT_MODEL
-from app.retrieval.types import ChunkHit
+from app.retrieval.types import ChunkHit, RetrievalFilters
 from tests.evals.support import EVALUATION_RECORDED_AT, SOURCE_SHA256
 
 QUESTIONS = {
@@ -114,7 +122,7 @@ BM25_FIELDS = {"bm25_k1": 1.2, "bm25_b": 0.75, "bm25_idf": "lucene"}
 
 def arm(**changes):
     """Build one hybrid deterministic arm with optional field replacements."""
-    values = {
+    values: dict[str, Any] = {
         "embedding_provider": "deterministic",
         "embedding_model": "token-hash-384",
         "strategy": "hybrid",
@@ -202,9 +210,12 @@ def test_arm_rejects_shapes_whose_numbers_could_not_be_attributed(changes, messa
 
 def test_embedding_identity_maps_sbert_multi_without_a_new_provider_literal():
     """Map the multilingual model through the existing SBERT provider."""
-    settings = SimpleNamespace(
-        embedding_model="text-embedding-3-small",
-        sbert_model="sentence-transformers/all-MiniLM-L6-v2",
+    settings = cast(
+        Settings,
+        SimpleNamespace(
+            embedding_model="text-embedding-3-small",
+            sbert_model="sentence-transformers/all-MiniLM-L6-v2",
+        ),
     )
 
     assert embedding_identity("deterministic", settings)[0] == "deterministic"
@@ -215,7 +226,7 @@ def test_embedding_identity_maps_sbert_multi_without_a_new_provider_literal():
     )
     assert embedding_identity("sbert-multi", settings) == ("sbert", MULTILINGUAL_SBERT_MODEL)
     with pytest.raises(ValueError, match="unsupported"):
-        embedding_identity("cohere", settings)
+        embedding_identity(cast(ProviderChoice, "cohere"), settings)
 
 
 def test_twin_alignment_measures_the_embedding_space_without_a_corpus():
@@ -269,7 +280,7 @@ def evaluate_arm(module_arm, tmp_path=None):
     """Evaluate one arm against a scripted retriever, bypassing the database."""
     return asyncio.run(
         run_arm(
-            SimpleNamespace(),
+            cast(AsyncSession, SimpleNamespace()),
             module_arm,
             suite(),
             provider=None,
@@ -348,7 +359,7 @@ def test_handling_selects_the_query_path_through_one_shared_retriever(monkeypatc
     monkeypatch.setattr(arms, "retrieve", fake_retrieve)
     for handling in ("routed", "direct"):
         retriever = make_crosslingual_retriever(
-            SimpleNamespace(),
+            cast(AsyncSession, SimpleNamespace()),
             arm(handling=handling, language="ko", lexical_ranker="bm25", **BM25_FIELDS),
             provider=DeterministicEmbeddingProvider(),
         )
@@ -380,11 +391,11 @@ def test_translated_handling_rewrites_the_query_and_records_what_it_sent(monkeyp
     monkeypatch.setattr(crosslingual, "translate_query", fake_translate)
     log = TranslationLog()
     retriever = make_crosslingual_retriever(
-        SimpleNamespace(),
+        cast(AsyncSession, SimpleNamespace()),
         arm(handling="translated", language="ko", translator_model="gpt-4.1-mini"),
         provider=None,
-        llm_provider=object(),
-        provider_budget=object(),
+        llm_provider=cast(LLMProvider, object()),
+        provider_budget=cast(ProviderBudget, object()),
         translation_log=log,
     )
 
@@ -403,7 +414,7 @@ def test_translated_handling_rewrites_the_query_and_records_what_it_sent(monkeyp
     ]
     with pytest.raises(ValueError, match="LLM provider"):
         make_crosslingual_retriever(
-            SimpleNamespace(),
+            cast(AsyncSession, SimpleNamespace()),
             arm(handling="translated", language="ko", translator_model="gpt-4.1-mini"),
             provider=None,
         )
@@ -474,10 +485,19 @@ def test_command_line_defaults_and_flags_match_the_documented_shape():
 def verdict(*, parity, regression):
     """Build one gate verdict from scripted parity and regression outcomes."""
     gated = [
-        (arm(handling="routed", language="ko"), SimpleNamespace(passed=outcome))
+        (
+            arm(handling="routed", language="ko"),
+            cast(ParityAssessment, SimpleNamespace(passed=outcome)),
+        )
         for outcome in parity
     ]
-    persisted = [(arm(language="ko"), SimpleNamespace(passed=outcome)) for outcome in regression]
+    persisted = [
+        (
+            arm(language="ko"),
+            cast(PersistedEvaluation, SimpleNamespace(passed=outcome, comparison=object())),
+        )
+        for outcome in regression
+    ]
     return crosslingual.gate_verdict(gated, persisted, enabled=True)
 
 
@@ -508,14 +528,14 @@ def test_the_translation_boundary_resolves_its_deferred_sdk_import():
     # boundary here is what makes a moved or renamed SDK symbol fail a test rather
     # than every invocation of the command.
     provider, budget = crosslingual.translation_boundary(
-        "gpt-4.1-mini", Settings(openai_api_key="sk-not-a-real-key")
+        "gpt-4.1-mini", Settings(openai_api_key=SecretStr("sk-not-a-real-key"))
     )
     try:
         assert provider.model_name == "gpt-4.1-mini"
         assert budget.max_input_tokens == crosslingual.TRANSLATION_MAX_INPUT_TOKENS
         assert budget.max_output_tokens == crosslingual.TRANSLATION_MAX_OUTPUT_TOKENS
     finally:
-        asyncio.run(provider.aclose())
+        asyncio.run(cast(OpenAILLMProvider, provider).aclose())
 
 
 def test_run_arm_records_the_suite_the_command_was_given(monkeypatch):
@@ -526,7 +546,7 @@ def test_run_arm_records_the_suite_the_command_was_given(monkeypatch):
     # must not write into the shipped suite's regression history.
     measured = asyncio.run(
         run_arm(
-            SimpleNamespace(),
+            cast(AsyncSession, SimpleNamespace()),
             arm(),
             suite(),
             provider=None,
@@ -638,7 +658,6 @@ def test_dart_corpus_arm_names_and_config_carry_the_corpus_identity():
         lexical_ranker="ts_rank_cd",
         language="ko",
         corpus_registry="dart",
-        corpus_language="ko",
     )
 
     assert edgar.name == "xling-deterministic-hybrid-ts-rank-cd-ko"
@@ -660,7 +679,6 @@ def test_parity_groups_never_collapse_across_corpora():
             language=lang,
             handling="routed",
             corpus_registry="dart",
-            corpus_language="ko",
         )
         for lang in ("en", "ko")
     ]
@@ -686,3 +704,47 @@ def test_corpus_argument_resolves_suite_goldens_and_chunk_target():
     assert edgar_args.golden.name == "retrieval.json"
     edgar_built = crosslingual.build_arms(edgar_args, "token-hash-384", settings=Settings())
     assert {arm.target_text_chars for arm in edgar_built} == {1200}
+
+
+def test_every_arm_pins_its_corpus_language_filter(monkeypatch):
+    """The bound retriever always carries the arm's corpus language filter."""
+    seen = {}
+
+    def factory(_session, **kwargs):
+        seen.update(kwargs)
+
+        async def run(_query, _k):
+            return ()
+
+        return run
+
+    monkeypatch.setattr(crosslingual, "make_retriever", factory)
+    session = cast(AsyncSession, object())
+    crosslingual.make_crosslingual_retriever(session, arm(), provider=None)
+    assert seen["filters"] == RetrievalFilters(languages=("en",))
+
+    crosslingual.make_crosslingual_retriever(session, arm(corpus_registry="dart"), provider=None)
+    assert seen["filters"] == RetrievalFilters(languages=("ko",))
+
+
+def test_gate_reports_and_optionally_fails_missing_baselines():
+    """Name first-run arms in the verdict; --require-baseline turns them into a failure."""
+    gated = [
+        (
+            arm(handling="routed", language="ko"),
+            cast(ParityAssessment, SimpleNamespace(passed=True)),
+        )
+    ]
+    first_run = [
+        (
+            arm(language="ko"),
+            cast(PersistedEvaluation, SimpleNamespace(passed=True, comparison=None)),
+        )
+    ]
+
+    tolerated = crosslingual.gate_verdict(gated, first_run, enabled=True)
+    required = crosslingual.gate_verdict(gated, first_run, enabled=True, require_baseline=True)
+
+    assert tolerated["regression_first_runs"] == [first_run[0][0].name]
+    assert tolerated["passed"] is True
+    assert required["passed"] is False

@@ -8,15 +8,21 @@ from unittest.mock import patch
 
 import pytest
 
-from app.ingestion.parser import doc_id
+from app.ingestion.edgar import doc_id
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="session")
 def parser_module() -> ModuleType:
-    """Import the parser module from the repository source tree."""
+    """Import the neutral parser-contract module from the repository source tree."""
     return import_module("app.ingestion.parser")
+
+
+@pytest.fixture(scope="session")
+def edgar_module() -> ModuleType:
+    """Import the EDGAR adapter module from the repository source tree."""
+    return import_module("app.ingestion.edgar")
 
 
 @pytest.fixture(scope="session")
@@ -55,23 +61,23 @@ def profiles_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def isolated_profiles(parser_module: ModuleType, tmp_path: Path):
+def isolated_profiles(edgar_module: ModuleType, tmp_path: Path):
     """Redirect profile I/O to a temporary directory for one test."""
-    with patch.object(parser_module, "PROFILES", tmp_path):
+    with patch.object(edgar_module, "PROFILES", tmp_path):
         yield tmp_path
 
 
 @pytest.fixture(scope="session")
 def parsed(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     manifest: list[dict],
     profiles_dir: Path,
 ) -> dict:
     """Parse every corpus document while learning profiles from a clean directory."""
-    with patch.object(parser_module, "PROFILES", profiles_dir):
+    with patch.object(edgar_module, "PROFILES", profiles_dir):
         out = {}
         for entry in sorted(manifest, key=lambda item: (item["ticker"], item["report_date"])):
-            result, _profile = parser_module.parse_filing(entry)
+            result, _profile = edgar_module.parse_filing(entry)
             out[doc_id(entry)] = result
         return out
 

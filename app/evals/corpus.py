@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.config import Settings, get_settings
+from app.db.models import CONTENT_TSV_SQL, LANGUAGE_FORMAT_CHECK_SQL, LEXICAL_TEXT_CHECK_SQL
 from app.evals.measurement import Clock, IndexingBudgetMeasurement, assess_indexing_budget
 from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing
 from app.ingestion.parser import ParsedFiling
@@ -157,7 +158,7 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         CONSTRAINT ck_documents_parse_status
             CHECK (parse_status IN ('parsed', 'needs_profile_update')),
         CONSTRAINT ck_documents_source_length_positive CHECK (source_length > 0),
-        CONSTRAINT ck_documents_language_format CHECK (language ~ '^[a-z]{{2}}$'),
+        CONSTRAINT ck_documents_language_format CHECK ({language_format_check_sql}),
         CONSTRAINT ck_documents_source_sha256_format
             CHECK (source_sha256 ~ '^[0-9a-f]{{64}}$')
     ) ON COMMIT PRESERVE ROWS
@@ -179,19 +180,13 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         citation text NOT NULL,
         lexical_text text,
         embedding vector({dimensions}),
-        content_tsv tsvector GENERATED ALWAYS AS (
-            CASE WHEN language = 'ko'
-                THEN to_tsvector('simple', coalesce(lexical_text, index_text))
-                ELSE to_tsvector('english', index_text)
-            END
-        ) STORED,
+        content_tsv tsvector GENERATED ALWAYS AS ({content_tsv_sql}) STORED,
         created_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT uq_doc_ordinal UNIQUE (doc_id, ordinal),
         CONSTRAINT ck_chunks_ordinal_nonnegative CHECK (ordinal >= 0),
         CONSTRAINT ck_chunks_kind CHECK (kind IN ('text', 'table')),
-        CONSTRAINT ck_chunks_language_format CHECK (language ~ '^[a-z]{{2}}$'),
-        CONSTRAINT ck_chunks_lexical_text_language
-            CHECK ((language = 'ko') = (lexical_text IS NOT NULL)),
+        CONSTRAINT ck_chunks_language_format CHECK ({language_format_check_sql}),
+        CONSTRAINT ck_chunks_lexical_text_language CHECK ({lexical_text_check_sql}),
         CONSTRAINT ck_chunks_start_nonnegative CHECK (start_char >= 0),
         CONSTRAINT ck_chunks_span_order CHECK (end_char > start_char),
         CONSTRAINT ck_chunks_source_sha256_format
@@ -218,17 +213,19 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
     """,
     """
     CREATE TEMP TABLE lexeme_stats (
-        lexeme text PRIMARY KEY,
+        language varchar(8) NOT NULL,
+        lexeme text NOT NULL,
         df integer NOT NULL,
+        PRIMARY KEY (language, lexeme),
         CONSTRAINT ck_lexeme_stats_df_positive CHECK (df > 0)
     ) ON COMMIT PRESERVE ROWS
     """,
     """
     CREATE TEMP TABLE bm25_corpus_stats (
-        singleton_id integer PRIMARY KEY,
+        language varchar(8) PRIMARY KEY,
         n bigint NOT NULL,
         avgdl double precision NOT NULL,
-        CONSTRAINT ck_bm25_corpus_stats_singleton CHECK (singleton_id = 1),
+        CONSTRAINT ck_bm25_corpus_stats_language_format CHECK ({language_format_check_sql}),
         CONSTRAINT ck_bm25_corpus_stats_n_positive CHECK (n > 0),
         CONSTRAINT ck_bm25_corpus_stats_avgdl_positive CHECK (avgdl > 0)
     ) ON COMMIT PRESERVE ROWS
@@ -267,7 +264,16 @@ async def _create_temporary_corpus_tables(connection: AsyncConnection, dimension
     if extension is None:
         raise RuntimeError("the configured PostgreSQL database does not have pgvector")
     for statement in _TEMPORARY_CORPUS_DDL:
-        await connection.execute(text(statement.format(dimensions=dimensions)))
+        await connection.execute(
+            text(
+                statement.format(
+                    dimensions=dimensions,
+                    content_tsv_sql=CONTENT_TSV_SQL,
+                    language_format_check_sql=LANGUAGE_FORMAT_CHECK_SQL,
+                    lexical_text_check_sql=LEXICAL_TEXT_CHECK_SQL,
+                )
+            )
+        )
     await connection.commit()
 
 

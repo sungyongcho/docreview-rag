@@ -5,7 +5,9 @@ from bs4 import BeautifulSoup, Tag
 from app.ingestion.tables import (
     MAX_SPAN,
     drop_empty,
+    is_unit_caption,
     merge_unit_columns,
+    render_table,
     split_header,
     table_captions,
     table_to_markdown,
@@ -300,6 +302,29 @@ def test_data_table_keeps_captions_inline_and_reports_none() -> None:
 
     assert table_captions(html) == []
     assert table_to_markdown(html).startswith("(단위 : 백만원)\n")
+
+
+def test_render_table_serves_both_answers_from_one_parse() -> None:
+    """render_table reports captions for a caption-only table, markdown otherwise."""
+    caption_only = "<table><tr><td>(단위 : 사)</td></tr></table>"
+    data = (
+        "<table><tr><td colspan='2'>(단위 : 백만원)</td></tr>"
+        "<tr><td>매출액</td><td>300,870</td></tr></table>"
+    )
+
+    assert render_table(caption_only) == (["(단위 : 사)"], "")
+    captions, markdown = render_table(data)
+    assert captions == []
+    assert markdown.startswith("(단위 : 백만원)\n")
+
+
+def test_is_unit_caption_accepts_only_a_whole_annotation() -> None:
+    """is_unit_caption matches a lone unit annotation, tolerating outer whitespace."""
+    assert is_unit_caption("(단위 : 백만원)")
+    assert is_unit_caption("  (단위: 원)  \n")
+    assert not is_unit_caption("당기 매출은 (단위 : 백만원) 기준으로 작성되었다")
+    assert not is_unit_caption("매출액")
+    assert not is_unit_caption("")
 
 
 def test_won_sign_column_merges_onto_its_value() -> None:

@@ -1,3 +1,5 @@
+"""Parsing every committed filing end to end."""
+
 import json
 from types import ModuleType
 
@@ -80,7 +82,7 @@ def test_learned_corpus_rules_match_golden(
 
 
 def test_nvda_fy2024_headings_match_style_and_item_syntax(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     blocks_by_doc: dict[str, tuple],
 ) -> None:
     """Keep exactly 23 styled Item headings in NVDA-FY2024."""
@@ -90,9 +92,9 @@ def test_nvda_fy2024_headings_match_style_and_item_syntax(
         text
         for block in blocks
         if (text := block.get_text(" ", strip=True))
-        and len(text) < parser_module.HEADING_MAX_CHARS
-        and parser_module.ITEM_RE.match(text)
-        and parser_module.matches_any(block, rules)
+        and len(text) < edgar_module.HEADING_MAX_CHARS
+        and edgar_module.ITEM_RE.match(text)
+        and edgar_module.matches_any(block, rules)
     ]
 
     assert len(hits) == 23
@@ -135,10 +137,10 @@ def test_nvda_fy2024_item15_contains_the_financial_statement_body(parsed: dict) 
 # Coverage regression
 
 
-def _measure(parser_module: ModuleType, result) -> tuple[int, int]:
+def _measure(edgar_module: ModuleType, result) -> tuple[int, int]:
     body = sum(len(block.text) for section in result.sections for block in section.blocks)
     tables = sum(
-        len(parser_module.BeautifulSoup(block.html, "html.parser").get_text(" ", strip=True))
+        len(edgar_module.BeautifulSoup(block.html, "html.parser").get_text(" ", strip=True))
         for section in result.sections
         for block in section.blocks
         if block.kind == "table" and block.html
@@ -149,11 +151,11 @@ def _measure(parser_module: ModuleType, result) -> tuple[int, int]:
 @pytest.mark.parametrize("doc", sorted(COVERAGE))
 def test_document_coverage_matches_golden(
     doc: str,
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     parsed: dict,
 ) -> None:
     """Keep exact total and section-assigned character counts for every filing."""
-    assert _measure(parser_module, parsed[doc]) == COVERAGE[doc]
+    assert _measure(edgar_module, parsed[doc]) == COVERAGE[doc]
 
 
 def test_parsed_result_carries_the_original_measurements(
@@ -171,21 +173,21 @@ def test_parsed_result_carries_the_original_measurements(
 
 
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
-def test_no_extra_sec_items(doc: str, parser_module: ModuleType, parsed: dict) -> None:
+def test_no_extra_sec_items(doc: str, edgar_module: ModuleType, parsed: dict) -> None:
     """Reject every parsed Item that is absent from the SEC Item order."""
     items = [section.item for section in parsed[doc].sections if section.item]
-    assert [item for item in items if item not in parser_module.ORDER] == []
+    assert [item for item in items if item not in edgar_module.ORDER] == []
 
 
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
 def test_missing_items_are_only_optional_items(
     doc: str,
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     parsed: dict,
 ) -> None:
     """Allow only historically unavailable or optional Items to be absent."""
     items = {section.item for section in parsed[doc].sections if section.item}
-    missing = {item for item in parser_module.ORDER if item not in items}
+    missing = {item for item in edgar_module.ORDER if item not in items}
     assert missing <= ALWAYS_OPTIONAL, f"{doc}: unexplained missing Items {sorted(missing)}"
 
 
@@ -225,22 +227,22 @@ def test_sections_carry_verifiable_source_positions(doc: str, parsed: dict) -> N
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
 def test_every_section_has_canonical_sec_metadata(
     doc: str,
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     parsed: dict,
 ) -> None:
     """Populate canonical title and Part metadata for every segmentation strategy."""
     for section in parsed[doc].sections:
         if section.item:
-            assert section.canonical_title == parser_module.CANONICAL[section.item]
-            assert section.part == parser_module.PART_OF[section.item]
+            assert section.canonical_title == edgar_module.CANONICAL[section.item]
+            assert section.part == edgar_module.PART_OF[section.item]
 
 
 def test_heading_based_items_stay_in_sec_order(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     parsed: dict,
 ) -> None:
     """Require SEC ordering for numbered headings but not scattered xref sections."""
-    rank = {item: index for index, item in enumerate(parser_module.ORDER)}
+    rank = {item: index for index, item in enumerate(edgar_module.ORDER)}
     for doc, result in parsed.items():
         if result.segment_type != "number":
             continue
@@ -249,11 +251,11 @@ def test_heading_based_items_stay_in_sec_order(
 
 
 def test_nvda_fy2024_heading_offsets_match_the_source(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     parsed: dict,
 ) -> None:
     """Prove selected Item heading elements against exact source positions."""
-    raw = parser_module.read_source(NVDA_FY2024_FILE)
+    raw = edgar_module.read_source(NVDA_FY2024_FILE)
     by_item = {section.item: section for section in parsed["NVDA-FY2024"].sections}
 
     for item, (expected_offset, expected_text) in NVDA_FY2024_OFFSETS.items():

@@ -99,17 +99,23 @@ async def backfill_term_stats(session: AsyncSession) -> TermStatCounts:
                 "SELECT chunk_id, SUM(tf) FROM chunk_terms GROUP BY chunk_id"
             )
         )
+        # Both derived statistics are partitioned by the chunk's corpus language:
+        # the corpora share one table but are tokenized differently, so a global
+        # N/avgdl/df would score each corpus against the other's distribution.
         await session.execute(
             text(
-                "INSERT INTO lexeme_stats (lexeme, df) "
-                "SELECT lexeme, COUNT(*) FROM chunk_terms GROUP BY lexeme"
+                "INSERT INTO lexeme_stats (language, lexeme, df) "
+                "SELECT c.language, ct.lexeme, COUNT(*) "
+                "FROM chunk_terms AS ct JOIN chunks AS c ON c.id = ct.chunk_id "
+                "GROUP BY c.language, ct.lexeme"
             )
         )
         await session.execute(
             text(
-                "INSERT INTO bm25_corpus_stats (singleton_id, n, avgdl) "
-                "SELECT 1, COUNT(*), AVG(dl)::double precision FROM chunk_lengths "
-                "HAVING COUNT(*) > 0"
+                "INSERT INTO bm25_corpus_stats (language, n, avgdl) "
+                "SELECT c.language, COUNT(*), AVG(cl.dl)::double precision "
+                "FROM chunk_lengths AS cl JOIN chunks AS c ON c.id = cl.chunk_id "
+                "GROUP BY c.language"
             )
         )
 
@@ -256,14 +262,11 @@ def bm25_statement(
             )
         ).label("lexeme")
     ).subquery("bm25_query_terms")
-    corpus = (
-        select(
-            BM25CorpusStat.n,
-            BM25CorpusStat.avgdl,
-        )
-        .where(BM25CorpusStat.singleton_id == 1)
-        .subquery("bm25_corpus")
-    )
+    corpus = select(
+        BM25CorpusStat.language,
+        BM25CorpusStat.n,
+        BM25CorpusStat.avgdl,
+    ).subquery("bm25_corpus")
 
     k1_param = bindparam("bm25_k1", value=normalized_k1, type_=Float())
     b_param = bindparam("bm25_b", value=normalized_b, type_=Float())
@@ -279,9 +282,14 @@ def bm25_statement(
         .join(Chunk, Chunk.id == ChunkTerm.chunk_id)
         .join(query_cte, true())
         .join(query_terms, query_terms.c.lexeme == ChunkTerm.lexeme)
-        .join(LexemeStat, LexemeStat.lexeme == ChunkTerm.lexeme)
+        # Statistics join on the chunk's own language, so every chunk is scored
+        # within its corpus even when the table hosts more than one.
+        .join(
+            LexemeStat,
+            (LexemeStat.lexeme == ChunkTerm.lexeme) & (LexemeStat.language == Chunk.language),
+        )
         .join(ChunkLength, ChunkLength.chunk_id == ChunkTerm.chunk_id)
-        .join(corpus, true())
+        .join(corpus, corpus.c.language == Chunk.language)
         .where(Chunk.content_tsv.op("@@")(tsquery))
         .group_by(ChunkTerm.chunk_id)
         .subquery("bm25_scores")
@@ -345,9 +353,7 @@ async def bm25_search(
             query, k, filters, k1=k1, b=b, idf=idf, text_search_config=text_search_config
         )
     )
-    stats_ready = await session.scalar(
-        select(BM25CorpusStat.singleton_id).where(BM25CorpusStat.singleton_id == 1)
-    )
-    if stats_ready is None:
+    stats_ready = await session.scalar(select(func.count()).select_from(BM25CorpusStat))
+    if not stats_ready:
         raise RuntimeError("BM25 statistics are missing or stale; rebuild them before searching")
     return [ChunkHit.model_validate(row) for row in result.mappings().all()]

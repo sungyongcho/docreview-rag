@@ -6,7 +6,8 @@ from types import MappingProxyType
 from typing import Any, Final
 
 from app.ingestion.dart import dart_doc_id, dart_section_label, dart_sort_key, parse_dart_filing
-from app.ingestion.parser import ParsedFiling, doc_id, parse_filing
+from app.ingestion.edgar import doc_id, edgar_section_label, edgar_sort_key, parse_filing
+from app.ingestion.parser import ParsedFiling
 
 DEFAULT_REGISTRY: Final[str] = "sec"
 
@@ -40,20 +41,13 @@ class Registry:
     chunk_target: int
 
 
-def _edgar_sort_key(entry: dict[str, Any]) -> tuple[str, ...]:
-    """Order EDGAR entries by issuer symbol, then report date."""
-    return (str(entry.get("ticker", "")), str(entry.get("report_date", "")))
-
-
 EDGAR: Final[Registry] = Registry(
     name="sec",
     language="en",
     doc_id=doc_id,
     parse=parse_filing,
-    sort_key=_edgar_sort_key,
-    # "Item 7" is how EDGAR itself names the section, and every committed citation
-    # already reads that way.
-    section_label="Item {}".format,
+    sort_key=edgar_sort_key,
+    section_label=edgar_section_label,
     chunk_target=1200,
 )
 

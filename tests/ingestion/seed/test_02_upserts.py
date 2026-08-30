@@ -2,10 +2,12 @@
 
 import argparse
 import asyncio
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion import seed
 from tests.ingestion.seed.support import sample_batch
@@ -88,7 +90,9 @@ class _Session:
 def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
     """Own one transaction while writing bounded chunk batches."""
     session = _Session()
-    result = asyncio.run(seed.persist_seed_batch(session, sample_batch(), chunk_batch_size=1))
+    result = asyncio.run(
+        seed.persist_seed_batch(cast(AsyncSession, session), sample_batch(), chunk_batch_size=1)
+    )
     assert result.documents == 1
     assert result.chunks == 2
     assert session.begins == 1
@@ -101,7 +105,9 @@ def test_persist_seed_batch_rolls_back_the_whole_batch_on_failure():
     """Roll back every seed write when one statement fails."""
     session = _Session(fail_at=2)
     with pytest.raises(RuntimeError, match="simulated database failure"):
-        asyncio.run(seed.persist_seed_batch(session, sample_batch(), chunk_batch_size=1))
+        asyncio.run(
+            seed.persist_seed_batch(cast(AsyncSession, session), sample_batch(), chunk_batch_size=1)
+        )
     assert session.begins == 1
     assert session.commits == 0
     assert session.rollbacks == 1
@@ -111,14 +117,18 @@ def test_persist_seed_batch_rejects_ambiguous_nested_transaction():
     """Reject sessions that already own a transaction."""
     session = _Session(active=True)
     with pytest.raises(RuntimeError, match="without an active transaction"):
-        asyncio.run(seed.persist_seed_batch(session, sample_batch()))
+        asyncio.run(seed.persist_seed_batch(cast(AsyncSession, session), sample_batch()))
     assert session.executed == []
 
 
 def test_persist_seed_batch_rejects_nonpositive_batch_size():
     """Reject nonpositive chunk batch sizes before writing."""
     with pytest.raises(ValueError, match="batch size must be positive"):
-        asyncio.run(seed.persist_seed_batch(_Session(), sample_batch(), chunk_batch_size=0))
+        asyncio.run(
+            seed.persist_seed_batch(
+                cast(AsyncSession, _Session()), sample_batch(), chunk_batch_size=0
+            )
+        )
 
 
 def test_seed_corpus_offloads_preparation_before_persisting(
@@ -134,7 +144,7 @@ def test_seed_corpus_offloads_preparation_before_persisting(
     monkeypatch.setattr(seed, "persist_seed_batch", persist)
     monkeypatch.setattr("app.retrieval.bm25.backfill_term_stats", rebuild)
 
-    session = object()
+    session = cast(AsyncSession, object())
     result = asyncio.run(seed.seed_corpus(session, expected_documents=1, chunk_batch_size=7))
 
     assert result == expected
@@ -178,6 +188,7 @@ def test_seed_cli_uses_the_same_seed_plus_statistics_wrapper(
         expected_documents=1,
         chunk_batch_size=7,
         create_schema=True,
+        recreate_schema=False,
     )
 
     asyncio.run(seed._run_cli(args))

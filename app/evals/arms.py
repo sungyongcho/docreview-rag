@@ -12,6 +12,7 @@ from app.config import BM25Idf, LexicalRanker
 from app.retrieval.bm25 import bm25_search
 from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.hybrid import DEFAULT_RRF_K
+from app.retrieval.korean import lexical_corpus_language, lexical_plan
 from app.retrieval.lexical import lexical_search
 from app.retrieval.service import normalize_query, retrieve
 from app.retrieval.types import ChunkHit, RetrievalFilters
@@ -91,16 +92,39 @@ def _lexical_retriever(
     candidate_k: int,
     filters: RetrievalFilters | None,
 ) -> Retriever:
-    """Bind the lexical-only lane, using BM25 when the arm resolved parameters."""
+    """Bind the lexical-only lane, using BM25 when the arm resolved parameters.
+
+    The corpus language named by ``filters`` selects the lexical plan, so this
+    lane tokenizes and parses queries exactly the way the target rows were
+    indexed — the same contract the hybrid lane applies inside the service.
+    """
+    plan = lexical_plan(lexical_corpus_language(filters))
 
     async def run(query: str, k: int) -> Sequence[ChunkHit]:
         """Search the lexical index for one normalized query."""
         _require_depth(candidate_k, k)
-        normalized_query = normalize_query(query)
+        lexical_query = plan.query_transform(normalize_query(query))
+        if not lexical_query.strip():
+            return []
         if bm25 is None:
-            return await lexical_search(session, normalized_query, k, filters)
+            return await lexical_search(
+                session,
+                lexical_query,
+                k,
+                filters,
+                text_search_config=plan.text_search_config,
+            )
         k1, b, idf = bm25
-        return await bm25_search(session, normalized_query, k, filters, k1=k1, b=b, idf=idf)
+        return await bm25_search(
+            session,
+            lexical_query,
+            k,
+            filters,
+            k1=k1,
+            b=b,
+            idf=idf,
+            text_search_config=plan.text_search_config,
+        )
 
     return run
 

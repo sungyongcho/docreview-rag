@@ -19,16 +19,17 @@ from app.config import get_settings
 from app.db.models import Chunk as ChunkModel, Document
 from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing, compose_index_text
 from app.ingestion.parser import ParsedFiling
-from app.ingestion.registry import registry_for, registry_name, resolve_registry
-from app.retrieval.korean import tokenize_korean_text
+from app.ingestion.registry import REGISTRIES, registry_for, registry_name, resolve_registry
+from app.retrieval.korean import lexical_plan
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
 # names rather than to this module; EXPECTED_DOCUMENTS is the committed EDGAR corpus.
 DEFAULT_MANIFEST_NAME = "manifest.json"
 EXPECTED_DOCUMENTS = 20
-# Corpus language tags this module is willing to persist. A row tagged outside this
-# set would silently fall through every language-filtered retrieval path.
-LANGUAGES = frozenset({"en", "ko"})
+# Corpus language tags this module is willing to persist: exactly the languages some
+# registry adapter publishes in. A row tagged outside this set would silently fall
+# through every language-filtered retrieval path.
+LANGUAGES = frozenset(registry.language for registry in REGISTRIES.values())
 DEFAULT_CHUNK_BATCH_SIZE = 500
 SHA256_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
 PARSE_STATUSES = frozenset({"parsed", "needs_profile_update"})
@@ -170,11 +171,16 @@ class ChunkRecord:
         )
         if not self.citation:
             raise ValueError(f"{self.doc_id} chunk {self.ordinal} has no citation")
-        if (self.language == "ko") != bool(self.lexical_text):
+        # Mirror the ck_chunks_lexical_text_language CHECK exactly (IS NOT NULL, not
+        # truthiness), so no record accepted here can die later inside the transaction.
+        requires_lexical = lexical_plan(self.language).index_transform is not None
+        if requires_lexical != (self.lexical_text is not None):
             raise ValueError(
                 f"{self.doc_id} chunk {self.ordinal}: lexical_text is required exactly "
-                "for Korean rows"
+                "for languages with a lexical index transform"
             )
+        if self.lexical_text is not None and not self.lexical_text.strip():
+            raise ValueError(f"{self.doc_id} chunk {self.ordinal}: lexical_text is blank")
 
     def values(self) -> dict[str, Any]:
         """Return SQL values without an embedding payload."""
@@ -319,7 +325,11 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
             ChunkRecord(
                 doc_id=chunk.doc_id,
                 language=language,
-                lexical_text=tokenize_korean_text(chunk.content) if language == "ko" else None,
+                lexical_text=(
+                    transform(chunk.content)
+                    if (transform := lexical_plan(language).index_transform) is not None
+                    else None
+                ),
                 item=chunk.item,
                 kind=chunk.kind,
                 ordinal=chunk.ordinal,
@@ -589,10 +599,17 @@ async def seed_corpus(
 async def _run_cli(args: argparse.Namespace) -> None:
     """Execute optional schema creation and one seed-plus-statistics operation."""
     from app.db.bootstrap import bootstrap_schema
+    from app.db.models import Base
     from app.db.session import Session, engine
 
     batch = prepare_seed_batch(args.manifest, expected_documents=args.expected_documents)
-    if args.create_schema:
+    if args.recreate_schema:
+        # The project migrates by rebuild: drop every model table, then let the
+        # bootstrap below recreate the current schema. Re-seeding restores all
+        # derived state (chunks, statistics, embeddings are recomputed).
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.drop_all)
+    if args.create_schema or args.recreate_schema:
         await bootstrap_schema(engine)
     async with Session() as session:
         result = await _persist_seed_batch_with_bm25_stats(
@@ -626,6 +643,14 @@ def main() -> None:
             "--create-schema",
             action="store_true",
             help="Create missing tables before seeding; this does not migrate existing tables.",
+        )
+        parser.add_argument(
+            "--recreate-schema",
+            action="store_true",
+            help=(
+                "DESTRUCTIVE: drop every model table and recreate the current schema "
+                "before seeding. This is the upgrade path after a schema change."
+            ),
         )
         return parser.parse_args()
 

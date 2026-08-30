@@ -1,3 +1,5 @@
+"""Profile learning, persistence, and convergence over repeated corpus passes."""
+
 import json
 from pathlib import Path
 from types import ModuleType
@@ -33,7 +35,7 @@ def test_xref_profile_has_no_expected_item_count(parsed: dict, profiles_dir: Pat
 
 # Repeated learning and failed-profile recovery
 def test_profiles_converge_on_the_third_corpus_pass(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     manifest: list[dict],
     isolated_profiles: Path,
 ) -> None:
@@ -46,7 +48,7 @@ def test_profiles_converge_on_the_third_corpus_pass(
     for _ in range(3):
         used = {}
         for entry in amd:
-            result, _profile = parser_module.parse_filing(entry)
+            result, _profile = edgar_module.parse_filing(entry)
             assert result.parse_status == "parsed", (
                 f"{result.doc_id}: parse warnings {result.warnings}"
             )
@@ -71,7 +73,7 @@ def test_profiles_converge_on_the_third_corpus_pass(
 
 
 def test_failed_profile_is_relearned_before_it_is_saved(
-    parser_module: ModuleType,
+    edgar_module: ModuleType,
     manifest: list[dict],
     isolated_profiles: Path,
 ) -> None:
@@ -81,7 +83,7 @@ def test_failed_profile_is_relearned_before_it_is_saved(
         for item in manifest
         if item["ticker"] == "NVDA" and item["report_date"].startswith("2024")
     )
-    parser_module.save_profile(
+    edgar_module.save_profile(
         "NVDA",
         2024,
         {
@@ -92,7 +94,7 @@ def test_failed_profile_is_relearned_before_it_is_saved(
             },
         },
     )
-    result, _profile = parser_module.parse_filing(entry)
+    result, _profile = edgar_module.parse_filing(entry)
 
     saved = json.loads((isolated_profiles / "NVDA.json").read_text())["profiles"]["2024"]
     assert result.profile_used == "relearned"
