@@ -49,7 +49,9 @@
    여러 모듈 조립은 `tests/X/test_NN_<behavior>.py`(두 자리, 디렉터리별 01부터 연속).
 4. **테스트 간 helper import** — `from tests.a.test_b import c` 금지. `support.py`로
    올리거나 파일 전용으로 자립시킨다.
-5. **누락 `__init__.py`** — `app/` 하위 패키지마다 docstring만 있는 파일을 둔다.
+5. **불필요한 `__init__.py` 추가 금지** — 없어도 되는 곳에 억지로 만들지 않는다.
+   `app/db`처럼 없는 채로 도는 패키지는 그대로 둔다. 이식본이 들고 온 `__init__.py`가
+   재수출만 하고 있으면 docstring만 남기거나 지운다.
 6. **DB 모델 선행 조건** — persistence 모듈은 `app/db/models.py`에 테이블이 먼저 있어야
    한다(`EvalResult`, `Run`, `Trace` 전례). 스키마 계약 테스트는 `tests/db/test_models.py`.
 7. **zero 분할 이전 레이아웃 참조** — 예전 모듈에서 심볼을 가져오거나(`retrieval_eval`),

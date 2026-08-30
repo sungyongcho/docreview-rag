@@ -1,17 +1,30 @@
 """Secret-safe record mapping and transaction-neutral run persistence."""
 
 import asyncio
+from typing import cast
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run, Trace
 from app.observability.persistence import (
     REDACTED,
     persist_run_report,
+    records_to_report,
     redact_sensitive_text,
     report_to_records,
 )
 from tests.observability.support import run_report, step_trace
+
+
+def test_record_mapping_round_trips_every_field():
+    """Rebuild the exact report from its records, so no column can be dropped one-way."""
+    report = run_report(steps=[step_trace(), step_trace(step=2, node="check")])
+
+    run, traces = report_to_records(report)
+    rebuilt = records_to_report(run, traces)
+
+    assert rebuilt == report
 
 
 def test_persistence_mapping_preserves_provenance_and_redacts_secrets():
@@ -42,7 +55,7 @@ def test_persistence_mapping_preserves_provenance_and_redacts_secrets():
     assert secret not in repr(run.report)
     assert secret not in trace.api_url
     assert secret not in trace.llm_output
-    assert secret not in trace.error
+    assert trace.error is not None and secret not in trace.error
     assert REDACTED in run.system_prompt
     assert REDACTED in trace.llm_output
 
@@ -128,16 +141,19 @@ def test_persistence_flushes_without_committing_or_live_services():
             self.flushed = False
 
         def add(self, value):
+            """Record one added instance."""
             self.added.append(value)
 
         def add_all(self, values):
+            """Record a batch of added instances."""
             self.added_many.extend(values)
 
         async def flush(self):
+            """Mark that the session was flushed."""
             self.flushed = True
 
     session = RecordingSession()
-    persisted = asyncio.run(persist_run_report(session, run_report()))
+    persisted = asyncio.run(persist_run_report(cast(AsyncSession, session), run_report()))
 
     assert persisted is session.added[0]
     assert isinstance(persisted, Run)

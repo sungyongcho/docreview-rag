@@ -2,19 +2,16 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-import json
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 from uuid import uuid4
 
-from openai import OpenAIError
 from pydantic import TypeAdapter
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.api.deps import ApiServices
-from app.api.errors import ApiProblemError, bad_request
+from app.api.errors import bad_request, translate_runtime_errors, unavailable
 from app.api.schemas import (
     DocumentResource,
     EvalResultResource,
@@ -22,24 +19,45 @@ from app.api.schemas import (
     RetrieveRequest,
     ReviewRequest,
 )
+from app.config import (
+    DEFAULT_BM25_B,
+    DEFAULT_BM25_IDF,
+    DEFAULT_BM25_K1,
+    BM25Idf,
+    LexicalRanker,
+    Settings,
+    get_settings,
+)
 from app.db.bootstrap import bootstrap_schema
 from app.db.models import Chunk, Document, EvalResult, Run, Trace
-from app.ingestion.seed import SeedResult, persist_seed_batch, prepare_seed_batch
+from app.ingestion.seed import (
+    ManifestError,
+    SeedResult,
+    load_seed_batch,
+    persist_seed_batch_with_stats,
+)
 from app.llm.provider import LLMProvider
-from app.llm.schemas import ProviderBudget
-from app.observability.persistence import persist_run_report, report_to_records
-from app.observability.types import RunReport, RunStatus, StepTrace, WorkflowNode
-from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingProvider
+from app.llm.schemas import ProviderBudget, TokenPricing
+from app.observability.persistence import (
+    persist_run_records,
+    record_to_step,
+    records_to_report,
+    report_to_records,
+)
+from app.observability.types import JsonObject, RunReport, StepTrace
+from app.retrieval.embeddings import (
+    DeterministicEmbeddingProvider,
+    EmbeddingProvider,
+    get_embedding_provider,
+)
 from app.retrieval.service import RetrievalResult, retrieve
-from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.retrieval.types import RetrievalFilters
 from app.workflow.runner import NodeObserver, run_workflow
 from app.workflow.types import WorkflowRequest
 
 type ParseStatus = Literal["parsed", "needs_profile_update"]
 
-_PARSE_STATUS = TypeAdapter(ParseStatus)
-_RUN_STATUS = TypeAdapter(RunStatus)
-_WORKFLOW_NODE = TypeAdapter(WorkflowNode)
+_PARSE_STATUS = TypeAdapter[ParseStatus](ParseStatus)
 
 
 def _default_session_factory() -> AsyncSession:
@@ -65,7 +83,12 @@ class SessionFactory(Protocol):
 
 
 class RetrievalService(Protocol):
-    """M2 retrieval call shape used by both retrieve and review resources."""
+    """M2 retrieval call shape used by both retrieve and review resources.
+
+    The ranking plan travels through this seam so a served request retrieves with the
+    same configuration the evaluation arms measured; a boundary that cannot carry the
+    plan silently pins every deployment to the defaults.
+    """
 
     def __call__(
         self,
@@ -75,6 +98,11 @@ class RetrievalService(Protocol):
         provider: EmbeddingProvider | None,
         k: int,
         filters: RetrievalFilters,
+        route_by_language: bool = False,
+        lexical_ranker: LexicalRanker = "ts_rank_cd",
+        bm25_k1: float = DEFAULT_BM25_K1,
+        bm25_b: float = DEFAULT_BM25_B,
+        bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
     ) -> Awaitable[RetrievalResult]:
         """Return one asynchronous retrieval result."""
         ...
@@ -89,7 +117,7 @@ class WorkflowService(Protocol):
         *,
         retriever: Callable[
             [str, int, RetrievalFilters],
-            Awaitable[RetrievalResult | Sequence[ChunkHit]],
+            Awaitable[RetrievalResult],
         ],
         provider: LLMProvider,
         on_node: NodeObserver | None = None,
@@ -99,22 +127,16 @@ class WorkflowService(Protocol):
 
 
 class RunPersister(Protocol):
-    """M4 persistence call shape used after a workflow completes."""
+    """M4 persistence call shape used after a workflow report is sanitized."""
 
     def __call__(
         self,
         session: AsyncSession,
-        report: RunReport,
-        *,
-        secret_values: Iterable[str],
+        run: Run,
+        traces: Sequence[Trace],
     ) -> Awaitable[Run]:
-        """Persist one report within the caller-owned transaction."""
+        """Persist already-sanitized records within the caller-owned transaction."""
         ...
-
-
-def _unavailable(code: str, message: str) -> ApiProblemError:
-    """Build the typed 503 an unconfigured dependency answers with."""
-    return ApiProblemError(status_code=503, code=code, message=message)
 
 
 def _document_resource(document: Document, chunk_count: int) -> DocumentResource:
@@ -122,6 +144,7 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
     return DocumentResource(
         doc_id=document.doc_id,
         registry=document.registry,
+        language=document.language,
         issuer=document.issuer,
         issuer_id=document.issuer_id,
         fiscal_year=document.fiscal_year,
@@ -137,47 +160,13 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
     )
 
 
-def _step_trace(trace: Trace) -> StepTrace:
-    """Rebuild one stored trace row as the strict step it was recorded from."""
-    return StepTrace(
-        step=trace.step,
-        node=_WORKFLOW_NODE.validate_python(trace.node, strict=True),
-        model_name=trace.model_name,
-        api_url=trace.api_url,
-        input_tokens=trace.input_tokens,
-        output_tokens=trace.output_tokens,
-        request_time_ms=trace.request_time_ms,
-        llm_output=trace.llm_output,
-        retries=trace.retries,
-        error=trace.error,
-    )
-
-
-def _run_report(run: Run, traces: Sequence[Trace]) -> RunReport:
-    """Rebuild one stored run and its traces as the report the API returns."""
-    return RunReport(
-        run_id=run.run_id,
-        status=_RUN_STATUS.validate_python(run.status, strict=True),
-        iterations=run.iterations,
-        total_requests=run.total_requests,
-        total_input_tokens=run.total_input_tokens,
-        total_output_tokens=run.total_output_tokens,
-        total_time_seconds=run.total_time_seconds,
-        system_prompt=run.system_prompt,
-        node_path=tuple(
-            _WORKFLOW_NODE.validate_python(node, strict=True) for node in run.node_path
-        ),
-        report=run.report,
-        steps=tuple(_step_trace(trace) for trace in traces),
-    )
-
-
 class RuntimeApiServices(ApiServices):
     """Compose API resources over one session per synchronous request.
 
     Retrieval defaults to the deterministic provider unless one is injected. Review is
     fail-closed until an LLM provider and its explicit budget are injected; construction
-    never creates the process database engine or starts a paid call.
+    never creates the process database engine or starts a paid call. Use
+    :func:`build_runtime_services` to compose from validated settings.
     """
 
     def __init__(
@@ -190,9 +179,15 @@ class RuntimeApiServices(ApiServices):
         provider_budget: ProviderBudget | None = None,
         retrieval_service: RetrievalService = retrieve,
         workflow_service: WorkflowService = run_workflow,
-        run_persister: RunPersister = persist_run_report,
+        run_persister: RunPersister = persist_run_records,
         run_id_factory: Callable[[], str] | None = None,
         secret_values: Iterable[str] = (),
+        route_by_language: bool = False,
+        lexical_ranker: LexicalRanker = "ts_rank_cd",
+        bm25_k1: float = DEFAULT_BM25_K1,
+        bm25_b: float = DEFAULT_BM25_B,
+        bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
+        corpus_root: Path | None = None,
     ) -> None:
         if (llm_provider is None) != (provider_budget is None):
             raise ValueError("llm_provider and provider_budget must be configured together")
@@ -208,6 +203,12 @@ class RuntimeApiServices(ApiServices):
         self._run_persister = run_persister
         self._run_id_factory = run_id_factory or (lambda: f"run-{uuid4().hex}")
         self._secret_values = tuple(secret_values)
+        self._route_by_language = route_by_language
+        self._lexical_ranker: LexicalRanker = lexical_ranker
+        self._bm25_k1 = bm25_k1
+        self._bm25_b = bm25_b
+        self._bm25_idf: BM25Idf = bm25_idf
+        self._corpus_root = corpus_root
 
     async def _retrieve_with_session(
         self,
@@ -216,13 +217,18 @@ class RuntimeApiServices(ApiServices):
         k: int,
         filters: RetrievalFilters,
     ) -> RetrievalResult:
-        """Retrieve against an open session, so caller and workflow share one."""
+        """Retrieve against an open session, forwarding the configured ranking plan."""
         return await self._retrieval_service(
             session,
             query,
             provider=self._embedding_provider,
             k=k,
             filters=filters,
+            route_by_language=self._route_by_language,
+            lexical_ranker=self._lexical_ranker,
+            bm25_k1=self._bm25_k1,
+            bm25_b=self._bm25_b,
+            bm25_idf=self._bm25_idf,
         )
 
     async def retrieve(self, request: RetrieveRequest) -> RetrievalResult:
@@ -241,9 +247,10 @@ class RuntimeApiServices(ApiServices):
         Raises
         ------
         ApiProblemError
-            If the embedding provider or database is unavailable.
+            Typed 400 for semantically invalid input, typed 503 when the embedding
+            provider or database is unavailable.
         """
-        try:
+        async with translate_runtime_errors():
             async with self._session_factory() as session:
                 return await self._retrieve_with_session(
                     session,
@@ -251,16 +258,6 @@ class RuntimeApiServices(ApiServices):
                     request.k,
                     request.filters,
                 )
-        except OpenAIError as error:
-            raise _unavailable(
-                "provider_unavailable",
-                f"Embedding provider is unavailable ({type(error).__name__}).",
-            ) from error
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
 
     async def list_documents(self) -> Sequence[DocumentResource]:
         """Return filing resources with deterministic chunk counts.
@@ -281,23 +278,34 @@ class RuntimeApiServices(ApiServices):
             .group_by(Document.doc_id)
             .order_by(Document.issuer, Document.fiscal_year, Document.doc_id)
         )
-        try:
+        async with translate_runtime_errors():
             async with self._session_factory() as session:
                 rows = (await session.execute(statement)).all()
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
         return tuple(_document_resource(document, count) for document, count in rows)
 
+    def _resolve_manifest_path(self, value: str) -> Path:
+        """Confine the requested manifest to the configured corpus directory.
+
+        The API is a network boundary: an unconfined path would let any caller use
+        ingestion as a file-existence and parse oracle for the whole filesystem.
+        """
+        root = (self._corpus_root or get_settings().corpus_dir).resolve()
+        candidate = Path(value)
+        resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
+        if resolved != root and not resolved.is_relative_to(root):
+            raise bad_request(
+                "manifest_outside_corpus",
+                "manifest_path must resolve inside the configured corpus directory.",
+            )
+        return resolved
+
     async def ingest(self, request: IngestRequest) -> SeedResult:
-        """Prepare a local manifest off-loop and atomically persist it.
+        """Prepare a confined local manifest off-loop and atomically persist it.
 
         Parameters
         ----------
         request : IngestRequest
-            Explicit server-local manifest and bounded batch settings.
+            Explicit corpus-relative manifest and bounded batch settings.
 
         Returns
         -------
@@ -307,76 +315,45 @@ class RuntimeApiServices(ApiServices):
         Raises
         ------
         ApiProblemError
-            If the manifest is invalid or the database is unavailable.
+            If the manifest is invalid, escapes the corpus directory, or the database
+            is unavailable.
 
         Notes
         -----
         CPU and file parsing run in a worker thread; the M1 persister retains
-        transaction ownership.
+        transaction ownership, and BM25 statistics are rebuilt in the same call
+        because every chunk upsert invalidates them. Schema DDL runs only when
+        ``create_schema`` asks for it.
         """
-        path = Path(request.manifest_path)
-        if not path.is_file():
-            raise bad_request("manifest_not_found", f"Manifest file was not found: {path}")
+        manifest_path = self._resolve_manifest_path(request.manifest_path)
         try:
             batch = await asyncio.to_thread(
-                prepare_seed_batch,
-                path,
+                load_seed_batch,
+                manifest_path,
                 expected_documents=request.expected_documents,
             )
-        except json.JSONDecodeError as error:
-            raise bad_request(
-                "invalid_manifest_json",
-                f"Manifest is not valid JSON at line {error.lineno} column {error.colno}.",
-            ) from error
-        except UnicodeDecodeError as error:
-            raise bad_request(
-                "invalid_manifest_encoding",
-                "Manifest must be UTF-8 text.",
-            ) from error
-        except FileNotFoundError as error:
-            raise bad_request(
-                "corpus_file_not_found",
-                f"Corpus file was not found: {error.filename}",
-            ) from error
-        except ValueError as error:
-            raise bad_request("invalid_manifest", str(error)) from error
+        except ManifestError as error:
+            raise bad_request(error.code, error.message) from error
 
-        try:
-            database_engine = (
-                self._database_engine
-                if self._database_engine is not None
-                else _default_database_engine()
-            )
-            await bootstrap_schema(database_engine)
+        async with translate_runtime_errors():
+            if request.create_schema:
+                database_engine = (
+                    self._database_engine
+                    if self._database_engine is not None
+                    else _default_database_engine()
+                )
+                await bootstrap_schema(database_engine)
             async with self._session_factory() as session:
-                return await persist_seed_batch(
+                return await persist_seed_batch_with_stats(
                     session,
                     batch,
                     chunk_batch_size=request.chunk_batch_size,
                 )
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
 
-    async def review(self, request: ReviewRequest) -> RunReport:
-        """Run, redact, persist, and return one terminal workflow report."""
-        return await self._review(request, on_node=None)
-
-    async def review_stream(
+    async def review(
         self,
         request: ReviewRequest,
-        on_node: NodeObserver,
-    ) -> RunReport:
-        """Run one review while reporting each committed node transition."""
-        return await self._review(request, on_node=on_node)
-
-    async def _review(
-        self,
-        request: ReviewRequest,
-        *,
-        on_node: NodeObserver | None,
+        on_node: NodeObserver | None = None,
     ) -> RunReport:
         """Compose retrieval, provider work, redaction, and persistence.
 
@@ -385,7 +362,7 @@ class RuntimeApiServices(ApiServices):
         request : ReviewRequest
             Validated public review request.
         on_node : NodeObserver | None
-            Optional streaming observer.
+            Optional streaming observer reporting each committed node transition.
 
         Returns
         -------
@@ -399,11 +376,12 @@ class RuntimeApiServices(ApiServices):
 
         Notes
         -----
-        Retrieval transactions end before provider work, and persistence starts a new
-        short transaction after the report has been sanitized.
+        Retrieval transactions end before provider work. The report is sanitized once,
+        and the resulting records are both persisted and returned, so redaction cost is
+        paid a single time per run.
         """
         if self._llm_provider is None or self._provider_budget is None:
-            raise _unavailable(
+            raise unavailable(
                 "provider_unavailable",
                 "Review requires an explicitly configured LLM provider and budget.",
             )
@@ -416,7 +394,7 @@ class RuntimeApiServices(ApiServices):
             provider_budget=self._provider_budget,
             max_context_chars=request.max_context_chars,
         )
-        try:
+        async with translate_runtime_errors():
             async with self._session_factory() as session:
 
                 async def retrieve_for_workflow(
@@ -440,26 +418,12 @@ class RuntimeApiServices(ApiServices):
                     report,
                     secret_values=self._secret_values,
                 )
-                safe_report = _run_report(safe_run, safe_traces)
+                safe_report = records_to_report(safe_run, safe_traces)
                 if session.in_transaction():
                     await session.rollback()
                 async with session.begin():
-                    await self._run_persister(
-                        session,
-                        safe_report,
-                        secret_values=self._secret_values,
-                    )
+                    await self._run_persister(session, safe_run, safe_traces)
                 return safe_report
-        except OpenAIError as error:
-            raise _unavailable(
-                "provider_unavailable",
-                f"LLM provider is unavailable ({type(error).__name__}).",
-            ) from error
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
 
     async def _trace_rows(self, session: AsyncSession, run_id: str) -> tuple[Trace, ...]:
         """Read this run's traces in recorded step order."""
@@ -470,52 +434,104 @@ class RuntimeApiServices(ApiServices):
 
     async def get_run(self, run_id: str) -> RunReport | None:
         """Load one run and ordered traces without executing workflow code."""
-        try:
+        async with translate_runtime_errors():
             async with self._session_factory() as session:
                 run = await session.get(Run, run_id)
                 if run is None:
                     return None
                 traces = await self._trace_rows(session, run_id)
-                return _run_report(run, traces)
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
+                return records_to_report(run, traces)
 
     async def get_traces(self, run_id: str) -> Sequence[StepTrace] | None:
         """Load ordered traces only when their parent run exists."""
-        try:
+        async with translate_runtime_errors():
             async with self._session_factory() as session:
-                if await session.get(Run, run_id) is None:
+                exists = await session.scalar(select(Run.run_id).where(Run.run_id == run_id))
+                if exists is None:
                     return None
                 traces = await self._trace_rows(session, run_id)
-                return tuple(_step_trace(trace) for trace in traces)
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
+                return tuple(record_to_step(trace) for trace in traces)
 
     async def list_eval_results(self, limit: int) -> Sequence[EvalResultResource]:
         """Load newest evaluation records through their strict public schema."""
         statement = select(EvalResult).order_by(EvalResult.created_at.desc(), EvalResult.id.desc())
-        try:
+        async with translate_runtime_errors():
             async with self._session_factory() as session:
                 rows = tuple(await session.scalars(statement.limit(limit)))
-        except SQLAlchemyError as error:
-            raise _unavailable(
-                "database_unavailable",
-                f"Database is unavailable ({type(error).__name__}).",
-            ) from error
         return tuple(
             EvalResultResource(
                 result_id=row.id,
                 suite=row.suite,
-                config=row.config,
+                # JSONB deserializes to JSON values; the ORM annotation is wider.
+                config=cast("JsonObject", row.config),
                 metrics={name: float(value) for name, value in row.metrics.items()},
                 raw_artifact_path=row.raw_artifact_path,
                 created_at=row.created_at,
             )
             for row in rows
         )
+
+
+def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServices:
+    """Compose the production service boundary from validated settings.
+
+    This is the single lever that makes deployed configuration real: the embedding
+    provider, the measured lexical plan, the review provider and budget, the corpus
+    root, and the secrets the redaction pass must strip all come from one ``Settings``
+    instance, exactly as the acceptance CLI reads them.
+
+    Parameters
+    ----------
+    settings : Settings | None
+        Validated settings, or ``None`` to load cached application settings.
+
+    Returns
+    -------
+    RuntimeApiServices
+        Fully configured service boundary; review stays fail-closed (typed 503)
+        until ``REVIEW_MODEL`` and its pricing are configured.
+    """
+    configured = settings if settings is not None else get_settings()
+    llm_provider: LLMProvider | None = None
+    provider_budget: ProviderBudget | None = None
+    if configured.review_model is not None:
+        from app.llm.provider import OpenAILLMProvider
+
+        input_price = configured.review_input_price_per_million_usd
+        output_price = configured.review_output_price_per_million_usd
+        if input_price is None or output_price is None:
+            raise ValueError("review pricing must be configured with the review model")
+        llm_provider = OpenAILLMProvider(
+            model_name=configured.review_model,
+            api_key=(
+                configured.openai_api_key.get_secret_value()
+                if configured.openai_api_key is not None
+                else None
+            ),
+        )
+        provider_budget = ProviderBudget(
+            max_input_tokens=configured.review_max_input_tokens,
+            max_output_tokens=configured.review_max_output_tokens,
+            max_cost_usd=configured.review_max_cost_usd,
+            pricing=TokenPricing(
+                input_per_million_usd=input_price,
+                output_per_million_usd=output_price,
+            ),
+        )
+    secret_values = tuple(
+        secret.get_secret_value()
+        for secret in (configured.openai_api_key, configured.dart_api_key)
+        if secret is not None and secret.get_secret_value().strip()
+    )
+    return RuntimeApiServices(
+        embedding_provider=get_embedding_provider(configured),
+        llm_provider=llm_provider,
+        provider_budget=provider_budget,
+        secret_values=secret_values,
+        route_by_language=configured.query_language_routing,
+        lexical_ranker=configured.lexical_ranker,
+        bm25_k1=configured.bm25_k1,
+        bm25_b=configured.bm25_b,
+        bm25_idf=configured.bm25_idf,
+        corpus_root=configured.corpus_dir,
+    )

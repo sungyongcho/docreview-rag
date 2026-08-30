@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.api.app import create_api_app
 from app.api.deps import ApiServices
-from app.api.runtime import RuntimeApiServices
+from app.api.runtime import build_runtime_services
 
 
 class HealthResponse(BaseModel):
@@ -19,8 +19,13 @@ class HealthResponse(BaseModel):
 
 
 def create_app(services: ApiServices | None = None) -> FastAPI:
-    """Build one API instance with an injectable database-backed service boundary."""
-    active_services = RuntimeApiServices() if services is None else services
+    """Build one API instance with an injectable database-backed service boundary.
+
+    The default composition reads validated ``Settings`` once, so the served process
+    honors the same embedding provider, lexical plan, and review configuration the
+    acceptance CLI and the evaluation arms use.
+    """
+    active_services = build_runtime_services() if services is None else services
     application = create_api_app(active_services)
 
     @application.get(

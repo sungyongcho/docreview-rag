@@ -14,6 +14,7 @@ from tests.ingestion.seed.support import sample_batch
 
 
 def _sql(statement) -> str:
+    """Render one statement as the PostgreSQL SQL it compiles to."""
     return str(statement.compile(dialect=postgresql.dialect()))
 
 
@@ -53,6 +54,8 @@ def test_chunk_upsert_invalidates_only_stale_embeddings():
 
 
 class _Transaction:
+    """Transaction that counts its own commit and rollback."""
+
     def __init__(self, session):
         self.session = session
 
@@ -67,6 +70,8 @@ class _Transaction:
 
 
 class _Session:
+    """Session recording every statement, optionally failing at the nth."""
+
     def __init__(self, *, active=False, fail_at=None):
         self.active = active
         self.fail_at = fail_at
@@ -76,12 +81,15 @@ class _Session:
         self.rollbacks = 0
 
     def in_transaction(self):
+        """Report whether this session was opened inside a transaction."""
         return self.active
 
     def begin(self):
+        """Open a counting transaction on this session."""
         return _Transaction(self)
 
     async def execute(self, statement):
+        """Record the statement, raising once the configured failure point is reached."""
         self.executed.append(statement)
         if self.fail_at == len(self.executed):
             raise RuntimeError("simulated database failure")
@@ -171,6 +179,8 @@ def test_seed_cli_uses_the_same_seed_plus_statistics_wrapper(
     create_schema = AsyncMock()
 
     class SessionContext:
+        """Async context manager handing out the one recording session."""
+
         async def __aenter__(self):
             return session
 
@@ -178,7 +188,7 @@ def test_seed_cli_uses_the_same_seed_plus_statistics_wrapper(
             return None
 
     monkeypatch.setattr(seed, "prepare_seed_batch", prepare)
-    monkeypatch.setattr(seed, "_persist_seed_batch_with_bm25_stats", persist_with_stats)
+    monkeypatch.setattr(seed, "persist_seed_batch_with_stats", persist_with_stats)
     monkeypatch.setattr(bootstrap, "bootstrap_schema", create_schema)
     monkeypatch.setattr(db_session, "Session", SessionContext)
     engine = object()

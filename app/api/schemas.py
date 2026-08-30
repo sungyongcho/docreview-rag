@@ -2,50 +2,57 @@
 
 from datetime import datetime
 import json
-import math
 from typing import Annotated, Literal, Self
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
     JsonValue,
+    StrictBool,
     StrictFloat,
     StrictInt,
     StrictStr,
     TypeAdapter,
 )
-from pydantic.functional_validators import field_validator, model_validator
+from pydantic.functional_validators import model_validator
 
-from app.observability.persistence import redact_sensitive_text
-from app.observability.types import Budget, RunReport, StepTrace, WorkflowNode
+from app.observability.persistence import redact_sensitive_text, sanitize_json
+from app.observability.types import (
+    Budget,
+    BudgetLimitFailure,
+    RunId,
+    RunReport,
+    RunStatus,
+    StepTrace,
+    WorkflowNode,
+)
 from app.retrieval.types import ChunkHit, RetrievalFilters
-from app.workflow.types import NodeError, ProviderFailure, WorkflowReport
+from app.workflow.types import (
+    NodeError,
+    ProviderFailure,
+    WorkflowReport,
+    run_status_for_failure,
+)
 
-NonBlank = Annotated[StrictStr, Field(min_length=1)]
+
+def _require_nonblank(value: str) -> str:
+    """Reject strings containing only whitespace."""
+    if not value.strip():
+        raise ValueError("value must not be blank")
+    return value
+
+
+# NonBlank carries the whitespace rule itself, so a model cannot declare the type and
+# forget the paired validator — the contract holds on every field that names it.
+NonBlank = Annotated[StrictStr, AfterValidator(_require_nonblank)]
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
 NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
 NonnegativeFloat = Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
-RunId = Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")]
+FiniteFloat = Annotated[StrictFloat, Field(allow_inf_nan=False)]
 SourceSha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
 JsonObject = dict[str, JsonValue]
-
-
-def _sanitize_public_json(value: JsonValue) -> JsonValue:
-    """Redact recognizable credentials from one public JSON value."""
-    if isinstance(value, str):
-        return redact_sensitive_text(value)
-    if isinstance(value, dict):
-        sanitized: dict[str, JsonValue] = {}
-        for key, child in value.items():
-            sanitized_key = redact_sensitive_text(str(key))
-            if sanitized_key in sanitized:
-                raise ValueError(f"redaction produced duplicate public key: {sanitized_key!r}")
-            sanitized[sanitized_key] = _sanitize_public_json(child)
-        return sanitized
-    if isinstance(value, list):
-        return [_sanitize_public_json(child) for child in value]
-    return value
 
 
 class StrictApiModel(BaseModel):
@@ -69,14 +76,6 @@ class ApiError(StrictApiModel):
     message: NonBlank
     details: tuple[ValidationIssue, ...] = ()
 
-    @field_validator("message", mode="after")
-    @classmethod
-    def reject_blank_message(cls, value: str) -> str:
-        """Reject error envelopes that cannot explain their failure."""
-        if not value.strip():
-            raise ValueError("error message must not be blank")
-        return value
-
 
 class ErrorResponse(StrictApiModel):
     """Top-level typed error envelope."""
@@ -97,15 +96,7 @@ class EvidenceHit(StrictApiModel):
     source_sha256: SourceSha256
     body: NonBlank
     context_header: StrictStr
-    score: Annotated[StrictFloat, Field(allow_inf_nan=False)]
-
-    @field_validator("doc_id", "item", "citation", "body", mode="after")
-    @classmethod
-    def reject_blank_text(cls, value: str | None) -> str | None:
-        """Reject whitespace-only evidence identity and content."""
-        if value is not None and not value.strip():
-            raise ValueError("evidence text must not be blank")
-        return value
+    score: FiniteFloat
 
     @model_validator(mode="after")
     def validate_span(self) -> Self:
@@ -141,14 +132,6 @@ class RetrieveRequest(StrictApiModel):
     k: Annotated[StrictInt, Field(gt=0, le=100)] = 5
     filters: RetrievalFilters = Field(default_factory=RetrievalFilters)
 
-    @field_validator("query", mode="after")
-    @classmethod
-    def reject_blank_query(cls, value: str) -> str:
-        """Reject queries containing only whitespace."""
-        if not value.strip():
-            raise ValueError("query must not be blank")
-        return value
-
 
 class RetrieveResponse(StrictApiModel):
     """Ranked evidence for one query."""
@@ -162,6 +145,7 @@ class DocumentResource(StrictApiModel):
 
     doc_id: NonBlank
     registry: NonBlank
+    language: NonBlank
     issuer: NonBlank
     issuer_id: NonBlank
     fiscal_year: PositiveInt
@@ -183,19 +167,17 @@ class DocumentListResponse(StrictApiModel):
 
 
 class IngestRequest(StrictApiModel):
-    """One explicit local manifest ingestion request."""
+    """One explicit local manifest ingestion request.
+
+    ``manifest_path`` is resolved inside the configured corpus directory; the API never
+    opens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL
+    runs only when a caller asks for it, never as a per-request side effect.
+    """
 
     manifest_path: NonBlank
     expected_documents: PositiveInt = 20
     chunk_batch_size: PositiveInt = 500
-
-    @field_validator("manifest_path", mode="after")
-    @classmethod
-    def reject_blank_path(cls, value: str) -> str:
-        """Reject an absent or whitespace-only manifest path."""
-        if not value.strip():
-            raise ValueError("manifest_path must not be blank")
-        return value
+    create_schema: StrictBool = False
 
 
 class IngestResponse(StrictApiModel):
@@ -214,36 +196,6 @@ class ReviewRequest(StrictApiModel):
     budget: Budget = Field(default_factory=Budget)
     max_context_chars: NonnegativeInt = 12_000
 
-    @field_validator("query", mode="after")
-    @classmethod
-    def reject_blank_query(cls, value: str) -> str:
-        """Reject review requests without an actual question."""
-        if not value.strip():
-            raise ValueError("query must not be blank")
-        return value
-
-
-class BudgetLimitFailure(StrictApiModel):
-    """A workflow node blocked by one exhausted cumulative resource."""
-
-    code: Literal["budget_exceeded"] = "budget_exceeded"
-    resource: Literal["iterations", "input_tokens", "output_tokens", "wall_clock_s"]
-    limit: StrictInt | StrictFloat
-    observed: StrictInt | StrictFloat
-    blocked_node: WorkflowNode
-
-    @model_validator(mode="after")
-    def validate_values(self) -> Self:
-        """Keep budget evidence finite and nonnegative."""
-        if any(
-            isinstance(value, float) and not math.isfinite(value)
-            for value in (self.limit, self.observed)
-        ):
-            raise ValueError("budget values must be finite")
-        if self.limit < 0 or self.observed < 0:
-            raise ValueError("budget values must be nonnegative")
-        return self
-
 
 RunFailure = Annotated[
     BudgetLimitFailure | ProviderFailure | NodeError,
@@ -256,7 +208,7 @@ class RunResponse(StrictApiModel):
     """One completed workflow run or its structured terminal failure."""
 
     run_id: RunId
-    status: Literal["ok", "budget_exceeded", "schema_rejected", "error"]
+    status: RunStatus
     iterations: NonnegativeInt
     total_requests: NonnegativeInt
     total_input_tokens: NonnegativeInt
@@ -269,29 +221,24 @@ class RunResponse(StrictApiModel):
 
     @model_validator(mode="after")
     def validate_terminal_shape(self) -> Self:
-        """Keep successful reports and terminal failures mutually exclusive."""
+        """Keep successful reports and terminal failures mutually exclusive.
+
+        The failed-status check delegates to the domain's ``run_status_for_failure``
+        so the API cannot maintain a private inverse table that drifts from the
+        mapping the runner persists with.
+        """
         if self.status == "ok":
             if self.report is None or self.failure is not None:
                 raise ValueError("successful runs require only a workflow report")
             return self
         if self.failure is None or self.report is not None:
             raise ValueError("failed runs require only a typed failure")
-        if self.status == "budget_exceeded":
-            matches = isinstance(self.failure, BudgetLimitFailure) or (
-                isinstance(self.failure, ProviderFailure)
-                and self.failure.status == "budget_exceeded"
-            )
-        elif self.status == "schema_rejected":
-            matches = (
-                isinstance(self.failure, ProviderFailure)
-                and self.failure.status == "schema_rejected"
-            )
-        else:
-            matches = isinstance(self.failure, NodeError) or (
-                isinstance(self.failure, ProviderFailure)
-                and self.failure.status in {"provider_refused", "provider_error"}
-            )
-        if not matches:
+        expected = (
+            "budget_exceeded"
+            if isinstance(self.failure, BudgetLimitFailure)
+            else run_status_for_failure(self.failure)
+        )
+        if self.status != expected:
             raise ValueError("run status must match its typed failure")
         return self
 
@@ -322,7 +269,7 @@ class RunResponse(StrictApiModel):
         """
         if not isinstance(run, RunReport):
             raise TypeError("run responses require a RunReport")
-        payload_value = _sanitize_public_json(run.report) if run.report is not None else None
+        payload_value = sanitize_json(run.report) if run.report is not None else None
         payload = payload_value if isinstance(payload_value, dict) else None
         report: WorkflowReport | None = None
         failure: RunFailure | None = None
@@ -335,7 +282,9 @@ class RunResponse(StrictApiModel):
         else:
             if payload is None:
                 raise ValueError("failed run report payload is missing")
-            raw_failure = payload.get("failure", payload.get("reason"))
+            # "reason" is the only terminal-failure key the workflow runner writes;
+            # accepting aliases here would let fixtures diverge from production.
+            raw_failure = payload.get("reason")
             if raw_failure is None:
                 raise ValueError("failed run report has no typed failure")
             failure = _RUN_FAILURE_ADAPTER.validate_json(
@@ -377,27 +326,9 @@ class EvalResultResource(StrictApiModel):
     result_id: PositiveInt
     suite: NonBlank
     config: JsonObject
-    metrics: dict[NonBlank, StrictFloat]
+    metrics: dict[NonBlank, FiniteFloat]
     raw_artifact_path: NonBlank
     created_at: datetime
-
-    @field_validator("suite", "raw_artifact_path", mode="after")
-    @classmethod
-    def reject_blank_text(cls, value: str) -> str:
-        """Reject evaluation identity fields containing only whitespace."""
-        if not value.strip():
-            raise ValueError("evaluation text must not be blank")
-        return value
-
-    @field_validator("metrics", mode="after")
-    @classmethod
-    def validate_metrics(cls, values: dict[str, float]) -> dict[str, float]:
-        """Reject blank metric names and nonfinite values."""
-        if any(not key.strip() for key in values):
-            raise ValueError("metric names must not be blank")
-        if any(not math.isfinite(value) for value in values.values()):
-            raise ValueError("metric values must be finite")
-        return values
 
 
 class EvalListResponse(StrictApiModel):

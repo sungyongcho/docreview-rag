@@ -460,6 +460,70 @@ def prepare_seed_batch(
     )
 
 
+class ManifestError(Exception):
+    """One typed manifest failure with a stable machine-readable code.
+
+    Owned by ingestion so every entrypoint reports the same code for the same broken
+    manifest; a new failure mode added here reaches the CLI and the API together.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def load_seed_batch(
+    manifest_path: Path,
+    *,
+    expected_documents: int | None = EXPECTED_DOCUMENTS,
+) -> SeedBatch:
+    """Prepare one manifest, mapping every expected failure to a ``ManifestError``.
+
+    Parameters
+    ----------
+    manifest_path : Path
+        Explicit manifest file location.
+    expected_documents : int | None
+        Required document count, or ``None`` to accept any nonempty corpus.
+
+    Returns
+    -------
+    SeedBatch
+        Validated corpus batch ready to persist.
+
+    Raises
+    ------
+    ManifestError
+        With one of the stable codes ``manifest_not_found``, ``invalid_manifest_json``,
+        ``invalid_manifest_encoding``, ``corpus_file_not_found``, ``invalid_manifest``.
+    """
+    if not manifest_path.is_file():
+        raise ManifestError(
+            "manifest_not_found",
+            f"Manifest file was not found: {manifest_path}",
+        )
+    try:
+        return prepare_seed_batch(manifest_path, expected_documents=expected_documents)
+    except json.JSONDecodeError as error:
+        raise ManifestError(
+            "invalid_manifest_json",
+            f"Manifest is not valid JSON at line {error.lineno} column {error.colno}.",
+        ) from error
+    except UnicodeDecodeError as error:
+        raise ManifestError(
+            "invalid_manifest_encoding",
+            "Manifest must be UTF-8 text.",
+        ) from error
+    except FileNotFoundError as error:
+        raise ManifestError(
+            "corpus_file_not_found",
+            f"Corpus file was not found: {error.filename}",
+        ) from error
+    except ValueError as error:
+        raise ManifestError("invalid_manifest", str(error)) from error
+
+
 def document_upsert_statement(records: Sequence[DocumentRecord]) -> Insert:
     """Build a nonempty PostgreSQL document upsert keyed by ``doc_id``."""
     if not records:
@@ -558,7 +622,7 @@ async def persist_seed_batch(
     return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 
 
-async def _persist_seed_batch_with_bm25_stats(
+async def persist_seed_batch_with_stats(
     session: AsyncSession,
     batch: SeedBatch,
     *,
@@ -589,7 +653,7 @@ async def seed_corpus(
         manifest_path,
         expected_documents=expected_documents,
     )
-    return await _persist_seed_batch_with_bm25_stats(
+    return await persist_seed_batch_with_stats(
         session,
         batch,
         chunk_batch_size=chunk_batch_size,
@@ -612,7 +676,7 @@ async def _run_cli(args: argparse.Namespace) -> None:
     if args.create_schema or args.recreate_schema:
         await bootstrap_schema(engine)
     async with Session() as session:
-        result = await _persist_seed_batch_with_bm25_stats(
+        result = await persist_seed_batch_with_stats(
             session,
             batch,
             chunk_batch_size=args.chunk_batch_size,

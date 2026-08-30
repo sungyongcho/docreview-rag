@@ -10,12 +10,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY --from=uv /uv /uvx /bin/
-COPY pyproject.toml uv.lock README.md ./
+# README.md stays out of this layer on purpose: with --no-install-project the project
+# metadata is never built, and the README churns with almost every commit — copying it
+# here would invalidate the dependency install on each edit.
+COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
 RUN useradd --create-home --uid 10001 appuser
-COPY --chown=appuser:appuser app ./app
+# The corpus layer changes rarely; ordering it before app/ keeps code edits from
+# rewriting the largest layer. .dockerignore keeps eval artifacts out of it.
 COPY --chown=appuser:appuser data ./data
+COPY --chown=appuser:appuser app ./app
 
 USER appuser
 

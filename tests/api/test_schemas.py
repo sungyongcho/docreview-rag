@@ -22,9 +22,9 @@ def test_retrieve_request_is_strict_and_rejects_blank_or_unknown_input():
     with pytest.raises(ValidationError):
         RetrieveRequest(query=" ")
     with pytest.raises(ValidationError):
-        RetrieveRequest(query="Revenue?", k="5")
+        RetrieveRequest(query="Revenue?", k="5")  # pyright: ignore[reportArgumentType]
     with pytest.raises(ValidationError):
-        RetrieveRequest(query="Revenue?", unsupported=True)
+        RetrieveRequest(query="Revenue?", unsupported=True)  # pyright: ignore[reportCallIssue]
 
 
 def test_evidence_projection_exposes_complete_source_identity(hit):
@@ -52,6 +52,7 @@ def test_successful_run_maps_to_strict_workflow_report(successful_run):
 
     assert response.status == "ok"
     assert response.failure is None
+    assert response.report is not None
     assert response.report.label == "SUPPORTED"
     assert response.report.citations[0].chunk_id == 7
 
@@ -118,7 +119,7 @@ def test_run_response_redacts_public_prompt_and_failure_text():
         system_prompt=f"Bearer {secret}",
         node_path=("retrieve", "grade"),
         steps=(),
-        report={"failure": failure.model_dump(mode="json")},
+        report={"reason": failure.model_dump(mode="json")},
     )
 
     response = RunResponse.from_run_report(report)

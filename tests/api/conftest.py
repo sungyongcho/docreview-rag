@@ -8,6 +8,7 @@ import pytest
 from app.api.app import create_api_app
 from app.ingestion.seed import SeedResult
 from app.observability.types import StepTrace, build_run_report
+from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.retrieval.types import ChunkHit
 from app.workflow.types import EvidenceCitation, ProviderFailure, WorkflowReport
 
@@ -121,7 +122,7 @@ def schema_rejected_run(trace):
         system_prompt="Use only filing evidence.",
         node_path=("retrieve", "grade"),
         steps=(trace,),
-        report={"failure": failure.model_dump(mode="json")},
+        report={"reason": failure.model_dump(mode="json")},
     )
 
 
@@ -150,7 +151,15 @@ class FakeApiServices:
         self.last_retrieve_request = request
         if self.retrieve_error is not None:
             raise self.retrieve_error
-        return self.hits
+        hits = tuple(self.hits)
+        return RetrievalResult(
+            hits=hits,
+            score_stage="rrf",
+            component_rankings=ComponentRankings(
+                vector=tuple(hit.chunk_id for hit in hits),
+                lexical=(),
+            ),
+        )
 
     async def list_documents(self):
         """Return the configured document collection."""
@@ -163,24 +172,16 @@ class FakeApiServices:
             raise self.ingest_error
         return self.seed_result
 
-    async def review(self, request):
-        """Record the request and return the configured report, or raise the staged error."""
+    async def review(self, request, on_node=None):
+        """Replay staged node states when observed, then return the configured report."""
         self.last_review_request = request
         if self.review_error is not None:
             raise self.review_error
         if self.review_result is None:
             raise RuntimeError("review fixture is not configured")
-        return self.review_result
-
-    async def review_stream(self, request, on_node):
-        """Replay the staged node states through the observer before the report."""
-        self.last_review_request = request
-        if self.review_error is not None:
-            raise self.review_error
-        if self.review_result is None:
-            raise RuntimeError("review fixture is not configured")
-        for node, state in self.stream_states:
-            await on_node(node, state)
+        if on_node is not None:
+            for node, state in self.stream_states:
+                await on_node(node, state)
         return self.review_result
 
     async def get_run(self, run_id):

@@ -74,7 +74,6 @@ def test_compose_preserves_postgres_and_has_no_worker_or_redis_service():
     assert "  redis:\n" not in compose
     assert "  worker:\n" not in compose
     assert "condition: service_healthy" in compose
-    assert "/health" in compose
 
 
 def test_container_uses_the_locked_runtime_and_nonroot_user():
@@ -85,3 +84,7 @@ def test_container_uses_the_locked_runtime_and_nonroot_user():
     assert "USER appuser" in dockerfile
     assert '"app.cli", "serve"' in dockerfile
     assert "HEALTHCHECK" in dockerfile
+    assert "/health" in dockerfile
+    # README churns with nearly every commit; it must stay out of the dependency layer.
+    copy_lines = [line for line in dockerfile.splitlines() if line.startswith("COPY")]
+    assert copy_lines and all("README" not in line for line in copy_lines)

@@ -7,7 +7,7 @@ import math
 from types import MappingProxyType
 from typing import Annotated, Final, Literal, Self
 
-from pydantic import Field, JsonValue, StrictStr
+from pydantic import Field, JsonValue, StrictFloat, StrictInt, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
 
 from app.llm.schemas import (
@@ -24,7 +24,11 @@ RunStatus = Literal["ok", "budget_exceeded", "schema_rejected", "error"]
 BudgetResource = Literal["iterations", "input_tokens", "output_tokens", "wall_clock_s"]
 JsonObject = dict[str, JsonValue]
 
-RunId = Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")]
+# Single definition of the run-id grammar. The API response schema and the route path
+# parameters validate against this same pattern, so a persisted run id can never be
+# accepted by one boundary and rejected by another.
+RUN_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+RunId = Annotated[StrictStr, Field(pattern=RUN_ID_PATTERN)]
 
 _PACING_RESOURCES: tuple[BudgetResource, ...] = ("iterations", "wall_clock_s")
 _PROVIDER_RESOURCES: tuple[BudgetResource, ...] = (
@@ -119,6 +123,32 @@ class Budget(StrictSchema):
     max_input_tokens: NonNegativeInt = 60_000
     max_output_tokens: NonNegativeInt = 4_000
     max_wall_clock_s: NonNegativeFloat = 120.0
+
+
+class BudgetLimitFailure(StrictSchema):
+    """A workflow node blocked by one exhausted cumulative resource.
+
+    Owned here, next to the budget guard that produces it, so the refusal payload and
+    the schema consumers validate against cannot drift apart.
+    """
+
+    code: Literal["budget_exceeded"] = "budget_exceeded"
+    resource: BudgetResource
+    limit: StrictInt | StrictFloat
+    observed: StrictInt | StrictFloat
+    blocked_node: WorkflowNode
+
+    @model_validator(mode="after")
+    def validate_values(self) -> Self:
+        """Keep budget evidence finite and nonnegative."""
+        if any(
+            isinstance(value, float) and not math.isfinite(value)
+            for value in (self.limit, self.observed)
+        ):
+            raise ValueError("budget values must be finite")
+        if self.limit < 0 or self.observed < 0:
+            raise ValueError("budget values must be nonnegative")
+        return self
 
 
 def derived_totals(

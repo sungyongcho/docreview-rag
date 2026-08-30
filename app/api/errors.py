@@ -1,11 +1,14 @@
 """Stable typed error handling for malformed and failed API requests."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+import contextlib
 import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from openai import OpenAIError
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.schemas import ApiError, ErrorResponse, ValidationIssue
@@ -43,6 +46,38 @@ def not_found(resource: str, identity: str) -> ApiProblemError:
         code=f"{resource}_not_found",
         message=f"{resource} {identity} was not found.",
     )
+
+
+def unavailable(code: str, message: str) -> ApiProblemError:
+    """Build the typed 503 an unconfigured or unreachable dependency answers with."""
+    return ApiProblemError(status_code=503, code=code, message=message)
+
+
+@contextlib.asynccontextmanager
+async def translate_runtime_errors() -> AsyncIterator[None]:
+    """Translate every expected infrastructure and domain failure exactly once.
+
+    One boundary owns the mapping so a new operation cannot forget a family: domain
+    ``ValueError`` (semantically invalid input the schemas cannot express) becomes a
+    typed 400, provider and database outages become typed 503s, and an already-typed
+    problem passes through unchanged.
+    """
+    try:
+        yield
+    except ApiProblemError:
+        raise
+    except ValueError as error:
+        raise bad_request("invalid_request", str(error)) from error
+    except OpenAIError as error:
+        raise unavailable(
+            "provider_unavailable",
+            f"Provider is unavailable ({type(error).__name__}).",
+        ) from error
+    except SQLAlchemyError as error:
+        raise unavailable(
+            "database_unavailable",
+            f"Database is unavailable ({type(error).__name__}).",
+        ) from error
 
 
 def _response(

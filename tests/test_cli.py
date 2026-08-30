@@ -9,9 +9,12 @@ import sys
 from typing import TypedDict, cast
 
 from openai import OpenAIError
+from pydantic import ValidationError
+import pytest
 from sqlalchemy.exc import OperationalError
 
 from app import cli
+from app.config import Settings, get_settings
 
 
 class ErrorDetail(TypedDict):
@@ -35,11 +38,11 @@ def error_payload(capsys) -> FailurePayload:
     return cast(FailurePayload, json.loads(captured.err))
 
 
-def test_retrieve_defaults_to_the_offline_provider_and_prints_stable_json(
+def test_retrieve_defaults_to_the_configured_provider_and_prints_stable_json(
     monkeypatch,
     capsys,
 ):
-    """Default to the offline provider and print one stable, sorted JSON object."""
+    """Leave the provider to configuration and print one stable, sorted JSON object."""
     observed = {}
 
     async def run(args):
@@ -49,7 +52,7 @@ def test_retrieve_defaults_to_the_offline_provider_and_prints_stable_json(
             "status": "ok",
             "command": "retrieve",
             "query": args.query,
-            "provider": args.provider,
+            "provider": args.provider or "deterministic",
             "hits": [],
         }
 
@@ -67,7 +70,65 @@ def test_retrieve_defaults_to_the_offline_provider_and_prints_stable_json(
         "status": "ok",
     }
     assert observed["k"] == 5
-    assert observed["provider"] == "deterministic"
+    # No flag means no override: the configured EMBEDDING_PROVIDER stays in charge.
+    assert observed["provider"] is None
+
+
+def test_filters_construct_against_the_real_domain_model():
+    """Build real RetrievalFilters from parsed flags, proving the field names match."""
+    args = cli.arguments(
+        [
+            "retrieve",
+            "--query",
+            "revenue",
+            "--issuer",
+            "ACME",
+            "--fiscal-year",
+            "2024",
+        ]
+    )
+
+    filters = cli._filters(args)
+
+    assert filters.issuers == ("ACME",)
+    assert filters.fiscal_years == (2024,)
+
+
+def test_embed_missing_without_explicit_provider_is_a_typed_exit(capsys):
+    """Refuse a backfill whose provider was not named, before any database access."""
+    exit_code = cli.main(["retrieve", "--query", "risk", "--embed-missing"])
+
+    payload = error_payload(capsys)
+    assert exit_code == cli.ExitCode.INVALID_INPUT
+    assert payload["error"]["code"] == "embed_missing_requires_provider"
+
+
+def test_invalid_settings_are_a_typed_exit_without_values(monkeypatch, capsys):
+    """Map a settings validation failure to a typed exit that echoes no input values."""
+
+    async def failing(args):
+        """Re-validate settings with a value the schema rejects."""
+        Settings.model_validate({**get_settings().model_dump(), "embedding_batch_size": 0})
+        raise AssertionError("validation should have failed")
+
+    monkeypatch.setattr(cli, "_run_data_command", failing)
+
+    exit_code = cli.main(["retrieve", "--query", "risk"])
+
+    payload = error_payload(capsys)
+    assert exit_code == cli.ExitCode.INVALID_INPUT
+    assert payload["error"]["code"] == "invalid_configuration"
+    assert "embedding_batch_size" in payload["error"]["message"]
+    # Locations and messages only: the rejected input values themselves stay out.
+    assert "input_value" not in payload["error"]["message"]
+
+
+def test_provider_override_revalidates_the_openai_key_guard():
+    """Run the fail-closed key guard when the provider is overridden per invocation."""
+    base = Settings.model_validate({**get_settings().model_dump(), "openai_api_key": None})
+
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY is required"):
+        cli._provider_settings(base, "openai")
 
 
 def test_empty_query_is_a_typed_invalid_input_exit(capsys):
@@ -98,7 +159,7 @@ def test_missing_manifest_fails_before_database_access(tmp_path, capsys):
     assert exit_code == cli.ExitCode.INVALID_FILE
     assert payload["error"] == {
         "code": "manifest_not_found",
-        "message": f"manifest file does not exist: {missing}",
+        "message": f"Manifest file was not found: {missing}",
     }
 
 

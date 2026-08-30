@@ -4,21 +4,19 @@ import asyncio
 from collections.abc import AsyncGenerator, Mapping
 import contextlib
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import ApiServices, get_api_services
+from app.api.deps import Services
 from app.api.errors import ApiProblemError
 from app.api.schemas import ApiError, ErrorResponse, ReviewRequest, RunResponse, StreamNodeEvent
 from app.observability.types import WorkflowNode
 from app.workflow.types import WorkflowState
 
 router = APIRouter(tags=["review"])
-Services = Annotated[ApiServices, Depends(get_api_services)]
 
 type _Event = tuple[str, str]
 
@@ -105,7 +103,7 @@ async def review_stream(request: ReviewRequest, services: Services) -> Streaming
     async def run_review() -> None:
         """Run the workflow, ending the queue with a report, a typed error, or both closed."""
         try:
-            report = await services.review_stream(request, on_node)
+            report = await services.review(request, on_node)
             payload = RunResponse.from_run_report(report).model_dump_json()
             await queue.put(("report", payload))
         except ApiProblemError as error:

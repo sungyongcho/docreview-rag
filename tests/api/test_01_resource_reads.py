@@ -41,6 +41,7 @@ def test_documents_route_returns_typed_collection(client_factory, services):
         DocumentResource(
             doc_id="ACME-FY2024",
             registry="sec",
+            language="en",
             issuer="ACME",
             issuer_id="123",
             fiscal_year=2024,

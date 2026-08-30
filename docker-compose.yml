@@ -35,18 +35,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()",
-        ]
-      interval: 10s
-      timeout: 3s
-      start_period: 10s
-      retries: 5
+    # The image's own HEALTHCHECK applies; duplicating it here would give the same
+    # probe two diverging definitions.
 
 volumes:
   pg_data:

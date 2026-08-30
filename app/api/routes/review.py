@@ -1,14 +1,11 @@
 """Synchronous evidence-review resource route."""
 
-from typing import Annotated
+from fastapi import APIRouter, Response
 
-from fastapi import APIRouter, Depends, Response
-
-from app.api.deps import ApiServices, get_api_services
+from app.api.deps import Services
 from app.api.schemas import ReviewRequest, RunResponse
 
 router = APIRouter(tags=["review"])
-Services = Annotated[ApiServices, Depends(get_api_services)]
 STATUS_CODES = {
     "ok": 200,
     "budget_exceeded": 429,

@@ -1,5 +1,6 @@
 """Environment-driven settings shared across ingestion, retrieval, and evaluation."""
 
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
@@ -39,6 +40,15 @@ class Settings(BaseSettings):
     bm25_k1: float = Field(default=DEFAULT_BM25_K1, gt=0, allow_inf_nan=False)
     bm25_b: float = Field(default=DEFAULT_BM25_B, ge=0, le=1, allow_inf_nan=False)
     bm25_idf: BM25Idf = DEFAULT_BM25_IDF
+    # The review workflow stays fail-closed (typed 503) until a model is named. Pricing
+    # is required with the model because the provider budget cannot estimate cost
+    # without it, and a guessed price would silently misreport spend.
+    review_model: str | None = None
+    review_max_input_tokens: int = Field(default=60_000, gt=0)
+    review_max_output_tokens: int = Field(default=4_000, gt=0)
+    review_max_cost_usd: Decimal = Field(default=Decimal("0.50"), ge=0)
+    review_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
+    review_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def require_openai_api_key(self) -> Self:
@@ -47,6 +57,25 @@ class Settings(BaseSettings):
             self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip()
         ):
             raise ValueError("OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai")
+        return self
+
+    @model_validator(mode="after")
+    def require_review_configuration(self) -> Self:
+        """Require the key and both prices whenever a review model is configured."""
+        if self.review_model is None:
+            return self
+        if not self.review_model.strip():
+            raise ValueError("REVIEW_MODEL must not be blank when set")
+        if self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip():
+            raise ValueError("OPENAI_API_KEY is required when REVIEW_MODEL is set")
+        if (
+            self.review_input_price_per_million_usd is None
+            or self.review_output_price_per_million_usd is None
+        ):
+            raise ValueError(
+                "REVIEW_INPUT_PRICE_PER_MILLION_USD and REVIEW_OUTPUT_PRICE_PER_MILLION_USD "
+                "are required when REVIEW_MODEL is set"
+            )
         return self
 
 

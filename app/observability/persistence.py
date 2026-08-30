@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 import re
+from typing import cast
 
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run, Trace
-from app.observability.types import JsonValue, RunReport
+from app.observability.types import JsonValue, RunReport, RunStatus, StepTrace, WorkflowNode
+
+_RUN_STATUS = TypeAdapter[RunStatus](RunStatus)
+_WORKFLOW_NODE = TypeAdapter[WorkflowNode](WorkflowNode)
 
 REDACTED = "[REDACTED]"
 _SECRET_NAME = r"(?:api[_-]?key|crtfc[_-]?key|authorization|password|secret|access[_-]?token)"
@@ -81,6 +86,15 @@ def redact_sensitive_text(text: str, *, secret_values: Iterable[str] = ()) -> st
         If an explicit secret is empty or non-string.
     """
     return _redact_sensitive_text(text, secrets=_compiled_secrets(secret_values))
+
+
+def sanitize_json(value: JsonValue, *, secret_values: Iterable[str] = ()) -> JsonValue:
+    """Sanitize one JSON value with the same rules persistence applies.
+
+    Public seam for boundaries that re-emit stored JSON, so every surface shares one
+    walker — including the sensitive-key rule a value-only pass would miss.
+    """
+    return _sanitize_json(value, secrets=_compiled_secrets(secret_values))
 
 
 def _sanitize_json(value: JsonValue, *, secrets: re.Pattern[str] | None) -> JsonValue:
@@ -194,6 +208,82 @@ def report_to_records(
     return run, traces
 
 
+def record_to_step(trace: Trace) -> StepTrace:
+    """Rebuild one stored trace row as the strict step it was recorded from."""
+    return StepTrace(
+        step=trace.step,
+        node=_WORKFLOW_NODE.validate_python(trace.node, strict=True),
+        model_name=trace.model_name,
+        api_url=trace.api_url,
+        input_tokens=trace.input_tokens,
+        output_tokens=trace.output_tokens,
+        estimated_cost_usd=trace.estimated_cost_usd,
+        request_time_ms=trace.request_time_ms,
+        llm_output=trace.llm_output,
+        retries=trace.retries,
+        error=trace.error,
+    )
+
+
+def records_to_report(run: Run, traces: Sequence[Trace]) -> RunReport:
+    """Rebuild one stored run and its ordered traces as a strict report.
+
+    This is the inverse of :func:`report_to_records` and lives beside it so a new
+    ``Run`` or ``Trace`` column changes both directions in one module — a field added
+    to one mapping and forgotten in the other fails the round-trip test here instead
+    of a production read.
+    """
+    return RunReport(
+        run_id=run.run_id,
+        status=_RUN_STATUS.validate_python(run.status, strict=True),
+        iterations=run.iterations,
+        total_requests=run.total_requests,
+        total_input_tokens=run.total_input_tokens,
+        total_output_tokens=run.total_output_tokens,
+        total_time_seconds=run.total_time_seconds,
+        system_prompt=run.system_prompt,
+        node_path=tuple(
+            _WORKFLOW_NODE.validate_python(node, strict=True) for node in run.node_path
+        ),
+        # The JSONB column deserializes to JSON values; the ORM annotation is the
+        # wider dict[str, object] only because SQLAlchemy cannot express JsonValue.
+        report=cast("dict[str, JsonValue] | None", run.report),
+        steps=tuple(record_to_step(trace) for trace in traces),
+    )
+
+
+async def persist_run_records(
+    session: AsyncSession,
+    run: Run,
+    traces: Sequence[Trace],
+) -> Run:
+    """Flush already-sanitized run records without committing the transaction.
+
+    Parameters
+    ----------
+    session : AsyncSession
+        Caller-owned transaction and flush boundary.
+    run : Run
+        Sanitized run row from :func:`report_to_records`.
+    traces : Sequence[Trace]
+        Sanitized ordered trace rows from the same mapping call.
+
+    Returns
+    -------
+    Run
+        Flushed run record.
+
+    Notes
+    -----
+    The caller retains commit and rollback ownership. Records are persisted as given;
+    sanitize once with :func:`report_to_records` instead of re-redacting per layer.
+    """
+    session.add(run)
+    session.add_all(traces)
+    await session.flush()
+    return run
+
+
 async def persist_run_report(
     session: AsyncSession,
     report: RunReport,
@@ -221,7 +311,4 @@ async def persist_run_report(
     The caller retains commit and rollback ownership.
     """
     run, traces = report_to_records(report, secret_values=secret_values)
-    session.add(run)
-    session.add_all(traces)
-    await session.flush()
-    return run
+    return await persist_run_records(session, run, traces)

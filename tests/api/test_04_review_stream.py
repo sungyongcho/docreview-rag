@@ -160,7 +160,7 @@ def test_stream_preserves_typed_service_errors_and_redacts_terminal_reports(
         system_prompt=f"Bearer {secret}",
         node_path=("retrieve", "grade"),
         steps=(),
-        report={"failure": failure.model_dump(mode="json")},
+        report={"reason": failure.model_dump(mode="json")},
     )
     with client_factory(services).stream(
         "POST", "/review/stream", json={"query": "Revenue?"}
@@ -181,8 +181,9 @@ def test_stream_send_failure_cancels_the_review_task():
             self.cancelled = asyncio.Event()
             self.release = asyncio.Event()
 
-        async def review_stream(self, request, on_node):
+        async def review(self, request, on_node=None):
             """Report one node, then block so the send failure can cancel this task."""
+            assert on_node is not None
             await on_node("retrieve", state())
             self.started.set()
             try:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Annotated, Protocol
+
+from fastapi import Depends
 
 from app.api.errors import ApiProblemError
 from app.api.schemas import (
@@ -16,17 +18,13 @@ from app.api.schemas import (
 from app.ingestion.seed import SeedResult
 from app.observability.types import RunReport, StepTrace
 from app.retrieval.service import RetrievalResult
-from app.retrieval.types import ChunkHit
 from app.workflow.runner import NodeObserver
 
 
 class ApiServices(Protocol):
     """All domain operations required by the seven HTTP resources."""
 
-    async def retrieve(
-        self,
-        request: RetrieveRequest,
-    ) -> RetrievalResult | Sequence[ChunkHit]:
+    async def retrieve(self, request: RetrieveRequest) -> RetrievalResult:
         """Return ranked evidence without performing HTTP work."""
         ...
 
@@ -38,16 +36,17 @@ class ApiServices(Protocol):
         """Run one synchronous local-manifest ingestion operation."""
         ...
 
-    async def review(self, request: ReviewRequest) -> RunReport:
-        """Run and persist one complete evidence-checked workflow."""
-        ...
-
-    async def review_stream(
+    async def review(
         self,
         request: ReviewRequest,
-        on_node: NodeObserver,
+        on_node: NodeObserver | None = None,
     ) -> RunReport:
-        """Run one reviewed workflow while reporting each completed node."""
+        """Run and persist one complete evidence-checked workflow.
+
+        ``on_node`` reports each completed node while the run is in flight; the
+        synchronous and streamed resources share this one method so a behavior
+        change cannot land on one path and miss the other.
+        """
         ...
 
     async def get_run(self, run_id: str) -> RunReport | None:
@@ -70,3 +69,7 @@ def get_api_services() -> ApiServices:
         code="service_unavailable",
         message="API services are not configured.",
     )
+
+
+# One dependency alias shared by every route module instead of eight local copies.
+Services = Annotated[ApiServices, Depends(get_api_services)]

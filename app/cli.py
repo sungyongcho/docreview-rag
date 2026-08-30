@@ -11,6 +11,7 @@ import sys
 from typing import TYPE_CHECKING, Literal, TextIO
 
 from openai import OpenAIError
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings, get_settings
@@ -63,17 +64,17 @@ def _add_retrieve_parser(subparsers: Subparsers) -> None:
     )
     parser.add_argument(
         "--provider",
-        choices=("deterministic", "openai"),
-        default="deterministic",
-        help="Embedding provider; deterministic is the offline default.",
+        choices=("deterministic", "openai", "sbert"),
+        default=None,
+        help="Embedding provider override; the configured EMBEDDING_PROVIDER otherwise.",
     )
     parser.add_argument(
         "--embed-missing",
         action="store_true",
-        help="Fill null chunk embeddings before retrieval.",
+        help="Fill null chunk embeddings before retrieval; requires an explicit --provider.",
     )
     parser.add_argument("--doc-id", action="append", default=[], help="Exact document filter.")
-    parser.add_argument("--ticker", action="append", default=[], help="Exact ticker filter.")
+    parser.add_argument("--issuer", action="append", default=[], help="Exact issuer filter.")
     parser.add_argument(
         "--fiscal-year",
         action="append",
@@ -172,6 +173,14 @@ def _validate_arguments(args: argparse.Namespace) -> None:
                 "candidate-k must be at least k",
                 ExitCode.INVALID_INPUT,
             )
+        # Chunks carry no embedding-provenance column, so a backfill with an implicit
+        # provider could silently commit mixed-provider vectors into one vector space.
+        if args.embed_missing and args.provider is None:
+            raise CliError(
+                "embed_missing_requires_provider",
+                "pass --provider explicitly when backfilling embeddings",
+                ExitCode.INVALID_INPUT,
+            )
     elif args.command == "ingest":
         if args.expected_documents <= 0:
             raise CliError(
@@ -202,9 +211,15 @@ def _validate_arguments(args: argparse.Namespace) -> None:
             )
 
 
-def _provider_settings(settings: Settings, provider: ProviderName) -> Settings:
-    """Copy the settings with the embedding provider this run asked for."""
-    return settings.model_copy(update={"embedding_provider": provider})
+def _provider_settings(settings: Settings, provider: ProviderName | None) -> Settings:
+    """Re-validate the settings with the explicitly requested embedding provider.
+
+    ``model_copy(update=...)`` would skip model validators — and with them the
+    fail-closed OpenAI key guard — so the override goes through full validation.
+    """
+    if provider is None:
+        return settings
+    return Settings.model_validate({**settings.model_dump(), "embedding_provider": provider})
 
 
 def _filters(args: argparse.Namespace) -> RetrievalFilters:
@@ -213,7 +228,7 @@ def _filters(args: argparse.Namespace) -> RetrievalFilters:
 
     return RetrievalFilters(
         doc_ids=tuple(args.doc_id),
-        tickers=tuple(args.ticker),
+        issuers=tuple(args.issuer),
         fiscal_years=tuple(args.fiscal_year),
         forms=tuple(args.form),
         items=tuple(args.item),
@@ -229,7 +244,7 @@ def _evidence_payload(hit: ChunkHit) -> dict[str, object]:
 
 
 async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
-    """Retrieve cited evidence, embedding whatever the corpus still lacks."""
+    """Retrieve cited evidence with the same ranking plan the configuration measured."""
     from app.db.session import Session
     from app.retrieval.embeddings import embed_missing_chunks, get_embedding_provider
     from app.retrieval.service import retrieve
@@ -247,6 +262,11 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
             k=args.k,
             candidate_k=args.candidate_k,
             filters=_filters(args),
+            route_by_language=settings.query_language_routing,
+            lexical_ranker=settings.lexical_ranker,
+            bm25_k1=settings.bm25_k1,
+            bm25_b=settings.bm25_b,
+            bm25_idf=settings.bm25_idf,
         )
     return {
         "status": "ok",
@@ -259,58 +279,21 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _checked_manifest(path: Path) -> Path:
-    """Fail before any database access when the manifest file is absent."""
-    if not path.is_file():
-        raise CliError(
-            "manifest_not_found",
-            f"manifest file does not exist: {path}",
-            ExitCode.INVALID_FILE,
-        )
-    return path
-
-
 async def _ingest(args: argparse.Namespace) -> dict[str, object]:
-    """Upsert one manifest into a bootstrapped schema and report the counts."""
+    """Upsert one manifest and rebuild the BM25 statistics its writes invalidated."""
     from app.db.bootstrap import bootstrap_schema
     from app.db.session import Session, engine
-    from app.ingestion.seed import persist_seed_batch, prepare_seed_batch
+    from app.ingestion.seed import ManifestError, load_seed_batch, persist_seed_batch_with_stats
 
-    manifest = _checked_manifest(args.manifest)
     try:
-        batch = prepare_seed_batch(
-            manifest,
-            expected_documents=args.expected_documents,
-        )
-    except json.JSONDecodeError as error:
-        raise CliError(
-            "invalid_manifest_json",
-            f"manifest is not valid JSON at line {error.lineno} column {error.colno}",
-            ExitCode.INVALID_FILE,
-        ) from error
-    except UnicodeDecodeError as error:
-        raise CliError(
-            "invalid_manifest_encoding",
-            "manifest must be UTF-8 text",
-            ExitCode.INVALID_FILE,
-        ) from error
-    except FileNotFoundError as error:
-        raise CliError(
-            "corpus_file_not_found",
-            f"corpus file does not exist: {error.filename}",
-            ExitCode.INVALID_FILE,
-        ) from error
-    except ValueError as error:
-        raise CliError(
-            "invalid_manifest",
-            str(error),
-            ExitCode.INVALID_FILE,
-        ) from error
+        batch = load_seed_batch(args.manifest, expected_documents=args.expected_documents)
+    except ManifestError as error:
+        raise CliError(error.code, error.message, ExitCode.INVALID_FILE) from error
 
     if args.create_schema:
         await bootstrap_schema(engine)
     async with Session() as session:
-        result = await persist_seed_batch(
+        result = await persist_seed_batch_with_stats(
             session,
             batch,
             chunk_batch_size=args.chunk_batch_size,
@@ -318,19 +301,24 @@ async def _ingest(args: argparse.Namespace) -> dict[str, object]:
     return {
         "status": "ok",
         "command": "ingest",
-        "manifest": str(manifest),
+        "manifest": str(args.manifest),
         "documents": result.documents,
         "chunks": result.chunks,
     }
 
 
 async def _run_data_command(args: argparse.Namespace) -> dict[str, object]:
-    """Dispatch to the command that needs a database session."""
-    if args.command == "retrieve":
-        return await _retrieve(args)
-    if args.command == "ingest":
-        return await _ingest(args)
-    raise AssertionError(f"unsupported data command: {args.command}")
+    """Dispatch to the command that needs a database session, then release the pool."""
+    from app.db.session import engine
+
+    try:
+        if args.command == "retrieve":
+            return await _retrieve(args)
+        if args.command == "ingest":
+            return await _ingest(args)
+        raise AssertionError(f"unsupported data command: {args.command}")
+    finally:
+        await engine.dispose()
 
 
 def _serve(args: argparse.Namespace) -> None:
@@ -391,6 +379,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CliError as error:
         _write_json(_failure_payload(error), sys.stderr)
         return error.exit_code
+    except ValidationError as error:
+        # Environment settings failed validation. The default rendering would echo
+        # every input value — including loaded credentials — so only locations and
+        # messages cross into the error envelope.
+        issues = "; ".join(
+            f"{'.'.join(str(part) for part in issue['loc']) or 'settings'}: {issue['msg']}"
+            for issue in error.errors(include_url=False, include_input=False)
+        )
+        failure = CliError(
+            "invalid_configuration",
+            f"configuration is invalid ({issues})",
+            ExitCode.INVALID_INPUT,
+        )
+        _write_json(_failure_payload(failure), sys.stderr)
+        return failure.exit_code
     except OpenAIError as error:
         failure = CliError(
             "provider_unavailable",

@@ -1,14 +1,11 @@
 """Synchronous ingestion resource route."""
 
-from typing import Annotated
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Depends
-
-from app.api.deps import ApiServices, get_api_services
+from app.api.deps import Services
 from app.api.schemas import ErrorResponse, IngestRequest, IngestResponse
 
 router = APIRouter(tags=["ingest"])
-Services = Annotated[ApiServices, Depends(get_api_services)]
 
 
 @router.post(

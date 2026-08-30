@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.observability.types import (
     NODE_BUDGET_RESOURCES,
     Budget,
+    BudgetLimitFailure,
     BudgetResource,
     RunReport,
     StepTrace,
@@ -96,12 +97,11 @@ def pre_node_budget_guard(
         node_path=node_path,
         steps=trace_values,
         report={
-            "reason": {
-                "code": "budget_exceeded",
-                "resource": exhausted,
-                "limit": limits[exhausted],
-                "observed": observed[exhausted],
-                "blocked_node": node,
-            }
+            "reason": BudgetLimitFailure(
+                resource=exhausted,
+                limit=limits[exhausted],
+                observed=observed[exhausted],
+                blocked_node=node,
+            ).model_dump(mode="json")
         },
     )
