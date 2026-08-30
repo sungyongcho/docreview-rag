@@ -80,7 +80,7 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 0881a52 | 완료 |
 | M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | fd71a74 | 완료 |
 | M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ — compose는 병합, db healthcheck 유지 | 8d2264c | 완료 |
-| M9.1~M9.6 | app/agent/ — 11파일 2145줄 | app/agent/ | — | 대기 |
+| M9.1~M9.6 | app/agent/ — 11파일 2145줄 | app/agent/ | — | b150fdb |
 | M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — | 대기 |
 | M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — | 대기 |
 <!-- port-map:end -->

@@ -63,7 +63,20 @@ def _invalid_json_constant(value: str) -> None:
     raise ValueError(f"non-finite JSON number: {value}")
 
 
-def _validation_errors(error: ValidationError) -> tuple[str, ...]:
+def strict_json_loads(text: str) -> object:
+    """Parse strict JSON, rejecting duplicate keys and non-finite numbers.
+
+    Shared by structured-output parsing here and tool-argument parsing in the
+    agent loop, so the two strict-JSON notions cannot drift apart.
+    """
+    return json.loads(
+        text,
+        object_pairs_hook=_json_object,
+        parse_constant=_invalid_json_constant,
+    )
+
+
+def validation_errors(error: ValidationError) -> tuple[str, ...]:
     """Render validation failures as repair instructions the model can act on."""
     messages = []
     for issue in error.errors(include_url=False, include_input=False):
@@ -96,15 +109,11 @@ def _parse_output[OutputT: BaseModel](
     JSON-mode strict validation, including array-to-tuple handling.
     """
     try:
-        value = json.loads(
-            output_text,
-            object_pairs_hook=_json_object,
-            parse_constant=_invalid_json_constant,
-        )
+        value = strict_json_loads(output_text)
         canonical = json.dumps(value, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
         return schema.model_validate_json(canonical, strict=True), ()
     except ValidationError as error:
-        return None, _validation_errors(error)
+        return None, validation_errors(error)
     except json.JSONDecodeError as error:
         message = f"$: {error.msg} at line {error.lineno} column {error.colno} [json_invalid]"
         return None, (message,)
