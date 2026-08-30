@@ -505,6 +505,7 @@ async def _load_fixture_corpus(connection) -> None:
             {
                 "doc_id": f"{issuer}-FY2024",
                 "registry": "sec",
+                "language": "en",
                 "issuer": issuer,
                 "issuer_id": issuer_id,
                 "fiscal_year": 2024,
@@ -537,6 +538,7 @@ async def _load_fixture_corpus(connection) -> None:
             {
                 "id": chunk_id,
                 "doc_id": "NVDA-FY2024" if chunk_id <= 3 else "AMD-FY2024",
+                "language": "en",
                 "item": "7" if chunk_id <= 3 else "7A",
                 "kind": "text",
                 "ordinal": ordinal,
@@ -702,11 +704,11 @@ def test_live_chunk_writes_invalidate_statistics_and_search_fails(database_url):
             sql(
                 """
                 INSERT INTO chunks (
-                    id, doc_id, item, kind, ordinal, body, context_header, index_text,
-                    start_char, end_char, source_sha256, citation, embedding
+                    id, doc_id, language, item, kind, ordinal, body, context_header,
+                    index_text, start_char, end_char, source_sha256, citation, embedding
                 )
                 SELECT
-                    99, doc_id, item, kind, 99, body, context_header,
+                    99, doc_id, language, item, kind, 99, body, context_header,
                     index_text || ' inserted', 9900, 9900 + length(body),
                     repeat('9', 64), 'inserted', embedding
                 FROM chunks WHERE id = 1

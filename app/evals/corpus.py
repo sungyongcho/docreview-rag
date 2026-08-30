@@ -141,6 +141,7 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
     CREATE TEMP TABLE documents (
         doc_id varchar(32) PRIMARY KEY,
         registry varchar(16) NOT NULL,
+        language varchar(8) NOT NULL,
         issuer varchar(32) NOT NULL,
         issuer_id varchar(64) NOT NULL,
         fiscal_year integer NOT NULL,
@@ -156,6 +157,7 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         CONSTRAINT ck_documents_parse_status
             CHECK (parse_status IN ('parsed', 'needs_profile_update')),
         CONSTRAINT ck_documents_source_length_positive CHECK (source_length > 0),
+        CONSTRAINT ck_documents_language_format CHECK (language ~ '^[a-z]{{2}}$'),
         CONSTRAINT ck_documents_source_sha256_format
             CHECK (source_sha256 ~ '^[0-9a-f]{{64}}$')
     ) ON COMMIT PRESERVE ROWS
@@ -164,6 +166,7 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
     CREATE TEMP TABLE chunks (
         id bigserial PRIMARY KEY,
         doc_id varchar(32) NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
+        language varchar(8) NOT NULL,
         item varchar(8),
         kind varchar(16) NOT NULL,
         ordinal integer NOT NULL,
@@ -182,6 +185,7 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         CONSTRAINT uq_doc_ordinal UNIQUE (doc_id, ordinal),
         CONSTRAINT ck_chunks_ordinal_nonnegative CHECK (ordinal >= 0),
         CONSTRAINT ck_chunks_kind CHECK (kind IN ('text', 'table')),
+        CONSTRAINT ck_chunks_language_format CHECK (language ~ '^[a-z]{{2}}$'),
         CONSTRAINT ck_chunks_start_nonnegative CHECK (start_char >= 0),
         CONSTRAINT ck_chunks_span_order CHECK (end_char > start_char),
         CONSTRAINT ck_chunks_source_sha256_format

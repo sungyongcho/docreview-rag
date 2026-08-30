@@ -17,14 +17,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.models import Chunk as ChunkModel, Document
-from app.ingestion.chunk import Chunk, chunk_filing, compose_index_text
+from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing, compose_index_text
 from app.ingestion.parser import ParsedFiling
-from app.ingestion.registry import registry_name, resolve_registry
+from app.ingestion.registry import registry_for, registry_name, resolve_registry
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
 # names rather than to this module; EXPECTED_DOCUMENTS is the committed EDGAR corpus.
 DEFAULT_MANIFEST_NAME = "manifest.json"
 EXPECTED_DOCUMENTS = 20
+# Corpus language tags this module is willing to persist. A row tagged outside this
+# set would silently fall through every language-filtered retrieval path.
+LANGUAGES = frozenset({"en", "ko"})
 DEFAULT_CHUNK_BATCH_SIZE = 500
 SHA256_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
 PARSE_STATUSES = frozenset({"parsed", "needs_profile_update"})
@@ -44,6 +47,7 @@ class DocumentRecord:
 
     doc_id: str
     registry: str
+    language: str
     issuer: str
     issuer_id: str
     fiscal_year: int
@@ -62,6 +66,7 @@ class DocumentRecord:
         required = {
             "doc_id": self.doc_id,
             "registry": self.registry,
+            "language": self.language,
             "issuer": self.issuer,
             "issuer_id": self.issuer_id,
             "form": self.form,
@@ -78,6 +83,8 @@ class DocumentRecord:
             raise ValueError(f"{self.doc_id} has an invalid fiscal year")
         if self.parse_status not in PARSE_STATUSES:
             raise ValueError(f"{self.doc_id} has an invalid parse status")
+        if self.language not in LANGUAGES:
+            raise ValueError(f"{self.doc_id} has an unsupported language: {self.language!r}")
         for position, entry in enumerate(self.item_index):
             if not isinstance(entry, dict):
                 raise ValueError(f"{self.doc_id} item index {position} is not an object")
@@ -100,6 +107,7 @@ class DocumentRecord:
         return {
             "doc_id": self.doc_id,
             "registry": self.registry,
+            "language": self.language,
             "issuer": self.issuer,
             "issuer_id": self.issuer_id,
             "fiscal_year": self.fiscal_year,
@@ -124,6 +132,7 @@ class ChunkRecord:
     """
 
     doc_id: str
+    language: str
     item: str | None
     kind: str
     ordinal: int
@@ -141,6 +150,10 @@ class ChunkRecord:
             raise ValueError("chunk must have a document id")
         if self.kind not in {"text", "table"}:
             raise ValueError(f"unsupported chunk kind: {self.kind}")
+        if self.language not in LANGUAGES:
+            raise ValueError(
+                f"{self.doc_id} chunk {self.ordinal} has an unsupported language: {self.language!r}"
+            )
         if self.ordinal < 0:
             raise ValueError(f"{self.doc_id} has a negative chunk ordinal")
         if not self.body:
@@ -160,6 +173,7 @@ class ChunkRecord:
         """Return SQL values without an embedding payload."""
         return {
             "doc_id": self.doc_id,
+            "language": self.language,
             "item": self.item,
             "kind": self.kind,
             "ordinal": self.ordinal,
@@ -229,6 +243,17 @@ def _require_sha256(value: str, *, owner: str) -> None:
         raise ValueError(f"{owner} must have a lowercase hexadecimal SHA-256")
 
 
+def registry_chunker(filing: ParsedFiling) -> list[Chunk]:
+    """Chunk one filing at its registry's measured chunk target.
+
+    Each corpus carries its own profile (EDGAR 1200, DART 600), so the default
+    seeding path must not flatten every registry onto one constant; a caller
+    measuring a different target still injects its own chunker.
+    """
+    target = registry_for(filing.registry).chunk_target
+    return chunk_filing(filing, ChunkConfig(target_text_chars=target))
+
+
 def document_record(filing: ParsedFiling) -> DocumentRecord:
     """Build an immutable document record from registry-neutral filing identity.
 
@@ -241,6 +266,7 @@ def document_record(filing: ParsedFiling) -> DocumentRecord:
     return DocumentRecord(
         doc_id=filing.doc_id,
         registry=filing.registry,
+        language=registry_for(filing.registry).language,
         issuer=filing.issuer,
         issuer_id=filing.issuer_id,
         fiscal_year=filing.fiscal_year,
@@ -262,6 +288,7 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
     Input order is preserved and ordinals must be dense.
     """
     records: list[ChunkRecord] = []
+    language = registry_for(filing.registry).language
     for expected_ordinal, chunk in enumerate(chunks):
         if chunk.doc_id != filing.doc_id:
             raise ValueError(
@@ -283,6 +310,7 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
         records.append(
             ChunkRecord(
                 doc_id=chunk.doc_id,
+                language=language,
                 item=chunk.item,
                 kind=chunk.kind,
                 ordinal=chunk.ordinal,
@@ -351,7 +379,7 @@ def parse_seed_filings(
 def build_seed_batch_from_filings(
     filings: Iterable[ParsedFiling],
     *,
-    chunker: Callable[[ParsedFiling], list[Chunk]] = chunk_filing,
+    chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
 ) -> SeedBatch:
     """Chunk parsed filings and return records in deterministic database order."""
     documents: list[DocumentRecord] = []
@@ -371,7 +399,7 @@ def build_seed_batch(
     *,
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
-    chunker: Callable[[ParsedFiling], list[Chunk]] = chunk_filing,
+    chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
 ) -> SeedBatch:
     """Parse and chunk manifest entries into a deterministic seed batch.
 
@@ -396,7 +424,7 @@ def prepare_seed_batch(
     manifest_name: str = DEFAULT_MANIFEST_NAME,
     expected_documents: int | None = EXPECTED_DOCUMENTS,
     parser: FilingParser | None = None,
-    chunker: Callable[[ParsedFiling], list[Chunk]] = chunk_filing,
+    chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
 ) -> SeedBatch:
     """Prepare and validate one complete corpus before any transaction opens.
 
@@ -423,6 +451,7 @@ def document_upsert_statement(records: Sequence[DocumentRecord]) -> Insert:
         index_elements=[Document.doc_id],
         set_={
             "registry": excluded.registry,
+            "language": excluded.language,
             "issuer": excluded.issuer,
             "issuer_id": excluded.issuer_id,
             "fiscal_year": excluded.fiscal_year,
@@ -451,6 +480,7 @@ def chunk_upsert_statement(records: Sequence[ChunkRecord]) -> Insert:
     return statement.on_conflict_do_update(
         index_elements=[ChunkModel.doc_id, ChunkModel.ordinal],
         set_={
+            "language": excluded.language,
             "item": excluded.item,
             "kind": excluded.kind,
             "body": excluded.body,

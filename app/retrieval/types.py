@@ -17,6 +17,7 @@ DocId = Annotated[StrictStr, Field(min_length=1, max_length=32)]
 Issuer = Annotated[StrictStr, Field(min_length=1, max_length=32)]
 FiscalYear = Annotated[StrictInt, Field(gt=0)]
 Form = Annotated[StrictStr, Field(min_length=1, max_length=16)]
+Language = Annotated[StrictStr, Field(pattern=r"^[a-z]{2}$")]
 Item = Annotated[StrictStr, Field(min_length=1, max_length=8)]
 SourceSha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
 Score = Annotated[StrictFloat, Field(allow_inf_nan=False)]
@@ -62,13 +63,14 @@ class RetrievalFilters(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     doc_ids: tuple[DocId, ...] = ()
+    languages: tuple[Language, ...] = ()
     issuers: tuple[Issuer, ...] = ()
     fiscal_years: tuple[FiscalYear, ...] = ()
     forms: tuple[Form, ...] = ()
     items: tuple[Item | None, ...] = ()
     kinds: tuple[ChunkKind, ...] = ()
 
-    @field_validator("doc_ids", "issuers", "forms", mode="after")
+    @field_validator("doc_ids", "languages", "issuers", "forms", mode="after")
     @classmethod
     def canonicalize_strings(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         """Remove duplicates and make equivalent string filters serialize equally."""

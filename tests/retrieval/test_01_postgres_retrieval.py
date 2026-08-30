@@ -66,6 +66,7 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
             {
                 "doc_id": "NVDA-FY2024",
                 "registry": "sec",
+                "language": "en",
                 "issuer": "NVDA",
                 "issuer_id": "1045810",
                 "fiscal_year": 2024,
@@ -89,6 +90,7 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                 {
                     "id": index,
                     "doc_id": "NVDA-FY2024",
+                    "language": "en",
                     "item": "7" if index < 3 else "8",
                     "kind": "text",
                     "ordinal": index - 1,

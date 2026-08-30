@@ -7,7 +7,14 @@ from bs4.element import NavigableString, PreformattedString
 
 Grid = list[list[str]]
 
-UNIT_MARKERS = frozenset({"$", "%", "€", "¥", "£"})
+UNIT_MARKERS = frozenset({"$", "%", "€", "¥", "£", "₩"})
+
+# Every element treated as one table cell. EDGAR HTML uses td/th; the DART viewer
+# format adds TE (a plain cell) and TU (a unit-annotated cell), both direct children
+# of TR. Sharing the tuple with the parser's data-table detection keeps "what counts
+# as a cell" a single contract: a tag missing here would drop its column from every
+# rendered table while the detection heuristic still counted the table as data.
+CELL_TAGS = ("td", "th", "te", "tu")
 
 # A larger span is a typo in the filing, not a table that wide. Without a ceiling one
 # malformed attribute allocates span x rows empty strings and turns ingestion into an OOM.
@@ -22,7 +29,7 @@ BLOCK_TAGS = frozenset(
         "address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt",
         "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4",
         "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section",
-        "table", "td", "th", "tr", "ul",
+        "table", "td", "te", "th", "tr", "tu", "ul",
     }
 )  # fmt: skip
 
@@ -30,11 +37,19 @@ TEXT_ALIGN_RE = re.compile(r"text-align\s*:\s*([a-zA-Z-]+)")
 
 # A cell is a value when it carries a digit and nothing but number punctuation around it.
 # "Dec 31, 2022" and "(In Millions)" are labels; "(1,234)" and "72.7 %" are values.
-NUMERIC_CELL_RE = re.compile(r"^[\s\d.,()\[\]%$€¥£+\-–—/]*\d[\s\d.,()\[\]%$€¥£+\-–—/]*$")
+# ₩ joins the currency signs and △/▲ join the sign punctuation: Korean filings write
+# negatives as △1,234, and without these characters every such cell reads as a label,
+# which pushes real data rows into the inferred header.
+NUMERIC_CELL_RE = re.compile(r"^[\s\d.,()\[\]%$€¥£₩+\-–—/△▲]*\d[\s\d.,()\[\]%$€¥£₩+\-–—/△▲]*$")
 
 # A bare four-digit year is a column label, not a value, so it must not stop header
 # inference in tables headed "(In millions) | 2024 | 2023".
 YEAR_CELL_RE = re.compile(r"^(?:19|20)\d{2}$")
+
+# DART tables carry their unit inside the grid as a spanned annotation row such as
+# "(단위 : 백만원)". Left in place it reads as a labelled first row, which corrupts
+# header inference; dropped it would silently strip the scale off every number.
+UNIT_CAPTION_RE = re.compile(r"^\(\s*단위\s*[:：]?\s*[^)]*\)$")
 
 
 def _cell_text(cell: Tag) -> str:
@@ -144,7 +159,7 @@ def to_grid(table: Tag) -> Grid:
         row: list[str] = []
         col = 0
 
-        for cell in tr.find_all(["td", "th"], recursive=False):
+        for cell in tr.find_all(list(CELL_TAGS), recursive=False):
             # Skip columns occupied by rowspans started in earlier rows.
             while col < len(open_rowspan_until) and open_rowspan_until[col] >= r:
                 col += 1
@@ -302,6 +317,35 @@ def merge_unit_columns(grid: Grid) -> Grid:
     return [[out[row_i][col] for col in keep] for row_i in range(height)]
 
 
+def split_unit_captions(grid: Grid) -> tuple[list[str], Grid]:
+    """Extract unit-annotation rows from a grid before header inference sees them.
+
+    Parameters
+    ----------
+    grid
+        Dense matrix after span expansion and empty-column removal.
+
+    Returns
+    -------
+    tuple[list[str], Grid]
+        Deduplicated caption texts in row order, and the grid without those rows.
+        A row is a caption when every non-empty cell matches the DART unit pattern;
+        span expansion may have copied one annotation across several columns, so the
+        texts of one row collapse to their distinct values.
+    """
+    captions: list[str] = []
+    rows: Grid = []
+    for row in grid:
+        texts = [cell.strip() for cell in row if cell.strip()]
+        if texts and all(UNIT_CAPTION_RE.match(text) for text in texts):
+            for text in dict.fromkeys(texts):
+                if text not in captions:
+                    captions.append(text)
+        else:
+            rows.append(row)
+    return captions, rows
+
+
 def _is_value(cell: str) -> bool:
     """Return whether a cell reads as a number rather than as a label."""
     text = cell.strip()
@@ -406,6 +450,34 @@ def to_markdown(grid: Grid) -> str:
     return "\n".join(lines)
 
 
+def _table_node(table: str | Tag | None) -> Tag | None:
+    """Return the table element of a node or fragment, or ``None``."""
+    if table is None:
+        return None
+    if isinstance(table, Tag):
+        node = table if table.name == "table" else table.find("table")
+    elif not table:
+        return None
+    else:
+        node = BeautifulSoup(table, "html.parser").find("table")
+    return node if isinstance(node, Tag) else None
+
+
+def table_captions(table: str | Tag | None) -> list[str]:
+    """Return the unit annotations of a caption-only table.
+
+    DART writes many units as a one-cell table immediately ahead of the data table
+    they describe. Such a table renders no markdown of its own, so its captions are
+    returned for the caller to carry into the next table's context; a table that has
+    data rows keeps its captions inline and returns nothing here.
+    """
+    node = _table_node(table)
+    if node is None:
+        return []
+    captions, rest = split_unit_captions(drop_empty(to_grid(node)))
+    return captions if not drop_empty(rest) else []
+
+
 def table_to_markdown(table: str | Tag | None) -> str:
     """Convert an HTML table into markdown text.
 
@@ -429,20 +501,20 @@ def table_to_markdown(table: str | Tag | None) -> str:
     filing, and normalizing here would be irreversible; query-side normalization
     should be handled outside this function.
     """
-    if table is None:
-        return ""
-    if isinstance(table, Tag):
-        node = table if table.name == "table" else table.find("table")
-    elif not table:
-        return ""
-    else:
-        node = BeautifulSoup(table, "html.parser").find("table")
-    if not isinstance(node, Tag):
+    node = _table_node(table)
+    if node is None:
         return ""
     grid = drop_empty(to_grid(node))
     if not grid:
         return ""
-    return to_markdown(merge_unit_columns(grid))
+    captions, grid = split_unit_captions(grid)
+    grid = drop_empty(grid)
+    if not grid:
+        return ""
+    markdown = to_markdown(merge_unit_columns(grid))
+    if not markdown:
+        return ""
+    return "\n".join([*captions, markdown]) if captions else markdown
 
 
 if __name__ == "__main__":  # pragma: no cover - eyeball helper

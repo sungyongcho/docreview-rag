@@ -40,8 +40,8 @@ def test_an_explicit_registry_name_selects_that_adapter():
 
 def test_an_unknown_registry_fails_closed_and_names_what_is_known():
     """Refuse an unreadable entry rather than parsing it with another registry's rules."""
-    with pytest.raises(ValueError, match="unknown registry 'dart'; known registries: sec"):
-        resolve_registry({**EDGAR_ENTRY, "registry": "dart"})
+    with pytest.raises(ValueError, match="unknown registry 'krx'; known registries: dart, sec"):
+        resolve_registry({**EDGAR_ENTRY, "registry": "krx"})
 
 
 def test_edgar_entries_order_by_issuer_then_report_date():
@@ -68,3 +68,23 @@ def test_the_registry_table_cannot_be_extended_at_runtime():
     """Keep the readable registries a fixed build-time fact."""
     with pytest.raises(TypeError):
         REGISTRIES["dart"] = REGISTRIES["sec"]  # type: ignore[index]
+
+
+def test_dart_registry_supplies_language_labeling_and_chunk_profile():
+    """Resolve DART entries to the Korean adapter with its own labels and target."""
+    registry = resolve_registry({"registry": "dart", "issuer": "005930", "fiscal_year": 2024})
+
+    assert registry.name == "dart"
+    assert registry.language == "ko"
+    assert registry.chunk_target == 600
+    assert registry.section_label("I") == "I. 회사의 개요"
+    assert registry.doc_id({"issuer": "005930", "fiscal_year": 2024}) == "005930-FY2024"
+
+
+def test_edgar_registry_keeps_the_committed_chunk_profile():
+    """Keep the English corpus on the 1200-character profile it was measured at."""
+    registry = resolve_registry(EDGAR_ENTRY)
+
+    assert registry.language == "en"
+    assert registry.chunk_target == 1200
+    assert registry.section_label("7") == "Item 7"

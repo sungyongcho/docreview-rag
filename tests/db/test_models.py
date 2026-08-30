@@ -11,6 +11,7 @@ def test_document_schema_persists_snapshot_and_filing_metadata():
     assert set(columns.keys()) == {
         "doc_id",
         "registry",
+        "language",
         "issuer",
         "issuer_id",
         "fiscal_year",
@@ -28,6 +29,7 @@ def test_document_schema_persists_snapshot_and_filing_metadata():
     assert not columns.source_length.nullable
     assert not columns.source_sha256.nullable
     assert not columns.parse_status.nullable
+    assert not columns.language.nullable
     assert not columns.item_index.nullable
     document_table = Document.__table__
     assert isinstance(document_table, Table)

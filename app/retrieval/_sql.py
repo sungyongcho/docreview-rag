@@ -91,6 +91,10 @@ def filter_predicates(filters: RetrievalFilters) -> tuple[ColumnElement[bool], .
     predicates: list[ColumnElement[bool]] = []
     if filters.doc_ids:
         predicates.append(Chunk.doc_id.in_(filters.doc_ids))
+    if filters.languages:
+        # The tag is denormalized onto chunks, so a language restriction needs no
+        # Document join and stays on the chunk access path every ranker shares.
+        predicates.append(Chunk.language.in_(filters.languages))
     if filters.issuers:
         predicates.append(Document.issuer.in_(filters.issuers))
     if filters.fiscal_years:

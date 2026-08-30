@@ -189,3 +189,12 @@ def test_sort_hits_uses_c_collation_compatible_codepoint_order_for_text_ties():
     ordered = retrieval_types.sort_hits(hits)
 
     assert [hit.chunk_id for hit in ordered] == [1, 2, 3, 4]
+
+
+def test_language_filters_canonicalize_and_reject_non_tags():
+    """Accept two-letter language tags, deduplicated and ordered; refuse others."""
+    filters = retrieval_types.RetrievalFilters.model_validate({"languages": ["ko", "en", "ko"]})
+
+    assert filters.languages == ("en", "ko")
+    with pytest.raises(ValidationError):
+        retrieval_types.RetrievalFilters.model_validate({"languages": ["KOR"]})

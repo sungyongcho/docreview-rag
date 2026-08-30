@@ -8,7 +8,7 @@ import pytest
 
 from app.ingestion import seed
 from app.ingestion.chunk import ChunkConfig, chunk_filing
-from app.ingestion.parser import Block
+from app.ingestion.parser import Block, Section
 from tests.ingestion.seed.support import SOURCE_SHA256, sample_chunks, sample_filing
 
 
@@ -19,6 +19,7 @@ def test_filing_records_keep_body_context_index_text_and_metadata():
     assert document.values() == {
         "doc_id": "NVDA-FY2024",
         "registry": "sec",
+        "language": "en",
         "issuer": "NVDA",
         "issuer_id": "1045810",
         "fiscal_year": 2024,
@@ -256,3 +257,51 @@ def test_chunk_record_rejects_inconsistent_index_text():
     _document, chunks = seed.filing_records(sample_filing(), sample_chunks())
     with pytest.raises(ValueError, match="inconsistent index text"):
         replace(chunks[0], index_text="stale combined text")
+
+
+def test_records_reject_an_unsupported_language():
+    """Refuse to build rows whose language no retrieval path would ever match."""
+    document, chunks = seed.filing_records(sample_filing(), sample_chunks())
+
+    with pytest.raises(ValueError, match="unsupported language"):
+        replace(document, language="fr")
+    with pytest.raises(ValueError, match="unsupported language"):
+        replace(chunks[0], language="")
+
+
+def test_chunk_records_tag_rows_with_the_registry_language():
+    """Stamp every row with the language its registry publishes in."""
+    document, chunks = seed.filing_records(sample_filing(), sample_chunks())
+
+    assert document.values()["language"] == "en"
+    assert {record.values()["language"] for record in chunks} == {"en"}
+
+
+def test_registry_chunker_applies_the_registry_chunk_target():
+    """Chunk a DART filing at its 600-character budget and EDGAR at 1200."""
+    paragraphs = [
+        Block("paragraph", "가" * 400, source_pos=40 * i, end_pos=40 * i + 30) for i in range(1, 4)
+    ]
+    base = sample_filing()
+    section = Section(
+        part="I",
+        item="1",
+        canonical_title="Business",
+        reported_title="Item 1. Business",
+        blocks=paragraphs,
+    )
+    dart = replace(
+        base,
+        doc_id="005930-FY2024",
+        registry="dart",
+        issuer="005930",
+        sections=[section],
+        item_index=[],
+    )
+    sec = replace(base, sections=[section])
+
+    dart_text = [c for c in seed.registry_chunker(dart) if c.kind == "text"]
+    sec_text = [c for c in seed.registry_chunker(sec) if c.kind == "text"]
+
+    assert len(dart_text) == 3  # each 400-char pair exceeds the 600 budget
+    assert len(sec_text) == 2  # two paragraphs fit the 1200 budget, the third flushes

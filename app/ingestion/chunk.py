@@ -5,7 +5,8 @@ import re
 from typing import Literal
 
 from app.ingestion.parser import Block, ParsedFiling, Section
-from app.ingestion.tables import table_to_markdown
+from app.ingestion.registry import section_label
+from app.ingestion.tables import table_captions, table_to_markdown
 
 ChunkKind = Literal["text", "table"]
 
@@ -107,6 +108,11 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
     units: list[Unit] = []
     pending: list[Block] = []
     pending_chars = 0
+    # Unit annotations harvested from caption-only tables. They describe exactly the
+    # next table, so anything that intervenes — a heading, a paragraph, a new source
+    # group, or the annotated table itself — clears them; letting one live longer
+    # stamps a wrong monetary scale onto every later table under the same heading.
+    pending_captions: list[str] = []
     narrative_headings: list[str] = []
     heading_run = False
     active_group: int | None = None
@@ -142,6 +148,7 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
             active_group = block.source_group
             narrative_headings = [block.source_heading] if block.source_heading else []
             heading_run = False
+            pending_captions = []
 
         if block.kind == heading_kind:
             flush_pending()
@@ -149,21 +156,30 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
                 narrative_headings = []
             narrative_headings.append(block.text)
             heading_run = True
+            pending_captions = []
             continue
 
         if block.kind == table_kind:
             flush_pending()
             markdown = to_markdown(block.html)
             if markdown:
-                heading = " · ".join(narrative_headings) or None
+                heading = " · ".join([*narrative_headings, *pending_captions]) or None
                 add_unit(Unit(table_kind, markdown, [block], heading))
                 heading_run = False
+                pending_captions = []
+                continue
+            # A caption-only table annotates the one table that follows it, so its
+            # unit travels as context instead of being dropped with the empty markdown.
+            for caption in table_captions(block.html):
+                if caption not in pending_captions:
+                    pending_captions.append(caption)
             continue
 
         text = block.text
         if not strip(text):
             continue
         heading_run = False
+        pending_captions = []
 
         block_chars = len(text)
         if pending and pending_chars + para_sep_chars + block_chars > target_chars:
@@ -180,8 +196,13 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
 
 
 def _citation(filing: ParsedFiling, section: Section) -> str:
-    """Return the issuer, fiscal year, and section citation."""
-    item = f"Item {section.item}" if section.item else "Unnumbered section"
+    """Return the issuer, fiscal year, and section citation.
+
+    Each registry names its own section codes — EDGAR writes ``Item 7`` where DART
+    writes a Roman numeral — so the label comes from the registry rather than from a
+    format string that would spell every corpus the EDGAR way.
+    """
+    item = section_label(filing.registry, section.item) if section.item else "Unnumbered section"
     return f"{filing.issuer} FY{filing.fiscal_year} · {item}"
 
 
@@ -189,9 +210,12 @@ def _context_header(
     filing: ParsedFiling, section: Section, narrative_heading: str | None = None
 ) -> str:
     """Build context that remains useful when a chunk is retrieved in isolation."""
-    parts = [_citation(filing, section)]
+    citation = _citation(filing, section)
+    parts = [citation]
     title = section.canonical_title or section.reported_title
-    if title:
+    # A registry whose section label already spells the title (DART's "I. 회사의 개요")
+    # would otherwise repeat it back to back in every indexed chunk.
+    if title and not citation.endswith(title):
         parts.append(title)
     if narrative_heading and narrative_heading != title:
         parts.append(narrative_heading)

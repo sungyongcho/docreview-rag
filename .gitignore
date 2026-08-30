@@ -35,9 +35,12 @@ logs/
 tmp/
 data/eval_runs/
 
-# Raw corpus filings are reproducible from the manifest through the EDGAR downloader.
+# Raw corpus filings are reproducible from each registry's manifest and downloader.
+# The manifests sit directly in data/corpus/ and match none of these patterns, so no
+# negation is needed to keep them tracked.
 data/corpus/**/*.html
-!data/corpus/manifest.json
+data/corpus/**/*.xml
+data/corpus/**/*.zip
 
 # Local or licensed source material is not part of the public portfolio.
 old/

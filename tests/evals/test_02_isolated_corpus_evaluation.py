@@ -33,6 +33,7 @@ def _batch() -> SeedBatch:
     document = DocumentRecord(
         doc_id="NVDA-FY2024",
         registry="sec",
+        language="en",
         issuer="NVDA",
         issuer_id="1045810",
         fiscal_year=2024,
@@ -54,6 +55,7 @@ def _batch() -> SeedBatch:
     chunks = tuple(
         ChunkRecord(
             doc_id=document.doc_id,
+            language="en",
             item="7",
             kind="text",
             ordinal=index,

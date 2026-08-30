@@ -37,6 +37,7 @@ class Document(Base):
 
     doc_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     registry: Mapped[str] = mapped_column(String(16), nullable=False)
+    language: Mapped[str] = mapped_column(String(8), nullable=False)
     issuer: Mapped[str] = mapped_column(String(32), nullable=False)
     issuer_id: Mapped[str] = mapped_column(String(64), nullable=False)
     fiscal_year: Mapped[int] = mapped_column(nullable=False)
@@ -56,6 +57,7 @@ class Document(Base):
             name="ck_documents_parse_status",
         ),
         CheckConstraint("source_length > 0", name="ck_documents_source_length_positive"),
+        CheckConstraint("language ~ '^[a-z]{2}$'", name="ck_documents_language_format"),
         CheckConstraint(
             "source_sha256 ~ '^[0-9a-f]{64}$'",
             name="ck_documents_source_sha256_format",
@@ -72,6 +74,7 @@ class Chunk(Base):
     doc_id: Mapped[str] = mapped_column(
         ForeignKey("documents.doc_id", ondelete="CASCADE"), index=True, nullable=False
     )
+    language: Mapped[str] = mapped_column(String(8), nullable=False)
     item: Mapped[str | None] = mapped_column(String(8), nullable=True)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     ordinal: Mapped[int] = mapped_column(nullable=False)
@@ -97,6 +100,7 @@ class Chunk(Base):
         UniqueConstraint("doc_id", "ordinal", name="uq_doc_ordinal"),
         CheckConstraint("ordinal >= 0", name="ck_chunks_ordinal_nonnegative"),
         CheckConstraint("kind IN ('text', 'table')", name="ck_chunks_kind"),
+        CheckConstraint("language ~ '^[a-z]{2}$'", name="ck_chunks_language_format"),
         CheckConstraint("start_char >= 0", name="ck_chunks_start_nonnegative"),
         CheckConstraint("end_char > start_char", name="ck_chunks_span_order"),
         CheckConstraint(

@@ -14,6 +14,7 @@ import warnings
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 from bs4.element import NavigableString
 
+from app.ingestion.tables import CELL_TAGS
 from app.ingestion.xref import (
     assign_items,
     find_missing,
@@ -296,7 +297,7 @@ def normalize(html: str) -> BeautifulSoup:
 
 def _is_data_table(tbl: Tag) -> bool:
     """Return whether a table has the shape and numeric density of financial data."""
-    cells = tbl.find_all(["td", "th"])
+    cells = tbl.find_all(list(CELL_TAGS))
     if len(cells) < DATA_TABLE_MIN_CELLS:
         return False
     texts = [c.get_text(" ", strip=True) for c in cells]

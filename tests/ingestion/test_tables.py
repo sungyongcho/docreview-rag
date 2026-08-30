@@ -1,3 +1,5 @@
+"""HTML table detection, span expansion, and markdown rendering."""
+
 from bs4 import BeautifulSoup, Tag
 
 from app.ingestion.tables import (
@@ -5,6 +7,7 @@ from app.ingestion.tables import (
     drop_empty,
     merge_unit_columns,
     split_header,
+    table_captions,
     table_to_markdown,
     to_grid,
     to_markdown,
@@ -254,3 +257,66 @@ def test_an_escaped_pipe_keeps_its_backslash() -> None:
     escaped = table_to_markdown(r"<table><tr><td>a\|b</td><td>c</td></tr></table>")
     plain = table_to_markdown("<table><tr><td>a|b</td><td>c</td></tr></table>")
     assert escaped != plain
+
+
+# DART cell vocabulary and Korean unit conventions
+
+
+def test_te_and_tu_cells_expand_like_td() -> None:
+    """Collect DART's TE and TU cell elements as ordinary grid cells."""
+    table = _table("<table><tr><te>매출액</te><tu>2024년</tu><td>300,870</td></tr></table>")
+    assert to_grid(table) == [["매출액", "2024년", "300,870"]]
+
+
+def test_unit_caption_row_moves_ahead_of_the_table() -> None:
+    """Lift an in-grid unit annotation out of header inference into a caption line."""
+    markdown = table_to_markdown(
+        """<table>
+          <tr><td colspan="3" align="right">(단위 : 백만원)</td></tr>
+          <tr><td>구 분</td><td>제56기</td><td>제55기</td></tr>
+          <tr><td>매출액</td><td>300,870,903</td><td>258,935,494</td></tr>
+        </table>"""
+    )
+    lines = markdown.splitlines()
+    assert lines[0] == "(단위 : 백만원)"
+    assert lines[1] == "| 구 분 | 제56기 | 제55기 |"
+    assert "| 매출액 | 300,870,903 | 258,935,494 |" in lines
+
+
+def test_caption_only_table_reports_captions_and_no_markdown() -> None:
+    """A one-cell unit table renders no markdown but exposes its annotation."""
+    html = "<table><tr><td>(단위 : 사)</td></tr></table>"
+
+    assert table_to_markdown(html) == ""
+    assert table_captions(html) == ["(단위 : 사)"]
+
+
+def test_data_table_keeps_captions_inline_and_reports_none() -> None:
+    """A table with data rows keeps its captions in markdown, not in table_captions."""
+    html = (
+        "<table><tr><td colspan='2'>(단위 : 백만원)</td></tr>"
+        "<tr><td>매출액</td><td>300,870</td></tr></table>"
+    )
+
+    assert table_captions(html) == []
+    assert table_to_markdown(html).startswith("(단위 : 백만원)\n")
+
+
+def test_won_sign_column_merges_onto_its_value() -> None:
+    """A ₩-only column folds into the value on its right, like the dollar sign."""
+    markdown = table_to_markdown(
+        """<table>
+          <tr><td>구 분</td><td></td><td>금액</td></tr>
+          <tr><td>매출액</td><td>₩</td><td>300,870</td></tr>
+          <tr><td>영업이익</td><td>₩</td><td>32,725</td></tr>
+        </table>"""
+    )
+    assert "| 매출액 | ₩ 300,870 |" in markdown
+    assert "| 영업이익 | ₩ 32,725 |" in markdown
+
+
+def test_triangle_negative_reads_as_a_value_not_a_label() -> None:
+    """A Korean triangle negative in a leading row does not become a header row."""
+    header, body = split_header([["구 분", "제56기"], ["순손실", "△1,234"], ["매출", "5,678"]])
+    assert header == [["구 분", "제56기"]]
+    assert ["순손실", "△1,234"] in body

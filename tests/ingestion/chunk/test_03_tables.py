@@ -67,3 +67,28 @@ def test_escaped_cell_pipe_does_not_change_markdown_width(C):
     widths = {len(markdown_cells(line)) for line in chunk.body.splitlines()}
 
     assert widths == {3}
+
+
+def test_caption_only_table_annotates_the_next_table_chunk(C):
+    """Carry a preceding unit-annotation table into the next table's context."""
+    caption = Block(
+        "table",
+        "",
+        html="<table><tr><td>(단위 : 백만원)</td></tr></table>",
+        source_pos=10,
+        end_pos=80,
+    )
+    data = Block(
+        "table",
+        "",
+        html="<table><tr><td>매출액</td><td>300,870</td></tr>"
+        "<tr><td>영업이익</td><td>32,725</td></tr></table>",
+        source_pos=80,
+        end_pos=300,
+    )
+    chunks = C.chunk_filing(build_filing([caption, data]))
+
+    assert len(chunks) == 1
+    assert chunks[0].kind == "table"
+    assert "(단위 : 백만원)" in chunks[0].context_header
+    assert "| 매출액 | 300,870 |" in chunks[0].body

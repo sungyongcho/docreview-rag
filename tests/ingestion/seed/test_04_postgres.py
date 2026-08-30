@@ -37,6 +37,7 @@ async def _exercise_rerun(module) -> None:
                     CREATE TEMP TABLE documents (
                         doc_id text PRIMARY KEY,
                         registry text NOT NULL,
+                        language text NOT NULL,
                         issuer text NOT NULL,
                         issuer_id text NOT NULL,
                         fiscal_year integer NOT NULL,
@@ -59,6 +60,7 @@ async def _exercise_rerun(module) -> None:
                     CREATE TEMP TABLE chunks (
                         id bigserial PRIMARY KEY,
                         doc_id text NOT NULL REFERENCES documents(doc_id),
+                        language text NOT NULL,
                         item text,
                         kind text NOT NULL,
                         ordinal integer NOT NULL,

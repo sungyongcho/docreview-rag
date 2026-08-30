@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     embed_dim: Literal[384] = 384
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
     openai_api_key: SecretStr | None = None
+    # Read only by the corpus acquisition command. The DART client takes the key as an
+    # argument so no library code reaches the process environment for a credential.
+    dart_api_key: SecretStr | None = None
     lexical_ranker: LexicalRanker = "ts_rank_cd"
     # Commands pass this flag explicitly so measured runs record whether Korean queries
     # skipped the English lexical component. The retrieval service never reads Settings.
