@@ -61,6 +61,11 @@ done
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(cd "$ENGINE_DIR/.." && pwd)
 cd "$ROOT" || exit 1
 
+# Shared cache-path resolution -- one channel directory across all worktrees,
+# for this script, dash-send.sh and dashboard-refresh.sh alike.
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/lib-cache.sh"
+
 if [ -z "$PANEL" ]; then
     for candidate in \
         "$ROOT/scripts/dashboard.panel.sh" \
@@ -392,7 +397,9 @@ alert() {
     if command -v notify-send >/dev/null 2>&1; then
         notify-send -a dashboard "${PROJECT_NAME}" "$message" 2>/dev/null
     else
-        printf '\a' > /dev/tty 2>/dev/null
+        # stderr is silenced BEFORE /dev/tty is opened: redirections apply
+        # left to right, so a failed open cannot leak a shell error.
+        printf '\a' 2>/dev/null > /dev/tty || :
     fi
 }
 
@@ -644,9 +651,11 @@ CACHE_DIR=".dashboard-cache"
 # shellcheck disable=SC1090
 . "$PANEL"
 
-case $CACHE_DIR in /*) ;; *) CACHE_DIR="$ROOT/$CACHE_DIR" ;; esac
+# Anchored at the primary worktree (lib-cache.sh), so a dashboard started in a
+# linked worktree still shares one channel with dash-send/dashboard-refresh.
+CACHE_HOME=$(resolve_cache_home "$CACHE_DIR")
+CACHE_DIR=$CACHE_HOME
 mkdir -p "$CACHE_DIR" 2>/dev/null
-CACHE_HOME=$CACHE_DIR
 
 
 declare -F panel_fast        >/dev/null || panel_fast() { :; }
@@ -654,14 +663,6 @@ declare -F panel_medium      >/dev/null || panel_medium() { :; }
 declare -F panel_fingerprint >/dev/null || panel_fingerprint() { :; }
 declare -F panel_verdict     >/dev/null || panel_verdict() { :; }
 
-# 고른 모드는 캐시에 남겨 다음 실행에도 이어진다.
-if [ ${#MODES[@]} -gt 0 ]; then
-    MODE=$(cat "$CACHE_DIR/mode" 2>/dev/null)
-    case " ${MODES[*]} " in
-        *" $MODE "*) ;;
-        *) MODE=${MODE_DEFAULT:-${MODES[0]}} ;;
-    esac
-fi
 mode_set() {
     MODE=$1
     printf '%s' "$MODE" > "$CACHE_DIR/mode" 2>/dev/null
@@ -699,7 +700,9 @@ edit_current() {
     local target=${EDIT_TARGETS[${NAV_VIEW[$((n - 1))]}]:-}
     [ -n "$target" ] || return 0
     leave_screen
-    "${VISUAL:-${EDITOR:-vi}}" "$target" </dev/tty >/dev/tty 2>&1
+    # Through sh, so a multi-word editor (EDITOR="code --wait") keeps its
+    # arguments instead of being looked up as one command name.
+    sh -c "${VISUAL:-${EDITOR:-vi}} \"\$1\"" sh "$target" </dev/tty >/dev/tty 2>&1
     LEFT_SCREEN=0
     enter_screen
     FINGERPRINT=""
@@ -713,8 +716,8 @@ edit_current() {
 # slow-job cache so one worktree's test run never overwrites another's.
 # --------------------------------------------------------------------------
 CTX=""
-_ctx_slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9' '_'; }
-ctx_cache_dir() { printf '%s/ctx-%s' "$CACHE_HOME" "$(_ctx_slug "$1")"; }
+# _ctx_slug and ctx_cache_dir come from lib-cache.sh, shared with the helper
+# scripts so all of them derive the same per-context directory names.
 ctx_set() {
     CTX=$1
     cd "$CTX" 2>/dev/null || return 0
@@ -752,6 +755,17 @@ if ((${#CTXS[@]} > 1)); then
     CTX=$(cat "$CACHE_HOME/.ctx" 2>/dev/null)
     case " ${CTXS[*]} " in *" $CTX "*) ;; *) CTX=${CTX_DEFAULT:-$ROOT} ;; esac
     ctx_set "$CTX"
+fi
+
+# 고른 모드는 캐시에 남겨 다음 실행에도 이어진다. Read only after ctx_set has
+# redirected CACHE_DIR, so this reads the same file mode_set writes to -- read
+# earlier, the saved mode never survives a restart on a multi-worktree repo.
+if [ ${#MODES[@]} -gt 0 ]; then
+    MODE=$(cat "$CACHE_DIR/mode" 2>/dev/null)
+    case " ${MODES[*]} " in
+        *" $MODE "*) ;;
+        *) MODE=${MODE_DEFAULT:-${MODES[0]}} ;;
+    esac
 fi
 
 
@@ -1162,7 +1176,8 @@ while :; do
                 d) ((PAGER_TOP += 10)) ;;
                 u|b) ((PAGER_TOP -= 10)); ((PAGER_TOP < 0)) && PAGER_TOP=0 ;;
                 g)
-                    local k2=""; read -rsn1 -t 0.3 k2 </dev/tty
+                    # Top-level loop, not a function -- `local` is an error here.
+                    k2=""; read -rsn1 -t 0.3 k2 </dev/tty
                     [ "$k2" = g ] && PAGER_TOP=0 ;;
                 G) PAGER_TOP=999999999 ;;
                 /) _pager_prompt_search ;;

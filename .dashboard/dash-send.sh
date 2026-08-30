@@ -19,8 +19,11 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CACHE=${DASH_CACHE_DIR:-"$ROOT/.dashboard-cache"}
+# Resolve the same cache directory the running dashboard reads, whichever
+# worktree this is called from (lib-cache.sh honours DASH_CACHE_DIR).
+# shellcheck disable=SC1091
+. "$(cd "$(dirname "$0")" && pwd)/lib-cache.sh"
+CACHE=$(active_cache_dir)
 mkdir -p "$CACHE" || exit 1
 FILE="$CACHE/session.env"
 TMP="$FILE.$$"
@@ -46,6 +49,10 @@ fi
 # A fold is an instruction, not a state: carrying it forward would refold the
 # section on the next unrelated send.
 FOLD=""; OPEN=""
+# A question is consumed by its answer. Any send that is not a new ask must
+# clear it, or a later note/fold/open re-writes the answered question with a
+# fresh mtime and the dashboard resurrects it, clickable options and all.
+[ "$cmd" = ask ] || { QUESTION=""; OPTIONS=""; }
 
 case $cmd in
     note)  NOTE=${1:-} ;;

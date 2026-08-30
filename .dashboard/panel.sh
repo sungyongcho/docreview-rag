@@ -75,6 +75,7 @@ STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=0
 PORT_ROWS=()
 REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""; REVIEW_BASE=""
 MAP_LAG=0; MAP_LAST=""
+REVIEW_DONE_AT=""
 REVIEW_READY=()
 DB_STATE="?"; DB_TICK=0
 SUITE_FRESH=-1
@@ -115,11 +116,14 @@ panel_fingerprint() {
 }
 
 panel_medium() {
-    "$RUFF" check app tests >/dev/null 2>&1 && LINT_OK=1 || LINT_OK=0
-    LINT_COUNT=0
-    if [ "$LINT_OK" = 0 ]; then
-        LINT_COUNT=$("$RUFF" check app tests --output-format=concise 2>/dev/null \
-            | grep -cE '^[^ ]+:[0-9]+:[0-9]+: ')
+    # One ruff run serves both the verdict and the count; running it twice
+    # would double the cost of every failing rerun for the same answer.
+    local lint_out
+    if lint_out=$("$RUFF" check app tests --output-format=concise 2>/dev/null); then
+        LINT_OK=1; LINT_COUNT=0
+    else
+        LINT_OK=0
+        LINT_COUNT=$(printf '%s\n' "$lint_out" | grep -cE '^[^ ]+:[0-9]+:[0-9]+: ')
     fi
     "$RUFF" format --check app tests >/dev/null 2>&1 && FMT_OK=1 || FMT_OK=0
 
@@ -245,14 +249,15 @@ PY
         ((MAP_LAG < 0)) && MAP_LAG=0
     fi
 
-    REVIEW_FOCUS=$(awk -F'|' -v want="$REVIEW_MOD" '
+    IFS='|' read -r REVIEW_DONE_AT REVIEW_FOCUS <<<"$(awk -F'|' -v want="$REVIEW_MOD" '
         /review-focus:start/ { inside = 1; next }
         /review-focus:end/   { inside = 0 }
         inside && /^\|/ {
-            for (i = 2; i <= 3; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
-            if ($2 == want) { print $3; exit }
+            for (i = 2; i <= 4; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+            if ($2 == want) { printf "%s|%s\n", $3, $4; exit }
         }
-    ' README.md 2>/dev/null)
+    ' README.md 2>/dev/null)"
+    [ "$REVIEW_DONE_AT" = "—" ] && REVIEW_DONE_AT=""
 }
 
 ok_badge() {
@@ -261,6 +266,16 @@ ok_badge() {
         0) badge bad "$2" ;;
         *) badge idle "$2" ;;
     esac
+}
+
+# The 1s loop re-renders an open detail screen on every tick; copying on each
+# render would clobber the reader's clipboard every second. Copy only when the
+# hand-off text changes -- once per screen, not once per tick.
+_LAST_CLIP=""
+clip_once() {
+    [ "$1" = "$_LAST_CLIP" ] && return 0
+    clip_copy "$1" || return 1
+    _LAST_CLIP=$1
 }
 
 # --- sections ---------------------------------------------------------------
@@ -398,13 +413,17 @@ section_progress() {
     fi
     if [ -n "$REVIEW_MOD" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
         local rv
-        if [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
+        if [ -n "$REVIEW_DONE_AT" ] && [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
+            rv="$(badge ok "${REVIEW_MOD} 리뷰 완료") ${D}반영 기준 ${REVIEW_DONE_AT}${R}"
+        elif [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
             rv="$(badge ok "${REVIEW_MOD} 다 참 — 코드 리뷰 시점")"
         else
             rv="${CYN}${REVIEW_MOD}${R} ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이  ${D}$((REVIEW_TOTAL - REVIEW_DONE))개 더 들어와야 리뷰${R}"
         fi
         kv "코드리뷰 단위" "$rv"
-        if [ -n "$REVIEW_BASE" ]; then
+        if [ -n "$REVIEW_BASE" ] && [ -n "$REVIEW_DONE_AT" ]; then
+            kv "  범위  " "${D}${REVIEW_BASE}..${REVIEW_DONE_AT} 리뷰함${R}"
+        elif [ -n "$REVIEW_BASE" ]; then
             kv "  범위  " "${YEL}${REVIEW_BASE}${R} ${D}이후부터 리뷰가 진행되어야 함${R}"
         else
             kv "  범위  " "${D}${REVIEW_MOD}의 첫 덩이가 아직 들어오지 않았다${R}"
@@ -422,11 +441,15 @@ section_progress() {
 # copied -- and the fallback "copy it yourself" is useless against an ellipsis.
 wrap_rows() {
     local text=$1 width=$2 line="" word
+    # Split on whitespace with pathname expansion off: a token like app/api/*
+    # or a lone ? must stay literal instead of matching files in the CWD.
+    set -f
     for word in $text; do
         if [ -z "$line" ]; then line=$word; continue; fi
         dw "$line $word"
         if ((DW > width)); then row "  $line"; line=$word; else line="$line $word"; fi
     done
+    set +f
     [ -n "$line" ] && row "  $line"
 }
 
@@ -436,7 +459,11 @@ detail_review() {
     local mod=${1:-$REVIEW_MOD}
     row " ${B}코드리뷰 단위 ${mod}${R}   ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이"
     blank
-    if [ -n "$REVIEW_BASE" ]; then
+    if [ -n "$REVIEW_BASE" ] && [ -n "$REVIEW_DONE_AT" ]; then
+        row "  ${REVIEW_BASE}..${REVIEW_DONE_AT} 구간을 리뷰했고 반영이 끝났다."
+        blank
+        row "  ${D}다시 보려면${R}  ${GRN}git diff ${REVIEW_BASE}..${REVIEW_DONE_AT}${R}"
+    elif [ -n "$REVIEW_BASE" ]; then
         row "  ${YEL}${REVIEW_BASE}${R} 이후부터 리뷰가 진행되어야 한다."
         row "  ${D}$(git log -1 --format='%h %s' "$REVIEW_BASE" 2>/dev/null)${R}"
         blank
@@ -445,7 +472,9 @@ detail_review() {
         row "  ${D}${mod}의 첫 덩이가 아직 들어오지 않아 리뷰 기준점이 없다${R}"
     fi
     blank
-    if [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
+    if [ -n "$REVIEW_DONE_AT" ]; then
+        row "  $(badge ok "리뷰를 받아 반영했다")   ${D}반영이 올라간 기준 ${REVIEW_DONE_AT}${R}"
+    elif [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
         row "  $(badge ok "모듈이 다 찼다 — 지금이 리뷰 시점")"
     else
         row "  $(badge warn "아직 $((REVIEW_TOTAL - REVIEW_DONE))개 덩이가 남았다")"
@@ -458,7 +487,7 @@ detail_review() {
         blank
         local handoff="$REVIEW_FOCUS"
         [ -n "$REVIEW_BASE" ] && handoff="${REVIEW_BASE} 이후부터 리뷰. ${REVIEW_FOCUS}"
-        if clip_copy "$handoff"; then
+        if clip_once "$handoff"; then
             row "  $(badge ok "기준 커밋과 함께 클립보드에 복사됨 — 리뷰 요청에 그대로 붙인다")"
         else
             row "  ${D}클립보드 도구가 없다 — 위 줄을 직접 복사한다${R}"
@@ -557,7 +586,7 @@ detail_checks() {
     row "  ${D}테스트 간 helper import — from tests.a.test_b import c 금지${R}"
     row "  ${D}무관한 삭제 — zero 파일이 assemble 계약을 덮어썼는지${R}"
     row "  ${D}테스트 배치 — 구현 파일 기준, 번호는 디렉터리별 01부터 연속${R}"
-    row "  ${D}누락 __init__.py — app/ 하위 패키지마다 docstring 파일${R}"
+    row "  ${D}억지 __init__.py — 없어도 되는 패키지에 새로 만들지 않는다${R}"
     blank
     if [ "$CHANGED_PY" -gt 0 ]; then
         row " ${B}이번 라운드가 건드린 .py ${CHANGED_PY}개${R}"
@@ -584,7 +613,7 @@ detail_command() {
     row " ${B}${label}${R}"; blank
     row "  ${GRN}${rest%%|*}${R}"; blank
     row "  ${D}${rest#*|}${R}"; blank
-    if clip_copy "${rest%%|*}"; then
+    if clip_once "${rest%%|*}"; then
         row "  $(badge ok "클립보드에 복사됨")"
     else
         row "  ${D}클립보드 도구가 없다 — 위 줄을 직접 복사한다${R}"

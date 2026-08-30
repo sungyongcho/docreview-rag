@@ -15,6 +15,11 @@ ENGINE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT=$(cd "$ENGINE_DIR/.." && pwd)
 cd "$ROOT" || exit 1
 
+# Shared cache-path resolution -- same directory as the dashboard, whichever
+# worktree this runs in.
+# shellcheck disable=SC1091
+. "$ENGINE_DIR/lib-cache.sh"
+
 PANEL=""
 for candidate in \
     "$ROOT/scripts/dashboard.panel.sh" \
@@ -45,23 +50,12 @@ JOB_TIMEOUT=${DASH_JOB_TIMEOUT:-900}
 # The panel is sourced only for its declarations; it must not do work at load.
 # shellcheck disable=SC1090
 . "$PANEL"
-case $CACHE_DIR in /*) ;; *) CACHE_DIR="$ROOT/$CACHE_DIR" ;; esac
-
-# On more than one git worktree, the live dashboard reads and writes a
-# per-worktree subdirectory (see ctx_cache_dir in dashboard.sh) even for the
-# worktree it starts in. Mirror that here, or a refresh writes to a cache
-# directory the running dashboard never looks at, and its numbers never
-# update no matter how many times this runs.
-if [ ${#CTXS[@]} -eq 0 ]; then
-    while IFS= read -r _wt_line; do
-        [[ $_wt_line == worktree\ * ]] && CTXS+=("${_wt_line#worktree }")
-    done < <(git -C "$ROOT" worktree list --porcelain 2>/dev/null)
-    ((${#CTXS[@]} <= 1)) && CTXS=()
-fi
-if ((${#CTXS[@]} > 1)); then
-    _slug=$(printf '%s' "$ROOT" | tr -c 'A-Za-z0-9' '_')
-    CACHE_DIR="$CACHE_DIR/ctx-$_slug"
-fi
+# On more than one git worktree, the live dashboard reads and writes the
+# per-context subdirectory it recorded in $CACHE_HOME/.ctx. active_cache_dir
+# (lib-cache.sh) resolves exactly that directory from any worktree, so a
+# refresh always writes where the running dashboard is looking.
+CACHE_HOME=$(resolve_cache_home "$CACHE_DIR")
+CACHE_DIR=$(active_cache_dir)
 mkdir -p "$CACHE_DIR"
 
 if [ "${1:-}" = "--list" ]; then
