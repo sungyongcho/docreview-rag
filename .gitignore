@@ -48,3 +48,4 @@ old/
 
 # Dashboard cache of the last full-suite line.
 .dashboard-suite
+.dashboard-collect
