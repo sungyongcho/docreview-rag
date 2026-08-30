@@ -120,6 +120,7 @@ def section_units(section: Section, config: ChunkConfig) -> list[Unit]:
     para_sep_chars = 2
 
     def flush_pending() -> None:
+        """Emit the buffered paragraphs as one chunk and reset the buffer."""
         nonlocal pending, pending_chars
         if not pending:
             return
@@ -216,6 +217,7 @@ def chunk_filing(filing: ParsedFiling, config: ChunkConfig | None = None) -> lis
         blocks: list[Block],
         narrative_heading: str | None = None,
     ) -> None:
+        """Record one chunk with its section, kind, and source blocks."""
         start, end = _source_span(blocks, filing.source_length)
         chunks.append(
             Chunk(
@@ -257,20 +259,22 @@ if __name__ == "__main__":  # pragma: no cover - manual inspection helper
     from pathlib import Path
     from unittest.mock import patch
 
-    from app.ingestion.parser import parse_filing
+    from app.ingestion.registry import resolve_registry
 
-    parser = argparse.ArgumentParser(description="Inspect structure-aware 10-K chunks.")
+    parser = argparse.ArgumentParser(description="Inspect structure-aware filing chunks.")
     parser.add_argument("--doc", default="NVDA-FY2024", help="doc_id, e.g. NVDA-FY2024")
+    parser.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
     parser.add_argument("--kind", choices=("text", "table"))
     parser.add_argument("--limit", type=int, default=3)
     args = parser.parse_args()
 
-    manifest = json.loads(Path("data/corpus/manifest.json").read_text())
-    entry = next(
-        item for item in manifest if f"{item['ticker']}-FY{item['report_date'][:4]}" == args.doc
-    )
+    manifest = json.loads(args.manifest.read_text())
+    entry = next((i for i in manifest if resolve_registry(i).doc_id(i) == args.doc), None)
+    if entry is None:
+        known = ", ".join(sorted(resolve_registry(i).doc_id(i) for i in manifest))
+        raise SystemExit(f"unknown doc {args.doc!r}; known documents: {known}")
     with patch("app.ingestion.parser.save_profile"):
-        parsed, _ = parse_filing(entry)
+        parsed, _ = resolve_registry(entry).parse(entry)
     selected = [chunk for chunk in chunk_filing(parsed) if not args.kind or chunk.kind == args.kind]
     for chunk in selected[: args.limit]:
         print(f"\n{'─' * 80}\n#{chunk.ordinal} {chunk.kind} [{chunk.start_char}, {chunk.end_char})")

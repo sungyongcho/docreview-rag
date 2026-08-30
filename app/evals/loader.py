@@ -10,7 +10,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.evals.artifacts import read_strict_json
 from app.evals.types import GoldenCase, GoldenSpan
-from app.ingestion.parser import doc_id, read_source, source_digest
+from app.ingestion.parser import read_source, source_digest
+from app.ingestion.registry import resolve_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GOLDEN_PATH = REPO_ROOT / "data" / "golden" / "retrieval.json"
@@ -151,8 +152,8 @@ def _manifest_sources(manifest_path: Path) -> dict[str, Path]:
         if not isinstance(entry, dict):
             raise GoldenDataError(f"manifest entry {index} must be an object")
         try:
-            identifier = doc_id(entry)
-        except (KeyError, TypeError) as exc:
+            identifier = resolve_registry(entry).doc_id(entry)
+        except (KeyError, TypeError, ValueError) as exc:
             raise GoldenDataError(
                 f"manifest entry {index} has no usable document identity: {exc}"
             ) from exc

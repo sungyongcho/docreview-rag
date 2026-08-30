@@ -1,4 +1,7 @@
+"""Parse one filing into source-anchored blocks, sections, and item coverage."""
+
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import hashlib
@@ -211,11 +214,19 @@ def source_digest(source: str) -> str:
 
 
 def line_offsets(html: str) -> list[int]:
-    """Return the absolute character offset of each line start."""
+    r"""Return the absolute character offset of each line start.
+
+    Lines are split on ``\n`` alone, because the ``sourceline`` values these offsets
+    are indexed by come from ``HTMLParser``, which counts only that separator.
+    ``str.splitlines`` also breaks on ``\r``, ``\x0b``, ``\x0c``, ``\x1c``-``\x1e``,
+    ``\x85`` and the Unicode line separators, and every such character would shift the
+    remaining offsets while leaving spans monotonic and in bounds — a silently wrong
+    citation rather than a failure.
+    """
     out, off = [], 0
-    for line in html.splitlines(keepends=True):
+    for line in html.split("\n"):
         out.append(off)
-        off += len(line)
+        off += len(line) + 1
     return out
 
 
@@ -295,31 +306,36 @@ def _is_data_table(tbl: Tag) -> bool:
     return numeric >= max(DATA_TABLE_MIN_NUMERIC, len(cells) // DATA_TABLE_NUMERIC_DIVISOR)
 
 
-def leaf_blocks(soup: BeautifulSoup) -> list[Tag]:
+def leaf_blocks(soup: BeautifulSoup, tags: Sequence[str] = LEAF_BLOCK_TAGS) -> list[Tag]:
     """Extract leaf content blocks used by downstream segmentation.
 
     Parameters
     ----------
     soup
         Parsed BeautifulSoup document.
+    tags
+        Block-level tag names a registry treats as content. The default is the EDGAR
+        HTML vocabulary; a registry whose documents carry their own block tags passes
+        its own so the data-table detection here is not reimplemented against it.
 
     Returns
     -------
     list[Tag]
         Ordered list of block-level elements considered leaf nodes for parsing.
     """
+    block_tags = list(tags)
     data_ids: set[int] = set()
     for t in soup.find_all("table"):
         if _is_data_table(t) and not any(id(p) in data_ids for p in t.find_parents("table")):
             data_ids.add(id(t))  # keep only the outermost nested table
 
     out = []
-    for el in soup.find_all(LEAF_BLOCK_TAGS):
+    for el in soup.find_all(block_tags):
         inside_data = any(id(p) in data_ids for p in el.find_parents("table"))
         if el.name == "table":
-            if not inside_data and (id(el) in data_ids or el.find(LEAF_BLOCK_TAGS) is None):
+            if not inside_data and (id(el) in data_ids or el.find(block_tags) is None):
                 out.append(el)  # keep a data table or legacy leaf table as one block
-        elif not inside_data and el.find(LEAF_BLOCK_TAGS) is None:
+        elif not inside_data and el.find(block_tags) is None:
             out.append(el)
     return out
 
@@ -384,6 +400,7 @@ def block_props(el: Tag) -> dict:
     css = _inline_css(el)  # element style plus up to two nested span styles
 
     def num(pattern: str) -> float:
+        """Return the first numeric group of one CSS pattern, or zero when absent."""
         m = re.search(pattern, css)
         return float(m.group(1)) if m else 0.0
 
@@ -696,6 +713,7 @@ def detect_number(blocks: list[Tag]) -> dict:
     """
 
     def collect(allow_table: bool) -> list[tuple[int, float]]:
+        """Collect the item numbers and their vertical positions from the blocks."""
         out = []
         for el in blocks:
             t = el.get_text(" ", strip=True)

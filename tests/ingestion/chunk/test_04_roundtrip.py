@@ -36,8 +36,12 @@ def test_text_chunk_body_is_an_ordered_source_subsequence(corpus, chunks_by_doc)
         for chunk in chunks_by_doc[doc_id]:
             if chunk.kind != "text":
                 continue
+            body_tokens = tokens(chunk.body)
+            # A body that tokenizes to nothing satisfies every assertion below without
+            # being compared to anything, so the emptiness is the failure, not a pass.
+            assert body_tokens, f"{doc_id} chunk {chunk.ordinal}: body tokenizes to nothing"
             visible = source_text(raw, chunk.start_char, chunk.end_char)
-            assert is_subsequence(tokens(chunk.body), tokens(visible)), (
+            assert is_subsequence(body_tokens, tokens(visible)), (
                 f"{doc_id} chunk {chunk.ordinal}: text body is not in its cited span"
             )
 
@@ -67,6 +71,35 @@ def test_table_rows_and_header_cells_exist_in_source(corpus, chunks_by_doc):
 def test_table_token_grounding_rejects_raw_substrings():
     """Reject an invented short token that appears only inside a source token."""
     assert _ungrounded_table_tokens(["9"], tokens("2019"), tokens("2019")) == {"9"}
+
+
+def test_tokenizer_splits_korean_into_comparable_tokens():
+    """Tokenize Korean, Latin, and numerals so grounding checks are not vacuous."""
+    assert tokens("삼성전자는 2024년 매출 300,870억원") == [
+        "삼성전자는",
+        "2024",
+        "년",
+        "매출",
+        "300,870",
+        "억원",
+    ]
+
+
+def test_tokenizer_leaves_english_tokenization_unchanged():
+    """Keep the ASCII branch byte-identical to the pre-Korean tokenizer."""
+    assert tokens("Revenue rose 12.5% to $26,974 (fiscal 2024)") == [
+        "revenue",
+        "rose",
+        "12.5",
+        "%",
+        "to",
+        "$",
+        "26,974",
+        "(",
+        "fiscal",
+        "2024",
+        ")",
+    ]
 
 
 def test_every_chunk_span_is_inside_its_document(corpus, chunks_by_doc):

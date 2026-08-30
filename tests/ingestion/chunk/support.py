@@ -6,8 +6,24 @@ import re
 from bs4 import BeautifulSoup
 
 from app.ingestion.parser import Block, ParsedFiling, Section
+from app.retrieval.language import HANGUL_RANGES
 
-TOKEN = re.compile(r"[A-Za-z0-9]+(?:[.,'-][A-Za-z0-9]+)*|[$%€¥£()]", re.ASCII)
+# The Hangul ranges come from the retrieval boundary that already declares all three
+# forms Korean text arrives in, so widening one place widens both.
+_HANGUL = "".join(rf"\u{start:04x}-\u{end:04x}" for start, end in HANGUL_RANGES)
+_HANJA = r"一-鿿"
+
+# The ASCII alternative stays first and byte-identical: English tokenization is
+# unchanged by construction. Without the scripts that follow it, a Korean chunk
+# tokenizes to nothing and every grounding assertion below passes vacuously.
+# ``re.ASCII`` is dropped rather than kept because the pattern uses no `\w`-class
+# escape for it to narrow, so it only misleads the next reader.
+TOKEN = re.compile(
+    r"[A-Za-z0-9]+(?:[.,'-][A-Za-z0-9]+)*"
+    rf"|[{_HANGUL}]+"
+    rf"|[{_HANJA}]+"
+    r"|[$%€¥£₩()△▲]"
+)
 
 
 def build_filing(blocks: list[Block]) -> ParsedFiling:

@@ -11,7 +11,7 @@ from app.db.models import Run, Trace
 from app.observability.types import JsonValue, RunReport
 
 REDACTED = "[REDACTED]"
-_SECRET_NAME = r"(?:api[_-]?key|authorization|password|secret|access[_-]?token)"
+_SECRET_NAME = r"(?:api[_-]?key|crtfc[_-]?key|authorization|password|secret|access[_-]?token)"
 _AUTH_SCHEME = r"(?:Bearer|Basic|Token)"
 
 _OPENAI_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")

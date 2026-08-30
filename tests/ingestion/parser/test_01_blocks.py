@@ -1,3 +1,5 @@
+"""Source-anchored block extraction from a raw filing."""
+
 import hashlib
 from types import ModuleType
 
@@ -117,6 +119,35 @@ def test_read_source_preserves_crlf_for_source_offsets(
     assert raw[start:end] == "café"
     assert parser_module.source_digest(raw) == hashlib.sha256(source_bytes).hexdigest()
     assert len(source_bytes) > len(raw)
+
+
+def test_line_offsets_count_only_the_separator_htmlparser_counts(
+    parser_module: ModuleType,
+) -> None:
+    """Treat a form feed as ordinary text, because HTMLParser does not end a line on it."""
+    raw = "<p>a</p>\x0c<p>b</p>\n<p>c</p>"
+
+    offsets = parser_module.line_offsets(raw)
+    soup = parser_module.normalize(raw)
+    third = soup.find_all("p")[2]
+    start = parser_module.source_pos(third, offsets)
+
+    assert offsets[:2] == [0, raw.index("\n") + 1]
+    assert raw[start:] == "<p>c</p>"
+
+
+def test_leaf_blocks_accept_a_registry_specific_block_vocabulary(
+    parser_module: ModuleType,
+) -> None:
+    """Collect the block tags a caller names without changing the default vocabulary."""
+    html = "<body><title>I. Heading</title><p>Body</p></body>"
+
+    soup = parser_module.normalize(html)
+    default_blocks = parser_module.leaf_blocks(soup)
+    with_title = parser_module.leaf_blocks(soup, ("title", "p"))
+
+    assert [block.name for block in default_blocks] == ["p"]
+    assert [block.name for block in with_title] == ["title", "p"]
 
 
 def test_all_body_blocks_have_valid_spans(corpus) -> None:

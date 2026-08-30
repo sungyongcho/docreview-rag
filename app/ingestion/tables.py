@@ -49,6 +49,7 @@ def _cell_text(cell: Tag) -> str:
     parts: list[str] = []
 
     def walk(node: Tag) -> None:
+        """Append the rendered text of every descendant node in document order."""
         for child in node.children:
             if isinstance(child, NavigableString):
                 # Comments, doctypes, and CDATA are not rendered text.
@@ -377,6 +378,7 @@ def to_markdown(grid: Grid) -> str:
     """
 
     def _cell(text: str) -> str:
+        """Escape one cell so a pipe or newline cannot add a column or a row."""
         # Escape backslashes before pipes so an escaped pipe cannot lose its backslash.
         raw = text.replace("\\", "\\\\").replace("|", "\\|")
         return " ".join(raw.split())
@@ -395,6 +397,7 @@ def to_markdown(grid: Grid) -> str:
     ]
 
     def _row(row: list[str]) -> str:
+        """Render one padded, pipe-delimited row at the table's full width."""
         return "| " + " | ".join(_cell(row[j]) if j < len(row) else "" for j in range(cols)) + " |"
 
     lines = [_row(head), "| " + " | ".join("---" for _ in range(cols)) + " |"]
@@ -447,22 +450,29 @@ if __name__ == "__main__":  # pragma: no cover - eyeball helper
     import json
     from pathlib import Path
 
-    from app.ingestion.parser import doc_id, leaf_blocks, normalize, read_source
+    from app.ingestion.parser import leaf_blocks, normalize, read_source
+    from app.ingestion.registry import resolve_registry
 
-    ap = argparse.ArgumentParser(description="Render 10-K tables as markdown.")
+    ap = argparse.ArgumentParser(description="Render filing tables as markdown.")
     ap.add_argument("--doc", default="NVDA-FY2024", help="doc_id, e.g. NVDA-FY2024")
+    ap.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
     ap.add_argument("--contains", default="Gross profit", help="pick tables containing this text")
     ap.add_argument("--limit", type=int, default=2)
     a = ap.parse_args()
 
-    manifest_path = Path("data/corpus/manifest.json")
+    manifest_path = a.manifest
     if not manifest_path.exists():
         raise SystemExit(f"{manifest_path} not found; run this from the repository root")
 
     manifest = json.loads(manifest_path.read_text())
-    entry = next((e for e in manifest if doc_id(e) == a.doc), None)
+
+    def _doc_id(item: dict) -> str:
+        """Return one manifest entry's document id through its own registry."""
+        return resolve_registry(item).doc_id(item)
+
+    entry = next((e for e in manifest if _doc_id(e) == a.doc), None)
     if entry is None:
-        known = ", ".join(sorted(doc_id(e) for e in manifest))
+        known = ", ".join(sorted(_doc_id(e) for e in manifest))
         raise SystemExit(f"unknown doc {a.doc!r}; known documents: {known}")
 
     soup = normalize(read_source(entry["file"]))

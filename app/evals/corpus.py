@@ -14,6 +14,7 @@ from app.evals.measurement import Clock, IndexingBudgetMeasurement, assess_index
 from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing
 from app.ingestion.parser import ParsedFiling
 from app.ingestion.seed import (
+    DEFAULT_MANIFEST_NAME,
     EXPECTED_DOCUMENTS,
     SeedBatch,
     build_seed_batch,
@@ -26,13 +27,23 @@ from app.retrieval.bm25 import backfill_term_stats
 from app.retrieval.embeddings import EmbeddingProvider, embed_missing_chunks
 
 
-def load_chunking_filings(*, settings: Settings | None = None) -> tuple[ParsedFiling, ...]:
+def load_chunking_filings(
+    *,
+    settings: Settings | None = None,
+    manifest_name: str = DEFAULT_MANIFEST_NAME,
+    expected_documents: int | None = EXPECTED_DOCUMENTS,
+) -> tuple[ParsedFiling, ...]:
     """Parse the fixed evaluation corpus once for reuse by every chunking arm.
 
     Parameters
     ----------
     settings : Settings | None, optional
         Explicit corpus settings, or the process settings when omitted.
+    manifest_name : str, optional
+        Manifest file under the configured corpus directory. One manifest describes one
+        corpus, so a second registry is selected here rather than merged into the first.
+    expected_documents : int | None, optional
+        Document count the named manifest must hold, or ``None`` to accept any count.
 
     Returns
     -------
@@ -55,8 +66,8 @@ def load_chunking_filings(*, settings: Settings | None = None) -> tuple[ParsedFi
     across chunk targets and builds a fresh immutable ``SeedBatch`` for each target.
     """
     configured = settings or get_settings()
-    entries = load_manifest(configured.corpus_dir / "manifest.json")
-    return parse_seed_filings(entries, expected_documents=EXPECTED_DOCUMENTS)
+    entries = load_manifest(configured.corpus_dir / manifest_name)
+    return parse_seed_filings(entries, expected_documents=expected_documents)
 
 
 def build_chunking_batch(
@@ -64,6 +75,8 @@ def build_chunking_batch(
     *,
     parsed_filings: Sequence[ParsedFiling] | None = None,
     settings: Settings | None = None,
+    manifest_name: str = DEFAULT_MANIFEST_NAME,
+    expected_documents: int | None = EXPECTED_DOCUMENTS,
 ) -> SeedBatch:
     """Build one source-stable corpus arm from new or already parsed filings.
 
@@ -76,6 +89,10 @@ def build_chunking_batch(
         the configured manifest itself.
     settings : Settings | None, optional
         Explicit corpus settings used only by the independent path.
+    manifest_name : str, optional
+        Manifest file the independent path reads under the configured corpus directory.
+    expected_documents : int | None, optional
+        Document count that manifest must hold, or ``None`` to accept any count.
 
     Returns
     -------
@@ -107,10 +124,10 @@ def build_chunking_batch(
         return build_seed_batch_from_filings(parsed_filings, chunker=chunker)
 
     configured = settings or get_settings()
-    entries = load_manifest(configured.corpus_dir / "manifest.json")
+    entries = load_manifest(configured.corpus_dir / manifest_name)
     return build_seed_batch(
         entries,
-        expected_documents=EXPECTED_DOCUMENTS,
+        expected_documents=expected_documents,
         chunker=chunker,
     )
 

@@ -18,13 +18,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.models import Chunk as ChunkModel, Document
 from app.ingestion.chunk import Chunk, chunk_filing, compose_index_text
-from app.ingestion.parser import ParsedFiling, parse_filing
+from app.ingestion.parser import ParsedFiling
+from app.ingestion.registry import registry_name, resolve_registry
 
+# One manifest describes one corpus, so the count belongs to the manifest a caller
+# names rather than to this module; EXPECTED_DOCUMENTS is the committed EDGAR corpus.
+DEFAULT_MANIFEST_NAME = "manifest.json"
 EXPECTED_DOCUMENTS = 20
 DEFAULT_CHUNK_BATCH_SIZE = 500
 SHA256_RE = re.compile(r"[0-9a-f]{64}", re.ASCII)
 PARSE_STATUSES = frozenset({"parsed", "needs_profile_update"})
 ITEM_STATUSES = frozenset({"parsed", "empty_disclosure", "incorporated_by_reference"})
+
+# One manifest entry in, one parsed filing and its segmentation profile out.
+type FilingParser = Callable[[dict[str, Any]], tuple[ParsedFiling, dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,13 +317,16 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
 def _ordered_manifest_entries(
     entries: Iterable[Mapping[str, Any]], expected_documents: int | None
 ) -> list[dict[str, Any]]:
-    """Copy, count, and deterministically order manifest entries."""
+    """Copy, count, and deterministically order manifest entries.
+
+    Each registry orders its own entries by its own keys, and the registry name leads
+    the sort so a manifest holding one registry keeps the order it has today while a
+    mixed manifest is still totally ordered.
+    """
     ordered = [dict(entry) for entry in entries]
     if expected_documents is not None and len(ordered) != expected_documents:
         raise ValueError(f"expected {expected_documents} manifest documents, found {len(ordered)}")
-    ordered.sort(
-        key=lambda entry: (str(entry.get("ticker", "")), str(entry.get("report_date", "")))
-    )
+    ordered.sort(key=lambda entry: (registry_name(entry), *resolve_registry(entry).sort_key(entry)))
     return ordered
 
 
@@ -324,15 +334,16 @@ def parse_seed_filings(
     entries: Iterable[Mapping[str, Any]],
     *,
     expected_documents: int | None = None,
-    parser: Callable[[dict[str, Any]], tuple[ParsedFiling, dict[str, Any]]] = parse_filing,
+    parser: FilingParser | None = None,
 ) -> tuple[ParsedFiling, ...]:
     """Parse copied manifest entries once in deterministic input-adapter order.
 
-    Validate the expected count before invoking the parser.
+    Validate the expected count before invoking the parser. Each entry is parsed by the
+    registry it names unless ``parser`` overrides that for every entry.
     """
     filings: list[ParsedFiling] = []
     for entry in _ordered_manifest_entries(entries, expected_documents):
-        filing, _profile = parser(entry)
+        filing, _profile = (parser or resolve_registry(entry).parse)(entry)
         filings.append(filing)
     return tuple(filings)
 
@@ -359,14 +370,17 @@ def build_seed_batch(
     entries: Iterable[Mapping[str, Any]],
     *,
     expected_documents: int | None = None,
-    parser: Callable[[dict[str, Any]], tuple[ParsedFiling, dict[str, Any]]] = parse_filing,
+    parser: FilingParser | None = None,
     chunker: Callable[[ParsedFiling], list[Chunk]] = chunk_filing,
 ) -> SeedBatch:
-    """Parse and chunk manifest entries into a deterministic seed batch."""
+    """Parse and chunk manifest entries into a deterministic seed batch.
+
+    Each entry is parsed by the registry it names unless ``parser`` overrides that.
+    """
     documents: list[DocumentRecord] = []
     chunks: list[ChunkRecord] = []
     for entry in _ordered_manifest_entries(entries, expected_documents):
-        filing, _profile = parser(entry)
+        filing, _profile = (parser or resolve_registry(entry).parse)(entry)
         document, filing_chunks = filing_records(filing, chunker(filing))
         documents.append(document)
         chunks.extend(filing_chunks)
@@ -377,14 +391,26 @@ def build_seed_batch(
 
 
 def prepare_seed_batch(
-    manifest_path: Path | None = None, *, expected_documents: int | None = EXPECTED_DOCUMENTS
+    manifest_path: Path | None = None,
+    *,
+    manifest_name: str = DEFAULT_MANIFEST_NAME,
+    expected_documents: int | None = EXPECTED_DOCUMENTS,
+    parser: FilingParser | None = None,
+    chunker: Callable[[ParsedFiling], list[Chunk]] = chunk_filing,
 ) -> SeedBatch:
-    """Prepare and validate the complete corpus before any transaction opens.
+    """Prepare and validate one complete corpus before any transaction opens.
 
-    Use the configured manifest unless an explicit path is supplied.
+    Use the named manifest under the configured corpus directory unless an explicit
+    path is supplied. ``parser`` and ``chunker`` reach ``build_seed_batch`` unchanged,
+    so a caller measuring a different chunk target does not lose registry dispatch.
     """
-    path = manifest_path or get_settings().corpus_dir / "manifest.json"
-    return build_seed_batch(load_manifest(path), expected_documents=expected_documents)
+    path = manifest_path or get_settings().corpus_dir / manifest_name
+    return build_seed_batch(
+        load_manifest(path),
+        expected_documents=expected_documents,
+        parser=parser,
+        chunker=chunker,
+    )
 
 
 def document_upsert_statement(records: Sequence[DocumentRecord]) -> Insert:

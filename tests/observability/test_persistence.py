@@ -80,6 +80,13 @@ def test_redaction_reaches_json_credentials_and_stops_at_the_query_boundary():
         redact_sensitive_text("https://api.test/v1/responses?api_key=sk-abcdefgh12&model=mini")
         == "https://api.test/v1/responses?api_key=[REDACTED]&model=mini"
     )
+    # Open DART names its credential `crtfc_key`, which no other pattern here matches.
+    assert (
+        redact_sensitive_text(
+            "https://opendart.fss.or.kr/api/list.json?crtfc_key=abc123&corp_code=x"
+        )
+        == "https://opendart.fss.or.kr/api/list.json?crtfc_key=[REDACTED]&corp_code=x"
+    )
 
 
 def test_credential_keys_in_a_report_have_their_values_replaced_wholesale():
