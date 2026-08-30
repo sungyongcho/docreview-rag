@@ -72,7 +72,7 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | b5a3e54 | 완료 |
 | M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | 920825e | 완료 |
 | M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 42760b7 | 완료 |
-| M5.3 | app/api/runtime.py — 522줄 | app/api/ | — | 대기 |
+| M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | 004d987 | 완료 |
 | M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ | — | 대기 |
 | M9.1~M9.6 | app/agent/ — 11파일 2145줄 | app/agent/ | — | 대기 |
 | M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — | 대기 |

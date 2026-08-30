@@ -74,6 +74,7 @@ CHANGED_PY=0; DOC_GAPS=0; SHIM_FILES=0
 STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=0
 PORT_ROWS=()
 REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""; REVIEW_BASE=""
+MAP_LAG=0; MAP_LAST=""
 REVIEW_READY=()
 DB_STATE="?"; DB_TICK=0
 SUITE_FRESH=-1
@@ -219,6 +220,22 @@ PY
         fi
     done
     [ -n "$first" ] && REVIEW_BASE=$(git rev-parse --short "${first}^" 2>/dev/null)
+
+    # The table is updated by hand after each commit, so it silently falls behind
+    # and every count on this screen goes stale with it. Nothing else notices, so
+    # measure it here: commits after the newest recorded chunk that touched the
+    # ported tree are port work the table has not been told about. Commits that
+    # only touch docs or this dashboard are correctly absent from it.
+    MAP_LAG=0; MAP_LAST=""
+    local last=""
+    for line in "${PORT_ROWS[@]}"; do
+        IFS=$'\t' read -r -a f <<<"$line"
+        [ "${f[4]}" = "완료" ] && [ "${f[3]}" != "—" ] && last=${f[3]}
+    done
+    if [ -n "$last" ] && git cat-file -e "${last}^{commit}" 2>/dev/null; then
+        MAP_LAST=$last
+        MAP_LAG=$(git rev-list --count "${last}..HEAD" -- app tests 2>/dev/null || printf 0)
+    fi
 
     REVIEW_FOCUS=$(awk -F'|' -v want="$REVIEW_MOD" '
         /review-focus:start/ { inside = 1; next }
@@ -385,6 +402,9 @@ section_progress() {
             kv "  범위  " "${D}${REVIEW_MOD}의 첫 덩이가 아직 들어오지 않았다${R}"
         fi
     fi
+    if [ "${MAP_LAG:-0}" -gt 0 ]; then
+        kv "  표    " "$(badge bad "기록되지 않은 이식 커밋 ${MAP_LAG}개 — 위 숫자는 낡았다")"
+    fi
     link progress all "  ${D}이식 범위표 전체 보기${R}"
     link review "$REVIEW_MOD" "  ${D}리뷰에서 볼 것 · 복붙용 문단${R}"
 }
@@ -459,6 +479,12 @@ detail_review() {
 detail_progress() {
     row " ${B}README.md 이식 범위표${R}   ${D}${PORT_DONE}/${PORT_TOTAL} 완료${R}"
     blank
+    if [ "${MAP_LAG:-0}" -gt 0 ]; then
+        row "  $(badge bad "표가 ${MAP_LAG}개 커밋 뒤처졌다 — ${MAP_LAST} 이후로 기록되지 않았다")"
+        rows_from < <(git log --oneline "${MAP_LAST}..HEAD" -- app tests 2>/dev/null | sed 's/^/    /')
+        row "  ${D}덩이를 끝냈으면 README 표의 해당 행을 커밋 해시와 함께 완료로 바꾼다.${R}"
+        blank
+    fi
     local i=0 line f mark
     for line in "${PORT_ROWS[@]}"; do
         IFS=$'\t' read -r -a f <<<"$line"
