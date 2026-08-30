@@ -49,7 +49,7 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 `zero`에서 가져온 파일이고, `assemble 착지`는 이 브랜치에서 어디에 놓였는지입니다.
 착지가 zero와 다른 행은 그 사실을 함께 적습니다.
 
-`scripts/dashboard.sh`가 이 표를 읽어 다음 단계를 표시하므로 마커를 지우지 마십시오.
+`.dashboard/`의 대시보드가 이 표를 읽어 다음 단계를 표시하므로 마커를 지우지 마십시오.
 
 <!-- port-map:start -->
 | 단계 | zero 범위 | assemble 착지 | 커밋 | 상태 |
@@ -79,7 +79,7 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — | 대기 |
 <!-- port-map:end -->
 
-이식 덩이가 아닌 커밋: `17cad6e` `2790ece` `91b42d1` 리팩터·수정, `e130627` 도구.
+이식 덩이가 아닌 커밋: `17cad6e` `2790ece` `91b42d1` 리팩터·수정, `e130627` `afb8242` `3714d62` 문서·도구.
 
 모듈 총량 (zero 대 현재):
 
@@ -96,9 +96,14 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 
 ### 대시보드
 
-작업 상태를 한 화면에서 봅니다. `Ctrl+C`로 종료하고, `--once`는 한 프레임만 출력합니다.
+브랜치·품질·이식 진행·반복 점검을 한 화면에서 봅니다. 표시만 하고 아무것도 고치지
+않습니다. `space`는 즉시 갱신, `1`~`5`는 섹션 접기, `q`는 종료입니다.
 
 ```bash
-./scripts/dashboard.sh          # 1초마다 제자리 갱신
-./scripts/suite.sh              # 전체 스위트·수집 수 캐시 갱신
+.dashboard/dashboard.sh            # 1초마다 제자리 갱신
+.dashboard/dashboard.sh --once     # 한 프레임만 출력 (파이프·CI)
+.dashboard/dashboard-refresh.sh    # 전체 스위트·수집 수 캐시 갱신
 ```
+
+전체 스위트는 몇 분이 걸리므로 틱에서 돌리지 않습니다. 위 갱신 스크립트가
+`.dashboard-cache/`에 결과를 넣고 대시보드는 그 값과 나이를 읽습니다.

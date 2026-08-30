@@ -134,5 +134,5 @@ Verification
 ## 9. 진행 상황
 
 이식 덩이별 zero 범위와 assemble 착지는 `README.md`의 이식 범위표에 기록한다.
-`scripts/dashboard.sh`가 그 표를 읽어 다음 단계를 표시하므로, 덩이를 끝내면
+`.dashboard/`의 대시보드가 그 표를 읽어 다음 단계를 표시하므로, 덩이를 끝내면
 표의 상태를 갱신한다.

@@ -46,6 +46,5 @@ data/corpus/**/*.zip
 old/
 42_curriculum/
 
-# Dashboard cache of the last full-suite line.
-.dashboard-suite
-.dashboard-collect
+# Dashboard cache written by .dashboard/dashboard-refresh.sh.
+.dashboard-cache/
