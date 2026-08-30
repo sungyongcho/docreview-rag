@@ -75,6 +75,7 @@ STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=0
 PORT_ROWS=()
 REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""; REVIEW_BASE=""
 MAP_LAG=0; MAP_LAST=""; MAP_UNRECORDED=""
+REVIEW_INFLIGHT=0; REVIEW_HEAD=""
 REVIEW_DONE_AT=""
 REVIEW_READY=()
 DB_STATE="?"; DB_TICK=0
@@ -173,15 +174,18 @@ PY
 
     # The port-map table is the only record of what has landed. Keep every row
     # so the detail screen does not parse README a second time.
+    # The row format here mirrors the parser in .githooks/pre-commit; change
+    # the table shape in both places or neither.
     PORT_ROWS=()
     local line
     while IFS= read -r line; do PORT_ROWS+=("$line"); done < <(awk -F'|' '
         /port-map:start/ { inside = 1; next }
         /port-map:end/   { inside = 0 }
         inside && /^\|/ {
-            for (i = 2; i <= 6; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+            for (i = 2; i <= 5; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
             if ($2 == "단계" || $2 ~ /^-+$/) next
-            printf "%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5, $6
+            # A filled base is the landing record; there is no separate status.
+            printf "%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5, ($5 == "—" ? "대기" : "완료")
         }
     ' README.md 2>/dev/null)
 
@@ -207,12 +211,30 @@ PY
     # The review follows the newest landed chunk, not the next pending one. Keyed
     # on the next chunk instead, a module that just filled up would be replaced by
     # the following one at the very moment it became reviewable.
+    REVIEW_INFLIGHT=0
     for line in "${PORT_ROWS[@]}"; do
         IFS=$'\t' read -r -a f <<<"$line"
         if [ "${f[4]}" = "완료" ]; then
             REVIEW_MOD="init"; [[ ${f[0]} =~ ^(M[0-9]+) ]] && REVIEW_MOD=${BASH_REMATCH[1]}
         fi
     done
+    # Unless the next chunk is already being worked on. Uncommitted files under
+    # its landing path mean that module is what the next review will read, and
+    # saying the previous one is finished helps nobody while that is true.
+    if [ -n "$LANDING" ]; then
+        # The cell is prose: a path, then optionally a note after an em dash.
+        # Keep the first path only and drop a list's trailing comma, so a
+        # multi-path cell still yields a real pathspec instead of silence.
+        local land=${LANDING%%—*}; land=${land%% *}; land=${land%,}
+        if [ -n "$land" ] && [ -n "$(git status --porcelain -uall -- "$land" 2>/dev/null)" ]; then
+            REVIEW_INFLIGHT=1
+            # Captured here, in the fingerprint-gated tier: reading it in
+            # section_progress would fork git once per tick for a value that
+            # only moves on commit.
+            REVIEW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+            REVIEW_MOD="init"; [[ $STAGE =~ ^(M[0-9]+) ]] && REVIEW_MOD=${BASH_REMATCH[1]}
+        fi
+    fi
     [ -n "$REVIEW_MOD" ] || REVIEW_MOD=${_mod_order[0]:-}
     REVIEW_TOTAL=${_mod_total[$REVIEW_MOD]:-0}
     REVIEW_DONE=${_mod_done[$REVIEW_MOD]:-0}
@@ -434,7 +456,9 @@ section_progress() {
     fi
     if [ -n "$REVIEW_MOD" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
         local rv
-        if [ -n "$REVIEW_DONE_AT" ] && [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
+        if [ "$REVIEW_INFLIGHT" = 1 ]; then
+            rv="${CYN}${REVIEW_MOD}${R} ${D}작업 중 — ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이 착지, 커밋 후 리뷰${R}"
+        elif [ -n "$REVIEW_DONE_AT" ] && [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
             rv="$(badge ok "${REVIEW_MOD} 리뷰 완료") ${D}반영 기준 ${REVIEW_DONE_AT}${R}"
         elif [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
             rv="$(badge ok "${REVIEW_MOD} 다 참 — 코드 리뷰 시점")"
@@ -442,7 +466,9 @@ section_progress() {
             rv="${CYN}${REVIEW_MOD}${R} ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이  ${D}$((REVIEW_TOTAL - REVIEW_DONE))개 더 들어와야 리뷰${R}"
         fi
         kv "코드리뷰 단위" "$rv"
-        if [ -n "$REVIEW_BASE" ] && [ -n "$REVIEW_DONE_AT" ]; then
+        if [ "$REVIEW_INFLIGHT" = 1 ]; then
+            kv "  범위  " "${YEL}${REVIEW_HEAD}${R} ${D}이후가 리뷰 범위가 된다${R}"
+        elif [ -n "$REVIEW_BASE" ] && [ -n "$REVIEW_DONE_AT" ]; then
             kv "  범위  " "${D}${REVIEW_BASE}..${REVIEW_DONE_AT} 리뷰함${R}"
         elif [ -n "$REVIEW_BASE" ]; then
             kv "  범위  " "${YEL}${REVIEW_BASE}${R} ${D}이후부터 리뷰가 진행되어야 함${R}"
@@ -540,7 +566,8 @@ detail_progress() {
     if [ "${MAP_LAG:-0}" -gt 0 ]; then
         row "  $(badge bad "표가 ${MAP_LAG}개 커밋 뒤처졌다 — ${MAP_LAST} 이후로 기록되지 않았다")"
         rows_from < <(for c in $MAP_UNRECORDED; do git log -1 --oneline "$c"; done 2>/dev/null | sed 's/^/    /')
-        row "  ${D}덩이를 끝냈으면 README 표의 해당 행을 커밋 해시와 함께 완료로 바꾼다.${R}"
+        row "  ${D}기준 칸은 .githooks/pre-commit이 착지 커밋에서 자동으로 찍는다.${R}"
+        row "  ${D}뒤처진 행은 그 덩이가 올라간 시점의 HEAD를 기준 칸에 손으로 채워 맞춘다.${R}"
         blank
     fi
     local i=0 line f mark

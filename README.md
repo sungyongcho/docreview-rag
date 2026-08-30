@@ -49,6 +49,12 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 `zero`에서 가져온 파일이고, `assemble 착지`는 이 브랜치에서 어디에 놓였는지입니다.
 착지가 zero와 다른 행은 그 사실을 함께 적습니다.
 
+`기준`이 채워져 있으면 그 덩이는 들어온 것이고, `—`이면 아직입니다. 별도의 상태 칸을
+두지 않는 이유는 그 둘이 언제나 같은 말이었고, 손으로 맞춰야 하는 칸이 하나 늘수록
+표가 어긋날 자리도 하나 늘기 때문입니다. 이 칸은 커밋 훅이 자동으로 채웁니다
+(`.githooks/pre-commit`). 훅은 클론마다 한 번 켜야 동작합니다:
+`git config core.hooksPath .githooks`.
+
 `기준`은 그 덩이가 **올라간 시점의 HEAD**이며, 덩이 자신의 커밋 해시가 아닙니다.
 자기 해시는 커밋을 만든 뒤에야 생기므로 그 행을 같은 커밋에 넣을 수 없고, 표가 항상
 한 커밋씩 뒤처집니다. 기준은 커밋 전에 이미 알 수 있으므로 행을 코드와 같은 커밋에
@@ -58,31 +64,32 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 `.dashboard/`의 대시보드가 이 표를 읽어 다음 단계를 표시하므로 마커를 지우지 마십시오.
 
 <!-- port-map:start -->
-| 단계 | zero 범위 | assemble 착지 | 기준 | 상태 |
-| --- | --- | --- | --- | --- |
-| init | 스캐폴드 | app/ingestion/xref.py | 루트 | 완료 |
-| M1.1, M1.2 | app/ingestion/{parser,tables}.py | 동일 + data/profiles | ab2c23b | 완료 |
-| M1.3 | app/ingestion/chunk.py | 동일 | a2ba790 | 완료 |
-| M1.4 | app/ingestion/seed.py, app/db/ | 동일 | 2b47b71 | 완료 |
-| M2.1~M2.4 | app/retrieval/{types,embeddings,vector,lexical}.py | 동일 + _sql.py 분리 | 7fde61e | 완료 |
-| M2.5~M2.8 | app/retrieval/{hybrid,rerank,service,__main__}.py | 동일 | bc33427 | 완료 |
-| M2.9~M2.11 | app/retrieval/{bm25,sbert,cross_encoder}.py | 동일 + _sentence_transformers.py | d8c0439 | 완료 |
-| M3.1~M3.3 | app/evals/{types,loader,scoring,regression}.py | 동일 | 7532b72 | 완료 |
-| M3.4 | app/evals/{ablation,retrieval_eval}.py | retrieval_eval 1449줄을 arms·artifacts·corpus·measurement·run으로 분할 | dd4cc60 | 완료 |
-| M3.5 | app/evals/{curation,breakdown}.py | 동일 + reporting.py 공유 | c55a4ec | 완료 |
-| M4.1, M4.4 | app/llm/ | 동일 | 17cad6e | 완료 |
-| M4.2 | app/observability/ | 동일 + db Run·Trace 모델 | 2790ece | 완료 |
-| M4.3 | app/workflow/ | 동일 | 81b668f | 완료 |
-| M8.1~M8.4 | app/evals/{bilingual,crosslingual,parity}.py, app/retrieval/{language,translate}.py | 동일 + identity·cli 공유. tests/crosslingual은 tests/evals·tests/retrieval로 분산 | b1475b7 | 완료 |
-| M10.0 | zero 없음 (신규) | app/ingestion/registry.py | cc1957b | 완료 |
-| M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | a370c44 | 완료 |
-| M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | b5a3e54 | 완료 |
-| M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 0881a52 | 완료 |
-| M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | fd71a74 | 완료 |
-| M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ — compose는 병합, db healthcheck 유지 | 8d2264c | 완료 |
-| M9.1~M9.6 | app/agent/ — 11파일 2145줄 | app/agent/ | — | b150fdb |
-| M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — | 대기 |
-| M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — | 대기 |
+| 단계 | zero 범위 | assemble 착지 | 기준 |
+|---|---|---|---|
+| init | 스캐폴드 | app/ingestion/xref.py | 루트 |
+| M1.1, M1.2 | app/ingestion/{parser,tables}.py | 동일 + data/profiles | ab2c23b |
+| M1.3 | app/ingestion/chunk.py | 동일 | a2ba790 |
+| M1.4 | app/ingestion/seed.py, app/db/ | 동일 | 2b47b71 |
+| M2.1~M2.4 | app/retrieval/{types,embeddings,vector,lexical}.py | 동일 + _sql.py 분리 | 7fde61e |
+| M2.5~M2.8 | app/retrieval/{hybrid,rerank,service,__main__}.py | 동일 | bc33427 |
+| M2.9~M2.11 | app/retrieval/{bm25,sbert,cross_encoder}.py | 동일 + _sentence_transformers.py | d8c0439 |
+| M3.1~M3.3 | app/evals/{types,loader,scoring,regression}.py | 동일 | 7532b72 |
+| M3.4 | app/evals/{ablation,retrieval_eval}.py | retrieval_eval 1449줄을 arms·artifacts·corpus·measurement·run으로 분할 | dd4cc60 |
+| M3.5 | app/evals/{curation,breakdown}.py | 동일 + reporting.py 공유 | c55a4ec |
+| M4.1, M4.4 | app/llm/ | 동일 | 17cad6e |
+| M4.2 | app/observability/ | 동일 + db Run·Trace 모델 | 2790ece |
+| M4.3 | app/workflow/ | 동일 | 81b668f |
+| M8.1~M8.4 | app/evals/{bilingual,crosslingual,parity}.py, app/retrieval/{language,translate}.py | 동일 + identity·cli 공유. tests/crosslingual은 tests/evals·tests/retrieval로 분산 | b1475b7 |
+| M10.0 | zero 없음 (신규) | app/ingestion/registry.py | cc1957b |
+| M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | a370c44 |
+| M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | b5a3e54 |
+| M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 0881a52 |
+| M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | fd71a74 |
+| M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ — compose는 병합, db healthcheck 유지 | 8d2264c |
+| M9.1~M9.4 | app/agent/{types,tools,registry,provider,loop,builtin_tools}.py — 1359줄 | app/agent/ — 도구 스키마를 레지스트리 중립으로 교정 | — |
+| M9.5~M9.6 | app/agent/{decompose,eval,mcp_server,__main__}.py — 786줄 | app/agent/ | — |
+| M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — |
+| M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — |
 <!-- port-map:end -->
 
 ### 리뷰 단위
@@ -111,7 +118,7 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M6 | — | 데모가 실제 파이프라인을 쓰는가, 아니면 결과를 흉내내는가. 오프라인 기본 경로가 유료 공급자를 부르지 않는가 |
 | M7 | — | 릴리스 가드가 게시되지 않은 것을 게시됐다고 주장하지 않는가. 아카이브가 비밀이나 코퍼스 원문을 담지 않는가 |
 | M8 | 기록 이전 | 언어 라우팅이 번역 암과 분리돼 측정되는가. 패리티 게이트가 한쪽 언어에 맞춰 느슨해지지 않았는가 |
-| M9 | — | 도구 선택을 모델에 넘기고도 중단 조건이 계약으로 남아 있는가. 인용 없는 종료가 막혀 있는가 |
+| M9 | — | 도구 선택을 모델에 넘기고도 중단 조건이 계약으로 남아 있는가. 인용 없는 종료가 막혀 있는가. **두 덩이로 나눠 리뷰한다**(§4-1 예외) — 앞 덩이로는 "하나의 스키마가 LLM·MCP·프롬프트를 모두 먹여 살린다"를 닫을 수 없다. MCP가 뒤 덩이에 있다 |
 | M10 | 기록 이전 | 레지스트리 어댑터가 SEC 이름을 경계 밖으로 내보내지 않는가. 한국어 lexical 통계가 언어별로 분리돼 있는가 |
 <!-- review-focus:end -->
 

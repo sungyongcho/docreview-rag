@@ -158,7 +158,7 @@ if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
 else
     B=""; D=""; R=""; GRN=""; YEL=""; RED=""; CYN=""; MAG=""
 fi
-RULE_CHAR=${DASH_RULE_CHAR:-─}
+RULE_CHAR=${DASH_RULE_CHAR:-╌}
 
 # --------------------------------------------------------------------------
 # Display width. A terminal cell is not a character: Hangul, Han, kana and
@@ -249,9 +249,10 @@ row() {
     FRAME+=("$CUT")
 }
 hr() {
+    local ch=${1:-$RULE_CHAR} color=${2:-$D}
     local line=""
     printf -v line '%*s' "$TCOLS" ''
-    FRAME+=("${D}${line// /$RULE_CHAR}${R}")
+    FRAME+=("${color}${line// /$ch}${R}")
 }
 blank() { FRAME+=(""); }
 
@@ -584,7 +585,7 @@ enter_screen() {
     # otherwise, and with mouse tracking on a single click is a burst of bytes
     # -- which is what "clicking types escape sequences at me" actually is.
     STTY_SAVED=$(stty -g 2>/dev/null) && stty -echo 2>/dev/null
-    [ "$CAP_MOUSE" = yes ] && printf '\e[?1000h\e[?1002h\e[?1006h'
+    [ "$CAP_MOUSE" = yes ] && printf '\e[?1000h\e[?1002h\e[?1003h\e[?1006h'
     return 0
 }
 LEFT_SCREEN=0
@@ -593,7 +594,7 @@ leave_screen() {
     [ "$CAP_TTY" = yes ] || return 0
     [ "$LEFT_SCREEN" = 1 ] && return 0
     LEFT_SCREEN=1
-    [ "$CAP_MOUSE" = yes ] && printf '\e[?1006l\e[?1002l\e[?1000l'
+    [ "$CAP_MOUSE" = yes ] && printf '\e[?1006l\e[?1003l\e[?1002l\e[?1000l'
     [ -n "${STTY_SAVED:-}" ] && stty "$STTY_SAVED" 2>/dev/null
     tput cnorm 2>/dev/null || printf '\e[?25h'
     if [ "$ENTERED_ALT" = 1 ]; then
@@ -607,6 +608,23 @@ leave_screen() {
 # Paint from the home position, erasing each line as it is rewritten and the
 # rest of the screen at the end. No full clear, so no flicker; no newline after
 # the last visible row, so the frame never scrolls into the scrollback.
+# Which FRAME row each screen row is showing, so a click and a hover can be
+# resolved without recomputing the scroll arithmetic.
+SCREEN_OF=()
+PAINTED=()
+HOVER_ROW=-1
+REPAINT_ONLY=0
+HOVER_BG=$'\e[48;5;236m'
+
+# The hovered row keeps its own colours; only the background is forced. A reset
+# inside the row would drop that background, so each one re-arms it. Sets HL
+# instead of printing, so a hover repaint costs no command substitution fork.
+_hl() {
+    HL="$HOVER_BG${1//$'\e[0m'/$'\e[0m'$HOVER_BG}"$'\e[K\e[0m'
+}
+
+# Repaint only the rows that actually changed. An idle tick usually rewrites the
+# clock and nothing else, and a hover rewrites two rows.
 paint() {
     local -i total=${#FRAME[@]}
     local -i chrome=$FRAME_CHROME; ((chrome > total)) && chrome=$total
@@ -616,17 +634,40 @@ paint() {
     ((VIEW_SCROLL < 0)) && VIEW_SCROLL=0
     local -i start=$((chrome + VIEW_SCROLL))
     local -i last=$((start + visible - 1)); ((last > total - 1)) && last=$((total - 1))
-    local out="" i first=1
-    for ((i = 0; i < chrome; i++)); do
-        [ "$first" = 1 ] || out+=$'\n'; first=0
-        out+="${FRAME[i]}"$'\e[K'
+
+    local -a want=() map=()
+    local -i i
+    for ((i = 0; i < chrome; i++)); do want+=("${FRAME[i]}"); map+=("$i"); done
+    for ((i = start; i <= last; i++)); do want+=("${FRAME[i]}"); map+=("$i"); done
+    SCREEN_OF=("${map[@]}")
+
+    local out="" line
+    local -i n=${#want[@]}
+    for ((i = 0; i < n; i++)); do
+        if ((i == HOVER_ROW)); then
+            _hl "${want[i]}"; line=$HL
+        else
+            line="${want[i]}"$'\e[K'
+        fi
+        [ "${PAINTED[i]-$'\x01'}" = "$line" ] && continue
+        out+=$'\e['$((i + 1))$';1H'"$line"
+        PAINTED[i]=$line
     done
-    for ((i = start; i <= last; i++)); do
-        [ "$first" = 1 ] || out+=$'\n'; first=0
-        out+="${FRAME[i]}"$'\e[K'
-    done
-    printf '\e[H%s\e[J' "$out"
+    # Clear anything the frame no longer reaches, once. FORCE_CLEAR covers the
+    # rows repaint_all forgot: with PAINTED emptied, the shrink check alone can
+    # never see that the previous frame reached further down the screen.
+    if ((FORCE_CLEAR)) || ((${#PAINTED[@]} > n)); then
+        out+=$'\e['$((n + 1))$';1H\e[J'
+        PAINTED=("${PAINTED[@]:0:n}")
+        FORCE_CLEAR=0
+    fi
+    [ -n "$out" ] && printf '%s' "$out"
 }
+
+# A resize or a screen swap invalidates what we believe is on screen -- and may
+# shrink the frame, so the next paint must also clear below the new last row.
+FORCE_CLEAR=0
+repaint_all() { PAINTED=(); FORCE_CLEAR=1; }
 
 # --------------------------------------------------------------------------
 # Panel
@@ -813,7 +854,7 @@ build_frame() {
         FRAME+=("$left")
     fi
     HIT[0]="refresh"
-    hr
+    hr ━ "$CYN"
     ctx_strip
     FRAME_CHROME=${#FRAME[@]}
 
@@ -840,9 +881,9 @@ build_frame() {
         local name=${SECTIONS[idx]}
         n=$((idx + 1))
         local title=${SECTION_TITLES[$name]:-$name}
-        local mark="▾"
-        [ -n "${COLLAPSED[$name]:-}" ] && mark="▸"
-        row " ${D}${n}${R} ${mark} ${B}${title}${R}"
+        local mark="▾" accent=$CYN
+        [ -n "${COLLAPSED[$name]:-}" ] && { mark="▸"; accent=$D; }
+        row "${accent}▌${R}${D}${n}${R} ${accent}${mark}${R} ${B}${title}${R}"
         HIT[$((${#FRAME[@]} - 1))]="section:$name"
         if [ -z "${COLLAPSED[$name]:-}" ]; then
             local before=${#FRAME[@]}
@@ -975,7 +1016,7 @@ NAV_VIEW=(); NAV_ARG=(); NAV_TITLE=()
 
 # 화면 이름은 VIEW_TITLES, 없으면 구획 제목, 그것도 없으면 내부 이름을 쓴다.
 view_title() { printf '%s' "${VIEW_TITLES[$1]:-${SECTION_TITLES[$1]:-$1}}"; }
-nav_push() { NAV_VIEW+=("$1"); NAV_ARG+=("$2"); NAV_TITLE+=("$(view_title "$1")"); VIEW_SCROLL=0; }
+nav_push() { NAV_VIEW+=("$1"); NAV_ARG+=("$2"); NAV_TITLE+=("$(view_title "$1")"); VIEW_SCROLL=0; HOVER_ROW=-1; repaint_all; }
 nav_pop() {
     local -i n=${#NAV_VIEW[@]}
     ((n)) || return 0
@@ -983,6 +1024,8 @@ nav_pop() {
     NAV_ARG=("${NAV_ARG[@]:0:$((n - 1))}")
     NAV_TITLE=("${NAV_TITLE[@]:0:$((n - 1))}")
     VIEW_SCROLL=0
+    HOVER_ROW=-1
+    repaint_all
 }
 nav_depth() { printf '%d' "${#NAV_VIEW[@]}"; }
 
@@ -1038,6 +1081,17 @@ handle_mouse() {
     local body=${seq:1:$((${#seq} - 2))}
     local btn=${body%%;*}; local rest=${body#*;}
     local y=${rest#*;}
+    # Motion carries bit 5. Track which row the cursor is on. REPAINT_ONLY is
+    # set for EVERY motion event, moved row or not: without it the main loop
+    # would rebuild the frame -- and run the forking checks -- once per event,
+    # and same-row motion is most of what any-motion tracking delivers.
+    if ((btn & 32)); then
+        local -i want=$((y - 1))
+        ((want < 0 || want >= ${#SCREEN_OF[@]})) && want=-1
+        ((want != HOVER_ROW)) && HOVER_ROW=$want
+        REPAINT_ONLY=1
+        return 0
+    fi
     if ((btn == 2)); then nav_pop; return 0; fi
     if ((btn == 64)); then
         if [ "$CUR_VIEW" = report ]; then
@@ -1060,8 +1114,9 @@ handle_mouse() {
     # paint() shows the chrome rows, then the body from VIEW_SCROLL onward, so a
     # screen row below the chrome names a FRAME row that far further down. Look
     # up the row the user actually clicked, not the one that used to be there.
-    local -i _row=$((y - 1))
-    ((_row >= FRAME_CHROME)) && _row=$((_row + VIEW_SCROLL))
+    local -i _screen=$((y - 1))
+    local -i _row=${SCREEN_OF[$_screen]:--1}
+    ((_row < 0)) && return 0
     local target=${HIT[$_row]:-}
     case $target in
         refresh)
@@ -1154,8 +1209,14 @@ trap 'leave_screen' EXIT
 enter_screen
 
 while :; do
-    term_size
-    if [ "$(nav_depth)" != 0 ]; then
+    # Probing the terminal forks tput twice; the size only changes on WINCH,
+    # so probe only then. RESIZED starts at 1, covering the first iteration.
+    if ((RESIZED)); then term_size; repaint_all; fi
+    # A hover moved the cursor and nothing else. Reuse the frame we already
+    # built: rebuilding it here would run the checks, and those fork.
+    if ((REPAINT_ONLY)); then
+        REPAINT_ONLY=0
+    elif [ "$(nav_depth)" != 0 ]; then
         build_view
     else
         run_checks
