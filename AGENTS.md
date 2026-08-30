@@ -1,0 +1,138 @@
+# AGENTS.md — 재조립 루프 운용 규칙
+
+이 파일은 `assemble` 브랜치에서 반복하는 **이식 루프**의 규칙만 담는다.
+브랜치 역할·판단 우선순위·docstring 규격·테스트 배치 규격 같은 전체 계약은
+별도의 재조립 하네스 문서에 있고, 세션마다 그것을 함께 제공한다.
+둘이 충돌하면 하네스가 우선한다.
+
+---
+
+## 1. 루프 한 바퀴
+
+```
+범위 확정 → 이식(가져오기만) → 청소 → [사용자가 외부에서 코드 리뷰를 받아옴]
+   → 수정 → 재청소 → 커밋 준비 → 커밋
+```
+
+| 단계 | 끝나는 조건 |
+|---|---|
+| 범위 확정 | 이 덩이가 어느 체크포인트인지, 어떤 파일이 오는지 목록으로 확정됨 |
+| 이식 | 파일이 제자리에 놓임. 이 단계에서는 아무것도 고치지 않는다 |
+| 청소 | 아래 §3 점검이 전부 0건, ruff·format·`git diff --check` 통과 |
+| 리뷰 반영 | 사용자가 가져온 지적을 최소 범위로 수정 |
+| 재청소 | §3 재실행. 리뷰 수정이 새 위반을 만들지 않았는지 확인 |
+| 커밋 준비 | §5 점검표 + `git add` 명령 + 커밋 메시지 + 한글 요약 제출 |
+| 커밋 | **사용자가 실행한다.** 에이전트는 절대 커밋하지 않는다 |
+
+## 2. 요청 문구별 권한
+
+| 문구 | 하는 일 |
+|---|---|
+| "계획", "확인해봐", "나눠봐" | 읽기 전용 조사. 파일 수정·생성 금지 |
+| "가져와", "가져오기만 해" | 파일 복사만. 정리·수정·이름변경·심 제거 전부 금지 |
+| "청소", "코드 정리" | 이번 덩이와 직접 관련 테스트만. 다른 모듈 탐색 금지 |
+| "docstring 검수" | 바뀐 파일 전수 스캔 후 필요한 것만 수정 |
+| "코드 리뷰" | 읽기 전용 finding만. 수정 금지 |
+| "커밋 준비" | §5 점검표 + staging 명령 + 메시지 + 한글 요약 |
+
+문구가 없으면 정리·수정까지 진행하는 것으로 본다.
+
+## 3. 매 라운드 반복되는 점검
+
+이식본마다 실제로 매번 나온 것들이다. 청소 단계에서 전수로 확인한다.
+
+1. **학습용 심** — `tests/support.py`의 `need()`/`optional_module()`, conftest의 모듈
+   픽스처(`E`/`W`/`G`/`OBS`/`XL`…), `*_MODULE` 환경변수 스위치. 전부 제거하고 직접 import.
+2. **패키지 façade import** — `from app.llm import X` 형태. 이 저장소의 `__init__.py`는
+   재수출하지 않는다(`app/retrieval`만 예외). 항상 정의 모듈 경로로.
+3. **테스트 배치** — 구현 파일 기준이다. `app/X/y.py` → `tests/X/test_y.py`,
+   여러 모듈 조립은 `tests/X/test_NN_<behavior>.py`(두 자리, 디렉터리별 01부터 연속).
+4. **테스트 간 helper import** — `from tests.a.test_b import c` 금지. `support.py`로
+   올리거나 파일 전용으로 자립시킨다.
+5. **누락 `__init__.py`** — `app/` 하위 패키지마다 docstring만 있는 파일을 둔다.
+6. **DB 모델 선행 조건** — persistence 모듈은 `app/db/models.py`에 테이블이 먼저 있어야
+   한다(`EvalResult`, `Run`, `Trace` 전례). 스키마 계약 테스트는 `tests/db/test_models.py`.
+7. **zero 분할 이전 레이아웃 참조** — 예전 모듈에서 심볼을 가져오거나(`retrieval_eval`),
+   평면 필드에 접근(`GroupScore.case_count` → `.suite.case_count`)하는 코드.
+8. **비공개·중첩 헬퍼 docstring** — ruff는 `_` 접두사를 잡지 않지만 이 저장소는 전부 단다.
+   테스트 함수 docstring은 1~3줄, NumPyDoc 섹션 금지.
+9. **덮어쓰기 사고** — zero 파일이 assemble 파일 위에 통째로 붙어 계약이 사라지는 경우.
+   `git diff`로 이번 덩이와 무관한 삭제가 있는지 항상 확인한다.
+
+## 4. 덩이 분할 판단
+
+**파일 소유가 갈리면 나눈다. 한 파일을 여러 체크포인트가 건드리면 합친다.**
+
+헝크 단위로 쪼개면 디스크에 존재한 적 없는 중간 상태가 커밋된다. 그 커밋에는 실행 결과를
+붙일 수 없고, "모든 커밋은 그 상태로 검증됐다"는 이 저장소의 성질을 잃는다.
+
+M10에서 3분할을 권했다가 뒤집은 사례가 근거다 — `registry.py`의 `Registry` 데이터클래스가
+M10.1의 어댑터 등록과 M10.3의 `chunk_target`을 같은 정의에 담고 있었고, `parser.py`가
+M10.2의 `CELL_TAGS`를 import했다.
+
+분할할 때는 **커밋될 스냅샷 자체**를 격리 검증한다.
+
+```bash
+git archive "$(git write-tree)" | tar -x -C /tmp/staged
+cd /tmp/staged && PYTHONPATH=/tmp/staged <repo>/.venv/bin/python -m pytest -q
+```
+
+코퍼스 원문(`data/corpus/**/*.html`)이 git에 없으므로 이 검증은 **import·수집 breakage만**
+잡는다. 데이터 의존 테스트 결과는 최종 워킹 트리 기준으로 보고한다.
+
+## 5. 커밋 전 점검표
+
+- 이번 기능의 파일이 전부 포함됐는가 (staged / unstaged / untracked 모두 확인)
+- 무관한 작업이 섞이지 않았는가 — 섞였으면 커밋을 나눈다
+- 테스트 파일명이 §3-3 규칙을 따르는가
+- 가까운 `conftest.py` / `support.py` / `golden.py`를 재사용했는가
+- production 로직이 테스트에 복제되지 않았는가
+- ruff / format / `git diff --check` 통과
+- DB 검증 여부가 정확히 보고됐는가
+
+## 6. 검증 보고 규칙
+
+**통과함 / 실행하지 않음 / 환경 때문에 실행하지 못함 / 무관한 기존 실패**를 구분한다.
+
+- 타입 검사: 이 환경에 `pyright`/`basedpyright` 바이너리가 없다. 매번 "미실행"으로 명시.
+- live PostgreSQL: 내려가 있으면 skip으로 빠진다. 스키마·SQL을 건드린 덩이는 반드시
+  `docker compose up -d db` 후 `-m live_postgres --require-live-postgres`를 돌린다.
+- SQL·pgvector 동작을 mock 테스트만으로 "검증 완료"라고 하지 않는다.
+
+## 7. 커밋 산출 형식
+
+한 줄 conventional commit이 전역 기본이지만 **이 저장소는 본문을 쓴다.**
+`git add` 블록과 히어독을 항상 함께 낸다. `Co-Authored-By`·도구 귀속 푸터 금지.
+
+```
+type(scope): concise outcome
+
+Summary
+한두 문장.
+
+Changes
+
+- 완성된 기능 단위로. 작업 과정이 아니라 결과를
+- 불릿 기호는 `-`
+
+Verification
+
+- 실행한 명령과 결과
+- 실행하지 못한 것은 그렇게 명시
+```
+
+내부 단계 약자(`M1`, `M4.2` 등)와 breaking-change `!`는 커밋 메시지에 넣지 않는다.
+
+## 8. 금지
+
+- 명시적 요청 없는 커밋 실행
+- 사용자 변경의 임의 revert / stash / format
+- 현재 요청과 무관한 모듈 탐색이나 리팩터
+- `new` / `zero` 브랜치 직접 수정
+- zero 완성 파일의 무비판적 전체 복사
+
+## 9. 진행 상황
+
+이식 덩이별 zero 범위와 assemble 착지는 `README.md`의 이식 범위표에 기록한다.
+`scripts/dashboard.sh`가 그 표를 읽어 다음 단계를 표시하므로, 덩이를 끝내면
+표의 상태를 갱신한다.

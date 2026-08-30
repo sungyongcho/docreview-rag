@@ -42,3 +42,63 @@ M5 — Serving: M5.1 → M5.4 → M5.2 → M5.3
 M9 — Agent: M9.1 → M9.2 → M9.3 → M9.4 → M9.5 → M9.6
 M6 — Demo: (M6.1 + M6.2) → M6.3
 M7 — Deployment: M7.1 → M7.2 → M7.3
+
+### 이식 범위 (실측)
+
+각 행은 실제 이식 덩이 하나이며 커밋 하나에 대응합니다. `zero 범위`는 그 덩이가
+`zero`에서 가져온 파일이고, `assemble 착지`는 이 브랜치에서 어디에 놓였는지입니다.
+착지가 zero와 다른 행은 그 사실을 함께 적습니다.
+
+`scripts/dashboard.sh`가 이 표를 읽어 다음 단계를 표시하므로 마커를 지우지 마십시오.
+
+<!-- port-map:start -->
+| 단계 | zero 범위 | assemble 착지 | 커밋 | 상태 |
+|---|---|---|---|---|
+| init | 스캐폴드 | app/ingestion/xref.py | ab2c23b | 완료 |
+| M1.1, M1.2 | app/ingestion/{parser,tables}.py | 동일 + data/profiles | a2ba790 | 완료 |
+| M1.3 | app/ingestion/chunk.py | 동일 | 2b47b71 | 완료 |
+| M1.4 | app/ingestion/seed.py, app/db/ | 동일 | 7fde61e | 완료 |
+| M2.1~M2.4 | app/retrieval/{types,embeddings,vector,lexical}.py | 동일 + _sql.py 분리 | bc33427 | 완료 |
+| M2.5~M2.8 | app/retrieval/{hybrid,rerank,service,__main__}.py | 동일 | d8c0439 | 완료 |
+| M2.9~M2.11 | app/retrieval/{bm25,sbert,cross_encoder}.py | 동일 + _sentence_transformers.py | 7532b72 | 완료 |
+| M3.1~M3.3 | app/evals/{types,loader,scoring,regression}.py | 동일 | dd4cc60 | 완료 |
+| M3.4 | app/evals/{ablation,retrieval_eval}.py | retrieval_eval 1449줄을 arms·artifacts·corpus·measurement·run으로 분할 | c55a4ec | 완료 |
+| M3.5 | app/evals/{curation,breakdown}.py | 동일 + reporting.py 공유 | 8b1e053 | 완료 |
+| M4.1, M4.4 | app/llm/ | 동일 | 117bc92 | 완료 |
+| M4.2 | app/observability/ | 동일 + db Run·Trace 모델 | 81b668f | 완료 |
+| M4.3 | app/workflow/ | 동일 | b1475b7 | 완료 |
+| M8.1~M8.4 | app/evals/{bilingual,crosslingual,parity}.py, app/retrieval/{language,translate}.py | 동일 + identity·cli 공유. tests/crosslingual은 tests/evals·tests/retrieval로 분산 | cc1957b | 완료 |
+| M10.0 | zero 없음 (신규) | app/ingestion/registry.py | a370c44 | 완료 |
+| M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | b5a3e54 | 완료 |
+| M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | 920825e | 완료 |
+| M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | — | 대기 |
+| M5.3 | app/api/runtime.py — 522줄 | app/api/ | — | 대기 |
+| M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ | — | 대기 |
+| M9.1~M9.6 | app/agent/ — 11파일 2145줄 | app/agent/ | — | 대기 |
+| M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — | 대기 |
+| M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — | 대기 |
+<!-- port-map:end -->
+
+이식 덩이가 아닌 커밋: `17cad6e` `2790ece` `91b42d1` 리팩터·수정, `e130627` 도구.
+
+모듈 총량 (zero 대 현재):
+
+| 모듈 | zero | assemble |
+|---|---|---|
+| M1 ingestion | 7파일 3471줄 | 10파일 4352줄 |
+| M2 retrieval | 14파일 2184줄 | 17파일 2774줄 |
+| M3 evals | 12파일 4901줄 | 20파일 5653줄 |
+| M4 llm+observability+workflow | 14파일 3115줄 | 14파일 2999줄 |
+| M5 api (대기) | 17파일 2035줄 | — |
+| M9 agent (대기) | 11파일 2145줄 | — |
+| M6 demo (대기) | 1파일 595줄 | — |
+| M7 release (대기) | 7파일 509줄 | — |
+
+### 대시보드
+
+작업 상태를 한 화면에서 봅니다. `Ctrl+C`로 종료하고, `--once`는 한 프레임만 출력합니다.
+
+```bash
+./scripts/dashboard.sh          # 1초마다 제자리 갱신
+./scripts/suite.sh              # 전체 스위트·수집 수 캐시 갱신
+```
