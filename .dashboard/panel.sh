@@ -198,28 +198,34 @@ PY
             _mod_done[$mod]=$(( ${_mod_done[$mod]:-0} + 1 ))
         elif [ -z "$STAGE" ]; then
             STAGE=${f[0]}; ZERO_RANGE=${f[1]}; LANDING=${f[2]}
-            REVIEW_MOD=$mod
         fi
     done
-    # The module under review is the one the next chunk belongs to; with the
-    # table finished there is no next chunk, so fall back to the last module.
-    [ -n "$REVIEW_MOD" ] || REVIEW_MOD=${_mod_order[${#_mod_order[@]} - 1]:-}
+    # The review follows the newest landed chunk, not the next pending one. Keyed
+    # on the next chunk instead, a module that just filled up would be replaced by
+    # the following one at the very moment it became reviewable.
+    for line in "${PORT_ROWS[@]}"; do
+        IFS=$'\t' read -r -a f <<<"$line"
+        if [ "${f[4]}" = "완료" ]; then
+            REVIEW_MOD="init"; [[ ${f[0]} =~ ^(M[0-9]+) ]] && REVIEW_MOD=${BASH_REMATCH[1]}
+        fi
+    done
+    [ -n "$REVIEW_MOD" ] || REVIEW_MOD=${_mod_order[0]:-}
     REVIEW_TOTAL=${_mod_total[$REVIEW_MOD]:-0}
     REVIEW_DONE=${_mod_done[$REVIEW_MOD]:-0}
     for mod in "${_mod_order[@]}"; do
         [ "${_mod_done[$mod]:-0}" = "${_mod_total[$mod]}" ] && REVIEW_READY+=("$mod")
     done
-    # A review reads the module, so it starts after the commit the module's
-    # first chunk landed on -- that parent is the base of `git diff <base>..HEAD`.
-    local first=""
+    # The table records the base each chunk landed on, so a module's review range
+    # is its first chunk's base -- read, not derived from a hash that row cannot
+    # have carried at the time it was written.
     for line in "${PORT_ROWS[@]}"; do
         IFS=$'\t' read -r -a f <<<"$line"
         mod="init"; [[ ${f[0]} =~ ^(M[0-9]+) ]] && mod=${BASH_REMATCH[1]}
         if [ "$mod" = "$REVIEW_MOD" ] && [ "${f[4]}" = "완료" ] && [ "${f[3]}" != "—" ]; then
-            first=${f[3]}; break
+            git cat-file -e "${f[3]}^{commit}" 2>/dev/null && REVIEW_BASE=${f[3]}
+            break
         fi
     done
-    [ -n "$first" ] && REVIEW_BASE=$(git rev-parse --short "${first}^" 2>/dev/null)
 
     # The table is updated by hand after each commit, so it silently falls behind
     # and every count on this screen goes stale with it. Nothing else notices, so
@@ -234,7 +240,9 @@ PY
     done
     if [ -n "$last" ] && git cat-file -e "${last}^{commit}" 2>/dev/null; then
         MAP_LAST=$last
-        MAP_LAG=$(git rev-list --count "${last}..HEAD" -- app tests 2>/dev/null || printf 0)
+        local seen; seen=$(git rev-list --count "${last}..HEAD" -- app tests 2>/dev/null || printf 0)
+        MAP_LAG=$((seen - 1))
+        ((MAP_LAG < 0)) && MAP_LAG=0
     fi
 
     REVIEW_FOCUS=$(awk -F'|' -v want="$REVIEW_MOD" '
@@ -503,12 +511,20 @@ detail_chunk() {
     blank
     kv "zero 범위" "${f[1]}"
     kv "착지     " "${f[2]}"
-    kv "커밋     " "${f[3]}"
+    kv "기준     " "${f[3]}"
     blank
     if [ "${f[3]}" != "—" ] && git cat-file -e "${f[3]}^{commit}" 2>/dev/null; then
-        rows_from < <(git show -s --format='%h  %ad  %s' --date=short "${f[3]}" 2>/dev/null)
-        hr
-        rows_from < <(git show --stat --format='' "${f[3]}" 2>/dev/null | sed '/^$/d' | head -24)
+        # The row records where the chunk landed, so its own commit is the first
+        # child of that base on this branch.
+        local own
+        own=$(git rev-list --ancestry-path --reverse "${f[3]}..HEAD" 2>/dev/null | head -1)
+        if [ -n "$own" ]; then
+            rows_from < <(git show -s --format='%h  %ad  %s' --date=short "$own" 2>/dev/null)
+            hr
+            rows_from < <(git show --stat --format='' "$own" 2>/dev/null | sed '/^$/d' | head -24)
+        else
+            row "  ${D}기준 이후의 커밋을 찾지 못했다${R}"
+        fi
     else
         row "  ${D}아직 커밋되지 않은 덩이다. 위 zero 범위가 가져올 대상이다.${R}"
         blank

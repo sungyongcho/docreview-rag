@@ -49,31 +49,37 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 `zero`에서 가져온 파일이고, `assemble 착지`는 이 브랜치에서 어디에 놓였는지입니다.
 착지가 zero와 다른 행은 그 사실을 함께 적습니다.
 
+`기준`은 그 덩이가 **올라간 시점의 HEAD**이며, 덩이 자신의 커밋 해시가 아닙니다.
+자기 해시는 커밋을 만든 뒤에야 생기므로 그 행을 같은 커밋에 넣을 수 없고, 표가 항상
+한 커밋씩 뒤처집니다. 기준은 커밋 전에 이미 알 수 있으므로 행을 코드와 같은 커밋에
+담을 수 있고, 그래야 표가 어긋나지 않습니다. 덩이 자신의 커밋은 `기준`의 자식이며,
+코드 리뷰 범위도 `git diff <그 모듈 첫 덩이의 기준>..HEAD`로 바로 나옵니다.
+
 `.dashboard/`의 대시보드가 이 표를 읽어 다음 단계를 표시하므로 마커를 지우지 마십시오.
 
 <!-- port-map:start -->
-| 단계 | zero 범위 | assemble 착지 | 커밋 | 상태 |
-|---|---|---|---|---|
-| init | 스캐폴드 | app/ingestion/xref.py | ab2c23b | 완료 |
-| M1.1, M1.2 | app/ingestion/{parser,tables}.py | 동일 + data/profiles | a2ba790 | 완료 |
-| M1.3 | app/ingestion/chunk.py | 동일 | 2b47b71 | 완료 |
-| M1.4 | app/ingestion/seed.py, app/db/ | 동일 | 7fde61e | 완료 |
-| M2.1~M2.4 | app/retrieval/{types,embeddings,vector,lexical}.py | 동일 + _sql.py 분리 | bc33427 | 완료 |
-| M2.5~M2.8 | app/retrieval/{hybrid,rerank,service,__main__}.py | 동일 | d8c0439 | 완료 |
-| M2.9~M2.11 | app/retrieval/{bm25,sbert,cross_encoder}.py | 동일 + _sentence_transformers.py | 7532b72 | 완료 |
-| M3.1~M3.3 | app/evals/{types,loader,scoring,regression}.py | 동일 | dd4cc60 | 완료 |
-| M3.4 | app/evals/{ablation,retrieval_eval}.py | retrieval_eval 1449줄을 arms·artifacts·corpus·measurement·run으로 분할 | c55a4ec | 완료 |
-| M3.5 | app/evals/{curation,breakdown}.py | 동일 + reporting.py 공유 | 8b1e053 | 완료 |
-| M4.1, M4.4 | app/llm/ | 동일 | 117bc92 | 완료 |
-| M4.2 | app/observability/ | 동일 + db Run·Trace 모델 | 81b668f | 완료 |
-| M4.3 | app/workflow/ | 동일 | b1475b7 | 완료 |
-| M8.1~M8.4 | app/evals/{bilingual,crosslingual,parity}.py, app/retrieval/{language,translate}.py | 동일 + identity·cli 공유. tests/crosslingual은 tests/evals·tests/retrieval로 분산 | cc1957b | 완료 |
-| M10.0 | zero 없음 (신규) | app/ingestion/registry.py | a370c44 | 완료 |
-| M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | b5a3e54 | 완료 |
-| M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | 920825e | 완료 |
-| M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 42760b7 | 완료 |
-| M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | 004d987 | 완료 |
-| M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ | — | 대기 |
+| 단계 | zero 범위 | assemble 착지 | 기준 | 상태 |
+| --- | --- | --- | --- | --- |
+| init | 스캐폴드 | app/ingestion/xref.py | 루트 | 완료 |
+| M1.1, M1.2 | app/ingestion/{parser,tables}.py | 동일 + data/profiles | ab2c23b | 완료 |
+| M1.3 | app/ingestion/chunk.py | 동일 | a2ba790 | 완료 |
+| M1.4 | app/ingestion/seed.py, app/db/ | 동일 | 2b47b71 | 완료 |
+| M2.1~M2.4 | app/retrieval/{types,embeddings,vector,lexical}.py | 동일 + _sql.py 분리 | 7fde61e | 완료 |
+| M2.5~M2.8 | app/retrieval/{hybrid,rerank,service,__main__}.py | 동일 | bc33427 | 완료 |
+| M2.9~M2.11 | app/retrieval/{bm25,sbert,cross_encoder}.py | 동일 + _sentence_transformers.py | d8c0439 | 완료 |
+| M3.1~M3.3 | app/evals/{types,loader,scoring,regression}.py | 동일 | 7532b72 | 완료 |
+| M3.4 | app/evals/{ablation,retrieval_eval}.py | retrieval_eval 1449줄을 arms·artifacts·corpus·measurement·run으로 분할 | dd4cc60 | 완료 |
+| M3.5 | app/evals/{curation,breakdown}.py | 동일 + reporting.py 공유 | c55a4ec | 완료 |
+| M4.1, M4.4 | app/llm/ | 동일 | 17cad6e | 완료 |
+| M4.2 | app/observability/ | 동일 + db Run·Trace 모델 | 2790ece | 완료 |
+| M4.3 | app/workflow/ | 동일 | 81b668f | 완료 |
+| M8.1~M8.4 | app/evals/{bilingual,crosslingual,parity}.py, app/retrieval/{language,translate}.py | 동일 + identity·cli 공유. tests/crosslingual은 tests/evals·tests/retrieval로 분산 | b1475b7 | 완료 |
+| M10.0 | zero 없음 (신규) | app/ingestion/registry.py | cc1957b | 완료 |
+| M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | a370c44 | 완료 |
+| M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | b5a3e54 | 완료 |
+| M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 0881a52 | 완료 |
+| M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | fd71a74 | 완료 |
+| M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ — compose는 병합, db healthcheck 유지 | 8d2264c | 완료 |
 | M9.1~M9.6 | app/agent/ — 11파일 2145줄 | app/agent/ | — | 대기 |
 | M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — | 대기 |
 | M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — | 대기 |
