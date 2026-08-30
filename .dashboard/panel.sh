@@ -74,7 +74,7 @@ CHANGED_PY=0; DOC_GAPS=0; SHIM_FILES=0
 STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=0
 PORT_ROWS=()
 REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""; REVIEW_BASE=""
-MAP_LAG=0; MAP_LAST=""
+MAP_LAG=0; MAP_LAST=""; MAP_UNRECORDED=""
 REVIEW_DONE_AT=""
 REVIEW_READY=()
 DB_STATE="?"; DB_TICK=0
@@ -244,9 +244,30 @@ PY
     done
     if [ -n "$last" ] && git cat-file -e "${last}^{commit}" 2>/dev/null; then
         MAP_LAST=$last
-        local seen; seen=$(git rev-list --count "${last}..HEAD" -- app tests 2>/dev/null || printf 0)
-        MAP_LAG=$((seen - 1))
-        ((MAP_LAG < 0)) && MAP_LAG=0
+        # Every recorded base -- a chunk's and a module review's alike -- accounts
+        # for the commit that landed on it. What is left over after those is work
+        # the table was never told about.
+        local bases=" "
+        bases+=$(awk -F'|' '
+            /port-map:start/    { where = "port";   next }
+            /review-focus:start/ { where = "review"; next }
+            /port-map:end|review-focus:end/ { where = ""; next }
+            where != "" && /^\|/ {
+                # The base sits in a different column in each table.
+                col = (where == "port") ? 5 : 3
+                gsub(/^[ \t]+|[ \t]+$/, "", $col); print $col
+            }
+        ' README.md 2>/dev/null | tr '\n' ' ')
+        MAP_LAG=0; MAP_UNRECORDED=""
+        local c parent
+        while IFS= read -r c; do
+            [ -n "$c" ] || continue
+            parent=$(git rev-parse --short "${c}^" 2>/dev/null)
+            case $bases in
+                *" $parent "*) ;;
+                *) MAP_LAG=$((MAP_LAG + 1)); MAP_UNRECORDED+="$c "; ;;
+            esac
+        done < <(git rev-list --abbrev-commit "${last}..HEAD" -- app tests 2>/dev/null)
     fi
 
     IFS='|' read -r REVIEW_DONE_AT REVIEW_FOCUS <<<"$(awk -F'|' -v want="$REVIEW_MOD" '
@@ -518,7 +539,7 @@ detail_progress() {
     blank
     if [ "${MAP_LAG:-0}" -gt 0 ]; then
         row "  $(badge bad "표가 ${MAP_LAG}개 커밋 뒤처졌다 — ${MAP_LAST} 이후로 기록되지 않았다")"
-        rows_from < <(git log --oneline "${MAP_LAST}..HEAD" -- app tests 2>/dev/null | sed 's/^/    /')
+        rows_from < <(for c in $MAP_UNRECORDED; do git log -1 --oneline "$c"; done 2>/dev/null | sed 's/^/    /')
         row "  ${D}덩이를 끝냈으면 README 표의 해당 행을 커밋 해시와 함께 완료로 바꾼다.${R}"
         blank
     fi
