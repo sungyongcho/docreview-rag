@@ -26,6 +26,7 @@ SECTION_TITLES=(
 
 VIEW_TITLES=(
     [chunk]="이식 덩이"
+    [review]="리뷰 단위"
     [commit]="커밋"
     [cfile]="파일"
     [command]="명령"
@@ -72,6 +73,8 @@ LINT_OK=-1; FMT_OK=-1; LINT_COUNT=0
 CHANGED_PY=0; DOC_GAPS=0; SHIM_FILES=0
 STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=0
 PORT_ROWS=()
+REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""
+REVIEW_READY=()
 DB_STATE="?"; DB_TICK=0
 SUITE_FRESH=-1
 
@@ -112,7 +115,11 @@ panel_fingerprint() {
 
 panel_medium() {
     "$RUFF" check app tests >/dev/null 2>&1 && LINT_OK=1 || LINT_OK=0
-    [ "$LINT_OK" = 0 ] && LINT_COUNT=$("$RUFF" check app tests 2>/dev/null | grep -cE '^[^ ]+:[0-9]+:[0-9]+:') || LINT_COUNT=0
+    LINT_COUNT=0
+    if [ "$LINT_OK" = 0 ]; then
+        LINT_COUNT=$("$RUFF" check app tests --output-format=concise 2>/dev/null \
+            | grep -cE '^[^ ]+:[0-9]+:[0-9]+: ')
+    fi
     "$RUFF" format --check app tests >/dev/null 2>&1 && FMT_OK=1 || FMT_OK=0
 
     # A cached suite line stops being proof the moment a source file is newer
@@ -147,7 +154,7 @@ for name in changed:
         if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         d = ast.get_docstring(n)
-        if d is None and not n.name.startswith("__") and not name.startswith("tests/"):
+        if d is None and not n.name.startswith("__"):
             docs += 1
         elif d and name.startswith("tests/") and n.name.startswith("test_") and len(d.strip().splitlines()) > 3:
             docs += 1
@@ -174,15 +181,41 @@ PY
     ' README.md 2>/dev/null)
 
     STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=${#PORT_ROWS[@]}
-    local f
+    # AGENTS.md §4-1: a chunk is a commit, a module is a review. The module is
+    # the stage label's leading M<n>, so membership has no second copy anywhere.
+    REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_READY=()
+    local f mod
+    declare -A _mod_total=() _mod_done=()
+    local -a _mod_order=()
     for line in "${PORT_ROWS[@]}"; do
         IFS=$'\t' read -r -a f <<<"$line"
+        mod="init"; [[ ${f[0]} =~ ^(M[0-9]+) ]] && mod=${BASH_REMATCH[1]}
+        [ -n "${_mod_total[$mod]:-}" ] || _mod_order+=("$mod")
+        _mod_total[$mod]=$(( ${_mod_total[$mod]:-0} + 1 ))
         if [ "${f[4]}" = "완료" ]; then
             PORT_DONE=$((PORT_DONE + 1))
+            _mod_done[$mod]=$(( ${_mod_done[$mod]:-0} + 1 ))
         elif [ -z "$STAGE" ]; then
             STAGE=${f[0]}; ZERO_RANGE=${f[1]}; LANDING=${f[2]}
+            REVIEW_MOD=$mod
         fi
     done
+    # The module under review is the one the next chunk belongs to; with the
+    # table finished there is no next chunk, so fall back to the last module.
+    [ -n "$REVIEW_MOD" ] || REVIEW_MOD=${_mod_order[${#_mod_order[@]} - 1]:-}
+    REVIEW_TOTAL=${_mod_total[$REVIEW_MOD]:-0}
+    REVIEW_DONE=${_mod_done[$REVIEW_MOD]:-0}
+    for mod in "${_mod_order[@]}"; do
+        [ "${_mod_done[$mod]:-0}" = "${_mod_total[$mod]}" ] && REVIEW_READY+=("$mod")
+    done
+    REVIEW_FOCUS=$(awk -F'|' -v want="$REVIEW_MOD" '
+        /review-focus:start/ { inside = 1; next }
+        /review-focus:end/   { inside = 0 }
+        inside && /^\|/ {
+            for (i = 2; i <= 3; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+            if ($2 == want) { print $3; exit }
+        }
+    ' README.md 2>/dev/null)
 }
 
 ok_badge() {
@@ -270,7 +303,11 @@ section_quality() {
         gauge "$AGE" "$(mode_window)"
         kv "증거 나이" "${GAUGE}  ${AGE_TEXT} / ${MODE_TITLES[${MODE:-normal}]}"
     fi
-    kv "수집 테스트" "$(cache collect '?')"
+    if [ "$SUITE_FRESH" = 0 ]; then
+        kv "수집 테스트" "$(cache collect '?')  $(badge warn "같은 캐시 — 함께 낡음")"
+    else
+        kv "수집 테스트" "$(cache collect '?')"
+    fi
     link quality all "  ${D}린트 출력과 캐시 원문 보기${R}"
 }
 
@@ -279,7 +316,7 @@ detail_quality() {
     if [ "$LINT_OK" = 1 ]; then
         row "  $(badge ok "위반 없음")"
     else
-        rows_from < <("$RUFF" check app tests 2>&1 | head -40)
+        rows_from < <("$RUFF" check app tests --output-format=concise 2>&1 | head -40)
     fi
     blank
     row " ${B}ruff format --check${R}"
@@ -322,7 +359,73 @@ section_progress() {
     else
         kv "다음 단계" "$(badge ok "표의 모든 행이 완료")"
     fi
+    if [ -n "$REVIEW_MOD" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
+        local rv
+        if [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
+            rv="$(badge ok "${REVIEW_MOD} 다 참 — 코드 리뷰 시점")"
+        else
+            rv="${CYN}${REVIEW_MOD}${R} ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이  ${D}$((REVIEW_TOTAL - REVIEW_DONE))개 더 들어와야 리뷰${R}"
+        fi
+        kv "리뷰 단위" "$rv"
+    fi
     link progress all "  ${D}이식 범위표 전체 보기${R}"
+    link review "$REVIEW_MOD" "  ${D}리뷰에서 볼 것 · 복붙용 문단${R}"
+}
+
+# Fold a paragraph onto as many rows as it needs. `row` truncates at the frame
+# edge, which is right for a status line and wrong for text meant to be read and
+# copied -- and the fallback "copy it yourself" is useless against an ellipsis.
+wrap_rows() {
+    local text=$1 width=$2 line="" word
+    for word in $text; do
+        if [ -z "$line" ]; then line=$word; continue; fi
+        dw "$line $word"
+        if ((DW > width)); then row "  $line"; line=$word; else line="$line $word"; fi
+    done
+    [ -n "$line" ] && row "  $line"
+}
+
+# AGENTS.md §4-1. The focus text lives in README so this screen has no second
+# copy of it; the clipboard hand-off is the point, so it goes out verbatim.
+detail_review() {
+    local mod=${1:-$REVIEW_MOD}
+    row " ${B}리뷰 단위 ${mod}${R}   ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이"
+    blank
+    if [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
+        row "  $(badge ok "모듈이 다 찼다 — 지금이 리뷰 시점")"
+    else
+        row "  $(badge warn "아직 $((REVIEW_TOTAL - REVIEW_DONE))개 덩이가 남았다")"
+        row "  ${D}덩이 하나만 놓고 받는 리뷰는 다음 덩이에서 같은 지적을 되풀이한다.${R}"
+    fi
+    blank
+    row " ${B}${mod} 에서 집중할 것${R}"
+    if [ -n "$REVIEW_FOCUS" ]; then
+        wrap_rows "$REVIEW_FOCUS" $((TCOLS - 6))
+        blank
+        if clip_copy "$REVIEW_FOCUS"; then
+            row "  $(badge ok "클립보드에 복사됨 — 리뷰 요청에 그대로 붙인다")"
+        else
+            row "  ${D}클립보드 도구가 없다 — 위 줄을 직접 복사한다${R}"
+        fi
+    else
+        row "  ${D}README 리뷰 초점 표에 ${mod} 행이 없다${R}"
+    fi
+    blank
+    row " ${B}이 모듈에 속한 덩이${R}"
+    local i=0 line f m mark
+    for line in "${PORT_ROWS[@]}"; do
+        IFS=$'\t' read -r -a f <<<"$line"
+        m="init"; [[ ${f[0]} =~ ^(M[0-9]+) ]] && m=${BASH_REMATCH[1]}
+        if [ "$m" = "$mod" ]; then
+            if [ "${f[4]}" = "완료" ]; then mark="${GRN}✓${R}"; else mark="${YEL}·${R}"; fi
+            dw_pad "${f[0]}" 14
+            link chunk "$i" "  ${mark} ${PAD} ${D}${f[3]}${R}  ${f[2]}"
+        fi
+        i=$((i + 1))
+    done
+    blank
+    row " ${B}리뷰를 이미 받을 수 있는 모듈${R}"
+    row "  ${D}${REVIEW_READY[*]:-없음}${R}"
 }
 
 detail_progress() {

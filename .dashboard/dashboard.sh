@@ -293,8 +293,17 @@ link() { # link <view> <arg> <text>
 }
 
 # 여러 줄 텍스트를 그대로 행으로 흘려보낸다. 명령 출력을 상세에 붙일 때 쓴다.
+# Given a command, runs it and emits a row per line. Given nothing, reads
+# stdin -- but only ever as `rows_from < <(cmd)`, never as `cmd | rows_from`:
+# the right-hand side of a pipe is a subshell, so every row it appends to FRAME
+# dies with it and the section renders empty with no error anywhere. Passing
+# the command as arguments is the form that cannot be got wrong.
 rows_from() {
     local line
+    if [ $# -gt 0 ]; then
+        while IFS= read -r line; do row "  $line"; done < <("$@")
+        return 0
+    fi
     while IFS= read -r line; do row "  $line"; done
 }
 
@@ -348,18 +357,93 @@ clip_copy() {
     if command -v xclip  >/dev/null 2>&1; then printf '%s' "$1" | xclip -selection clipboard 2>/dev/null && return 0; fi
     return 1
 }
-cache_age() {
-    local f=$CACHE_DIR/$1
-    [ -f "$f" ] || { AGE=-1; AGE_TEXT="never"; return; }
-    local -i mt now
-    mt=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
-    printf -v now '%(%s)T' -1
-    AGE=$((now - mt))
-    if   ((AGE < 90));   then AGE_TEXT="${AGE}s ago"
-    elif ((AGE < 5400)); then AGE_TEXT="$((AGE / 60))m ago"
-    else                      AGE_TEXT="$((AGE / 3600))h ago"; fi
+
+# --------------------------------------------------------------------------
+# Alerts. A panel calls alert() when something worth interrupting the user
+# happened -- a gate flipping from pass to fail, a budget crossed, a long job
+# finishing. Deduped per key so a state that holds across many ticks fires
+# once, not every second; the bell badge and the alert log persist across a
+# restart because both live under CACHE_DIR, not in memory only.
+# --------------------------------------------------------------------------
+declare -A ALERT_LAST=()
+_ALERT_STATE_LOADED=0
+_alert_load_state() {
+    _ALERT_STATE_LOADED=1
+    [ -f "$CACHE_DIR/.alert-state" ] || return 0
+    local k v
+    while IFS='=' read -r k v; do [ -n "$k" ] && ALERT_LAST[$k]=$v; done < "$CACHE_DIR/.alert-state"
 }
 
+# alert <level: info|warn|bad> <key> <message> [report_path]
+# report_path, if given, becomes a link into the built-in pager (detail_report).
+alert() {
+    local level=$1 key=$2 message=$3 report=${4:-}
+    [ "$_ALERT_STATE_LOADED" = 1 ] || _alert_load_state
+    [ "${ALERT_LAST[$key]:-}" = "$message" ] && return 0
+    ALERT_LAST[$key]=$message
+    : > "$CACHE_DIR/.alert-state"
+    local k
+    for k in "${!ALERT_LAST[@]}"; do printf '%s=%s\n' "$k" "${ALERT_LAST[$k]}" >> "$CACHE_DIR/.alert-state"; done
+    local ts; printf -v ts '%(%s)T' -1
+    printf '%s\t%s\t%s\t%s\t%s\n' "$ts" "$level" "$key" "$report" "${message//$'\n'/ }" >> "$CACHE_DIR/alerts.tsv"
+    if [ "$(wc -l < "$CACHE_DIR/alerts.tsv" 2>/dev/null || echo 0)" -gt 200 ]; then
+        tail -n 200 "$CACHE_DIR/alerts.tsv" > "$CACHE_DIR/.alerts.tmp" && mv "$CACHE_DIR/.alerts.tmp" "$CACHE_DIR/alerts.tsv"
+    fi
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -a dashboard "${PROJECT_NAME}" "$message" 2>/dev/null
+    else
+        printf '\a' > /dev/tty 2>/dev/null
+    fi
+}
+
+alert_unseen() {
+    [ -f "$CACHE_DIR/alerts.tsv" ] || { printf 0; return; }
+    local seen=0
+    [ -f "$CACHE_DIR/.alerts-seen" ] && seen=$(cat "$CACHE_DIR/.alerts-seen" 2>/dev/null)
+    awk -F'\t' -v s="${seen:-0}" '$1+0>s+0' "$CACHE_DIR/alerts.tsv" 2>/dev/null | wc -l
+}
+alerts_mark_seen() { local now; printf -v now '%(%s)T' -1; printf '%s' "$now" > "$CACHE_DIR/.alerts-seen" 2>/dev/null; }
+
+# --------------------------------------------------------------------------
+# Trend metrics. record_metric appends a timestamped reading; sparkline turns
+# recent readings into a one-line unicode bar chart in $SPARK. Call
+# record_metric wherever a fresh number is actually measured -- typically
+# panel_medium or right after a SLOW_JOBS command -- never every tick.
+# --------------------------------------------------------------------------
+record_metric() { # record_metric <name> <value> [max_points=200]
+    local name=$1 value=$2 max=${3:-200}
+    local dir="$CACHE_DIR/metrics" f
+    mkdir -p "$dir" 2>/dev/null
+    f="$dir/$name.tsv"
+    local ts; printf -v ts '%(%s)T' -1
+    printf '%s\t%s\n' "$ts" "$value" >> "$f"
+    if [ "$(wc -l < "$f" 2>/dev/null || echo 0)" -gt "$max" ]; then
+        tail -n "$max" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    fi
+}
+
+SPARK=""
+sparkline() { # sparkline <name> [width=20] -> $SPARK
+    local name=$1 width=${2:-20}
+    local f="$CACHE_DIR/metrics/$name.tsv"
+    SPARK="${D}(no data)${R}"
+    [ -f "$f" ] || return 0
+    local -a vals; mapfile -t vals < <(tail -n "$width" "$f" 2>/dev/null | cut -f2)
+    ((${#vals[@]})) || return 0
+    local min=${vals[0]} max=${vals[0]} v
+    for v in "${vals[@]}"; do
+        LC_ALL=C awk -v v="$v" -v m="$min" 'BEGIN{exit !(v+0<m+0)}' 2>/dev/null && min=$v
+        LC_ALL=C awk -v v="$v" -v m="$max" 'BEGIN{exit !(v+0>m+0)}' 2>/dev/null && max=$v
+    done
+    local range; range=$(LC_ALL=C awk -v a="$max" -v b="$min" 'BEGIN{d=a-b; print (d==0?1:d)}')
+    local blocks=(▁ ▂ ▃ ▄ ▅ ▆ ▇ █)
+    local out="" idx
+    for v in "${vals[@]}"; do
+        idx=$(LC_ALL=C awk -v v="$v" -v b="$min" -v r="$range" 'BEGIN{i=int((v-b)/r*7+0.5); if(i<0)i=0; if(i>7)i=7; print i}')
+        out+="${blocks[idx]}"
+    done
+    SPARK="$out"
+}
 cache_age() {
     local f=$CACHE_DIR/$1
     [ -f "$f" ] || { AGE=-1; AGE_TEXT="never"; return; }
@@ -517,11 +601,22 @@ leave_screen() {
 # rest of the screen at the end. No full clear, so no flicker; no newline after
 # the last visible row, so the frame never scrolls into the scrollback.
 paint() {
-    local out="" i last=$((${#FRAME[@]} - 1))
-    ((last > TROWS - 1)) && last=$((TROWS - 1))
-    for ((i = 0; i <= last; i++)); do
+    local -i total=${#FRAME[@]}
+    local -i chrome=$FRAME_CHROME; ((chrome > total)) && chrome=$total
+    local -i visible=$((TROWS - chrome)); ((visible < 1)) && visible=1
+    local -i max_scroll=$((total - chrome - visible)); ((max_scroll < 0)) && max_scroll=0
+    ((VIEW_SCROLL > max_scroll)) && VIEW_SCROLL=$max_scroll
+    ((VIEW_SCROLL < 0)) && VIEW_SCROLL=0
+    local -i start=$((chrome + VIEW_SCROLL))
+    local -i last=$((start + visible - 1)); ((last > total - 1)) && last=$((total - 1))
+    local out="" i first=1
+    for ((i = 0; i < chrome; i++)); do
+        [ "$first" = 1 ] || out+=$'\n'; first=0
         out+="${FRAME[i]}"$'\e[K'
-        ((i < last)) && out+=$'\n'
+    done
+    for ((i = start; i <= last; i++)); do
+        [ "$first" = 1 ] || out+=$'\n'; first=0
+        out+="${FRAME[i]}"$'\e[K'
     done
     printf '\e[H%s\e[J' "$out"
 }
@@ -533,12 +628,16 @@ declare -A SECTION_TITLES=()
 declare -A COLLAPSED=()
 declare -A MODE_TITLES=()
 declare -A VIEW_TITLES=()
+declare -A EDIT_TARGETS=()
+declare -A CTX_TITLES=()
 MODES=()
 MODE_DEFAULT=""
 MODE=""
 COMMANDS=()
 SECTIONS=()
 SLOW_JOBS=()
+CTXS=()
+CTX_DEFAULT=""
 PROJECT_NAME=$(basename "$ROOT")
 CACHE_DIR=".dashboard-cache"
 
@@ -547,6 +646,8 @@ CACHE_DIR=".dashboard-cache"
 
 case $CACHE_DIR in /*) ;; *) CACHE_DIR="$ROOT/$CACHE_DIR" ;; esac
 mkdir -p "$CACHE_DIR" 2>/dev/null
+CACHE_HOME=$CACHE_DIR
+
 
 declare -F panel_fast        >/dev/null || panel_fast() { :; }
 declare -F panel_medium      >/dev/null || panel_medium() { :; }
@@ -565,6 +666,7 @@ mode_set() {
     MODE=$1
     printf '%s' "$MODE" > "$CACHE_DIR/mode" 2>/dev/null
     FINGERPRINT=""
+    VIEW_SCROLL=0
 }
 mode_cycle() {
     local -i i
@@ -575,6 +677,82 @@ mode_cycle() {
     done
     mode_set "${MODES[0]}"
 }
+ctx_cycle() {
+    local -i i
+    for i in "${!CTXS[@]}"; do
+        if [ "${CTXS[i]}" = "$CTX" ]; then
+            ctx_set "${CTXS[$(((i + 1) % ${#CTXS[@]}))]}"; return 0
+        fi
+    done
+    ((${#CTXS[@]})) && ctx_set "${CTXS[0]}"
+}
+
+# --------------------------------------------------------------------------
+# Direct edit. A panel opts a screen into this by setting
+# EDIT_TARGETS[view]=path -- everything else stays read-only. Pressing e (or
+# clicking the hint the breadcrumb shows) suspends the alt-screen, hands the
+# terminal to $VISUAL/$EDITOR, and forces a refresh on return.
+# --------------------------------------------------------------------------
+edit_current() {
+    local -i n=${#NAV_VIEW[@]}
+    ((n)) || return 0
+    local target=${EDIT_TARGETS[${NAV_VIEW[$((n - 1))]}]:-}
+    [ -n "$target" ] || return 0
+    leave_screen
+    "${VISUAL:-${EDITOR:-vi}}" "$target" </dev/tty >/dev/tty 2>&1
+    LEFT_SCREEN=0
+    enter_screen
+    FINGERPRINT=""
+}
+
+# --------------------------------------------------------------------------
+# Worktree/context switch. Auto-populated from `git worktree list` when a
+# panel does not declare CTXS -- a repo with only one worktree never shows the
+# strip, since there is nothing to choose. Switching actually `cd`s, so every
+# git call after it reads the chosen worktree; each context keeps its own
+# slow-job cache so one worktree's test run never overwrites another's.
+# --------------------------------------------------------------------------
+CTX=""
+_ctx_slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9' '_'; }
+ctx_cache_dir() { printf '%s/ctx-%s' "$CACHE_HOME" "$(_ctx_slug "$1")"; }
+ctx_set() {
+    CTX=$1
+    cd "$CTX" 2>/dev/null || return 0
+    CACHE_DIR=$(ctx_cache_dir "$CTX")
+    mkdir -p "$CACHE_DIR" 2>/dev/null
+    printf '%s' "$CTX" > "$CACHE_HOME/.ctx" 2>/dev/null
+    FINGERPRINT=""
+    VIEW_SCROLL=0
+}
+CTX_RANGES=()
+ctx_strip() {
+    ((${#CTXS[@]} > 1)) || return 0
+    CTX_RANGES=()
+    local text="  " c label
+    local -i col=3
+    for c in "${CTXS[@]}"; do
+        label=${CTX_TITLES[$c]:-$(basename "$c")}
+        dw "$label"; local -i lw=$DW
+        CTX_RANGES+=("$col:$((col + lw + 1)):$c")
+        if [ "$c" = "$CTX" ]; then text+="${B}${GRN}[${label}]${R} "
+        else text+="${D} ${label} ${R}"; fi
+        col=$((col + lw + 3))
+    done
+    row "$text"
+    HIT[$((${#FRAME[@]} - 1))]="ctx"
+}
+# 워크트리가 하나뿐이면 선택할 게 없다 - 그때는 목록도 비운다.
+if [ ${#CTXS[@]} -eq 0 ]; then
+    while IFS= read -r _wt_line; do
+        [[ $_wt_line == worktree\ * ]] && CTXS+=("${_wt_line#worktree }")
+    done < <(git -C "$ROOT" worktree list --porcelain 2>/dev/null)
+    ((${#CTXS[@]} <= 1)) && CTXS=()
+fi
+if ((${#CTXS[@]} > 1)); then
+    CTX=$(cat "$CACHE_HOME/.ctx" 2>/dev/null)
+    case " ${CTXS[*]} " in *" $CTX "*) ;; *) CTX=${CTX_DEFAULT:-$ROOT} ;; esac
+    ctx_set "$CTX"
+fi
 
 
 # --------------------------------------------------------------------------
@@ -596,13 +774,24 @@ run_checks() {
 }
 
 build_frame() {
-    FRAME=(); HIT=()
+    FRAME=(); HIT=(); CUR_VIEW=""
     local stamp; printf -v stamp '%(%H:%M:%S)T' -1
 
-    local left="${B}${CYN}${PROJECT_NAME}${R}"
+    local -i n_unseen; n_unseen=$(alert_unseen)
+    local bell=""; BELL_RANGE=""
+    if ((n_unseen > 0)); then bell=" ${RED}🔔${n_unseen}${R}"; fi
+
+    local left="${B}${CYN}${PROJECT_NAME}${R}${bell}"
     local right="${D}${stamp}${R}"
     dw "$left"; local -i lw=$DW
     dw "$right"; local -i rw=$DW
+    if ((n_unseen > 0)); then
+        # 종 배지는 프로젝트 이름 바로 뒤에 있다. 그 열 범위만 따로 기억해서
+        # 헤더 줄 클릭이 갱신인지 종 클릭인지 가른다.
+        dw "${B}${CYN}${PROJECT_NAME}${R}"; local -i namecol=$((DW + 1))
+        dw "$bell"; local -i bellw=$DW
+        BELL_RANGE="${namecol}:$((namecol + bellw - 1))"
+    fi
     if ((lw + rw + 2 <= TCOLS)); then
         dw_pad "$left" $((TCOLS - rw))
         FRAME+=("${PAD}${right}")
@@ -611,6 +800,8 @@ build_frame() {
     fi
     HIT[0]="refresh"
     hr
+    ctx_strip
+    FRAME_CHROME=${#FRAME[@]}
 
     # The signal block sits above the sections because it is the one thing on
     # the frame that is not derived from the repository: it is the session
@@ -656,15 +847,113 @@ build_frame() {
     if [ -n "$verdict" ]; then hr; row " $verdict"; fi
 
     if [ "$ONCE" = 0 ] && [ "$CAP_TTY" = yes ]; then
-        local hint
+        local hint extra=""
+        ((${#MODES[@]}))    && extra+=" · m mode"
+        ((${#CTXS[@]} > 1)) && extra+=" · w worktree"
         if [ "$CAP_MOUSE" = yes ]; then
-            hint="click: fold section · body line for detail · header to refresh   q quit"
+            hint="click: fold section · body line for detail · header to refresh${extra}   q quit"
         else
-            hint="space refresh · 1-9 fold section · q quit   ${D}(mouse: $CAP_MOUSE_WHY)${R}"
+            hint="space refresh · 1-9 fold section${extra} · q quit   ${D}(mouse: $CAP_MOUSE_WHY)${R}"
         fi
         while ((${#FRAME[@]} < TROWS - 1)); do blank; done
         row "${D}${hint}${R}"
     fi
+}
+
+declare -F detail_alerts >/dev/null || detail_alerts() {
+    alerts_mark_seen
+    if [ ! -s "$CACHE_DIR/alerts.tsv" ]; then
+        row "  ${D}알림 없음 — 아직 alert()가 불린 적이 없다${R}"
+        return
+    fi
+    local ts level key report message icon when whentxt
+    while IFS=$'\t' read -r ts level key report message; do
+        case $level in
+            bad)  icon="${RED}✕${R}" ;;
+            warn) icon="${YEL}!${R}" ;;
+            *)    icon="${CYN}i${R}" ;;
+        esac
+        when=$(( $(date +%s) - ts )); ((when < 0)) && when=0
+        if   ((when < 60));   then whentxt="${when}s"
+        elif ((when < 3600)); then whentxt="$((when/60))m"
+        else                       whentxt="$((when/3600))h"; fi
+        if [ -n "$report" ] && [ -f "$report" ]; then
+            link report "$report" "${icon} ${D}${whentxt} 전${R}  ${message}"
+        else
+            row "  ${icon} ${D}${whentxt} 전${R}  ${message}"
+        fi
+    done < <(tac "$CACHE_DIR/alerts.tsv" 2>/dev/null || tail -r "$CACHE_DIR/alerts.tsv" 2>/dev/null)
+}
+
+# --------------------------------------------------------------------------
+# Built-in pager. Any link/alert that points at a text file opens here,
+# staying inside the alt-screen rather than shelling out to less/vim -- the
+# whole reading experience stays inside this one process and this one screen.
+# --------------------------------------------------------------------------
+PAGER_FILE=""; PAGER_LINES=(); PAGER_TOP=0; PAGER_QUERY=""
+
+# Any screen taller than the terminal scrolls its body by wheel, the header
+# and breadcrumb stay put. FRAME_CHROME is how many leading FRAME rows the
+# current build_frame/build_view call pinned before its body began.
+FRAME_CHROME=0
+VIEW_SCROLL=0
+declare -a PAGER_MATCHES=(); PAGER_MIDX=-1
+
+_pager_load() {
+    [ "$PAGER_FILE" = "$1" ] && return 0
+    PAGER_FILE=$1; PAGER_TOP=0; PAGER_QUERY=""; PAGER_MATCHES=(); PAGER_MIDX=-1
+    if [ -r "$1" ]; then
+        mapfile -t PAGER_LINES < "$1"
+    else
+        PAGER_LINES=("${D}읽을 수 없다: $1${R}")
+    fi
+}
+_pager_search() {
+    PAGER_MATCHES=(); PAGER_MIDX=-1
+    [ -n "$PAGER_QUERY" ] || return 0
+    local i
+    for i in "${!PAGER_LINES[@]}"; do
+        [[ ${PAGER_LINES[i]} == *"$PAGER_QUERY"* ]] && PAGER_MATCHES+=("$i")
+    done
+}
+_pager_next_match() {
+    ((${#PAGER_MATCHES[@]})) || return 0
+    PAGER_MIDX=$(( (PAGER_MIDX + 1) % ${#PAGER_MATCHES[@]} ))
+    PAGER_TOP=${PAGER_MATCHES[$PAGER_MIDX]}
+}
+_pager_prev_match() {
+    ((${#PAGER_MATCHES[@]})) || return 0
+    PAGER_MIDX=$(( (PAGER_MIDX - 1 + ${#PAGER_MATCHES[@]}) % ${#PAGER_MATCHES[@]} ))
+    PAGER_TOP=${PAGER_MATCHES[$PAGER_MIDX]}
+}
+_pager_prompt_search() {
+    printf '\e[%d;1H\e[2K/' "$TROWS"
+    [ -n "$STTY_SAVED" ] && stty "$STTY_SAVED" 2>/dev/null </dev/tty
+    tput cnorm 2>/dev/null
+    local q=""; IFS= read -r q </dev/tty
+    stty -echo -icanon min 0 time 0 2>/dev/null </dev/tty
+    tput civis 2>/dev/null
+    PAGER_QUERY=$q; _pager_search; _pager_next_match
+}
+
+declare -F detail_report >/dev/null || detail_report() {
+    _pager_load "$1"
+    local -i avail=$((TROWS - 6)); ((avail < 3)) && avail=3
+    local -i total=${#PAGER_LINES[@]}
+    ((PAGER_TOP > total - avail)) && PAGER_TOP=$((total - avail))
+    ((PAGER_TOP < 0)) && PAGER_TOP=0
+    local -i i last=0
+    for ((i = PAGER_TOP; i < PAGER_TOP + avail && i < total; i++)); do
+        if [ -n "$PAGER_QUERY" ] && [[ ${PAGER_LINES[i]} == *"$PAGER_QUERY"* ]]; then
+            row "  ${YEL}${PAGER_LINES[i]}${R}"
+        else
+            row "  ${PAGER_LINES[i]}"
+        fi
+        last=$((i + 1))
+    done
+    local m=""
+    ((${#PAGER_MATCHES[@]})) && m="  ${D}검색 '${PAGER_QUERY}' ${GRN}$((PAGER_MIDX + 1))/${#PAGER_MATCHES[@]}${R}"
+    row "${D}$((PAGER_TOP + 1))-${last}/${total}  j/k 스크롤 · gg/G 처음·끝 · / 검색 · n/N 다음·이전${R}${m}"
 }
 
 # 상세 화면은 쌓인다. 뒤로 가면 한 장씩 벗겨진다.
@@ -672,20 +961,23 @@ NAV_VIEW=(); NAV_ARG=(); NAV_TITLE=()
 
 # 화면 이름은 VIEW_TITLES, 없으면 구획 제목, 그것도 없으면 내부 이름을 쓴다.
 view_title() { printf '%s' "${VIEW_TITLES[$1]:-${SECTION_TITLES[$1]:-$1}}"; }
-nav_push() { NAV_VIEW+=("$1"); NAV_ARG+=("$2"); NAV_TITLE+=("$(view_title "$1")"); }
+nav_push() { NAV_VIEW+=("$1"); NAV_ARG+=("$2"); NAV_TITLE+=("$(view_title "$1")"); VIEW_SCROLL=0; }
 nav_pop() {
     local -i n=${#NAV_VIEW[@]}
     ((n)) || return 0
     NAV_VIEW=("${NAV_VIEW[@]:0:$((n - 1))}")
     NAV_ARG=("${NAV_ARG[@]:0:$((n - 1))}")
     NAV_TITLE=("${NAV_TITLE[@]:0:$((n - 1))}")
+    VIEW_SCROLL=0
 }
 nav_depth() { printf '%d' "${#NAV_VIEW[@]}"; }
 
+CUR_VIEW=""
 build_view() {
     FRAME=(); HIT=()
     local -i n=${#NAV_VIEW[@]} i
     local view=${NAV_VIEW[$((n - 1))]} arg=${NAV_ARG[$((n - 1))]}
+    CUR_VIEW=$view
 
     local crumb="${D}${PROJECT_NAME}${R}"
     for ((i = 0; i < n; i++)); do crumb+="${D} › ${R}${B}${NAV_TITLE[i]}${R}"; done
@@ -694,6 +986,7 @@ build_view() {
     row " ${CYN}←${R} ${D}뒤로  (esc · backspace · 우클릭)${R}"
     HIT[1]="back"
     hr
+    FRAME_CHROME=${#FRAME[@]}
 
     if declare -F "detail_$view" >/dev/null; then
         "detail_$view" "$arg"
@@ -702,8 +995,10 @@ build_view() {
     fi
 
     if [ "$CAP_TTY" = yes ]; then
+        local editable=""
+        [ -n "${EDIT_TARGETS[$view]:-}" ] && editable=" · e 편집"
         while ((${#FRAME[@]} < TROWS - 1)); do blank; done
-        row "${D}esc 뒤로 · q 종료${R}"
+        row "${D}esc 뒤로${editable} · q 종료${R}"
     fi
 }
 
@@ -730,11 +1025,39 @@ handle_mouse() {
     local btn=${body%%;*}; local rest=${body#*;}
     local y=${rest#*;}
     if ((btn == 2)); then nav_pop; return 0; fi
+    if ((btn == 64)); then
+        if [ "$CUR_VIEW" = report ]; then
+            ((PAGER_TOP -= 3)); ((PAGER_TOP < 0)) && PAGER_TOP=0
+        else
+            ((VIEW_SCROLL -= 3)); ((VIEW_SCROLL < 0)) && VIEW_SCROLL=0
+        fi
+        return 0
+    fi
+    if ((btn == 65)); then
+        if [ "$CUR_VIEW" = report ]; then
+            PAGER_TOP=$((PAGER_TOP + 3))
+        else
+            VIEW_SCROLL=$((VIEW_SCROLL + 3))
+        fi
+        return 0
+    fi
     ((btn == 0)) || return 0
     local x=${body#*;}; x=${x%%;*}
-    local target=${HIT[$((y - 1))]:-}
+    # paint() shows the chrome rows, then the body from VIEW_SCROLL onward, so a
+    # screen row below the chrome names a FRAME row that far further down. Look
+    # up the row the user actually clicked, not the one that used to be there.
+    local -i _row=$((y - 1))
+    ((_row >= FRAME_CHROME)) && _row=$((_row + VIEW_SCROLL))
+    local target=${HIT[$_row]:-}
     case $target in
-        refresh) FINGERPRINT="" ;;
+        refresh)
+            if [ -n "${BELL_RANGE:-}" ]; then
+                local bs=${BELL_RANGE%%:*} be=${BELL_RANGE#*:}
+                if ((x >= bs && x <= be)); then
+                    nav_push alerts ""; alerts_mark_seen; dash_emit alerts opened; return 0
+                fi
+            fi
+            FINGERPRINT="" ;;
         back) nav_pop ;;
         mode)
             local r start stop mname
@@ -745,6 +1068,14 @@ handle_mouse() {
                 fi
             done
             mode_cycle; dash_emit mode name "$MODE" ;;
+        ctx)
+            local rc startc stopc cname
+            for rc in "${CTX_RANGES[@]}"; do
+                startc=${rc%%:*}; stopc=${rc#*:}; cname=${stopc#*:}; stopc=${stopc%%:*}
+                if ((x >= startc && x <= stopc)); then
+                    ctx_set "$cname"; dash_emit ctx path "$cname"; return 0
+                fi
+            done ;;
         nav:*)
             local spec=${target#nav:}
             local view=${spec%%:*} narg=${spec#*:}
@@ -755,6 +1086,7 @@ handle_mouse() {
         section:*)
             local name=${target#section:}
             if [ -n "${COLLAPSED[$name]:-}" ]; then unset "COLLAPSED[$name]"; else COLLAPSED[$name]=1; fi
+            VIEW_SCROLL=0
             dash_emit "$(fold_state "$name")" section "$name" ;;
         signal:*)
             local choice=${DASH_OPTION_LIST[${target#signal:}]:-}
@@ -780,6 +1112,7 @@ toggle_index() {
     ((i >= 1 && i <= ${#SECTIONS[@]})) || return 0
     local name=${SECTIONS[$((i - 1))]}
     if [ -n "${COLLAPSED[$name]:-}" ]; then unset "COLLAPSED[$name]"; else COLLAPSED[$name]=1; fi
+    VIEW_SCROLL=0
     # Folding is the only navigation available with keys alone, which makes it
     # the only signal a terminal without mouse support can send back.
     dash_emit "$(fold_state "$name")" section "$name"
@@ -819,11 +1152,32 @@ while :; do
 
     key=""
     if read -rsn1 -t "$INTERVAL" key; then
+        if [ "$(nav_depth)" != 0 ] && [ "$CUR_VIEW" = report ]; then
+            case $key in
+                q|Q) break ;;
+                $'\e') handle_mouse; [ "$MOUSE_SEEN" = 1 ] || nav_pop ;;
+                $'\177'|$'\b') nav_pop ;;
+                j) ((PAGER_TOP++)) ;;
+                k) ((PAGER_TOP > 0)) && ((PAGER_TOP--)) ;;
+                d) ((PAGER_TOP += 10)) ;;
+                u|b) ((PAGER_TOP -= 10)); ((PAGER_TOP < 0)) && PAGER_TOP=0 ;;
+                g)
+                    local k2=""; read -rsn1 -t 0.3 k2 </dev/tty
+                    [ "$k2" = g ] && PAGER_TOP=0 ;;
+                G) PAGER_TOP=999999999 ;;
+                /) _pager_prompt_search ;;
+                n) _pager_next_match ;;
+                N) _pager_prev_match ;;
+                ' '|r|R) FINGERPRINT="" ;;
+            esac
+            continue
+        fi
         if [ "$(nav_depth)" != 0 ]; then
             case $key in
                 q|Q) break ;;
                 $'\e') handle_mouse; [ "$MOUSE_SEEN" = 1 ] || nav_pop ;;
                 $'\177'|$'\b'|b|B) nav_pop ;;
+                e) edit_current ;;
                 ' '|r|R) FINGERPRINT="" ;;
             esac
             continue
@@ -832,6 +1186,7 @@ while :; do
             q|Q) break ;;
             ' '|r|R) FINGERPRINT="" ;;
             m|M) [ ${#MODES[@]} -gt 0 ] && mode_cycle && dash_emit mode name "$MODE" ;;
+            w|W) [ ${#CTXS[@]} -gt 1 ] && ctx_cycle && dash_emit ctx path "$CTX" ;;
             [1-9]) toggle_index "$key" ;;
             $'\e') handle_mouse ;;
         esac

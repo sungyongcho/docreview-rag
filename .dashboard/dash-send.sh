@@ -35,18 +35,37 @@ cmd=${1:-}
 [ -n "$cmd" ] || usage
 shift
 
+# Each field is carried over from the previous send unless this one replaces
+# it, so asking a question does not silently wipe the note that explains why it
+# is being asked. `clear` is the only thing that empties the file.
+NOTE=""; QUESTION=""; OPTIONS=""; FOLD=""; OPEN=""
+if [ -f "$FILE" ] && [ "$cmd" != clear ]; then
+    # shellcheck disable=SC1090
+    . "$FILE" 2>/dev/null
+fi
+# A fold is an instruction, not a state: carrying it forward would refold the
+# section on the next unrelated send.
+FOLD=""; OPEN=""
+
 case $cmd in
-    note)  printf "NOTE='%s'\n" "$(esc "${1:-}")" > "$TMP" ;;
+    note)  NOTE=${1:-} ;;
     ask)
-        q=${1:-}; shift 2>/dev/null || true
-        [ -n "$q" ] && [ $# -gt 0 ] || usage
-        { printf "QUESTION='%s'\n" "$(esc "$q")"
-          printf "OPTIONS='%s'\n" "$(esc "$(IFS='|'; echo "$*")")"; } > "$TMP" ;;
-    fold)  [ $# -gt 0 ] || usage; printf "FOLD='%s'\n" "$(esc "$*")" > "$TMP" ;;
-    open)  [ $# -gt 0 ] || usage; printf "OPEN='%s'\n" "$(esc "$*")" > "$TMP" ;;
-    clear) : > "$TMP" ;;
+        QUESTION=${1:-}; shift 2>/dev/null || true
+        [ -n "$QUESTION" ] && [ $# -gt 0 ] || usage
+        OPTIONS=$(IFS='|'; echo "$*") ;;
+    fold)  [ $# -gt 0 ] || usage; FOLD=$* ;;
+    open)  [ $# -gt 0 ] || usage; OPEN=$* ;;
+    clear) NOTE=""; QUESTION=""; OPTIONS="" ;;
     *)     usage ;;
 esac
+
+{
+    printf "NOTE='%s'\n" "$(esc "$NOTE")"
+    printf "QUESTION='%s'\n" "$(esc "$QUESTION")"
+    printf "OPTIONS='%s'\n" "$(esc "$OPTIONS")"
+    printf "FOLD='%s'\n" "$(esc "$FOLD")"
+    printf "OPEN='%s'\n" "$(esc "$OPEN")"
+} > "$TMP"
 
 # Written whole, then moved into place: a tick landing mid-write must never
 # read half a command, and the move is what the dashboard keys off.

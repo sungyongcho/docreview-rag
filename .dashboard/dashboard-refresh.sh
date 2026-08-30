@@ -26,14 +26,42 @@ done
 [ -n "$PANEL" ] || { printf 'dashboard-refresh: no panel file found\n' >&2; exit 1; }
 
 SLOW_JOBS=()
+# Mirror every associative array the engine declares before sourcing a panel.
+# This script runs under `set -u`, and an assignment to an undeclared
+# associative array is read as an arithmetic index -- so a panel that declares
+# VIEW_TITLES or MODE_TITLES would die here with "unbound variable" while
+# working perfectly under the engine.
 declare -A SECTION_TITLES=()
+declare -A MODE_TITLES=()
+declare -A VIEW_TITLES=()
+declare -A EDIT_TARGETS=()
+declare -A CTX_TITLES=()
 SECTIONS=()
+MODES=()
+COMMANDS=()
+CTXS=()
 CACHE_DIR=".dashboard-cache"
 JOB_TIMEOUT=${DASH_JOB_TIMEOUT:-900}
 # The panel is sourced only for its declarations; it must not do work at load.
 # shellcheck disable=SC1090
 . "$PANEL"
 case $CACHE_DIR in /*) ;; *) CACHE_DIR="$ROOT/$CACHE_DIR" ;; esac
+
+# On more than one git worktree, the live dashboard reads and writes a
+# per-worktree subdirectory (see ctx_cache_dir in dashboard.sh) even for the
+# worktree it starts in. Mirror that here, or a refresh writes to a cache
+# directory the running dashboard never looks at, and its numbers never
+# update no matter how many times this runs.
+if [ ${#CTXS[@]} -eq 0 ]; then
+    while IFS= read -r _wt_line; do
+        [[ $_wt_line == worktree\ * ]] && CTXS+=("${_wt_line#worktree }")
+    done < <(git -C "$ROOT" worktree list --porcelain 2>/dev/null)
+    ((${#CTXS[@]} <= 1)) && CTXS=()
+fi
+if ((${#CTXS[@]} > 1)); then
+    _slug=$(printf '%s' "$ROOT" | tr -c 'A-Za-z0-9' '_')
+    CACHE_DIR="$CACHE_DIR/ctx-$_slug"
+fi
 mkdir -p "$CACHE_DIR"
 
 if [ "${1:-}" = "--list" ]; then
