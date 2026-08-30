@@ -77,6 +77,73 @@ if [ -z "$PANEL" ] || [ ! -f "$PANEL" ]; then
 fi
 
 # --------------------------------------------------------------------------
+# The two-way channel.
+#
+# An agent session working on the repository writes dash-send.sh's file into
+# the cache directory; the dashboard applies it on the next tick. Going back
+# the other way, what the reader does here is appended to events.jsonl, which
+# the session tails. Two files, no daemon and no port, and neither is tracked,
+# so a signal never turns into a commit.
+#
+# This lives in the engine rather than in each panel because none of it is
+# project-specific. A panel that reimplements it is duplicating the engine.
+# --------------------------------------------------------------------------
+DASH_NOTE=""; DASH_QUESTION=""; DASH_OPTIONS=""
+_SIGNAL_MTIME=""
+declare -a DASH_OPTION_LIST=()
+
+# JSON string escaping without jq: the events file has to be machine-readable
+# by whatever is tailing it, and a note or an option is arbitrary text that
+# will contain a quote or a backslash sooner or later.
+dash_json_str() {
+    local s=${1-} out=""
+    s=${s//\\/\\\\}
+    s=${s//\"/\\\"}
+    s=${s//$'\n'/\\n}
+    s=${s//$'\t'/\\t}
+    s=${s//$'\r'/}
+    printf '"%s"' "$s"
+}
+
+# One JSON object per line, appended. The session reads each line as an event.
+dash_emit() {
+    local kind=$1 body="" k v stamp
+    shift
+    printf -v stamp '%(%FT%T%z)T' -1
+    while [ $# -ge 2 ]; do
+        k=$1; v=$2; shift 2
+        body+=",$(dash_json_str "$k"):$(dash_json_str "$v")"
+    done
+    printf '{"t":%s,"kind":%s%s}\n' \
+        "$(dash_json_str "$stamp")" "$(dash_json_str "$kind")" "$body" \
+        >> "$CACHE_DIR/events.jsonl" 2>/dev/null
+}
+
+# Applied once per send, keyed on the file's mtime rather than its contents.
+# Reapplying a fold on every tick would snap that section shut under the
+# reader's fingers the moment they opened it by hand.
+dash_read_signal() {
+    local f="$CACHE_DIR/session.env" mtime="" name
+    [ -f "$f" ] && mtime=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)
+    [ "$mtime" = "$_SIGNAL_MTIME" ] && return 0
+    _SIGNAL_MTIME=$mtime
+    DASH_NOTE=""; DASH_QUESTION=""; DASH_OPTIONS=""
+    local NOTE="" QUESTION="" OPTIONS="" FOLD="" OPEN=""
+    if [ -n "$mtime" ]; then
+        # shellcheck disable=SC1090
+        . "$f" 2>/dev/null
+    fi
+    DASH_NOTE=$NOTE; DASH_QUESTION=$QUESTION; DASH_OPTIONS=$OPTIONS
+    DASH_OPTION_LIST=()
+    if [ -n "$DASH_OPTIONS" ]; then
+        local saved=$IFS; IFS='|'; read -ra DASH_OPTION_LIST <<<"$DASH_OPTIONS"; IFS=$saved
+    fi
+    for name in $FOLD; do COLLAPSED[$name]=1; done
+    for name in $OPEN; do unset "COLLAPSED[$name]"; done
+    return 0
+}
+
+# --------------------------------------------------------------------------
 # Style. Colours are dropped when the frame is not going to a terminal, so
 # --once stays clean in a pipe.
 # --------------------------------------------------------------------------
@@ -218,6 +285,81 @@ grid() {
 # Cache access for values too slow to compute on a tick.
 # --------------------------------------------------------------------------
 cache() { [ -f "$CACHE_DIR/$1" ] && cat "$CACHE_DIR/$1" || printf '%s' "${2-}"; }
+
+# 상세 화면으로 들어가는 줄. 클릭하면 그 화면이 네비게이션 스택에 쌓인다.
+link() { # link <view> <arg> <text>
+    row "  ${CYN}›${R} $3"
+    HIT[$((${#FRAME[@]} - 1))]="nav:$1:$2"
+}
+
+# 여러 줄 텍스트를 그대로 행으로 흘려보낸다. 명령 출력을 상세에 붙일 때 쓴다.
+rows_from() {
+    local line
+    while IFS= read -r line; do row "  $line"; done
+}
+
+# 자동차 속도계처럼 생긴 눈금. 예산 대비 실측을 한눈에 본다.
+# gauge <값> <최대> [칸수] → $GAUGE
+gauge() {
+    local v=$1 max=$2 w=${3:-24}
+    local -i filled pos
+    local pct
+    pct=$(LC_ALL=C awk -v v="$v" -v m="$max" 'BEGIN{ if(m<=0){print 0}else{printf "%d", (v/m)*100} }' 2>/dev/null)
+    [ -z "$pct" ] && pct=0
+    filled=$(( pct * w / 100 )); ((filled > w)) && filled=$w; ((filled < 0)) && filled=0
+    pos=$filled; ((pos >= w)) && pos=$((w - 1))
+    local col=$GRN
+    ((pct >= 70)) && col=$YEL
+    ((pct >= 100)) && col=$RED
+    local bar="" i
+    for ((i = 0; i < w; i++)); do
+        if ((i == pos)); then bar+="${col}▮${R}"
+        elif ((i < filled)); then bar+="${col}━${R}"
+        else bar+="${D}·${R}"
+        fi
+    done
+    GAUGE="${D}⟨${R}${bar}${D}⟩${R} ${col}${pct}%${R}"
+}
+
+# 모드 선택 띠. 클릭한 칸을 알아내려고 각 이름의 열 범위를 기억해 둔다.
+MODE_HIT_ROW=-1
+MODE_RANGES=()
+mode_strip() {
+    [ ${#MODES[@]} -eq 0 ] && return 0
+    MODE_RANGES=()
+    local text="  " m label
+    local -i col=3
+    for m in "${MODES[@]}"; do
+        label=${MODE_TITLES[$m]:-$m}
+        dw "$label"; local -i lw=$DW
+        MODE_RANGES+=("$col:$((col + lw + 1)):$m")
+        if [ "$m" = "$MODE" ]; then text+="${B}${GRN}[${label}]${R} "
+        else text+="${D} ${label} ${R}"; fi
+        col=$((col + lw + 3))
+    done
+    row "$text"
+    MODE_HIT_ROW=$((${#FRAME[@]} - 1))
+    HIT[$MODE_HIT_ROW]="mode"
+}
+
+# 클립보드에 넣는다. 대시보드는 프로젝트 명령을 실행하지 않는다 — 넘겨줄 뿐이다.
+clip_copy() {
+    if command -v wl-copy >/dev/null 2>&1; then printf '%s' "$1" | wl-copy 2>/dev/null && return 0; fi
+    if command -v xclip  >/dev/null 2>&1; then printf '%s' "$1" | xclip -selection clipboard 2>/dev/null && return 0; fi
+    return 1
+}
+cache_age() {
+    local f=$CACHE_DIR/$1
+    [ -f "$f" ] || { AGE=-1; AGE_TEXT="never"; return; }
+    local -i mt now
+    mt=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)
+    printf -v now '%(%s)T' -1
+    AGE=$((now - mt))
+    if   ((AGE < 90));   then AGE_TEXT="${AGE}s ago"
+    elif ((AGE < 5400)); then AGE_TEXT="$((AGE / 60))m ago"
+    else                      AGE_TEXT="$((AGE / 3600))h ago"; fi
+}
+
 cache_age() {
     local f=$CACHE_DIR/$1
     [ -f "$f" ] || { AGE=-1; AGE_TEXT="never"; return; }
@@ -346,15 +488,22 @@ enter_screen() {
         clear 2>/dev/null || printf '\e[H\e[2J'
     fi
     tput civis 2>/dev/null || printf '\e[?25l'
+    # Echo off for the whole run, not just inside `read -s`. Anything arriving
+    # while a frame is being painted is echoed by the terminal driver
+    # otherwise, and with mouse tracking on a single click is a burst of bytes
+    # -- which is what "clicking types escape sequences at me" actually is.
+    STTY_SAVED=$(stty -g 2>/dev/null) && stty -echo 2>/dev/null
     [ "$CAP_MOUSE" = yes ] && printf '\e[?1000h\e[?1002h\e[?1006h'
     return 0
 }
 LEFT_SCREEN=0
+STTY_SAVED=""
 leave_screen() {
     [ "$CAP_TTY" = yes ] || return 0
     [ "$LEFT_SCREEN" = 1 ] && return 0
     LEFT_SCREEN=1
     [ "$CAP_MOUSE" = yes ] && printf '\e[?1006l\e[?1002l\e[?1000l'
+    [ -n "${STTY_SAVED:-}" ] && stty "$STTY_SAVED" 2>/dev/null
     tput cnorm 2>/dev/null || printf '\e[?25h'
     if [ "$ENTERED_ALT" = 1 ]; then
         tput rmcup 2>/dev/null || printf '\e[?1049l'
@@ -382,6 +531,12 @@ paint() {
 # --------------------------------------------------------------------------
 declare -A SECTION_TITLES=()
 declare -A COLLAPSED=()
+declare -A MODE_TITLES=()
+declare -A VIEW_TITLES=()
+MODES=()
+MODE_DEFAULT=""
+MODE=""
+COMMANDS=()
 SECTIONS=()
 SLOW_JOBS=()
 PROJECT_NAME=$(basename "$ROOT")
@@ -398,6 +553,30 @@ declare -F panel_medium      >/dev/null || panel_medium() { :; }
 declare -F panel_fingerprint >/dev/null || panel_fingerprint() { :; }
 declare -F panel_verdict     >/dev/null || panel_verdict() { :; }
 
+# 고른 모드는 캐시에 남겨 다음 실행에도 이어진다.
+if [ ${#MODES[@]} -gt 0 ]; then
+    MODE=$(cat "$CACHE_DIR/mode" 2>/dev/null)
+    case " ${MODES[*]} " in
+        *" $MODE "*) ;;
+        *) MODE=${MODE_DEFAULT:-${MODES[0]}} ;;
+    esac
+fi
+mode_set() {
+    MODE=$1
+    printf '%s' "$MODE" > "$CACHE_DIR/mode" 2>/dev/null
+    FINGERPRINT=""
+}
+mode_cycle() {
+    local -i i
+    for i in "${!MODES[@]}"; do
+        if [ "${MODES[i]}" = "$MODE" ]; then
+            mode_set "${MODES[$(((i + 1) % ${#MODES[@]}))]}"; return 0
+        fi
+    done
+    mode_set "${MODES[0]}"
+}
+
+
 # --------------------------------------------------------------------------
 # Refresh budget. Fast work runs on every tick. Medium work runs only when the
 # working tree fingerprint moves, so an idle tick costs a couple of git calls
@@ -412,6 +591,7 @@ run_checks() {
         panel_medium
         FINGERPRINT=$fp
     fi
+    dash_read_signal
     panel_fast
 }
 
@@ -432,6 +612,24 @@ build_frame() {
     HIT[0]="refresh"
     hr
 
+    # The signal block sits above the sections because it is the one thing on
+    # the frame that is not derived from the repository: it is the session
+    # talking, and it is answered here rather than in another window.
+    if [ -n "$DASH_NOTE" ] || [ -n "$DASH_QUESTION" ]; then
+        [ -n "$DASH_NOTE" ] && row " ${CYN}◆${R} ${DASH_NOTE}"
+        if [ -n "$DASH_QUESTION" ]; then
+            row " ${B}? ${DASH_QUESTION}${R}"
+            local -i oi=0
+            for opt in "${DASH_OPTION_LIST[@]}"; do
+                [ -n "$opt" ] || continue
+                row "   ${CYN}▸${R} ${opt}"
+                HIT[$((${#FRAME[@]} - 1))]="signal:$oi"
+                oi=$((oi + 1))
+            done
+        fi
+        hr
+    fi
+
     local -i n=0 idx
     for idx in "${!SECTIONS[@]}"; do
         local name=${SECTIONS[idx]}
@@ -445,7 +643,11 @@ build_frame() {
             local before=${#FRAME[@]}
             "section_$name"
             local after=${#FRAME[@]} j
-            for ((j = before; j < after; j++)); do HIT[$j]="body:$name:$((j - before))"; done
+            # 이미 주인이 있는 줄(link, mode)은 건드리지 않는다. 덮어쓰면
+            # 그 줄의 클릭이 통째로 구획 본문 클릭으로 바뀐다.
+            for ((j = before; j < after; j++)); do
+                [ -z "${HIT[$j]:-}" ] && HIT[$j]="body:$name:$((j - before))"
+            done
         fi
         ((idx < ${#SECTIONS[@]} - 1)) && hr
     done
@@ -465,55 +667,122 @@ build_frame() {
     fi
 }
 
-DETAIL=""
-build_detail() {
+# 상세 화면은 쌓인다. 뒤로 가면 한 장씩 벗겨진다.
+NAV_VIEW=(); NAV_ARG=(); NAV_TITLE=()
+
+# 화면 이름은 VIEW_TITLES, 없으면 구획 제목, 그것도 없으면 내부 이름을 쓴다.
+view_title() { printf '%s' "${VIEW_TITLES[$1]:-${SECTION_TITLES[$1]:-$1}}"; }
+nav_push() { NAV_VIEW+=("$1"); NAV_ARG+=("$2"); NAV_TITLE+=("$(view_title "$1")"); }
+nav_pop() {
+    local -i n=${#NAV_VIEW[@]}
+    ((n)) || return 0
+    NAV_VIEW=("${NAV_VIEW[@]:0:$((n - 1))}")
+    NAV_ARG=("${NAV_ARG[@]:0:$((n - 1))}")
+    NAV_TITLE=("${NAV_TITLE[@]:0:$((n - 1))}")
+}
+nav_depth() { printf '%d' "${#NAV_VIEW[@]}"; }
+
+build_view() {
     FRAME=(); HIT=()
-    row " ${B}${CYN}${DETAIL_TITLE}${R}"
+    local -i n=${#NAV_VIEW[@]} i
+    local view=${NAV_VIEW[$((n - 1))]} arg=${NAV_ARG[$((n - 1))]}
+
+    local crumb="${D}${PROJECT_NAME}${R}"
+    for ((i = 0; i < n; i++)); do crumb+="${D} › ${R}${B}${NAV_TITLE[i]}${R}"; done
+    row " $crumb"
+    HIT[0]="refresh"
+    row " ${CYN}←${R} ${D}뒤로  (esc · backspace · 우클릭)${R}"
+    HIT[1]="back"
     hr
-    local line
-    while IFS= read -r line; do row "  $line"; done <<<"$DETAIL"
-    hr
-    row " ${D}any key returns${R}"
+
+    if declare -F "detail_$view" >/dev/null; then
+        "detail_$view" "$arg"
+    else
+        row "  ${D}이 화면에는 상세가 없다: ${view}${R}"
+    fi
+
+    if [ "$CAP_TTY" = yes ]; then
+        while ((${#FRAME[@]} < TROWS - 1)); do blank; done
+        row "${D}esc 뒤로 · q 종료${R}"
+    fi
 }
 
 # --------------------------------------------------------------------------
 # Input
 # --------------------------------------------------------------------------
+MOUSE_SEEN=0
 handle_mouse() {
     # SGR 1006: ESC [ < btn ; col ; row (M press | m release)
+    MOUSE_SEEN=0
     local seq="" ch
     while read -rsn1 -t 0.05 ch; do
         seq+=$ch
         [[ $ch == [Mm] ]] && break
         ((${#seq} > 24)) && break
     done
+    # ESC 다음의 '[' 는 아직 여기 남아 있다. 벗겨내지 않으면 아래 검사가
+    # 항상 실패해서 클릭이 통째로 무시된다.
+    seq=${seq#\[}
     [[ $seq == \<*[Mm] ]] || return 0
+    MOUSE_SEEN=1
     [[ $seq == *M ]] || return 0
     local body=${seq:1:$((${#seq} - 2))}
     local btn=${body%%;*}; local rest=${body#*;}
     local y=${rest#*;}
+    if ((btn == 2)); then nav_pop; return 0; fi
     ((btn == 0)) || return 0
+    local x=${body#*;}; x=${x%%;*}
     local target=${HIT[$((y - 1))]:-}
     case $target in
         refresh) FINGERPRINT="" ;;
+        back) nav_pop ;;
+        mode)
+            local r start stop mname
+            for r in "${MODE_RANGES[@]}"; do
+                start=${r%%:*}; stop=${r#*:}; mname=${stop#*:}; stop=${stop%%:*}
+                if ((x >= start && x <= stop)); then
+                    mode_set "$mname"; dash_emit mode name "$mname"; return 0
+                fi
+            done
+            mode_cycle; dash_emit mode name "$MODE" ;;
+        nav:*)
+            local spec=${target#nav:}
+            local view=${spec%%:*} narg=${spec#*:}
+            if declare -F "detail_$view" >/dev/null; then
+                nav_push "$view" "$narg"
+                dash_emit detail view "$view" arg "$narg"
+            fi ;;
         section:*)
             local name=${target#section:}
-            if [ -n "${COLLAPSED[$name]:-}" ]; then unset "COLLAPSED[$name]"; else COLLAPSED[$name]=1; fi ;;
+            if [ -n "${COLLAPSED[$name]:-}" ]; then unset "COLLAPSED[$name]"; else COLLAPSED[$name]=1; fi
+            dash_emit "$(fold_state "$name")" section "$name" ;;
+        signal:*)
+            local choice=${DASH_OPTION_LIST[${target#signal:}]:-}
+            if [ -n "$choice" ]; then
+                dash_emit answer question "$DASH_QUESTION" choice "$choice"
+                DASH_QUESTION=""; DASH_OPTIONS=""; DASH_OPTION_LIST=()
+                DASH_NOTE="답을 보냈다 / answer sent: $choice"
+            fi ;;
         body:*)
             local rest2=${target#body:}
             local name=${rest2%%:*}
             if declare -F "detail_$name" >/dev/null; then
-                DETAIL=$("detail_$name" "${rest2##*:}")
-                DETAIL_TITLE=${SECTION_TITLES[$name]:-$name}
+                nav_push "$name" "${rest2##*:}"
+                dash_emit detail section "$name" row "${rest2##*:}"
             fi ;;
     esac
 }
+
+fold_state() { [ -n "${COLLAPSED[$1]:-}" ] && printf folded || printf open; }
 
 toggle_index() {
     local -i i=$1
     ((i >= 1 && i <= ${#SECTIONS[@]})) || return 0
     local name=${SECTIONS[$((i - 1))]}
     if [ -n "${COLLAPSED[$name]:-}" ]; then unset "COLLAPSED[$name]"; else COLLAPSED[$name]=1; fi
+    # Folding is the only navigation available with keys alone, which makes it
+    # the only signal a terminal without mouse support can send back.
+    dash_emit "$(fold_state "$name")" section "$name"
 }
 
 # --------------------------------------------------------------------------
@@ -539,8 +808,8 @@ enter_screen
 
 while :; do
     term_size
-    if [ -n "$DETAIL" ]; then
-        build_detail
+    if [ "$(nav_depth)" != 0 ]; then
+        build_view
     else
         run_checks
         build_frame
@@ -550,14 +819,19 @@ while :; do
 
     key=""
     if read -rsn1 -t "$INTERVAL" key; then
-        if [ -n "$DETAIL" ]; then
-            [ "$key" = $'\e' ] && handle_mouse
-            DETAIL=""
+        if [ "$(nav_depth)" != 0 ]; then
+            case $key in
+                q|Q) break ;;
+                $'\e') handle_mouse; [ "$MOUSE_SEEN" = 1 ] || nav_pop ;;
+                $'\177'|$'\b'|b|B) nav_pop ;;
+                ' '|r|R) FINGERPRINT="" ;;
+            esac
             continue
         fi
         case $key in
             q|Q) break ;;
             ' '|r|R) FINGERPRINT="" ;;
+            m|M) [ ${#MODES[@]} -gt 0 ] && mode_cycle && dash_emit mode name "$MODE" ;;
             [1-9]) toggle_index "$key" ;;
             $'\e') handle_mouse ;;
         esac
