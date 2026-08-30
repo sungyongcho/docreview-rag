@@ -86,8 +86,8 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 0881a52 |
 | M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | fd71a74 |
 | M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ — compose는 병합, db healthcheck 유지 | 8d2264c |
-| M9.1~M9.4 | app/agent/{types,tools,registry,provider,loop,builtin_tools}.py — 1359줄 | app/agent/ — 도구 스키마를 레지스트리 중립으로 교정 | — |
-| M9.5~M9.6 | app/agent/{decompose,eval,mcp_server,__main__}.py — 786줄 | app/agent/ | — |
+| M9.1~M9.4 | app/agent/{types,tools,registry,provider,loop,builtin_tools}.py — 1359줄 | app/agent/ — 도구 스키마를 레지스트리 중립으로 교정 | b150fdb |
+| M9.5~M9.6 | app/agent/{decompose,eval,mcp_server,__main__}.py — 735줄 | app/agent/ — 진입점 import를 지연시켜 --help가 설정과 무관하게 뜬다 | — |
 | M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | — |
 | M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — |
 <!-- port-map:end -->
