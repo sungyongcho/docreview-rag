@@ -45,3 +45,6 @@ data/corpus/**/*.zip
 # Local or licensed source material is not part of the public portfolio.
 old/
 42_curriculum/
+
+# Dashboard cache of the last full-suite line.
+.dashboard-suite
