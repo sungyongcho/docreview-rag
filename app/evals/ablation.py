@@ -2,9 +2,8 @@
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
-import re
 
 from app.config import (
     DEFAULT_BM25_B,
@@ -14,17 +13,20 @@ from app.config import (
     LexicalRanker,
 )
 from app.evals.arms import LEXICAL_RANKERS, RetrievalStrategy, resolve_bm25_parameters
+from app.evals.identity import (
+    ARM_NAME,
+    RANKER_ORDER,
+    RANKER_SLUG,
+    STRATEGY_ORDER,
+    artifact_filename,
+)
 from app.evals.reporting import markdown_table
 from app.evals.retrieval_eval import RetrievalEvaluation, write_evaluation_artifact
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
 type ExperimentEvaluator = Callable[["ExperimentConfig"], Awaitable[RetrievalEvaluation]]
 
-STRATEGY_ORDER = {"lexical": 0, "vector": 1, "hybrid": 2}
-RANKER_ORDER = {"ts_rank_cd": 0, "bm25": 1}
-RANKER_SLUG = {"ts_rank_cd": "ts-rank-cd", "bm25": "bm25"}
 DEFAULT_LEXICAL_RANKERS: tuple[LexicalRanker, ...] = LEXICAL_RANKERS
-EXPERIMENT_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 def experiment_name(
@@ -94,7 +96,7 @@ class ExperimentConfig:
 
     def __post_init__(self) -> None:
         """Reject contradictory or incomplete experiment provenance."""
-        if EXPERIMENT_NAME.fullmatch(self.name) is None:
+        if ARM_NAME.fullmatch(self.name) is None:
             raise ValueError("experiment name must be lowercase kebab-case")
         if self.target_text_chars <= 0 or self.dimensions <= 0:
             raise ValueError("chunk target and embedding dimensions must be positive")
@@ -331,37 +333,6 @@ def experiment_matrix(
     return tuple(sorted(configs, key=sort_key))
 
 
-def artifact_filename(recorded_at: datetime, config: ExperimentConfig) -> str:
-    """Build the UTC-timestamped filename for one raw artifact.
-
-    Parameters
-    ----------
-    recorded_at : datetime
-        Timezone-aware recording time encoded in this filename.
-    config : ExperimentConfig
-        Arm whose validated name identifies the artifact.
-
-    Returns
-    -------
-    str
-        Filename containing a second-resolution UTC timestamp and arm name.
-
-    Raises
-    ------
-    ValueError
-        If ``recorded_at`` is naive or has no UTC offset.
-
-    Notes
-    -----
-    Equivalent instants in different time zones produce the same timestamp prefix.
-    The function creates no file, and second-resolution names are not globally unique.
-    """
-    if recorded_at.tzinfo is None or recorded_at.utcoffset() is None:
-        raise ValueError("recorded_at must be timezone-aware")
-    timestamp = recorded_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return f"{timestamp}-{config.name}.json"
-
-
 async def run_ablation(
     configs: Sequence[ExperimentConfig],
     evaluator: ExperimentEvaluator,
@@ -415,7 +386,7 @@ async def run_ablation(
         if evaluation.config != config.to_dict():
             raise ValueError(f"evaluation config does not match arm {config.name}")
 
-        path = directory / artifact_filename(recorded_at, config)
+        path = directory / artifact_filename(recorded_at, config.name)
         write_evaluation_artifact(path, evaluation)
         outcomes.append(
             AblationOutcome(

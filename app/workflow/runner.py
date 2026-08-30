@@ -66,6 +66,7 @@ def make_session_retriever(
     candidate_k: int | None = None,
     rrf_k: int = DEFAULT_RRF_K,
     reranker: RerankProvider | None = None,
+    route_by_language: bool = False,
     lexical_ranker: LexicalRanker = "ts_rank_cd",
     bm25_k1: float = DEFAULT_BM25_K1,
     bm25_b: float = DEFAULT_BM25_B,
@@ -87,6 +88,10 @@ def make_session_retriever(
         Reciprocal-rank-fusion constant.
     reranker : RerankProvider | None
         Optional second-stage scorer for the fused candidate list.
+    route_by_language : bool
+        Skip the English lexical component for a Korean query, matching the configured
+        retrieval settings. Passed explicitly so a run cannot pick up a query path its
+        recorded configuration does not name.
     lexical_ranker : LexicalRanker
         Explicit lexical algorithm, matching the configured retrieval settings.
     bm25_k1 : float
@@ -125,6 +130,7 @@ def make_session_retriever(
             filters=filters,
             rrf_k=rrf_k,
             reranker=reranker,
+            route_by_language=route_by_language,
             lexical_ranker=lexical_ranker,
             bm25_k1=bm25_k1,
             bm25_b=bm25_b,

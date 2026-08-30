@@ -116,6 +116,45 @@ def test_a_non_bm25_hybrid_arm_forwards_no_bm25_values(monkeypatch):
     assert "bm25_k1" not in seen
 
 
+def test_language_routing_is_bound_to_the_arm_and_only_to_a_fused_one(monkeypatch):
+    """Forward the arm's routing selection, and refuse it on a single-lane arm."""
+    seen = {}
+
+    async def retrieve(_session, _query, **kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(hits=())
+
+    monkeypatch.setattr(arms, "retrieve", retrieve)
+    routed = make_retriever(
+        object(),
+        strategy="hybrid",
+        provider=_Provider(),
+        lexical_ranker="ts_rank_cd",
+        route_by_language=True,
+    )
+
+    asyncio.run(routed("AMD의 매출은?", 1))
+    assert seen["route_by_language"] is True
+
+    unrouted = make_retriever(
+        object(), strategy="hybrid", provider=_Provider(), lexical_ranker="ts_rank_cd"
+    )
+    asyncio.run(unrouted("AMD의 매출은?", 1))
+    assert seen["route_by_language"] is False
+
+    # Routing chooses between two components, so a single-lane arm carrying the flag
+    # would be labelled with a query path it never takes.
+    for strategy, ranker in (("lexical", "ts_rank_cd"), ("vector", None)):
+        with pytest.raises(ValueError, match="routing requires the hybrid strategy"):
+            make_retriever(
+                object(),
+                strategy=strategy,
+                provider=_Provider(),
+                lexical_ranker=ranker,
+                route_by_language=True,
+            )
+
+
 def test_resolve_bm25_parameters_returns_values_only_for_a_bm25_arm():
     """Resolve a complete parameter set for BM25 and nothing for any other arm."""
     assert resolve_bm25_parameters("bm25", 1.5, 0.4, "robertson") == (1.5, 0.4, "robertson")

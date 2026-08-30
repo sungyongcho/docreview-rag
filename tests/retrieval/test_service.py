@@ -310,3 +310,132 @@ def test_cli_rejects_invalid_bm25_overrides_during_argument_parsing(capsys, flag
 
     assert exc_info.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch):
+    """Skip the English lexical component for a Korean query and keep it for English."""
+    events = []
+
+    class Provider(DeterministicEmbeddingProvider):
+        async def embed_query(self, query):
+            events.append(("embed", query))
+            return [0.0] * self.dimensions
+
+    async def vector(received_session, query_vector, *, k, filters):
+        events.append(("vector", k))
+        return [hit(1, 0.99)]
+
+    async def lexical(received_session, query, k, filters):
+        events.append(("lexical", query))
+        return [hit(2, 9_000.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+
+    korean = asyncio.run(
+        service.retrieve(
+            object(),
+            "AMD의 매출총이익률은 어떻게 변화했습니까?",
+            provider=Provider(),
+            k=2,
+            filters=RetrievalFilters(),
+            route_by_language=True,
+        )
+    )
+
+    assert [event[0] for event in events] == ["embed", "vector"]
+    assert korean.component_rankings.lexical == ()
+    assert korean.component_rankings.vector == (1,)
+    assert [candidate.chunk_id for candidate in korean.hits] == [1]
+
+    events.clear()
+    english = asyncio.run(
+        service.retrieve(
+            object(),
+            "How did AMD's gross margin change?",
+            provider=Provider(),
+            k=2,
+            route_by_language=True,
+        )
+    )
+
+    assert [event[0] for event in events] == ["embed", "vector", "lexical"]
+    assert english.component_rankings.lexical == (2,)
+
+
+def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
+    """Keep the lexical component for a Korean query the caller did not route."""
+    events = []
+
+    class Provider(DeterministicEmbeddingProvider):
+        async def embed_query(self, query):
+            return [0.0] * self.dimensions
+
+    async def vector(received_session, query_vector, *, k, filters):
+        return [hit(1, 0.99)]
+
+    async def lexical(received_session, query, k, filters):
+        events.append(query)
+        return [hit(2, 9_000.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+
+    result = asyncio.run(service.retrieve(object(), "AMD의 매출은?", provider=Provider(), k=2))
+
+    # The service holds no opinion of its own: it never reads Settings, so an arm
+    # measured here cannot inherit a query path its recorded config does not name.
+    assert events == ["AMD의 매출은?"]
+    assert result.component_rankings.lexical == (2,)
+    assert "get_settings" not in vars(service)
+
+
+@pytest.mark.parametrize(
+    ("configured", "flags", "expected"),
+    [
+        (False, [], False),
+        (True, [], True),
+        (False, ["--route-by-language"], True),
+        (True, ["--no-route-by-language"], False),
+    ],
+)
+def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
+    monkeypatch, configured, flags, expected
+):
+    """Read routing from settings at the command boundary, overridable in both ways."""
+    from app.db import session as db_session
+
+    seen: dict[str, object] = {}
+
+    class Session:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    class Engine:
+        async def dispose(self):
+            return None
+
+    async def retrieve(session, query, **kwargs):
+        seen.update(kwargs)
+        return service.RetrievalResult(
+            hits=(hit(1, 1 / 61),),
+            score_stage="rrf",
+            component_rankings=service.ComponentRankings(vector=(1,), lexical=()),
+        )
+
+    settings = Settings(query_language_routing=configured)
+    monkeypatch.setattr(db_session, "Session", Session)
+    monkeypatch.setattr(db_session, "engine", Engine())
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "get_embedding_provider", lambda _settings: object())
+    monkeypatch.setattr(cli, "retrieve", retrieve)
+
+    payload = asyncio.run(cli._run(cli.arguments(["--query", "AMD의 매출은?", *flags])))
+
+    # The value the command executed and the value it reports must be the same one,
+    # or the evidence would name a query path the run did not take.
+    assert seen["route_by_language"] is expected
+    assert payload["route_by_language"] is expected

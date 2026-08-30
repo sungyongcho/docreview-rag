@@ -21,8 +21,6 @@ from sqlalchemy.pool import NullPool
 from app.config import LexicalRanker, get_settings
 from app.db.bootstrap import bootstrap_schema
 from app.evals.ablation import (
-    RANKER_ORDER,
-    STRATEGY_ORDER,
     AblationOutcome,
     AblationReport,
     ExperimentConfig,
@@ -37,7 +35,9 @@ from app.evals.arms import (
     make_retriever,
 )
 from app.evals.artifacts import write_json_artifact
+from app.evals.cli import positive_int
 from app.evals.corpus import build_chunking_batch, load_chunking_filings, temporary_corpus_session
+from app.evals.identity import RANKER_ORDER, STRATEGY_ORDER, artifact_filename
 from app.evals.loader import DEFAULT_GOLDEN_PATH, load_golden_cases
 from app.evals.measurement import (
     QUERY_BUDGET_COUNT,
@@ -57,14 +57,6 @@ from app.evals.retrieval_eval import (
 )
 from app.retrieval.embeddings import get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K
-
-
-def _positive_int(value: str) -> int:
-    """Parse one command-line token as a strictly positive integer."""
-    parsed = int(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return parsed
 
 
 def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -99,7 +91,7 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
     parser.add_argument("--provider", choices=("deterministic", "openai"), default="deterministic")
-    parser.add_argument("--target-text-chars", type=_positive_int, nargs="+", default=[500, 1200])
+    parser.add_argument("--target-text-chars", type=positive_int, nargs="+", default=[500, 1200])
     parser.add_argument(
         "--strategies",
         choices=RETRIEVAL_STRATEGIES,
@@ -113,10 +105,10 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=list(LEXICAL_RANKERS),
         help="Lexical rankers to cross with every lexical and hybrid arm.",
     )
-    parser.add_argument("-k", type=_positive_int, default=5)
-    parser.add_argument("--candidate-k", type=_positive_int, default=20)
-    parser.add_argument("--rrf-k", type=_positive_int, default=DEFAULT_RRF_K)
-    parser.add_argument("--budget-queries", type=_positive_int, default=QUERY_BUDGET_COUNT)
+    parser.add_argument("-k", type=positive_int, default=5)
+    parser.add_argument("--candidate-k", type=positive_int, default=20)
+    parser.add_argument("--rrf-k", type=positive_int, default=DEFAULT_RRF_K)
+    parser.add_argument("--budget-queries", type=positive_int, default=QUERY_BUDGET_COUNT)
     parser.add_argument("--persist-results", action="store_true")
     parsed = parser.parse_args(argv)
 
@@ -309,9 +301,8 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 rrf_k=args.rrf_k,
             ),
         )
-        timestamp = recorded_at.strftime("%Y%m%dT%H%M%SZ")
         budget_path = write_json_artifact(
-            args.artifact_dir / f"{timestamp}-budgets.json", budget_payload
+            args.artifact_dir / artifact_filename(recorded_at, "budgets"), budget_payload
         )
 
         persisted: list[PersistedEvaluation] = []

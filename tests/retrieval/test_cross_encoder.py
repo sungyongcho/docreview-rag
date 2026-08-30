@@ -241,6 +241,7 @@ def test_run_passes_cross_encoder_when_rerank_is_enabled(monkeypatch):
     settings = SimpleNamespace(
         embedding_provider="deterministic",
         lexical_ranker="ts_rank_cd",
+        query_language_routing=False,
         bm25_k1=1.2,
         bm25_b=0.75,
         bm25_idf="lucene",

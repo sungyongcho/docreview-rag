@@ -131,6 +131,7 @@ def _hybrid_retriever(
     *,
     candidate_k: int,
     rrf_k: int,
+    route_by_language: bool,
     filters: RetrievalFilters | None,
 ) -> Retriever:
     """Bind the fused lane; BM25 values are forwarded only for a BM25 arm."""
@@ -149,6 +150,7 @@ def _hybrid_retriever(
             candidate_k=candidate_k,
             filters=filters,
             rrf_k=rrf_k,
+            route_by_language=route_by_language,
             lexical_ranker=lexical_ranker,
             **bm25_arguments,
         )
@@ -168,6 +170,7 @@ def make_retriever(
     bm25_idf: BM25Idf | None = None,
     candidate_k: int = 20,
     rrf_k: int = DEFAULT_RRF_K,
+    route_by_language: bool = False,
     filters: RetrievalFilters | None = None,
 ) -> Retriever:
     """Bind one explicit retrieval strategy and ranker configuration to a session.
@@ -190,6 +193,10 @@ def make_retriever(
         Positive hybrid candidate depth, which must also cover each requested ``k``.
     rrf_k : int, optional
         Positive reciprocal-rank-fusion constant used by hybrid retrieval.
+    route_by_language : bool, optional
+        Skip the English lexical component for a Korean query. Only a fused arm can
+        route, because routing decides between two components; naming it on a
+        single-lane arm would label a query path that arm never takes.
     filters : RetrievalFilters | None, optional
         Canonical evidence restrictions passed to every active retrieval component.
 
@@ -201,8 +208,8 @@ def make_retriever(
     Raises
     ------
     ValueError
-        If the strategy, provider, ranker, BM25 values, or retrieval limits form an
-        invalid or mislabeled experiment arm.
+        If the strategy, provider, ranker, BM25 values, routing selection, or retrieval
+        limits form an invalid or mislabeled experiment arm.
 
     Notes
     -----
@@ -218,6 +225,8 @@ def make_retriever(
         raise ValueError("candidate_k must be positive")
     if rrf_k <= 0:
         raise ValueError("rrf_k must be positive")
+    if route_by_language and strategy != "hybrid":
+        raise ValueError("language routing requires the hybrid strategy")
 
     if strategy == "vector":
         if lexical_ranker is not None:
@@ -241,5 +250,6 @@ def make_retriever(
         bm25,
         candidate_k=candidate_k,
         rrf_k=rrf_k,
+        route_by_language=route_by_language,
         filters=filters,
     )

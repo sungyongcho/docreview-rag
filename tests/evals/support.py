@@ -1,9 +1,12 @@
-"""Inline golden-case and hit builders shared by the evaluation tests."""
+"""Builders and constants shared by evaluation tests."""
+
+from datetime import UTC, datetime
 
 from app.evals.types import GoldenCase, GoldenSpan
 from app.retrieval.types import ChunkHit
 
 SOURCE_SHA256 = "a" * 64
+EVALUATION_RECORDED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def positive_case(case_id: str = "m3c-01") -> GoldenCase:

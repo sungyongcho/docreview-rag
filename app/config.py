@@ -1,3 +1,5 @@
+"""Environment-driven settings shared across ingestion, retrieval, and evaluation."""
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
@@ -28,6 +30,9 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
     openai_api_key: SecretStr | None = None
     lexical_ranker: LexicalRanker = "ts_rank_cd"
+    # Commands pass this flag explicitly so measured runs record whether Korean queries
+    # skipped the English lexical component. The retrieval service never reads Settings.
+    query_language_routing: bool = False
     bm25_k1: float = Field(default=DEFAULT_BM25_K1, gt=0, allow_inf_nan=False)
     bm25_b: float = Field(default=DEFAULT_BM25_B, ge=0, le=1, allow_inf_nan=False)
     bm25_idf: BM25Idf = DEFAULT_BM25_IDF

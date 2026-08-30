@@ -22,6 +22,7 @@ from app.db.models import DIM
 from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, hybrid_search
+from app.retrieval.language import detect_query_language
 from app.retrieval.lexical import lexical_search
 from app.retrieval.rerank import RerankProvider, rerank_hits
 from app.retrieval.types import ChunkHit, RetrievalFilters
@@ -79,6 +80,7 @@ async def retrieve(
     filters: RetrievalFilters | None = None,
     rrf_k: int = DEFAULT_RRF_K,
     reranker: RerankProvider | None = None,
+    route_by_language: bool = False,
     lexical_ranker: LexicalRanker = "ts_rank_cd",
     bm25_k1: float = DEFAULT_BM25_K1,
     bm25_b: float = DEFAULT_BM25_B,
@@ -104,6 +106,10 @@ async def retrieve(
         Positive reciprocal-rank-fusion constant.
     reranker : RerankProvider | None, optional
         Optional second-stage scorer for the fused candidate list.
+    route_by_language : bool, optional
+        Whether a Korean query skips the English lexical component. Callers decide;
+        the service never reads ``Settings``, so a measured arm cannot inherit a
+        query path it did not declare.
     lexical_ranker : LexicalRanker, optional
         Explicit lexical algorithm. PostgreSQL ``ts_rank_cd`` is the stable default.
     bm25_k1 : float, optional
@@ -150,6 +156,7 @@ async def retrieve(
         raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
 
     normalized_query = normalize_query(query)
+    skip_lexical = route_by_language and detect_query_language(normalized_query) == "ko"
 
     active_provider = provider if provider is not None else get_embedding_provider()
     if active_provider.dimensions != DIM:
@@ -183,6 +190,8 @@ async def retrieve(
         component_filters: RetrievalFilters,
     ) -> list[ChunkHit]:
         """Retrieve candidates with the configured lexical ranker."""
+        if skip_lexical:
+            return []
         if lexical_ranker == "bm25":
             hits = await bm25_search(
                 session,

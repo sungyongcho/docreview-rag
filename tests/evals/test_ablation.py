@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 import pytest
 
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
-from app.evals.ablation import EXPERIMENT_NAME, ExperimentConfig, experiment_matrix, run_ablation
+from app.evals.ablation import ExperimentConfig, experiment_matrix, run_ablation
+from app.evals.identity import ARM_NAME
 from app.evals.retrieval_eval import evaluate_retriever
 from app.evals.types import GoldenCase, GoldenSpan
 from app.retrieval.types import ChunkHit
@@ -92,7 +93,7 @@ def test_experiment_matrix_names_are_unique_and_filename_safe():
     assert "structure-500-lexical-ts-rank-cd" in names
     assert "structure-1200-hybrid-bm25" in names
     for name in names:
-        assert EXPERIMENT_NAME.fullmatch(name)
+        assert ARM_NAME.fullmatch(name)
 
 
 def test_vector_arm_is_not_duplicated_across_rankers():

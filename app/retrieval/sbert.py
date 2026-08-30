@@ -11,6 +11,10 @@ from typing import Protocol, cast
 from app.retrieval._sentence_transformers import ThreadSafeLazy, sentence_transformers_attribute
 from app.retrieval.embeddings import EmbeddingProvider, validate_embeddings, validate_texts
 
+# This multilingual sibling retains the 384-dimensional database contract while
+# placing Korean and English text in one embedding space.
+MULTILINGUAL_SBERT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
 
 class _EmbeddingMatrix(Protocol):
     """Array-like result returned by sentence-transformers."""

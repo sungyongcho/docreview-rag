@@ -68,6 +68,12 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=get_args(LexicalRanker),
         help="Override the configured lexical ranker.",
     )
+    parser.add_argument(
+        "--route-by-language",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override whether a Korean query skips the English lexical component.",
+    )
     parser.add_argument("--bm25-k1", type=float, help="Override positive BM25 saturation.")
     parser.add_argument("--bm25-b", type=float, help="Override BM25 length normalization.")
     parser.add_argument(
@@ -106,6 +112,7 @@ def _payload(
     backfill: EmbeddingBackfillResult | None,
     result: RetrievalResult,
     lexical_ranker: LexicalRanker = "ts_rank_cd",
+    route_by_language: bool = False,
     bm25_stats: TermStatCounts | None = None,
 ) -> dict[str, object]:
     """Build JSON output without exposing component-native scores.
@@ -117,6 +124,7 @@ def _payload(
         "provider": provider,
         "backfill": asdict(backfill) if backfill is not None else None,
         "lexical_ranker": lexical_ranker,
+        "route_by_language": route_by_language,
         "bm25_stats": asdict(bm25_stats) if bm25_stats is not None else None,
         "score_stage": result.score_stage,
         "hits": [hit.model_dump(mode="json") for hit in result.hits],
@@ -140,6 +148,10 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     settings = _provider_settings(get_settings(), args.provider)
     provider = get_embedding_provider(settings)
     lexical_ranker = args.lexical_ranker or settings.lexical_ranker
+    routing_override = args.route_by_language
+    route_by_language = (
+        settings.query_language_routing if routing_override is None else routing_override
+    )
     bm25_k1 = settings.bm25_k1 if args.bm25_k1 is None else args.bm25_k1
     bm25_b = settings.bm25_b if args.bm25_b is None else args.bm25_b
     bm25_idf = args.bm25_idf or settings.bm25_idf
@@ -162,6 +174,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                 k=args.k,
                 candidate_k=args.candidate_k,
                 reranker=CrossEncoderReranker() if args.rerank else None,
+                route_by_language=route_by_language,
                 lexical_ranker=lexical_ranker,
                 bm25_k1=bm25_k1,
                 bm25_b=bm25_b,
@@ -173,6 +186,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             backfill=backfill,
             result=result,
             lexical_ranker=lexical_ranker,
+            route_by_language=route_by_language,
             bm25_stats=bm25_stats,
         )
     finally:
