@@ -27,7 +27,7 @@ def stub_components(monkeypatch, events: list[tuple[str, int]]) -> None:
         events.append(("vector", k))
         return [hit(1, 0.9), hit(2, 0.8), hit(3, 0.7), hit(4, 0.6)]
 
-    async def lexical(received_session, query, k, filters):
+    async def lexical(received_session, query, k, filters, *, text_search_config):
         events.append(("lexical", k))
         return [hit(4, 9.0), hit(3, 8.0), hit(2, 7.0), hit(1, 6.0)]
 

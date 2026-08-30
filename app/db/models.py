@@ -86,10 +86,21 @@ class Chunk(Base):
     end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     citation: Mapped[str] = mapped_column(Text, nullable=False)
+    # Korean rows store the n-gram tokenization of index_text (app.retrieval.korean);
+    # English rows leave it NULL and the tsvector falls through to index_text.
+    lexical_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
     content_tsv: Mapped[str] = mapped_column(
         TSVECTOR,
-        Computed("to_tsvector('english', index_text)", persisted=True),
+        # The config must be a literal inside each branch: a runtime text-to-regconfig
+        # cast is only stable, and PostgreSQL requires generation expressions to be
+        # immutable.
+        Computed(
+            "CASE WHEN language = 'ko' "
+            "THEN to_tsvector('simple', coalesce(lexical_text, index_text)) "
+            "ELSE to_tsvector('english', index_text) END",
+            persisted=True,
+        ),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -101,6 +112,10 @@ class Chunk(Base):
         CheckConstraint("ordinal >= 0", name="ck_chunks_ordinal_nonnegative"),
         CheckConstraint("kind IN ('text', 'table')", name="ck_chunks_kind"),
         CheckConstraint("language ~ '^[a-z]{2}$'", name="ck_chunks_language_format"),
+        CheckConstraint(
+            "(language = 'ko') = (lexical_text IS NOT NULL)",
+            name="ck_chunks_lexical_text_language",
+        ),
         CheckConstraint("start_char >= 0", name="ck_chunks_start_nonnegative"),
         CheckConstraint("end_char > start_char", name="ck_chunks_span_order"),
         CheckConstraint(

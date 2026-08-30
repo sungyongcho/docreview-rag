@@ -115,7 +115,7 @@ def test_translate_query_rejects_a_translation_that_is_still_korean():
         [raw('{"translated_query":"AMD의 7nm 공급 위험","source_language":"ko"}')] * 2
     )
 
-    with pytest.raises(QueryTranslationError, match="not English"):
+    with pytest.raises(QueryTranslationError, match="not in the target language 'en'"):
         translate(provider)
 
 

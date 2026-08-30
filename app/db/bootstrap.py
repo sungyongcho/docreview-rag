@@ -46,7 +46,7 @@ async def ensure_bm25_stats_invalidation(
         text(
             f"""
             CREATE TRIGGER {trigger}
-            AFTER INSERT OR DELETE OR UPDATE OF index_text ON {chunks}
+            AFTER INSERT OR DELETE OR UPDATE OF index_text, lexical_text ON {chunks}
             FOR EACH STATEMENT
             EXECUTE FUNCTION {function}()
             """

@@ -28,6 +28,8 @@ def lexical_statement(
     query: str,
     k: int,
     filters: RetrievalFilters | None = None,
+    *,
+    text_search_config: str = TEXT_SEARCH_CONFIG,
 ) -> Select[Any]:
     """Build a safe PostgreSQL FTS statement ranked by cover density.
 
@@ -39,6 +41,10 @@ def lexical_statement(
         Maximum number of ranked chunks to return.
     filters : RetrievalFilters | None
         Optional exact-match restrictions.
+    text_search_config : str
+        Configuration the query is parsed with. It must match the configuration the
+        target rows were indexed with — English rows use the default, Korean rows
+        are indexed under ``simple`` over pre-tokenized text.
 
     Returns
     -------
@@ -61,7 +67,7 @@ def lexical_statement(
         raise ValueError("k must be positive")
 
     active_filters = filters or RetrievalFilters()
-    parsed = func.websearch_to_tsquery(TEXT_SEARCH_CONFIG, _relaxed_websearch_query(query)).label(
+    parsed = func.websearch_to_tsquery(text_search_config, _relaxed_websearch_query(query)).label(
         "tsquery"
     )
     query_cte = select(parsed).cte("lexical_query").prefix_with("MATERIALIZED")
@@ -82,6 +88,8 @@ async def lexical_search(
     query: str,
     k: int = 5,
     filters: RetrievalFilters | None = None,
+    *,
+    text_search_config: str = TEXT_SEARCH_CONFIG,
 ) -> list[ChunkHit]:
     """Run the PostgreSQL FTS baseline and return typed hits.
 
@@ -110,5 +118,7 @@ async def lexical_search(
     -----
     Fusion must consume rank rather than compare this native score with another scale.
     """
-    result = await session.execute(lexical_statement(query, k, filters))
+    result = await session.execute(
+        lexical_statement(query, k, filters, text_search_config=text_search_config)
+    )
     return [ChunkHit.model_validate(row) for row in result.mappings().all()]

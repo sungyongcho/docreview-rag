@@ -34,7 +34,12 @@ GATED_METRIC: Final[MetricName] = "recall_at_k"
 
 @dataclass(frozen=True, slots=True)
 class ParityMetric:
-    """One metric measured on both language slices of the same arm."""
+    """One metric measured on both language slices of the same arm.
+
+    ``delta`` and ``ratio`` are oriented by the corpus's native language: delta is
+    native minus foreign and ratio is foreign over native, so the same floor means
+    the same thing on an English corpus (native en) and a Korean one (native ko).
+    """
 
     metric: MetricName
     en: float
@@ -53,6 +58,7 @@ class ParityAssessment:
     min_recall_ratio: float
     metrics: tuple[ParityMetric, ...]
     failures: tuple[str, ...]
+    native_language: str = "en"
 
     @property
     def passed(self) -> bool:
@@ -68,7 +74,7 @@ class ParityAssessment:
 
     @property
     def recall_ratio(self) -> float | None:
-        """Return the gated ko/en recall ratio, or None when the English slice is 0."""
+        """Return the gated foreign-over-native recall ratio, or None when undefined."""
         return self.metric(GATED_METRIC).ratio
 
 
@@ -96,12 +102,17 @@ def assess_parity(
     ko_eval: RetrievalEvaluation,
     *,
     min_recall_ratio: float = DEFAULT_MIN_RECALL_RATIO,
+    native_language: str = "en",
 ) -> ParityAssessment:
     """Compare evaluations whose only configured difference is query language.
 
-    The assessment records ``delta = en - ko`` and ``ratio = ko / en`` for each gated
-    metric. A zero English score leaves the ratio undefined and fails closed.
+    ``native_language`` names the corpus's own language: its slice is the
+    denominator, so the gate always asks how well the foreign-language questions
+    keep up with the questions the corpus was written in. A zero native score
+    leaves the ratio undefined and fails closed.
     """
+    if native_language not in {"en", "ko"}:
+        raise ValueError("native_language must be 'en' or 'ko'")
     if not isinstance(en_eval, RetrievalEvaluation) or not isinstance(ko_eval, RetrievalEvaluation):
         raise TypeError("parity requires two RetrievalEvaluation values")
     if not math.isfinite(min_recall_ratio) or not 0.0 < min_recall_ratio <= 1.0:
@@ -125,20 +136,23 @@ def assess_parity(
     for name in HIGHER_IS_BETTER_METRICS:
         english = en_values[name]
         korean = ko_values[name]
-        ratio = None if english == 0.0 else korean / english
+        native, foreign = (english, korean) if native_language == "en" else (korean, english)
+        ratio = None if native == 0.0 else foreign / native
         metrics.append(
             ParityMetric(
                 metric=name,
                 en=english,
                 ko=korean,
-                delta=english - korean,
+                delta=native - foreign,
                 ratio=ratio,
             )
         )
         if name != GATED_METRIC:
             continue
         if ratio is None:
-            failures.append(f"{name}: English slice scored 0, so parity is undefined")
+            failures.append(
+                f"{name}: the native {native_language} slice scored 0, so parity is undefined"
+            )
         elif ratio < min_recall_ratio and not math.isclose(
             ratio,
             min_recall_ratio,
@@ -154,14 +168,17 @@ def assess_parity(
         min_recall_ratio=min_recall_ratio,
         metrics=tuple(metrics),
         failures=tuple(failures),
+        native_language=native_language,
     )
 
 
 def parity_markdown(assessment: ParityAssessment) -> str:
     """Render one parity assessment as a compact verdict table."""
     verdict = "PASS" if assessment.passed else "FAIL"
+    native = assessment.native_language.upper()
+    foreign = "KO" if native == "EN" else "EN"
     lines = [
-        "| Metric | EN | KO | Delta (EN-KO) | Ratio (KO/EN) |",
+        f"| Metric | EN | KO | Delta ({native}-{foreign}) | Ratio ({foreign}/{native}) |",
         "|---|---:|---:|---:|---:|",
     ]
     for result in assessment.metrics:

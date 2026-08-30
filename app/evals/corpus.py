@@ -177,15 +177,21 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         end_char bigint NOT NULL,
         source_sha256 varchar(64) NOT NULL,
         citation text NOT NULL,
+        lexical_text text,
         embedding vector({dimensions}),
         content_tsv tsvector GENERATED ALWAYS AS (
-            to_tsvector('english', index_text)
+            CASE WHEN language = 'ko'
+                THEN to_tsvector('simple', coalesce(lexical_text, index_text))
+                ELSE to_tsvector('english', index_text)
+            END
         ) STORED,
         created_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT uq_doc_ordinal UNIQUE (doc_id, ordinal),
         CONSTRAINT ck_chunks_ordinal_nonnegative CHECK (ordinal >= 0),
         CONSTRAINT ck_chunks_kind CHECK (kind IN ('text', 'table')),
         CONSTRAINT ck_chunks_language_format CHECK (language ~ '^[a-z]{{2}}$'),
+        CONSTRAINT ck_chunks_lexical_text_language
+            CHECK ((language = 'ko') = (lexical_text IS NOT NULL)),
         CONSTRAINT ck_chunks_start_nonnegative CHECK (start_char >= 0),
         CONSTRAINT ck_chunks_span_order CHECK (end_char > start_char),
         CONSTRAINT ck_chunks_source_sha256_format

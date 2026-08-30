@@ -20,6 +20,7 @@ from app.db.models import Chunk as ChunkModel, Document
 from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing, compose_index_text
 from app.ingestion.parser import ParsedFiling
 from app.ingestion.registry import registry_for, registry_name, resolve_registry
+from app.retrieval.korean import tokenize_korean_text
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
 # names rather than to this module; EXPECTED_DOCUMENTS is the committed EDGAR corpus.
@@ -143,6 +144,7 @@ class ChunkRecord:
     end_char: int
     source_sha256: str
     citation: str
+    lexical_text: str | None = None
 
     def __post_init__(self) -> None:
         """Reject invalid content, index text, source spans, and citations."""
@@ -168,6 +170,11 @@ class ChunkRecord:
         )
         if not self.citation:
             raise ValueError(f"{self.doc_id} chunk {self.ordinal} has no citation")
+        if (self.language == "ko") != bool(self.lexical_text):
+            raise ValueError(
+                f"{self.doc_id} chunk {self.ordinal}: lexical_text is required exactly "
+                "for Korean rows"
+            )
 
     def values(self) -> dict[str, Any]:
         """Return SQL values without an embedding payload."""
@@ -184,6 +191,7 @@ class ChunkRecord:
             "end_char": self.end_char,
             "source_sha256": self.source_sha256,
             "citation": self.citation,
+            "lexical_text": self.lexical_text,
         }
 
 
@@ -311,6 +319,7 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
             ChunkRecord(
                 doc_id=chunk.doc_id,
                 language=language,
+                lexical_text=tokenize_korean_text(chunk.content) if language == "ko" else None,
                 item=chunk.item,
                 kind=chunk.kind,
                 ordinal=chunk.ordinal,
@@ -481,6 +490,7 @@ def chunk_upsert_statement(records: Sequence[ChunkRecord]) -> Insert:
         index_elements=[ChunkModel.doc_id, ChunkModel.ordinal],
         set_={
             "language": excluded.language,
+            "lexical_text": excluded.lexical_text,
             "item": excluded.item,
             "kind": excluded.kind,
             "body": excluded.body,

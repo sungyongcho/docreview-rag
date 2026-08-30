@@ -368,7 +368,8 @@ def test_search_shares_the_first_four_parameters_with_lexical_search():
     candidate = list(inspect.signature(bm25.bm25_search).parameters)
 
     assert candidate[:4] == baseline[:4] == ["session", "query", "k", "filters"]
-    assert [p for p in candidate[4:]] == ["k1", "b", "idf"]
+    assert [p for p in candidate[4:]] == ["k1", "b", "idf", "text_search_config"]
+    assert baseline[4:] == ["text_search_config"]
 
 
 def test_backfill_refuses_a_session_that_is_already_in_a_transaction():

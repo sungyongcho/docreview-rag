@@ -374,7 +374,7 @@ def test_translated_handling_rewrites_the_query_and_records_what_it_sent(monkeyp
 
     monkeypatch.setattr(crosslingual, "make_retriever", factory)
 
-    async def fake_translate(query, *, llm_provider, provider_budget):
+    async def fake_translate(query, *, llm_provider, provider_budget, target_language="en"):
         return SimpleNamespace(translated_query="AMD revenue?", source_language="ko")
 
     monkeypatch.setattr(crosslingual, "translate_query", fake_translate)
@@ -628,3 +628,61 @@ def test_build_arms_crosses_handling_only_with_the_hybrid_strategy():
     ]
     assert all(built.target_text_chars == CROSSLINGUAL_TARGET_TEXT_CHARS for built in arms)
     assert all(built.to_config()["retrieval"]["reranker"] is None for built in arms)
+
+
+def test_dart_corpus_arm_names_and_config_carry_the_corpus_identity():
+    """A DART arm cannot share a name or a baseline with its EDGAR twin."""
+    edgar = arm(strategy="hybrid", lexical_ranker="ts_rank_cd", language="ko")
+    dart = arm(
+        strategy="hybrid",
+        lexical_ranker="ts_rank_cd",
+        language="ko",
+        corpus_registry="dart",
+        corpus_language="ko",
+    )
+
+    assert edgar.name == "xling-deterministic-hybrid-ts-rank-cd-ko"
+    assert dart.name == "xling-dart-deterministic-hybrid-ts-rank-cd-ko"
+    assert edgar.to_config()["corpus"] == {"registry": "sec", "language": "en"}
+    assert dart.to_config()["corpus"] == {"registry": "dart", "language": "ko"}
+
+
+def test_parity_groups_never_collapse_across_corpora():
+    """The same shape measured on two corpora forms two parity groups, not one."""
+    shapes = [
+        arm(strategy="hybrid", lexical_ranker="ts_rank_cd", language=lang, handling="routed")
+        for lang in ("en", "ko")
+    ]
+    dart_shapes = [
+        arm(
+            strategy="hybrid",
+            lexical_ranker="ts_rank_cd",
+            language=lang,
+            handling="routed",
+            corpus_registry="dart",
+            corpus_language="ko",
+        )
+        for lang in ("en", "ko")
+    ]
+
+    assert crosslingual.gateable_matrix(shapes)
+    assert crosslingual.gateable_matrix(dart_shapes)
+    assert crosslingual._parity_identity(shapes[0]) != crosslingual._parity_identity(dart_shapes[0])
+
+
+def test_corpus_argument_resolves_suite_goldens_and_chunk_target():
+    """--corpus dart binds the DART suite, goldens, manifest, and 600-char target."""
+    args = crosslingual.arguments(["--corpus", "dart"])
+
+    assert args.suite == crosslingual.DART_CROSSLINGUAL_SUITE
+    assert args.golden.name == "dart_retrieval.json"
+    assert args.ko_golden.name == "dart_retrieval_ko.json"
+    built = crosslingual.build_arms(args, "token-hash-384", settings=Settings())
+    assert {arm.corpus_registry for arm in built} == {"dart"}
+    assert {arm.target_text_chars for arm in built} == {600}
+
+    edgar_args = crosslingual.arguments([])
+    assert edgar_args.suite == crosslingual.CROSSLINGUAL_SUITE
+    assert edgar_args.golden.name == "retrieval.json"
+    edgar_built = crosslingual.build_arms(edgar_args, "token-hash-384", settings=Settings())
+    assert {arm.target_text_chars for arm in edgar_built} == {1200}

@@ -45,7 +45,9 @@ CANDIDATE_ID_PREFIX: Final[str] = "m3s"
 DEFAULT_GOLDEN_ID_PREFIX: Final[str] = "m3c"
 ID_NUMBER_WIDTH: Final[int] = 2
 MAX_ID_NUMBER: Final[int] = 10**ID_NUMBER_WIDTH - 1
-CANDIDATE_ID_PATTERN: Final[str] = rf"^{CANDIDATE_ID_PREFIX}-[0-9]{{{ID_NUMBER_WIDTH}}}$"
+# One shape, many suites: any module's candidate namespace ("m3s", "m10s") passes,
+# while promotion still refuses to mint a golden id the target suite already uses.
+CANDIDATE_ID_PATTERN: Final[str] = rf"^m[0-9]+s-[0-9]{{{ID_NUMBER_WIDTH}}}$"
 
 DecisionLabel = Literal["approve", "reject"]
 CandidateState = Literal["pending", "approved", "rejected"]

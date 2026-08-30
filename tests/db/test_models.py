@@ -69,11 +69,13 @@ def test_chunk_schema_preserves_evidence_context_and_source_coordinates():
     assert columns.embedding.nullable
 
 
-def test_search_vector_is_computed_from_index_text():
-    """Generate the PostgreSQL search vector from indexed text."""
+def test_search_vector_is_computed_per_corpus_language():
+    """Generate the search vector with each corpus language's own configuration."""
     computed = Chunk.__table__.columns.content_tsv.computed
     assert isinstance(computed, Computed)
-    assert "to_tsvector('english', index_text)" in str(computed.sqltext)
+    expression = str(computed.sqltext)
+    assert "to_tsvector('simple', coalesce(lexical_text, index_text))" in expression
+    assert "to_tsvector('english', index_text)" in expression
     assert computed.persisted is True
 
 

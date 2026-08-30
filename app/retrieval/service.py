@@ -22,8 +22,9 @@ from app.db.models import DIM
 from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, hybrid_search
+from app.retrieval.korean import KOREAN_TEXT_SEARCH_CONFIG, tokenize_korean_text
 from app.retrieval.language import detect_query_language
-from app.retrieval.lexical import lexical_search
+from app.retrieval.lexical import TEXT_SEARCH_CONFIG, lexical_search
 from app.retrieval.rerank import RerankProvider, rerank_hits
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.retrieval.vector import vector_search
@@ -70,6 +71,28 @@ class RetrievalResult(BaseModel):
     component_rankings: ComponentRankings
 
 
+def _lexical_corpus_language(filters: RetrievalFilters | None) -> str:
+    """Return the corpus language the lexical component must tokenize for.
+
+    An absent or empty language filter keeps the committed English behavior. A
+    filter naming exactly ``"ko"`` selects the Korean tokenization; a filter mixing
+    corpus languages is refused rather than guessed.
+
+    Raises
+    ------
+    ValueError
+        If ``filters.languages`` names more than one language while including
+        ``"ko"`` — the two corpora are tokenized differently, so one statement
+        cannot serve both.
+    """
+    languages = set(filters.languages) if filters is not None else set()
+    if "ko" not in languages:
+        return "en"
+    if languages != {"ko"}:
+        raise ValueError("lexical retrieval cannot span corpus languages; filter to exactly one")
+    return "ko"
+
+
 async def retrieve(
     session: AsyncSession,
     query: str,
@@ -107,9 +130,9 @@ async def retrieve(
     reranker : RerankProvider | None, optional
         Optional second-stage scorer for the fused candidate list.
     route_by_language : bool, optional
-        Whether a Korean query skips the English lexical component. Callers decide;
-        the service never reads ``Settings``, so a measured arm cannot inherit a
-        query path it did not declare.
+        Whether a query in a different language than the corpus skips the lexical
+        component. Callers decide; the service never reads ``Settings``, so a
+        measured arm cannot inherit a query path it did not declare.
     lexical_ranker : LexicalRanker, optional
         Explicit lexical algorithm. PostgreSQL ``ts_rank_cd`` is the stable default.
     bm25_k1 : float, optional
@@ -131,6 +154,12 @@ async def retrieve(
 
     Notes
     -----
+    The corpus language comes from ``filters.languages`` alone — never from the
+    script of the query — and selects the lexical tokenization: a single ``"ko"``
+    filter parses the query with the same n-gram tokenizer the Korean rows were
+    indexed with. A filter mixing corpus languages is rejected because one lexical
+    statement cannot parse a query under two configurations at once.
+
     The component adapters close over one ``AsyncSession`` and must remain sequential;
     concurrent use of that session is unsafe. Without a reranker, the service slices the
     fused candidate pool to ``k``. With a reranker, the complete pool is retained and the
@@ -156,7 +185,8 @@ async def retrieve(
         raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
 
     normalized_query = normalize_query(query)
-    skip_lexical = route_by_language and detect_query_language(normalized_query) == "ko"
+    corpus_language = _lexical_corpus_language(filters)
+    skip_lexical = route_by_language and detect_query_language(normalized_query) != corpus_language
 
     active_provider = provider if provider is not None else get_embedding_provider()
     if active_provider.dimensions != DIM:
@@ -192,22 +222,32 @@ async def retrieve(
         """Retrieve candidates with the configured lexical ranker."""
         if skip_lexical:
             return []
+        if corpus_language == "ko":
+            lexical_query = tokenize_korean_text(component_query)
+            text_search_config = KOREAN_TEXT_SEARCH_CONFIG
+        else:
+            lexical_query = component_query
+            text_search_config = TEXT_SEARCH_CONFIG
+        if not lexical_query.strip():
+            return []
         if lexical_ranker == "bm25":
             hits = await bm25_search(
                 session,
-                component_query,
+                lexical_query,
                 component_k,
                 component_filters,
                 k1=bm25_k1,
                 b=bm25_b,
                 idf=bm25_idf,
+                text_search_config=text_search_config,
             )
         else:
             hits = await lexical_search(
                 session,
-                component_query,
+                lexical_query,
                 component_k,
                 component_filters,
+                text_search_config=text_search_config,
             )
         lexical_hits.extend(hits)
         return hits

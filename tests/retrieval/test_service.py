@@ -41,7 +41,7 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
         events.append(("vector", received_session, len(query_vector), k, filters))
         return [hit(1, 0.99), hit(2, 0.01)]
 
-    async def lexical(received_session, query, k, filters):
+    async def lexical(received_session, query, k, filters, *, text_search_config):
         events.append(("lexical", received_session, query, k, filters))
         return [hit(2, 9_000.0), hit(3, 8_000.0)]
 
@@ -108,7 +108,7 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
         assert k == 2
         return [hit(1, 0.9), hit(2, 0.8)]
 
-    async def lexical(_session, query, k, filters):
+    async def lexical(_session, query, k, filters, *, text_search_config):
         assert query == "NVDA research development spending"
         assert k == 2
         return []
@@ -325,7 +325,7 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
         events.append(("vector", k))
         return [hit(1, 0.99)]
 
-    async def lexical(received_session, query, k, filters):
+    async def lexical(received_session, query, k, filters, *, text_search_config):
         events.append(("lexical", query))
         return [hit(2, 9_000.0)]
 
@@ -374,7 +374,7 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     async def vector(received_session, query_vector, *, k, filters):
         return [hit(1, 0.99)]
 
-    async def lexical(received_session, query, k, filters):
+    async def lexical(received_session, query, k, filters, *, text_search_config):
         events.append(query)
         return [hit(2, 9_000.0)]
 
@@ -439,3 +439,104 @@ def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
     # or the evidence would name a query path the run did not take.
     assert seen["route_by_language"] is expected
     assert payload["route_by_language"] is expected
+
+
+def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):
+    """A ko corpus filter sends n-gram tokens under the simple configuration."""
+    calls = []
+    session = cast(AsyncSession, object())
+
+    async def vector(received_session, query_vector, *, k, filters):
+        return [hit(1, 0.9)]
+
+    async def lexical(received_session, query, k, filters, *, text_search_config):
+        calls.append((query, text_search_config))
+        return [hit(2, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+
+    asyncio.run(
+        service.retrieve(
+            session,
+            "삼성전자 매출",
+            provider=DeterministicEmbeddingProvider(),
+            k=2,
+            filters=RetrievalFilters(languages=("ko",)),
+        )
+    )
+
+    assert calls == [("삼성 성전 전자 매출", "simple")]
+
+
+def test_english_corpus_keeps_the_raw_query_and_english_config(monkeypatch):
+    """Without a ko filter the lexical component behaves exactly as committed."""
+    calls = []
+    session = cast(AsyncSession, object())
+
+    async def vector(received_session, query_vector, *, k, filters):
+        return [hit(1, 0.9)]
+
+    async def lexical(received_session, query, k, filters, *, text_search_config):
+        calls.append((query, text_search_config))
+        return [hit(2, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+
+    asyncio.run(
+        service.retrieve(
+            session,
+            "NVDA data center revenue",
+            provider=DeterministicEmbeddingProvider(),
+            k=2,
+        )
+    )
+
+    assert calls == [("NVDA data center revenue", "english")]
+
+
+def test_mixed_language_filter_is_refused_for_lexical_retrieval():
+    """One statement cannot parse a query under two tokenizations at once."""
+    session = cast(AsyncSession, object())
+
+    with pytest.raises(ValueError, match="cannot span corpus languages"):
+        asyncio.run(
+            service.retrieve(
+                session,
+                "query",
+                provider=DeterministicEmbeddingProvider(),
+                k=2,
+                filters=RetrievalFilters(languages=("en", "ko")),
+            )
+        )
+
+
+def test_routing_skips_lexical_when_query_and_corpus_languages_differ(monkeypatch):
+    """Routing on a Korean corpus skips the lexical lane for an English query."""
+    lexical_calls = []
+    session = cast(AsyncSession, object())
+
+    async def vector(received_session, query_vector, *, k, filters):
+        return [hit(1, 0.9)]
+
+    async def lexical(received_session, query, k, filters, *, text_search_config):
+        lexical_calls.append(query)
+        return [hit(2, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+
+    result = asyncio.run(
+        service.retrieve(
+            session,
+            "semiconductor revenue outlook",
+            provider=DeterministicEmbeddingProvider(),
+            k=2,
+            filters=RetrievalFilters(languages=("ko",)),
+            route_by_language=True,
+        )
+    )
+
+    assert lexical_calls == []
+    assert result.component_rankings.lexical == ()

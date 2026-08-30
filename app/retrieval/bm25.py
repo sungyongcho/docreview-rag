@@ -196,6 +196,7 @@ def bm25_statement(
     k1: float = DEFAULT_BM25_K1,
     b: float = DEFAULT_BM25_B,
     idf: BM25Idf = DEFAULT_BM25_IDF,
+    text_search_config: str = TEXT_SEARCH_CONFIG,
 ) -> Select[Any]:
     """Build a bound BM25 query with shared filters and deterministic ordering.
 
@@ -232,7 +233,7 @@ def bm25_statement(
     active_filters = filters or RetrievalFilters()
 
     parsed = func.websearch_to_tsquery(
-        TEXT_SEARCH_CONFIG,
+        text_search_config,
         bindparam(
             "bm25_match_query",
             value=relaxed_websearch_query(query),
@@ -245,7 +246,7 @@ def bm25_statement(
         func.unnest(
             func.tsvector_to_array(
                 func.to_tsvector(
-                    TEXT_SEARCH_CONFIG,
+                    text_search_config,
                     bindparam(
                         "bm25_positive_query",
                         value=positive_websearch_text(query),
@@ -306,6 +307,7 @@ async def bm25_search(
     k1: float = DEFAULT_BM25_K1,
     b: float = DEFAULT_BM25_B,
     idf: BM25Idf = DEFAULT_BM25_IDF,
+    text_search_config: str = TEXT_SEARCH_CONFIG,
 ) -> list[ChunkHit]:
     """Rank chunks with BM25 and return complete typed evidence.
 
@@ -338,7 +340,11 @@ async def bm25_search(
     ValueError
         If public BM25 parameters are invalid.
     """
-    result = await session.execute(bm25_statement(query, k, filters, k1=k1, b=b, idf=idf))
+    result = await session.execute(
+        bm25_statement(
+            query, k, filters, k1=k1, b=b, idf=idf, text_search_config=text_search_config
+        )
+    )
     stats_ready = await session.scalar(
         select(BM25CorpusStat.singleton_id).where(BM25CorpusStat.singleton_id == 1)
     )

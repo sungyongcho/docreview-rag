@@ -1,0 +1,562 @@
+[
+  {
+    "id": "m10c-01",
+    "question": "As of the end of 2024, how many shares is SK hynix authorized to issue, and how many common shares are actually outstanding in circulation?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 94874,
+        "end_char": 95075
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년 12월 31일 기준 발행할 주식의 총수는 9,000,000,000주이며, 자기주식을 제외한 유통주식수는 보통주 689,038,731주입니다.",
+    "note": "Division I.4 (주식의 총수 등) — the opening narrative paragraph states authorized shares, cumulative issued shares, and treasury-excluded floating shares in one span, giving the exact figures without table markup.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-02",
+    "question": "What was SK hynix's cumulative 2024 production output in value terms, and what was the average utilization rate of its production facilities over the same period?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 153322,
+        "end_char": 153432
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년 누적 생산실적은 35,232,737백만원이며, 같은 기간 생산설비 평균가동률은 100%를 유지했다.",
+    "note": "Lives in II. 사업의 내용 > 3. 원재료 및 생산설비 > 2. 생산실적 및 가동률 as a one-line narrative SPAN that states both the cumulative output figure and the 100% utilization rate.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-03",
+    "question": "What was SK hynix's net borrowings at the end of FY2024, and by how much did it decrease from the prior year-end?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 3880481,
+        "end_char": 3880666
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년 말 순차입금은 8조 5,274억원으로, 전기말 20조 5,477억원 대비 12조 203억원 감소했습니다.",
+    "note": "Division IV (MD&A), subsection '3. 유동성 관리정책 및 현황'; the narrative sentence gives the exact net-debt figure, the prior-year figure, and the decrease.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-04",
+    "question": "What was SK hynix's consolidated revenue in 2024, and how does it compare with the previous two fiscal years?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 142919,
+        "end_char": 143050
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년(제77기) 연결 매출액은 66조 1,930억원으로, 2023년(제76기)의 32조 7,657억원에서 두 배 이상 늘었고 2022년(제75기)의 44조 6,216억원도 크게 웃돌았습니다.",
+    "note": "Division II.1 (사업의 개요), closing paragraph — one sentence lists the FY2024, FY2023, and FY2022 consolidated revenue figures side by side, so the span contains every number the year-over-year comparison needs.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-05",
+    "question": "How do SK hynix's domestic sites and its Chongqing site in China differ in the Zero Waste to Landfill (ZWTL) certification grades they held in 2024?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 245213,
+        "end_char": 245772
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "국내 사업장은 2024년에도 최고 등급인 Platinum(재활용률 100%)을 유지한 반면, 중국 충칭 사업장은 2024년 Gold 등급을 획득했다.",
+    "note": "Lives in the 친환경 제품 및 사업장 구축 subsection of the environmental narrative in II. 사업의 내용, where one contiguous SPAN contrasts the domestic Platinum grade with the Chongqing Gold grade for 2024.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-06",
+    "question": "How large was capital expenditure, measured by consolidated property-plant-and-equipment acquisitions, in 2023 versus 2024, and why did it change?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 3858802,
+        "end_char": 3858988
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2023년에는 수익성 확보를 위한 보수적 투자로 6.6조원을 집행했으나, 2024년에는 메모리 수요 증가에 대응하기 위해 투자를 늘려 18.0조원을 집행했습니다.",
+    "note": "Division IV (MD&A), '1. 개요' investment-trend narrative; the span holds both years' capex figures and each year's stated rationale, so the comparison is fully answerable within it.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-07",
+    "question": "What were the main drivers of memory semiconductor market growth in 2024, and which demand sources led the growth for DRAM and NAND respectively?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 145308,
+        "end_char": 145595
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년 메모리 시장은 AI향 서버와 클라우드 컴퓨팅 발전에 따른 고성능 메모리 수요 증가와 HBM·DDR5 등 신규 기술 도입으로 성장했으며, DRAM은 생성형 AI에 따른 HBM 수요 확대가, NAND는 AI 데이터센터용 고용량 기업용 SSD가 성장을 이끌었습니다.",
+    "note": "Division II.2 (주요 제품 및 서비스), subsection 나. 가격변동추이 — this narrative span names the concrete growth drivers (HBM, DDR5, generative AI, enterprise SSD) for both DRAM and NAND in one place.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-08",
+    "question": "Does SK hynix hold an order backlog under long-term supply contracts with customers, and how are supply volumes and prices determined?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 177309,
+        "end_char": 177425
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "주요 고객사와 월별/분기별 상호 합의로 공급 물량과 가격을 결정하며, 장기공급 계약에 따른 수주 현황은 없다.",
+    "note": "Lives in II. 사업의 내용 > 4. 매출 및 수주상황 > 나. 수주상황 as a single sentence stating monthly/quarterly mutually agreed volumes and prices and the absence of any long-term supply contract backlog.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-09",
+    "question": "What were SK hynix's consolidated revenue and operating profit in 2024, and how does the company characterize this performance?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 3856316,
+        "end_char": 3856643
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년 연결 기준 매출은 전년 대비 33.4조원 증가한 66.2조원, 영업이익은 흑자 전환한 23.5조원으로, 매출과 영업이익 모두 창사 이래 최대 실적이었습니다.",
+    "note": "Division IV (MD&A), subsection '1. 개요' opening narrative; the single sentence states both headline figures and the record-high characterization.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-10",
+    "question": "Among the consolidated subsidiaries, which ones are classified as major subsidiaries? What is the criterion for that determination?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 23850,
+        "end_char": 23978
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "직전 사업연도말 자산총액이 750억원 이상이거나 지배회사 자산총액의 10% 이상인 종속회사를 주요 종속회사로 판단합니다.",
+    "note": "Division I.1 (회사의 개요), footnote under the consolidated-subsidiary summary table — the single TD line states the full classification rule with both numeric thresholds, so the span alone answers the policy question.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-11",
+    "question": "On what basis does SK hynix set aside its legal reserve, and for what purposes can that reserve be used?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 1701393,
+        "end_char": 1701728
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "상법에 따라 자본금의 50%에 달할 때까지 매 결산기 현금배당액의 10% 이상을 이익준비금으로 적립하며, 이 준비금은 현금배당에는 쓸 수 없고 자본전입이나 결손보전에만 사용할 수 있습니다.",
+    "note": "Division III, consolidated notes, note 23 (이익잉여금 및 배당금) reserve-description narrative; the span states the statutory accrual rule (10% of cash dividends up to 50% of capital) and permitted uses.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-12",
+    "question": "Roughly what share of SK hynix's revenue arises in US dollars, and what does the company primarily target in its foreign-exchange risk management?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "000660-FY2024",
+        "source_sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+        "start_char": 183872,
+        "end_char": 184154
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "매출의 90% 이상이 USD로 발생하며, 수입에서 지출을 차감한 잔존 외화 현금흐름을 환리스크 관리의 주 대상으로 하고 있다.",
+    "note": "Lives in II. 사업의 내용 > 5. 위험관리 및 파생거래 > 나. 회사의 위험관리 정책, where one narrative sentence states the over-90% USD revenue share and the residual FX cash-flow management target.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-13",
+    "question": "What sanctions did the Korea Fair Trade Commission impose regarding the Samsung Welstory cafeteria-services transactions, and what is the current status?",
+    "category": "multi_hop",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 5034441,
+        "end_char": 5034680
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "공정거래위원회는 2021년 8월 27일 삼성웰스토리 단체급식 거래 관련 공정거래법 위반 혐의로 당사에 1,012억 17백만원, 삼성디스플레이에 228억 57백만원의 과징금과 시정조치를 부과했고, 현재 행정소송이 진행 중이며 시정조치는 2022년 1월 27일 집행정지 결정이 확정되었다.",
+    "note": "Division XI (그 밖에 투자자 보호를 위하여 필요한 사항), subsection 3.나 (행정기관의 제재현황 - 공정거래위원회) narrative; the span combines the fine amounts for two entities, the sanction date, and the ongoing litigation status needed for the answer.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-14",
+    "question": "How did the 2024 amendment to the articles of incorporation change the notice period for convening board meetings?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 127059,
+        "end_char": 127128
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "이사회 소집 통지기한이 '24시간 전'에서 '7일 전(단, 긴급시 24시간으로 단축 가능)'으로 변경되었습니다.",
+    "note": "In 'I. 회사의 개요 > 5. 정관에 관한 사항 > 가. 정관 이력' inside the 2024-03-20 amendment table, this single <P> row states the old 24-hour rule and the new 7-day rule verbatim.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-15",
+    "question": "Which currencies are the main sources of Samsung Electronics' foreign exchange risk exposure, and how does the company mitigate that risk?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 210480,
+        "end_char": 210918
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "삼성전자는 USD, EUR 등에서 환율변동위험에 노출되어 있으며, 통화별 자산과 부채 규모를 일치하는 수준으로 유지해 환율변동 영향을 최소화하고 있습니다.",
+    "note": "Narrative in '5. 위험관리 및 파생거래' under 나. 주요 재무위험관리 (1) 시장위험 (환율변동위험); the span names the exposed currencies (USD, EUR) and the asset-liability matching mitigation in adjacent sentences.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-16",
+    "question": "How did the number of Samsung Group's domestic affiliates change versus the prior year-end, and how many are listed versus unlisted?",
+    "category": "exact_number",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 4590467,
+        "end_char": 4590629
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "2024년말 삼성그룹 국내 계열회사는 전년말과 동일한 63개사이며, 이 중 상장사는 당사를 포함해 17개사, 비상장사는 46개사이다.",
+    "note": "Division IX (계열회사 등에 관한 사항), subsection 1.가 opening narrative gives the year-over-year comparison (unchanged at 63) and the listed/unlisted split in one sentence span.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-17",
+    "question": "What is the total par value of the issued shares, and why does it differ from the paid-in capital?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 51910,
+        "end_char": 52070
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "발행주식의 액면총액은 679,267백만원(보통주 596,978백만원, 우선주 82,289백만원)이며, 이익소각으로 인해 납입자본금 897,514백만원과 차이가 납니다.",
+    "note": "In 'I. 회사의 개요 > 3. 자본금 변동사항', the narrative paragraph carries the exact par-value total, its common/preferred split, and the retirement-of-shares reason for the gap versus paid-in capital of 897,514 million won.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-18",
+    "question": "Between the DX and DS divisions, which accounted for the larger share of 2024 revenue, and how much did each record?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 141099,
+        "end_char": 141251
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DX 부문이 174조 8,877억원(58.1%)으로 DS 부문 111조 660억원(36.9%)보다 매출 비중이 더 큽니다.",
+    "note": "In 'II. 사업의 내용 > 2. 주요 제품 및 서비스 > 가. 주요 제품 매출', the narrative sentence lists every division's 2024 revenue and share, so the DX-versus-DS comparison needs nothing outside the span.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-19",
+    "question": "Among Samsung Electronics' business divisions, which one grew its revenue the most year-over-year in 2024, and by what rate?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 187234,
+        "end_char": 187400
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DX 2.9% 증가, SDC 5.9% 감소, Harman 0.8% 감소와 비교해 DS 부문이 전년 대비 66.8% 증가로 가장 크게 성장했습니다.",
+    "note": "Narrative lead-in of '4. 매출 및 수주상황' subsection 가. 매출실적; the span lists every division's YoY change, so ranking them (DS at 66.8% is highest) is answerable entirely within the quote.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-20",
+    "question": "When and under what corporate name was Samsung Electronics founded?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 5863,
+        "end_char": 5954
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "삼성전자는 1969년 1월 13일 삼성전자공업주식회사라는 상호로 설립되었습니다.",
+    "note": "In 'I. 회사의 개요 > 1. 회사의 개요 > 나. 설립일자', two adjacent narrative <P> lines state the 1969-01-13 founding under the original name (plus the 1975 IPO), so the span alone answers the question.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-21",
+    "question": "From which companies does Samsung Electronics' DS division source key raw materials such as wafers and chemicals?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 145172,
+        "end_char": 145522
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DS 부문은 Chemical을 솔브레인㈜ 등으로부터, Wafer를 SUMCO 등으로부터 공급받고 있습니다.",
+    "note": "Narrative opening of '3. 원재료 및 생산설비' subsection 가. 주요 원재료 현황; the sentence names the DS division's suppliers (솔브레인, SUMCO) directly, so no table lookup is needed.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-22",
+    "question": "Did Samsung Electronics acquire any treasury shares after the fiscal year-end, and if so, under which board resolution and in what quantity?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 1820131,
+        "end_char": 1820237
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "지배회사는 2024년 11월 15일 이사회 결의에 따라 자기주식을 매입 중이며, 보고기간일 이후 보통주 2,044만주와 우선주 286만주 등 총 2,330만주를 취득했다.",
+    "note": "Division III, '3. 연결재무제표 주석' Note 33 (보고기간 후 사건, 연결): one P element inside the disclosure table states the dated board resolution and the exact share counts, so the span alone answers the question.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-23",
+    "question": "Which accounting firms performed the external audit over the last three fiscal years, and what audit opinions did they issue?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 3294808,
+        "end_char": 3294979
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "제55기와 제56기는 삼정회계법인, 제54기는 안진회계법인이 감사를 수행했으며 감사의견은 모두 적정이었고, 감사 대상 종속기업도 공시대상기간 중 모두 적정의견을 받았다.",
+    "note": "Division V (회계감사인의 감사의견 등), subsection 1.가 opening narrative names both auditors and their unqualified opinions in a single paragraph, so the span alone answers the question.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-24",
+    "question": "Since when, and under what legal basis, has Samsung Electronics been reporting its domestic greenhouse gas emissions and energy usage to the government?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "005930-FY2024",
+        "source_sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "start_char": 248508,
+        "end_char": 248832
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "삼성전자는 탄소중립ㆍ녹색성장기본법 제27조와 온실가스 배출권 할당 및 거래에 관한 법률 제24조에 따라 제3자 검증을 마친 온실가스 배출량과 에너지 사용량을 2011년 5월부터 정부에 신고하고 있습니다.",
+    "note": "Environmental regulation narrative in '7. 기타 참고사항' subsection 나. 환경 관련 규제사항 (온실가스 배출량 및 에너지 사용량 관리); the span carries the two statutes and the dated start (2011년 5월) of government reporting.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-25",
+    "question": "Does Samsung Electronics hold any Bitcoin or other cryptocurrency on its balance sheet?",
+    "category": "absent",
+    "facet": "policy",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "Neither filing mentions cryptocurrency holdings at all; the negative remains pending author approval.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-26",
+    "question": "What revenue guidance did SK hynix give for fiscal year 2025?",
+    "category": "absent",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "Korean annual reports carry no forward revenue guidance figures; the term does not occur in either filing.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-27",
+    "question": "What supply agreement does Samsung Electronics have with Tesla for automotive chips?",
+    "category": "absent",
+    "facet": "factual",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "Tesla appears nowhere in either filing, in Korean or Latin spelling.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m10c-28",
+    "question": "Which business units did SK hynix announce it would spin off in 2024?",
+    "category": "absent",
+    "facet": "risk",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No spin-off or 물적분할 plan is described in either filing.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  }
+]

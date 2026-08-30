@@ -58,9 +58,35 @@ QueryHandling = Literal["direct", "routed", "translated"]
 ProviderChoice = Literal["deterministic", "openai", "sbert", "sbert-multi"]
 
 CROSSLINGUAL_SUITE: Final[str] = "m8-crosslingual-v1"
+DART_CROSSLINGUAL_SUITE: Final[str] = "m10-dart-crosslingual-v1"
+
 # Keep the selected chunk target fixed so the matrix measures only embedding space,
 # retrieval strategy, query language, and query handling.
 CROSSLINGUAL_TARGET_TEXT_CHARS: Final[int] = 1200
+
+# One measured corpus per command run. A profile binds everything that changes with
+# the corpus — registry, corpus language, golden twins, manifest, and the measured
+# chunk target — so a run cannot pair one corpus's suite with another's index.
+CORPUS_PROFILES: Final[dict[str, dict[str, Any]]] = {
+    "edgar": {
+        "registry": "sec",
+        "language": "en",
+        "suite": CROSSLINGUAL_SUITE,
+        "golden": None,  # DEFAULT_GOLDEN_PATH / KO_GOLDEN_PATH
+        "manifest_name": "manifest.json",
+        "expected_documents": 20,
+        "target_text_chars": CROSSLINGUAL_TARGET_TEXT_CHARS,
+    },
+    "dart": {
+        "registry": "dart",
+        "language": "ko",
+        "suite": DART_CROSSLINGUAL_SUITE,
+        "golden": "dart",
+        "manifest_name": "dart-manifest.json",
+        "expected_documents": 2,
+        "target_text_chars": 600,
+    },
+}
 DETERMINISTIC_EMBEDDING_MODEL: Final[str] = "token-hash-384"
 PROVIDER_CHOICES: Final[tuple[ProviderChoice, ...]] = (
     "deterministic",
@@ -104,6 +130,8 @@ class CrosslingualArm:
     embedding_model: str
     strategy: RetrievalStrategy
     language: QueryLanguage
+    corpus_registry: str = "sec"
+    corpus_language: QueryLanguage = "en"
     handling: QueryHandling = "direct"
     lexical_ranker: LexicalRanker | None = None
     bm25_k1: float | None = None
@@ -126,6 +154,10 @@ class CrosslingualArm:
             raise ValueError(f"unsupported retrieval strategy: {self.strategy}")
         if self.language not in LANGUAGE_CHOICES:
             raise ValueError(f"unsupported query language: {self.language}")
+        if self.corpus_registry not in {"sec", "dart"}:
+            raise ValueError(f"unsupported corpus registry: {self.corpus_registry}")
+        if self.corpus_language not in LANGUAGE_CHOICES:
+            raise ValueError(f"unsupported corpus language: {self.corpus_language}")
         if self.handling not in HANDLING_CHOICES:
             raise ValueError(f"unsupported query handling: {self.handling}")
         if self.strategy == "vector":
@@ -154,7 +186,12 @@ class CrosslingualArm:
     @property
     def name(self) -> str:
         """Return the kebab arm name, which must survive being used as a filename."""
-        parts = ["xling", self.embedding_provider, self.strategy]
+        # The EDGAR corpus keeps its historical names; any other corpus is named so
+        # the two cells sharing a question language cannot share an artifact file.
+        parts = ["xling"]
+        if self.corpus_registry != "sec":
+            parts.append(self.corpus_registry)
+        parts += [self.embedding_provider, self.strategy]
         if self.lexical_ranker is not None:
             parts.append(RANKER_SLUG[self.lexical_ranker])
         if self.handling != "direct":
@@ -195,6 +232,10 @@ class CrosslingualArm:
             retrieval["bm25"] = {"k1": self.bm25_k1, "b": self.bm25_b, "idf": self.bm25_idf}
         return {
             "name": self.name,
+            "corpus": {
+                "registry": self.corpus_registry,
+                "language": self.corpus_language,
+            },
             "chunking": {
                 "strategy": "structure-aware",
                 "target_text_chars": self.target_text_chars,
@@ -437,6 +478,11 @@ def make_crosslingual_retriever(
     """Bind direct, routed, or translated handling to the shared retriever factory."""
     if arm.handling == "translated" and (llm_provider is None or provider_budget is None):
         raise ValueError("translated handling requires an LLM provider and a budget")
+    if arm.corpus_language == "ko" and (filters is None or not filters.languages):
+        # The Korean corpus is reached through the language filter: it is what makes
+        # the service tokenize the lexical query the way the rows were indexed.
+        base = filters.model_dump() if filters is not None else {}
+        filters = RetrievalFilters.model_validate({**base, "languages": ("ko",)})
     bound = make_retriever(
         session,
         strategy=arm.strategy,
@@ -447,8 +493,8 @@ def make_crosslingual_retriever(
         bm25_idf=arm.bm25_idf,
         candidate_k=arm.candidate_k,
         rrf_k=arm.rrf_k,
-        # A translated arm sends English downstream, so routing it would skip the
-        # lexical component the translation exists to make usable.
+        # A translated arm sends the corpus language downstream, so routing it would
+        # skip the lexical component the translation exists to make usable.
         route_by_language=arm.handling == "routed",
         filters=filters,
     )
@@ -461,6 +507,7 @@ def make_crosslingual_retriever(
             query,
             llm_provider=llm_provider,
             provider_budget=provider_budget,
+            target_language=arm.corpus_language,
         )
         if translation_log is not None:
             translation_log.record(arm.name, query, translation)
@@ -514,9 +561,14 @@ async def run_arm(
     )
 
 
-def _parity_identity(arm: CrosslingualArm) -> tuple[str, str, str | None]:
-    """Return the key the two language slices of one measured arm must share."""
-    return (arm.strategy, arm.handling, arm.lexical_ranker)
+def _parity_identity(arm: CrosslingualArm) -> tuple[str, str, str, str | None]:
+    """Return the key the two language slices of one measured arm must share.
+
+    The corpus registry is part of the key: without it, the four cells of a
+    question-language x corpus matrix would collapse onto two slots and half the
+    measured runs would be silently overwritten before assessment.
+    """
+    return (arm.corpus_registry, arm.strategy, arm.handling, arm.lexical_ranker)
 
 
 def gateable_matrix(arms: Sequence[CrosslingualArm]) -> bool:
@@ -526,7 +578,7 @@ def gateable_matrix(arms: Sequence[CrosslingualArm]) -> bool:
     is refused before a corpus is parsed rather than after every arm has been measured
     and, with a paid provider, paid for.
     """
-    languages: dict[tuple[str, str, str | None], set[str]] = {}
+    languages: dict[tuple[str, str, str, str | None], set[str]] = {}
     for arm in arms:
         if arm.strategy == "hybrid" and arm.handling != "direct":
             languages.setdefault(_parity_identity(arm), set()).add(arm.language)
@@ -539,13 +591,13 @@ def parity_pairs(
     min_recall_ratio: float = DEFAULT_MIN_RECALL_RATIO,
 ) -> tuple[tuple[CrosslingualArm, ParityAssessment], ...]:
     """Assess parity for every arm that was measured in both languages."""
-    by_identity: dict[tuple[str, str, str | None], dict[str, LanguageRun]] = {}
+    by_identity: dict[tuple[str, str, str, str | None], dict[str, LanguageRun]] = {}
     for run in runs:
         by_identity.setdefault(_parity_identity(run.arm), {})[run.arm.language] = run
     assessments: list[tuple[CrosslingualArm, ParityAssessment]] = []
     ordered = sorted(
         by_identity,
-        key=lambda key: (STRATEGY_ORDER[key[0]], HANDLING_ORDER[key[1]], key[2] or ""),
+        key=lambda key: (key[0], STRATEGY_ORDER[key[1]], HANDLING_ORDER[key[2]], key[3] or ""),
     )
     for identity in ordered:
         slices = by_identity[identity]
@@ -558,6 +610,7 @@ def parity_pairs(
                     slices["en"].evaluation,
                     slices["ko"].evaluation,
                     min_recall_ratio=min_recall_ratio,
+                    native_language=slices["ko"].arm.corpus_language,
                 ),
             )
         )
@@ -617,9 +670,15 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Measure retrieval on Korean and English twin queries and gate parity."
     )
-    parser.add_argument("--suite", default=CROSSLINGUAL_SUITE)
-    parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
-    parser.add_argument("--ko-golden", type=Path, default=KO_GOLDEN_PATH)
+    parser.add_argument(
+        "--corpus",
+        choices=tuple(CORPUS_PROFILES),
+        default="edgar",
+        help="Corpus cell to measure; suite, goldens, manifest, and chunk target follow it.",
+    )
+    parser.add_argument("--suite", default=None)
+    parser.add_argument("--golden", type=Path, default=None)
+    parser.add_argument("--ko-golden", type=Path, default=None)
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
     parser.add_argument("--provider", choices=PROVIDER_CHOICES, default="deterministic")
     parser.add_argument(
@@ -658,6 +717,20 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # fail after the provider is built and both golden suites are loaded.
     if parsed.candidate_k < parsed.k:
         parser.error("--candidate-k must be at least -k")
+    profile = CORPUS_PROFILES[parsed.corpus]
+    if parsed.suite is None:
+        parsed.suite = profile["suite"]
+    golden_dir = DEFAULT_GOLDEN_PATH.parent
+    if parsed.golden is None:
+        parsed.golden = (
+            golden_dir / "dart_retrieval.json"
+            if profile["golden"] == "dart"
+            else DEFAULT_GOLDEN_PATH
+        )
+    if parsed.ko_golden is None:
+        parsed.ko_golden = (
+            golden_dir / "dart_retrieval_ko.json" if profile["golden"] == "dart" else KO_GOLDEN_PATH
+        )
     return parsed
 
 
@@ -669,6 +742,7 @@ def build_arms(
 ) -> tuple[CrosslingualArm, ...]:
     """Expand parsed axes into sorted arms with explicit BM25 provenance."""
     resolved = settings if settings is not None else get_settings()
+    profile = CORPUS_PROFILES[getattr(args, "corpus", "edgar")]
     languages = list(dict.fromkeys(args.languages))
     strategies = list(dict.fromkeys(args.strategies))
     handlings = list(dict.fromkeys(args.handling))
@@ -690,6 +764,8 @@ def build_arms(
                         embedding_model=embedding_model,
                         strategy=strategy,
                         language=language,
+                        corpus_registry=profile["registry"],
+                        corpus_language=profile["language"],
                         handling=handling,
                         lexical_ranker=ranker,
                         bm25_k1=bm25[0],
@@ -698,6 +774,7 @@ def build_arms(
                         translator_model=(
                             args.translator_model if handling == "translated" else None
                         ),
+                        target_text_chars=profile["target_text_chars"],
                         k=args.k,
                         candidate_k=args.candidate_k,
                         rrf_k=args.rrf_k,
@@ -769,7 +846,9 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
         else {"embedding_provider": settings_provider}
     )
     provider = get_embedding_provider(settings)
-    suite = load_bilingual_suites(args.golden, args.ko_golden)
+    profile = CORPUS_PROFILES[args.corpus]
+    manifest_path = settings.corpus_dir / str(profile["manifest_name"])
+    suite = load_bilingual_suites(args.golden, args.ko_golden, manifest_path=manifest_path)
     arms = build_arms(args, embedding_model, settings=settings)
     # Refused here, not after the matrix has been measured: the answer depends only on
     # the requested axes, and --handling defaults to direct, so plain --gate always
@@ -791,12 +870,18 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     coverage: list[LexicalCoverage] = []
     translations = TranslationLog()
     try:
-        batch = build_chunking_batch(CROSSLINGUAL_TARGET_TEXT_CHARS, settings=settings)
+        target_text_chars = int(profile["target_text_chars"])
+        batch = build_chunking_batch(
+            target_text_chars,
+            settings=settings,
+            manifest_name=str(profile["manifest_name"]),
+            expected_documents=int(profile["expected_documents"]),
+        )
         async with temporary_corpus_session(
             engine,
             batch,
             provider,
-            target_text_chars=CROSSLINGUAL_TARGET_TEXT_CHARS,
+            target_text_chars=target_text_chars,
             embedding_provider=args.provider,
         ) as (session, indexing):
             probe_bm25 = args.lexical_ranker == "bm25"
@@ -809,6 +894,11 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 bm25_b=settings.bm25_b if probe_bm25 else None,
                 bm25_idf=settings.bm25_idf if probe_bm25 else None,
                 candidate_k=args.candidate_k,
+                # On the Korean corpus the probe must tokenize the way the rows were
+                # indexed, exactly as the measured arms do.
+                filters=(
+                    RetrievalFilters(languages=("ko",)) if profile["language"] == "ko" else None
+                ),
             )
             for language in dict.fromkeys(args.languages):
                 coverage.append(

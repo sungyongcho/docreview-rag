@@ -71,6 +71,7 @@ async def _exercise_rerun(module) -> None:
                         end_char bigint NOT NULL,
                         source_sha256 text NOT NULL,
                         citation text NOT NULL,
+                        lexical_text text,
                         embedding text,
                         UNIQUE (doc_id, ordinal)
                     )

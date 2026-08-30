@@ -277,3 +277,28 @@ def test_parity_markdown_renders_the_verdict_and_the_undefined_ratio():
     assert "FAIL" in failed_table
     assert "PASS" in passed_table
     assert "1.000000" in passed_table
+
+
+def test_native_korean_corpus_orients_the_ratio_toward_the_foreign_slice():
+    """On a Korean corpus the English slice is the numerator and ko the floor's base."""
+    en_eval = evaluation("en", recall=0.4, hit_rate=0.4, mrr=0.3)
+    ko_eval = evaluation("ko", recall=0.8, hit_rate=0.8, mrr=0.6)
+
+    assessment = assess_parity(en_eval, ko_eval, native_language="ko")
+
+    gated = assessment.metric("recall_at_k")
+    assert gated.ratio == pytest.approx(0.5)
+    assert assessment.native_language == "ko"
+    assert not assessment.passed
+
+
+def test_native_zero_slice_fails_closed_for_either_direction():
+    """A zero native slice is undefined parity, whichever language is native."""
+    assessment = assess_parity(
+        evaluation("en", recall=0.5, hit_rate=0.5, mrr=0.4),
+        evaluation("ko", recall=0.0, hit_rate=0.0, mrr=0.0),
+        native_language="ko",
+    )
+
+    assert assessment.recall_ratio is None
+    assert any("native ko slice scored 0" in failure for failure in assessment.failures)

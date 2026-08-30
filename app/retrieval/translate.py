@@ -9,12 +9,25 @@ from app.llm.provider import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, StrictSchema
 from app.retrieval.language import QueryLanguage, detect_query_language
 
-TRANSLATE_SYSTEM_PROMPT = (
-    "You translate retrieval queries about United States SEC 10-K filings into English. "
-    "Return the English query and the language it came from. Keep tickers, product names, "
-    "process nodes, fiscal years, and numbers exactly as they appear in the input, and do "
-    "not answer the question or add words the input does not contain."
-)
+# One prompt per corpus language: a translated arm always translates INTO the
+# language the target corpus is written in.
+TRANSLATE_SYSTEM_PROMPTS: dict[str, str] = {
+    "en": (
+        "You translate retrieval queries about United States SEC 10-K filings into "
+        "English. Return the English query and the language it came from. Keep tickers, "
+        "product names, process nodes, fiscal years, and numbers exactly as they appear "
+        "in the input, and do not answer the question or add words the input does not "
+        "contain."
+    ),
+    "ko": (
+        "You translate retrieval queries about Korean DART annual reports (사업보고서) "
+        "into Korean. Return the Korean query and the language it came from. Keep "
+        "tickers, product names, process nodes, fiscal years, and numbers exactly as "
+        "they appear in the input, and do not answer the question or add words the "
+        "input does not contain."
+    ),
+}
+TRANSLATE_SYSTEM_PROMPT = TRANSLATE_SYSTEM_PROMPTS["en"]
 
 
 class QueryTranslationError(RuntimeError):
@@ -40,8 +53,9 @@ async def translate_query(
     *,
     llm_provider: LLMProvider,
     provider_budget: ProviderBudget,
+    target_language: QueryLanguage = "en",
 ) -> QueryTranslation:
-    """Translate one query into English through an injected provider.
+    """Translate one query into the corpus language through an injected provider.
 
     Translation fails closed instead of returning the original query, so an evaluation
     cannot label an untranslated retrieval path as translated.
@@ -49,15 +63,18 @@ async def translate_query(
     Raises
     ------
     ValueError
-        If ``query`` is blank.
+        If ``query`` is blank or ``target_language`` is unsupported.
     QueryTranslationError
         If the provider refuses, exhausts its budget, fails schema validation after
-        one repair, misreports the source language, or returns a query that still
-        contains Hangul.
+        one repair, misreports the source language, or returns a query that is not
+        in the target language.
     """
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must not be blank")
-    prompt = Prompt(system=TRANSLATE_SYSTEM_PROMPT, user=query)
+    system = TRANSLATE_SYSTEM_PROMPTS.get(target_language)
+    if system is None:
+        raise ValueError(f"unsupported translation target: {target_language!r}")
+    prompt = Prompt(system=system, user=query)
     result = await llm_provider.complete(prompt, QueryTranslation, provider_budget)
     if result.status != "ok" or result.parsed is None:
         raise QueryTranslationError(f"query translation failed: {result.status}")
@@ -72,6 +89,8 @@ async def translate_query(
             f"translated query reports source {translation.source_language!r}, "
             f"but the input is {source_language!r}"
         )
-    if detect_query_language(translation.translated_query) != "en":
-        raise QueryTranslationError("translated query is not English")
+    if detect_query_language(translation.translated_query) != target_language:
+        raise QueryTranslationError(
+            f"translated query is not in the target language {target_language!r}"
+        )
     return translation
