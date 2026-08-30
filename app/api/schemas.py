@@ -161,14 +161,15 @@ class DocumentResource(StrictApiModel):
     """One ingested filing and its source identity."""
 
     doc_id: NonBlank
-    ticker: NonBlank
-    cik: PositiveInt
+    registry: NonBlank
+    issuer: NonBlank
+    issuer_id: NonBlank
     fiscal_year: PositiveInt
     form: NonBlank
     filing_date: NonBlank
     report_period: NonBlank
-    accession: NonBlank
-    url: NonBlank
+    filing_id: NonBlank
+    source_url: NonBlank
     parse_status: Literal["parsed", "needs_profile_update"]
     source_length: PositiveInt
     source_sha256: SourceSha256

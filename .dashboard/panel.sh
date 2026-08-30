@@ -26,7 +26,7 @@ SECTION_TITLES=(
 
 VIEW_TITLES=(
     [chunk]="이식 덩이"
-    [review]="리뷰 단위"
+    [review]="코드리뷰 단위"
     [commit]="커밋"
     [cfile]="파일"
     [command]="명령"
@@ -73,7 +73,7 @@ LINT_OK=-1; FMT_OK=-1; LINT_COUNT=0
 CHANGED_PY=0; DOC_GAPS=0; SHIM_FILES=0
 STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=0
 PORT_ROWS=()
-REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""
+REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_FOCUS=""; REVIEW_BASE=""
 REVIEW_READY=()
 DB_STATE="?"; DB_TICK=0
 SUITE_FRESH=-1
@@ -183,7 +183,7 @@ PY
     STAGE=""; ZERO_RANGE=""; LANDING=""; PORT_DONE=0; PORT_TOTAL=${#PORT_ROWS[@]}
     # AGENTS.md §4-1: a chunk is a commit, a module is a review. The module is
     # the stage label's leading M<n>, so membership has no second copy anywhere.
-    REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_READY=()
+    REVIEW_MOD=""; REVIEW_DONE=0; REVIEW_TOTAL=0; REVIEW_READY=(); REVIEW_BASE=""
     local f mod
     declare -A _mod_total=() _mod_done=()
     local -a _mod_order=()
@@ -208,6 +208,18 @@ PY
     for mod in "${_mod_order[@]}"; do
         [ "${_mod_done[$mod]:-0}" = "${_mod_total[$mod]}" ] && REVIEW_READY+=("$mod")
     done
+    # A review reads the module, so it starts after the commit the module's
+    # first chunk landed on -- that parent is the base of `git diff <base>..HEAD`.
+    local first=""
+    for line in "${PORT_ROWS[@]}"; do
+        IFS=$'\t' read -r -a f <<<"$line"
+        mod="init"; [[ ${f[0]} =~ ^(M[0-9]+) ]] && mod=${BASH_REMATCH[1]}
+        if [ "$mod" = "$REVIEW_MOD" ] && [ "${f[4]}" = "완료" ] && [ "${f[3]}" != "—" ]; then
+            first=${f[3]}; break
+        fi
+    done
+    [ -n "$first" ] && REVIEW_BASE=$(git rev-parse --short "${first}^" 2>/dev/null)
+
     REVIEW_FOCUS=$(awk -F'|' -v want="$REVIEW_MOD" '
         /review-focus:start/ { inside = 1; next }
         /review-focus:end/   { inside = 0 }
@@ -366,7 +378,12 @@ section_progress() {
         else
             rv="${CYN}${REVIEW_MOD}${R} ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이  ${D}$((REVIEW_TOTAL - REVIEW_DONE))개 더 들어와야 리뷰${R}"
         fi
-        kv "리뷰 단위" "$rv"
+        kv "코드리뷰 단위" "$rv"
+        if [ -n "$REVIEW_BASE" ]; then
+            kv "  범위  " "${YEL}${REVIEW_BASE}${R} ${D}이후부터 리뷰가 진행되어야 함${R}"
+        else
+            kv "  범위  " "${D}${REVIEW_MOD}의 첫 덩이가 아직 들어오지 않았다${R}"
+        fi
     fi
     link progress all "  ${D}이식 범위표 전체 보기${R}"
     link review "$REVIEW_MOD" "  ${D}리뷰에서 볼 것 · 복붙용 문단${R}"
@@ -389,7 +406,16 @@ wrap_rows() {
 # copy of it; the clipboard hand-off is the point, so it goes out verbatim.
 detail_review() {
     local mod=${1:-$REVIEW_MOD}
-    row " ${B}리뷰 단위 ${mod}${R}   ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이"
+    row " ${B}코드리뷰 단위 ${mod}${R}   ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이"
+    blank
+    if [ -n "$REVIEW_BASE" ]; then
+        row "  ${YEL}${REVIEW_BASE}${R} 이후부터 리뷰가 진행되어야 한다."
+        row "  ${D}$(git log -1 --format='%h %s' "$REVIEW_BASE" 2>/dev/null)${R}"
+        blank
+        row "  ${GRN}git diff ${REVIEW_BASE}..HEAD${R}"
+    else
+        row "  ${D}${mod}의 첫 덩이가 아직 들어오지 않아 리뷰 기준점이 없다${R}"
+    fi
     blank
     if [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
         row "  $(badge ok "모듈이 다 찼다 — 지금이 리뷰 시점")"
@@ -402,8 +428,10 @@ detail_review() {
     if [ -n "$REVIEW_FOCUS" ]; then
         wrap_rows "$REVIEW_FOCUS" $((TCOLS - 6))
         blank
-        if clip_copy "$REVIEW_FOCUS"; then
-            row "  $(badge ok "클립보드에 복사됨 — 리뷰 요청에 그대로 붙인다")"
+        local handoff="$REVIEW_FOCUS"
+        [ -n "$REVIEW_BASE" ] && handoff="${REVIEW_BASE} 이후부터 리뷰. ${REVIEW_FOCUS}"
+        if clip_copy "$handoff"; then
+            row "  $(badge ok "기준 커밋과 함께 클립보드에 복사됨 — 리뷰 요청에 그대로 붙인다")"
         else
             row "  ${D}클립보드 도구가 없다 — 위 줄을 직접 복사한다${R}"
         fi
