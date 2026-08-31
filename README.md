@@ -89,7 +89,7 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M9.1~M9.4 | app/agent/{types,tools,registry,provider,loop,builtin_tools}.py — 1359줄 | app/agent/ — 도구 스키마를 레지스트리 중립으로 교정 | b150fdb |
 | M9.5~M9.6 | app/agent/{decompose,eval,mcp_server,__main__}.py — 735줄 | app/agent/ — 리뷰 반영으로 eval은 app/evals/decomposition.py로, 융합은 retrieval의 fuse_ranked_lists로 이동 | 71cbabb |
 | M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | bceca7f |
-| M7.1~M7.3 | app/release/ — 7파일 509줄 | app/release/ | — |
+| M7.1~M7.3 | app/release/ — 7파일 518줄, deploy/huggingface/, 클린 체크아웃 스크립트 | app/release/ — 검증 스크립트를 실재하는 경로로 교정 | da34df5 |
 <!-- port-map:end -->
 
 ### 리뷰 단위
