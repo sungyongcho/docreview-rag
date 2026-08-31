@@ -212,6 +212,7 @@ PY
     # on the next chunk instead, a module that just filled up would be replaced by
     # the following one at the very moment it became reviewable.
     REVIEW_INFLIGHT=0
+REVIEW_DEFERRED=0
     for line in "${PORT_ROWS[@]}"; do
         IFS=$'\t' read -r -a f <<<"$line"
         if [ "${f[4]}" = "완료" ]; then
@@ -301,6 +302,10 @@ PY
         }
     ' README.md 2>/dev/null)"
     [ "$REVIEW_DONE_AT" = "—" ] && REVIEW_DONE_AT=""
+    # A module whose review is deliberately deferred should not be reported as
+    # awaiting one every time it fills up.
+    REVIEW_DEFERRED=0
+    [ "$REVIEW_DONE_AT" = "최종으로 미룸" ] && { REVIEW_DEFERRED=1; REVIEW_DONE_AT=""; }
 }
 
 ok_badge() {
@@ -456,7 +461,9 @@ section_progress() {
     fi
     if [ -n "$REVIEW_MOD" ] && [ "$REVIEW_TOTAL" -gt 0 ]; then
         local rv
-        if [ "$REVIEW_INFLIGHT" = 1 ]; then
+        if [ "$REVIEW_DEFERRED" = 1 ] && [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
+            rv="$(badge idle "${REVIEW_MOD} 개별 리뷰 없음 — 최종 전체 리뷰로 미룸")"
+        elif [ "$REVIEW_INFLIGHT" = 1 ]; then
             rv="${CYN}${REVIEW_MOD}${R} ${D}작업 중 — ${REVIEW_DONE}/${REVIEW_TOTAL} 덩이 착지, 커밋 후 리뷰${R}"
         elif [ -n "$REVIEW_DONE_AT" ] && [ "$REVIEW_DONE" -ge "$REVIEW_TOTAL" ]; then
             rv="$(badge ok "${REVIEW_MOD} 리뷰 완료") ${D}반영 기준 ${REVIEW_DONE_AT}${R}"

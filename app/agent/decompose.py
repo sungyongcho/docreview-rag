@@ -1,62 +1,30 @@
-"""LLM query decomposition and the merged multi-hop retriever."""
+"""LLM query decomposition and the fused multi-question retriever."""
 
+from __future__ import annotations
+
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Annotated, Protocol, Self
+import logging
+from typing import TYPE_CHECKING, Annotated, NamedTuple, Self
 
 from pydantic import Field, StrictStr
 from pydantic.functional_validators import model_validator
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.llm.provider import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, StrictSchema
+from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
+from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
+from app.retrieval.service import retrieve
+from app.retrieval.types import ChunkHit, RetrievalFilters
 
 if TYPE_CHECKING:
-    from app.retrieval.embeddings import EmbeddingProvider
-    from app.retrieval.service import RetrievalResult
-    from app.retrieval.types import ChunkHit, RetrievalFilters
-else:
-    EmbeddingProvider = object
-    ChunkHit = object
-    RetrievalFilters = object
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-DEFAULT_RRF_K = 60
+    from app.llm.provider import LLMProvider
 
 type Retriever = Callable[[str, int], Awaitable[Sequence[ChunkHit]]]
+type SessionFactory = Callable[[], AsyncSession]
 
-
-class _RetrievalResult(Protocol):
-    """Materialized retrieval result consumed by decomposition."""
-
-    @property
-    def hits(self) -> tuple[ChunkHit, ...]:
-        """Return immutable ranked hits."""
-        ...
-
-
-async def retrieve(
-    session: AsyncSession,
-    query: str,
-    *,
-    provider: EmbeddingProvider | None = None,
-    k: int = 5,
-    candidate_k: int | None = None,
-    filters: RetrievalFilters | None = None,
-    rrf_k: int = DEFAULT_RRF_K,
-) -> _RetrievalResult:
-    """Load production retrieval only when the decomposed path actually runs."""
-    from app.retrieval.service import retrieve as retrieve_service
-
-    result: RetrievalResult = await retrieve_service(
-        session,
-        query,
-        provider=provider,
-        k=k,
-        candidate_k=candidate_k,
-        filters=filters,
-        rrf_k=rrf_k,
-    )
-    return result
-
+_LOGGER = logging.getLogger(__name__)
 
 MAX_SUB_QUESTIONS = 4
 
@@ -86,12 +54,25 @@ class QueryDecomposition(StrictSchema):
         return self
 
 
+class Decomposition(NamedTuple):
+    """Sub-questions plus the provider status that produced them.
+
+    ``fallback_status`` is ``None`` when the LLM decomposed the question, and the
+    provider's failure status when the original question is being used unchanged
+    — so a caller can tell an intended refusal-degradation from an outage instead
+    of reading identical results from both.
+    """
+
+    sub_questions: tuple[str, ...]
+    fallback_status: str | None
+
+
 async def decompose_query(
     question: str,
     *,
     llm_provider: LLMProvider,
     provider_budget: ProviderBudget,
-) -> tuple[str, ...]:
+) -> Decomposition:
     """Return validated sub-questions, falling back to the original on failure.
 
     Parameters
@@ -105,8 +86,9 @@ async def decompose_query(
 
     Returns
     -------
-    tuple[str, ...]
-        Validated sub-questions, or the original question as a one-item fallback.
+    Decomposition
+        Validated sub-questions with no fallback status, or the original question
+        as a one-item fallback carrying the provider status that caused it.
 
     Raises
     ------
@@ -116,96 +98,22 @@ async def decompose_query(
     Notes
     -----
     Decomposition is an optimization. Provider refusal or schema failure degrades to
-    the measured single-query baseline rather than failing retrieval.
+    the measured single-query baseline rather than failing retrieval — but the
+    degradation is reported, not hidden, so an evaluation run over a broken
+    provider cannot masquerade as a genuine null result.
     """
     if not isinstance(question, str) or not question.strip():
         raise ValueError("question must not be blank")
     prompt = Prompt(system=DECOMPOSE_SYSTEM_PROMPT, user=question)
     result = await llm_provider.complete(prompt, QueryDecomposition, provider_budget)
     if result.status != "ok" or result.parsed is None:
-        return (question,)
-    return result.parsed.sub_questions
-
-
-def merge_ranked_lists(
-    ranked_lists: tuple[tuple[ChunkHit, ...], ...],
-    k: int,
-    *,
-    rrf_k: int = DEFAULT_RRF_K,
-) -> tuple[ChunkHit, ...]:
-    """Fuse per-sub-question rankings with reciprocal-rank scores over n lists.
-
-    Parameters
-    ----------
-    ranked_lists : tuple[tuple[ChunkHit, ...], ...]
-        Ranked results from each independently retrieved sub-question.
-    k : int
-        Positive number of fused hits to return.
-    rrf_k : int
-        Positive reciprocal-rank constant.
-
-    Returns
-    -------
-    tuple[ChunkHit, ...]
-        Deterministically ordered hits carrying accumulated RRF scores.
-
-    Raises
-    ------
-    ValueError
-        If limits are invalid or one chunk id carries conflicting source identity.
-
-    Notes
-    -----
-    Each input list contributes at most one rank per chunk id, matching the M2 RRF
-    contract and preventing duplicate rows from amplifying one sub-question.
-    """
-    if k <= 0:
-        raise ValueError("k must be positive")
-    if rrf_k <= 0:
-        raise ValueError("rrf_k must be positive")
-
-    def identity(hit: ChunkHit) -> tuple[object, ...]:
-        """Return immutable source identity, excluding the lane-specific score."""
-        return (
-            hit.doc_id,
-            hit.citation,
-            hit.start_char,
-            hit.end_char,
-            hit.source_sha256,
-            hit.body,
-        )
-
-    scores: dict[int, float] = {}
-    first_seen: dict[int, ChunkHit] = {}
-    for hits in ranked_lists:
-        seen_in_list: set[int] = set()
-        rank = 0
-        for hit in hits:
-            previous = first_seen.get(hit.chunk_id)
-            if previous is not None and identity(previous) != identity(hit):
-                raise ValueError(f"chunk {hit.chunk_id} has conflicting source identity")
-            if hit.chunk_id in seen_in_list:
-                continue
-            seen_in_list.add(hit.chunk_id)
-            rank += 1
-            scores[hit.chunk_id] = scores.get(hit.chunk_id, 0.0) + 1.0 / (rrf_k + rank)
-            first_seen.setdefault(hit.chunk_id, hit)
-    fused = sorted(
-        first_seen.values(),
-        key=lambda hit: (
-            -scores[hit.chunk_id],
-            hit.doc_id,
-            hit.source_sha256,
-            hit.start_char,
-            hit.end_char,
-            hit.chunk_id,
-        ),
-    )
-    return tuple(hit.model_copy(update={"score": scores[hit.chunk_id]}) for hit in fused[:k])
+        status = result.status if result.status != "ok" else "missing_parse"
+        return Decomposition(sub_questions=(question,), fallback_status=status)
+    return Decomposition(sub_questions=result.parsed.sub_questions, fallback_status=None)
 
 
 def make_decomposed_retriever(
-    session: AsyncSession,
+    session_factory: SessionFactory,
     *,
     llm_provider: LLMProvider,
     provider_budget: ProviderBudget,
@@ -218,14 +126,17 @@ def make_decomposed_retriever(
 
     Parameters
     ----------
-    session : AsyncSession
-        Caller-owned session used by sequential retrieval reads.
+    session_factory : SessionFactory
+        Callable producing one fresh ``AsyncSession`` per sub-question, e.g. the
+        application ``async_sessionmaker``; independent sessions let the
+        sub-question retrievals run concurrently.
     llm_provider : LLMProvider
         Explicit provider used only for decomposition.
     provider_budget : ProviderBudget
         Budget applied to the decomposition call.
     embedding_provider : EmbeddingProvider | None
-        Optional explicit query embedding provider.
+        Explicit query embedding provider, or ``None`` to resolve the configured
+        provider once here — never per retrieval.
     candidate_k : int | None
         Optional retrieval candidate depth.
     rrf_k : int
@@ -236,41 +147,47 @@ def make_decomposed_retriever(
     Returns
     -------
     Retriever
-        M3-compatible callable that decomposes, retrieves, closes reads, and fuses.
+        M3-compatible callable that decomposes, retrieves concurrently, and fuses.
 
     Notes
     -----
-    The callable plugs into the unchanged M3 harness. Every retrieval transaction is
-    rolled back before a later invocation can wait on the provider.
+    A degraded decomposition (provider failure, schema rejection) is logged with
+    its status before the single-query fallback runs, so an evaluation over a
+    broken provider is visible in the run's own output. Each sub-question owns a
+    session for the duration of one retrieval; closing it releases the read.
     """
+    provider = embedding_provider if embedding_provider is not None else get_embedding_provider()
 
-    async def close_read_transaction() -> None:
-        """Release retrieval reads before a later query invokes the provider."""
-        if session.in_transaction():
-            await session.rollback()
+    async def retrieve_one(sub_question: str, k: int) -> tuple[ChunkHit, ...]:
+        """Retrieve one sub-question over its own short-lived session."""
+        async with session_factory() as session:
+            result = await retrieve(
+                session,
+                sub_question,
+                provider=provider,
+                k=k,
+                candidate_k=candidate_k,
+                filters=filters,
+                rrf_k=rrf_k,
+            )
+            return result.hits
 
-    async def retrieve_decomposed(question: str, k: int) -> tuple[ChunkHit, ...]:
-        """Decompose one question, retrieve each sub-question, and fuse the rankings."""
-        sub_questions = await decompose_query(
+    async def retrieve_decomposed(question: str, k: int) -> Sequence[ChunkHit]:
+        """Decompose one question, retrieve each sub-question concurrently, and fuse."""
+        decomposition = await decompose_query(
             question,
             llm_provider=llm_provider,
             provider_budget=provider_budget,
         )
-        ranked_lists = []
-        for sub_question in sub_questions:
-            try:
-                result = await retrieve(
-                    session,
-                    sub_question,
-                    provider=embedding_provider,
-                    k=k,
-                    candidate_k=candidate_k,
-                    filters=filters,
-                    rrf_k=rrf_k,
-                )
-                ranked_lists.append(result.hits)
-            finally:
-                await close_read_transaction()
-        return merge_ranked_lists(tuple(ranked_lists), k, rrf_k=rrf_k)
+        if decomposition.fallback_status is not None:
+            _LOGGER.warning(
+                "decomposition fell back to the original question (status=%s): %.120s",
+                decomposition.fallback_status,
+                question,
+            )
+        ranked_lists = await asyncio.gather(
+            *(retrieve_one(sub_question, k) for sub_question in decomposition.sub_questions)
+        )
+        return fuse_ranked_lists(ranked_lists, k, rrf_k=rrf_k)
 
     return retrieve_decomposed

@@ -3,56 +3,14 @@
 import asyncio
 import sys
 from types import SimpleNamespace
-from typing import cast
 
 from pydantic import ValidationError
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.builtin_tools import _QueryEmbeddingCache, build_default_registry
 from app.agent.tools import ToolError
 from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingProvider
-from app.retrieval.types import ChunkHit
-from tests.retrieval.support import hit_values
-
-
-def hit(chunk_id, *, score=0.5):
-    """Build one retrieval hit with offsets derived from its chunk id."""
-    start = chunk_id * 100
-    return ChunkHit(
-        **hit_values(chunk_id=chunk_id, score=score, start_char=start, end_char=start + 50)
-    )
-
-
-class FakeSession:
-    """Duck-typed async session capturing chunk lookups."""
-
-    def __init__(self, chunk=None):
-        self.chunk = chunk
-        self.requested_ids = []
-        self.transaction_open = False
-        self.rollback_count = 0
-
-    async def get(self, model, chunk_id):
-        """Record the requested chunk id and return the staged row."""
-        del model
-        self.requested_ids.append(chunk_id)
-        self.transaction_open = True
-        return self.chunk
-
-    def in_transaction(self):
-        """Report whether this fake session currently holds a transaction."""
-        return self.transaction_open
-
-    async def rollback(self):
-        """Close the transaction and count the rollback."""
-        self.transaction_open = False
-        self.rollback_count += 1
-
-
-def session_for(chunk=None):
-    """Build one fake session cast to the AsyncSession contract the registry declares."""
-    return cast(AsyncSession, FakeSession(chunk))
+from tests.agent.support import FakeSessionFactory, hit
 
 
 class CountingEmbeddings(EmbeddingProvider):
@@ -97,28 +55,40 @@ def evidence_ids(tool, output):
 
 
 def test_search_filings_maps_filters_and_extracts_evidence(monkeypatch):
-    """Map the tool arguments onto retrieval filters and close the read transaction."""
+    """Map the tool arguments onto retrieval filters and close the per-call session."""
     calls = patch_retrieve(monkeypatch, [(hit(7), hit(9))])
-    session = session_for()
-    registry = build_default_registry(session)
+    factory = FakeSessionFactory()
+    registry = build_default_registry(factory)
     tool = registry.get("search_filings")
 
-    params = tool.parameters.model_validate(
-        {"query": "revenue", "k": None, "issuers": ["NVDA"], "fiscal_years": [2024], "forms": None}
-    )
+    params = tool.parameters.model_validate({"query": "revenue", "issuers": ["NVDA"]})
     output = asyncio.run(tool.run(params))
 
     (call,) = calls
     assert call[0] == "revenue"
     assert call[1]["k"] == 5
     assert call[1]["filters"].issuers == ("NVDA",)
-    assert call[1]["filters"].fiscal_years == (2024,)
+    assert call[1]["filters"].fiscal_years == ()
     assert output["hits"][0]["chunk_id"] == 7
     assert "snippet" in output["hits"][0]
     assert evidence_ids(tool, output) == (7, 9)
-    fake = cast(FakeSession, session)
-    assert fake.rollback_count == 1
-    assert not fake.in_transaction()
+    (session,) = factory.sessions
+    assert session.closed
+    assert not session.in_transaction()
+
+
+def test_search_filings_uses_the_configured_default_k(monkeypatch):
+    """Fall back to the registry's search_k when the caller omits k."""
+    calls = patch_retrieve(monkeypatch, [(hit(7),)])
+    registry = build_default_registry(FakeSessionFactory(), search_k=7)
+
+    tool = registry.get("search_filings")
+    asyncio.run(tool.run(tool.parameters.model_validate({"query": "revenue"})))
+
+    (call,) = calls
+    assert call[1]["k"] == 7
+    with pytest.raises(ValueError, match="search_k"):
+        build_default_registry(FakeSessionFactory(), search_k=0)
 
 
 def test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids():
@@ -133,47 +103,50 @@ def test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids():
         context_header="NVDA FY2024 · Item 7",
         body="Research and development expenses increased." * 200,
     )
-    session = session_for(chunk)
-    registry = build_default_registry(session)
+    factory = FakeSessionFactory(chunk)
+    registry = build_default_registry(factory)
     tool = registry.get("fetch_chunk")
 
     output = asyncio.run(tool.run(tool.parameters.model_validate({"chunk_id": 7})))
 
-    assert cast(FakeSession, session).requested_ids == [7]
+    (session,) = factory.sessions
+    assert session.requested_ids == [7]
     assert output["doc_id"] == "NVDA-FY2024"
     assert len(output["body"]) <= 4_000
     assert evidence_ids(tool, output) == (7,)
-    assert cast(FakeSession, session).rollback_count == 1
+    assert session.closed
 
-    missing_session = session_for()
-    missing = build_default_registry(missing_session).get("fetch_chunk")
+    missing_factory = FakeSessionFactory()
+    missing = build_default_registry(missing_factory).get("fetch_chunk")
     with pytest.raises(ToolError, match="chunk 99 does not exist"):
         asyncio.run(missing.run(missing.parameters.model_validate({"chunk_id": 99})))
-    fake = cast(FakeSession, missing_session)
-    assert fake.rollback_count == 1
-    assert not fake.in_transaction()
+    (missing_session,) = missing_factory.sessions
+    assert missing_session.closed
+    assert not missing_session.in_transaction()
 
 
 def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
     """Query each year separately, group the results in year order, and require a real span."""
     calls = patch_retrieve(monkeypatch, [(hit(1),), (hit(2),)])
-    session = session_for()
-    registry = build_default_registry(session, embedding_provider=DeterministicEmbeddingProvider())
+    factory = FakeSessionFactory()
+    registry = build_default_registry(factory, embedding_provider=DeterministicEmbeddingProvider())
     tool = registry.get("compare_years")
 
     params = tool.parameters.model_validate(
-        {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2024, 2023], "k": None}
+        {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2024, 2023]}
     )
     output = asyncio.run(tool.run(params))
 
     assert [call[1]["filters"].fiscal_years for call in calls] == [(2023,), (2024,)]
     assert [year["fiscal_year"] for year in output["years"]] == [2023, 2024]
     assert evidence_ids(tool, output) == (1, 2)
-    assert cast(FakeSession, session).rollback_count == 2
+    (session,) = factory.sessions
+    assert session.closed
+    assert not session.in_transaction()
 
     with pytest.raises(ValidationError, match="two to four"):
         tool.parameters.model_validate(
-            {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2024], "k": None}
+            {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2024]}
         )
 
 
@@ -181,11 +154,11 @@ def test_compare_years_shares_one_query_embedding_cache(monkeypatch):
     """Hand every per-year retrieval the same caching provider around the injected one."""
     calls = patch_retrieve(monkeypatch, [(hit(1),), (hit(2),), (hit(3),)])
     inner = CountingEmbeddings()
-    registry = build_default_registry(session_for(), embedding_provider=inner)
+    registry = build_default_registry(FakeSessionFactory(), embedding_provider=inner)
     tool = registry.get("compare_years")
 
     params = tool.parameters.model_validate(
-        {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2022, 2023, 2024], "k": None}
+        {"query": "revenue", "issuer": "NVDA", "fiscal_years": [2022, 2023, 2024]}
     )
     asyncio.run(tool.run(params))
 

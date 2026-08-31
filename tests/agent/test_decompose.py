@@ -1,4 +1,4 @@
-"""Query decomposition: contract, fallback, and n-list fusion."""
+"""Query decomposition: contract, fallback signalling, and the fused retriever."""
 
 import asyncio
 from decimal import Decimal
@@ -12,12 +12,11 @@ from app.agent.decompose import (
     QueryDecomposition,
     decompose_query,
     make_decomposed_retriever,
-    merge_ranked_lists,
 )
 from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
-from app.retrieval.types import ChunkHit
-from tests.retrieval.support import hit_values
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.agent.support import FakeSessionFactory, hit
 
 
 def budget():
@@ -44,16 +43,9 @@ def raw(output_text):
     )
 
 
-def hit(chunk_id, *, score=0.5):
-    """Build one retrieval hit with offsets derived from its chunk id."""
-    start = chunk_id * 100
-    return ChunkHit(
-        **hit_values(chunk_id=chunk_id, score=score, start_char=start, end_char=start + 50)
-    )
-
-
-def test_decomposition_contract_rejects_duplicates_and_overflow():
-    """Require two to four distinct sub-questions, rejecting repeats and overflow."""
+def test_decomposition_contract_accepts_one_to_four_distinct_sub_questions():
+    """Accept one to four distinct sub-questions, rejecting repeats and overflow."""
+    QueryDecomposition(sub_questions=("What was 2023 revenue?",))
     QueryDecomposition(sub_questions=("What was 2023 revenue?", "What was 2024 revenue?"))
 
     with pytest.raises(ValidationError):
@@ -64,19 +56,20 @@ def test_decomposition_contract_rejects_duplicates_and_overflow():
         QueryDecomposition(sub_questions=tuple(f"Question {index}?" for index in range(5)))
 
 
-def test_decompose_query_returns_sub_questions_and_falls_back_on_failure():
-    """Return the parsed sub-questions, falling back to the original on refusal."""
+def test_decompose_query_returns_sub_questions_and_names_the_fallback_cause():
+    """Return the parsed sub-questions, and carry the provider status on fallback."""
     provider = DeterministicLLMProvider(
         [raw('{"sub_questions":["What was 2023 revenue?","What was 2024 revenue?"]}')]
     )
-    sub_questions = asyncio.run(
+    decomposition = asyncio.run(
         decompose_query(
             "How did revenue change between 2023 and 2024?",
             llm_provider=provider,
             provider_budget=budget(),
         )
     )
-    assert sub_questions == ("What was 2023 revenue?", "What was 2024 revenue?")
+    assert decomposition.sub_questions == ("What was 2023 revenue?", "What was 2024 revenue?")
+    assert decomposition.fallback_status is None
 
     refusing = DeterministicLLMProvider([raw("not json"), raw("still not json")])
     fallback = asyncio.run(
@@ -86,80 +79,66 @@ def test_decompose_query_returns_sub_questions_and_falls_back_on_failure():
             provider_budget=budget(),
         )
     )
-    assert fallback == ("How did revenue change between 2023 and 2024?",)
+    assert fallback.sub_questions == ("How did revenue change between 2023 and 2024?",)
+    assert fallback.fallback_status is not None
 
 
-def test_merge_ranked_lists_rewards_cross_list_agreement():
-    """Rank a hit both lists returned above one only a single list found."""
-    first = (hit(1), hit(2))
-    second = (hit(2), hit(3))
-
-    fused = merge_ranked_lists((first, second), 3, rrf_k=60)
-
-    assert [item.chunk_id for item in fused] == [2, 1, 3]
-    assert fused[0].score == pytest.approx(1 / 62 + 1 / 61)
-    with pytest.raises(ValueError):
-        merge_ranked_lists((first,), 0)
-
-
-def test_merge_ranked_lists_ignores_intra_list_duplicates_and_rejects_identity_drift():
-    """Count a repeat within one list once, and refuse two hits claiming one identity."""
-    first = hit(1)
-    second = hit(2)
-
-    fused = merge_ranked_lists(((first, first, second),), 2, rrf_k=60)
-
-    assert [item.chunk_id for item in fused] == [1, 2]
-    assert fused[0].score == pytest.approx(1 / 61)
-    conflicting = first.model_copy(update={"doc_id": "OTHER"})
-    with pytest.raises(ValueError, match="conflicting source identity"):
-        merge_ranked_lists(((first,), (conflicting,)), 1)
-
-
-def test_decomposed_retriever_merges_per_sub_question_rankings(monkeypatch):
-    """Retrieve once per sub-question and merge the rankings, closing each read."""
+def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkeypatch):
+    """Retrieve each sub-question over its own session and fuse the rankings."""
     provider = DeterministicLLMProvider(
         [raw('{"sub_questions":["What was 2023 revenue?","What was 2024 revenue?"]}')]
     )
     queries = []
 
-    class FakeSession:
-        """Session recording how many read transactions were closed."""
-
-        def __init__(self):
-            self.transaction_open = False
-            self.rollback_count = 0
-
-        def in_transaction(self):
-            """Report whether this fake session currently holds a transaction."""
-            return self.transaction_open
-
-        async def rollback(self):
-            """Close the transaction and count the rollback."""
-            self.transaction_open = False
-            self.rollback_count += 1
-
-    session = FakeSession()
-
-    async def fake_retrieve(received_session, query, **kwargs):
+    async def fake_retrieve(session, query, **kwargs):
         """Record the query and return the staged hits for it."""
-        received_session.transaction_open = True
+        session.transaction_open = True
         queries.append(query)
         ranked = {
-            ("What was 2023 revenue?"): (hit(1), hit(2)),
+            "What was 2023 revenue?": (hit(1), hit(2)),
             "What was 2024 revenue?": (hit(2), hit(3)),
         }[query]
         return SimpleNamespace(hits=ranked)
 
     module = sys.modules[make_decomposed_retriever.__module__]
     monkeypatch.setattr(module, "retrieve", fake_retrieve)
+    factory = FakeSessionFactory()
     retriever = make_decomposed_retriever(
-        session,
+        factory,
         llm_provider=provider,
         provider_budget=budget(),
+        embedding_provider=DeterministicEmbeddingProvider(),
     )
     hits = asyncio.run(retriever("How did revenue change between 2023 and 2024?", 2))
 
-    assert queries == ["What was 2023 revenue?", "What was 2024 revenue?"]
+    assert sorted(queries) == ["What was 2023 revenue?", "What was 2024 revenue?"]
     assert [item.chunk_id for item in hits] == [2, 1]
-    assert session.rollback_count == 2
+    assert len(factory.sessions) == 2
+    assert all(session.closed for session in factory.sessions)
+    assert all(not session.in_transaction() for session in factory.sessions)
+
+
+def test_decomposed_retriever_logs_a_degraded_decomposition(monkeypatch, caplog):
+    """Warn with the provider status when retrieval degrades to the original question."""
+    refusing = DeterministicLLMProvider([raw("not json"), raw("still not json")])
+    original = "How did revenue change between 2023 and 2024?"
+
+    async def fake_retrieve(session, query, **kwargs):
+        """Return one staged hit for the fallback query."""
+        assert query == original
+        return SimpleNamespace(hits=(hit(1),))
+
+    module = sys.modules[make_decomposed_retriever.__module__]
+    monkeypatch.setattr(module, "retrieve", fake_retrieve)
+    retriever = make_decomposed_retriever(
+        FakeSessionFactory(),
+        llm_provider=refusing,
+        provider_budget=budget(),
+        embedding_provider=DeterministicEmbeddingProvider(),
+    )
+
+    with caplog.at_level("WARNING", logger="app.agent.decompose"):
+        hits = asyncio.run(retriever(original, 1))
+
+    assert [item.chunk_id for item in hits] == [1]
+    assert any("fell back" in record.getMessage() for record in caplog.records)

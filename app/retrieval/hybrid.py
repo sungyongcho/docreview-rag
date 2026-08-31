@@ -43,21 +43,19 @@ def _unique_ranked_hits(hits: Sequence[ChunkHit]) -> list[ChunkHit]:
     return unique
 
 
-def rrf_fuse(
-    vector_hits: Sequence[ChunkHit],
-    lexical_hits: Sequence[ChunkHit],
+def fuse_ranked_lists(
+    ranked_lists: Sequence[Sequence[ChunkHit]],
     k: int,
     *,
     rrf_k: int = DEFAULT_RRF_K,
 ) -> list[ChunkHit]:
-    """Fuse ranked lists by reciprocal rank, keyed by database ``chunk_id``.
+    """Fuse any number of ranked lists by reciprocal rank, keyed by ``chunk_id``.
 
     Parameters
     ----------
-    vector_hits : Sequence[ChunkHit]
-        Vector candidates in component-rank order.
-    lexical_hits : Sequence[ChunkHit]
-        Lexical candidates in component-rank order.
+    ranked_lists : Sequence[Sequence[ChunkHit]]
+        Component rankings in relevance order — retrieval lanes, sub-question
+        results, or any other independently ranked evidence.
     k : int
         Maximum number of fused hits to return.
     rrf_k : int
@@ -66,17 +64,22 @@ def rrf_fuse(
     Returns
     -------
     list[ChunkHit]
-        Top-k evidence hits carrying fused scores.
+        Top-k evidence hits carrying fused scores, ordered by the shared
+        deterministic hit key.
 
     Raises
     ------
     ValueError
-        If ``k`` or ``rrf_k`` is not positive.
+        If ``k`` or ``rrf_k`` is not positive, or two lists carry the same
+        ``chunk_id`` with different source identity.
 
     Notes
     -----
-    Source scores are ignored because vector similarity and PostgreSQL FTS scores have
-    unrelated scales. Each list contributes ``1 / (rrf_k + rank)`` once per chunk.
+    Source scores are ignored because component score scales are unrelated. Each
+    list contributes ``1 / (rrf_k + rank)`` once per chunk; within one list the
+    first occurrence of a chunk wins. Across lists, every field except the
+    lane-specific ``score`` must agree, so corrupted or mixed-corpus inputs fail
+    instead of silently keeping whichever instance arrived first.
     """
     if k <= 0:
         raise ValueError("k must be positive")
@@ -84,13 +87,15 @@ def rrf_fuse(
         raise ValueError("rrf_k must be positive")
 
     fused: dict[int, _FusedHit] = {}
-    for ranking in (vector_hits, lexical_hits):
+    for ranking in ranked_lists:
         for rank, hit in enumerate(_unique_ranked_hits(ranking), start=1):
             contribution = 1.0 / (rrf_k + rank)
             entry = fused.get(hit.chunk_id)
             if entry is None:
                 fused[hit.chunk_id] = _FusedHit(hit=hit, score=contribution)
             else:
+                if entry.hit.model_dump(exclude={"score"}) != hit.model_dump(exclude={"score"}):
+                    raise ValueError(f"chunk {hit.chunk_id} has conflicting source identity")
                 entry.score += contribution
 
     selected = heapq.nsmallest(
@@ -99,6 +104,21 @@ def rrf_fuse(
         key=lambda entry: hit_order_key_for_score(entry.hit, entry.score),
     )
     return [entry.hit.model_copy(update={"score": entry.score}) for entry in selected]
+
+
+def rrf_fuse(
+    vector_hits: Sequence[ChunkHit],
+    lexical_hits: Sequence[ChunkHit],
+    k: int,
+    *,
+    rrf_k: int = DEFAULT_RRF_K,
+) -> list[ChunkHit]:
+    """Fuse the two hybrid retrieval lanes with :func:`fuse_ranked_lists`.
+
+    Kept as the named two-lane entry point of the M2 hybrid contract; the fusion
+    rules live once, in :func:`fuse_ranked_lists`.
+    """
+    return fuse_ranked_lists((vector_hits, lexical_hits), k, rrf_k=rrf_k)
 
 
 async def hybrid_search(

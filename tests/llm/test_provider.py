@@ -291,10 +291,12 @@ class FakeResponses:
         self.calls = []
 
     async def create(self, **kwargs):
+        """Record the arguments and return the staged response."""
         self.calls.append(kwargs)
         return self.response
 
     async def parse(self, **kwargs):
+        """Record the arguments and return the staged response."""
         self.calls.append(kwargs)
         return self.response
 
@@ -427,16 +429,20 @@ def test_strict_format_closes_every_object_and_requires_every_key():
     assert grade["required"] == list(grade["properties"])
 
 
-def test_strict_format_rejects_constructs_decoding_cannot_enforce():
-    """Reject schema constructs strict decoding cannot enforce."""
+def test_strict_format_strips_defaults_and_requires_every_field():
+    """Drop defaults, which strict decoding never applies, while requiring the field."""
 
     class Defaulted(BaseModel):
+        """Schema carrying a default, which strict decoding never applies."""
+
         model_config = ConfigDict(extra="forbid")
 
         label: str = Field(default="SUPPORTED")
 
-    with pytest.raises(ValueError, match=r"defaults at \$\.label"):
-        strict_response_format(Defaulted)
+    schema = strict_response_format(Defaulted)["schema"]
+
+    assert "default" not in schema["properties"]["label"]
+    assert schema["required"] == ["label"]
 
 
 def test_strict_format_is_deterministic_between_calls():
@@ -474,11 +480,14 @@ def test_repair_loop_still_guards_the_strict_path():
     """Guard the strict path with the same bounded repair loop."""
 
     class SequencedResponses:
+        """Responses endpoint returning one staged reply per call, in order."""
+
         def __init__(self, responses):
             self.responses = list(responses)
             self.calls = []
 
         async def create(self, **kwargs):
+            """Record the arguments and return the staged response."""
             self.calls.append(kwargs)
             return self.responses.pop(0)
 

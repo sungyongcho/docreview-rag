@@ -1,18 +1,24 @@
 """Tool registry that publishes one schema to the LLM, the MCP server, and the prompt."""
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+import json
 from typing import Any
 
-from app.agent.tools import Tool
-from app.llm.provider import strict_response_format
+from pydantic import ValidationError
+
+from app.agent.tools import Tool, ToolError, safe_runtime_error
+from app.llm.provider import strict_response_format, validation_errors
 
 
 class ToolRegistry:
     """Named, immutable-by-convention collection of agent tools.
 
     The registry is the single source for three consumers: the provider gets
-    strict function specs, the MCP server gets input schemas, and the system
-    prompt gets a generated manual. One registration feeds all three, so the
-    documentation the model reads can never drift from the schema it must obey.
+    strict function specs, the MCP server gets tolerant input schemas, and the
+    system prompt gets a generated manual. One registration feeds all three, so
+    the documentation the model reads can never drift from the schema it must
+    obey.
     """
 
     def __init__(self) -> None:
@@ -60,6 +66,23 @@ class ToolRegistry:
             )
         return specs
 
+    def input_schemas(self) -> list[dict[str, Any]]:
+        """Return each tool's name, description, and tolerant JSON input schema.
+
+        Unlike :meth:`specs`, optional fields keep their defaults and stay
+        optional, so protocol-neutral consumers such as the MCP server accept an
+        idiomatic call that omits them, while the strict provider surface still
+        requires every field.
+        """
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.parameters.model_json_schema(),
+            }
+            for tool in self.tools
+        ]
+
     def manual(self) -> str:
         """Render the tool manual the system prompt feeds to the model."""
         lines = ["Available tools:"]
@@ -68,3 +91,73 @@ class ToolRegistry:
             arguments = ", ".join(sorted(properties)) or "no arguments"
             lines.append(f"- {tool.name}({arguments}): {tool.description}")
         return "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolOutcome:
+    """Result of one registry-dispatched tool execution.
+
+    Exactly one of ``error`` and ``output_json`` is set. ``output`` carries the
+    unserialized payload for consumers that inspect it further, such as the
+    loop's evidence extraction.
+    """
+
+    output: Any = None
+    output_json: str | None = None
+    error: str | None = None
+
+
+async def execute_tool(
+    registry: ToolRegistry,
+    name: str,
+    arguments: Mapping[str, Any],
+) -> ToolOutcome:
+    """Validate, run, and serialize one registered tool behind the shared error taxonomy.
+
+    Parameters
+    ----------
+    registry : ToolRegistry
+        Single source of executable tools and parameter schemas.
+    name : str
+        Requested tool name.
+    arguments : Mapping[str, Any]
+        Already-parsed JSON-object arguments.
+
+    Returns
+    -------
+    ToolOutcome
+        Serialized payload, or a typed error when lookup, validation, execution,
+        or serialization fails.
+
+    Notes
+    -----
+    Both published surfaces — the agent loop and the MCP server — dispatch
+    through this function, so their error contracts cannot drift. A
+    :class:`~app.agent.tools.ToolError` and a validation failure carry their
+    model-actionable detail verbatim — both are authored against the caller's
+    own input, never against provider payloads — while every unexpected
+    exception is redacted through :func:`~app.agent.tools.safe_runtime_error`.
+    """
+    try:
+        tool = registry.get(name)
+    except ValueError as error:
+        return ToolOutcome(error=str(error))
+    try:
+        parameters = tool.parameters.model_validate(dict(arguments))
+    except ValidationError as error:
+        details = "; ".join(validation_errors(error))
+        return ToolOutcome(error=f"invalid arguments for {name}: {details}")
+    except ValueError as error:
+        return ToolOutcome(error=f"invalid arguments for {name}: {error}")
+    try:
+        output = await tool.run(parameters)
+    except ToolError as error:
+        message = str(error).strip() or safe_runtime_error(error, f"tool {name}")
+        return ToolOutcome(error=message)
+    except Exception as error:
+        return ToolOutcome(error=safe_runtime_error(error, f"tool {name}"))
+    try:
+        output_json = json.dumps(output, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError, RecursionError) as error:
+        return ToolOutcome(error=safe_runtime_error(error, f"tool {name} serialization"))
+    return ToolOutcome(output=output, output_json=output_json)

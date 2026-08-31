@@ -1,16 +1,12 @@
 """Expose the agent tool registry as a Model Context Protocol stdio server."""
 
-import json
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.context import ServerRequestContext
 import mcp.types as mcp_types
-from pydantic import ValidationError
 
-from app.agent.registry import ToolRegistry
-from app.agent.tools import safe_runtime_error
-from app.llm.provider import strict_response_format
+from app.agent.registry import ToolRegistry, execute_tool
 
 SERVER_NAME = "docreview-agent"
 
@@ -21,7 +17,7 @@ def build_mcp_server(registry: ToolRegistry) -> Server:
     Parameters
     ----------
     registry : ToolRegistry
-        Shared tool definitions, strict schemas, and executable handlers.
+        Shared tool definitions, tolerant input schemas, and executable handlers.
 
     Returns
     -------
@@ -35,13 +31,25 @@ def build_mcp_server(registry: ToolRegistry) -> Server:
 
     Notes
     -----
-    Schemas come from the same strict transform used by the agent provider. Validation,
-    execution, and serialization failures become ``is_error`` data rather than escaping
-    as protocol exceptions.
+    The published tool list is rendered once from :meth:`ToolRegistry.input_schemas`,
+    the registry's own tolerant derivation, so this surface cannot drift from the
+    registry. Every call dispatches through the shared
+    :func:`~app.agent.registry.execute_tool` boundary, so validation, execution,
+    and serialization failures carry exactly the errors the agent loop reports —
+    a :class:`~app.agent.tools.ToolError` message verbatim, everything unexpected
+    redacted — as ``is_error`` data rather than protocol exceptions.
     """
     if not isinstance(registry, ToolRegistry):
         raise TypeError("registry must be a ToolRegistry")
     server: Server = Server(SERVER_NAME)
+    published_tools = [
+        mcp_types.Tool(
+            name=item["name"],
+            description=item["description"],
+            input_schema=item["input_schema"],
+        )
+        for item in registry.input_schemas()
+    ]
 
     async def list_tools(
         context: ServerRequestContext[Any],
@@ -49,16 +57,7 @@ def build_mcp_server(registry: ToolRegistry) -> Server:
     ) -> mcp_types.ListToolsResult:
         """Publish every registered tool under the registry's own schema."""
         del context, params
-        return mcp_types.ListToolsResult(
-            tools=[
-                mcp_types.Tool(
-                    name=tool.name,
-                    description=tool.description,
-                    input_schema=dict(strict_response_format(tool.parameters)["schema"]),
-                )
-                for tool in registry.tools
-            ]
-        )
+        return mcp_types.ListToolsResult(tools=list(published_tools))
 
     async def call_tool(
         context: ServerRequestContext[Any],
@@ -66,32 +65,14 @@ def build_mcp_server(registry: ToolRegistry) -> Server:
     ) -> mcp_types.CallToolResult:
         """Run one registered tool, returning a typed error rather than raising."""
         del context
-        try:
-            tool = registry.get(params.name)
-            parameters = tool.parameters.model_validate(params.arguments or {})
-        except (ValueError, ValidationError) as error:
+        outcome = await execute_tool(registry, params.name, params.arguments or {})
+        if outcome.error is not None:
             return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=str(error))],
-                is_error=True,
-            )
-        try:
-            output = await tool.run(parameters)
-        except Exception as error:
-            message = safe_runtime_error(error, "tool execution")
-            return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=message)],
-                is_error=True,
-            )
-        try:
-            payload = json.dumps(output, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
-        except (TypeError, ValueError) as error:
-            message = safe_runtime_error(error, "tool serialization")
-            return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=message)],
+                content=[mcp_types.TextContent(type="text", text=outcome.error)],
                 is_error=True,
             )
         return mcp_types.CallToolResult(
-            content=[mcp_types.TextContent(type="text", text=payload)],
+            content=[mcp_types.TextContent(type="text", text=outcome.output_json or "")],
             is_error=False,
         )
 
@@ -106,7 +87,9 @@ async def serve_stdio(registry: ToolRegistry) -> None:
     Parameters
     ----------
     registry : ToolRegistry
-        Tool set published over the stdio transport.
+        Tool set published over the stdio transport. Tools must own their
+        per-call resources: the transport dispatches each request in its own
+        task, so tool calls may run concurrently.
 
     Notes
     -----

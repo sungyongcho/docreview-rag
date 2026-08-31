@@ -51,16 +51,45 @@ def test_rrf_rejects_nonpositive_limits(k, rrf_k):
         hybrid.rrf_fuse([], [], k, rrf_k=rrf_k)
 
 
+def test_fuse_ranked_lists_generalizes_fusion_to_n_lists():
+    """Fuse three sub-question rankings with the same reciprocal-rank rules."""
+    first = [hit(1, 0.9), hit(2, 0.8)]
+    second = [hit(2, 0.7), hit(3, 0.6)]
+    third = [hit(2, 0.5)]
+
+    fused = hybrid.fuse_ranked_lists((first, second, third), 3, rrf_k=60)
+
+    assert [result.chunk_id for result in fused] == [2, 1, 3]
+    assert fused[0].score == pytest.approx(1 / 62 + 1 / 61 + 1 / 61)
+    with pytest.raises(ValueError):
+        hybrid.fuse_ranked_lists((first,), 0)
+
+
+def test_fuse_ranked_lists_rejects_conflicting_identity_for_one_chunk_id():
+    """Refuse two lists whose shared chunk id claims different source identity."""
+    original = hit(7, 0.9)
+    conflicting = original.model_copy(update={"doc_id": "OTHER"})
+
+    same_identity = original.model_copy(update={"score": -1.0})
+    fused = hybrid.fuse_ranked_lists(((original, original), (same_identity,)), 1, rrf_k=10)
+    assert fused[0].score == pytest.approx(2 / 11)
+
+    with pytest.raises(ValueError, match="conflicting source identity"):
+        hybrid.fuse_ranked_lists(((original,), (conflicting,)), 1)
+
+
 def test_hybrid_search_injects_filters_and_fuses_sequential_candidate_lists():
     """Pass shared filters through sequential components and fuse their ranks."""
     filters = RetrievalFilters(doc_ids=("NVDA-FY2024",), kinds=("text",))
     calls = []
 
     async def vector(query, k, received_filters):
+        """Record the call and return the vector path's ranked hits."""
         calls.append(("vector", query, k, received_filters))
         return [hit(1, 0.9), hit(2, 0.8)]
 
     async def lexical(query, k, received_filters):
+        """Record the call and return the lexical path's ranked hits."""
         calls.append(("lexical", query, k, received_filters))
         return [hit(2, 50.0), hit(3, 40.0)]
 
@@ -88,6 +117,7 @@ def test_hybrid_search_supplies_default_filters_and_validates_inputs():
     received = []
 
     async def search(query, k, filters):
+        """Record what the component was given and return nothing."""
         received.append((query, k, filters))
         return []
 

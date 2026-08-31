@@ -1,6 +1,6 @@
 """Built-in filing tools: typed wrappers over the M2 retrieval surface."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,11 +12,14 @@ from app.agent.tools import Tool, ToolError
 from app.agent.types import AgentCitation
 from app.db.models import Chunk
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
+from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.service import retrieve
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
-DEFAULT_RRF_K = 60
+type SessionFactory = Callable[[], AsyncSession]
+
 DEFAULT_SEARCH_K = 5
+MAX_SEARCH_K = 20
 SNIPPET_CHARS = 320
 BODY_CHARS = 4_000
 
@@ -55,13 +58,18 @@ class ToolParams(BaseModel):
 
 
 class SearchFilingsParams(ToolParams):
-    """Arguments for one hybrid retrieval call."""
+    """Arguments for one hybrid retrieval call.
+
+    Optional fields default to ``None`` so tolerant surfaces (MCP clients) may
+    omit them; the strict provider schema still requires every field because
+    strict decoding strips defaults and marks all properties required.
+    """
 
     query: Annotated[str, Field(min_length=1)]
-    k: Annotated[int, Field(gt=0, le=20)] | None
-    issuers: tuple[str, ...] | None
-    fiscal_years: tuple[int, ...] | None
-    forms: tuple[str, ...] | None
+    k: Annotated[int, Field(gt=0, le=MAX_SEARCH_K)] | None = None
+    issuers: tuple[str, ...] | None = None
+    fiscal_years: tuple[int, ...] | None = None
+    forms: tuple[str, ...] | None = None
 
 
 class FetchChunkParams(ToolParams):
@@ -76,7 +84,7 @@ class CompareYearsParams(ToolParams):
     query: Annotated[str, Field(min_length=1)]
     issuer: Annotated[str, Field(min_length=1, max_length=32)]
     fiscal_years: tuple[int, ...]
-    k: Annotated[int, Field(gt=0, le=10)] | None
+    k: Annotated[int, Field(gt=0, le=10)] | None = None
 
     @field_validator("fiscal_years", mode="after")
     @classmethod
@@ -131,49 +139,58 @@ def _chunk_evidence(output: dict[str, Any]) -> tuple[AgentCitation, ...]:
 
 
 def build_default_registry(
-    session: AsyncSession,
+    session_factory: SessionFactory,
     *,
     embedding_provider: EmbeddingProvider | None = None,
     candidate_k: int | None = None,
     rrf_k: int = DEFAULT_RRF_K,
+    search_k: int = DEFAULT_SEARCH_K,
 ) -> ToolRegistry:
-    """Register the built-in filing tools over one caller-owned session.
+    """Register the built-in filing tools over a per-call session factory.
 
     Parameters
     ----------
-    session : AsyncSession
-        Caller-owned session reused only for short, sequential read transactions.
+    session_factory : SessionFactory
+        Callable producing one fresh ``AsyncSession`` per tool invocation, e.g.
+        the application ``async_sessionmaker``. Because every call owns its own
+        session, concurrent tool calls (the MCP transport dispatches each request
+        in its own task) cannot interleave reads on shared state.
     embedding_provider : EmbeddingProvider | None
         Optional explicit query embedding provider.
     candidate_k : int | None
         Optional shared candidate depth for retrieval tools.
     rrf_k : int
         Positive reciprocal-rank-fusion constant.
+    search_k : int
+        Hit count ``search_filings`` uses when the caller omits ``k``.
 
     Returns
     -------
     ToolRegistry
         Three typed filing tools with complete evidence identity extractors.
 
+    Raises
+    ------
+    ValueError
+        If ``search_k`` leaves the range the ``search_filings`` schema accepts.
+
     Notes
     -----
-    Retrieval semantics remain in M2. Each tool materializes its payload and rolls
-    back the read transaction before returning control to a later provider turn.
+    Retrieval semantics remain in M2. Each tool opens its session on entry and the
+    context exit rolls the read transaction back, so no read survives past the
+    tool call that started it.
     """
-
-    async def close_read_transaction() -> None:
-        """Release a read transaction before control returns to the provider loop."""
-        if session.in_transaction():
-            await session.rollback()
+    if not 0 < search_k <= MAX_SEARCH_K:
+        raise ValueError(f"search_k must be between 1 and {MAX_SEARCH_K}")
 
     async def search_filings(params: SearchFilingsParams) -> dict[str, Any]:
         """Hybrid-search the corpus and materialize citable hits before releasing the read."""
-        try:
+        async with session_factory() as session:
             result = await retrieve(
                 session,
                 params.query,
                 provider=embedding_provider,
-                k=params.k or DEFAULT_SEARCH_K,
+                k=params.k or search_k,
                 candidate_k=candidate_k,
                 filters=RetrievalFilters(
                     issuers=params.issuers or (),
@@ -183,12 +200,10 @@ def build_default_registry(
                 rrf_k=rrf_k,
             )
             return {"hits": [_hit_payload(hit) for hit in result.hits]}
-        finally:
-            await close_read_transaction()
 
     async def fetch_chunk(params: FetchChunkParams) -> dict[str, Any]:
         """Read one stored chunk in full, rejecting ids the corpus does not contain."""
-        try:
+        async with session_factory() as session:
             chunk = await session.get(Chunk, params.chunk_id)
             if chunk is None:
                 raise ToolError(f"chunk {params.chunk_id} does not exist")
@@ -202,17 +217,15 @@ def build_default_registry(
                 "context_header": chunk.context_header,
                 "body": chunk.body[:BODY_CHARS],
             }
-        finally:
-            await close_read_transaction()
 
     async def compare_years(params: CompareYearsParams) -> dict[str, Any]:
-        """Retrieve the same question per sorted fiscal year, releasing each read in turn."""
+        """Retrieve the same question per sorted fiscal year over one short-lived session."""
         provider = _QueryEmbeddingCache(
             embedding_provider if embedding_provider is not None else get_embedding_provider()
         )
-        years: list[dict[str, Any]] = []
-        for fiscal_year in sorted(params.fiscal_years):
-            try:
+        async with session_factory() as session:
+            years: list[dict[str, Any]] = []
+            for fiscal_year in sorted(params.fiscal_years):
                 result = await retrieve(
                     session,
                     params.query,
@@ -231,9 +244,7 @@ def build_default_registry(
                         "hits": [_hit_payload(hit) for hit in result.hits],
                     }
                 )
-            finally:
-                await close_read_transaction()
-        return {"issuer": params.issuer, "years": years}
+            return {"issuer": params.issuer, "years": years}
 
     registry = ToolRegistry()
     registry.register(

@@ -2,15 +2,14 @@
 
 from collections.abc import Callable, Mapping
 import functools
-import json
 import time
 from typing import Any
 
 from pydantic import ValidationError
 
 from app.agent.provider import ProviderTurn, ToolCallingProvider
-from app.agent.registry import ToolRegistry
-from app.agent.tools import FINAL_ANSWER_NAME, ToolError, safe_runtime_error
+from app.agent.registry import ToolRegistry, execute_tool
+from app.agent.tools import FINAL_ANSWER_NAME, safe_runtime_error
 from app.agent.types import (
     AgentAnswer,
     AgentBudget,
@@ -123,38 +122,28 @@ async def _dispatch(
 
     Notes
     -----
-    Tool exceptions never escape into the agent loop. A :class:`ToolError` and a
-    validation failure carry their model-actionable detail verbatim — both are
-    authored against the model's own input, never against provider payloads —
-    while every unexpected exception is redacted through
-    :func:`safe_runtime_error` so raw messages cannot leak into public results.
+    Tool exceptions never escape into the agent loop: lookup, validation,
+    execution, and serialization run through the shared
+    :func:`~app.agent.registry.execute_tool` boundary, so this surface and the
+    MCP server report identical errors for identical failures. Evidence
+    extraction stays here because only the loop grounds citations.
     """
     try:
         tool = registry.get(call.name)
     except ValueError as error:
         return Observation(call_id=call.call_id, name=call.name, error=str(error)), ()
     try:
-        parameters = tool.parameters.model_validate(_parse_arguments(call.arguments_json))
-    except ValidationError as error:
-        details = "; ".join(validation_errors(error))
-        message = f"invalid arguments for {call.name}: {details}"
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
+        arguments = _parse_arguments(call.arguments_json)
     except ValueError as error:
         message = f"invalid arguments for {call.name}: {error}"
         return Observation(call_id=call.call_id, name=call.name, error=message), ()
-    try:
-        output = await tool.run(parameters)
-    except ToolError as error:
-        message = str(error).strip() or safe_runtime_error(error, f"tool {call.name}")
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
-    except Exception as error:
-        message = safe_runtime_error(error, f"tool {call.name}")
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
-    try:
-        output_json = json.dumps(output, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
-    except (TypeError, ValueError) as error:
-        message = safe_runtime_error(error, f"tool {call.name} serialization")
-        return Observation(call_id=call.call_id, name=call.name, error=message), ()
+    outcome = await execute_tool(registry, call.name, arguments)
+    if outcome.error is not None:
+        return Observation(call_id=call.call_id, name=call.name, error=outcome.error), ()
+    output = outcome.output
+    output_json = outcome.output_json
+    if output_json is None:
+        raise ValueError("execute_tool returned neither output nor error")
     try:
         evidence = tool.evidence_ids(output) if tool.evidence_ids is not None else ()
         if not isinstance(evidence, tuple) or any(

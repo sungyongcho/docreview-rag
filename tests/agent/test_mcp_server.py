@@ -8,23 +8,24 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.mcp_server import build_mcp_server
 from app.agent.registry import ToolRegistry
-from app.agent.tools import Tool
+from app.agent.tools import Tool, ToolError
 
 
 class EchoParams(BaseModel):
-    """Closed argument schema for the echo tool."""
+    """Closed argument schema for the echo tool, with one optional field."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     text: str = Field(min_length=1)
+    repeat: int | None = None
 
 
 def registry_with_echo():
     """Build a registry holding one echo tool."""
 
     async def run(params):
-        """Return the text it was given."""
-        return {"text": params.text}
+        """Return the text it was given, repeated when asked."""
+        return {"text": params.text * (params.repeat or 1)}
 
     registry = ToolRegistry()
     registry.register(
@@ -45,7 +46,7 @@ def handler_for(server, method):
 
 
 def test_mcp_list_tools_mirrors_the_registry_schema():
-    """Publish each tool over MCP under the same schema the registry holds."""
+    """Publish each tool over MCP under the registry's own tolerant schema."""
     registry = registry_with_echo()
     server = build_mcp_server(registry)
 
@@ -54,31 +55,58 @@ def test_mcp_list_tools_mirrors_the_registry_schema():
     )
 
     (tool,) = result.tools
+    (published,) = registry.input_schemas()
     assert tool.name == "echo_text"
+    assert tool.input_schema == published["input_schema"]
     assert tool.input_schema["additionalProperties"] is False
     assert tool.input_schema["required"] == ["text"]
-    (spec,) = registry.specs()
-    assert tool.input_schema == spec["parameters"]
 
 
-def test_mcp_call_tool_returns_json_payloads_and_typed_errors():
-    """Return the tool payload as JSON, and a typed error for a bad call."""
-    server = build_mcp_server(registry_with_echo())
-    call = handler_for(server, "tools/call")
+def test_mcp_call_tool_accepts_omitted_optional_arguments():
+    """Run a call that omits optional fields, the idiomatic MCP client shape."""
+    call = handler_for(build_mcp_server(registry_with_echo()), "tools/call")
 
     ok = asyncio.run(
         call(None, mcp_types.CallToolRequestParams(name="echo_text", arguments={"text": "hi"}))
     )
+
     assert ok.is_error is False
     assert json.loads(ok.content[0].text) == {"text": "hi"}
+
+
+def test_mcp_call_tool_reports_errors_the_way_the_loop_does():
+    """Project validation failures and forward ToolError messages verbatim."""
+
+    async def missing_chunk(params):
+        """Raise the model-actionable failure the tool contract forwards."""
+        raise ToolError(f"chunk for {params.text!r} does not exist")
+
+    registry = registry_with_echo()
+    registry.register(
+        Tool(
+            name="fetch_probe",
+            description="Raise a ToolError naming its cause.",
+            parameters=EchoParams,
+            run=missing_chunk,
+        )
+    )
+    call = handler_for(build_mcp_server(registry), "tools/call")
 
     invalid = asyncio.run(
         call(None, mcp_types.CallToolRequestParams(name="echo_text", arguments={"nope": 1}))
     )
-    assert invalid.is_error is True and "text" in invalid.content[0].text
+    assert invalid.is_error is True
+    assert invalid.content[0].text.startswith("invalid arguments for echo_text:")
+    assert "input_value" not in invalid.content[0].text
 
     unknown = asyncio.run(call(None, mcp_types.CallToolRequestParams(name="missing", arguments={})))
     assert unknown.is_error is True and "unknown tool" in unknown.content[0].text
+
+    actionable = asyncio.run(
+        call(None, mcp_types.CallToolRequestParams(name="fetch_probe", arguments={"text": "x"}))
+    )
+    assert actionable.is_error is True
+    assert actionable.content[0].text == "chunk for 'x' does not exist"
 
 
 def test_mcp_call_tool_converts_execution_and_serialization_failures():
