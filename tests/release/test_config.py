@@ -19,6 +19,10 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert settings.openai_api_key is None
     assert settings.openai_enabled is False
     assert settings.allow_ingest is False
+    assert settings.admin_mode == "readonly"
+    assert settings.rate_limit_per_minute == 5
+    assert settings.rate_limit_per_day == 25
+    assert settings.public_daily_cost_usd == Decimal("1.00")
     assert settings.trust_proxy_headers is False
     budget = settings.provider_budget()
     assert budget.pricing.estimate(
@@ -74,3 +78,24 @@ def test_invalid_release_settings_fail_closed(values) -> None:
     """Refuse a setting outside its range instead of falling back to a default."""
     with pytest.raises(ValidationError):
         ReleaseSettings(**values)
+
+
+def test_live_admin_requires_runtime_and_loopback() -> None:
+    """Refuse a callable administrator surface on canned or remotely bound deployments."""
+    with pytest.raises(ValidationError, match="DOCREVIEW_MODE=runtime"):
+        ReleaseSettings(admin_mode="live", host="127.0.0.1")
+    with pytest.raises(ValidationError, match="loopback"):
+        ReleaseSettings(mode="runtime", admin_mode="live", host="0.0.0.0")
+
+    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1")
+
+    assert settings.admin_mode == "live"
+
+
+def test_admin_cors_origin_is_loopback_only() -> None:
+    """Allow the tunneled local Next dev server but reject public browser origins."""
+    settings = ReleaseSettings(admin_cors_origin="http://127.0.0.1:3000")
+
+    assert settings.admin_cors_origin == "http://127.0.0.1:3000"
+    with pytest.raises(ValidationError, match="loopback"):
+        ReleaseSettings(admin_cors_origin="https://sungyongcho.com")

@@ -4,6 +4,8 @@ import asyncio
 from collections import OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
+from decimal import Decimal
 import math
 import time
 
@@ -112,3 +114,37 @@ class InProcessRateLimiter:
                 remaining_minute=self._per_minute - minute_count - 1,
                 remaining_day=self._per_day - day_count - 1,
             )
+
+
+class DailyCostLimiter:
+    """Reserve worst-case provider spend against one UTC-day process budget."""
+
+    def __init__(
+        self,
+        *,
+        daily_limit_usd: Decimal,
+        reservation_usd: Decimal,
+        today: Callable[[], date] = lambda: datetime.now(UTC).date(),
+    ) -> None:
+        if daily_limit_usd <= 0 or reservation_usd <= 0:
+            raise ValueError("cost limits must be positive")
+        if reservation_usd > daily_limit_usd:
+            raise ValueError("one reservation must not exceed the daily limit")
+        self._daily_limit = daily_limit_usd
+        self._reservation = reservation_usd
+        self._today = today
+        self._day = today()
+        self._reserved = Decimal("0")
+        self._lock = asyncio.Lock()
+
+    async def reserve(self) -> tuple[bool, Decimal]:
+        """Reserve one maximum request cost and return remaining budget."""
+        async with self._lock:
+            current_day = self._today()
+            if current_day != self._day:
+                self._day = current_day
+                self._reserved = Decimal("0")
+            if self._reserved + self._reservation > self._daily_limit:
+                return False, self._daily_limit - self._reserved
+            self._reserved += self._reservation
+            return True, self._daily_limit - self._reserved

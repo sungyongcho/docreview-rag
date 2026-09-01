@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.release.limiter import InProcessRateLimiter
+from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
 SECURITY_HEADERS = {
     "cache-control": "no-store",
@@ -70,12 +70,14 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         limiter: InProcessRateLimiter,
         trust_proxy_headers: bool,
         allow_ingest: bool,
+        cost_limiter: DailyCostLimiter | None = None,
         salt: bytes | None = None,
     ) -> None:
         super().__init__(app)
         self._limiter = limiter
         self._trust_proxy_headers = trust_proxy_headers
         self._allow_ingest = allow_ingest
+        self._cost_limiter = cost_limiter
         self._salt = salt or secrets.token_bytes(32)
 
     def _client_key(self, request: Request) -> str:
@@ -130,11 +132,28 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                     content={
                         "error": {
                             "code": "rate_limited",
-                            "message": "The single-instance demo request limit was reached.",
+                            "message": "The single-instance service request limit was reached.",
                             "details": [],
                         }
                     },
                 )
+            if request.url.path in {"/review", "/review/stream"} and self._cost_limiter is not None:
+                allowed, remaining = await self._cost_limiter.reserve()
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "error": {
+                                "code": "daily_cost_limit",
+                                "message": (
+                                    "The public answer budget is exhausted; use retrieval evidence "
+                                    "without an LLM answer."
+                                ),
+                                "details": [],
+                            }
+                        },
+                        headers={"X-DocReview-Daily-Cost-Remaining-USD": format(remaining, "f")},
+                    )
             response = await call_next(request)
             response.headers["X-RateLimit-Remaining-Minute"] = str(decision.remaining_minute)
             response.headers["X-RateLimit-Remaining-Day"] = str(decision.remaining_day)

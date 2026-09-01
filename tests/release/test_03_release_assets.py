@@ -3,8 +3,8 @@
 from pathlib import Path
 
 
-def test_hugging_face_metadata_is_docker_canned_and_port_aligned() -> None:
-    """Declare the container, the offline mode and one port consistently across the assets."""
+def test_hugging_face_metadata_is_static_next_canned_and_port_aligned() -> None:
+    """Declare the static service, offline mode, and one port consistently."""
     metadata = Path("deploy/huggingface/README.md").read_text(encoding="utf-8")
     dockerfile = Path("deploy/huggingface/Dockerfile").read_text(encoding="utf-8")
     environment = Path("deploy/huggingface/space.env.example").read_text(encoding="utf-8")
@@ -13,6 +13,8 @@ def test_hugging_face_metadata_is_docker_canned_and_port_aligned() -> None:
     assert "sdk: docker" in metadata
     assert "app_port: 7860" in metadata
     assert "DOCREVIEW_MODE=canned" in dockerfile
+    assert "npm run build" in dockerfile
+    assert "/web/out ./web/out" in dockerfile
     assert '--port", "7860' in dockerfile
     assert '--workers", "1' in dockerfile
     assert "HEALTHCHECK" in dockerfile
@@ -22,10 +24,10 @@ def test_hugging_face_metadata_is_docker_canned_and_port_aligned() -> None:
 
 
 def test_compose_app_has_single_container_security_guards() -> None:
-    """Run the container read-only, without added privileges, and with capabilities dropped."""
+    """Mount only persistent data while retaining process security guards."""
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
-    assert "read_only: true" in compose
+    assert "./data:/app/data" in compose
     assert "no-new-privileges:true" in compose
     assert "cap_drop:\n      - ALL" in compose
     assert "${APP_PORT:-8000}:8000" in compose

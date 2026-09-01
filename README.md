@@ -1,19 +1,466 @@
-## docreview-rag-agent
+# DocReview
 
-### Local PostgreSQL
+SEC 10-K와 한국 DART 사업보고서를 원문 근거와 함께 검토하는 evidence-first RAG
+서비스입니다. 공시 원문을 파싱하고 PostgreSQL/pgvector에 저장한 뒤 vector·lexical
+검색을 RRF로 융합하며, 답변은 검색된 source span을 인용해야만 `SUPPORTED`로
+종료할 수 있습니다. 근거가 없으면 `NOT_IN_DOCS`를 반환합니다.
 
-빠른 테스트는 데이터베이스 없이 실행하고, PostgreSQL 통합 테스트는 Compose의
-`db` 서비스를 명시적으로 시작한 뒤 실행합니다.
+사용자 화면은 정적 Next.js 서비스이고, FastAPI가 검색·리뷰·평가·관리 API를
+제공합니다. 공개 배포에서는 실제 검색과 비용 제한 LLM 리뷰를 제공하고, corpus 변경과
+골든 평가 작업은 SSH tunnel을 통한 local operator 모드에서만 실행합니다.
+
+## 주요 기능
+
+- SEC EDGAR·DART 원문 수집과 registry별 파싱
+- source SHA-256와 half-open character span으로 되짚을 수 있는 청크
+- pgvector exact vector search와 `ts_rank_cd`/BM25 lexical search
+- RRF 융합, 선택적 cross-encoder reranking, 한국어 n-gram lexical 경로
+- 인용 검증 LLM workflow와 `NOT_IN_DOCS` fail-closed 종료
+- 최근 대화·인용 카드·5단계 온보딩을 갖춘 Next.js 서비스
+- corpus 상태, 골든셋, 실험 비교, API Inspector를 갖춘 Corpus Lab
+- Recall@k·Hit Rate@k·MRR·latency, 교차언어 parity, ablation 평가
+- FastAPI·SSE·MCP agent·Gradio 내부 evidence fixture
+- Firebase Hosting, GCP VM, Caddy, Cloudflare Worker 배포 구성
+
+## 시스템 구조
+
+```text
+SEC EDGAR / Open DART
+        │
+        ▼
+download → manifest → registry parser → sections/tables → source-stable chunks
+        │
+        ▼
+PostgreSQL + pgvector + language-aware lexical index
+        │
+        ├─ vector search
+        ├─ ts_rank_cd / BM25
+        └─ RRF → optional reranker
+                     │
+                     ▼
+        evidence validation → LLM review → citations / NOT_IN_DOCS
+                     │
+                     ▼
+             FastAPI → Next.js service
+```
+
+| 경로 | 역할 |
+|---|---|
+| `app/ingestion/` | EDGAR·DART 수집, 파싱, 표, 청크, DB seed |
+| `app/retrieval/` | embedding, vector/lexical/BM25, RRF, reranking |
+| `app/evals/` | golden evaluation, ablation, parity, regression |
+| `app/llm/`, `app/workflow/` | provider boundary, 예산, 인용 검증 workflow |
+| `app/api/` | public API와 SSH-only administrator API |
+| `app/agent/` | citation-required tool loop와 MCP stdio server |
+| `app/release/` | rate/cost guard, secret redaction, Next 정적 서비스 |
+| `web/` | Next.js App Router 서비스, Corpus Lab, localStorage 대화 |
+| `data/` | corpus manifest, golden suite, profiles, evaluation artifacts |
+
+## 요구사항
+
+- [uv](https://docs.astral.sh/uv/)
+- Docker Engine과 Docker Compose
+- Node.js 24+와 npm 11+ — Next 개발·테스트 시
+- 선택: `OPENAI_API_KEY` — 실제 LLM 리뷰
+- 선택: `DART_API_KEY` — DART 원문 수집
+- SEC 수집 시 연락처를 포함한 `SEC_USER_AGENT`
+
+## 설치
+
+```bash
+uv sync
+cd web
+npm ci
+cd ..
+```
+
+로컬 SBERT와 cross-encoder까지 사용하려면 CPU extra를 설치합니다.
+
+```bash
+uv sync --extra cpu
+```
+
+루트 `.env`는 git에 포함되지 않습니다. 시작 템플릿은 다음과 같습니다.
+
+```bash
+cp .env.example .env
+```
+
+```dotenv
+SEC_USER_AGENT=Jane Doe jane@example.com
+DART_API_KEY=<your-dart-key>
+OPENAI_API_KEY=<your-openai-key>
+```
+
+키는 사용하는 기능에만 필요합니다. 기본 deterministic embedding과 retrieval 테스트는
+OpenAI 키 없이 실행됩니다.
+
+## 5분 로컬 실행
+
+### 1. 원문 준비
+
+새 clone에는 manifest만 있고 원문은 없습니다. SEC 20건을 내려받으려면 `.env`의
+`SEC_USER_AGENT`를 먼저 설정합니다.
+
+```bash
+uv run python -m app.ingestion.edgar_api
+```
+
+DART manifest의 삼성전자·SK하이닉스·NAVER FY2022~FY2024 원문은 선택 사항입니다.
+
+```bash
+uv run python -m app.ingestion.dart_api
+```
+
+수집 명령은 원문과 manifest까지만 준비합니다. 파싱·청킹·DB 저장은 다음 ingest
+단계가 담당합니다.
+
+### 2. PostgreSQL과 인제스트
+
+```bash
+docker compose up -d db
+docker compose ps db
+```
+
+SEC corpus를 넣고 새 DB schema를 만듭니다.
+
+```bash
+uv run python -m app.cli ingest \
+  --manifest data/corpus/manifest.json \
+  --create-schema
+```
+
+DART corpus를 추가합니다.
+
+```bash
+uv run python -m app.cli ingest \
+  --manifest data/corpus/dart-manifest.json
+```
+
+첫 검색에서 비어 있는 embedding을 채웁니다.
+
+```bash
+uv run python -m app.cli retrieve \
+  --query "data center revenue drivers" \
+  --embed-missing \
+  --provider deterministic
+```
+
+### 3. 전체 서비스 시작
+
+```bash
+docker compose up --build -d
+```
+
+브라우저에서 다음 주소를 엽니다.
+
+```text
+http://127.0.0.1:8000/docreview-rag-agent/
+```
+
+상태와 로그는 다음과 같이 확인합니다.
+
+```bash
+curl -s http://127.0.0.1:8000/health
+docker compose logs -f app
+```
+
+서비스만 중지하고 PostgreSQL은 유지하려면:
+
+```bash
+docker compose stop app
+```
+
+## Next.js 개발 모드
+
+FastAPI와 PostgreSQL은 Docker로 실행하고 Next dev server만 호스트에서 띄웁니다.
+
+```bash
+docker compose up --build -d app
+
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
+  scripts/run_operator_web.sh
+```
+
+개발 화면:
+
+```text
+http://127.0.0.1:3000/docreview-rag-agent/
+```
+
+operator 모드는 실제 `/admin/*` API를 사용합니다. 공개 Firebase build는 같은 화면을
+보여주지만 Corpus Lab 실행 버튼은 비활성화되고 저장된 측정 결과만 표시합니다.
+
+## 데이터와 corpus 관리
+
+기본 corpus:
+
+| Registry | 발행인 | 범위 |
+|---|---|---|
+| SEC EDGAR | NVDA, AMD, INTC, MU | 각 5개년 10-K |
+| DART | 삼성전자, SK하이닉스, NAVER | 각 FY2022~FY2024 사업보고서 |
+
+SEC 기간과 회사를 확장할 수 있습니다.
+
+```bash
+uv run python -m app.ingestion.edgar_api --years 2015-2024
+uv run python -m app.ingestion.edgar_api \
+  --ticker TSM AVGO \
+  --years 2020-2024
+```
+
+DART 회사와 사업연도를 확장할 수 있습니다.
+
+```bash
+uv run python -m app.ingestion.dart_api \
+  --stock-codes 005930 000660 035420 \
+  --fiscal-year 2022 2023 2024
+```
+
+모든 수집 작업은 재실행 가능하며 기존 manifest 항목을 보존합니다. Corpus Lab의
+`Overview`에서는 누락 문서 수집, manifest ingest, embedding backfill, BM25 통계
+재구축을 background job으로 실행할 수 있습니다.
+
+## 검색과 리뷰
+
+CLI 검색:
+
+```bash
+uv run python -m app.cli retrieve \
+  --query "Samsung memory business risks" \
+  -k 5
+```
+
+세부 retrieval 실험:
+
+```bash
+uv run python -m app.retrieval \
+  --query "메모리 사업 위험" \
+  --lexical-ranker bm25 \
+  --route-by-language
+```
+
+`EMBEDDING_PROVIDER=openai` 또는 `REVIEW_MODEL`을 설정하면 OpenAI 키가 필요합니다.
+리뷰 workflow는 모델, 키, 입·출력 가격이 모두 있어야 열리는 fail-closed 구조입니다.
+
+```dotenv
+REVIEW_MODEL=gpt-4.1-mini
+REVIEW_INPUT_PRICE_PER_MILLION_USD=0.40
+REVIEW_OUTPUT_PRICE_PER_MILLION_USD=1.60
+```
+
+공개 release는 IP당 분·일 제한, 요청당 비용 제한, UTC 일일 비용 상한을 적용합니다.
+한도가 소진되면 프런트는 LLM 답변 대신 실제 retrieval evidence를 표시합니다.
+
+## Corpus Lab과 골든 평가
+
+Corpus Lab은 다음 영역으로 구성됩니다.
+
+- `Overview`: DB/schema/index 상태와 안전한 corpus 작업
+- `Documents`: registry·issuer·연도·언어·chunk 상태
+- `Golden Tests`: SEC/DART × EN/KO suite와 retrieval profile
+- `Experiments`: baseline 대비 metric·case 변화
+- `Jobs`: quick/matrix background job
+- `API Inspector`: strict JSON 요청과 typed 응답
+
+조절 가능한 retrieval profile:
+
+- strategy: vector, lexical, hybrid
+- `k`, `candidate_k`, `rrf_k`
+- `ts_rank_cd` 또는 BM25와 `k1`, `b`, IDF
+- query language routing
+- 선택적 cross-encoder reranking
+
+빠른 실행은 현재 DB index를 사용합니다. matrix 실행은 격리 PostgreSQL corpus에서
+chunk 크기·strategy·ranker 조합을 비교하고 운영 corpus를 변경하지 않습니다.
+
+CLI 평가:
+
+```bash
+uv run python -m app.evals.run
+uv run python -m app.evals.crosslingual --corpus edgar --gate
+uv run python -m app.evals.crosslingual \
+  --corpus dart \
+  --lexical-ranker bm25 \
+  --gate
+```
+
+Recall@k·Hit Rate@k·MRR은 retrieval을 평가합니다. 최종 LLM 답변의 사실성이나
+claim-level entailment를 증명하는 지표로 해석하지 않습니다.
+
+## API
+
+로컬 Swagger UI:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+주요 public endpoint:
+
+| 메서드 | 경로 | 역할 |
+|---|---|---|
+| `GET` | `/health` | 프로세스 상태 |
+| `POST` | `/retrieve` | 인용 근거 검색 |
+| `POST` | `/review` | 근거 검증 리뷰 |
+| `POST` | `/review/stream` | SSE 리뷰 스트림 |
+| `GET` | `/documents` | 인제스트 문서 목록 |
+| `GET` | `/runs/{run_id}` | 리뷰 실행 결과 |
+| `GET` | `/runs/{run_id}/traces` | 단계별 비용·토큰 trace |
+| `GET` | `/eval` | 저장된 평가 결과 |
+
+`/admin/*`는 local operator API입니다. 공개 Caddy 설정에서는 `/admin/*`와 `/ingest`를
+차단하고, GCP 운영 환경에서는 SSH tunnel을 통해서만 접근합니다.
+
+## Agent와 MCP
+
+provider 호출 없는 agent loop:
+
+```bash
+uv run python -m app.agent \
+  --question "What drove NVIDIA data center growth?"
+```
+
+OpenAI provider 사용:
+
+```bash
+uv run python -m app.agent \
+  --question "What drove NVIDIA data center growth?" \
+  --provider openai \
+  --model gpt-5-mini
+```
+
+MCP stdio server:
+
+```bash
+uv run python -m app.agent --mcp
+```
+
+## 테스트와 품질 검사
+
+DB가 필요 없는 Python 테스트:
 
 ```bash
 uv run pytest -m "not live_postgres"
-docker compose up -d db
-uv run pytest -m live_postgres --require-live-postgres
-docker compose stop db
 ```
 
-포트 변경, 상태 확인, 데이터 보존 및 삭제 방법은
-[Docker Compose로 로컬 PostgreSQL 실행](deploy/docker-compose.md)을 참고합니다.
+실제 PostgreSQL/pgvector 테스트:
+
+```bash
+docker compose up -d db
+uv run pytest -m live_postgres --require-live-postgres
+```
+
+전체 Python·정적 검사:
+
+```bash
+uv run pytest -q
+uv run ruff check app tests scripts
+uv run ruff format --check app tests
+```
+
+Next 검사:
+
+```bash
+cd web
+npm test
+npm run typecheck
+npm run build
+npm audit
+```
+
+클린 archive, Compose, 일반/Hugging Face 이미지, health와 Next landing까지 확인하는
+통합 게이트:
+
+```bash
+scripts/verify_clean_checkout.sh
+```
+
+## Docker와 데이터 수명주기
+
+로컬 Compose는 `db`와 `app` 두 서비스를 제공합니다. DB만 실행하거나 전체 서비스를
+실행할 수 있습니다.
+
+```bash
+docker compose up -d db
+docker compose up --build -d
+```
+
+포트 변경, 볼륨 보존·삭제, schema drift 처리 등 자세한 운영 명령은
+[Docker Compose 운영](deploy/docker-compose.md)에 있습니다.
+
+## 배포
+
+배포 구조:
+
+```text
+sungyongcho.com/docreview-rag-agent/*
+        │
+        ▼
+Cloudflare Worker
+        ├─ static UI ──> Firebase Hosting
+        └─ /api/* ─────> GCP e2-small → Caddy → FastAPI → PostgreSQL
+```
+
+Firebase용 Next 정적 파일 생성과 배포:
+
+```bash
+FIREBASE_PROJECT_ID=<project-id> scripts/deploy_firebase_web.sh
+```
+
+GCP VM 준비·배포 스크립트:
+
+```bash
+GCP_PROJECT_ID=<project-id> deploy/gcp/create_vm.sh
+GCP_PROJECT_ID=<project-id> deploy/gcp/deploy_backend.sh
+```
+
+실관리 UI는 SSH tunnel 뒤에서 실행합니다.
+
+```bash
+GCP_PROJECT_ID=<project-id> deploy/gcp/operator_tunnel.sh
+scripts/run_operator_web.sh
+```
+
+배포 스크립트는 비용과 외부 상태를 변경하므로 값을 검토한 뒤 별도로 실행해야 합니다.
+
+## 트러블슈팅
+
+| 증상 | 확인할 것 |
+|---|---|
+| `database_unavailable` | `docker compose ps db`, `DB_PORT`, `DATABASE_URL` |
+| `schema drift` | 기존 DB가 현재 ORM column보다 오래됨. 아래 경고 참고 |
+| `/review` 503 | `REVIEW_MODEL`, `OPENAI_API_KEY`, 입·출력 가격 |
+| 공개 review 429 | IP rate limit 또는 UTC daily cost limit |
+| 검색 결과 없음 | ingest 여부와 최초 `--embed-missing` 실행 |
+| BM25 stale | ingest 또는 BM25 stats rebuild 실행 |
+| `sbert`/reranker import 오류 | `uv sync --extra cpu` |
+| Next 클릭이 동작하지 않음 | 개발 URL과 `allowedDevOrigins`, browser console |
+
+이 프로젝트는 schema migration을 `ALTER`가 아니라 재구축으로 처리합니다. 다음 명령은
+모델 테이블·청크·embedding·통계를 삭제하고 다시 생성하는 **파괴적 개발 명령**입니다.
+백업과 재인제스트 준비 없이 실행하지 마십시오.
+
+```bash
+uv run python -m app.ingestion.seed \
+  --manifest data/corpus/manifest.json \
+  --recreate-schema
+```
+
+## 관련 운영 문서
+
+- [Docker Compose 운영](deploy/docker-compose.md)
+- [골든셋 author review queue](data/golden/REVIEW.md)
+- [테스트 파일 배치 규칙](tests/RULES.md)
+
+## 재조립 기록
+
+아래 영역은 현재 서비스 사용 설명이 아니라 `assemble` 재구현 과정의 기계 입력과
+역사 기록입니다. `.dashboard/`와 `.githooks/pre-commit`이 marker가 있는 표를 직접
+읽으므로 marker·열 구조를 변경하지 않습니다.
+
+<details>
+<summary>재조립 순서, 이식 범위, 리뷰 기록과 대시보드</summary>
 
 ### implementation order
 재배치 비교표 (zero 완성본 기준)
@@ -163,3 +610,5 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 ```
 
 클릭이 이스케이프 문자로 새어 나오는 터미널이면 `--no-mouse`로 끄고 키만 씁니다.
+
+</details>

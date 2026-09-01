@@ -82,7 +82,8 @@ def test_container_uses_the_locked_runtime_and_nonroot_user():
 
     assert "uv sync --locked --no-dev --no-install-project" in dockerfile
     assert "USER appuser" in dockerfile
-    assert '"app.cli", "serve"' in dockerfile
+    assert '"app.release.space:app"' in dockerfile
+    assert "npm run build" in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "/health" in dockerfile
     # README churns with nearly every commit; it must stay out of the dependency layer.

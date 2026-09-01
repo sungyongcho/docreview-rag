@@ -1,3 +1,13 @@
+FROM node:24-alpine AS web
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web ./
+ENV NEXT_PUBLIC_API_BASE_URL=/docreview-rag-agent/api \
+	NEXT_PUBLIC_ADMIN_MODE=canned
+RUN npm run build
+
 FROM ghcr.io/astral-sh/uv:0.11.19 AS uv
 
 FROM python:3.14-slim
@@ -9,6 +19,7 @@ ENV HOME=/home/user \
 	UV_COMPILE_BYTECODE=1 \
 	UV_LINK_MODE=copy \
 	DOCREVIEW_MODE=canned \
+	DOCREVIEW_ADMIN_MODE=readonly \
 	DOCREVIEW_PORT=7860
 
 RUN useradd --create-home --uid 1000 user \
@@ -17,12 +28,13 @@ RUN useradd --create-home --uid 1000 user \
 WORKDIR /home/user/app
 
 COPY --from=uv /uv /uvx /bin/
-COPY --chown=user:user pyproject.toml uv.lock README.md ./
+COPY --chown=user:user pyproject.toml uv.lock ./
 
 USER user
-RUN uv sync --locked --no-dev --extra demo --no-install-project
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY --chown=user:user app ./app
+COPY --from=web --chown=user:user /web/out ./web/out
 
 EXPOSE 7860
 

@@ -1,12 +1,25 @@
 """Release settings, which default to the offline mode and open nothing implicitly."""
 
 from decimal import Decimal
+from ipaddress import ip_address
 from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.llm.schemas import ProviderBudget, TokenPricing
+
+type AdminMode = Literal["off", "readonly", "live"]
+
+
+def _loopback_host(host: str) -> bool:
+    """Return whether one configured bind host is explicitly loopback-only."""
+    if host.strip().lower() == "localhost":
+        return True
+    try:
+        return ip_address(host.strip()).is_loopback
+    except ValueError:
+        return False
 
 
 class ReleaseSettings(BaseSettings):
@@ -21,11 +34,13 @@ class ReleaseSettings(BaseSettings):
     mode: Literal["canned", "runtime"] = "canned"
     host: str = "0.0.0.0"
     port: int = Field(default=7860, ge=1, le=65_535)
-    rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
-    rate_limit_per_day: int = Field(default=100, ge=1, le=100_000)
+    rate_limit_per_minute: int = Field(default=5, ge=1, le=1_000)
+    rate_limit_per_day: int = Field(default=25, ge=1, le=100_000)
     rate_limit_max_clients: int = Field(default=1_024, ge=1, le=100_000)
     trust_proxy_headers: bool = False
     allow_ingest: bool = False
+    admin_mode: AdminMode = "readonly"
+    admin_cors_origin: str | None = None
 
     openai_api_key: SecretStr | None = Field(
         default=None,
@@ -34,9 +49,18 @@ class ReleaseSettings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     openai_max_input_tokens: int = Field(default=12_000, ge=1, le=100_000)
     openai_max_output_tokens: int = Field(default=600, ge=1, le=4_000)
-    openai_max_cost_usd: Decimal = Field(default=Decimal("0.01"), ge=0, le=1)
+    openai_max_cost_usd: Decimal = Field(default=Decimal("0.01"), gt=0, le=1)
+    public_daily_cost_usd: Decimal = Field(default=Decimal("1.00"), gt=0, le=100)
     openai_input_per_million_usd: Decimal = Field(default=Decimal("0.40"), ge=0)
     openai_output_per_million_usd: Decimal = Field(default=Decimal("1.60"), ge=0)
+
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def blank_key_is_unset(cls, value: object) -> object:
+        """Treat blank compose substitutions as an absent provider secret."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @model_validator(mode="after")
     def validate_release_limits(self) -> Self:
@@ -47,6 +71,16 @@ class ReleaseSettings(BaseSettings):
             raise ValueError("host must not be blank")
         if not self.openai_model.strip():
             raise ValueError("openai_model must not be blank")
+        if self.admin_mode == "live" and self.mode != "runtime":
+            raise ValueError("live corpus administration requires DOCREVIEW_MODE=runtime")
+        if self.admin_mode == "live" and not _loopback_host(self.host):
+            raise ValueError("live corpus administration requires an explicit loopback host")
+        if self.admin_cors_origin is not None and not self.admin_cors_origin.startswith(
+            ("http://127.0.0.1:", "http://localhost:")
+        ):
+            raise ValueError("administrator CORS origin must be loopback HTTP")
+        if self.openai_max_cost_usd > self.public_daily_cost_usd:
+            raise ValueError("request cost cap must not exceed the public daily cost cap")
         return self
 
     @property

@@ -22,6 +22,11 @@ htmlcov/
 # Build artifacts
 build/
 dist/
+web/node_modules/
+web/.next/
+web/out/
+web/*.tsbuildinfo
+deploy/firebase/public/
 *.egg-info/
 
 # Editor and operating-system files

@@ -47,9 +47,19 @@ uv sync --locked --extra demo
 printf 'Clean archive: focused release, demo, and API tests\n'
 uv run pytest -o addopts="" tests/release tests/test_demo.py tests/api -q
 
+printf 'Clean archive: Next tests, typecheck, and static build\n'
+(
+    cd web
+    npm ci
+    npm test
+    npm run typecheck
+    NEXT_PUBLIC_API_BASE_URL=/docreview-rag-agent/api \
+        NEXT_PUBLIC_ADMIN_MODE=canned npm run build
+)
+
 printf 'Clean archive: lint and owned format\n'
 uv run ruff check --no-fix app tests scripts
-uv run ruff format --check app/release app/demo.py tests/release
+uv run ruff format --check app tests
 
 printf 'Clean archive: Compose configuration and application image build\n'
 docker compose -p "$M7_PROJECT" config --quiet
@@ -81,11 +91,11 @@ try:
         body = response.read().decode("utf-8")
 except (OSError, TimeoutError, urllib.error.URLError):
     raise SystemExit(1) from None
-if "Document Review Evidence Demo" not in body:
-    raise SystemExit("Gradio landing page marker is missing")
+if "Evidence-first SEC and DART filing review" not in body:
+    raise SystemExit("Next service landing marker is missing")
 PY
     then
-        printf 'Clean archive: canned health and Gradio smoke passed on port %s\n' "$M7_PORT"
+        printf 'Clean archive: canned health and Next smoke passed on port %s\n' "$M7_PORT"
         exit 0
     fi
     if [[ "$attempt" == "45" ]]; then

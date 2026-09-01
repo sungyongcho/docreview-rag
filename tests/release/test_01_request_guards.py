@@ -1,12 +1,13 @@
 """Public middleware, headers, and secret-redaction tests."""
 
+import asyncio
 import logging
 import sys
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from app.release.limiter import InProcessRateLimiter
+from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 from app.release.middleware import (
     ReleaseGuardMiddleware,
     SecurityHeadersMiddleware,
@@ -66,6 +67,55 @@ def test_public_ingestion_is_disabled_before_service_execution() -> None:
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["error"]["code"] == "release_read_only"
+
+
+def test_daily_cost_limiter_reserves_worst_case_and_resets_by_day() -> None:
+    """Refuse provider work once worst-case reservations exhaust the UTC-day budget."""
+    from datetime import date
+    from decimal import Decimal
+
+    day = [date(2026, 9, 1)]
+    limiter = DailyCostLimiter(
+        daily_limit_usd=Decimal("0.02"),
+        reservation_usd=Decimal("0.01"),
+        today=lambda: day[0],
+    )
+
+    assert asyncio.run(limiter.reserve()) == (True, Decimal("0.01"))
+    assert asyncio.run(limiter.reserve()) == (True, Decimal("0.00"))
+    assert asyncio.run(limiter.reserve()) == (False, Decimal("0.00"))
+    day[0] = date(2026, 9, 2)
+    assert asyncio.run(limiter.reserve()) == (True, Decimal("0.01"))
+
+
+def test_review_route_fails_closed_after_daily_cost_reservation() -> None:
+    """Return a typed fallback signal before a provider route exceeds the daily cap."""
+    from decimal import Decimal
+
+    app = FastAPI()
+    app.add_middleware(
+        ReleaseGuardMiddleware,
+        limiter=InProcessRateLimiter(per_minute=10, per_day=10, max_clients=4),
+        trust_proxy_headers=False,
+        allow_ingest=False,
+        cost_limiter=DailyCostLimiter(
+            daily_limit_usd=Decimal("0.01"),
+            reservation_usd=Decimal("0.01"),
+        ),
+    )
+
+    @app.post("/review")
+    async def review() -> dict[str, str]:
+        """Stand in for one cost-bearing provider route."""
+        return {"status": "ok"}
+
+    with TestClient(app) as client:
+        first = client.post("/review")
+        blocked = client.post("/review")
+
+    assert first.status_code == 200
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "daily_cost_limit"
 
 
 def test_forwarded_client_input_requires_explicit_trust() -> None:

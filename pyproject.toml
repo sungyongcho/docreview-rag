@@ -20,11 +20,13 @@ dependencies = [
     "starlette<1",
     "tqdm>=4.67",
     "uvicorn>=0.52.1",
-	"gradio>=5.49.1",
 ]
 
 
 [project.optional-dependencies]
+demo = [
+    "gradio>=5.49.1",
+]
 # uv sync --extra cpu      # development and deployment default
 # uv sync --extra rocm     # AMD; see docs before enabling on an iGPU
 # uv sync --extra cu130    # NVIDIA
@@ -81,6 +83,7 @@ dev = [
     "pytest-cov>=6.0",   # Coverage — uv run pytest --cov=app
     "ruff>=0.16",        # Linter + formatter (uses the [tool.ruff] settings below)
     "ipython>=9.0",      # Interactive REPL — uv run ipython
+    "gradio>=5.49.1",    # Internal evidence-demo regression surface
 ]
 
 

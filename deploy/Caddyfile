@@ -1,0 +1,11 @@
+{$DOCREVIEW_ORIGIN_HOST} {
+	encode zstd gzip
+
+	@blocked path /admin* /ingest
+	respond @blocked 404
+
+	@public path /health /release /openapi.json /docs /retrieve /review /review/stream /documents /runs/* /eval
+	reverse_proxy @public app:8000
+
+	respond 404
+}
