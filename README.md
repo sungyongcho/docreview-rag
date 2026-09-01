@@ -217,7 +217,9 @@ uv run python -m app.ingestion.dart_api \
   --fiscal-year 2022 2023 2024
 ```
 
-모든 수집 작업은 재실행 가능하며 기존 manifest 항목을 보존합니다. Corpus Lab의
+모든 수집 작업은 재실행 가능하며 기존 manifest 항목을 보존합니다. DART는 manifest의
+파일 길이와 SHA-256이 원문과 일치하면 해당 회사·사업연도를 API 호출 전에 건너뜁니다.
+Corpus Lab의
 `Overview`에서는 누락 문서 수집, manifest ingest, embedding backfill, BM25 통계
 재구축을 background job으로 실행할 수 있습니다.
 

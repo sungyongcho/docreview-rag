@@ -508,6 +508,101 @@ def test_manifest_round_trips_with_korean_names_intact(tmp_path):
     assert dart_api.read_manifest(path) == entries
 
 
+def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path, monkeypatch):
+    """A matching file and digest avoid even the corp-code request."""
+    source_path = tmp_path / "dart/005930/existing.xml"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("사업보고서", encoding="utf-8")
+    source = source_path.read_text(encoding="utf-8")
+    entry = dart_entry("005930", 2024, "existing") | {
+        "file": str(source_path),
+        "source_length": len(source),
+        "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
+    }
+    dart_api.write_manifest(tmp_path / "dart-manifest.json", [entry])
+
+    def unexpected_client(**_kwargs):
+        """Fail if a no-op acquisition attempts to construct a network client."""
+        raise AssertionError("DART network client must not be constructed")
+
+    monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
+    updates = []
+
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",),
+            fiscal_years=(2024,),
+            corpus_dir=tmp_path,
+            api_key="",
+            on_progress=updates.append,
+        )
+    )
+
+    assert result.archived == result.added == ()
+    assert result.manifest_entries == 1
+    assert updates[-1].current == updates[-1].total == 0
+
+
+def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monkeypatch):
+    """A manifest identity alone is insufficient when the source digest has drifted."""
+    source_path = tmp_path / "dart/005930/existing.xml"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("damaged", encoding="utf-8")
+    entry = dart_entry("005930", 2024, "existing") | {
+        "file": str(source_path),
+        "source_length": len("damaged"),
+        "source_sha256": "0" * 64,
+    }
+    dart_api.write_manifest(tmp_path / "dart-manifest.json", [entry])
+    corp_codes = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
+    document = zip_bytes(
+        {
+            f"{RCEPT_NO}.xml": (
+                '<?xml version="1.0" encoding="UTF-8"?><DOCUMENT>복구됨</DOCUMENT>'
+            ).encode()
+        }
+    )
+    requested_paths = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve the stale target and record which endpoints were needed."""
+        requested_paths.append(request.url.path)
+        if request.url.path.endswith("corpCode.xml"):
+            return httpx.Response(200, content=corp_codes)
+        if request.url.path.endswith("list.json"):
+            return httpx.Response(200, json={"status": "000", "list": [ANNUAL]})
+        if request.url.path.endswith("document.xml"):
+            return httpx.Response(200, content=document)
+        raise AssertionError(request.url.path)
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
+
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",),
+            fiscal_years=(2024,),
+            corpus_dir=tmp_path,
+            api_key=API_KEY,
+        )
+    )
+
+    assert len(result.archived) == 1
+    assert result.added == ()
+    assert requested_paths == [
+        "/api/corpCode.xml",
+        "/api/list.json",
+        "/api/document.xml",
+    ]
+    stored = dart_api.read_manifest(tmp_path / "dart-manifest.json")
+    assert stored[0]["filing_id"] == RCEPT_NO
+    assert stored[0]["source_sha256"] != "0" * 64
+
+
 def test_reusable_dart_acquisition_archives_and_merges_with_progress(tmp_path, monkeypatch):
     """Run issuer lookup, report selection, and archive storage through one reusable call."""
     corp_codes = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})

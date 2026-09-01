@@ -701,6 +701,63 @@ def write_manifest(path: Path, entries: Sequence[Mapping[str, Any]]) -> None:
     path.write_text(payload + "\n", encoding="utf-8")
 
 
+def _manifest_source_is_current(entry: Mapping[str, Any], *, corpus_dir: Path) -> bool:
+    """Return whether one manifest entry still describes its source file exactly."""
+    raw_file = entry.get("file")
+    expected_length = entry.get("source_length")
+    expected_digest = entry.get("source_sha256")
+    if (
+        not isinstance(raw_file, str)
+        or not raw_file.strip()
+        or not isinstance(expected_length, int)
+        or isinstance(expected_length, bool)
+        or expected_length < 0
+        or not isinstance(expected_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None
+    ):
+        return False
+
+    root = corpus_dir.resolve()
+    recorded = Path(raw_file)
+    candidates = (recorded,) if recorded.is_absolute() else (recorded, corpus_dir / recorded)
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            continue
+        if not resolved.is_file():
+            continue
+        try:
+            source = resolved.read_bytes().decode("utf-8")
+        except OSError, UnicodeDecodeError:
+            return False
+        actual_digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        return len(source) == expected_length and actual_digest == expected_digest
+    return False
+
+
+def pending_dart_targets(
+    existing: Sequence[Mapping[str, Any]],
+    *,
+    stock_codes: Sequence[str],
+    fiscal_years: Sequence[int],
+    corpus_dir: Path,
+) -> list[tuple[str, int]]:
+    """Return requested issuer-years absent from disk or inconsistent with the manifest."""
+    valid = {
+        (entry.get("issuer"), entry.get("fiscal_year"))
+        for entry in existing
+        if _manifest_source_is_current(entry, corpus_dir=corpus_dir)
+    }
+    return [
+        (stock_code, fiscal_year)
+        for stock_code in stock_codes
+        for fiscal_year in fiscal_years
+        if (stock_code, fiscal_year) not in valid
+    ]
+
+
 def merge_manifest(
     existing: Sequence[Mapping[str, Any]], archived: Sequence[Mapping[str, Any]]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -744,11 +801,20 @@ async def acquire_dart(
     progress_factory: ByteProgressFactory | None = None,
 ) -> DartAcquisitionResult:
     """Download and archive requested DART filings without parsing or ingesting them."""
-    if not api_key.strip():
-        raise ValueError("DART_API_KEY is not configured; add it to .env")
     manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
     existing = read_manifest(manifest_path)
-    targets = [(code, year) for code in stock_codes for year in fiscal_years]
+    targets = pending_dart_targets(
+        existing,
+        stock_codes=stock_codes,
+        fiscal_years=fiscal_years,
+        corpus_dir=corpus_dir,
+    )
+    if not targets:
+        if on_progress is not None:
+            on_progress(OperationProgress("download", 0, 0, "Every requested filing is valid"))
+        return DartAcquisitionResult((), (), len(existing))
+    if not api_key.strip():
+        raise ValueError("DART_API_KEY is not configured; add it to .env")
     archived: list[dict[str, Any]] = []
 
     def byte_progress(
@@ -797,7 +863,8 @@ async def acquire_dart(
                 api_key=api_key,
                 on_progress=progress,
             )
-        issuers = parse_corp_codes(bundle, stock_codes=stock_codes)
+        pending_stock_codes = tuple(dict.fromkeys(stock_code for stock_code, _ in targets))
+        issuers = parse_corp_codes(bundle, stock_codes=pending_stock_codes)
 
         for index, (stock_code, fiscal_year) in enumerate(targets):
             issuer = issuers[stock_code]
@@ -854,9 +921,7 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
     ) -> None:
         """Archive every requested issuer-year and merge the result into the manifest."""
         secret = get_settings().dart_api_key
-        if secret is None:
-            raise SystemExit("DART_API_KEY is not configured; add it to .env")
-        api_key = secret.get_secret_value()
+        api_key = "" if secret is None else secret.get_secret_value()
 
         try:
             result = await acquire_dart(
@@ -868,12 +933,18 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
             )
         except ValueError as error:
             raise SystemExit(str(error)) from None
+        manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
+        if not result.archived:
+            print(
+                f"nothing to fetch; every requested entry of {manifest_path} "
+                "matches its source file"
+            )
+            return
         with overall_bar(len(result.archived), unit="filing", description="DART") as overall:
             for entry in result.archived:
                 label = f"{entry['issuer']} FY{entry['fiscal_year']}"
                 overall.advance(label)
                 overall.write(f"{label}: {entry['file']} ({entry['source_length']:,} chars)")
-        manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
         print(
             f"wrote {manifest_path}: {len(result.added)} new, "
             f"{result.manifest_entries} filing(s) recorded"
