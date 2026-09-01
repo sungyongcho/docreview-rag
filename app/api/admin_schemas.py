@@ -270,3 +270,24 @@ class EvaluationComparisonResponse(StrictAdminModel):
     suite: str
     metrics: tuple[EvaluationMetricDelta, ...]
     cases: tuple[EvaluationCaseDelta, ...]
+
+
+class EvaluationCaseSummary(StrictAdminModel):
+    """One bounded absolute case result from a persisted evaluation artifact."""
+
+    case_id: str
+    question: str
+    first_relevant_rank: PositiveInt | None
+    citations: tuple[str, ...]
+
+
+class EvaluationResultDetailResponse(StrictAdminModel):
+    """Absolute metrics, configuration, and bounded cases for one result."""
+
+    result_id: PositiveInt
+    suite: str
+    config: dict[str, object]
+    metrics: dict[str, StrictFloat]
+    cases: tuple[EvaluationCaseSummary, ...]
+    raw_artifact_path: str
+    created_at: datetime

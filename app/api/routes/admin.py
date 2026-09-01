@@ -10,6 +10,7 @@ from app.api.admin_schemas import (
     EvaluationComparisonResponse,
     EvaluationJobResource,
     EvaluationJobsResponse,
+    EvaluationResultDetailResponse,
     EvaluationRunRequest,
     GoldenSuiteResource,
     RetrievalPreviewRequest,
@@ -106,6 +107,22 @@ async def evaluation_job(job_id: str, services: AdminServices) -> EvaluationJobR
     if job is None:
         raise not_found("evaluation_job", job_id)
     return job
+
+
+@router.get(
+    "/evaluations/results/{result_id}",
+    response_model=EvaluationResultDetailResponse,
+    responses={404: {"model": ErrorResponse}},
+)
+async def evaluation_result(
+    result_id: int,
+    services: AdminServices,
+) -> EvaluationResultDetailResponse:
+    """Return absolute metrics and bounded case details for one result."""
+    detail = await services.evaluation_result(result_id)
+    if detail is None:
+        raise not_found("evaluation_result", str(result_id))
+    return detail
 
 
 @router.get("/evaluations/compare", response_model=EvaluationComparisonResponse)

@@ -23,11 +23,13 @@ from tests.retrieval.support import fake_sentence_transformers, hit
 def stub_components(monkeypatch, events: list[tuple[str, int]]) -> None:
     """Install four-candidate vector and lexical components."""
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         events.append(("vector", k))
         return [hit(1, 0.9), hit(2, 0.8), hit(3, 0.7), hit(4, 0.6)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         events.append(("lexical", k))
         return [hit(4, 9.0), hit(3, 8.0), hit(2, 7.0), hit(1, 6.0)]
 
@@ -84,6 +86,8 @@ def test_load_constructs_the_model_once(monkeypatch):
     calls: list[str] = []
 
     class Encoder:
+        """Test double for Encoder behavior."""
+
         def __init__(self, model):
             calls.append(model)
 
@@ -111,11 +115,14 @@ def test_score_preserves_pair_order_and_runs_model_off_loop(monkeypatch):
     calls: dict[str, Any] = {}
 
     class Encoder:
+        """Test double for Encoder behavior."""
+
         def __init__(self, model):
             calls["model"] = model
             calls["constructor_thread"] = threading.get_ident()
 
         def predict(self, pairs, *, batch_size):
+            """Exercise predict behavior."""
             calls["pairs"] = list(pairs)
             calls["batch_size"] = batch_size
             calls["predict_thread"] = threading.get_ident()
@@ -139,17 +146,21 @@ def test_simultaneous_cold_scores_construct_one_model(monkeypatch):
     constructors: list[str] = []
 
     class Encoder:
+        """Test double for Encoder behavior."""
+
         def __init__(self, model):
             constructors.append(model)
             time.sleep(0.05)
 
         def predict(self, pairs, *, batch_size):
+            """Exercise predict behavior."""
             return [1.0] * len(pairs)
 
     fake_sentence_transformers(monkeypatch, CrossEncoder=Encoder)
     reranker = cross_encoder.CrossEncoderReranker(model="cross-encoder/fake")
 
     async def score_concurrently():
+        """Exercise score concurrently behavior."""
         return await asyncio.gather(
             reranker.score("first", ["document"]),
             reranker.score("second", ["document"]),
@@ -179,7 +190,10 @@ def test_reranker_rescores_the_full_candidate_pool_then_truncates(monkeypatch):
     seen: dict[str, Any] = {}
 
     class Reranker(RerankProvider):
+        """Test double for Reranker behavior."""
+
         async def score(self, query: str, documents: Sequence[str]) -> Sequence[float]:
+            """Exercise score behavior."""
             seen["query"] = query
             seen["documents"] = list(documents)
             return [float(index) for index in range(len(documents))]
@@ -196,7 +210,10 @@ def test_component_rankings_record_proposals_not_rerank_survivors(monkeypatch):
     """Preserve component proposals independently of rerank survivors."""
 
     class Reranker(RerankProvider):
+        """Test double for Reranker behavior."""
+
         async def score(self, query: str, documents: Sequence[str]) -> Sequence[float]:
+            """Exercise score behavior."""
             return [0.0] * len(documents)
 
     result = retrieve(monkeypatch, [], k=1, candidate_k=4, reranker=Reranker())
@@ -217,13 +234,15 @@ def test_cli_accepts_rerank_flag():
 
 def test_run_passes_cross_encoder_when_rerank_is_enabled(monkeypatch):
     """Pass a cross-encoder to the service only when requested."""
-    from app.db import session as db_session
+    import app.db.session as db_session
     from app.retrieval import __main__ as cli
 
     reranker = object()
     seen: dict[str, Any] = {}
 
     class Session:
+        """Test double for Session behavior."""
+
         async def __aenter__(self):
             return object()
 
@@ -231,10 +250,14 @@ def test_run_passes_cross_encoder_when_rerank_is_enabled(monkeypatch):
             return None
 
     class Engine:
+        """Test double for Engine behavior."""
+
         async def dispose(self):
+            """Exercise dispose behavior."""
             return None
 
     async def retrieve(session, query, **kwargs):
+        """Exercise retrieve behavior."""
         seen.update(kwargs)
         return object()
 

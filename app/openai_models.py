@@ -57,10 +57,10 @@ _LUNA = OpenAIModelPricing(
     cache_write_input_per_million_usd=Decimal("0.25"),
     output_per_million_usd=Decimal("1.20"),
 )
-_EMBEDDING_SMALL = OpenAIModelPricing(
-    input_per_million_usd=Decimal("0.02"),
-    cached_input_per_million_usd=Decimal("0.02"),
-    cache_write_input_per_million_usd=Decimal("0.02"),
+_EMBEDDING_LARGE = OpenAIModelPricing(
+    input_per_million_usd=Decimal("0.13"),
+    cached_input_per_million_usd=Decimal("0.13"),
+    cache_write_input_per_million_usd=Decimal("0.13"),
     output_per_million_usd=Decimal("0"),
 )
 
@@ -70,7 +70,7 @@ _DEFAULTS: MappingProxyType[OpenAIModelRole, str] = MappingProxyType(
         "review": "gpt-5.6-terra",
         "decomposition": "gpt-5.6-terra",
         "translation": "gpt-5.6-luna",
-        "embedding": "text-embedding-3-small",
+        "embedding": "text-embedding-3-large",
     }
 )
 _ALLOWED: MappingProxyType[OpenAIModelRole, tuple[str, ...]] = MappingProxyType(
@@ -79,7 +79,7 @@ _ALLOWED: MappingProxyType[OpenAIModelRole, tuple[str, ...]] = MappingProxyType(
         "review": ("gpt-5.6-terra",),
         "decomposition": ("gpt-5.6-terra",),
         "translation": ("gpt-5.6-luna", "gpt-5.6-terra"),
-        "embedding": ("text-embedding-3-small",),
+        "embedding": ("text-embedding-3-large",),
     }
 )
 _REASONING: MappingProxyType[OpenAIModelRole, ReasoningEffort | None] = MappingProxyType(
@@ -119,7 +119,7 @@ def resolve_openai_model(
     elif selected == "gpt-5.6-luna":
         pricing = _LUNA
     else:
-        pricing = _EMBEDDING_SMALL
+        pricing = _EMBEDDING_LARGE
     return OpenAIModelSelection(
         role=role,
         model=selected,

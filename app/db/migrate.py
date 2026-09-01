@@ -20,7 +20,13 @@ LEDGER_TABLE: Final[str] = "docreview_schema_migrations"
 _SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 _COLUMNS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
+    "chunks": (
+        ("embedding_provider", "VARCHAR(32)"),
+        ("embedding_model", "VARCHAR(128)"),
+        ("embedding_dimensions", "INTEGER"),
+    ),
     "runs": (
+        ("request_context", "JSONB"),
         ("total_cached_input_tokens", "BIGINT NOT NULL DEFAULT 0"),
         ("total_cache_write_input_tokens", "BIGINT NOT NULL DEFAULT 0"),
         ("total_reasoning_tokens", "BIGINT NOT NULL DEFAULT 0"),
@@ -33,7 +39,20 @@ _COLUMNS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
     ),
 }
 _CONSTRAINTS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
+    "chunks": (
+        (
+            "ck_chunks_embedding_identity_complete",
+            "(embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL "
+            "AND embedding_dimensions IS NULL) OR (embedding IS NOT NULL AND "
+            "btrim(embedding_provider) <> '' AND btrim(embedding_model) <> '' AND "
+            "embedding_dimensions > 0)",
+        ),
+    ),
     "runs": (
+        (
+            "ck_runs_request_context_object",
+            "request_context IS NULL OR jsonb_typeof(request_context) = 'object'",
+        ),
         ("ck_runs_cached_input_tokens_nonnegative", "total_cached_input_tokens >= 0"),
         (
             "ck_runs_cache_write_input_tokens_nonnegative",
@@ -43,6 +62,10 @@ _CONSTRAINTS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ("ck_runs_cost_nonnegative", "total_estimated_cost_usd >= 0"),
     ),
     "traces": (
+        (
+            "ck_traces_node_v2",
+            "node IN ('gate', 'route', 'retrieve', 'chat', 'grade', 'check', 'report')",
+        ),
         ("ck_traces_cached_input_tokens_nonnegative", "cached_input_tokens >= 0"),
         (
             "ck_traces_cache_write_input_tokens_nonnegative",
@@ -138,6 +161,9 @@ async def _missing_objects(
             f"{table}.{name}"
             for name, _expression in _CONSTRAINTS[table]
             if name not in live_constraints
+            and not (
+                table == "traces" and name == "ck_traces_node_v2" and "node" not in live_columns
+            )
         )
     return tuple(sorted(missing_columns)), tuple(sorted(missing_constraints))
 
@@ -206,6 +232,7 @@ async def apply_schema_migrations(
         actual_schema,
     )
     tables = set(columns_by_table)
+    reset_embeddings = any(name.startswith("chunks.embedding_") for name in plan.missing_columns)
     for table, columns in _COLUMNS.items():
         if table not in tables:
             continue
@@ -216,6 +243,15 @@ async def apply_schema_migrations(
                     f"ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS {preparer.quote(name)} {ddl}"
                 )
             )
+
+    if "chunks" in tables and reset_embeddings:
+        chunks = f"{namespace}.{preparer.quote('chunks')}"
+        await connection.execute(
+            text(
+                f"UPDATE {chunks} SET embedding = NULL, embedding_provider = NULL, "
+                "embedding_model = NULL, embedding_dimensions = NULL"
+            )
+        )
 
     if {"runs", "traces"}.issubset(tables):
         await connection.execute(
@@ -239,7 +275,18 @@ async def apply_schema_migrations(
         if table not in tables:
             continue
         qualified = f"{namespace}.{preparer.quote(table)}"
+        if table == "traces" and "node" in columns_by_table[table]:
+            await connection.execute(
+                text(f"ALTER TABLE {qualified} DROP CONSTRAINT IF EXISTS ck_traces_node")
+            )
         for name, expression in constraints:
+            missing_trace_node = (
+                table == "traces"
+                and name == "ck_traces_node_v2"
+                and "node" not in columns_by_table[table]
+            )
+            if missing_trace_node:
+                continue
             await connection.execute(
                 text(
                     "DO $migration$ BEGIN "

@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from app.openai_models import resolve_openai_model
@@ -28,7 +28,7 @@ class Settings(DotenvFirstSettings):
     database_url: str = "postgresql+asyncpg://filing:filing@localhost:5432/filing"
     corpus_dir: Path = Path("data/corpus")
     embedding_provider: EmbeddingProviderName = "deterministic"
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = "text-embedding-3-large"
     sbert_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embed_dim: Literal[384] = 384
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
@@ -56,6 +56,30 @@ class Settings(DotenvFirstSettings):
     review_max_cost_usd: Decimal = Field(default=Decimal("0.50"), ge=0)
     review_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     review_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
+    local_llm_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"),
+    )
+    local_llm_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LOCAL_LLM_MODEL", "DOCREVIEW_LOCAL_LLM_MODEL"),
+    )
+    local_llm_protocol: Literal["auto", "openai_responses", "ollama"] = Field(
+        default="auto",
+        validation_alias=AliasChoices("LOCAL_LLM_PROTOCOL", "DOCREVIEW_LOCAL_LLM_PROTOCOL"),
+    )
+    local_llm_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LOCAL_LLM_API_KEY", "DOCREVIEW_LOCAL_LLM_API_KEY"),
+    )
+    local_llm_max_input_tokens: int = Field(default=12_000, gt=0)
+    local_llm_max_output_tokens: int = Field(default=600, gt=0)
+
+    @field_validator("local_llm_base_url", "local_llm_model", mode="before")
+    @classmethod
+    def blank_local_values_are_unset(cls, value: object) -> object:
+        """Treat blank Compose substitutions as absent local configuration."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def require_openai_api_key(self) -> Self:
@@ -87,6 +111,17 @@ class Settings(DotenvFirstSettings):
             or self.review_output_price_per_million_usd is not None
         ):
             raise ValueError("manual review pricing was removed; model policy owns prices")
+        return self
+
+    @model_validator(mode="after")
+    def require_local_llm_pair(self) -> Self:
+        """Require local endpoint and model together without exposing either to clients."""
+        if (self.local_llm_base_url is None) != (self.local_llm_model is None):
+            raise ValueError("LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL must be configured together")
+        if self.local_llm_base_url is not None and not self.local_llm_base_url.strip():
+            raise ValueError("LOCAL_LLM_BASE_URL must not be blank")
+        if self.local_llm_model is not None and not self.local_llm_model.strip():
+            raise ValueError("LOCAL_LLM_MODEL must not be blank")
         return self
 
 

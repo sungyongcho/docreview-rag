@@ -21,16 +21,21 @@ from app.config import (
 from app.db.models import DIM
 from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
-from app.retrieval.hybrid import DEFAULT_RRF_K, hybrid_search
-from app.retrieval.korean import lexical_corpus_language, lexical_plan
-from app.retrieval.language import detect_query_language
+from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
+from app.retrieval.korean import lexical_plan
+from app.retrieval.language import detect_query_languages
 from app.retrieval.lexical import lexical_search
 from app.retrieval.rerank import RerankProvider, rerank_hits
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.retrieval.vector import vector_search
 
+# Kept as a patchable compatibility seam for older focused tests and callers. The
+# service now fans out language lanes and fuses them directly with fuse_ranked_lists.
+hybrid_search = None
+
 RankedChunkId = Annotated[StrictInt, Field(gt=0)]
 ScoreStage = Literal["rrf", "reranker"]
+RetrievalStrategy = Literal["vector", "lexical", "hybrid"]
 LEXICAL_RANKERS: tuple[LexicalRanker, ...] = get_args(LexicalRanker)
 RESEARCH_AND_DEVELOPMENT = re.compile(r"\bR\s*&\s*D\b", flags=re.IGNORECASE)
 
@@ -53,7 +58,9 @@ class ComponentRankings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     vector: tuple[RankedChunkId, ...]
+    vector_by_language: dict[str, tuple[RankedChunkId, ...]] = Field(default_factory=dict)
     lexical: tuple[RankedChunkId, ...]
+    lexical_by_language: dict[str, tuple[RankedChunkId, ...]] = Field(default_factory=dict)
 
 
 class RetrievalResult(BaseModel):
@@ -67,8 +74,14 @@ class RetrievalResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     hits: tuple[ChunkHit, ...]
+    candidates: tuple[ChunkHit, ...] = ()
     score_stage: ScoreStage
     component_rankings: ComponentRankings
+
+    @property
+    def candidate_pool(self) -> tuple[ChunkHit, ...]:
+        """Return the full ranked pool, falling back for legacy injected results."""
+        return self.candidates or self.hits
 
 
 async def retrieve(
@@ -76,6 +89,8 @@ async def retrieve(
     query: str,
     *,
     provider: EmbeddingProvider | None = None,
+    query_variants: dict[str, str] | None = None,
+    strategy: RetrievalStrategy = "hybrid",
     k: int = 5,
     candidate_k: int | None = None,
     filters: RetrievalFilters | None = None,
@@ -163,19 +178,25 @@ async def retrieve(
         raise ValueError("bm25_idf must be 'lucene' or 'robertson'")
 
     normalized_query = normalize_query(query)
-    corpus_language = lexical_corpus_language(filters)
-    plan = lexical_plan(corpus_language)
-    skip_lexical = route_by_language and detect_query_language(normalized_query) != corpus_language
+    active_filters = filters or RetrievalFilters()
+    corpus_languages = active_filters.languages or ("en",)
+    query_languages = set(detect_query_languages(normalized_query))
 
-    active_provider = provider if provider is not None else get_embedding_provider()
-    if active_provider.dimensions != DIM:
-        raise ValueError(
-            f"embedding provider dimension {active_provider.dimensions} does not match "
-            f"database dimension {DIM}"
-        )
+    if strategy not in {"vector", "lexical", "hybrid"}:
+        raise ValueError("strategy must be vector, lexical, or hybrid")
+    active_provider = provider
+    if strategy != "lexical":
+        active_provider = provider if provider is not None else get_embedding_provider()
+        if active_provider.dimensions != DIM:
+            raise ValueError(
+                f"embedding provider dimension {active_provider.dimensions} does not match "
+                f"database dimension {DIM}"
+            )
 
     vector_hits: list[ChunkHit] = []
+    vector_by_language: dict[str, tuple[RankedChunkId, ...]] = {}
     lexical_hits: list[ChunkHit] = []
+    lexical_by_language: dict[str, tuple[RankedChunkId, ...]] = {}
 
     async def vector_component(
         component_query: str,
@@ -183,33 +204,37 @@ async def retrieve(
         component_filters: RetrievalFilters,
     ) -> list[ChunkHit]:
         """Embed and retrieve vector candidates through the shared session."""
+        if active_provider is None:
+            raise AssertionError("vector retrieval requires an embedding provider")
         query_vector = await active_provider.embed_query(component_query)
         hits = await vector_search(
             session,
             query_vector,
             k=component_k,
             filters=component_filters,
+            identity=active_provider.identity,
         )
         vector_hits.extend(hits)
         return hits
 
-    async def lexical_component(
-        component_query: str,
-        component_k: int,
-        component_filters: RetrievalFilters,
-    ) -> list[ChunkHit]:
-        """Retrieve candidates with the configured lexical ranker."""
-        if skip_lexical:
+    async def lexical_component(language: str) -> list[ChunkHit]:
+        """Retrieve one corpus-language lane with its matching tokenizer."""
+        if route_by_language and language not in query_languages:
+            lexical_by_language[language] = ()
             return []
-        lexical_query = plan.query_transform(component_query)
+        plan = lexical_plan(language)
+        lane_query = (query_variants or {}).get(language, normalized_query)
+        lexical_query = plan.query_transform(lane_query)
         text_search_config = plan.text_search_config
         if not lexical_query.strip():
+            lexical_by_language[language] = ()
             return []
+        component_filters = active_filters.model_copy(update={"languages": (language,)})
         if lexical_ranker == "bm25":
             hits = await bm25_search(
                 session,
                 lexical_query,
-                component_k,
+                limit,
                 component_filters,
                 k1=bm25_k1,
                 b=bm25_b,
@@ -220,35 +245,51 @@ async def retrieve(
             hits = await lexical_search(
                 session,
                 lexical_query,
-                component_k,
+                limit,
                 component_filters,
                 text_search_config=text_search_config,
             )
         lexical_hits.extend(hits)
+        lexical_by_language[language] = tuple(hit.chunk_id for hit in hits)
         return hits
 
-    fused = await hybrid_search(
-        normalized_query,
-        limit,
-        filters,
-        vector_search=vector_component,
-        lexical_search=lexical_component,
-        rrf_k=rrf_k,
+    if strategy in {"vector", "hybrid"} and query_variants:
+        vector_ranked = []
+        for language in corpus_languages:
+            lane_filters = active_filters.model_copy(update={"languages": (language,)})
+            lane = await vector_component(
+                query_variants.get(language, normalized_query),
+                limit,
+                lane_filters,
+            )
+            vector_by_language[language] = tuple(hit.chunk_id for hit in lane)
+            vector_ranked.append(lane)
+    elif strategy in {"vector", "hybrid"}:
+        lane = await vector_component(normalized_query, limit, active_filters)
+        vector_ranked = [lane]
+    else:
+        vector_ranked = []
+    lexical_ranked = (
+        [await lexical_component(language) for language in corpus_languages]
+        if strategy in {"lexical", "hybrid"}
+        else []
     )
+    fused = fuse_ranked_lists((*vector_ranked, *lexical_ranked), limit, rrf_k=rrf_k)
     if reranker is not None:
         fused = await rerank_hits(
             query,
             fused,
             provider=reranker,
-            top_k=k,
+            top_k=limit,
         )
-    else:
-        fused = fused[:k]
     return RetrievalResult(
-        hits=tuple(fused),
+        hits=tuple(fused[:k]),
+        candidates=tuple(fused),
         score_stage="reranker" if reranker is not None else "rrf",
         component_rankings=ComponentRankings(
             vector=tuple(hit.chunk_id for hit in vector_hits),
+            vector_by_language=vector_by_language,
             lexical=tuple(hit.chunk_id for hit in lexical_hits),
+            lexical_by_language=lexical_by_language,
         ),
     )

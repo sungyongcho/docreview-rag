@@ -9,7 +9,12 @@ from collections.abc import Callable, Sequence
 from typing import Protocol, cast
 
 from app.retrieval._sentence_transformers import ThreadSafeLazy, sentence_transformers_attribute
-from app.retrieval.embeddings import EmbeddingProvider, validate_embeddings, validate_texts
+from app.retrieval.embeddings import (
+    EmbeddingIdentity,
+    EmbeddingProvider,
+    validate_embeddings,
+    validate_texts,
+)
 
 # This multilingual sibling retains the 384-dimensional database contract while
 # placing Korean and English text in one embedding space.
@@ -144,3 +149,8 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
             expected_count=len(inputs),
             dimensions=self.dimensions,
         )
+
+    @property
+    def identity(self) -> EmbeddingIdentity:
+        """Return the configured sentence-transformer identity."""
+        return EmbeddingIdentity("sbert", self.model, self.dimensions)

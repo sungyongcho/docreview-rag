@@ -29,3 +29,21 @@ def detect_query_language(query: str) -> QueryLanguage:
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must not be blank")
     return "ko" if contains_hangul(query) else "en"
+
+
+def detect_query_languages(query: str) -> tuple[QueryLanguage, ...]:
+    """Return every supported script language visibly present in a query.
+
+    Korean and Latin text can coexist in one issuer comparison. Returning both keeps
+    lexical routing from collapsing a mixed query onto one corpus tokenizer. Numbers
+    alone do not imply English; an otherwise script-free query retains the historical
+    English default.
+    """
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must not be blank")
+    languages: list[QueryLanguage] = []
+    if any(character.isascii() and character.isalpha() for character in query):
+        languages.append("en")
+    if contains_hangul(query):
+        languages.append("ko")
+    return tuple(languages or ["en"])

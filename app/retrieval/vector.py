@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DIM, Chunk
 from app.retrieval._sql import apply_filters, hit_columns, hit_order_by
+from app.retrieval.embeddings import EmbeddingIdentity
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
 
 
@@ -52,6 +53,7 @@ def vector_search_statement(
     *,
     k: int,
     filters: RetrievalFilters | None = None,
+    identity: EmbeddingIdentity | None = None,
 ) -> Select[Any]:
     """Build the exact cosine query used by runtime and SQL contract tests.
 
@@ -84,6 +86,12 @@ def vector_search_statement(
     restrictions = filters or RetrievalFilters()
     distance = Chunk.embedding.cosine_distance(vector).label("distance")
     statement = select(*hit_columns(distance)).where(Chunk.embedding.is_not(None))
+    if identity is not None:
+        statement = statement.where(
+            Chunk.embedding_provider == identity.provider,
+            Chunk.embedding_model == identity.model,
+            Chunk.embedding_dimensions == identity.dimensions,
+        )
     statement = apply_filters(statement, restrictions)
     return statement.order_by(*hit_order_by(distance.asc())).limit(k)
 
@@ -94,6 +102,7 @@ async def vector_search(
     *,
     k: int = 5,
     filters: RetrievalFilters | None = None,
+    identity: EmbeddingIdentity | None = None,
 ) -> list[ChunkHit]:
     """Return complete chunk evidence ordered by exact cosine similarity.
 
@@ -123,7 +132,7 @@ async def vector_search(
     if k == 0:
         return []
 
-    statement = vector_search_statement(query_vector, k=k, filters=filters)
+    statement = vector_search_statement(query_vector, k=k, filters=filters, identity=identity)
     rows = (await session.execute(statement)).mappings().all()
     hits: list[ChunkHit] = []
     for row in rows:

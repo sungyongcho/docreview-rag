@@ -471,6 +471,7 @@ def test_discovered_entry_matches_the_committed_manifest_shape():
     )[0]
     assert built == {
         "ticker": "NVDA",
+        "aliases": ["NVDA"],
         "cik": 1045810,
         "accession": "0001045810-24-000029",
         "filing_date": "2024-02-21",

@@ -33,15 +33,20 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
     filters = RetrievalFilters(doc_ids=("NVDA-FY2024",))
 
     class Provider(DeterministicEmbeddingProvider):
+        """Test double for Provider behavior."""
+
         async def embed_query(self, query):
+            """Exercise embed query behavior."""
             events.append(("embed", query))
             return [0.0] * self.dimensions
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         events.append(("vector", received_session, len(query_vector), k, filters))
         return [hit(1, 0.99), hit(2, 0.01)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         events.append(("lexical", received_session, query, k, filters))
         return [hit(2, 9_000.0), hit(3, 8_000.0)]
 
@@ -69,14 +74,16 @@ def test_service_uses_default_candidate_pool_one_session_and_rank_only_component
     assert result.score_stage == "rrf"
     assert result.component_rankings.model_dump() == {
         "vector": (1, 2),
+        "vector_by_language": {},
         "lexical": (2, 3),
+        "lexical_by_language": {"en": (2, 3)},
     }
-    assert set(service.ComponentRankings.model_fields) == {"vector", "lexical"}
-    assert all(
-        type(chunk_id) is int
-        for ranking in result.component_rankings.model_dump().values()
-        for chunk_id in ranking
-    )
+    assert set(service.ComponentRankings.model_fields) == {
+        "vector",
+        "vector_by_language",
+        "lexical",
+        "lexical_by_language",
+    }
 
     events.clear()
     asyncio.run(
@@ -104,17 +111,22 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
     session = cast(AsyncSession, object())
     rerank_calls = []
 
-    async def vector(_session, _query_vector, *, k, filters):
+    async def vector(_session, _query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         assert k == 2
         return [hit(1, 0.9), hit(2, 0.8)]
 
     async def lexical(_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         assert query == "NVDA research development spending"
         assert k == 2
         return []
 
     class Reranker(RerankProvider):
+        """Test double for Reranker behavior."""
+
         async def score(self, query, documents):
+            """Exercise score behavior."""
             rerank_calls.append((query, len(documents)))
             return [0.1, 0.9]
 
@@ -157,9 +169,11 @@ def test_service_rejects_invalid_requests_before_provider_or_hybrid_search(
     """Validate service-owned inputs before building a provider or searching."""
 
     def build_provider():
+        """Exercise build provider behavior."""
         raise AssertionError("invalid input must not build the provider")
 
     async def search(*_args, **_kwargs):
+        """Exercise search behavior."""
         raise AssertionError("invalid input must not reach hybrid search")
 
     monkeypatch.setattr(service, "get_embedding_provider", build_provider)
@@ -174,14 +188,21 @@ def test_service_rejects_a_shallow_candidate_pool_with_a_reranker(monkeypatch):
     """Keep candidate depth at least the requested final result count."""
 
     class Provider(DeterministicEmbeddingProvider):
+        """Test double for Provider behavior."""
+
         async def embed_query(self, _query):
+            """Exercise embed query behavior."""
             raise AssertionError("invalid limits must not call the provider")
 
     class Reranker(RerankProvider):
+        """Test double for Reranker behavior."""
+
         async def score(self, _query, _documents):
+            """Exercise score behavior."""
             raise AssertionError("invalid limits must not call the reranker")
 
     async def search(*_args, **_kwargs):
+        """Exercise search behavior."""
         raise AssertionError("invalid limits must not access the database")
 
     monkeypatch.setattr(service, "vector_search", search)
@@ -205,10 +226,12 @@ def test_service_builds_and_validates_default_provider_before_hybrid_search(monk
     calls = []
 
     def build_provider():
+        """Exercise build provider behavior."""
         calls.append("provider")
         return DeterministicEmbeddingProvider(dimensions=32)
 
     async def search(*_args, **_kwargs):
+        """Exercise search behavior."""
         raise AssertionError("an invalid provider must not reach hybrid search")
 
     monkeypatch.setattr(service, "get_embedding_provider", build_provider)
@@ -286,8 +309,12 @@ def test_cli_acceptance_arguments_and_payload_keep_component_scores_private():
     assert payload["score_stage"] == "rrf"
     component_rankings = payload["component_rankings"]
     assert isinstance(component_rankings, dict)
-    assert component_rankings == {"vector": [1, 2], "lexical": [1]}
-    assert set(component_rankings) == {"vector", "lexical"}
+    assert component_rankings == {
+        "vector": [1, 2],
+        "vector_by_language": {},
+        "lexical": [1],
+        "lexical_by_language": {},
+    }
 
 
 @pytest.mark.parametrize(
@@ -317,15 +344,20 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
     events = []
 
     class Provider(DeterministicEmbeddingProvider):
+        """Test double for Provider behavior."""
+
         async def embed_query(self, query):
+            """Exercise embed query behavior."""
             events.append(("embed", query))
             return [0.0] * self.dimensions
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         events.append(("vector", k))
         return [hit(1, 0.99)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         events.append(("lexical", query))
         return [hit(2, 9_000.0)]
 
@@ -335,7 +367,7 @@ def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch
     korean = asyncio.run(
         service.retrieve(
             cast(AsyncSession, object()),
-            "AMD의 매출총이익률은 어떻게 변화했습니까?",
+            "매출총이익률은 어떻게 변화했습니까?",
             provider=Provider(),
             k=2,
             filters=RetrievalFilters(),
@@ -368,13 +400,18 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     events = []
 
     class Provider(DeterministicEmbeddingProvider):
+        """Test double for Provider behavior."""
+
         async def embed_query(self, query):
+            """Exercise embed query behavior."""
             return [0.0] * self.dimensions
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         return [hit(1, 0.99)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         events.append(query)
         return [hit(2, 9_000.0)]
 
@@ -404,11 +441,13 @@ def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
     monkeypatch, configured, flags, expected
 ):
     """Read routing from settings at the command boundary, overridable in both ways."""
-    from app.db import session as db_session
+    import app.db.session as db_session
 
     seen: dict[str, object] = {}
 
     class Session:
+        """Test double for Session behavior."""
+
         async def __aenter__(self):
             return object()
 
@@ -416,10 +455,14 @@ def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
             return None
 
     class Engine:
+        """Test double for Engine behavior."""
+
         async def dispose(self):
+            """Exercise dispose behavior."""
             return None
 
     async def retrieve(session, query, **kwargs):
+        """Exercise retrieve behavior."""
         seen.update(kwargs)
         return service.RetrievalResult(
             hits=(hit(1, 1 / 61),),
@@ -447,10 +490,12 @@ def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):
     calls = []
     session = cast(AsyncSession, object())
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         return [hit(1, 0.9)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         calls.append((query, text_search_config))
         return [hit(2, 5.0)]
 
@@ -475,10 +520,12 @@ def test_english_corpus_keeps_the_raw_query_and_english_config(monkeypatch):
     calls = []
     session = cast(AsyncSession, object())
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         return [hit(1, 0.9)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         calls.append((query, text_search_config))
         return [hit(2, 5.0)]
 
@@ -497,20 +544,35 @@ def test_english_corpus_keeps_the_raw_query_and_english_config(monkeypatch):
     assert calls == [("NVDA data center revenue", "english")]
 
 
-def test_mixed_language_filter_is_refused_for_lexical_retrieval():
-    """One statement cannot parse a query under two tokenizations at once."""
+def test_mixed_language_filter_fans_out_lexical_retrieval(monkeypatch):
+    """Run one tokenizer-matched lexical statement per corpus language."""
+    calls = []
     session = cast(AsyncSession, object())
 
-    with pytest.raises(ValueError, match="cannot span corpus languages"):
-        asyncio.run(
-            service.retrieve(
-                session,
-                "query",
-                provider=DeterministicEmbeddingProvider(),
-                k=2,
-                filters=RetrievalFilters(languages=("en", "ko")),
-            )
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
+        return [hit(1, 0.9)]
+
+    async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
+        calls.append((filters.languages, text_search_config))
+        return [hit(2 if filters.languages == ("en",) else 3, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+
+    result = asyncio.run(
+        service.retrieve(
+            session,
+            "memory 매출",
+            provider=DeterministicEmbeddingProvider(),
+            k=3,
+            filters=RetrievalFilters(languages=("en", "ko")),
         )
+    )
+
+    assert calls == [(("en",), "english"), (("ko",), "simple")]
+    assert set(result.component_rankings.lexical_by_language) == {"en", "ko"}
 
 
 def test_routing_skips_lexical_when_query_and_corpus_languages_differ(monkeypatch):
@@ -518,10 +580,12 @@ def test_routing_skips_lexical_when_query_and_corpus_languages_differ(monkeypatc
     lexical_calls = []
     session = cast(AsyncSession, object())
 
-    async def vector(received_session, query_vector, *, k, filters):
+    async def vector(received_session, query_vector, *, k, filters, identity=None):
+        """Exercise vector behavior."""
         return [hit(1, 0.9)]
 
     async def lexical(received_session, query, k, filters, *, text_search_config):
+        """Exercise lexical behavior."""
         lexical_calls.append(query)
         return [hit(2, 5.0)]
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+import httpx
 from pydantic import BaseModel, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
 
@@ -17,6 +19,7 @@ from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.runtime import RuntimeApiServices
 from app.llm.provider import LLMProvider, OpenAILLMProvider
+from app.llm.schemas import TokenPricing
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
@@ -27,6 +30,49 @@ ProviderFactory = Callable[..., LLMProvider]
 ReadinessProbe = Callable[[], Awaitable[dict[str, Any]]]
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parents[2] / "web" / "out"
 PUBLIC_BASE_PATH = "/docreview-rag-agent"
+
+
+async def _local_engine_readiness(settings: ReleaseSettings) -> dict[str, object]:
+    """Probe local model inventory without generating text or exposing its endpoint."""
+    if not settings.local_llm_enabled:
+        return {"enabled": False, "reason": "not_configured"}
+    base = settings.local_llm_base_url.rstrip("/")
+    headers = (
+        {"authorization": f"Bearer {settings.local_llm_api_key.get_secret_value()}"}
+        if settings.local_llm_api_key is not None
+        else {}
+    )
+    protocols = (
+        (settings.local_llm_protocol,)
+        if settings.local_llm_protocol != "auto"
+        else ("ollama", "openai_responses")
+    )
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        for protocol in protocols:
+            try:
+                if protocol == "ollama":
+                    response = await client.get(f"{base}/api/tags", headers=headers)
+                    response.raise_for_status()
+                    models = [item.get("name") for item in response.json().get("models", [])]
+                else:
+                    root = base[:-3] if base.endswith("/v1") else base
+                    response = await client.get(f"{root}/v1/models", headers=headers)
+                    response.raise_for_status()
+                    models = [item.get("id") for item in response.json().get("data", [])]
+            except httpx.HTTPError, ValueError, TypeError:
+                continue
+            if settings.local_llm_model in models:
+                return {
+                    "enabled": True,
+                    "model": settings.local_llm_model,
+                    "protocol": protocol,
+                }
+    return {
+        "enabled": False,
+        "model": settings.local_llm_model,
+        "protocol": settings.local_llm_protocol,
+        "reason": "model_unreachable_or_missing",
+    }
 
 
 class ReleaseHealth(BaseModel):
@@ -87,6 +133,7 @@ class ReleaseReadiness(BaseModel):
     models: dict[str, object]
     review_enabled: bool
     active_review_model: str | None
+    review_engines: dict[str, object]
     corpus: CorpusReadiness
 
 
@@ -98,16 +145,53 @@ def build_runtime_services(
     """Compose runtime services without activating a provider from key presence alone."""
     if settings.mode != "runtime":
         raise ValueError("runtime services require DOCREVIEW_MODE=runtime")
-    if settings.openai_api_key is None:
-        return RuntimeApiServices()
+    providers = {}
+    budgets = {}
+    secrets: list[str] = []
+    if settings.openai_api_key is not None:
+        api_key = settings.openai_api_key.get_secret_value()
+        provider = provider_factory(model_name=settings.openai_model, api_key=api_key)
+        providers["openai"] = provider
+        budgets["openai"] = settings.provider_budget()
+        secrets.append(api_key)
+    if settings.local_llm_enabled:
+        from app.llm.local import LocalLLMProvider
 
-    api_key = settings.openai_api_key.get_secret_value()
-    provider = provider_factory(model_name=settings.openai_model, api_key=api_key)
-    install_secret_redaction((api_key,))
+        protocol = settings.local_llm_protocol
+        if protocol == "auto":
+            protocol = (
+                "openai_responses"
+                if settings.local_llm_base_url.rstrip("/").endswith("/v1")
+                else "ollama"
+            )
+        providers["local"] = LocalLLMProvider(
+            base_url=settings.local_llm_base_url,
+            model_name=settings.local_llm_model,
+            protocol=protocol,
+            api_key=(
+                settings.local_llm_api_key.get_secret_value()
+                if settings.local_llm_api_key is not None
+                else None
+            ),
+        )
+        budgets["local"] = settings.provider_budget().model_copy(
+            update={
+                "max_cost_usd": Decimal("0"),
+                "pricing": TokenPricing(
+                    input_per_million_usd=Decimal("0"),
+                    output_per_million_usd=Decimal("0"),
+                ),
+            }
+        )
+        if settings.local_llm_api_key is not None:
+            secrets.append(settings.local_llm_api_key.get_secret_value())
+    install_secret_redaction(tuple(secrets))
     return RuntimeApiServices(
-        llm_provider=provider,
-        provider_budget=settings.provider_budget(),
-        secret_values=(api_key,),
+        llm_providers=providers,
+        provider_budgets=budgets,
+        secret_values=tuple(secrets),
+        intent_classifier_enabled=True,
+        query_routing_enabled=True,
     )
 
 
@@ -207,6 +291,10 @@ def create_release_app(
                 models=openai_policy_snapshot()["roles"],
                 review_enabled=False,
                 active_review_model=None,
+                review_engines={
+                    "openai": {"enabled": False, "reason": "canned_mode"},
+                    "local": {"enabled": False, "reason": "canned_mode"},
+                },
                 corpus=CorpusReadiness(availability="not_applicable"),
             )
 
@@ -247,16 +335,29 @@ def create_release_app(
                 schema_message=type(error).__name__,
             )
 
+        local_readiness = await _local_engine_readiness(active_settings)
         payload = ReleaseReadiness(
             status="ready" if corpus_ready else "degraded",
             mode="runtime",
             admin_mode=active_settings.admin_mode,
             policy_revision=POLICY_REVISION,
             models=openai_policy_snapshot()["roles"],
-            review_enabled=active_settings.openai_enabled,
+            review_enabled=(active_settings.openai_enabled or active_settings.local_llm_enabled),
             active_review_model=(
                 active_settings.openai_model if active_settings.openai_enabled else None
             ),
+            review_engines={
+                "openai": {
+                    "enabled": active_settings.openai_enabled,
+                    "model": (
+                        active_settings.openai_model if active_settings.openai_enabled else None
+                    ),
+                    "protocol": "responses",
+                },
+                "local": {
+                    **local_readiness,
+                },
+            },
             corpus=corpus,
         )
         if corpus_ready:

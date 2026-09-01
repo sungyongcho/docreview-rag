@@ -638,6 +638,7 @@ def archive_document(
     return {
         "registry": "dart",
         "issuer": issuer.stock_code,
+        "aliases": [issuer.corp_name, issuer.stock_code],
         "issuer_id": issuer.corp_code,
         "filing_id": document.rcept_no,
         "form": ANNUAL_REPORT_FORM,
@@ -777,17 +778,28 @@ def merge_manifest(
     from app.ingestion.dart import dart_doc_id
 
     merged = [dict(entry) for entry in existing]
+    aliases_by_issuer = {
+        str(entry.get("issuer", "")): list(entry["aliases"])
+        for entry in merged
+        if isinstance(entry.get("aliases"), list)
+    }
     position = {dart_doc_id(entry): index for index, entry in enumerate(merged)}
 
     added: list[dict[str, Any]] = []
-    for entry in archived:
+    for raw_entry in archived:
+        entry = dict(raw_entry)
+        issuer = str(entry.get("issuer", ""))
+        entry["aliases"] = aliases_by_issuer.get(
+            issuer,
+            list(entry.get("aliases") or [issuer]),
+        )
         document = dart_doc_id(entry)
         if document in position:
-            merged[position[document]] = dict(entry)
+            merged[position[document]] = entry
             continue
         position[document] = len(merged)
-        merged.append(dict(entry))
-        added.append(dict(entry))
+        merged.append(entry)
+        added.append(entry)
     return merged, added
 
 

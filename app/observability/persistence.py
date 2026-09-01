@@ -187,6 +187,7 @@ def report_to_records(
         system_prompt=_redact_sensitive_text(report.system_prompt, secrets=secrets),
         node_path=list(report.node_path),
         report=_sanitize_json(report.report, secrets=secrets),
+        request_context=_sanitize_json(report.request_context, secrets=secrets),
     )
     traces = tuple(
         Trace(
@@ -262,6 +263,7 @@ def records_to_report(run: Run, traces: Sequence[Trace]) -> RunReport:
         # The JSONB column deserializes to JSON values; the ORM annotation is the
         # wider dict[str, object] only because SQLAlchemy cannot express JsonValue.
         report=cast("dict[str, JsonValue] | None", run.report),
+        request_context=cast("dict[str, JsonValue] | None", run.request_context),
         steps=tuple(record_to_step(trace) for trace in traces),
     )
 

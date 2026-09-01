@@ -142,6 +142,15 @@ def validate_embeddings(
     return vectors
 
 
+@dataclass(frozen=True, slots=True)
+class EmbeddingIdentity:
+    """Provider, model, and dimensions defining one vector space."""
+
+    provider: str
+    model: str
+    dimensions: int
+
+
 class EmbeddingProvider(ABC):
     """Async provider boundary shared by query and document embeddings."""
 
@@ -154,6 +163,15 @@ class EmbeddingProvider(ABC):
     async def embed_query(self, text: str) -> list[float]:
         """Embed one query through the same model and validation path."""
         return (await self.embed_documents([text]))[0]
+
+    @property
+    def identity(self) -> EmbeddingIdentity:
+        """Return the exact identity persisted beside generated vectors."""
+        return EmbeddingIdentity(
+            type(self).__name__.removesuffix("EmbeddingProvider").casefold(),
+            type(self).__name__,
+            self.dimensions,
+        )
 
 
 class DeterministicEmbeddingProvider(EmbeddingProvider):
@@ -191,6 +209,11 @@ class DeterministicEmbeddingProvider(EmbeddingProvider):
             dimensions=self.dimensions,
         )
 
+    @property
+    def identity(self) -> EmbeddingIdentity:
+        """Return the deterministic token-hash identity."""
+        return EmbeddingIdentity("deterministic", f"token-hash-{self.dimensions}", self.dimensions)
+
 
 @dataclass(frozen=True, slots=True)
 class EmbeddingUsage:
@@ -207,7 +230,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     def __init__(
         self,
         *,
-        model: str = "text-embedding-3-small",
+        model: str = "text-embedding-3-large",
         dimensions: int = 384,
         client: EmbeddingClient | None = None,
         api_key: str | None = None,
@@ -269,6 +292,11 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         """Return cumulative usage for requests this provider instance issued."""
         return self._usage
 
+    @property
+    def identity(self) -> EmbeddingIdentity:
+        """Return the configured OpenAI embedding identity."""
+        return EmbeddingIdentity("openai", self.model, self.dimensions)
+
 
 def get_embedding_provider(
     settings: Settings | None = None, *, client: EmbeddingClient | None = None
@@ -329,6 +357,7 @@ async def _missing_batch(
     batch_size: int,
     *,
     after_chunk_id: int | None = None,
+    identity: EmbeddingIdentity | None = None,
 ) -> list[PendingEmbedding]:
     """Load one keyset-paginated batch and close its read transaction.
 
@@ -351,7 +380,12 @@ async def _missing_batch(
     The transaction closes before provider I/O, and the cursor prevents stale null rows
     from being selected repeatedly in the same run.
     """
-    statement = select(Chunk.id, Chunk.index_text).where(Chunk.embedding.is_(None))
+    stale = Chunk.embedding.is_(None)
+    if identity is not None:
+        stale = stale | Chunk.embedding_provider.is_distinct_from(identity.provider)
+        stale = stale | Chunk.embedding_model.is_distinct_from(identity.model)
+        stale = stale | Chunk.embedding_dimensions.is_distinct_from(identity.dimensions)
+    statement = select(Chunk.id, Chunk.index_text).where(stale)
     if after_chunk_id is not None:
         statement = statement.where(Chunk.id > after_chunk_id)
 
@@ -364,6 +398,7 @@ async def _store_batch(
     session: AsyncSession,
     pending: Sequence[PendingEmbedding],
     vectors: Sequence[Sequence[float]],
+    identity: EmbeddingIdentity | None = None,
 ) -> int:
     """Bulk-store vectors guarded by null state and indexed-text identity.
 
@@ -401,16 +436,26 @@ async def _store_batch(
     async with session.begin():
         if not pending:
             return 0
+        stale = Chunk.embedding.is_(None)
+        if identity is not None:
+            stale = stale | Chunk.embedding_provider.is_distinct_from(identity.provider)
+            stale = stale | Chunk.embedding_model.is_distinct_from(identity.model)
+            stale = stale | Chunk.embedding_dimensions.is_distinct_from(identity.dimensions)
         result = cast(
             CursorResult[Any],
             await session.execute(
                 update(Chunk)
                 .where(
                     Chunk.id == batch_values.c.id,
-                    Chunk.embedding.is_(None),
+                    stale,
                     Chunk.index_text == batch_values.c.index_text,
                 )
-                .values(embedding=batch_values.c.embedding.cast(Chunk.__table__.c.embedding.type))
+                .values(
+                    embedding=batch_values.c.embedding.cast(Chunk.__table__.c.embedding.type),
+                    embedding_provider=identity.provider if identity is not None else None,
+                    embedding_model=identity.model if identity is not None else None,
+                    embedding_dimensions=identity.dimensions if identity is not None else None,
+                )
                 .returning(Chunk.id)
             ),
         )
@@ -468,6 +513,7 @@ async def embed_missing_chunks(
         session,
         effective_batch_size,
         after_chunk_id=last_seen_chunk_id,
+        identity=provider.identity,
     ):
         batches += 1
         selected += len(pending)
@@ -476,7 +522,7 @@ async def embed_missing_chunks(
         vectors = validate_embeddings(
             vectors, expected_count=len(pending), dimensions=provider.dimensions
         )
-        stored = await _store_batch(session, pending, vectors)
+        stored = await _store_batch(session, pending, vectors, provider.identity)
         embedded += stored
         skipped_stale += len(pending) - stored
         if on_batch is not None:

@@ -17,10 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
     EvaluationCaseDelta,
+    EvaluationCaseSummary,
     EvaluationComparisonResponse,
     EvaluationJobResource,
     EvaluationJobsResponse,
     EvaluationMetricDelta,
+    EvaluationResultDetailResponse,
     EvaluationRunRequest,
     GoldenSuiteId,
     GoldenSuiteResource,
@@ -567,4 +569,43 @@ class EvaluationAdminService:
             suite=candidate.suite,
             metrics=metrics,
             cases=tuple(case_deltas),
+        )
+
+    async def result_detail(self, result_id: int) -> EvaluationResultDetailResponse | None:
+        """Return absolute metrics and bounded case summaries for one result."""
+        async with self._session_factory() as session:
+            result = await session.get(EvalResult, result_id)
+        if result is None:
+            return None
+        payload = read_strict_json(self._artifact_path(result.raw_artifact_path))
+        if not isinstance(payload, dict):
+            raise ValueError("evaluation artifact root must be an object")
+        raw_metrics = payload.get("metrics")
+        if not isinstance(raw_metrics, dict):
+            raise ValueError("evaluation artifact metrics must be an object")
+        cases: list[EvaluationCaseSummary] = []
+        for item in payload.get("cases", [])[:50]:
+            if not isinstance(item, dict) or not isinstance(item.get("golden"), dict):
+                continue
+            score = item.get("score") if isinstance(item.get("score"), dict) else {}
+            cases.append(
+                EvaluationCaseSummary(
+                    case_id=str(item["golden"].get("id", "unknown")),
+                    question=str(item["golden"].get("question", "")),
+                    first_relevant_rank=score.get("first_relevant_rank"),
+                    citations=tuple(
+                        str(hit.get("citation", ""))
+                        for hit in item.get("hits", [])[:5]
+                        if isinstance(hit, dict)
+                    ),
+                )
+            )
+        return EvaluationResultDetailResponse(
+            result_id=result.id,
+            suite=result.suite,
+            config=dict(result.config),
+            metrics={name: float(value) for name, value in raw_metrics.items()},
+            cases=tuple(cases),
+            raw_artifact_path=result.raw_artifact_path,
+            created_at=result.created_at,
         )

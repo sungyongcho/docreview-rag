@@ -599,6 +599,18 @@ def chunk_upsert_statement(records: Sequence[ChunkRecord]) -> Insert:
                 (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding),
                 else_=None,
             ),
+            "embedding_provider": case(
+                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding_provider),
+                else_=None,
+            ),
+            "embedding_model": case(
+                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding_model),
+                else_=None,
+            ),
+            "embedding_dimensions": case(
+                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding_dimensions),
+                else_=None,
+            ),
         },
     )
 

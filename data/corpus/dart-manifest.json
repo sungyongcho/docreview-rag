@@ -2,6 +2,7 @@
   {
     "registry": "dart",
     "issuer": "005930",
+    "aliases": ["삼성전자", "Samsung Electronics", "005930"],
     "issuer_id": "00126380",
     "filing_id": "20250311001085",
     "form": "사업보고서",
@@ -19,11 +20,12 @@
     "exotic_separators": 0,
     "corp_name": "삼성전자",
     "report_nm": "사업보고서 (2024.12)",
-    "fetched_at": "2026-09-01T02:21:20.126582Z"
+    "fetched_at": "2026-09-01T05:14:18.836830Z"
   },
   {
     "registry": "dart",
     "issuer": "000660",
+    "aliases": ["SK하이닉스", "SK hynix", "000660"],
     "issuer_id": "00164779",
     "filing_id": "20250319000665",
     "form": "사업보고서",
@@ -41,11 +43,12 @@
     "exotic_separators": 0,
     "corp_name": "SK하이닉스",
     "report_nm": "사업보고서 (2024.12)",
-    "fetched_at": "2026-09-01T02:24:01.407336Z"
+    "fetched_at": "2026-09-01T05:15:16.633672Z"
   },
   {
     "registry": "dart",
     "issuer": "005930",
+    "aliases": ["삼성전자", "Samsung Electronics", "005930"],
     "issuer_id": "00126380",
     "filing_id": "20230307000542",
     "form": "사업보고서",
@@ -68,6 +71,7 @@
   {
     "registry": "dart",
     "issuer": "005930",
+    "aliases": ["삼성전자", "Samsung Electronics", "005930"],
     "issuer_id": "00126380",
     "filing_id": "20240312000736",
     "form": "사업보고서",
@@ -90,6 +94,7 @@
   {
     "registry": "dart",
     "issuer": "000660",
+    "aliases": ["SK하이닉스", "SK hynix", "000660"],
     "issuer_id": "00164779",
     "filing_id": "20230321001209",
     "form": "사업보고서",
@@ -112,6 +117,7 @@
   {
     "registry": "dart",
     "issuer": "000660",
+    "aliases": ["SK하이닉스", "SK hynix", "000660"],
     "issuer_id": "00164779",
     "filing_id": "20240319000684",
     "form": "사업보고서",
@@ -134,6 +140,7 @@
   {
     "registry": "dart",
     "issuer": "035420",
+    "aliases": ["NAVER", "네이버", "035420"],
     "issuer_id": "00266961",
     "filing_id": "20230314001049",
     "form": "사업보고서",
@@ -156,6 +163,7 @@
   {
     "registry": "dart",
     "issuer": "035420",
+    "aliases": ["NAVER", "네이버", "035420"],
     "issuer_id": "00266961",
     "filing_id": "20240318000844",
     "form": "사업보고서",
@@ -178,6 +186,7 @@
   {
     "registry": "dart",
     "issuer": "035420",
+    "aliases": ["NAVER", "네이버", "035420"],
     "issuer_id": "00266961",
     "filing_id": "20250318000645",
     "form": "사업보고서",

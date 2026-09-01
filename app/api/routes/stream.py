@@ -12,7 +12,16 @@ from starlette.types import Receive, Scope, Send
 
 from app.api.deps import Services
 from app.api.errors import ApiProblemError
-from app.api.schemas import ApiError, ErrorResponse, ReviewRequest, RunResponse, StreamNodeEvent
+from app.api.evidence import EvidenceSelection
+from app.api.schemas import (
+    ApiError,
+    ErrorResponse,
+    RetrieveRequest,
+    RetrieveResponse,
+    ReviewRequest,
+    RunResponse,
+    StreamNodeEvent,
+)
 from app.observability.types import WorkflowNode
 from app.workflow.types import WorkflowState
 
@@ -103,7 +112,27 @@ async def review_stream(request: ReviewRequest, services: Services) -> Streaming
     async def run_review() -> None:
         """Run the workflow, ending the queue with a report, a typed error, or both closed."""
         try:
-            report = await services.review(request, on_node)
+            active_request = request
+            if request.evidence_selection is None and hasattr(services, "retrieve"):
+                prepared = await services.retrieve(
+                    RetrieveRequest(
+                        query=request.query,
+                        session_profile=request.session_profile,
+                        k=request.k,
+                        filters=request.filters,
+                    )
+                )
+                if isinstance(prepared, RetrieveResponse):
+                    await queue.put(("candidates", prepared.model_dump_json()))
+                    if prepared.candidate_token is not None:
+                        active_request = request.model_copy(
+                            update={
+                                "evidence_selection": EvidenceSelection(
+                                    candidate_token=prepared.candidate_token
+                                )
+                            }
+                        )
+            report = await services.review(active_request, on_node)
             payload = RunResponse.from_run_report(report).model_dump_json()
             await queue.put(("report", payload))
         except ApiProblemError as error:

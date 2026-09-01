@@ -95,6 +95,8 @@ def filter_predicates(filters: RetrievalFilters) -> tuple[ColumnElement[bool], .
         # The tag is denormalized onto chunks, so a language restriction needs no
         # Document join and stays on the chunk access path every ranker shares.
         predicates.append(Chunk.language.in_(filters.languages))
+    if filters.registries:
+        predicates.append(Document.registry.in_(filters.registries))
     if filters.issuers:
         predicates.append(Document.issuer.in_(filters.issuers))
     if filters.fiscal_years:
@@ -127,7 +129,7 @@ def needs_document_join(filters: RetrievalFilters) -> bool:
     bool
         True when issuer, fiscal-year, or form restrictions are active.
     """
-    return bool(filters.issuers or filters.fiscal_years or filters.forms)
+    return bool(filters.registries or filters.issuers or filters.fiscal_years or filters.forms)
 
 
 def apply_filters(statement: Select[Any], filters: RetrievalFilters) -> Select[Any]:

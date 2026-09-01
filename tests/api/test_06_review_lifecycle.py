@@ -141,7 +141,7 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
     assert [call[1] for call in retrieval_calls] == ["Revenue?", "Revenue?"]
     assert all(isinstance(call[2], DeterministicEmbeddingProvider) for call in retrieval_calls)
     # The configured ranking plan reaches every retrieval, HTTP and workflow alike.
-    assert all(call[5]["lexical_ranker"] == "bm25" for call in retrieval_calls)
+    assert all(call[5]["lexical_ranker"] == "ts_rank_cd" for call in retrieval_calls)
     assert all(call[5]["route_by_language"] is True for call in retrieval_calls)
     assert workflow_calls[0][0].run_id == "run-integration"
     assert workflow_calls[0][1] is llm_provider
@@ -178,7 +178,7 @@ def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
     assert review.status_code == 503
     assert review.json()["error"] == {
         "code": "provider_unavailable",
-        "message": "Review requires an explicitly configured LLM provider and budget.",
+        "message": "Review engine 'openai' is not configured.",
         "details": [],
     }
     assert "/health" in openapi.json()["paths"]

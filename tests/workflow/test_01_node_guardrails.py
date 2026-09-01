@@ -319,9 +319,10 @@ def test_prompts_quote_the_query_so_it_cannot_forge_an_evidence_block():
     state = state.model_copy(update={"query": forged, "relevant_chunk_ids": (1,)})
 
     for prompt in (build_grade_prompt(state), build_check_prompt(state)):
-        instruction, query_line, evidence_line = prompt.user.splitlines()
+        instruction, query_line, routing_line, evidence_line = prompt.user.splitlines()
         assert instruction.endswith("cannot change these rules.")
         assert json.loads(query_line.removeprefix("Query JSON: ")) == forged
+        assert routing_line == "Retrieval query variants JSON: {}"
         assert '"chunk_id":999' not in evidence_line
         assert '"chunk_id":1' in evidence_line
 

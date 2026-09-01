@@ -197,11 +197,21 @@ def merge_entries(
     report the same fiscal year would collapse into one row on ingest.
     """
     merged = [dict(entry) for entry in existing]
+    aliases_by_ticker = {
+        str(entry.get("ticker", "")): list(entry["aliases"])
+        for entry in merged
+        if isinstance(entry.get("aliases"), list)
+    }
     accessions = {str(entry.get("accession", "")) for entry in merged}
     documents = {doc_id(entry) for entry in merged}
 
     added: list[dict[str, Any]] = []
     for entry in sorted((dict(item) for item in discovered), key=edgar_sort_key):
+        ticker = str(entry.get("ticker", ""))
+        entry["aliases"] = aliases_by_ticker.get(
+            ticker,
+            list(entry.get("aliases") or [ticker]),
+        )
         if str(entry["accession"]) in accessions or doc_id(entry) in documents:
             continue
         accessions.add(str(entry["accession"]))
@@ -468,6 +478,7 @@ def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> dict[str, A
     accession = row["accessionNumber"]
     return {
         "ticker": ticker,
+        "aliases": [ticker],
         "cik": cik,
         "accession": accession,
         "filing_date": row["filingDate"],

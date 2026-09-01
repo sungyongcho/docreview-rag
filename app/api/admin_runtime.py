@@ -14,6 +14,7 @@ from app.api.admin_schemas import (
     EvaluationComparisonResponse,
     EvaluationJobResource,
     EvaluationJobsResponse,
+    EvaluationResultDetailResponse,
     EvaluationRunRequest,
     GoldenSuiteResource,
     RetrievalPreviewRequest,
@@ -154,6 +155,10 @@ class RuntimeAdminApiServices:
     async def evaluation_job(self, job_id: str) -> EvaluationJobResource | None:
         """Return one evaluation job when known."""
         return await self._evaluations.job(job_id)
+
+    async def evaluation_result(self, result_id: int) -> EvaluationResultDetailResponse | None:
+        """Return one persisted evaluation result detail."""
+        return await self._evaluations.result_detail(result_id)
 
     async def compare(
         self,

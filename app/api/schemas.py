@@ -18,6 +18,8 @@ from pydantic import (
 )
 from pydantic.functional_validators import model_validator
 
+from app.api.evidence import EvidenceSelection
+from app.api.review_profile import ResolvedRetrievalProfile, ReviewSessionProfile
 from app.llm.schemas import NonNegativeDecimal
 from app.observability.persistence import redact_sensitive_text, sanitize_json
 from app.observability.types import (
@@ -29,7 +31,9 @@ from app.observability.types import (
     StepTrace,
     WorkflowNode,
 )
+from app.retrieval.scope import ResolvedQueryScope
 from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.workflow.gate import ConversationTurn
 from app.workflow.types import (
     NodeError,
     ProviderFailure,
@@ -126,12 +130,35 @@ class EvidenceHit(StrictApiModel):
         )
 
 
+class CandidateComponentRank(StrictApiModel):
+    """One retrieval lane's 1-based rank contribution for a candidate."""
+
+    lane: Literal["vector", "lexical"]
+    language: Literal["en", "ko"] | None = None
+    rank: PositiveInt
+
+
+class EvidenceCandidate(EvidenceHit):
+    """One inspectable candidate with filing and rank provenance."""
+
+    rank: PositiveInt
+    registry: NonBlank
+    language: NonBlank
+    issuer: NonBlank
+    fiscal_year: PositiveInt
+    form: NonBlank
+    score_stage: Literal["rrf", "reranker"]
+    rank_score: FiniteFloat
+    component_ranks: tuple[CandidateComponentRank, ...] = ()
+
+
 class RetrieveRequest(StrictApiModel):
     """One bounded evidence retrieval request."""
 
     query: NonBlank
-    k: Annotated[StrictInt, Field(gt=0, le=100)] = 5
-    filters: RetrievalFilters = Field(default_factory=RetrievalFilters)
+    session_profile: ReviewSessionProfile = Field(default_factory=ReviewSessionProfile)
+    k: Annotated[StrictInt, Field(gt=0, le=100)] | None = None
+    filters: RetrievalFilters | None = None
 
 
 class RetrieveResponse(StrictApiModel):
@@ -139,6 +166,13 @@ class RetrieveResponse(StrictApiModel):
 
     query: NonBlank
     results: tuple[EvidenceHit, ...]
+    candidates: tuple[EvidenceCandidate, ...]
+    candidate_token: NonBlank | None
+    candidate_expires_at: NonnegativeInt
+    score_stage: Literal["rrf", "reranker"]
+    component_rankings: dict[str, JsonValue]
+    resolved_profile: ResolvedRetrievalProfile
+    resolved_scope: ResolvedQueryScope | None = None
 
 
 class DocumentResource(StrictApiModel):
@@ -192,8 +226,11 @@ class ReviewRequest(StrictApiModel):
     """One synchronous evidence-checked workflow request."""
 
     query: NonBlank
-    k: Annotated[StrictInt, Field(gt=0, le=100)] = 5
-    filters: RetrievalFilters = Field(default_factory=RetrievalFilters)
+    session_profile: ReviewSessionProfile = Field(default_factory=ReviewSessionProfile)
+    evidence_selection: EvidenceSelection | None = None
+    conversation_history: tuple[ConversationTurn, ...] = Field(max_length=6, default=())
+    k: Annotated[StrictInt, Field(gt=0, le=100)] | None = None
+    filters: RetrievalFilters | None = None
     budget: Budget = Field(default_factory=Budget)
     max_context_chars: NonnegativeInt = 12_000
 
@@ -202,6 +239,16 @@ RunFailure = Annotated[
     BudgetLimitFailure | ProviderFailure | NodeError,
     Field(discriminator="code"),
 ]
+
+
+class ConversationReport(StrictApiModel):
+    """One retrieval-free canned or provider-backed casual response."""
+
+    report_kind: Literal["conversation"] = "conversation"
+    answer: NonBlank
+    response_source: Literal["canned", "engine"]
+
+
 _RUN_FAILURE_ADAPTER = TypeAdapter(RunFailure)
 
 
@@ -221,7 +268,7 @@ class RunResponse(StrictApiModel):
     total_time_seconds: NonnegativeFloat
     system_prompt: NonBlank
     node_path: tuple[WorkflowNode, ...]
-    report: WorkflowReport | None
+    report: WorkflowReport | ConversationReport | None
     failure: RunFailure | None
 
     @model_validator(mode="after")
@@ -276,13 +323,21 @@ class RunResponse(StrictApiModel):
             raise TypeError("run responses require a RunReport")
         payload_value = sanitize_json(run.report) if run.report is not None else None
         payload = payload_value if isinstance(payload_value, dict) else None
-        report: WorkflowReport | None = None
+        report: WorkflowReport | ConversationReport | None = None
         failure: RunFailure | None = None
         if run.status == "ok":
             if payload is None:
                 raise ValueError("successful run report payload is missing")
-            report = WorkflowReport.model_validate_json(
-                json.dumps(payload, allow_nan=False, separators=(",", ":"), sort_keys=True)
+            serialized = json.dumps(
+                payload,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            report = (
+                ConversationReport.model_validate_json(serialized)
+                if payload.get("report_kind") == "conversation"
+                else WorkflowReport.model_validate_json(serialized)
             )
         else:
             if payload is None:

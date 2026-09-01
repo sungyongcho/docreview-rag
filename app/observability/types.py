@@ -20,7 +20,7 @@ from app.llm.schemas import (
     StrictSchema,
 )
 
-WorkflowNode = Literal["retrieve", "grade", "check", "report"]
+WorkflowNode = Literal["gate", "route", "retrieve", "chat", "grade", "check", "report"]
 RunStatus = Literal["ok", "budget_exceeded", "schema_rejected", "error"]
 BudgetResource = Literal["iterations", "input_tokens", "output_tokens", "wall_clock_s"]
 JsonObject = dict[str, JsonValue]
@@ -46,7 +46,10 @@ _PROVIDER_RESOURCES: tuple[BudgetResource, ...] = (
 # the wrong one.
 NODE_BUDGET_RESOURCES: Final[Mapping[WorkflowNode, tuple[BudgetResource, ...]]] = MappingProxyType(
     {
+        "gate": _PROVIDER_RESOURCES,
+        "route": _PROVIDER_RESOURCES,
         "retrieve": _PACING_RESOURCES,
+        "chat": _PROVIDER_RESOURCES,
         "grade": _PROVIDER_RESOURCES,
         "check": _PROVIDER_RESOURCES,
         "report": _PACING_RESOURCES,
@@ -99,6 +102,7 @@ class RunReport(StrictSchema):
     system_prompt: NonBlank
     node_path: tuple[WorkflowNode, ...]
     report: JsonObject | None
+    request_context: JsonObject | None = None
     steps: tuple[StepTrace, ...]
 
     @field_validator("report", mode="after")
@@ -202,6 +206,7 @@ def build_run_report(
     node_path: tuple[WorkflowNode, ...] | list[WorkflowNode],
     steps: tuple[StepTrace, ...] | list[StepTrace],
     report: JsonObject | None = None,
+    request_context: JsonObject | None = None,
 ) -> RunReport:
     """Build a report whose cumulative counters derive from raw traces.
 
@@ -244,6 +249,7 @@ def build_run_report(
         system_prompt=system_prompt,
         node_path=tuple(node_path),
         report=report,
+        request_context=request_context,
         steps=trace_values,
     )
 

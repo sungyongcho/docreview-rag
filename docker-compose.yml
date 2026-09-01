@@ -28,6 +28,7 @@ services:
       CORPUS_DIR: /app/data/corpus
       DATABASE_URL: postgresql+asyncpg://filing:filing@db:5432/filing
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-large}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DART_API_KEY: ${DART_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-}
@@ -36,6 +37,9 @@ services:
       DOCREVIEW_HOST: 127.0.0.1
       DOCREVIEW_ADMIN_CORS_ORIGIN: http://127.0.0.1:3000
       DOCREVIEW_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-}
+      LOCAL_LLM_PROTOCOL: ${LOCAL_LLM_PROTOCOL:-auto}
     depends_on:
       db:
         condition: service_healthy

@@ -214,13 +214,13 @@ def test_embedding_identity_maps_sbert_multi_without_a_new_provider_literal():
     settings = cast(
         Settings,
         SimpleNamespace(
-            embedding_model="text-embedding-3-small",
+            embedding_model="text-embedding-3-large",
             sbert_model="sentence-transformers/all-MiniLM-L6-v2",
         ),
     )
 
     assert embedding_identity("deterministic", settings)[0] == "deterministic"
-    assert embedding_identity("openai", settings) == ("openai", "text-embedding-3-small")
+    assert embedding_identity("openai", settings) == ("openai", "text-embedding-3-large")
     assert embedding_identity("sbert", settings) == (
         "sbert",
         "sentence-transformers/all-MiniLM-L6-v2",

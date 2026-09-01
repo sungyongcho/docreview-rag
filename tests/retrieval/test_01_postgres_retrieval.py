@@ -102,6 +102,9 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                     "source_sha256": source_sha256,
                     "citation": header,
                     "embedding": vector,
+                    "embedding_provider": provider.identity.provider,
+                    "embedding_model": provider.identity.model,
+                    "embedding_dimensions": provider.identity.dimensions,
                 },
             )
         await connection.execute(chunks.insert(), chunk_rows)

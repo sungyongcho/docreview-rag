@@ -202,6 +202,7 @@ class EvidenceCitation(StrictSchema):
 class WorkflowReport(StrictSchema):
     """The guarded answer and its complete degradation provenance."""
 
+    report_kind: Literal["document_review"] = "document_review"
     label: Literal["SUPPORTED", "NOT_IN_DOCS"]
     answer: NonBlank
     citations: tuple[EvidenceCitation, ...]
@@ -234,6 +235,7 @@ class WorkflowRequest(StrictSchema):
     max_context_chars: NonNegativeInt = 12_000
     evidence_overfetch: PositiveInt = 3
     max_hits_per_document: PositiveInt = 2
+    routing_queries: dict[str, NonBlank] = Field(default_factory=dict)
     system_prompt: NonBlank = DEFAULT_SYSTEM_PROMPT
 
 
@@ -254,6 +256,7 @@ class WorkflowState(StrictSchema):
     evidence_overfetch: PositiveInt
     max_hits_per_document: PositiveInt
     system_prompt: NonBlank
+    routing_queries: dict[str, NonBlank] = Field(default_factory=dict)
     retrieved_hits: tuple[ChunkHit, ...] = ()
     evidence: tuple[ChunkHit, ...] = ()
     relevant_chunk_ids: tuple[PositiveInt, ...] = ()
@@ -276,6 +279,7 @@ def initial_state(request: WorkflowRequest) -> WorkflowState:
         evidence_overfetch=request.evidence_overfetch,
         max_hits_per_document=request.max_hits_per_document,
         system_prompt=request.system_prompt,
+        routing_queries=request.routing_queries,
     )
 
 

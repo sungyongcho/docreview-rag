@@ -2,7 +2,11 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable, Sequence
+from decimal import Decimal
+import hashlib
+import json
 from pathlib import Path
+import secrets
 from typing import Literal, Protocol, cast
 from uuid import uuid4
 
@@ -11,12 +15,26 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.api.deps import ApiServices
-from app.api.errors import bad_request, translate_runtime_errors, unavailable
+from app.api.errors import ApiProblemError, bad_request, translate_runtime_errors, unavailable
+from app.api.evidence import (
+    CandidateSnapshotCodec,
+    EvidenceSnapshotError,
+    select_evidence,
+)
+from app.api.review_profile import (
+    ResolvedRetrievalProfile,
+    ReviewSessionProfile,
+    resolve_retrieval_profile,
+)
 from app.api.schemas import (
+    CandidateComponentRank,
     DocumentResource,
     EvalResultResource,
+    EvidenceCandidate,
+    EvidenceHit,
     IngestRequest,
     RetrieveRequest,
+    RetrieveResponse,
     ReviewRequest,
 )
 from app.config import (
@@ -37,22 +55,38 @@ from app.ingestion.seed import (
     persist_seed_batch_with_stats,
 )
 from app.llm.provider import LLMProvider
-from app.llm.schemas import ProviderBudget, TokenPricing
+from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
 from app.observability.persistence import (
     persist_run_records,
     record_to_step,
     records_to_report,
     report_to_records,
 )
-from app.observability.types import JsonObject, RunReport, StepTrace
+from app.observability.trace import step_trace_from_provider_result
+from app.observability.types import JsonObject, RunReport, StepTrace, build_run_report
 from app.openai_models import resolve_openai_model
+from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingProvider,
     get_embedding_provider,
 )
+from app.retrieval.scope import (
+    DocumentMetadata,
+    ManifestScopeIndex,
+    QueryScopeError,
+    ResolvedQueryScope,
+    resolve_query_scope,
+)
 from app.retrieval.service import RetrievalResult, retrieve
-from app.retrieval.types import RetrievalFilters
+from app.retrieval.translate import QueryTranslationError, route_query
+from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.workflow.gate import (
+    ChatReply,
+    ConversationDecision,
+    IntentClassification,
+    deterministic_decision,
+)
 from app.workflow.runner import NodeObserver, run_workflow
 from app.workflow.types import WorkflowRequest
 
@@ -97,8 +131,13 @@ class RetrievalService(Protocol):
         query: str,
         *,
         provider: EmbeddingProvider | None,
+        strategy: str = "hybrid",
+        query_variants: dict[str, str] | None = None,
         k: int,
+        candidate_k: int | None = None,
         filters: RetrievalFilters,
+        rrf_k: int = 60,
+        reranker: object | None = None,
         route_by_language: bool = False,
         lexical_ranker: LexicalRanker = "ts_rank_cd",
         bm25_k1: float = DEFAULT_BM25_K1,
@@ -184,6 +223,8 @@ class RuntimeApiServices(ApiServices):
         embedding_provider: EmbeddingProvider | None = None,
         llm_provider: LLMProvider | None = None,
         provider_budget: ProviderBudget | None = None,
+        llm_providers: dict[str, LLMProvider] | None = None,
+        provider_budgets: dict[str, ProviderBudget] | None = None,
         retrieval_service: RetrievalService = retrieve,
         workflow_service: WorkflowService = run_workflow,
         run_persister: RunPersister = persist_run_records,
@@ -195,9 +236,15 @@ class RuntimeApiServices(ApiServices):
         bm25_b: float = DEFAULT_BM25_B,
         bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
         corpus_root: Path | None = None,
+        scope_index: ManifestScopeIndex | None = None,
+        snapshot_codec: CandidateSnapshotCodec | None = None,
+        intent_classifier_enabled: bool = False,
+        query_routing_enabled: bool = False,
     ) -> None:
         if (llm_provider is None) != (provider_budget is None):
             raise ValueError("llm_provider and provider_budget must be configured together")
+        if (llm_providers is None) != (provider_budgets is None):
+            raise ValueError("llm provider and budget registries must be configured together")
         self._session_factory = session_factory
         self._database_engine = database_engine
         self._embedding_provider = (
@@ -205,6 +252,11 @@ class RuntimeApiServices(ApiServices):
         )
         self._llm_provider = llm_provider
         self._provider_budget = provider_budget
+        self._llm_providers = dict(llm_providers or {})
+        self._provider_budgets = dict(provider_budgets or {})
+        if llm_provider is not None and provider_budget is not None:
+            self._llm_providers.setdefault("openai", llm_provider)
+            self._provider_budgets.setdefault("openai", provider_budget)
         self._retrieval_service = retrieval_service
         self._workflow_service = workflow_service
         self._run_persister = run_persister
@@ -216,6 +268,10 @@ class RuntimeApiServices(ApiServices):
         self._bm25_b = bm25_b
         self._bm25_idf: BM25Idf = bm25_idf
         self._corpus_root = corpus_root
+        self._scope_index = scope_index
+        self._snapshot_codec = snapshot_codec or CandidateSnapshotCodec(secrets.token_bytes(32))
+        self._intent_classifier_enabled = intent_classifier_enabled
+        self._query_routing_enabled = query_routing_enabled
 
     @property
     def session_factory(self) -> SessionFactory:
@@ -233,22 +289,133 @@ class RuntimeApiServices(ApiServices):
         query: str,
         k: int,
         filters: RetrievalFilters,
+        profile: ResolvedRetrievalProfile | None = None,
+        query_variants: dict[str, str] | None = None,
     ) -> RetrievalResult:
         """Retrieve against an open session, forwarding the configured ranking plan."""
+        plan = profile or resolve_retrieval_profile(ReviewSessionProfile())
         return await self._retrieval_service(
             session,
             query,
             provider=self._embedding_provider,
+            strategy=plan.strategy,
+            query_variants=query_variants,
             k=k,
+            candidate_k=max(plan.candidate_k, k),
             filters=filters,
-            route_by_language=self._route_by_language,
-            lexical_ranker=self._lexical_ranker,
-            bm25_k1=self._bm25_k1,
-            bm25_b=self._bm25_b,
-            bm25_idf=self._bm25_idf,
+            rrf_k=plan.rrf_k,
+            reranker=CrossEncoderReranker() if plan.reranker else None,
+            route_by_language=plan.route_by_language,
+            lexical_ranker=plan.lexical_ranker or self._lexical_ranker,
+            bm25_k1=plan.bm25_k1,
+            bm25_b=plan.bm25_b,
+            bm25_idf=plan.bm25_idf,
         )
 
-    async def retrieve(self, request: RetrieveRequest) -> RetrievalResult:
+    def _manifest_scope_index(self) -> ManifestScopeIndex:
+        """Return the injected or lazily loaded committed manifest scope index."""
+        if self._scope_index is None:
+            root = (self._corpus_root or get_settings().corpus_dir).resolve()
+            paths = (root / "manifest.json", root / "dart-manifest.json")
+            try:
+                self._scope_index = ManifestScopeIndex.from_paths(paths)
+            except (OSError, ValueError, TypeError) as error:
+                raise unavailable(
+                    "query_scope_unavailable",
+                    f"Query scope metadata is unavailable ({type(error).__name__}).",
+                ) from error
+        return self._scope_index
+
+    def _resolved_request(
+        self,
+        query: str,
+        session_profile: ReviewSessionProfile,
+        legacy_filters: RetrievalFilters | None,
+        legacy_k: int | None,
+    ) -> tuple[ResolvedRetrievalProfile, ResolvedQueryScope]:
+        """Resolve one strict profile and query scope with legacy API overrides."""
+        profile = resolve_retrieval_profile(session_profile)
+        if legacy_k is not None:
+            profile = profile.model_copy(
+                update={"k": legacy_k, "candidate_k": max(profile.candidate_k, legacy_k)}
+            )
+        explicit_filters = legacy_filters or session_profile.explicit_filters()
+        if session_profile.retrieval_preset == "korean" and not explicit_filters.languages:
+            explicit_filters = explicit_filters.model_copy(update={"languages": ("ko",)})
+        try:
+            scope = resolve_query_scope(
+                query,
+                self._manifest_scope_index(),
+                corpus_scope=session_profile.corpus_scope,
+                explicit_filters=explicit_filters,
+            )
+        except QueryScopeError as error:
+            raise ApiProblemError(
+                status_code=422,
+                code=error.code,
+                message=error.message,
+            ) from error
+        return profile, scope
+
+    @staticmethod
+    def _component_ranks(
+        chunk_id: int,
+        result: RetrievalResult,
+    ) -> tuple[CandidateComponentRank, ...]:
+        """Return every component rank that contributed one candidate."""
+        ranks: list[CandidateComponentRank] = []
+        if chunk_id in result.component_rankings.vector:
+            ranks.append(
+                CandidateComponentRank(
+                    lane="vector",
+                    rank=result.component_rankings.vector.index(chunk_id) + 1,
+                )
+            )
+        for language, ids in result.component_rankings.lexical_by_language.items():
+            if chunk_id in ids:
+                ranks.append(
+                    CandidateComponentRank(
+                        lane="lexical",
+                        language=cast("Literal['en', 'ko']", language),
+                        rank=ids.index(chunk_id) + 1,
+                    )
+                )
+        return tuple(ranks)
+
+    def _candidate_resource(
+        self,
+        hit: ChunkHit,
+        *,
+        rank: int,
+        result: RetrievalResult,
+    ) -> EvidenceCandidate:
+        """Combine one hit with manifest filing and component-rank provenance."""
+        metadata = self._manifest_scope_index().documents.get(hit.doc_id)
+        if metadata is None:
+            issuer, _, year_text = hit.doc_id.partition("-FY")
+            metadata = DocumentMetadata(
+                doc_id=hit.doc_id,
+                registry="dart" if issuer.isdigit() else "sec",
+                language="ko" if issuer.isdigit() else "en",
+                issuer=issuer,
+                fiscal_year=int(year_text) if year_text.isdigit() else 1,
+                form="사업보고서" if issuer.isdigit() else "10-K",
+            )
+        base = EvidenceHit.from_chunk_hit(hit).model_dump(mode="python")
+        return EvidenceCandidate(
+            **base,
+            rank=rank,
+            registry=metadata.registry,
+            language=metadata.language,
+            issuer=metadata.issuer,
+            fiscal_year=metadata.fiscal_year,
+            form=metadata.form,
+            score_stage=result.score_stage,
+            rank_score=hit.score,
+            component_ranks=self._component_ranks(hit.chunk_id, result),
+        )
+
+    async def retrieve(self, request: RetrieveRequest) -> RetrieveResponse:
         """Call retrieval through one request-owned database session.
 
         Parameters
@@ -268,13 +435,90 @@ class RuntimeApiServices(ApiServices):
             provider or database is unavailable.
         """
         async with translate_runtime_errors():
+            index = self._manifest_scope_index()
+            gate = deterministic_decision(
+                request.query,
+                has_issuer_alias=bool(index.match(request.query)),
+            )
+            if gate is None and self._intent_classifier_enabled:
+                gate = await self._classify_intent(
+                    ReviewRequest(
+                        query=request.query,
+                        session_profile=request.session_profile,
+                        k=request.k,
+                        filters=request.filters,
+                    )
+                )
+            if gate is not None and gate.intent == "casual_chat":
+                return RetrieveResponse(
+                    query=request.query,
+                    results=(),
+                    candidates=(),
+                    candidate_token=None,
+                    candidate_expires_at=0,
+                    score_stage="rrf",
+                    component_rankings={},
+                    resolved_profile=resolve_retrieval_profile(request.session_profile),
+                    resolved_scope=None,
+                )
+            profile, scope = self._resolved_request(
+                request.query,
+                request.session_profile,
+                request.filters,
+                request.k,
+            )
+            routed_queries: dict[str, str] = {}
+            if self._query_routing_enabled:
+                provider = self._llm_providers.get(request.session_profile.engine)
+                budget = self._provider_budgets.get(request.session_profile.engine)
+                if provider is None or budget is None:
+                    raise unavailable(
+                        "provider_unavailable",
+                        f"Review engine {request.session_profile.engine!r} is not configured.",
+                    )
+                for language in scope.filters.languages or ("en",):
+                    try:
+                        routed = await route_query(
+                            request.query,
+                            target_language=cast("Literal['en', 'ko']", language),
+                            llm_provider=provider,
+                            provider_budget=budget,
+                        )
+                    except QueryTranslationError as error:
+                        raise unavailable(
+                            "query_routing_failed",
+                            f"Query routing failed for {language} ({type(error).__name__}).",
+                        ) from error
+                    routed_queries[language] = routed.translated_query
             async with self._session_factory() as session:
-                return await self._retrieve_with_session(
+                result = await self._retrieve_with_session(
                     session,
                     request.query,
-                    request.k,
-                    request.filters,
+                    profile.k,
+                    scope.filters,
+                    profile,
+                    routed_queries or None,
                 )
+            token, snapshot = self._snapshot_codec.issue(
+                query=request.query,
+                profile=profile,
+                filters=scope.filters,
+                candidates=result.candidate_pool,
+            )
+            return RetrieveResponse(
+                query=request.query,
+                results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
+                candidates=tuple(
+                    self._candidate_resource(hit, rank=rank, result=result)
+                    for rank, hit in enumerate(result.candidate_pool, start=1)
+                ),
+                candidate_token=token,
+                candidate_expires_at=snapshot.expires_at,
+                score_stage=result.score_stage,
+                component_rankings=result.component_rankings.model_dump(mode="json"),
+                resolved_profile=profile,
+                resolved_scope=scope,
+            )
 
     async def list_documents(self) -> Sequence[DocumentResource]:
         """Return filing resources with deterministic chunk counts.
@@ -397,7 +641,115 @@ class RuntimeApiServices(ApiServices):
         and the resulting records are both persisted and returned, so redaction cost is
         paid a single time per run.
         """
+        index = self._manifest_scope_index()
+        decision = deterministic_decision(
+            request.query,
+            has_issuer_alias=bool(index.match(request.query)),
+        )
+        if decision is not None and decision.intent == "casual_chat":
+            return await self._casual_report(request, decision)
+        if decision is None and self._intent_classifier_enabled:
+            decision = await self._classify_intent(request)
+            if decision.intent == "casual_chat":
+                return await self._casual_report(request, decision)
         return await self._review(request, on_node=on_node, retrieval_override=None)
+
+    def _engine(self, request: ReviewRequest) -> tuple[LLMProvider, ProviderBudget]:
+        """Return the selected provider and budget without cross-engine fallback."""
+        engine = request.session_profile.engine
+        provider = self._llm_providers.get(engine)
+        budget = self._provider_budgets.get(engine)
+        if provider is None or budget is None:
+            raise unavailable(
+                "provider_unavailable",
+                f"Review engine {engine!r} is not configured.",
+            )
+        return provider, budget
+
+    async def _classify_intent(self, request: ReviewRequest) -> ConversationDecision:
+        """Classify only an input the deterministic gate cannot decide."""
+        provider, budget = self._engine(request)
+        result = await provider.complete(
+            Prompt(
+                system=(
+                    "Classify whether the user asks to review SEC or DART filing evidence, "
+                    "or is having casual conversation. Do not answer the user."
+                ),
+                user=request.query,
+            ),
+            IntentClassification,
+            budget,
+        )
+        if result.status != "ok" or result.parsed is None:
+            raise unavailable(
+                "provider_unavailable",
+                f"Intent classification failed ({result.status}).",
+            )
+        return ConversationDecision(
+            intent=result.parsed.intent,
+            source="classifier",
+            matched_rule="structured_classifier",
+            rationale=result.parsed.reason,
+        )
+
+    async def _casual_report(
+        self,
+        request: ReviewRequest,
+        decision: ConversationDecision,
+    ) -> RunReport:
+        """Persist a retrieval-free canned or selected-engine conversation response."""
+        run_id = self._run_id_factory()
+        traces: tuple[StepTrace, ...] = ()
+        source = "canned"
+        answer = decision.canned_answer
+        if answer is None:
+            provider, budget = self._engine(request)
+            history = [turn.model_dump(mode="json") for turn in request.conversation_history[-6:]]
+            result = await provider.complete(
+                Prompt(
+                    system=(
+                        "Reply briefly and conversationally. Do not claim to have searched filing "
+                        "evidence, do not invent citations, and do not output NOT_IN_DOCS."
+                    ),
+                    user=json.dumps(
+                        {"history": history, "message": request.query},
+                        ensure_ascii=False,
+                    ),
+                ),
+                ChatReply,
+                budget,
+            )
+            if result.status != "ok" or result.parsed is None:
+                raise unavailable(
+                    "provider_unavailable",
+                    f"Conversation reply failed ({result.status}).",
+                )
+            answer = result.parsed.answer
+            traces = (step_trace_from_provider_result(result, step=1, node="chat"),)
+            source = "engine"
+        report = build_run_report(
+            run_id=run_id,
+            status="ok",
+            total_time_seconds=0.0,
+            system_prompt="Retrieval-free conversation gate.",
+            node_path=("gate", "chat", "report") if traces else ("gate", "report"),
+            steps=traces,
+            report={
+                "report_kind": "conversation",
+                "answer": answer,
+                "response_source": source,
+            },
+            request_context={
+                "intent": decision.model_dump(mode="json"),
+                "engine": request.session_profile.engine,
+                "history_turns": len(request.conversation_history),
+            },
+        )
+        safe_run, safe_traces = report_to_records(report, secret_values=self._secret_values)
+        async with self._session_factory() as session:
+            async with session.begin():
+                await self._run_persister(session, safe_run, safe_traces)
+        return records_to_report(safe_run, safe_traces)
 
     async def review_with_retrieval(
         self,
@@ -416,22 +768,120 @@ class RuntimeApiServices(ApiServices):
         retrieval_override: SessionRetrievalService | None,
     ) -> RunReport:
         """Execute, sanitize, and persist one public or administrator review."""
-        if self._llm_provider is None or self._provider_budget is None:
+        engine = request.session_profile.engine
+        llm_provider = self._llm_providers.get(engine)
+        provider_budget = self._provider_budgets.get(engine)
+        if llm_provider is None or provider_budget is None:
             raise unavailable(
                 "provider_unavailable",
-                "Review requires an explicitly configured LLM provider and budget.",
+                f"Review engine {engine!r} is not configured.",
             )
+        profile, scope = self._resolved_request(
+            request.query,
+            request.session_profile,
+            request.filters,
+            request.k,
+        )
+        snapshot = None
+        if request.evidence_selection is not None:
+            try:
+                snapshot = self._snapshot_codec.verify(
+                    request.evidence_selection.candidate_token,
+                    query=request.query,
+                    profile=profile,
+                    filters=scope.filters,
+                )
+            except EvidenceSnapshotError as error:
+                raise ApiProblemError(
+                    status_code=error.status_code,
+                    code=error.code,
+                    message=error.message,
+                ) from error
+        routed_queries: dict[str, str] = {}
+        if snapshot is None and self._query_routing_enabled:
+            for language in scope.filters.languages or ("en",):
+                try:
+                    routed = await route_query(
+                        request.query,
+                        target_language=cast("Literal['en', 'ko']", language),
+                        llm_provider=llm_provider,
+                        provider_budget=provider_budget,
+                    )
+                except QueryTranslationError as error:
+                    raise unavailable(
+                        "query_routing_failed",
+                        f"Query routing failed for {language} ({type(error).__name__}).",
+                    ) from error
+                routed_queries[language] = routed.translated_query
         workflow_request = WorkflowRequest(
             run_id=self._run_id_factory(),
             query=request.query,
-            k=request.k,
-            filters=request.filters,
+            k=profile.k,
+            filters=scope.filters,
             budget=request.budget,
-            provider_budget=self._provider_budget,
+            provider_budget=provider_budget,
             max_context_chars=request.max_context_chars,
+            max_hits_per_document=profile.k if snapshot is not None else 2,
+            routing_queries=routed_queries,
         )
         async with translate_runtime_errors():
             async with self._session_factory() as session:
+                selected_result: RetrievalResult | None = None
+                if snapshot is not None and request.evidence_selection is not None:
+                    ids = tuple(candidate.chunk_id for candidate in snapshot.candidates)
+                    rows = tuple(await session.scalars(select(Chunk).where(Chunk.id.in_(ids))))
+                    models = {row.id: row for row in rows}
+                    ordered_hits = tuple(
+                        ChunkHit(
+                            chunk_id=item.chunk_id,
+                            doc_id=models[item.chunk_id].doc_id,
+                            item=models[item.chunk_id].item,
+                            kind=cast("Literal['text', 'table']", models[item.chunk_id].kind),
+                            citation=models[item.chunk_id].citation,
+                            start_char=models[item.chunk_id].start_char,
+                            end_char=models[item.chunk_id].end_char,
+                            source_sha256=models[item.chunk_id].source_sha256,
+                            body=models[item.chunk_id].body,
+                            context_header=models[item.chunk_id].context_header,
+                            index_text=models[item.chunk_id].index_text,
+                            score=1.0 / rank,
+                        )
+                        for rank, item in enumerate(snapshot.candidates, start=1)
+                        if item.chunk_id in models
+                    )
+                    try:
+                        selected = select_evidence(
+                            snapshot,
+                            request.evidence_selection,
+                            ordered_hits,
+                            k=profile.k,
+                            max_context_chars=request.max_context_chars,
+                        )
+                    except EvidenceSnapshotError as error:
+                        raise ApiProblemError(
+                            status_code=error.status_code,
+                            code=error.code,
+                            message=error.message,
+                        ) from error
+                    ids_by_language: dict[str, list[int]] = {}
+                    for hit in selected:
+                        ids_by_language.setdefault(
+                            self._manifest_scope_index().documents[hit.doc_id].language,
+                            [],
+                        ).append(hit.chunk_id)
+                    selected_result = RetrievalResult(
+                        hits=selected,
+                        candidates=selected,
+                        score_stage="rrf",
+                        component_rankings={
+                            "vector": (),
+                            "lexical": (),
+                            "lexical_by_language": {
+                                language: tuple(chunk_ids)
+                                for language, chunk_ids in ids_by_language.items()
+                            },
+                        },
+                    )
 
                 async def retrieve_for_workflow(
                     query: str,
@@ -440,7 +890,16 @@ class RuntimeApiServices(ApiServices):
                 ) -> RetrievalResult:
                     """Retrieve on the session this run already holds."""
                     result = (
-                        await self._retrieve_with_session(session, query, k, filters)
+                        selected_result
+                        if selected_result is not None
+                        else await self._retrieve_with_session(
+                            session,
+                            query,
+                            k,
+                            filters,
+                            profile,
+                            routed_queries or None,
+                        )
                         if retrieval_override is None
                         else await retrieval_override(session, query, k, filters)
                     )
@@ -451,8 +910,34 @@ class RuntimeApiServices(ApiServices):
                 report = await self._workflow_service(
                     workflow_request,
                     retriever=retrieve_for_workflow,
-                    provider=self._llm_provider,
+                    provider=llm_provider,
                     on_node=on_node,
+                )
+                report = report.model_copy(
+                    update={
+                        "request_context": {
+                            "engine": engine,
+                            "requested_profile": request.session_profile.model_dump(mode="json"),
+                            "resolved_profile": profile.model_dump(mode="json"),
+                            "resolved_scope": scope.model_dump(mode="json"),
+                            "routing_queries": routed_queries,
+                            "selection": (
+                                {
+                                    "candidate_snapshot_sha256": hashlib.sha256(
+                                        request.evidence_selection.candidate_token.encode("utf-8")
+                                    ).hexdigest(),
+                                    "pinned_chunk_ids": list(
+                                        request.evidence_selection.pinned_chunk_ids
+                                    ),
+                                    "excluded_chunk_ids": list(
+                                        request.evidence_selection.excluded_chunk_ids
+                                    ),
+                                }
+                                if request.evidence_selection is not None
+                                else None
+                            ),
+                        }
+                    }
                 )
                 safe_run, safe_traces = report_to_records(
                     report,
@@ -534,6 +1019,8 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
     configured = settings if settings is not None else get_settings()
     llm_provider: LLMProvider | None = None
     provider_budget: ProviderBudget | None = None
+    providers: dict[str, LLMProvider] = {}
+    budgets: dict[str, ProviderBudget] = {}
     if configured.review_model is not None:
         from app.llm.provider import OpenAILLMProvider
 
@@ -560,15 +1047,53 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
                 ),
             ),
         )
+        providers["openai"] = llm_provider
+        budgets["openai"] = provider_budget
+    if configured.local_llm_base_url is not None and configured.local_llm_model is not None:
+        from app.llm.local import LocalLLMProvider
+
+        protocol = configured.local_llm_protocol
+        if protocol == "auto":
+            protocol = (
+                "openai_responses"
+                if configured.local_llm_base_url.rstrip("/").endswith("/v1")
+                else "ollama"
+            )
+        local_provider = LocalLLMProvider(
+            base_url=configured.local_llm_base_url,
+            model_name=configured.local_llm_model,
+            protocol=protocol,
+            api_key=(
+                configured.local_llm_api_key.get_secret_value()
+                if configured.local_llm_api_key is not None
+                else None
+            ),
+        )
+        providers["local"] = local_provider
+        budgets["local"] = ProviderBudget(
+            max_input_tokens=configured.local_llm_max_input_tokens,
+            max_output_tokens=configured.local_llm_max_output_tokens,
+            max_cost_usd=Decimal("0"),
+            pricing=TokenPricing(
+                input_per_million_usd=Decimal("0"),
+                output_per_million_usd=Decimal("0"),
+            ),
+        )
     secret_values = tuple(
         secret.get_secret_value()
-        for secret in (configured.openai_api_key, configured.dart_api_key)
+        for secret in (
+            configured.openai_api_key,
+            configured.dart_api_key,
+            configured.local_llm_api_key,
+        )
         if secret is not None and secret.get_secret_value().strip()
     )
     return RuntimeApiServices(
         embedding_provider=get_embedding_provider(configured),
         llm_provider=llm_provider,
         provider_budget=provider_budget,
+        llm_providers=providers,
+        provider_budgets=budgets,
         secret_values=secret_values,
         route_by_language=configured.query_language_routing,
         lexical_ranker=configured.lexical_ranker,
@@ -576,4 +1101,6 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         bm25_b=configured.bm25_b,
         bm25_idf=configured.bm25_idf,
         corpus_root=configured.corpus_dir,
+        intent_classifier_enabled=True,
+        query_routing_enabled=True,
     )

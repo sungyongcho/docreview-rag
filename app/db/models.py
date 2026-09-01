@@ -104,6 +104,9 @@ class Chunk(Base):
     # English rows leave it NULL and the tsvector falls through to index_text.
     lexical_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
+    embedding_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(nullable=True)
     content_tsv: Mapped[str] = mapped_column(
         TSVECTOR,
         Computed(CONTENT_TSV_SQL, persisted=True),
@@ -124,6 +127,13 @@ class Chunk(Base):
         CheckConstraint(
             "source_sha256 ~ '^[0-9a-f]{64}$'",
             name="ck_chunks_source_sha256_format",
+        ),
+        CheckConstraint(
+            "(embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL "
+            "AND embedding_dimensions IS NULL) OR (embedding IS NOT NULL AND "
+            "btrim(embedding_provider) <> '' AND btrim(embedding_model) <> '' AND "
+            "embedding_dimensions > 0)",
+            name="ck_chunks_embedding_identity_complete",
         ),
         Index("ix_chunks_tsv", "content_tsv", postgresql_using="gin"),
     )
@@ -247,6 +257,10 @@ class Run(Base):
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     node_path: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     report: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    request_context: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -283,6 +297,10 @@ class Run(Base):
             "report IS NULL OR jsonb_typeof(report) = 'object'",
             name="ck_runs_report_object",
         ),
+        CheckConstraint(
+            "request_context IS NULL OR jsonb_typeof(request_context) = 'object'",
+            name="ck_runs_request_context_object",
+        ),
         Index("ix_runs_status_created_at", "status", "created_at"),
     )
 
@@ -318,8 +336,8 @@ class Trace(Base):
         UniqueConstraint("run_id", "step", name="uq_traces_run_step"),
         CheckConstraint("step > 0", name="ck_traces_step_positive"),
         CheckConstraint(
-            "node IN ('retrieve', 'grade', 'check', 'report')",
-            name="ck_traces_node",
+            "node IN ('gate', 'route', 'retrieve', 'chat', 'grade', 'check', 'report')",
+            name="ck_traces_node_v2",
         ),
         CheckConstraint("btrim(model_name) <> ''", name="ck_traces_model_name_nonempty"),
         CheckConstraint("btrim(api_url) <> ''", name="ck_traces_api_url_nonempty"),

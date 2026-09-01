@@ -22,8 +22,8 @@ def test_policy_defaults_are_role_scoped_and_price_exact_models():
     assert agent.model == "gpt-5.6-terra" and agent.reasoning_effort == "medium"
     assert agent.pricing.cache_write_input_per_million_usd == Decimal("2.50")
     assert translation.model == "gpt-5.6-luna" and translation.reasoning_effort == "low"
-    assert embedding.model == "text-embedding-3-small" and embedding.dimensions == 384
-    assert embedding.pricing.input_per_million_usd == Decimal("0.02")
+    assert embedding.model == "text-embedding-3-large" and embedding.dimensions == 384
+    assert embedding.pricing.input_per_million_usd == Decimal("0.13")
 
 
 @pytest.mark.parametrize("model", ["gpt-5-mini", "gpt-4.1-mini", "gpt-5.6-sol", "other"])

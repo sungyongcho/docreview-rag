@@ -9,12 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
-from app.ingestion import seed
+import app.ingestion.seed as seed
 from tests.ingestion.seed.support import sample_batch
 from tests.live_postgres import live_postgres_unavailable
 
 
 async def _database_is_reachable(database_url: str) -> tuple[bool, str]:
+    """Exercise database is reachable behavior."""
     engine = create_async_engine(database_url, poolclass=NullPool)
     try:
         async with asyncio.timeout(3):
@@ -28,6 +29,7 @@ async def _database_is_reachable(database_url: str) -> tuple[bool, str]:
 
 
 async def _exercise_rerun(module) -> None:
+    """Exercise exercise rerun behavior."""
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
     try:
         async with engine.connect() as connection:
@@ -73,6 +75,9 @@ async def _exercise_rerun(module) -> None:
                         citation text NOT NULL,
                         lexical_text text,
                         embedding text,
+                        embedding_provider text,
+                        embedding_model text,
+                        embedding_dimensions integer,
                         UNIQUE (doc_id, ordinal)
                     )
                     """

@@ -197,6 +197,9 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         citation text NOT NULL,
         lexical_text text,
         embedding vector({dimensions}),
+        embedding_provider varchar(32),
+        embedding_model varchar(128),
+        embedding_dimensions integer,
         content_tsv tsvector GENERATED ALWAYS AS ({content_tsv_sql}) STORED,
         created_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT uq_doc_ordinal UNIQUE (doc_id, ordinal),
@@ -207,7 +210,13 @@ _TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
         CONSTRAINT ck_chunks_start_nonnegative CHECK (start_char >= 0),
         CONSTRAINT ck_chunks_span_order CHECK (end_char > start_char),
         CONSTRAINT ck_chunks_source_sha256_format
-            CHECK (source_sha256 ~ '^[0-9a-f]{{64}}$')
+            CHECK (source_sha256 ~ '^[0-9a-f]{{64}}$'),
+        CONSTRAINT ck_chunks_embedding_identity_complete CHECK (
+            (embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL
+                AND embedding_dimensions IS NULL)
+            OR (embedding IS NOT NULL AND btrim(embedding_provider) <> ''
+                AND btrim(embedding_model) <> '' AND embedding_dimensions > 0)
+        )
     ) ON COMMIT PRESERVE ROWS
     """,
     "CREATE INDEX ON chunks USING gin (content_tsv)",

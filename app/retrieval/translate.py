@@ -7,7 +7,7 @@ from pydantic.functional_validators import model_validator
 
 from app.llm.provider import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, StrictSchema
-from app.retrieval.language import QueryLanguage, detect_query_language
+from app.retrieval.language import QueryLanguage, detect_query_language, detect_query_languages
 
 # One prompt per corpus language: a translated arm always translates INTO the
 # language the target corpus is written in.
@@ -93,3 +93,46 @@ async def translate_query(
             f"translated query is not in the target language {target_language!r}"
         )
     return translation
+
+
+class RoutedQuery(StrictSchema):
+    """One structured rewrite targeting an exact corpus language lane."""
+
+    translated_query: Annotated[StrictStr, Field(min_length=1)]
+    target_language: QueryLanguage
+
+    @model_validator(mode="after")
+    def reject_blank_routed_query(self) -> Self:
+        """Reject a whitespace-only query variant."""
+        if not self.translated_query.strip():
+            raise ValueError("translated_query must not be blank")
+        return self
+
+
+async def route_query(
+    query: str,
+    *,
+    target_language: QueryLanguage,
+    llm_provider: LLMProvider,
+    provider_budget: ProviderBudget,
+) -> RoutedQuery:
+    """Rewrite one raw query into a corpus lane through the strict provider boundary."""
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must not be blank")
+    system = TRANSLATE_SYSTEM_PROMPTS[target_language]
+    prompt = Prompt(
+        system=(
+            f"{system} The input may already contain {target_language} or mixed scripts. "
+            "Preserve every issuer name, ticker, number, fiscal year, and product name."
+        ),
+        user=query,
+    )
+    result = await llm_provider.complete(prompt, RoutedQuery, provider_budget)
+    if result.status != "ok" or result.parsed is None:
+        raise QueryTranslationError(f"query routing failed: {result.status}")
+    routed = result.parsed
+    if routed.target_language != target_language:
+        raise QueryTranslationError("query routing returned the wrong target language")
+    if target_language not in detect_query_languages(routed.translated_query):
+        raise QueryTranslationError("routed query does not contain the target language")
+    return routed

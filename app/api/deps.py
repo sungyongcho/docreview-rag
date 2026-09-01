@@ -13,18 +13,18 @@ from app.api.schemas import (
     EvalResultResource,
     IngestRequest,
     RetrieveRequest,
+    RetrieveResponse,
     ReviewRequest,
 )
 from app.ingestion.seed import SeedResult
 from app.observability.types import RunReport, StepTrace
-from app.retrieval.service import RetrievalResult
 from app.workflow.runner import NodeObserver
 
 
 class ApiServices(Protocol):
     """All domain operations required by the seven HTTP resources."""
 
-    async def retrieve(self, request: RetrieveRequest) -> RetrievalResult:
+    async def retrieve(self, request: RetrieveRequest) -> RetrieveResponse:
         """Return ranked evidence without performing HTTP work."""
         ...
 

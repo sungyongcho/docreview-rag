@@ -171,6 +171,7 @@ def test_database_models_match_run_and_trace_mapping_contracts():
         "system_prompt",
         "node_path",
         "report",
+        "request_context",
         "created_at",
     }
     assert {
@@ -204,7 +205,7 @@ def test_database_models_match_run_and_trace_mapping_contracts():
     assert ("run_id", "step") in unique_columns
     assert {
         "ck_runs_status",
-        "ck_traces_node",
+        "ck_traces_node_v2",
         "ck_traces_step_positive",
         "ck_traces_cost_nonnegative",
     } <= checks

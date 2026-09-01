@@ -146,7 +146,7 @@ def test_openai_provider_requests_384_floats_and_restores_response_order():
     assert requests == [
         {
             "input": ["first", "second"],
-            "model": "text-embedding-3-small",
+            "model": "text-embedding-3-large",
             "dimensions": 384,
             "encoding_format": "float",
         }
@@ -362,16 +362,18 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
     stored_ids = []
     progress = []
 
-    async def missing(_session, batch_size, *, after_chunk_id):
+    async def missing(_session, batch_size, *, after_chunk_id, identity):
         """Return the next stable batch after the supplied cursor."""
+        assert identity == provider.identity
         selected_sizes.append(batch_size)
         selected_cursors.append(after_chunk_id)
         return [
             item for item in available if after_chunk_id is None or item.chunk_id > after_chunk_id
         ][:batch_size]
 
-    async def store(_session, pending, _vectors):
+    async def store(_session, pending, _vectors, identity):
         """Record pending IDs while treating the first as stale."""
+        assert identity == provider.identity
         stored_ids.append([item.chunk_id for item in pending])
         return sum(item.chunk_id != 1 for item in pending)
 
