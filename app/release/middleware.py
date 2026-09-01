@@ -70,6 +70,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         limiter: InProcessRateLimiter,
         trust_proxy_headers: bool,
         allow_ingest: bool,
+        enforce_rate_limit: bool = True,
         cost_limiter: DailyCostLimiter | None = None,
         salt: bytes | None = None,
     ) -> None:
@@ -77,6 +78,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         self._limiter = limiter
         self._trust_proxy_headers = trust_proxy_headers
         self._allow_ingest = allow_ingest
+        self._enforce_rate_limit = enforce_rate_limit
         self._cost_limiter = cost_limiter
         self._salt = salt or secrets.token_bytes(32)
 
@@ -120,6 +122,8 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             )
 
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if not self._enforce_rate_limit:
+                return await call_next(request)
             decision = await self._limiter.check(self._client_key(request))
             if not decision.allowed:
                 return JSONResponse(

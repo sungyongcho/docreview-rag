@@ -7,6 +7,7 @@ from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import RawProviderResponse
 from app.release.app import build_runtime_services, create_release_app
 from app.release.config import ReleaseSettings
+from app.release.middleware import ReleaseGuardMiddleware
 
 
 def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> None:
@@ -101,3 +102,18 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
     assert not any(path.startswith("/admin") for path in hidden_paths)
     assert "/admin/corpus" in live_paths
     assert "/admin/evaluations/runs" in live_paths
+
+
+def test_live_operator_disables_only_public_request_limits() -> None:
+    """Wire loopback live mode without public rate or daily-cost enforcement."""
+    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1")
+    application = create_release_app(settings, services=RuntimeApiServices())
+    guard = next(
+        middleware
+        for middleware in application.user_middleware
+        if middleware.cls is ReleaseGuardMiddleware
+    )
+
+    assert guard.kwargs["enforce_rate_limit"] is False
+    assert guard.kwargs["cost_limiter"] is None
+    assert guard.kwargs["allow_ingest"] is False

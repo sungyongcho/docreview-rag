@@ -56,6 +56,7 @@ docker compose logs -f app
 - deterministic embedding
 - `.env`에 `OPENAI_API_KEY`가 있을 때만 LLM review 활성화
 - `./data`를 `/app/data`에 bind mount해 corpus와 eval artifact 보존
+- loopback live operator는 공개 서비스용 IP rate limit과 일일 비용 상한을 적용하지 않음
 
 ## Next 개발 모드
 

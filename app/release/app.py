@@ -118,12 +118,16 @@ def create_release_app(
         daily_limit_usd=active_settings.public_daily_cost_usd,
         reservation_usd=active_settings.openai_max_cost_usd,
     )
+    enforce_public_limits = active_settings.admin_mode != "live"
     application.add_middleware(
         ReleaseGuardMiddleware,
         limiter=limiter,
         trust_proxy_headers=active_settings.trust_proxy_headers,
         allow_ingest=active_settings.allow_ingest,
-        cost_limiter=cost_limiter if active_settings.mode == "runtime" else None,
+        enforce_rate_limit=enforce_public_limits,
+        cost_limiter=(
+            cost_limiter if active_settings.mode == "runtime" and enforce_public_limits else None
+        ),
     )
     application.add_middleware(SecurityHeadersMiddleware)
     if active_settings.admin_mode == "live" and active_settings.admin_cors_origin is not None:

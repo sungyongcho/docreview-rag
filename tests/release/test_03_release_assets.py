@@ -24,7 +24,7 @@ def test_hugging_face_metadata_is_static_next_canned_and_port_aligned() -> None:
 
 
 def test_compose_app_has_single_container_security_guards() -> None:
-    """Mount only persistent data while retaining process security guards."""
+    """Bind the local UI to same-origin APIs while retaining process security guards."""
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
     assert "./data:/app/data" in compose
@@ -32,6 +32,8 @@ def test_compose_app_has_single_container_security_guards() -> None:
     assert "cap_drop:\n      - ALL" in compose
     assert "${APP_PORT:-8000}:8000" in compose
     assert "${DB_PORT:-5432}:5432" in compose
+    assert 'NEXT_PUBLIC_API_BASE_URL: ""' in compose
+    assert "NEXT_PUBLIC_ADMIN_MODE: live" in compose
 
 
 def test_clean_checkout_script_has_fresh_locked_and_smoke_gates() -> None:

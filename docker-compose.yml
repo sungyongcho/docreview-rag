@@ -19,6 +19,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # The local image serves static files and FastAPI from one origin. Public
+        # Firebase builds override these with the Cloudflare API URL and canned lab.
+        NEXT_PUBLIC_API_BASE_URL: ""
+        NEXT_PUBLIC_ADMIN_MODE: live
     environment:
       CORPUS_DIR: /app/data/corpus
       DATABASE_URL: postgresql+asyncpg://filing:filing@db:5432/filing

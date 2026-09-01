@@ -16,7 +16,7 @@ from app.release.middleware import (
 from app.release.secrets import REDACTION, SecretRedactionFilter
 
 
-def _guarded_app() -> FastAPI:
+def _guarded_app(*, enforce_rate_limit: bool = True) -> FastAPI:
     """Build one application behind the release guards."""
     app = FastAPI()
     app.add_middleware(
@@ -24,6 +24,7 @@ def _guarded_app() -> FastAPI:
         limiter=InProcessRateLimiter(per_minute=1, per_day=2, max_clients=8),
         trust_proxy_headers=False,
         allow_ingest=False,
+        enforce_rate_limit=enforce_rate_limit,
         salt=b"x" * 32,
     )
     app.add_middleware(SecurityHeadersMiddleware)
@@ -67,6 +68,17 @@ def test_public_ingestion_is_disabled_before_service_execution() -> None:
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["error"]["code"] == "release_read_only"
+
+
+def test_local_operator_bypasses_public_rate_limit_but_not_ingest_guard() -> None:
+    """Keep loopback operator work unlimited without opening the public ingest route."""
+    with TestClient(_guarded_app(enforce_rate_limit=False)) as client:
+        responses = [client.post("/work") for _ in range(3)]
+        ingest = client.post("/ingest")
+
+    assert [response.status_code for response in responses] == [200, 200, 200]
+    assert all("x-ratelimit-remaining-minute" not in response.headers for response in responses)
+    assert ingest.status_code == 403
 
 
 def test_daily_cost_limiter_reserves_worst_case_and_resets_by_day() -> None:
