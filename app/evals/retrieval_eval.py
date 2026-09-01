@@ -24,6 +24,7 @@ from app.evals.regression import (
 )
 from app.evals.scoring import CaseScore, SuiteScore, score_case, score_suite
 from app.evals.types import GoldenCase
+from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.retrieval.types import ChunkHit
 
 RAW_ARTIFACT_SCHEMA_VERSION = 1
@@ -212,6 +213,7 @@ async def evaluate_retriever(
     k: int = 5,
     clock: Clock = time.perf_counter_ns,
     recorded_at: datetime | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> RetrievalEvaluation:
     """Evaluate every case once while scoring only source-bearing positives.
 
@@ -263,7 +265,7 @@ async def evaluate_retriever(
     results: list[CaseEvaluation] = []
     scores: list[CaseScore] = []
     latencies: list[float] = []
-    for case in ordered:
+    for position, case in enumerate(ordered, start=1):
         started = clock()
         hits = tuple(await retriever(case.question, k))
         elapsed_ms = (clock() - started) / 1_000_000
@@ -281,6 +283,8 @@ async def evaluate_retriever(
                 score=case_score,
             )
         )
+        if on_progress is not None:
+            on_progress(OperationProgress("evaluate", position, len(ordered), case.id))
 
     return RetrievalEvaluation(
         suite=suite,

@@ -12,6 +12,7 @@ from typing import get_args
 
 from app.config import BM25Idf, EmbeddingProviderName, LexicalRanker, Settings, get_settings
 from app.db.bootstrap import bootstrap_schema
+from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
 from app.retrieval.bm25 import TermStatCounts, backfill_term_stats
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
@@ -132,7 +133,11 @@ def _payload(
     }
 
 
-async def _run(args: argparse.Namespace) -> dict[str, object]:
+async def _run(
+    args: argparse.Namespace,
+    *,
+    on_progress: OperationProgressCallback | None = None,
+) -> dict[str, object]:
     """Run optional embedding backfill and one retrieval request.
 
     Parameters
@@ -159,14 +164,44 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
     try:
         if args.rebuild_bm25_stats:
+            if on_progress is not None:
+                on_progress(OperationProgress("schema", 0, 1, "Checking schema"))
             await bootstrap_schema(engine)
+            if on_progress is not None:
+                on_progress(OperationProgress("schema", 1, 1, "Schema ready"))
         async with Session() as session:
             backfill = None
             bm25_stats = None
             if args.rebuild_bm25_stats:
+                if on_progress is not None:
+                    on_progress(OperationProgress("bm25", 0, 1, "Rebuilding term statistics"))
                 bm25_stats = await backfill_term_stats(session)
+                if on_progress is not None:
+                    on_progress(OperationProgress("bm25", 1, 1, "Term statistics rebuilt"))
             if args.embed_missing:
-                backfill = await embed_missing_chunks(session, provider)
+
+                def publish_batch(result: EmbeddingBackfillResult) -> None:
+                    """Publish cumulative embedding batch progress."""
+                    if on_progress is not None:
+                        on_progress(
+                            OperationProgress(
+                                "embedding",
+                                result.batches,
+                                None,
+                                f"{result.embedded} chunks stored",
+                            )
+                        )
+
+                backfill = await embed_missing_chunks(session, provider, on_batch=publish_batch)
+                if on_progress is not None:
+                    on_progress(
+                        OperationProgress(
+                            "embedding",
+                            backfill.batches,
+                            backfill.batches,
+                            f"{backfill.embedded} chunks stored",
+                        )
+                    )
             result = await retrieve(
                 session,
                 args.query,
@@ -195,7 +230,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
 def main() -> None:
     """Run the acceptance command and print machine-readable evidence."""
-    print(json.dumps(asyncio.run(_run(arguments())), indent=2, ensure_ascii=False))
+    with operation_bar("Retrieval preparation") as progress:
+        result = asyncio.run(_run(arguments(), on_progress=progress))
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

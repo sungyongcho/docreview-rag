@@ -745,18 +745,28 @@ class RuntimeCorpusAdminService:
         if command.kind == "ingest_manifest":
             assert command.manifest is not None
             manifest = self._resolve_manifest(command.manifest)
-            publish(OperationProgress("parse", 0, 4, f"Parsing {manifest.name}"))
+            loop = asyncio.get_running_loop()
+
+            def publish_from_parser(progress: OperationProgress) -> None:
+                """Move parser-thread progress safely onto the queue's event loop."""
+                loop.call_soon_threadsafe(publish, progress)
+
             batch = await asyncio.to_thread(
                 load_seed_batch,
                 manifest,
                 expected_documents=command.expected_documents,
+                on_progress=publish_from_parser,
             )
-            publish(OperationProgress("schema", 1, 4, "Checking schema compatibility"))
+            await asyncio.sleep(0)
+            publish(OperationProgress("schema", 0, 1, "Checking schema compatibility"))
             await bootstrap_schema(self._database_engine)
-            publish(OperationProgress("persist", 2, 4, "Persisting documents and chunks"))
+            publish(OperationProgress("schema", 1, 1, "Schema compatible"))
             async with self._session_factory() as session:
-                result = await persist_seed_batch_with_stats(session, batch)
-            publish(OperationProgress("bm25", 4, 4, "BM25 statistics rebuilt"))
+                result = await persist_seed_batch_with_stats(
+                    session,
+                    batch,
+                    on_progress=publish,
+                )
             return f"Ingested {result.documents} document(s) and {result.chunks} chunk(s)"
 
         if command.kind == "backfill_embeddings":

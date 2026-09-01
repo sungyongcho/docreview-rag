@@ -7,8 +7,8 @@ import json
 import pytest
 
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
-from app.evals import run
 from app.evals.measurement import assess_indexing_budget
+import app.evals.run as run
 from app.evals.run import _run_cli, arguments, main
 from tests.evals.support import positive_case, relevant_hit
 
@@ -47,7 +47,11 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
     provider = type("ProviderStub", (), {"dimensions": 8})()
     monkeypatch.setattr(run, "get_embedding_provider", lambda _settings: provider)
     monkeypatch.setattr(run, "load_golden_cases", lambda _path: [positive_case()])
-    monkeypatch.setattr(run, "load_chunking_filings", lambda *, settings: (object(), object()))
+    monkeypatch.setattr(
+        run,
+        "load_chunking_filings",
+        lambda *, settings, **_kwargs: (object(), object()),
+    )
     monkeypatch.setattr(run, "build_chunking_batch", lambda target, **_kwargs: object())
     monkeypatch.setattr(run, "create_async_engine", lambda *_a, **_k: engine)
 
@@ -72,6 +76,7 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
         bound.append((strategy, lexical_ranker))
 
         async def retriever(_query, _k):
+            """Return the fixed relevant hit for one bound arm."""
             return [relevant_hit()]
 
         return retriever

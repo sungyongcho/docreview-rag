@@ -14,6 +14,7 @@ from app.db.models import CONTENT_TSV_SQL, LANGUAGE_FORMAT_CHECK_SQL, LEXICAL_TE
 from app.evals.measurement import Clock, IndexingBudgetMeasurement, assess_indexing_budget
 from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing
 from app.ingestion.parser import ParsedFiling
+from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.seed import (
     DEFAULT_MANIFEST_NAME,
     SeedBatch,
@@ -24,7 +25,11 @@ from app.ingestion.seed import (
     persist_seed_batch,
 )
 from app.retrieval.bm25 import backfill_term_stats
-from app.retrieval.embeddings import EmbeddingProvider, embed_missing_chunks
+from app.retrieval.embeddings import (
+    EmbeddingBackfillResult,
+    EmbeddingProvider,
+    embed_missing_chunks,
+)
 
 
 def load_chunking_filings(
@@ -32,6 +37,7 @@ def load_chunking_filings(
     settings: Settings | None = None,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
     expected_documents: int | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> tuple[ParsedFiling, ...]:
     """Parse the fixed evaluation corpus once for reuse by every chunking arm.
 
@@ -67,7 +73,12 @@ def load_chunking_filings(
     """
     configured = settings or get_settings()
     entries = load_manifest(configured.corpus_dir / manifest_name)
-    return parse_seed_filings(entries, expected_documents=expected_documents)
+    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
+    return parse_seed_filings(
+        entries,
+        expected_documents=expected_documents,
+        **progress_options,
+    )
 
 
 def build_chunking_batch(
@@ -77,6 +88,7 @@ def build_chunking_batch(
     settings: Settings | None = None,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
     expected_documents: int | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Build one source-stable corpus arm from new or already parsed filings.
 
@@ -120,8 +132,13 @@ def build_chunking_batch(
         """Chunk one parsed filing with the selected target."""
         return chunk_filing(filing, chunk_config)
 
+    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
     if parsed_filings is not None:
-        return build_seed_batch_from_filings(parsed_filings, chunker=chunker)
+        return build_seed_batch_from_filings(
+            parsed_filings,
+            chunker=chunker,
+            **progress_options,
+        )
 
     configured = settings or get_settings()
     entries = load_manifest(configured.corpus_dir / manifest_name)
@@ -129,6 +146,7 @@ def build_chunking_batch(
         entries,
         expected_documents=expected_documents,
         chunker=chunker,
+        **progress_options,
     )
 
 
@@ -287,6 +305,7 @@ async def temporary_corpus_session(
     shared_preparation_seconds: float = 0.0,
     clock: Clock = time.perf_counter_ns,
     started_at_ns: int | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> AsyncIterator[tuple[AsyncSession, IndexingBudgetMeasurement]]:
     """Index one isolated corpus arm within a connection-scoped session.
 
@@ -336,14 +355,44 @@ async def temporary_corpus_session(
     connection = await engine.connect()
     session: AsyncSession | None = None
     try:
+        if on_progress is not None:
+            on_progress(OperationProgress("temporary_schema", 0, 1, "Creating isolated tables"))
         await _create_temporary_corpus_tables(connection, provider.dimensions)
+        if on_progress is not None:
+            on_progress(OperationProgress("temporary_schema", 1, 1, "Isolated tables ready"))
         session = AsyncSession(bind=connection, expire_on_commit=False)
-        await persist_seed_batch(session, batch)
+        await persist_seed_batch(session, batch, on_progress=on_progress)
         # One rebuild per corpus arm. Every BM25 experiment on this chunking shares
         # it, and the next chunk target gets its own corpus and its own statistics,
         # because df, avgdl, and dl are all properties of a particular chunking.
+        if on_progress is not None:
+            on_progress(OperationProgress("bm25", 0, 1, "Rebuilding term statistics"))
         await backfill_term_stats(session)
-        backfill = await embed_missing_chunks(session, provider)
+        if on_progress is not None:
+            on_progress(OperationProgress("bm25", 1, 1, "Term statistics rebuilt"))
+
+        def on_embedding_batch(result: EmbeddingBackfillResult) -> None:
+            """Project cumulative embedding batches onto the operation callback."""
+            if on_progress is not None:
+                on_progress(
+                    OperationProgress(
+                        "embedding",
+                        result.batches,
+                        None,
+                        f"{result.embedded} chunks stored",
+                    )
+                )
+
+        backfill = await embed_missing_chunks(session, provider, on_batch=on_embedding_batch)
+        if on_progress is not None:
+            on_progress(
+                OperationProgress(
+                    "embedding",
+                    backfill.batches,
+                    backfill.batches,
+                    f"{backfill.embedded} chunks stored",
+                )
+            )
         if backfill.embedded != len(batch.chunks) or backfill.skipped_stale:
             raise RuntimeError("temporary corpus embedding backfill was incomplete")
         await session.commit()

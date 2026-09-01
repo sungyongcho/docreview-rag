@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -174,6 +175,128 @@ def test_broken_manifest_json_fails_before_database_access(tmp_path, capsys):
     assert exit_code == cli.ExitCode.INVALID_FILE
     assert payload["error"]["code"] == "invalid_manifest_json"
     assert "line 1 column" in payload["error"]["message"]
+
+
+def test_recreate_schema_is_an_explicit_destructive_ingest_option():
+    """Expose rebuilding separately from non-destructive missing-table creation."""
+    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--recreate-schema"])
+
+    assert args.recreate_schema is True
+    assert args.create_schema is False
+
+
+def test_schema_creation_and_recreation_are_mutually_exclusive():
+    """Reject an ambiguous ingest request before opening the database."""
+    with pytest.raises(cli.CliError, match="not allowed with argument"):
+        cli.arguments(
+            [
+                "ingest",
+                "--manifest",
+                "manifest.json",
+                "--create-schema",
+                "--recreate-schema",
+            ]
+        )
+
+
+def test_create_schema_reports_drift_before_parsing_the_corpus(monkeypatch):
+    """Fail a stale database preflight without spending time parsing every filing."""
+    import app.db.bootstrap as bootstrap
+    import app.ingestion.seed as seed
+
+    parsed = False
+
+    async def drift(_engine):
+        """Raise the compatibility failure returned by the live bootstrap."""
+        raise bootstrap.SchemaDriftError("stale schema")
+
+    def load(*_args, **_kwargs):
+        """Record an invalid late parse if schema preflight did not stop the command."""
+        nonlocal parsed
+        parsed = True
+        raise AssertionError("corpus parsing must not start")
+
+    monkeypatch.setattr(bootstrap, "bootstrap_schema", drift)
+    monkeypatch.setattr(seed, "load_seed_batch", load)
+    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--create-schema"])
+
+    with pytest.raises(cli.CliError, match="stale schema") as excinfo:
+        asyncio.run(cli._ingest(args))
+
+    assert excinfo.value.code == "schema_drift"
+    assert parsed is False
+
+
+def test_recreate_schema_drops_then_bootstraps_before_persisting(monkeypatch):
+    """Keep the destructive rebuild ordered behind parsing and ahead of writes."""
+    import app.db.bootstrap as bootstrap
+    import app.db.session as db_session
+    import app.ingestion.seed as seed
+
+    events = []
+    batch = object()
+    session = object()
+
+    class Connection:
+        """Record the metadata operation executed inside the rebuild transaction."""
+
+        async def run_sync(self, operation):
+            """Record the metadata operation executed by the transaction."""
+            events.append(operation.__name__)
+
+    class Begin:
+        """Yield the recording connection as an async engine transaction."""
+
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, _exc_type, _exc, _traceback):
+            return None
+
+    class Engine:
+        """Open the one recording rebuild transaction."""
+
+        def begin(self):
+            """Return the recording rebuild transaction."""
+            return Begin()
+
+    class SessionContext:
+        """Yield the recording persistence session."""
+
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, _exc_type, _exc, _traceback):
+            return None
+
+    def load(*_args, **_kwargs):
+        """Return a validated batch before any destructive operation."""
+        events.append("parse")
+        return batch
+
+    async def create(_engine):
+        """Record current-schema bootstrap after the drop."""
+        events.append("bootstrap")
+
+    async def persist(received_session, received_batch, **_kwargs):
+        """Record persistence after the rebuilt schema exists."""
+        assert received_session is session
+        assert received_batch is batch
+        events.append("persist")
+        return seed.SeedResult(documents=1, chunks=2)
+
+    engine = Engine()
+    monkeypatch.setattr(bootstrap, "bootstrap_schema", create)
+    monkeypatch.setattr(db_session, "engine", engine)
+    monkeypatch.setattr(db_session, "Session", SessionContext)
+    monkeypatch.setattr(seed, "load_seed_batch", load)
+    monkeypatch.setattr(seed, "persist_seed_batch_with_stats", persist)
+    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--recreate-schema"])
+
+    result = asyncio.run(cli._ingest(args))
+
+    assert result["documents"] == 1
+    assert events == ["parse", "drop_all", "bootstrap", "persist"]
 
 
 def test_provider_unavailability_has_a_stable_nonsecret_exit(monkeypatch, capsys):

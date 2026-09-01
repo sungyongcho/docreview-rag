@@ -45,6 +45,7 @@ from app.evals.retrieval_eval import (
     write_evaluation_artifact,
 )
 from app.evals.types import GoldenCase
+from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
 from app.ingestion.registry import REGISTRIES, registry_for
 from app.ingestion.seed import DEFAULT_MANIFEST_NAME
 from app.llm.provider import LLMProvider
@@ -564,6 +565,7 @@ async def run_arm(
     llm_provider: LLMProvider | None = None,
     provider_budget: ProviderBudget | None = None,
     translation_log: TranslationLog | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> LanguageRun:
     """Evaluate one language arm and optionally persist its raw artifact."""
     moment = recorded_at or datetime.now(UTC)
@@ -582,6 +584,7 @@ async def run_arm(
         config=arm.to_config(),
         k=arm.k,
         recorded_at=moment,
+        on_progress=on_progress,
     )
     artifact_path = None
     if artifact_dir is not None:
@@ -856,7 +859,11 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
     return provider, budget
 
 
-async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
+async def _run_cli(
+    args: argparse.Namespace,
+    *,
+    on_progress: OperationProgressCallback | None = None,
+) -> dict[str, Any]:
     """Measure the requested matrix in one isolated corpus and assess parity.
 
     Parameters
@@ -904,11 +911,16 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     if any(arm.handling == "translated" for arm in arms):
         llm_provider, provider_budget = translation_boundary(args.translator_model, settings)
 
+    if on_progress is not None:
+        on_progress(OperationProgress("alignment", 0, 1, "Comparing bilingual query twins"))
     alignment = await twin_query_alignment(provider, suite, provider_name=args.provider)
+    if on_progress is not None:
+        on_progress(OperationProgress("alignment", 1, 1, "Query twins compared"))
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
     runs: list[LanguageRun] = []
     coverage: list[LexicalCoverage] = []
     translations = TranslationLog()
+    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
     try:
         target_text_chars = profile.target_text_chars
         batch = build_chunking_batch(
@@ -916,6 +928,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
             settings=settings,
             manifest_name=profile.manifest_name,
             expected_documents=profile.expected_documents,
+            **progress_options,
         )
         async with temporary_corpus_session(
             engine,
@@ -923,6 +936,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
             provider,
             target_text_chars=target_text_chars,
             embedding_provider=args.provider,
+            **progress_options,
         ) as (session, indexing):
             probe_bm25 = args.lexical_ranker == "bm25"
             lexical_probe = make_retriever(
@@ -949,6 +963,22 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                     )
                 )
             for arm in arms:
+
+                def publish_case(
+                    progress: OperationProgress,
+                    arm_name: str = arm.name,
+                ) -> None:
+                    """Name the active cross-lingual arm on each case update."""
+                    if on_progress is not None:
+                        on_progress(
+                            OperationProgress(
+                                f"evaluate:{arm_name}",
+                                progress.current,
+                                progress.total,
+                                f"{arm_name} · {progress.message}",
+                            )
+                        )
+
                 runs.append(
                     await run_arm(
                         session,
@@ -961,6 +991,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                         llm_provider=llm_provider,
                         provider_budget=provider_budget,
                         translation_log=translations,
+                        **({"on_progress": publish_case} if on_progress is not None else {}),
                     )
                 )
 
@@ -1017,7 +1048,8 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> None:
     """Run the cross-lingual measurement command and honour the parity gate."""
     args = arguments()
-    result = asyncio.run(_run_cli(args))
+    with operation_bar("Cross-lingual evaluation") as progress:
+        result = asyncio.run(_run_cli(args, on_progress=progress))
     print(result["comparison_table"])
     print()
     print(result["category_table"])

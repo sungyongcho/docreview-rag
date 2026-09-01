@@ -1,4 +1,4 @@
-"""Two-level progress display shared by the corpus acquisition commands.
+"""Terminal progress displays shared by long-running corpus commands.
 
 A corpus build waits on two very different clocks: how many filings are left, and
 how far the current multi-megabyte body has come. One bar cannot show both, and
@@ -87,3 +87,25 @@ def overall_bar(total: int, *, unit: str, description: str) -> Iterator[Overall]
     """Draw the outer bar counting whole filings, and yield its handle."""
     with tqdm(total=total, unit=unit, desc=description) as bar:
         yield Overall(bar)
+
+
+@contextmanager
+def operation_bar(description: str, *, unit: str = "step") -> Iterator[OperationProgressCallback]:
+    """Render absolute multi-stage operation updates on one reusable terminal bar."""
+    with tqdm(total=None, unit=unit, desc=description, disable=None) as bar:
+        active_stage: str | None = None
+
+        def report(progress: OperationProgress) -> None:
+            """Synchronize stage, total, position, and human-readable detail."""
+            nonlocal active_stage
+            if progress.stage != active_stage:
+                active_stage = progress.stage
+                bar.reset(total=progress.total)
+                bar.set_description_str(f"{description} · {progress.stage}")
+            elif bar.total != progress.total:
+                bar.total = progress.total
+            bar.n = progress.current
+            bar.set_postfix_str(progress.message)
+            bar.refresh()
+
+        yield report

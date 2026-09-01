@@ -3,7 +3,7 @@
 import pytest
 
 import app.ingestion.progress as progress
-from app.ingestion.progress import byte_bar, overall_bar
+from app.ingestion.progress import OperationProgress, byte_bar, operation_bar, overall_bar
 
 
 class FakeBar:
@@ -11,11 +11,13 @@ class FakeBar:
 
     def __init__(self, **options) -> None:
         self.options = options
+        self.desc = options.get("desc")
         self.total = options.get("total")
         self.n = 0
         self.postfix: str | None = None
         self.lines: list[str] = []
         self.refreshes = 0
+        self.resets: list[int | None] = []
         self.closed = False
 
     def __enter__(self) -> FakeBar:
@@ -32,6 +34,16 @@ class FakeBar:
     def update(self, count: int) -> None:
         """Advance the recorded item count."""
         self.n += count
+
+    def reset(self, *, total: int | None = None) -> None:
+        """Reset the recorded count and timing boundary for a new stage."""
+        self.n = 0
+        self.total = total
+        self.resets.append(total)
+
+    def set_description_str(self, text: str) -> None:
+        """Record the active operation stage."""
+        self.desc = text
 
     def set_postfix_str(self, text: str) -> None:
         """Record the latest position label."""
@@ -121,3 +133,19 @@ def test_a_line_printed_during_a_run_goes_through_the_bar(bars):
 
     assert bars[0].postfix is None
     assert bars[0].lines == ["one line"]
+
+
+def test_operation_bar_tracks_absolute_multi_stage_updates(bars):
+    """One terminal bar follows stage resets without accumulating old counts."""
+    with operation_bar("Ingest", unit="batch") as report:
+        report(OperationProgress("parse", 2, 5, "NVDA FY2024"))
+        report(OperationProgress("persist", 1, 3, "500 chunks"))
+
+    bar = bars[0]
+    assert bar.options["unit"] == "batch"
+    assert bar.desc == "Ingest · persist"
+    assert (bar.n, bar.total) == (1, 3)
+    assert bar.postfix == "500 chunks"
+    assert bar.refreshes == 2
+    assert bar.resets == [5, 3]
+    assert bar.closed

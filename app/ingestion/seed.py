@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.db.models import Chunk as ChunkModel, Document
 from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing, compose_index_text
 from app.ingestion.parser import ParsedFiling
+from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.registry import REGISTRIES, registry_for, registry_name, resolve_registry
 from app.retrieval.korean import lexical_plan
 
@@ -383,16 +384,20 @@ def parse_seed_filings(
     *,
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> tuple[ParsedFiling, ...]:
     """Parse copied manifest entries once in deterministic input-adapter order.
 
     Validate the expected count before invoking the parser. Each entry is parsed by the
     registry it names unless ``parser`` overrides that for every entry.
     """
+    ordered = _ordered_manifest_entries(entries, expected_documents)
     filings: list[ParsedFiling] = []
-    for entry in _ordered_manifest_entries(entries, expected_documents):
+    for position, entry in enumerate(ordered, start=1):
         filing, _profile = (parser or resolve_registry(entry).parse)(entry)
         filings.append(filing)
+        if on_progress is not None:
+            on_progress(OperationProgress("parse", position, len(ordered), filing.doc_id))
     return tuple(filings)
 
 
@@ -400,14 +405,18 @@ def build_seed_batch_from_filings(
     filings: Iterable[ParsedFiling],
     *,
     chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Chunk parsed filings and return records in deterministic database order."""
+    ordered = tuple(filings)
     documents: list[DocumentRecord] = []
     chunks: list[ChunkRecord] = []
-    for filing in filings:
+    for position, filing in enumerate(ordered, start=1):
         document, filing_chunks = filing_records(filing, chunker(filing))
         documents.append(document)
         chunks.extend(filing_chunks)
+        if on_progress is not None:
+            on_progress(OperationProgress("chunk", position, len(ordered), filing.doc_id))
 
     documents.sort(key=lambda record: record.doc_id)
     chunks.sort(key=lambda record: (record.doc_id, record.ordinal))
@@ -420,18 +429,22 @@ def build_seed_batch(
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
     chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Parse and chunk manifest entries into a deterministic seed batch.
 
     Each entry is parsed by the registry it names unless ``parser`` overrides that.
     """
+    ordered = _ordered_manifest_entries(entries, expected_documents)
     documents: list[DocumentRecord] = []
     chunks: list[ChunkRecord] = []
-    for entry in _ordered_manifest_entries(entries, expected_documents):
+    for position, entry in enumerate(ordered, start=1):
         filing, _profile = (parser or resolve_registry(entry).parse)(entry)
         document, filing_chunks = filing_records(filing, chunker(filing))
         documents.append(document)
         chunks.extend(filing_chunks)
+        if on_progress is not None:
+            on_progress(OperationProgress("prepare", position, len(ordered), filing.doc_id))
 
     documents.sort(key=lambda record: record.doc_id)
     chunks.sort(key=lambda record: (record.doc_id, record.ordinal))
@@ -445,6 +458,7 @@ def prepare_seed_batch(
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
     chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Prepare and validate one complete corpus before any transaction opens.
 
@@ -458,6 +472,7 @@ def prepare_seed_batch(
         expected_documents=expected_documents,
         parser=parser,
         chunker=chunker,
+        on_progress=on_progress,
     )
 
 
@@ -478,6 +493,7 @@ def load_seed_batch(
     manifest_path: Path,
     *,
     expected_documents: int | None = None,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
     """Prepare one manifest, mapping every expected failure to a ``ManifestError``.
 
@@ -505,7 +521,11 @@ def load_seed_batch(
             f"Manifest file was not found: {manifest_path}",
         )
     try:
-        return prepare_seed_batch(manifest_path, expected_documents=expected_documents)
+        return prepare_seed_batch(
+            manifest_path,
+            expected_documents=expected_documents,
+            on_progress=on_progress,
+        )
     except json.JSONDecodeError as error:
         raise ManifestError(
             "invalid_manifest_json",
@@ -592,7 +612,11 @@ def _batches(records: Sequence[ChunkRecord], size: int) -> Iterable[Sequence[Chu
 
 
 async def persist_seed_batch(
-    session: AsyncSession, batch: SeedBatch, *, chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE
+    session: AsyncSession,
+    batch: SeedBatch,
+    *,
+    chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedResult:
     """Upsert one batch and remove stale trailing chunks in one transaction.
 
@@ -608,17 +632,36 @@ async def persist_seed_batch(
         chunk_counts[record.doc_id] += 1
 
     async with session.begin():
+        if on_progress is not None:
+            on_progress(OperationProgress("documents", 0, 1, "Upserting documents"))
         if batch.documents:
             await session.execute(document_upsert_statement(batch.documents))
-        for records in _batches(batch.chunks, chunk_batch_size):
+        if on_progress is not None:
+            on_progress(OperationProgress("documents", 1, 1, f"{len(batch.documents)} documents"))
+        chunk_batch_total = (len(batch.chunks) + chunk_batch_size - 1) // chunk_batch_size
+        for position, records in enumerate(
+            _batches(batch.chunks, chunk_batch_size),
+            start=1,
+        ):
             await session.execute(chunk_upsert_statement(records))
-        for doc_id, count in chunk_counts.items():
+            if on_progress is not None:
+                on_progress(
+                    OperationProgress(
+                        "chunks",
+                        position,
+                        chunk_batch_total,
+                        f"{min(position * chunk_batch_size, len(batch.chunks))} chunks",
+                    )
+                )
+        for position, (doc_id, count) in enumerate(chunk_counts.items(), start=1):
             await session.execute(
                 delete(ChunkModel).where(
                     ChunkModel.doc_id == doc_id,
                     ChunkModel.ordinal >= count,
                 )
             )
+            if on_progress is not None:
+                on_progress(OperationProgress("cleanup", position, len(chunk_counts), doc_id))
 
     return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 
@@ -628,12 +671,23 @@ async def persist_seed_batch_with_stats(
     batch: SeedBatch,
     *,
     chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedResult:
     """Persist one corpus batch, then rebuild its invalidated BM25 statistics."""
     from app.retrieval.bm25 import backfill_term_stats
 
-    result = await persist_seed_batch(session, batch, chunk_batch_size=chunk_batch_size)
+    persist_options = {"on_progress": on_progress} if on_progress is not None else {}
+    result = await persist_seed_batch(
+        session,
+        batch,
+        chunk_batch_size=chunk_batch_size,
+        **persist_options,
+    )
+    if on_progress is not None:
+        on_progress(OperationProgress("bm25", 0, 1, "Rebuilding term statistics"))
     await backfill_term_stats(session)
+    if on_progress is not None:
+        on_progress(OperationProgress("bm25", 1, 1, "Term statistics rebuilt"))
     return result
 
 
@@ -643,50 +697,71 @@ async def seed_corpus(
     *,
     expected_documents: int | None = None,
     chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
+    on_progress: OperationProgressCallback | None = None,
 ) -> SeedResult:
     """Prepare and persist the corpus, then rebuild BM25 statistics.
 
     Database writes remain on the caller's event loop. Corpus persistence and
     statistic rebuild each own a separate transaction.
     """
+    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
     batch = await asyncio.to_thread(
         prepare_seed_batch,
         manifest_path,
         expected_documents=expected_documents,
+        **progress_options,
     )
     return await persist_seed_batch_with_stats(
         session,
         batch,
         chunk_batch_size=chunk_batch_size,
+        **progress_options,
     )
 
 
-async def _run_cli(args: argparse.Namespace) -> None:
+async def _run_cli(
+    args: argparse.Namespace,
+    *,
+    on_progress: OperationProgressCallback | None = None,
+) -> None:
     """Execute optional schema creation and one seed-plus-statistics operation."""
     from app.db.bootstrap import bootstrap_schema
     from app.db.models import Base
     from app.db.session import Session, engine
 
-    batch = prepare_seed_batch(args.manifest, expected_documents=args.expected_documents)
+    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
+    batch = prepare_seed_batch(
+        args.manifest,
+        expected_documents=args.expected_documents,
+        **progress_options,
+    )
     if args.recreate_schema:
         # The project migrates by rebuild: drop every model table, then let the
         # bootstrap below recreate the current schema. Re-seeding restores all
         # derived state (chunks, statistics, embeddings are recomputed).
+        if on_progress is not None:
+            on_progress(OperationProgress("schema", 0, 2, "Dropping model tables"))
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.drop_all)
+        if on_progress is not None:
+            on_progress(OperationProgress("schema", 1, 2, "Creating current schema"))
     if args.create_schema or args.recreate_schema:
         await bootstrap_schema(engine)
+        if on_progress is not None:
+            on_progress(OperationProgress("schema", 2, 2, "Schema ready"))
     async with Session() as session:
         result = await persist_seed_batch_with_stats(
             session,
             batch,
             chunk_batch_size=args.chunk_batch_size,
+            **progress_options,
         )
     print(f"Committed {result.documents} documents and {result.chunks} chunks.")
 
 
 def main() -> None:
     """Run optional schema bootstrap, corpus persistence, and statistics rebuild."""
+    from app.ingestion.progress import operation_bar
 
     def _arguments() -> argparse.Namespace:
         """Parse seed CLI arguments."""
@@ -719,7 +794,8 @@ def main() -> None:
         )
         return parser.parse_args()
 
-    asyncio.run(_run_cli(_arguments()))
+    with operation_bar("Ingest") as progress:
+        asyncio.run(_run_cli(_arguments(), on_progress=progress))
 
 
 if __name__ == "__main__":

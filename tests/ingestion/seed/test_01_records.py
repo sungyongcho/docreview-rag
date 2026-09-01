@@ -6,9 +6,9 @@ from typing import cast
 
 import pytest
 
-from app.ingestion import seed
 from app.ingestion.chunk import ChunkConfig, chunk_filing
 from app.ingestion.parser import Block, Section
+import app.ingestion.seed as seed
 from tests.ingestion.seed.support import SOURCE_SHA256, sample_chunks, sample_filing
 
 
@@ -121,12 +121,15 @@ def test_build_seed_batch_sorts_manifest_and_output():
         "NVDA": sample_filing("NVDA-FY2024"),
     }
     calls = []
+    progress = []
 
     def parser(entry):
+        """Record and parse one manifest entry."""
         calls.append(("parse", entry["ticker"]))
         return filings[entry["ticker"]], {}
 
     def chunker(filing):
+        """Record and chunk one parsed filing."""
         calls.append(("chunk", filing.issuer))
         return sample_chunks(filing.doc_id)
 
@@ -139,6 +142,7 @@ def test_build_seed_batch_sorts_manifest_and_output():
         expected_documents=2,
         parser=parser,
         chunker=chunker,
+        on_progress=progress.append,
     )
     assert [record.doc_id for record in batch.documents] == ["AMD-FY2023", "NVDA-FY2024"]
     assert [(record.doc_id, record.ordinal) for record in batch.chunks] == [
@@ -153,6 +157,10 @@ def test_build_seed_batch_sorts_manifest_and_output():
         ("parse", "NVDA"),
         ("chunk", "NVDA"),
     ]
+    assert [(update.current, update.total, update.message) for update in progress] == [
+        (1, 2, "AMD-FY2023"),
+        (2, 2, "NVDA-FY2024"),
+    ]
 
 
 def test_build_seed_batch_enforces_expected_manifest_size():
@@ -166,6 +174,7 @@ def test_parse_seed_filings_orders_entries_and_calls_parser_once():
     calls = []
 
     def parser(entry):
+        """Record one sorted parse and return its filing."""
         calls.append(entry["doc_id"])
         return sample_filing(entry["doc_id"]), {}
 
@@ -184,6 +193,7 @@ def test_parse_seed_filings_validates_count_before_parsing():
     calls = []
 
     def parser(entry):
+        """Record an unexpected parser invocation."""
         calls.append(entry)
         return sample_filing(), {}
 
@@ -197,9 +207,11 @@ def test_parse_once_batch_exactly_matches_build_seed_batch():
     """Keep parse-once and combined batch construction equivalent."""
 
     def parser(entry):
+        """Build one filing for parse-once equivalence."""
         return sample_filing(entry["doc_id"]), {}
 
     def chunker(filing):
+        """Build chunks for parse-once equivalence."""
         return sample_chunks(filing.doc_id)
 
     entries = [

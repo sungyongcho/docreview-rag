@@ -19,6 +19,7 @@ def _evaluation():
     """Evaluate one absent and one positive case against a fixed clock."""
 
     async def retriever(_query, _k):
+        """Return one relevant hit for the deterministic evaluation."""
         return [relevant_hit()]
 
     clock_values = iter((0, 1_000_000, 2_000_000, 5_000_000))
@@ -56,6 +57,30 @@ def test_runner_records_all_cases_but_scores_only_source_bearing_positives():
     assert evaluation.latency.p95_ms == 3.0
 
 
+def test_runner_reports_each_completed_case_in_canonical_order():
+    """Publish absolute case progress without coupling evaluation to a terminal."""
+
+    async def retriever(_query, _k):
+        """Return one relevant hit while case progress is recorded."""
+        return [relevant_hit()]
+
+    updates = []
+    asyncio.run(
+        evaluate_retriever(
+            [absent_case(), positive_case()],
+            retriever,
+            suite="m3-runner-test",
+            config={"provider": "deterministic", "k": 5},
+            on_progress=updates.append,
+        )
+    )
+
+    assert [(update.current, update.total, update.message) for update in updates] == [
+        (1, 2, "m3c-01"),
+        (2, 2, "m3c-02"),
+    ]
+
+
 def test_raw_artifact_preserves_hits_spans_latency_and_review_provenance(tmp_path):
     """Preserve hits, source spans, latency, and review provenance in the artifact."""
     path = write_evaluation_artifact(tmp_path / "raw.json", _evaluation())
@@ -79,6 +104,7 @@ def test_runner_rejects_empty_or_absent_only_scoring_suites(cases):
     """Reject a suite with nothing to score rather than reporting empty metrics."""
 
     async def retriever(_query, _k):
+        """Return no hits for an invalid scoring suite."""
         return []
 
     with pytest.raises(ValueError):

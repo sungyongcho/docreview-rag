@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ingestion import seed
+import app.ingestion.seed as seed
 from tests.ingestion.seed.support import sample_batch
 
 
@@ -98,8 +98,14 @@ class _Session:
 def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
     """Own one transaction while writing bounded chunk batches."""
     session = _Session()
+    progress = []
     result = asyncio.run(
-        seed.persist_seed_batch(cast(AsyncSession, session), sample_batch(), chunk_batch_size=1)
+        seed.persist_seed_batch(
+            cast(AsyncSession, session),
+            sample_batch(),
+            chunk_batch_size=1,
+            on_progress=progress.append,
+        )
     )
     assert result.documents == 1
     assert result.chunks == 2
@@ -107,6 +113,13 @@ def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
     assert session.commits == 1
     assert session.rollbacks == 0
     assert len(session.executed) == 4
+    assert [(update.stage, update.current, update.total) for update in progress] == [
+        ("documents", 0, 1),
+        ("documents", 1, 1),
+        ("chunks", 1, 2),
+        ("chunks", 2, 2),
+        ("cleanup", 1, 1),
+    ]
 
 
 def test_persist_seed_batch_rolls_back_the_whole_batch_on_failure():

@@ -114,10 +114,16 @@ def _add_ingest_parser(subparsers: Subparsers) -> None:
         default=500,
         help="Number of chunk rows per PostgreSQL upsert statement.",
     )
-    parser.add_argument(
+    schema = parser.add_mutually_exclusive_group()
+    schema.add_argument(
         "--create-schema",
         action="store_true",
         help="Create missing tables before ingestion; existing tables are not migrated.",
+    )
+    schema.add_argument(
+        "--recreate-schema",
+        action="store_true",
+        help="DESTRUCTIVE: drop model tables and rebuild the current schema before ingestion.",
     )
 
 
@@ -246,7 +252,12 @@ def _evidence_payload(hit: ChunkHit) -> dict[str, object]:
 async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
     """Retrieve cited evidence with the same ranking plan the configuration measured."""
     from app.db.session import Session
-    from app.retrieval.embeddings import embed_missing_chunks, get_embedding_provider
+    from app.ingestion.progress import OperationProgress, operation_bar
+    from app.retrieval.embeddings import (
+        EmbeddingBackfillResult,
+        embed_missing_chunks,
+        get_embedding_provider,
+    )
     from app.retrieval.service import retrieve
 
     settings = _provider_settings(get_settings(), args.provider)
@@ -254,7 +265,29 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
     async with Session() as session:
         backfill = None
         if args.embed_missing:
-            backfill = await embed_missing_chunks(session, provider)
+            with operation_bar("Embeddings", unit="batch") as progress:
+                progress(OperationProgress("embedding", 0, None, "Selecting missing chunks"))
+
+                def on_batch(result: EmbeddingBackfillResult) -> None:
+                    """Publish cumulative embedding batches without exposing provider detail."""
+                    progress(
+                        OperationProgress(
+                            "embedding",
+                            result.batches,
+                            None,
+                            f"{result.embedded} chunks stored",
+                        )
+                    )
+
+                backfill = await embed_missing_chunks(session, provider, on_batch=on_batch)
+                progress(
+                    OperationProgress(
+                        "embedding",
+                        backfill.batches,
+                        backfill.batches,
+                        f"{backfill.embedded} chunks stored",
+                    )
+                )
         result = await retrieve(
             session,
             args.query,
@@ -281,23 +314,48 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
 
 async def _ingest(args: argparse.Namespace) -> dict[str, object]:
     """Upsert one manifest and rebuild the BM25 statistics its writes invalidated."""
-    from app.db.bootstrap import bootstrap_schema
+    from app.db.bootstrap import SchemaDriftError, bootstrap_schema
+    from app.db.models import Base
     from app.db.session import Session, engine
+    from app.ingestion.progress import OperationProgress, operation_bar
     from app.ingestion.seed import ManifestError, load_seed_batch, persist_seed_batch_with_stats
 
-    try:
-        batch = load_seed_batch(args.manifest, expected_documents=args.expected_documents)
-    except ManifestError as error:
-        raise CliError(error.code, error.message, ExitCode.INVALID_FILE) from error
+    with operation_bar("Ingest") as progress:
+        if args.create_schema:
+            try:
+                progress(OperationProgress("schema", 0, 1, "Checking current schema"))
+                await bootstrap_schema(engine)
+                progress(OperationProgress("schema", 1, 1, "Schema ready"))
+            except SchemaDriftError as error:
+                raise CliError("schema_drift", str(error), ExitCode.UNAVAILABLE) from error
 
-    if args.create_schema:
-        await bootstrap_schema(engine)
-    async with Session() as session:
-        result = await persist_seed_batch_with_stats(
-            session,
-            batch,
-            chunk_batch_size=args.chunk_batch_size,
-        )
+        try:
+            batch = load_seed_batch(
+                args.manifest,
+                expected_documents=args.expected_documents,
+                on_progress=progress,
+            )
+        except ManifestError as error:
+            raise CliError(error.code, error.message, ExitCode.INVALID_FILE) from error
+
+        try:
+            if args.recreate_schema:
+                progress(OperationProgress("schema", 0, 2, "Dropping model tables"))
+                async with engine.begin() as connection:
+                    await connection.run_sync(Base.metadata.drop_all)
+                progress(OperationProgress("schema", 1, 2, "Creating current schema"))
+                await bootstrap_schema(engine)
+                progress(OperationProgress("schema", 2, 2, "Schema ready"))
+        except SchemaDriftError as error:
+            raise CliError("schema_drift", str(error), ExitCode.UNAVAILABLE) from error
+
+        async with Session() as session:
+            result = await persist_seed_batch_with_stats(
+                session,
+                batch,
+                chunk_batch_size=args.chunk_batch_size,
+                on_progress=progress,
+            )
     return {
         "status": "ok",
         "command": "ingest",

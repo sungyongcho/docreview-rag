@@ -55,6 +55,7 @@ from app.evals.retrieval_eval import (
     evaluate_retriever,
     persist_evaluation,
 )
+from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
 from app.retrieval.embeddings import get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
@@ -150,7 +151,11 @@ def budget_arm_selection(
     return strategy, min(lexical_rankers, key=lambda name: RANKER_ORDER[name])
 
 
-async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
+async def _run_cli(
+    args: argparse.Namespace,
+    *,
+    on_progress: OperationProgressCallback | None = None,
+) -> dict[str, Any]:
     """Execute the complete parse-once experiment command.
 
     Parameters
@@ -211,12 +216,17 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     budget_bm25: BM25Parameters | None = (
         (settings.bm25_k1, settings.bm25_b, settings.bm25_idf) if budget_ranker == "bm25" else None
     )
+    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
 
     preparation_started_at_ns = time.perf_counter_ns()
     parsed_filings = (
-        load_chunking_filings(settings=settings)
+        load_chunking_filings(settings=settings, **progress_options)
         if args.manifest_name == "manifest.json"
-        else load_chunking_filings(settings=settings, manifest_name=args.manifest_name)
+        else load_chunking_filings(
+            settings=settings,
+            manifest_name=args.manifest_name,
+            **progress_options,
+        )
     )
     shared_preparation = SharedPreparationMeasurement(
         operation="manifest-load-and-parse",
@@ -235,6 +245,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 target_text_chars,
                 parsed_filings=parsed_filings,
                 settings=settings,
+                **progress_options,
             )
             configs = experiment_matrix(
                 target_text_chars=(target_text_chars,),
@@ -257,6 +268,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                 embedding_provider=args.provider,
                 shared_preparation_seconds=shared_preparation.total_seconds,
                 started_at_ns=indexing_started_at_ns,
+                **progress_options,
             ) as (session, indexing):
                 indexing_measurements.append(indexing)
 
@@ -273,6 +285,22 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                         candidate_k=config.candidate_k,
                         rrf_k=config.rrf_k,
                     )
+
+                    def publish_case(progress: OperationProgress) -> None:
+                        """Name the active matrix arm on each golden-case update."""
+                        if on_progress is not None:
+                            on_progress(
+                                OperationProgress(
+                                    f"evaluate:{config.name}",
+                                    progress.current,
+                                    progress.total,
+                                    f"{config.name} · {progress.message}",
+                                )
+                            )
+
+                    evaluation_progress = (
+                        {"on_progress": publish_case} if on_progress is not None else {}
+                    )
                     return await evaluate_retriever(
                         cases,
                         retriever,
@@ -280,6 +308,7 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
                         config=config.to_dict(),
                         k=config.k,
                         recorded_at=recorded_at,
+                        **evaluation_progress,
                     )
 
                 report = await run_ablation(
@@ -371,7 +400,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         regression comparison stayed within its limit, and ``1`` otherwise. A measured
         budget or quality regression must fail the process; printing it is not enough.
     """
-    result = asyncio.run(_run_cli(arguments(argv)))
+    with operation_bar("Evaluation") as progress:
+        result = asyncio.run(_run_cli(arguments(argv), on_progress=progress))
     print(result["comparison_table"])
     print(
         json.dumps(

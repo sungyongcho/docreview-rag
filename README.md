@@ -122,12 +122,25 @@ docker compose up -d db
 docker compose ps db
 ```
 
-SEC corpus를 넣고 새 DB schema를 만듭니다.
+SEC corpus를 넣고, 비어 있는 DB에 현재 schema를 만듭니다. 파싱·청킹·DB batch 저장·
+BM25 재계산은 터미널 진행률로 표시됩니다.
 
 ```bash
 uv run python -m app.cli ingest \
   --manifest data/corpus/manifest.json \
   --create-schema
+```
+
+기존 volume에서 `schema_drift`가 나오면 그 DB는 현재 ORM보다 오래된 것입니다.
+`--create-schema`는 기존 table을 변경하지 않습니다. 기존 DB 내용을 버리고 corpus에서
+다시 만들기로 결정한 경우에만 아래 명령을 사용합니다.
+
+> **경고:** model table, chunk, embedding, BM25 통계, run/eval 결과가 삭제됩니다.
+
+```bash
+uv run python -m app.cli ingest \
+  --manifest data/corpus/manifest.json \
+  --recreate-schema
 ```
 
 DART corpus를 추가합니다.
@@ -444,7 +457,7 @@ scripts/run_operator_web.sh
 백업과 재인제스트 준비 없이 실행하지 마십시오.
 
 ```bash
-uv run python -m app.ingestion.seed \
+uv run python -m app.cli ingest \
   --manifest data/corpus/manifest.json \
   --recreate-schema
 ```
