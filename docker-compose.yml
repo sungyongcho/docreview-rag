@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: filing
       POSTGRES_PASSWORD: filing
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${DB_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +23,7 @@ services:
         # The local image serves static files and FastAPI from one origin. Public
         # Firebase builds override these with the Cloudflare API URL and canned lab.
         NEXT_PUBLIC_API_BASE_URL: ""
-        NEXT_PUBLIC_ADMIN_MODE: live
+        NEXT_PUBLIC_ADMIN_MODE: ${NEXT_PUBLIC_ADMIN_MODE:-live}
     environment:
       CORPUS_DIR: /app/data/corpus
       DATABASE_URL: postgresql+asyncpg://filing:filing@db:5432/filing
@@ -33,9 +33,9 @@ services:
       DART_API_KEY: ${DART_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-}
       DOCREVIEW_MODE: runtime
-      DOCREVIEW_ADMIN_MODE: live
+      DOCREVIEW_ADMIN_MODE: ${DOCREVIEW_ADMIN_MODE:-live}
       DOCREVIEW_HOST: 127.0.0.1
-      DOCREVIEW_ADMIN_CORS_ORIGIN: http://127.0.0.1:3000
+      DOCREVIEW_ADMIN_CORS_ORIGIN: ${DOCREVIEW_ADMIN_CORS_ORIGIN:-http://127.0.0.1:3000}
       DOCREVIEW_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-}
       LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-}
@@ -43,7 +43,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports: ["${APP_PORT:-8000}:8000"]
+    ports: ["${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}:8000"]
     init: true
     group_add:
       - "${HOST_GID:-1000}"

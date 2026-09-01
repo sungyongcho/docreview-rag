@@ -3,9 +3,11 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export HOST_GID="${HOST_GID:-$(id -g)}"
+local_host="${DOCREVIEW_LOCAL_HOST:-127.0.0.1}"
 web_port="${DOCREVIEW_OPERATOR_WEB_PORT:-3000}"
-operator_origin="http://127.0.0.1:${web_port}"
+operator_origin="http://${local_host}:${web_port}"
 operator_port="${DOCREVIEW_OPERATOR_PORT:-18001}"
+db_port="${DB_PORT:-5432}"
 operator_token="$(
     "${repo_root}/.venv/bin/python" -c 'import secrets; print(secrets.token_urlsafe(32))'
 )"
@@ -30,9 +32,10 @@ DOCREVIEW_OPERATOR_PORT="${operator_port}" \
 operator_pid=$!
 
 cd "${repo_root}/web"
-NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:8000}" \
+NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-http://${local_host}:${APP_PORT:-8000}}" \
 NEXT_PUBLIC_ADMIN_MODE=live \
-NEXT_PUBLIC_OPERATOR_BASE_URL="http://127.0.0.1:${operator_port}" \
+NEXT_PUBLIC_OPERATOR_BASE_URL="http://${local_host}:${operator_port}" \
+NEXT_PUBLIC_DB_ENDPOINT="${local_host}:${db_port}" \
 NEXT_PUBLIC_OPERATOR_TOKEN="${operator_token}" \
     setsid npm run dev -- --port "${web_port}" &
 web_pid=$!

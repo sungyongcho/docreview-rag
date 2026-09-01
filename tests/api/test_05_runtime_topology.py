@@ -1,5 +1,6 @@
 """Runtime entrypoint, health, and the container topology it is served by."""
 
+import asyncio
 import os
 from pathlib import Path
 import subprocess
@@ -7,7 +8,12 @@ import sys
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
+from app.api.errors import ApiProblemError
+from app.api.review_profile import PromptPolicy, ReviewSessionProfile
+from app.api.runtime import RuntimeApiServices
+from app.api.schemas import ReviewRequest
 from app.main import app, create_app
 
 
@@ -36,6 +42,38 @@ def test_runtime_import_does_not_build_the_database_engine():
     assert result.returncode == 0
     assert result.stdout.strip() == "imported"
     assert result.stderr == ""
+
+
+def test_public_runtime_rejects_custom_prompt_policy_before_provider_or_database() -> None:
+    """Fail closed on Dev-only policy before touching any runtime dependency."""
+    services = RuntimeApiServices(allow_custom_prompt_policy=False)
+    request = ReviewRequest(
+        query="Revenue?",
+        session_profile=ReviewSessionProfile(
+            prompt_policy=PromptPolicy(additional_instructions="Be concise.")
+        ),
+    )
+
+    with pytest.raises(ApiProblemError) as captured:
+        asyncio.run(services.review(request))
+
+    assert captured.value.status_code == 403
+    assert captured.value.error.code == "capability_disabled"
+
+
+def test_public_runtime_rejects_snapshot_query_before_provider_or_database() -> None:
+    """Keep public snapshot access read-only and comparison-only."""
+    services = RuntimeApiServices(allow_snapshot_query=False)
+    request = ReviewRequest(
+        query="Revenue?",
+        session_profile=ReviewSessionProfile(snapshot_id=1),
+    )
+
+    with pytest.raises(ApiProblemError) as captured:
+        asyncio.run(services.review(request))
+
+    assert captured.value.status_code == 403
+    assert captured.value.error.code == "capability_disabled"
 
 
 def test_health_route_reports_process_liveness_without_external_services():

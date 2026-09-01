@@ -26,7 +26,7 @@ gcloud compute instances create "${vm_name}" \
   --tags docreview-http,docreview-https \
   --metadata-from-file startup-script="$(dirname "$0")/startup.sh"
 
-for port in 80 443; do
+for port in "${DOCREVIEW_HTTP_PORT:-80}" "${DOCREVIEW_HTTPS_PORT:-443}"; do
   rule="docreview-allow-${port}"
   if ! gcloud compute firewall-rules describe "${rule}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
     gcloud compute firewall-rules create "${rule}" \
