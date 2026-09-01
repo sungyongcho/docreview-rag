@@ -37,6 +37,59 @@ export interface ChatMessage {
   trace?: string;
 }
 
+export interface ModelPolicyRole {
+  default: string;
+  allowed: string[];
+  reasoning_effort: "low" | "medium" | null;
+  dimensions: number | null;
+}
+
+export interface Readiness {
+  status: "ready" | "degraded";
+  mode: "canned" | "runtime";
+  admin_mode: "off" | "readonly" | "live";
+  policy_revision: string;
+  models: Record<string, ModelPolicyRole>;
+  review_enabled: boolean;
+  active_review_model: string | null;
+  corpus: {
+    availability: "ready" | "degraded" | "not_applicable" | "unavailable";
+    database_connected: boolean | null;
+    schema_status: string | null;
+    schema_message: string | null;
+    documents: number | null;
+    chunks: number | null;
+    embedded_chunks: number | null;
+    pending_embeddings: number | null;
+    bm25_ready: boolean | null;
+    writable: boolean | null;
+  };
+}
+
+export interface UsageModel {
+  model_name: string;
+  requests: number;
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  estimated_cost_usd: string;
+}
+
+export interface ProviderUsage {
+  runs: number;
+  requests: number;
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  estimated_cost_usd: string;
+  latest_run_at: string | null;
+  models: UsageModel[];
+}
+
 export interface Conversation {
   id: string;
   title: string;

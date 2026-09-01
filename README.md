@@ -95,6 +95,13 @@ OPENAI_API_KEY=<your-openai-key>
 키는 사용하는 기능에만 필요합니다. 기본 deterministic embedding과 retrieval 테스트는
 OpenAI 키 없이 실행됩니다.
 
+로컬 실행에서는 checkout의 `.env`가 process 환경변수보다 우선합니다. OpenAI embedding
+backfill까지 사용하려면 다음 선택을 함께 둡니다.
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+```
+
 ## 5분 로컬 실행
 
 ### 1. 원문 준비
@@ -132,8 +139,16 @@ uv run python -m app.cli ingest \
 ```
 
 기존 volume에서 `schema_drift`가 나오면 그 DB는 현재 ORM보다 오래된 것입니다.
-`--create-schema`는 기존 table을 변경하지 않습니다. 기존 DB 내용을 버리고 corpus에서
-다시 만들기로 결정한 경우에만 아래 명령을 사용합니다.
+먼저 등록된 data-preserving migration이 해당 drift를 처리하는지 확인하고 적용합니다.
+
+```bash
+uv run python -m app.db.migrate --plan
+uv run python -m app.db.migrate --apply
+```
+
+`--create-schema`는 기존 table을 변경하지 않습니다. migration 적용 뒤에도 알 수 없는
+drift가 남고, 기존 DB 내용을 버리고 corpus에서 다시 만들기로 결정한 경우에만 아래
+명령을 사용합니다.
 
 > **경고:** model table, chunk, embedding, BM25 통계, run/eval 결과가 삭제됩니다.
 
@@ -204,6 +219,72 @@ http://127.0.0.1:3000/docreview-rag-agent/
 operator 모드는 실제 `/admin/*` API를 사용합니다. 공개 Firebase build는 같은 화면을
 보여주지만 Corpus Lab 실행 버튼은 비활성화되고 저장된 측정 결과만 표시합니다.
 
+### 로컬 Operations
+
+현재 checkout의 검사와 로컬 Docker 서비스를 웹에서 제어하려면 host 전용 console을
+실행합니다. 이 스크립트는 임시 인증 token, `127.0.0.1:18001` Operations API, Next dev
+server를 함께 띄웁니다. app container를 중지해도 `http://127.0.0.1:3000` 화면은 남습니다.
+
+```bash
+scripts/run_local_operator_web.sh
+```
+
+3000번이 사용 중이면 다른 고정 포트를 양쪽 service에 함께 전달합니다.
+
+```bash
+DOCREVIEW_OPERATOR_WEB_PORT=3010 scripts/run_local_operator_web.sh
+```
+
+Operations는 registry에 고정된 argv만 `shell=False`로 실행합니다. public build와 원격
+SSH tunnel UI에는 command URL이나 token이 없으므로 화면 자체가 나타나지 않습니다.
+corpus 수집·ingest·embedding·BM25 작업은 기존 Corpus Lab에 남고, DB reset·volume 삭제·
+deploy·Git stage/commit은 웹 명령으로 제공하지 않습니다.
+
+local Compose는 `.env`의 `OPENAI_API_KEY`, `DART_API_KEY`, `SEC_USER_AGENT`, 선택적
+`EMBEDDING_PROVIDER`를 app container에 전달합니다. 코드나 frontend가 바뀐 뒤에는
+Operations의 **Build and start app** 또는 다음 명령으로 image를 다시 만듭니다.
+
+Linux bind mount 쓰기는 host data group으로 맞춥니다. 기본 GID는 1000이며 다른 환경은
+`.env`에 `HOST_GID=<id -g 결과>`를 설정합니다. host-owned `data/`는 group write 권한을
+유지해야 Corpus Lab의 artifact·manifest 작업이 동작합니다.
+
+```bash
+docker compose up --build -d app
+```
+
+배포본은 현재 `canned/read-only` 정책을 유지합니다. `/admin/*`, Usage, local Operations는
+노출하지 않습니다. 배포 환경에서 live 관리 기능을 열려면 인증·감사 log·원격 job 취소·
+비용 상한을 별도 설계한 뒤에만 확장합니다.
+
+서비스 UI는 시작·30초 주기·탭/네트워크 복귀 때 `/health`와 `/ready`를 확인합니다. API가
+응답하지 않으면 retry/reload 전까지 blocking dialog를 표시하고, DB·schema·corpus가
+degraded면 닫을 수 있는 경고와 System status 이동을 제공합니다. 긴 대화는 workspace
+우측 scrollbar로 메시지만 스크롤되며 sidebar·topbar·composer는 고정됩니다.
+
+튜토리얼은 New review, composer, evidence, recent reviews, Corpus Lab, System status,
+local Operations, Documentation의 실제 control을 spotlight합니다. 강조된 control을 직접
+클릭해 동작시키거나 Next로 진행할 수 있고 reduced-motion 환경에서는 pointer animation을
+멈춥니다.
+
+<!-- operator-commands:start -->
+| ID | Command | Purpose | Confirmation |
+|---|---|---|---|
+| `git-status` | `git status --short --branch` | Show branch plus staged, unstaged, and untracked paths. | no |
+| `python-lint` | `.venv/bin/ruff check app tests scripts` | Check application, tests, and scripts without rewriting files. | no |
+| `python-format-check` | `.venv/bin/ruff format --check app tests` | Report files Ruff would reformat without changing them. | no |
+| `python-tests-offline` | `.venv/bin/pytest -q -m not live_postgres` | Run the suite without live PostgreSQL cases or provider requests. | no |
+| `python-tests-postgres` | `.venv/bin/pytest -q -m live_postgres --require-live-postgres` | Require the live PostgreSQL marker instead of silently skipping it. | no |
+| `web-tests` | `npm test` | Run the Vitest component and client-contract suite. | no |
+| `web-typecheck` | `npm run typecheck` | Run TypeScript without emitting build output. | no |
+| `web-build` | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
+| `db-migrate-plan` | `.venv/bin/python -m app.db.migrate --plan` | Inspect pending data-preserving schema migrations without changing the database. | no |
+| `db-migrate-apply` | `.venv/bin/python -m app.db.migrate --apply` | Apply pending additive migrations while preserving corpus and run rows. | required |
+| `db-start` | `docker compose up -d db` | Start the local pgvector service and retain its existing volume. | required |
+| `db-stop` | `docker compose stop db` | Stop the local database without deleting its volume. | required |
+| `app-start` | `docker compose up --build -d app` | Build the local image and start the app with its database dependency. | required |
+| `app-stop` | `docker compose stop app` | Stop the local app container while leaving PostgreSQL unchanged. | required |
+<!-- operator-commands:end -->
+
 ## 데이터와 corpus 관리
 
 기본 corpus:
@@ -256,12 +337,11 @@ uv run python -m app.retrieval \
 ```
 
 `EMBEDDING_PROVIDER=openai` 또는 `REVIEW_MODEL`을 설정하면 OpenAI 키가 필요합니다.
-리뷰 workflow는 모델, 키, 입·출력 가격이 모두 있어야 열리는 fail-closed 구조입니다.
+모델과 가격은 역할별 정책에 고정되며, 임의 모델이나 수동 가격 환경변수는 시작 전에
+거부됩니다.
 
 ```dotenv
-REVIEW_MODEL=gpt-4.1-mini
-REVIEW_INPUT_PRICE_PER_MILLION_USD=0.40
-REVIEW_OUTPUT_PRICE_PER_MILLION_USD=1.60
+REVIEW_MODEL=gpt-5.6-terra
 ```
 
 공개 release는 IP당 분·일 제한, 요청당 비용 제한, UTC 일일 비용 상한을 적용합니다.
@@ -277,6 +357,7 @@ Corpus Lab은 다음 영역으로 구성됩니다.
 - `Experiments`: baseline 대비 metric·case 변화
 - `Jobs`: quick/matrix background job
 - `API Inspector`: strict JSON 요청과 typed 응답
+- `Usage`: local run/trace에 기록된 모델별 token과 예상 비용 (`live` operator 전용)
 
 조절 가능한 retrieval profile:
 
@@ -316,6 +397,7 @@ http://127.0.0.1:8000/docs
 | 메서드 | 경로 | 역할 |
 |---|---|---|
 | `GET` | `/health` | 프로세스 상태 |
+| `GET` | `/ready` | 모델 정책·DB·schema·corpus readiness |
 | `POST` | `/retrieve` | 인용 근거 검색 |
 | `POST` | `/review` | 근거 검증 리뷰 |
 | `POST` | `/review/stream` | SSE 리뷰 스트림 |
@@ -342,7 +424,8 @@ OpenAI provider 사용:
 uv run python -m app.agent \
   --question "What drove NVIDIA data center growth?" \
   --provider openai \
-  --model gpt-5-mini
+  --model gpt-5.6-terra \
+  --max-cost-usd 0.25
 ```
 
 MCP stdio server:
@@ -444,17 +527,18 @@ scripts/run_operator_web.sh
 | 증상 | 확인할 것 |
 |---|---|
 | `database_unavailable` | `docker compose ps db`, `DB_PORT`, `DATABASE_URL` |
-| `schema drift` | 기존 DB가 현재 ORM column보다 오래됨. 아래 경고 참고 |
-| `/review` 503 | `REVIEW_MODEL`, `OPENAI_API_KEY`, 입·출력 가격 |
+| `schema drift` | `app.db.migrate --plan` 후 등록 migration 적용. 남으면 아래 rebuild 경고 참고 |
+| `/review` 503 | `REVIEW_MODEL`, `OPENAI_API_KEY`, `/ready`의 model policy 상태 |
 | 공개 review 429 | IP rate limit 또는 UTC daily cost limit |
 | 검색 결과 없음 | ingest 여부와 최초 `--embed-missing` 실행 |
 | BM25 stale | ingest 또는 BM25 stats rebuild 실행 |
 | `sbert`/reranker import 오류 | `uv sync --extra cpu` |
 | Next 클릭이 동작하지 않음 | 개발 URL과 `allowedDevOrigins`, browser console |
 
-이 프로젝트는 schema migration을 `ALTER`가 아니라 재구축으로 처리합니다. 다음 명령은
-모델 테이블·청크·embedding·통계를 삭제하고 다시 생성하는 **파괴적 개발 명령**입니다.
-백업과 재인제스트 준비 없이 실행하지 마십시오.
+등록된 additive migration만 명시적 plan/apply로 실행하며 startup에서는 DDL을 수행하지
+않습니다. 등록 migration으로 해결되지 않는 drift의 마지막 수단은 재구축입니다. 다음
+명령은 모델 테이블·청크·embedding·통계를 삭제하고 다시 생성하는 **파괴적 개발 명령**
+이므로 백업과 재인제스트 준비 없이 실행하지 마십시오.
 
 ```bash
 uv run python -m app.cli ingest \
@@ -467,6 +551,23 @@ uv run python -m app.cli ingest \
 - [Docker Compose 운영](deploy/docker-compose.md)
 - [골든셋 author review queue](data/golden/REVIEW.md)
 - [테스트 파일 배치 규칙](tests/RULES.md)
+
+## 제품 완성 로드맵
+
+`planned`는 설계만 확정된 상태, `implemented`는 코드와 focused test가 있는 상태,
+`verified`는 아래 증거와 실제 로컬 화면까지 확인한 상태입니다.
+
+<!-- product-roadmap:start -->
+| Gate | State | Included behavior | Verification evidence |
+|---|---|---|---|
+| Model policy | verified | role allowlist, reasoning, cached/cache-write pricing, Agent USD cap | Python policy/provider tests |
+| Schema migration | verified | explicit additive usage-accounting migration with row preservation | live PostgreSQL migration test and local ledger |
+| Readiness | verified | typed `/ready`, policy and corpus state, 200/503 split | release API tests and local `/ready` response |
+| Review UX | verified | SSE progress/cancel, safe GFM, right-edge scroll, runtime modal, target-click tour | Vitest and local browser health/tour QA |
+| Corpus Lab | verified | public read-only, local live operator, usage, golden evaluation jobs | component/API tests and successful local quick evaluation |
+| Local Operations | verified | authenticated fixed command registry, logs, cancel, service confirmation | operator API tests and browser Git-status run |
+| Release UI | verified | test, typecheck, isolated static build, fixed shell chrome | static build and local browser QA |
+<!-- product-roadmap:end -->
 
 ## 재조립 기록
 

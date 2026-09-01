@@ -27,7 +27,10 @@ services:
     environment:
       CORPUS_DIR: /app/data/corpus
       DATABASE_URL: postgresql+asyncpg://filing:filing@db:5432/filing
-      EMBEDDING_PROVIDER: deterministic
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DART_API_KEY: ${DART_API_KEY:-}
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-}
       DOCREVIEW_MODE: runtime
       DOCREVIEW_ADMIN_MODE: live
       DOCREVIEW_HOST: 127.0.0.1
@@ -38,6 +41,8 @@ services:
         condition: service_healthy
     ports: ["${APP_PORT:-8000}:8000"]
     init: true
+    group_add:
+      - "${HOST_GID:-1000}"
     volumes:
       - ./data:/app/data
     tmpfs:

@@ -10,6 +10,7 @@ import {
   getCorpusJobs,
   getEvaluationJobs,
   getGoldenSuites,
+  getProviderUsage,
   queueEvaluation,
   queueCorpusOperation,
 } from "@/lib/api";
@@ -20,10 +21,11 @@ import type {
   EvaluationRequest,
   GoldenSuite,
   RetrievalProfile,
+  ProviderUsage,
   SuiteId,
 } from "@/lib/types";
 
-type LabTab = "overview" | "documents" | "golden" | "experiments" | "jobs" | "api";
+type LabTab = "overview" | "documents" | "golden" | "experiments" | "jobs" | "api" | "usage";
 
 const TABS: Array<[LabTab, string]> = [
   ["overview", "Overview"],
@@ -34,14 +36,28 @@ const TABS: Array<[LabTab, string]> = [
   ["api", "API Inspector"],
 ];
 
+const EMPTY_USAGE: ProviderUsage = {
+  runs: 0,
+  requests: 0,
+  input_tokens: 0,
+  cached_input_tokens: 0,
+  cache_write_input_tokens: 0,
+  output_tokens: 0,
+  reasoning_tokens: 0,
+  estimated_cost_usd: "0",
+  latest_run_at: null,
+  models: [],
+};
+
 interface CorpusLabProps {
   live: boolean;
+  ready?: boolean;
   profile: RetrievalProfile;
   onProfileChange: (profile: RetrievalProfile) => void;
   onApplyProfile: (profile: RetrievalProfile) => void;
 }
 
-export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: CorpusLabProps) {
+export function CorpusLab({ live, ready = true, profile, onProfileChange, onApplyProfile }: CorpusLabProps) {
   const [tab, setTab] = useState<LabTab>("overview");
   const [suites, setSuites] = useState<GoldenSuite[]>(CANNED_SUITES);
   const [suiteId, setSuiteId] = useState<SuiteId>("sec-en");
@@ -65,6 +81,8 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
   const [years, setYears] = useState("2023 2024");
   const [manifest, setManifest] = useState("manifest.json");
   const [corpusJobs, setCorpusJobs] = useState<Record<string, unknown>>({ history: [] });
+  const [usage, setUsage] = useState<ProviderUsage>(EMPTY_USAGE);
+  const [usageError, setUsageError] = useState("");
 
   const evaluationRequest = useMemo<EvaluationRequest>(() => ({
     suite_id: suiteId,
@@ -93,6 +111,12 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
       setJobs(jobRows);
       setCorpus(corpusSnapshot);
       setCorpusJobs(corpusJobRows);
+      setUsageError("");
+      try {
+        setUsage(await getProviderUsage());
+      } catch (reason) {
+        setUsageError(reason instanceof Error ? reason.message : "Usage could not be loaded.");
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Refresh failed.");
     }
@@ -106,7 +130,7 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
   }, [live]);
 
   async function runEvaluation() {
-    if (!live) return;
+    if (!live || !ready) return;
     setBusy(true);
     setError("");
     try {
@@ -149,7 +173,7 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
   }
 
   async function queueCorpus(body: Record<string, unknown>) {
-    if (!live) return;
+    if (!live || !ready) return;
     setBusy(true);
     setError("");
     try {
@@ -170,6 +194,8 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
   const corpusHistory = Array.isArray(corpusJobs.history)
     ? (corpusJobs.history as Array<Record<string, unknown>>)
     : [];
+  const tabs = live ? [...TABS, ["usage", "Usage"] as [LabTab, string]] : TABS;
+  const canRun = live && ready;
 
   return (
     <section className="lab-shell">
@@ -178,7 +204,7 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
         <div className={`mode-badge ${live ? "live" : ""}`}>{live ? "Local operator" : "Read-only portfolio"}</div>
       </header>
       <nav className="lab-tabs" aria-label="Corpus Lab sections">
-        {TABS.map(([id, label]) => (
+        {tabs.map(([id, label]) => (
           <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)}>{label}</button>
         ))}
       </nav>
@@ -201,10 +227,10 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
             <label>Manifest<select value={manifest} onChange={(event) => setManifest(event.target.value)}><option value="manifest.json">manifest.json</option><option value="dart-manifest.json">dart-manifest.json</option></select></label>
           </div>
           <div className="action-row">
-            <button className="button" type="button" disabled={!live || busy} onClick={() => void queueCorpus({ kind: registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: identifiers.split(/[\s,]+/).filter(Boolean), years: years.split(/[\s,]+/).map(Number).filter(Number.isInteger) })}>Acquire missing filings</button>
-            <button className="button" type="button" disabled={!live || busy} onClick={() => void queueCorpus({ kind: "ingest_manifest", manifest })}>Ingest manifest</button>
-            <button className="button" type="button" disabled={!live || busy} onClick={() => void queueCorpus({ kind: "backfill_embeddings" })}>Backfill embeddings</button>
-            <button className="button" type="button" disabled={!live || busy} onClick={() => void queueCorpus({ kind: "rebuild_bm25" })}>Rebuild BM25</button>
+            <button className="button" type="button" disabled={!canRun || busy} onClick={() => void queueCorpus({ kind: registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: identifiers.split(/[\s,]+/).filter(Boolean), years: years.split(/[\s,]+/).map(Number).filter(Number.isInteger) })}>Acquire missing filings</button>
+            <button className="button" type="button" disabled={!canRun || busy} onClick={() => void queueCorpus({ kind: "ingest_manifest", manifest })}>Ingest manifest</button>
+            <button className="button" type="button" disabled={!canRun || busy} onClick={() => void queueCorpus({ kind: "backfill_embeddings" })}>Backfill embeddings</button>
+            <button className="button" type="button" disabled={!canRun || busy} onClick={() => void queueCorpus({ kind: "rebuild_bm25" })}>Rebuild BM25</button>
           </div>
           {!live && <p className="helper">Actual acquisition and indexing are available only through the SSH operator tunnel.</p>}
           {corpusHistory.slice(0, 3).map((job) => <p className="helper" key={String(job.job_id)}>{String(job.status)} · {String(job.message)}</p>)}
@@ -225,7 +251,7 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
           <label>Run mode<select value={mode} onChange={(event) => setMode(event.target.value as "quick" | "matrix")}><option value="quick">Quick · current index</option><option value="matrix">Matrix · isolated corpus</option></select></label>
           {mode === "matrix" && <label>Chunk targets<input value={chunkTargets} onChange={(event) => setChunkTargets(event.target.value)} placeholder="500 1200" /></label>}
           <ProfileFields profile={profile} onChange={onProfileChange} />
-          <button className="button primary" type="button" disabled={!live || busy} onClick={() => void runEvaluation()}><Play size={15} /> {busy ? "Queueing…" : "Queue evaluation"}</button>
+          <button className="button primary" type="button" disabled={!canRun || busy} onClick={() => void runEvaluation()}><Play size={15} /> {busy ? "Queueing…" : "Queue evaluation"}</button>
           {!live && <p className="helper">Public mode shows verified canned comparison data. Actual execution requires the SSH operator tunnel.</p>}
         </section>
         <section className="surface metric-table">
@@ -242,7 +268,26 @@ export function CorpusLab({ live, profile, onProfileChange, onApplyProfile }: Co
 
       {tab === "jobs" && <section className="surface"><h2>Evaluation jobs</h2>{jobs.map((job) => <article className="job-row" key={job.job_id}><div><strong>{job.request.suite_id} · {job.request.mode}</strong><p>{job.message}</p></div><span>{job.status}</span>{job.status === "succeeded" && job.result_id && job.baseline_id && <button className="button ghost" type="button" onClick={() => void loadComparison(job.result_id!, job.baseline_id!)}>Compare</button>}{job.status === "succeeded" && <button className="button ghost" type="button" disabled={!live} onClick={() => onApplyProfile(job.request.profile)}>Use in current review</button>}</article>)}</section>}
 
-      {tab === "api" && <div className="api-inspector"><section><h2>Request</h2><textarea value={rawRequest} onChange={(event) => setRawRequest(event.target.value)} spellCheck={false} /><button className="button primary" type="button" disabled={!live} onClick={() => void sendRawRequest()}><Braces size={15} /> Send to API</button></section><section><h2>Response</h2><pre>{rawResponse || "The typed API response will appear here."}</pre></section></div>}
+      {tab === "api" && <div className="api-inspector"><section><h2>Request</h2><textarea value={rawRequest} onChange={(event) => setRawRequest(event.target.value)} spellCheck={false} /><button className="button primary" type="button" disabled={!canRun} onClick={() => void sendRawRequest()}><Braces size={15} /> Send to API</button></section><section><h2>Response</h2><pre>{rawResponse || "The typed API response will appear here."}</pre></section></div>}
+
+      {tab === "usage" && live && <div className="panel-stack">
+        {usageError && <div className="notice error" role="alert">{usageError}</div>}
+        <div className="metric-grid">
+          <Metric icon={<Activity />} label="Runs" value={String(usage.runs)} />
+          <Metric icon={<Braces />} label="Requests" value={String(usage.requests)} />
+          <Metric icon={<Database />} label="Input tokens" value={usage.input_tokens.toLocaleString()} />
+          <Metric icon={<Beaker />} label="Estimated cost" value={`$${usage.estimated_cost_usd}`} />
+        </div>
+        <section className="surface table-wrap usage-table">
+          <h2>Recorded model usage</h2>
+          <p className="helper">Local application traces only. This does not query OpenAI account billing.</p>
+          <table><thead><tr><th>Model</th><th>Requests</th><th>Input</th><th>Cached</th><th>Cache write</th><th>Output</th><th>Reasoning</th><th>Estimated USD</th></tr></thead><tbody>
+            {usage.models.map((model) => <tr key={model.model_name}><td>{model.model_name}</td><td>{model.requests}</td><td>{model.input_tokens.toLocaleString()}</td><td>{model.cached_input_tokens.toLocaleString()}</td><td>{model.cache_write_input_tokens.toLocaleString()}</td><td>{model.output_tokens.toLocaleString()}</td><td>{model.reasoning_tokens.toLocaleString()}</td><td>${model.estimated_cost_usd}</td></tr>)}
+          </tbody></table>
+          {!usage.models.length && <p className="helper">No persisted provider traces yet.</p>}
+          {usage.latest_run_at && <p className="helper">Latest run: {new Date(usage.latest_run_at).toLocaleString()}</p>}
+        </section>
+      </div>}
     </section>
   );
 }

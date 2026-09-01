@@ -75,6 +75,20 @@ Next 개발 URL:
 http://127.0.0.1:3000/docreview-rag-agent/
 ```
 
+로컬 Compose는 root `.env`의 `OPENAI_API_KEY`, `DART_API_KEY`, `SEC_USER_AGENT`와
+선택적 `EMBEDDING_PROVIDER`를 app에 전달합니다. `.env`가 있으면 application settings도
+같은 이름의 process 환경변수보다 `.env` 값을 우선합니다. public deployment에서는
+administrator와 Usage route를 계속 노출하지 않습니다.
+
+app은 non-root UID 10001을 유지하면서 `HOST_GID`를 supplementary group으로 받아
+host-owned `./data` bind mount에 씁니다. 기본은 1000이고 host group이 다르면 `.env`에
+`HOST_GID=$(id -g)`의 숫자 값을 넣습니다. `data/`, `data/corpus`, `data/eval_runs`는 group
+write 가능한 상태여야 합니다.
+
+정적 frontend는 배포 환경에서도 configured API base의 `/health`와 `/ready`를 확인합니다.
+API origin이 내려가면 blocking retry/reload dialog를, runtime DB가 degraded면 dismissible
+warning을 표시합니다. Canned release의 `not_applicable` corpus는 정상 상태입니다.
+
 Compose는 local Next origin만 administrator CORS에 허용합니다. 공개 정적 build는
 Corpus Lab의 실제 실행 API를 호출하지 않습니다.
 
@@ -144,7 +158,16 @@ docker compose logs app
 없으면 ingest나 retrieval 중간에 모호한 `UndefinedColumn` 오류가 발생합니다.
 
 Corpus Lab은 drift를 표시하고 모든 쓰기 작업을 차단합니다. 기존 corpus가 재다운로드
-가능하고 DB를 재구축하기로 명시적으로 결정한 경우에만 다음 개발 명령을 사용합니다.
+가능하더라도 먼저 등록된 additive migration을 plan/apply합니다. migration은 app startup
+중 자동 실행되지 않으며 배포 전 명시적 운영 단계로 실행합니다.
+
+```bash
+uv run python -m app.db.migrate --plan
+uv run python -m app.db.migrate --apply
+```
+
+등록 migration으로 해결되지 않고 DB를 재구축하기로 명시적으로 결정한 경우에만 다음
+개발 명령을 사용합니다.
 
 > **경고:** 아래 명령은 model table, chunk, embedding, BM25 통계, run/eval 데이터를
 > 삭제합니다. 필요한 결과를 먼저 백업하십시오.
