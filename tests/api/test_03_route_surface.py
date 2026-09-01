@@ -80,6 +80,8 @@ def test_openapi_exposes_resource_oriented_surface(client_factory, services):
         "/review/stream",
         "/runs/{run_id}",
         "/runs/{run_id}/traces",
+        "/snapshots",
+        "/snapshots/compare",
     }
 
     retrieve_responses = document["paths"]["/retrieve"]["post"]["responses"]

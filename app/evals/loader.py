@@ -2,6 +2,8 @@
 
 from collections import defaultdict
 from collections.abc import Iterable
+import hashlib
+import json
 from pathlib import Path
 import re
 
@@ -22,6 +24,16 @@ DOC_ID_PATTERN = re.compile(r"[A-Za-z0-9.]+-FY[0-9]{4}")
 
 class GoldenDataError(ValueError):
     """A golden file or its cited source snapshot violates the golden-data contract."""
+
+
+def encode_golden_payload(payload: list[dict[str, object]]) -> bytes:
+    """Encode one canonical human-reviewable golden JSON document."""
+    return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode()
+
+
+def golden_payload_sha256(payload: list[dict[str, object]]) -> str:
+    """Hash the canonical bytes used by DB revisions and temporary eval inputs."""
+    return hashlib.sha256(encode_golden_payload(payload)).hexdigest()
 
 
 def normalized_question(question: str) -> str:
@@ -268,12 +280,26 @@ def load_golden_cases(
     """
     golden_path = Path(path)
     payload = read_strict_json(golden_path, error=GoldenDataError)
+    return validate_golden_payload(
+        payload,
+        manifest_path=manifest_path,
+        label=str(golden_path),
+    )
+
+
+def validate_golden_payload(
+    payload: object,
+    *,
+    manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    label: str = "golden payload",
+) -> list[GoldenCase]:
+    """Validate in-memory revision cases against schema, uniqueness, and source bytes."""
     if not isinstance(payload, list):
-        raise GoldenDataError(f"golden file root must be a JSON array: {golden_path}")
+        raise GoldenDataError(f"golden file root must be a JSON array: {label}")
     try:
         cases = GOLDEN_CASES.validate_python(payload)
     except ValidationError as exc:
-        raise GoldenDataError(f"invalid golden cases in {golden_path}: {exc}") from exc
+        raise GoldenDataError(f"invalid golden cases in {label}: {exc}") from exc
 
     validate_unique_cases(cases)
     validate_golden_sources(cases, manifest_path)

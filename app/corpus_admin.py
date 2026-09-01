@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, select
@@ -17,12 +17,24 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.config import Settings, get_settings
 from app.db.bootstrap import SchemaDriftError, bootstrap_schema, ensure_schema_compatibility
-from app.db.models import BM25CorpusStat, Chunk, Document
+from app.db.models import (
+    BM25CorpusStat,
+    Chunk,
+    Document,
+    EvaluationSnapshot,
+    SnapshotDocument,
+)
 from app.ingestion.dart_api import acquire_dart
 from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.progress import OperationProgress
 from app.ingestion.seed import load_seed_batch, persist_seed_batch_with_stats
 from app.observability.persistence import redact_sensitive_text
+from app.operator.jobs import (
+    JobExecutionCoordinator,
+    JobStore,
+    JobTurnCancelledError,
+    StoredJob,
+)
 from app.retrieval.bm25 import backfill_term_stats
 from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
@@ -37,7 +49,9 @@ type AdminJobKind = Literal[
     "backfill_embeddings",
     "rebuild_bm25",
 ]
-type AdminJobStatus = Literal["queued", "running", "succeeded", "failed"]
+type AdminJobStatus = Literal[
+    "queued", "running", "succeeded", "failed", "interrupted", "cancelled"
+]
 type SchemaStatus = Literal["compatible", "empty", "drifted", "unavailable"]
 
 MAX_QUEUED_JOBS = 8
@@ -71,6 +85,22 @@ class SessionFactory(Protocol):
     def __call__(self) -> AsyncSession:
         """Return one asynchronous session context manager."""
         ...
+
+
+async def _embedding_state(session: AsyncSession, provider: EmbeddingProvider) -> tuple[int, int]:
+    """Return committed compatible and pending chunk counts for one provider identity."""
+    identity = provider.identity
+    compatible = (
+        Chunk.embedding.is_not(None)
+        & (Chunk.embedding_provider == identity.provider)
+        & (Chunk.embedding_model == identity.model)
+        & (Chunk.embedding_dimensions == identity.dimensions)
+    )
+    total = int(await session.scalar(select(func.count()).select_from(Chunk)) or 0)
+    ready = int(
+        await session.scalar(select(func.count()).select_from(Chunk).where(compatible)) or 0
+    )
+    return ready, total - ready
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +141,9 @@ class AdminDocument:
     form: str
     parse_status: str
     filing_date: str
+    report_period: str
+    filing_id: str
+    source_url: str
     source_length: int
     source_sha256: str
     chunk_count: int
@@ -129,11 +162,28 @@ class ChunkPreview:
 
 
 @dataclass(frozen=True, slots=True)
+class SnapshotMembership:
+    """One immutable snapshot revision containing a selected document."""
+
+    snapshot_id: int
+    label: str
+    status: str
+    public: bool
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentDetail:
     """One selected document and its bounded chunk previews."""
 
     document: AdminDocument
     chunks: tuple[ChunkPreview, ...]
+    text_chunks: int = 0
+    table_chunks: int = 0
+    embedded_chunks: int = 0
+    item_counts: tuple[dict[str, object], ...] = ()
+    embedding_identities: tuple[dict[str, object], ...] = ()
+    snapshot_memberships: tuple[SnapshotMembership, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +235,8 @@ class AdminJob:
     created_at: datetime = datetime.min.replace(tzinfo=UTC)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    error_code: str | None = None
+    result_refs: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +246,56 @@ class JobBoard:
     active: AdminJob | None
     queued: tuple[AdminJob, ...]
     history: tuple[AdminJob, ...]
+
+
+class JobCancelledError(RuntimeError):
+    """Signal cooperative cancellation at one safe progress boundary."""
+
+
+def _command_payload(command: AdminCommand) -> dict[str, object]:
+    """Serialize one validated command for persistent retry provenance."""
+    return {
+        "identifiers": list(command.identifiers),
+        "years": list(command.years),
+        "manifest": command.manifest,
+        "expected_documents": command.expected_documents,
+    }
+
+
+def _command_from_stored(job: StoredJob) -> AdminCommand:
+    """Revalidate one persisted corpus request before retry or display."""
+    payload = job.request_json
+    return AdminCommand(
+        kind=cast("AdminJobKind", job.kind),
+        identifiers=tuple(str(value) for value in payload.get("identifiers", [])),
+        years=tuple(int(value) for value in payload.get("years", [])),
+        manifest=(str(payload["manifest"]) if payload.get("manifest") is not None else None),
+        expected_documents=(
+            int(payload["expected_documents"])
+            if payload.get("expected_documents") is not None
+            else None
+        ),
+    )
+
+
+def _job_from_stored(job: StoredJob) -> AdminJob:
+    """Project a stored job onto the existing corpus job response contract."""
+    return AdminJob(
+        job_id=job.job_id,
+        command=_command_from_stored(job),
+        status=cast("AdminJobStatus", job.status),
+        stage=job.stage,
+        current=job.current,
+        total=job.total,
+        message=job.message,
+        detail_current=job.detail_current,
+        detail_total=job.detail_total,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error_code=job.error_code,
+        result_refs=job.result_refs,
+    )
 
 
 class CorpusAdminService(Protocol):
@@ -220,7 +322,7 @@ class CorpusAdminService(Protocol):
         """Return one selected document and bounded chunk previews."""
         ...
 
-    async def enqueue(self, command: AdminCommand) -> AdminJob:
+    async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one safe administrator operation."""
         ...
 
@@ -266,6 +368,9 @@ class CannedCorpusAdminService:
             form="10-K",
             parse_status="parsed",
             filing_date="2024-02-21",
+            report_period="2024-01-28",
+            filing_id="0001045810-24-000029",
+            source_url="https://www.sec.gov/Archives/edgar/data/1045810/",
             source_length=1_873_421,
             source_sha256="3" * 64,
             chunk_count=612,
@@ -280,6 +385,9 @@ class CannedCorpusAdminService:
             form="사업보고서",
             parse_status="parsed",
             filing_date="2025-03-11",
+            report_period="2024-12-31",
+            filing_id="20250311001042",
+            source_url="https://dart.fss.or.kr/",
             source_length=5_780_874,
             source_sha256="5" * 64,
             chunk_count=668,
@@ -396,9 +504,9 @@ class CannedCorpusAdminService:
             return None
         return DocumentDetail(document, self._details.get(doc_id, ()))
 
-    async def enqueue(self, command: AdminCommand) -> AdminJob:
+    async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Refuse mutation on the public portfolio fixture."""
-        del command
+        del command, retry_of
         raise PermissionError("Read-only portfolio demo; local administrator mode is required.")
 
     async def retry(self, job_id: str) -> AdminJob:
@@ -428,6 +536,9 @@ class RuntimeCorpusAdminService:
         session_factory: SessionFactory = _default_session_factory,
         embedding_provider: EmbeddingProvider | None = None,
         operation_runner: OperationRunner | None = None,
+        job_store: JobStore | None = None,
+        execution_lock: asyncio.Lock | None = None,
+        execution_coordinator: JobExecutionCoordinator | None = None,
     ) -> None:
         configured = settings or get_settings()
         self._settings = configured
@@ -435,11 +546,16 @@ class RuntimeCorpusAdminService:
         self._session_factory = session_factory
         self._embedding_provider = embedding_provider
         self._operation_runner = operation_runner
+        self._job_store = job_store
+        self._execution_lock = execution_lock or asyncio.Lock()
+        self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._corpus_root = configured.corpus_dir.resolve()
         self._queue: asyncio.Queue[AdminJob] = asyncio.Queue(maxsize=MAX_QUEUED_JOBS)
         self._jobs: dict[str, AdminJob] = {}
         self._history: deque[str] = deque(maxlen=MAX_JOB_HISTORY)
         self._worker: asyncio.Task[None] | None = None
+        self._recovered_jobs = False
+        self._cancel_events: dict[str, asyncio.Event] = {}
 
     @property
     def read_only(self) -> bool:
@@ -555,6 +671,9 @@ class RuntimeCorpusAdminService:
                 form=document.form,
                 parse_status=document.parse_status,
                 filing_date=document.filing_date,
+                report_period=document.report_period,
+                filing_id=document.filing_id,
+                source_url=document.source_url,
                 source_length=document.source_length,
                 source_sha256=document.source_sha256,
                 chunk_count=int(chunk_count),
@@ -629,6 +748,58 @@ class RuntimeCorpusAdminService:
         )
         async with self._session_factory() as session:
             chunks = tuple(await session.scalars(statement))
+            aggregate_rows = (
+                await session.execute(
+                    select(
+                        Chunk.kind,
+                        Chunk.item,
+                        Chunk.embedding_provider,
+                        Chunk.embedding_model,
+                        Chunk.embedding_dimensions,
+                        func.count(),
+                    )
+                    .where(Chunk.doc_id == doc_id)
+                    .group_by(
+                        Chunk.kind,
+                        Chunk.item,
+                        Chunk.embedding_provider,
+                        Chunk.embedding_model,
+                        Chunk.embedding_dimensions,
+                    )
+                )
+            ).all()
+            snapshot_rows = (
+                await session.execute(
+                    select(EvaluationSnapshot)
+                    .join(
+                        SnapshotDocument,
+                        SnapshotDocument.snapshot_id == EvaluationSnapshot.id,
+                    )
+                    .where(
+                        SnapshotDocument.doc_id == doc_id,
+                        SnapshotDocument.source_sha256 == document.source_sha256,
+                    )
+                    .order_by(EvaluationSnapshot.created_at.desc(), EvaluationSnapshot.id.desc())
+                )
+            ).scalars()
+            memberships = tuple(snapshot_rows)
+        text_chunks = sum(int(row[5]) for row in aggregate_rows if row.kind == "text")
+        table_chunks = sum(int(row[5]) for row in aggregate_rows if row.kind == "table")
+        embedded_chunks = sum(
+            int(row[5]) for row in aggregate_rows if row.embedding_provider is not None
+        )
+        item_totals: dict[str, int] = {}
+        embedding_totals: dict[tuple[str, str, int], int] = {}
+        for row in aggregate_rows:
+            item = row.item or "unsectioned"
+            item_totals[item] = item_totals.get(item, 0) + int(row[5])
+            if row.embedding_provider is not None:
+                identity = (
+                    str(row.embedding_provider),
+                    str(row.embedding_model),
+                    int(row.embedding_dimensions),
+                )
+                embedding_totals[identity] = embedding_totals.get(identity, 0) + int(row[5])
         return DocumentDetail(
             document,
             tuple(
@@ -642,10 +813,36 @@ class RuntimeCorpusAdminService:
                 )
                 for chunk in chunks
             ),
+            text_chunks=text_chunks,
+            table_chunks=table_chunks,
+            embedded_chunks=embedded_chunks,
+            item_counts=tuple(
+                {"item": item, "count": count} for item, count in sorted(item_totals.items())
+            ),
+            embedding_identities=tuple(
+                {
+                    "provider": identity[0],
+                    "model": identity[1],
+                    "dimensions": identity[2],
+                    "count": count,
+                }
+                for identity, count in sorted(embedding_totals.items())
+            ),
+            snapshot_memberships=tuple(
+                SnapshotMembership(
+                    snapshot_id=snapshot.id,
+                    label=snapshot.label,
+                    status=snapshot.status,
+                    public=snapshot.public,
+                    created_at=snapshot.created_at,
+                )
+                for snapshot in memberships
+            ),
         )
 
-    async def enqueue(self, command: AdminCommand) -> AdminJob:
+    async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one operation and start the persistent single worker lazily."""
+        await self._ensure_job_recovery()
         if self._queue.full():
             raise RuntimeError(f"administrator queue is full ({MAX_QUEUED_JOBS})")
         job = AdminJob(
@@ -657,22 +854,82 @@ class RuntimeCorpusAdminService:
             total=None,
             message="Queued",
             created_at=_utc_now(),
+            result_refs={"retry_of": retry_of} if retry_of is not None else {},
         )
         self._jobs[job.job_id] = job
+        self._cancel_events[job.job_id] = asyncio.Event()
+        if self._job_store is not None:
+            await self._job_store.create(
+                job_id=job.job_id,
+                domain="corpus",
+                kind=command.kind,
+                request_json=_command_payload(command),
+                created_at=job.created_at,
+                result_refs=job.result_refs,
+            )
+        await self._execution_coordinator.register(job.job_id, job.created_at)
         self._queue.put_nowait(job)
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._work(), name="corpus-admin-worker")
         return job
 
     async def retry(self, job_id: str) -> AdminJob:
-        """Requeue the command from one failed operation only."""
+        """Requeue the command from one failed or interrupted operation only."""
+        await self._ensure_job_recovery()
         job = self._jobs.get(job_id)
-        if job is None or job.status != "failed":
-            raise ValueError("only a known failed job can be retried")
-        return await self.enqueue(job.command)
+        if job is None and self._job_store is not None:
+            stored = await self._job_store.get(job_id)
+            job = (
+                _job_from_stored(stored)
+                if stored is not None and stored.domain == "corpus"
+                else None
+            )
+        if job is None or job.status not in {"failed", "interrupted"}:
+            raise ValueError("only a known failed or interrupted job can be retried")
+        return await self.enqueue(job.command, retry_of=job_id)
+
+    async def cancel(self, job_id: str) -> AdminJob:
+        """Cancel queued work or request cooperative running-job cancellation."""
+        await self._ensure_job_recovery()
+        job = self._jobs.get(job_id)
+        if job is None or job.status not in {"queued", "running"}:
+            raise ValueError("only a known queued or running job can be cancelled")
+        if job.status == "running" and job.command.kind != "backfill_embeddings":
+            raise ValueError("this running operation has no safe cancellation boundary")
+        self._cancel_events.setdefault(job_id, asyncio.Event()).set()
+        await self._execution_coordinator.cancel(job_id)
+        cancelled = replace(
+            job,
+            status="cancelled",
+            stage="cancelled",
+            message="Cancelled by operator.",
+            finished_at=_utc_now(),
+            error_code="cancelled",
+        )
+        self._jobs[job_id] = cancelled
+        if self._job_store is not None:
+            await self._job_store.cancel(job_id)
+        return cancelled
 
     async def jobs(self) -> JobBoard:
         """Return one active job, FIFO queue, and newest-first bounded history."""
+        await self._ensure_job_recovery()
+        if self._job_store is not None:
+            rows = await self._job_store.list(domain="corpus", limit=MAX_JOB_HISTORY + 16)
+            jobs = tuple(_job_from_stored(row) for row in rows)
+            active = next((item for item in jobs if item.status == "running"), None)
+            queued = tuple(
+                sorted(
+                    (item for item in jobs if item.status == "queued"),
+                    key=lambda item: item.created_at,
+                )
+            )
+            history = tuple(
+                item
+                for item in jobs
+                if item.status in {"succeeded", "failed", "interrupted", "cancelled"}
+            )[:MAX_JOB_HISTORY]
+            return JobBoard(active, queued, history)
         ordered = sorted(self._jobs.values(), key=lambda item: item.created_at)
         active = next((item for item in ordered if item.status == "running"), None)
         queued = tuple(item for item in ordered if item.status == "queued")
@@ -681,6 +938,8 @@ class RuntimeCorpusAdminService:
 
     def _publish(self, job_id: str, progress: OperationProgress) -> None:
         """Replace one running job with its newest non-secret progress snapshot."""
+        if self._cancel_events.get(job_id, asyncio.Event()).is_set():
+            raise JobCancelledError("cancelled by operator")
         job = self._jobs[job_id]
         self._jobs[job_id] = replace(
             job,
@@ -690,6 +949,36 @@ class RuntimeCorpusAdminService:
             message=self._redact(progress.message),
             detail_current=progress.detail_current,
             detail_total=progress.detail_total,
+        )
+        if self._job_store is not None:
+            asyncio.create_task(self._persist_current_job(job_id))
+
+    async def _ensure_job_recovery(self) -> None:
+        """Mark stale process-owned jobs interrupted once before accepting work."""
+        if self._recovered_jobs:
+            return
+        if self._job_store is not None:
+            await self._job_store.interrupt_incomplete("corpus")
+        self._recovered_jobs = True
+
+    async def _persist_current_job(self, job_id: str) -> None:
+        """Persist the latest in-memory state, collapsing stale progress callbacks."""
+        if self._job_store is None or job_id not in self._jobs:
+            return
+        job = self._jobs[job_id]
+        await self._job_store.put(
+            job_id,
+            status=job.status,
+            stage=job.stage,
+            current=job.current,
+            total=job.total,
+            detail_current=job.detail_current,
+            detail_total=job.detail_total,
+            message=job.message,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+            error_code=job.error_code,
+            result_refs=job.result_refs or {},
         )
 
     async def _assert_writable_schema(self) -> None:
@@ -771,8 +1060,8 @@ class RuntimeCorpusAdminService:
 
         if command.kind == "backfill_embeddings":
             await bootstrap_schema(self._database_engine)
-            snapshot = await self.snapshot()
-            pending = snapshot.status.pending_embeddings
+            async with self._session_factory() as session:
+                ready_before, pending = await _embedding_state(session, self._provider)
 
             def on_batch(result: EmbeddingBackfillResult) -> None:
                 """Publish cumulative batch counts from the resumable backfill."""
@@ -787,7 +1076,18 @@ class RuntimeCorpusAdminService:
 
             async with self._session_factory() as session:
                 result = await embed_missing_chunks(session, self._provider, on_batch=on_batch)
-            return f"Embedded {result.embedded} chunk(s); skipped {result.skipped_stale} stale"
+            async with self._session_factory() as session:
+                ready_after, pending_after = await _embedding_state(session, self._provider)
+            if ready_after < ready_before + result.embedded:
+                raise RuntimeError(
+                    "embedding postcondition failed: reported rows were not committed"
+                )
+            if pending_after > max(0, pending - result.embedded):
+                raise RuntimeError("embedding postcondition failed: pending rows did not decrease")
+            return (
+                f"Embedded {result.embedded} chunk(s); skipped {result.skipped_stale} stale; "
+                f"verified {ready_after} ready"
+            )
 
         await bootstrap_schema(self._database_engine)
         publish(OperationProgress("bm25", 0, 1, "Rebuilding BM25 statistics"))
@@ -795,40 +1095,78 @@ class RuntimeCorpusAdminService:
             result = await backfill_term_stats(session)
         return f"Rebuilt BM25 statistics for {result.chunks} chunk(s)"
 
+    async def _execute_job(self, queued: AdminJob) -> None:
+        """Execute one corpus job while the shared operator lock is held."""
+        running = replace(
+            queued,
+            status="running",
+            stage="starting",
+            message="Starting",
+            started_at=_utc_now(),
+        )
+        self._jobs[queued.job_id] = running
+        await self._persist_current_job(queued.job_id)
+        try:
+            job_id = queued.job_id
+            message = await self._run_operation(
+                queued.command,
+                lambda progress, job_id=job_id: self._publish(job_id, progress),
+            )
+        except JobCancelledError:
+            finished = replace(
+                self._jobs[queued.job_id],
+                status="cancelled",
+                stage="cancelled",
+                message="Cancelled by operator.",
+                error_code="cancelled",
+                finished_at=_utc_now(),
+            )
+        except Exception as error:  # noqa: BLE001 - job boundary records typed safe failure
+            finished = replace(
+                self._jobs[queued.job_id],
+                status="failed",
+                stage="failed",
+                message=self._redact(f"{type(error).__name__}: {error}"),
+                error_code=(
+                    "postcondition_failed"
+                    if "postcondition failed" in str(error)
+                    else type(error).__name__.lower()
+                ),
+                finished_at=_utc_now(),
+            )
+        else:
+            finished = replace(
+                self._jobs[queued.job_id],
+                status="succeeded",
+                stage="complete",
+                message=self._redact(message),
+                finished_at=_utc_now(),
+                result_refs={
+                    **(self._jobs[queued.job_id].result_refs or {}),
+                    "summary": self._redact(message),
+                },
+            )
+        self._jobs[queued.job_id] = finished
+        await self._persist_current_job(queued.job_id)
+        self._history.append(queued.job_id)
+        self._cancel_events.pop(queued.job_id, None)
+
     async def _work(self) -> None:
-        """Run queued jobs serially for the lifetime of the current queue."""
+        """Run queued jobs serially through the shared corpus/evaluation lock."""
         while not self._queue.empty():
             queued = await self._queue.get()
-            running = replace(
-                queued,
-                status="running",
-                stage="starting",
-                message="Starting",
-                started_at=_utc_now(),
-            )
-            self._jobs[queued.job_id] = running
             try:
-                job_id = queued.job_id
-                message = await self._run_operation(
-                    queued.command,
-                    lambda progress, job_id=job_id: self._publish(job_id, progress),
-                )
-            except Exception as error:  # noqa: BLE001 - job boundary records typed safe failure
-                finished = replace(
-                    self._jobs[queued.job_id],
-                    status="failed",
-                    stage="failed",
-                    message=self._redact(f"{type(error).__name__}: {error}"),
-                    finished_at=_utc_now(),
-                )
-            else:
-                finished = replace(
-                    self._jobs[queued.job_id],
-                    status="succeeded",
-                    stage="complete",
-                    message=self._redact(message),
-                    finished_at=_utc_now(),
-                )
-            self._jobs[queued.job_id] = finished
-            self._history.append(queued.job_id)
-            self._queue.task_done()
+                if self._jobs.get(queued.job_id, queued).status == "cancelled":
+                    self._history.append(queued.job_id)
+                    continue
+                async with self._execution_coordinator.turn(queued.job_id):
+                    async with self._execution_lock:
+                        if self._jobs.get(queued.job_id, queued).status != "cancelled":
+                            await self._execute_job(queued)
+                        else:
+                            self._history.append(queued.job_id)
+            except JobTurnCancelledError:
+                if queued.job_id not in self._history:
+                    self._history.append(queued.job_id)
+            finally:
+                self._queue.task_done()

@@ -5,7 +5,21 @@ import pytest
 from app.workflow.gate import deterministic_decision
 
 
-@pytest.mark.parametrize("query", ["안녕", "안녕!!!", "뭐함", "섹스", "보지털", "hello"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "안녕",
+        "안녕하세요",
+        "안녕!!!",
+        "하이",
+        "hi",
+        "hello",
+        "hello world",
+        "뭐함",
+        "섹스",
+        "보지털",
+    ],
+)
 def test_exact_casual_intents_never_enter_document_review(query: str) -> None:
     """Classify only complete normalized canned utterances as casual."""
     decision = deterministic_decision(query)

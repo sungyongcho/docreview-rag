@@ -96,6 +96,9 @@ def test_daily_cost_limiter_reserves_worst_case_and_resets_by_day() -> None:
     assert asyncio.run(limiter.reserve()) == (True, Decimal("0.01"))
     assert asyncio.run(limiter.reserve()) == (True, Decimal("0.00"))
     assert asyncio.run(limiter.reserve()) == (False, Decimal("0.00"))
+    remaining, reset = asyncio.run(limiter.status())
+    assert remaining == Decimal("0.00")
+    assert reset.isoformat() == "2026-09-02T00:00:00+00:00"
     day[0] = date(2026, 9, 2)
     assert asyncio.run(limiter.reserve()) == (True, Decimal("0.01"))
 
@@ -128,6 +131,38 @@ def test_review_route_fails_closed_after_daily_cost_reservation() -> None:
     assert first.status_code == 200
     assert blocked.status_code == 429
     assert blocked.json()["error"]["code"] == "daily_cost_limit"
+
+
+def test_public_proxy_marker_blocks_dev_only_review_policy() -> None:
+    """Reject custom prompt, retrieval, and snapshot controls before route execution."""
+    app = FastAPI()
+    app.add_middleware(
+        ReleaseGuardMiddleware,
+        limiter=InProcessRateLimiter(per_minute=10, per_day=10, max_clients=4),
+        trust_proxy_headers=False,
+        allow_ingest=False,
+    )
+
+    @app.post("/review")
+    async def review() -> dict[str, str]:
+        """Stand in for a provider route that must remain unreachable."""
+        return {"status": "unexpected"}
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/review",
+            headers={"X-DocReview-Public": "true"},
+            json={
+                "query": "Revenue?",
+                "session_profile": {
+                    "retrieval_preset": "balanced",
+                    "snapshot_id": 3,
+                },
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "capability_disabled"
 
 
 def test_forwarded_client_input_requires_explicit_trust() -> None:

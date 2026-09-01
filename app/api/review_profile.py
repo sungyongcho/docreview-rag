@@ -3,18 +3,33 @@
 from decimal import Decimal
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+)
 from pydantic.functional_validators import model_validator
 
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, BM25Idf, LexicalRanker
+from app.observability.types import Budget
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.scope import CorpusScope
 from app.retrieval.types import RetrievalFilters
+from app.workflow.types import DEFAULT_SYSTEM_PROMPT
 
 type ReviewEngine = Literal["openai", "local"]
 type RetrievalPreset = Literal["balanced", "korean", "accuracy", "custom"]
 type RetrievalStrategy = Literal["vector", "lexical", "hybrid"]
 type RerankerName = Literal["cross_encoder"]
+
+
+def _tuple_from_json_array(value: object) -> object:
+    """Accept JSON arrays at the boundary while preserving strict child values."""
+    return tuple(value) if isinstance(value, list) else value
 
 
 class StrictProfileModel(BaseModel):
@@ -34,7 +49,7 @@ class CustomRetrievalProfile(StrictProfileModel):
     bm25_k1: Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)] = DEFAULT_BM25_K1
     bm25_b: Annotated[StrictFloat, Field(ge=0, le=1, allow_inf_nan=False)] = DEFAULT_BM25_B
     bm25_idf: BM25Idf = DEFAULT_BM25_IDF
-    route_by_language: StrictBool = True
+    route_by_language: StrictBool = False
     reranker: RerankerName | None = None
 
     @model_validator(mode="after")
@@ -53,19 +68,57 @@ class CustomRetrievalProfile(StrictProfileModel):
         return self
 
 
+class PromptPolicy(StrictProfileModel):
+    """Developer-controlled additions around the immutable evidence guard."""
+
+    additional_instructions: Annotated[str, Field(max_length=8_000)] = ""
+    history_turns: Annotated[StrictInt, Field(ge=0, le=6)] = 6
+    max_context_chars: Annotated[StrictInt, Field(ge=1_000, le=100_000)] = 12_000
+    evidence_overfetch: Annotated[StrictInt, Field(ge=1, le=10)] = 3
+    max_hits_per_document: Annotated[StrictInt, Field(ge=1, le=100)] = 2
+    workflow_budget: Budget = Field(default_factory=Budget)
+
+    @property
+    def system_prompt(self) -> str:
+        """Append optional instructions without allowing removal of the guard."""
+        extra = self.additional_instructions.strip()
+        return DEFAULT_SYSTEM_PROMPT if not extra else f"{DEFAULT_SYSTEM_PROMPT}\n\n{extra}"
+
+    @model_validator(mode="after")
+    def validate_workflow_ceiling(self) -> Self:
+        """Keep browser-configurable workflow limits inside server safety ceilings."""
+        budget = self.workflow_budget
+        if budget.max_iterations > 20:
+            raise ValueError("max_iterations must not exceed 20")
+        if budget.max_input_tokens > 100_000:
+            raise ValueError("max_input_tokens must not exceed 100000")
+        if budget.max_output_tokens > 4_000:
+            raise ValueError("max_output_tokens must not exceed 4000")
+        if not 1 <= budget.max_wall_clock_s <= 600:
+            raise ValueError("max_wall_clock_s must be in 1..600")
+        return self
+
+
 class ReviewSessionProfile(StrictProfileModel):
     """Conversation settings persisted by the browser and revalidated by the server."""
 
     engine: ReviewEngine = "openai"
     corpus_scope: CorpusScope = "auto"
-    issuers: tuple[str, ...] = ()
-    languages: tuple[Literal["en", "ko"], ...] = ()
-    fiscal_years: tuple[Annotated[StrictInt, Field(gt=0)], ...] = ()
-    forms: tuple[str, ...] = ()
-    sections: tuple[str | None, ...] = ()
+    issuers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)] = ()
+    languages: Annotated[
+        tuple[Literal["en", "ko"], ...], BeforeValidator(_tuple_from_json_array)
+    ] = ()
+    fiscal_years: Annotated[
+        tuple[Annotated[StrictInt, Field(gt=0)], ...],
+        BeforeValidator(_tuple_from_json_array),
+    ] = ()
+    forms: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)] = ()
+    sections: Annotated[tuple[str | None, ...], BeforeValidator(_tuple_from_json_array)] = ()
     retrieval_preset: RetrievalPreset = "balanced"
     custom_retrieval: CustomRetrievalProfile | None = None
     applied_from_evaluation: str | None = None
+    snapshot_id: Annotated[StrictInt, Field(gt=0)] | None = None
+    prompt_policy: PromptPolicy = Field(default_factory=PromptPolicy)
 
     @model_validator(mode="after")
     def validate_custom_shape(self) -> Self:
@@ -86,6 +139,7 @@ class ReviewSessionProfile(StrictProfileModel):
             fiscal_years=self.fiscal_years,
             forms=self.forms,
             items=self.sections,
+            snapshot_id=self.snapshot_id,
         )
 
 
@@ -106,7 +160,11 @@ class ResolvedRetrievalProfile(StrictProfileModel):
 
 
 _BALANCED = CustomRetrievalProfile()
-_KOREAN = CustomRetrievalProfile(candidate_k=30, lexical_ranker="bm25")
+_KOREAN = CustomRetrievalProfile(
+    candidate_k=30,
+    lexical_ranker="bm25",
+    route_by_language=True,
+)
 _ACCURACY = CustomRetrievalProfile(
     candidate_k=50,
     lexical_ranker="bm25",

@@ -93,9 +93,72 @@ async def _exercise(database_url: URL) -> tuple[bool, str]:
         await engine.dispose()
 
 
+async def _exercise_experiment_schema(database_url: URL) -> tuple[bool, str]:
+    """Migrate a corpus/eval schema that predates experiment snapshot tables."""
+    engine = create_async_engine(database_url, poolclass=NullPool)
+    connection = None
+    try:
+        try:
+            async with asyncio.timeout(3):
+                connection = await engine.connect()
+                await connection.execute(text("SELECT 1"))
+        except Exception as error:
+            return False, str(error)
+        await connection.execute(
+            text("CREATE TEMP TABLE documents (doc_id VARCHAR(32) PRIMARY KEY)")
+        )
+        await connection.execute(text("CREATE TEMP TABLE eval_results (id BIGSERIAL PRIMARY KEY)"))
+        await connection.execute(
+            text(
+                "CREATE TEMP TABLE chunks (id BIGSERIAL PRIMARY KEY, embedding vector(384), "
+                "embedding_provider VARCHAR(32), embedding_model VARCHAR(128), "
+                "embedding_dimensions INTEGER)"
+            )
+        )
+
+        before = await plan_schema_migrations(connection, schema="pg_temp")
+        assert "evaluation_snapshots" in before.missing_tables
+        applied = await apply_schema_migrations(connection, schema="pg_temp")
+        assert applied == (
+            "20260901_usage_accounting",
+            "20260901_job_progress",
+            "20260901_snapshot_index_revision",
+        )
+        after = await plan_schema_migrations(connection, schema="pg_temp")
+        assert after.applied is True and after.needed is False
+        columns = set(
+            (
+                await connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = (SELECT nspname FROM pg_namespace "
+                        "WHERE oid = pg_my_temp_schema()) AND table_name = 'snapshot_chunks'"
+                    )
+                )
+            ).scalars()
+        )
+        assert {"embedding", "body", "index_text", "content_tsv"} <= columns
+        await connection.rollback()
+        return True, ""
+    finally:
+        if connection is not None:
+            await connection.close()
+        await engine.dispose()
+
+
 @pytest.mark.live_postgres
 def test_usage_migration_preserves_old_rows_and_is_idempotent():
     """Migrate the previous usage schema without rebuilding persisted data."""
     reachable, detail = asyncio.run(_exercise(make_url(get_settings().database_url)))
+    if not reachable:
+        live_postgres_unavailable(detail)
+
+
+@pytest.mark.live_postgres
+def test_experiment_migration_creates_snapshot_tables_idempotently():
+    """Create the additive golden and snapshot schema in the requested namespace."""
+    reachable, detail = asyncio.run(
+        _exercise_experiment_schema(make_url(get_settings().database_url))
+    )
     if not reachable:
         live_postgres_unavailable(detail)

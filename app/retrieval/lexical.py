@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import Select, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Chunk
+from app.db.models import Chunk, SnapshotChunk
 from app.retrieval._sql import (
     TEXT_SEARCH_CONFIG,
     apply_filters,
@@ -67,20 +67,21 @@ def lexical_statement(
         raise ValueError("k must be positive")
 
     active_filters = filters or RetrievalFilters()
+    source = Chunk if active_filters.snapshot_id is None else SnapshotChunk
     parsed = func.websearch_to_tsquery(text_search_config, _relaxed_websearch_query(query)).label(
         "tsquery"
     )
     query_cte = select(parsed).cte("lexical_query").prefix_with("MATERIALIZED")
     tsquery = query_cte.c.tsquery
-    score = func.ts_rank_cd(Chunk.content_tsv, tsquery, TS_RANK_NORMALIZATION).label("score")
+    score = func.ts_rank_cd(source.content_tsv, tsquery, TS_RANK_NORMALIZATION).label("score")
     statement = (
-        select(*hit_columns(score))
-        .select_from(Chunk)
+        select(*hit_columns(score, source))
+        .select_from(source)
         .join(query_cte, true())
-        .where(Chunk.content_tsv.op("@@")(tsquery))
+        .where(source.content_tsv.op("@@")(tsquery))
     )
-    statement = apply_filters(statement, active_filters)
-    return statement.order_by(*hit_order_by(score.desc())).limit(k)
+    statement = apply_filters(statement, active_filters, source)
+    return statement.order_by(*hit_order_by(score.desc(), source)).limit(k)
 
 
 async def lexical_search(

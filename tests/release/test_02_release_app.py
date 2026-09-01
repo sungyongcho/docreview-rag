@@ -199,3 +199,40 @@ def test_live_operator_disables_only_public_request_limits() -> None:
     assert guard.kwargs["enforce_rate_limit"] is False
     assert guard.kwargs["cost_limiter"] is None
     assert guard.kwargs["allow_ingest"] is False
+
+
+def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slots() -> None:
+    """Expose mode controls and inspect allowance without spending it."""
+    settings = ReleaseSettings(
+        rate_limit_per_minute=2,
+        rate_limit_per_day=3,
+        _env_file=None,
+    )
+    with TestClient(create_release_app(settings)) as client:
+        capabilities = client.get("/capabilities")
+        first = client.get("/limits")
+        second = client.get("/limits")
+
+    assert capabilities.json()["can_edit_prompt_policy"] is False
+    assert capabilities.json()["can_compare_published_snapshots"] is True
+    assert first.json()["remaining_minute"] == 2
+    assert second.json()["remaining_day"] == 3
+    assert first.json()["retry_after_seconds"] == 0
+    assert first.json()["minute_reset_seconds"] == 0
+    assert first.json()["day_reset_seconds"] == 0
+    assert first.json()["daily_cost_reset_at_utc"].endswith(("Z", "+00:00"))
+
+
+def test_live_capabilities_enable_developer_controls() -> None:
+    """Enable experiment controls only on explicit loopback live mode."""
+    settings = ReleaseSettings(
+        mode="runtime",
+        admin_mode="live",
+        host="127.0.0.1",
+        _env_file=None,
+    )
+    with TestClient(create_release_app(settings, services=RuntimeApiServices())) as client:
+        capabilities = client.get("/capabilities").json()
+
+    assert capabilities["can_edit_prompt_policy"] is True
+    assert capabilities["can_run_evaluation"] is True

@@ -130,6 +130,17 @@ def test_statement_applies_every_shared_filter_with_and_semantics():
     assert ["table"] in params.values()
 
 
+def test_snapshot_statement_reads_only_the_frozen_chunk_revision():
+    """Search copied snapshot text without joining the mutable live chunk table."""
+    sql, params = normalized_sql(
+        lexical.lexical_statement("research expense", 5, RetrievalFilters(snapshot_id=7))
+    )
+
+    assert "FROM snapshot_chunks" in sql
+    assert "FROM chunks" not in sql
+    assert 7 in params.values()
+
+
 def test_statement_handles_an_unnumbered_item_filter_without_an_empty_in_clause():
     """Filter unnumbered sections without emitting an empty IN clause."""
     sql, _params = normalized_sql(
@@ -151,7 +162,10 @@ def test_search_executes_once_and_validates_database_mappings():
     mapping = hit_values(score=0.625)
 
     class Result:
+        """Expose one deterministic lexical mapping result."""
+
         def mappings(self):
+            """Return the recorded hit mapping."""
             return SimpleNamespace(all=lambda: [mapping])
 
     session = RecordingSession(Result())

@@ -13,10 +13,24 @@ from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.db.bootstrap import ensure_schema_compatibility
+from app.db.bootstrap import ensure_schema_compatibility, remove_snapshot_chunk_protection
+from app.db.models import Base
 
 USAGE_MIGRATION_ID: Final[str] = "20260901_usage_accounting"
+EXPERIMENT_MIGRATION_ID: Final[str] = "20260901_job_progress"
+SNAPSHOT_REVISION_MIGRATION_ID: Final[str] = "20260901_snapshot_index_revision"
 LEDGER_TABLE: Final[str] = "docreview_schema_migrations"
+EXPERIMENT_TABLES: Final[tuple[str, ...]] = (
+    "golden_revisions",
+    "evaluation_snapshots",
+    "snapshot_documents",
+    "snapshot_chunks",
+    "snapshot_chunk_terms",
+    "snapshot_chunk_lengths",
+    "snapshot_bm25_corpus_stats",
+    "snapshot_lexeme_stats",
+    "operator_jobs",
+)
 _SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 _COLUMNS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
@@ -36,6 +50,32 @@ _COLUMNS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ("cached_input_tokens", "BIGINT NOT NULL DEFAULT 0"),
         ("cache_write_input_tokens", "BIGINT NOT NULL DEFAULT 0"),
         ("reasoning_tokens", "BIGINT NOT NULL DEFAULT 0"),
+    ),
+    "snapshot_chunks": (
+        ("embedding", "vector(384)"),
+        ("doc_id", "VARCHAR(32)"),
+        ("registry", "VARCHAR(16)"),
+        ("language", "VARCHAR(8)"),
+        ("issuer", "VARCHAR(32)"),
+        ("fiscal_year", "INTEGER"),
+        ("form", "VARCHAR(32)"),
+        ("item", "VARCHAR(8)"),
+        ("kind", "VARCHAR(16)"),
+        ("ordinal", "INTEGER"),
+        ("body", "TEXT"),
+        ("context_header", "TEXT"),
+        ("index_text", "TEXT"),
+        ("lexical_text", "TEXT"),
+        ("start_char", "BIGINT"),
+        ("end_char", "BIGINT"),
+        ("citation", "TEXT"),
+        (
+            "content_tsv",
+            "TSVECTOR GENERATED ALWAYS AS ("
+            "CASE WHEN language = 'ko' "
+            "THEN to_tsvector('simple', coalesce(lexical_text, index_text)) "
+            "ELSE to_tsvector('english', index_text) END) STORED",
+        ),
     ),
 }
 _CONSTRAINTS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
@@ -73,6 +113,24 @@ _CONSTRAINTS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ),
         ("ck_traces_reasoning_tokens_nonnegative", "reasoning_tokens >= 0"),
     ),
+    "snapshot_chunks": (
+        ("ck_snapshot_chunks_ordinal_nonnegative", "ordinal >= 0"),
+        ("ck_snapshot_chunks_kind", "kind IN ('text', 'table')"),
+        ("ck_snapshot_chunks_language_format", "language ~ '^[a-z]{2}$'"),
+        (
+            "ck_snapshot_chunks_lexical_text_language",
+            "(language = 'ko') = (lexical_text IS NOT NULL)",
+        ),
+        ("ck_snapshot_chunks_start_nonnegative", "start_char >= 0"),
+        ("ck_snapshot_chunks_span_order", "end_char > start_char"),
+        (
+            "ck_snapshot_chunks_embedding_identity_complete",
+            "(embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL "
+            "AND embedding_dimensions IS NULL) OR (embedding IS NOT NULL AND "
+            "btrim(embedding_provider) <> '' AND btrim(embedding_model) <> '' AND "
+            "embedding_dimensions > 0)",
+        ),
+    ),
 }
 
 
@@ -85,6 +143,7 @@ class MigrationPlan:
     needed: bool
     missing_columns: tuple[str, ...]
     missing_constraints: tuple[str, ...]
+    missing_tables: tuple[str, ...] = ()
 
 
 def _validate_schema(schema: str) -> str:
@@ -159,7 +218,7 @@ async def _missing_objects(
         live_constraints = constraints_by_table.get(table, set())
         missing_constraints.extend(
             f"{table}.{name}"
-            for name, _expression in _CONSTRAINTS[table]
+            for name, _expression in _CONSTRAINTS.get(table, ())
             if name not in live_constraints
             and not (
                 table == "traces" and name == "ck_traces_node_v2" and "node" not in live_columns
@@ -175,9 +234,16 @@ async def plan_schema_migrations(
 ) -> MigrationPlan:
     """Inspect migration state without creating tables or changing data."""
     actual_schema = await _resolved_schema(connection, schema)
+    columns_by_table, _constraints_by_table = await _schema_objects(connection, actual_schema)
     missing_columns, missing_constraints = await _missing_objects(
         connection,
         actual_schema,
+    )
+    experiment_applicable = {"documents", "eval_results"}.issubset(columns_by_table)
+    missing_tables = (
+        tuple(name for name in EXPERIMENT_TABLES if name not in columns_by_table)
+        if experiment_applicable
+        else ()
     )
     preparer = postgresql.dialect().identifier_preparer
     ledger = f"{preparer.quote_schema(actual_schema)}.{preparer.quote(LEDGER_TABLE)}"
@@ -185,19 +251,25 @@ async def plan_schema_migrations(
         await connection.scalar(text("SELECT to_regclass(:ledger) IS NOT NULL"), {"ledger": ledger})
     )
     applied = False
+    required_ids = [USAGE_MIGRATION_ID]
+    if experiment_applicable:
+        required_ids.extend((EXPERIMENT_MIGRATION_ID, SNAPSHOT_REVISION_MIGRATION_ID))
     if ledger_exists:
-        applied = bool(
+        applied_count = int(
             await connection.scalar(
-                text(f"SELECT EXISTS (SELECT 1 FROM {ledger} WHERE migration_id = :id)"),
-                {"id": USAGE_MIGRATION_ID},
+                text(f"SELECT count(*) FROM {ledger} WHERE migration_id = ANY(:ids)"),
+                {"ids": required_ids},
             )
+            or 0
         )
+        applied = applied_count == len(required_ids)
     return MigrationPlan(
-        migration_id=USAGE_MIGRATION_ID,
+        migration_id=required_ids[-1],
         applied=applied,
-        needed=bool(missing_columns or missing_constraints),
+        needed=bool(missing_columns or missing_constraints or missing_tables),
         missing_columns=missing_columns,
         missing_constraints=missing_constraints,
+        missing_tables=missing_tables,
     )
 
 
@@ -227,6 +299,9 @@ async def apply_schema_migrations(
     if plan.applied and not plan.needed:
         return ()
 
+    applied_ids = set(
+        (await connection.execute(text(f"SELECT migration_id FROM {ledger}"))).scalars()
+    )
     columns_by_table, _constraints_by_table = await _schema_objects(
         connection,
         actual_schema,
@@ -297,6 +372,135 @@ async def apply_schema_migrations(
                     "END IF; END $migration$"
                 )
             )
+    if plan.missing_tables:
+        experiment_tables = [Base.metadata.tables[name] for name in EXPERIMENT_TABLES]
+        await connection.run_sync(
+            lambda sync_connection: Base.metadata.create_all(
+                sync_connection.execution_options(schema_translate_map={None: actual_schema}),
+                tables=experiment_tables,
+                checkfirst=True,
+            )
+        )
+    available_tables = tables | set(plan.missing_tables)
+    if {"documents", "chunks", "snapshot_documents", "snapshot_chunks"}.issubset(available_tables):
+        documents = f"{namespace}.{preparer.quote('documents')}"
+        chunks = f"{namespace}.{preparer.quote('chunks')}"
+        snapshot_documents = f"{namespace}.{preparer.quote('snapshot_documents')}"
+        snapshot_chunks = f"{namespace}.{preparer.quote('snapshot_chunks')}"
+        snapshot_terms = f"{namespace}.{preparer.quote('snapshot_chunk_terms')}"
+        snapshot_lengths = f"{namespace}.{preparer.quote('snapshot_chunk_lengths')}"
+        chunk_terms = f"{namespace}.{preparer.quote('chunk_terms')}"
+        chunk_lengths = f"{namespace}.{preparer.quote('chunk_lengths')}"
+        source_chunk_columns = {
+            "id",
+            "doc_id",
+            "language",
+            "item",
+            "kind",
+            "ordinal",
+            "body",
+            "context_header",
+            "index_text",
+            "lexical_text",
+            "start_char",
+            "end_char",
+            "citation",
+        }
+        source_document_columns = {"doc_id", "registry", "issuer", "fiscal_year", "form"}
+        can_backfill_chunks = source_chunk_columns.issubset(
+            columns_by_table.get("chunks", set())
+        ) and source_document_columns.issubset(columns_by_table.get("documents", set()))
+        snapshot_row_count = int(
+            await connection.scalar(text(f"SELECT count(*) FROM {snapshot_chunks}")) or 0
+        )
+        if snapshot_row_count and not can_backfill_chunks:
+            raise RuntimeError("existing snapshot rows require complete live chunk metadata")
+        if can_backfill_chunks:
+            await connection.execute(
+                text(
+                    f"UPDATE {snapshot_chunks} AS sc SET "
+                    "doc_id = c.doc_id, registry = d.registry, language = c.language, "
+                    "issuer = d.issuer, fiscal_year = d.fiscal_year, form = d.form, "
+                    "item = c.item, kind = c.kind, ordinal = c.ordinal, body = c.body, "
+                    "context_header = c.context_header, index_text = c.index_text, "
+                    "lexical_text = c.lexical_text, start_char = c.start_char, "
+                    "end_char = c.end_char, citation = c.citation "
+                    f"FROM {chunks} AS c JOIN {documents} AS d ON d.doc_id = c.doc_id "
+                    "WHERE sc.chunk_id = c.id"
+                )
+            )
+        if "chunk_terms" in available_tables:
+            await connection.execute(
+                text(
+                    f"INSERT INTO {snapshot_terms} (snapshot_id, chunk_id, lexeme, tf) "
+                    f"SELECT sc.snapshot_id, ct.chunk_id, ct.lexeme, ct.tf "
+                    f"FROM {snapshot_chunks} sc "
+                    f"JOIN {chunk_terms} ct ON ct.chunk_id = sc.chunk_id "
+                    "ON CONFLICT (snapshot_id, chunk_id, lexeme) DO NOTHING"
+                )
+            )
+        if "chunk_lengths" in available_tables:
+            await connection.execute(
+                text(
+                    f"INSERT INTO {snapshot_lengths} (snapshot_id, chunk_id, dl) "
+                    f"SELECT sc.snapshot_id, cl.chunk_id, cl.dl FROM {snapshot_chunks} sc "
+                    f"JOIN {chunk_lengths} cl ON cl.chunk_id = sc.chunk_id "
+                    "ON CONFLICT (snapshot_id, chunk_id) DO NOTHING"
+                )
+            )
+        required_snapshot_columns = (
+            "doc_id",
+            "registry",
+            "language",
+            "issuer",
+            "fiscal_year",
+            "form",
+            "kind",
+            "ordinal",
+            "body",
+            "context_header",
+            "index_text",
+            "start_char",
+            "end_char",
+            "citation",
+        )
+        for column in required_snapshot_columns:
+            await connection.execute(
+                text(
+                    f"ALTER TABLE {snapshot_chunks} ALTER COLUMN "
+                    f"{preparer.quote(column)} SET NOT NULL"
+                )
+            )
+        await connection.execute(
+            text(
+                f"ALTER TABLE {snapshot_chunks} DROP CONSTRAINT IF EXISTS "
+                "snapshot_chunks_chunk_id_fkey"
+            )
+        )
+        await connection.execute(
+            text(
+                f"ALTER TABLE {snapshot_documents} DROP CONSTRAINT IF EXISTS "
+                "snapshot_documents_doc_id_fkey"
+            )
+        )
+        await connection.execute(
+            text(
+                "DO $migration$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                f"WHERE conrelid = '{snapshot_chunks}'::regclass "
+                "AND conname = 'uq_snapshot_doc_ordinal') THEN "
+                f"ALTER TABLE {snapshot_chunks} ADD CONSTRAINT uq_snapshot_doc_ordinal "
+                "UNIQUE (snapshot_id, doc_id, ordinal); "
+                "END IF; END $migration$"
+            )
+        )
+        await connection.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS ix_snapshot_chunks_tsv ON {snapshot_chunks} "
+                "USING gin (content_tsv)"
+            )
+        )
+        await remove_snapshot_chunk_protection(connection, schema=actual_schema)
     await connection.execute(
         text(
             f"INSERT INTO {ledger} (migration_id) VALUES (:id) "
@@ -304,9 +508,37 @@ async def apply_schema_migrations(
         ),
         {"id": USAGE_MIGRATION_ID},
     )
+    if {"documents", "eval_results"}.issubset(columns_by_table):
+        await connection.execute(
+            text(
+                f"INSERT INTO {ledger} (migration_id) VALUES (:id) "
+                "ON CONFLICT (migration_id) DO NOTHING"
+            ),
+            {"id": EXPERIMENT_MIGRATION_ID},
+        )
+        await connection.execute(
+            text(
+                f"INSERT INTO {ledger} (migration_id) VALUES (:id) "
+                "ON CONFLICT (migration_id) DO NOTHING"
+            ),
+            {"id": SNAPSHOT_REVISION_MIGRATION_ID},
+        )
     if schema == "public":
         await ensure_schema_compatibility(connection)
-    return (USAGE_MIGRATION_ID,)
+    applied_now = [
+        migration_id
+        for migration_id in (
+            USAGE_MIGRATION_ID,
+            EXPERIMENT_MIGRATION_ID,
+            SNAPSHOT_REVISION_MIGRATION_ID,
+        )
+        if migration_id not in applied_ids
+        and (
+            migration_id == USAGE_MIGRATION_ID
+            or {"documents", "eval_results"}.issubset(columns_by_table)
+        )
+    ]
+    return tuple(applied_now)
 
 
 def arguments() -> argparse.Namespace:

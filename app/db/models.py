@@ -6,6 +6,7 @@ from decimal import Decimal
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Computed,
     DateTime,
@@ -235,6 +236,284 @@ class EvalResult(Base):
             name="ck_eval_results_raw_artifact_path_nonempty",
         ),
         Index("ix_eval_results_suite_created_at", "suite", "created_at"),
+    )
+
+
+class GoldenRevision(Base):
+    """One immutable or editable revision of a strict golden-suite JSON payload."""
+
+    __tablename__ = "golden_revisions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    suite_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("golden_revisions.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("suite_id", "version", name="uq_golden_revision_suite_version"),
+        CheckConstraint(
+            "status IN ('draft', 'validated', 'published')",
+            name="ck_golden_revisions_status",
+        ),
+        CheckConstraint("version > 0", name="ck_golden_revisions_version_positive"),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'array'", name="ck_golden_revisions_payload_array"
+        ),
+        CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_golden_revisions_sha256_format"),
+        Index("ix_golden_revisions_suite_created_at", "suite_id", "created_at"),
+    )
+
+
+class EvaluationSnapshot(Base):
+    """One immutable published comparison unit over corpus, golden, and eval identity."""
+
+    __tablename__ = "evaluation_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
+    public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    corpus_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    golden_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("golden_revisions.id", ondelete="RESTRICT"), nullable=True
+    )
+    eval_result_id: Mapped[int] = mapped_column(
+        ForeignKey("eval_results.id", ondelete="RESTRICT"), unique=True, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('ready', 'archived')", name="ck_evaluation_snapshots_status"),
+        CheckConstraint("btrim(label) <> ''", name="ck_evaluation_snapshots_label_nonempty"),
+        CheckConstraint(
+            "corpus_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_evaluation_snapshots_corpus_fingerprint",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(profile) = 'object'", name="ck_evaluation_snapshots_profile_object"
+        ),
+        Index("ix_evaluation_snapshots_public_created_at", "public", "created_at"),
+    )
+
+
+class SnapshotDocument(Base):
+    """One exact source document included in an evaluation snapshot."""
+
+    __tablename__ = "snapshot_documents"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    doc_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunk_count: Mapped[int] = mapped_column(nullable=False)
+    embedding_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("chunk_count >= 0", name="ck_snapshot_documents_chunk_count"),
+        CheckConstraint(
+            "source_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_snapshot_documents_source_sha256",
+        ),
+        CheckConstraint(
+            "embedding_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_snapshot_documents_embedding_fingerprint",
+        ),
+    )
+
+
+class SnapshotChunk(Base):
+    """Exact chunk and embedding identity retained by one immutable snapshot."""
+
+    __tablename__ = "snapshot_chunks"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    registry: Mapped[str] = mapped_column(String(16), nullable=False)
+    language: Mapped[str] = mapped_column(String(8), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(32), nullable=False)
+    fiscal_year: Mapped[int] = mapped_column(nullable=False)
+    form: Mapped[str] = mapped_column(String(32), nullable=False)
+    item: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    ordinal: Mapped[int] = mapped_column(nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    context_header: Mapped[str] = mapped_column(Text, nullable=False)
+    index_text: Mapped[str] = mapped_column(Text, nullable=False)
+    lexical_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    citation: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
+    content_tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(CONTENT_TSV_SQL, persisted=True),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "doc_id", "ordinal", name="uq_snapshot_doc_ordinal"),
+        CheckConstraint("ordinal >= 0", name="ck_snapshot_chunks_ordinal_nonnegative"),
+        CheckConstraint("kind IN ('text', 'table')", name="ck_snapshot_chunks_kind"),
+        CheckConstraint(LANGUAGE_FORMAT_CHECK_SQL, name="ck_snapshot_chunks_language_format"),
+        CheckConstraint(
+            LEXICAL_TEXT_CHECK_SQL,
+            name="ck_snapshot_chunks_lexical_text_language",
+        ),
+        CheckConstraint("start_char >= 0", name="ck_snapshot_chunks_start_nonnegative"),
+        CheckConstraint("end_char > start_char", name="ck_snapshot_chunks_span_order"),
+        CheckConstraint(
+            "source_sha256 ~ '^[0-9a-f]{64}$'", name="ck_snapshot_chunks_source_sha256"
+        ),
+        CheckConstraint(
+            "(embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL "
+            "AND embedding_dimensions IS NULL) OR (embedding IS NOT NULL AND "
+            "btrim(embedding_provider) <> '' AND btrim(embedding_model) <> '' AND "
+            "embedding_dimensions > 0)",
+            name="ck_snapshot_chunks_embedding_identity_complete",
+        ),
+        Index("ix_snapshot_chunks_chunk_id", "chunk_id"),
+        Index("ix_snapshot_chunks_tsv", "content_tsv", postgresql_using="gin"),
+    )
+
+
+class SnapshotChunkTerm(Base):
+    """One frozen lexeme frequency for a snapshot chunk."""
+
+    __tablename__ = "snapshot_chunk_terms"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    lexeme: Mapped[str] = mapped_column(Text, primary_key=True)
+    tf: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("tf > 0", name="ck_snapshot_chunk_terms_tf_positive"),
+        Index("ix_snapshot_chunk_terms_lexeme", "snapshot_id", "lexeme"),
+    )
+
+
+class SnapshotChunkLength(Base):
+    """Frozen total lexeme occurrences for one snapshot chunk."""
+
+    __tablename__ = "snapshot_chunk_lengths"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    dl: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (CheckConstraint("dl > 0", name="ck_snapshot_chunk_lengths_positive"),)
+
+
+class SnapshotBM25CorpusStat(Base):
+    """Per-language corpus size and average length frozen for one snapshot."""
+
+    __tablename__ = "snapshot_bm25_corpus_stats"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    language: Mapped[str] = mapped_column(String(8), primary_key=True)
+    n: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    avgdl: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("n > 0", name="ck_snapshot_bm25_corpus_n_positive"),
+        CheckConstraint("avgdl > 0", name="ck_snapshot_bm25_corpus_avgdl_positive"),
+    )
+
+
+class SnapshotLexemeStat(Base):
+    """One frozen document-frequency value used by snapshot BM25 scoring."""
+
+    __tablename__ = "snapshot_lexeme_stats"
+
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
+    )
+    language: Mapped[str] = mapped_column(String(8), primary_key=True)
+    lexeme: Mapped[str] = mapped_column(Text, primary_key=True)
+    df: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (CheckConstraint("df > 0", name="ck_snapshot_lexeme_stats_df_positive"),)
+
+
+class OperatorJob(Base):
+    """One persisted corpus or evaluation job with bounded progress evidence."""
+
+    __tablename__ = "operator_jobs"
+
+    job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    domain: Mapped[str] = mapped_column(String(16), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_json: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    stage: Mapped[str] = mapped_column(String(64), nullable=False)
+    current: Mapped[int] = mapped_column(nullable=False, default=0)
+    total: Mapped[int | None] = mapped_column(nullable=True)
+    detail_current: Mapped[int | None] = mapped_column(nullable=True)
+    detail_total: Mapped[int | None] = mapped_column(nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_refs: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("domain IN ('corpus', 'evaluation')", name="ck_operator_jobs_domain"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'interrupted', 'cancelled')",
+            name="ck_operator_jobs_status",
+        ),
+        CheckConstraint("current >= 0", name="ck_operator_jobs_current_nonnegative"),
+        CheckConstraint("total IS NULL OR total >= 0", name="ck_operator_jobs_total_nonnegative"),
+        CheckConstraint(
+            "detail_current IS NULL OR detail_current >= 0",
+            name="ck_operator_jobs_detail_current_nonnegative",
+        ),
+        CheckConstraint(
+            "detail_total IS NULL OR detail_total >= 0",
+            name="ck_operator_jobs_detail_total_nonnegative",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(request_json) = 'object'", name="ck_operator_jobs_request_object"
+        ),
+        CheckConstraint(
+            "jsonb_typeof(result_refs) = 'object'", name="ck_operator_jobs_results_object"
+        ),
+        Index("ix_operator_jobs_status_created_at", "status", "created_at"),
+        Index("ix_operator_jobs_domain_created_at", "domain", "created_at"),
     )
 
 

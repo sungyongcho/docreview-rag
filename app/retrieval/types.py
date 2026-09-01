@@ -21,6 +21,7 @@ Language = Annotated[StrictStr, Field(pattern=r"^[a-z]{2}$")]
 Registry = Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9_-]*$")]
 Item = Annotated[StrictStr, Field(min_length=1, max_length=8)]
 SourceSha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
+SnapshotId = Annotated[StrictInt, Field(gt=0)]
 Score = Annotated[StrictFloat, Field(allow_inf_nan=False)]
 
 
@@ -71,6 +72,7 @@ class RetrievalFilters(BaseModel):
     forms: tuple[Form, ...] = ()
     items: tuple[Item | None, ...] = ()
     kinds: tuple[ChunkKind, ...] = ()
+    snapshot_id: SnapshotId | None = None
 
     @field_validator("doc_ids", "registries", "languages", "issuers", "forms", mode="after")
     @classmethod

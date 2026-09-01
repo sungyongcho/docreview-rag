@@ -1,7 +1,11 @@
 [
   {
     "ticker": "NVDA",
-    "aliases": ["NVDA", "NVIDIA", "NVIDIA Corporation"],
+    "aliases": [
+      "NVDA",
+      "NVIDIA",
+      "NVIDIA Corporation"
+    ],
     "cik": 1045810,
     "accession": "0001045810-24-000029",
     "filing_date": "2024-02-21",
@@ -12,7 +16,11 @@
   },
   {
     "ticker": "NVDA",
-    "aliases": ["NVDA", "NVIDIA", "NVIDIA Corporation"],
+    "aliases": [
+      "NVDA",
+      "NVIDIA",
+      "NVIDIA Corporation"
+    ],
     "cik": 1045810,
     "accession": "0001045810-23-000017",
     "filing_date": "2023-02-24",
@@ -23,7 +31,11 @@
   },
   {
     "ticker": "NVDA",
-    "aliases": ["NVDA", "NVIDIA", "NVIDIA Corporation"],
+    "aliases": [
+      "NVDA",
+      "NVIDIA",
+      "NVIDIA Corporation"
+    ],
     "cik": 1045810,
     "accession": "0001045810-22-000036",
     "filing_date": "2022-03-18",
@@ -34,7 +46,11 @@
   },
   {
     "ticker": "NVDA",
-    "aliases": ["NVDA", "NVIDIA", "NVIDIA Corporation"],
+    "aliases": [
+      "NVDA",
+      "NVIDIA",
+      "NVIDIA Corporation"
+    ],
     "cik": 1045810,
     "accession": "0001045810-21-000010",
     "filing_date": "2021-02-26",
@@ -45,7 +61,11 @@
   },
   {
     "ticker": "NVDA",
-    "aliases": ["NVDA", "NVIDIA", "NVIDIA Corporation"],
+    "aliases": [
+      "NVDA",
+      "NVIDIA",
+      "NVIDIA Corporation"
+    ],
     "cik": 1045810,
     "accession": "0001045810-20-000010",
     "filing_date": "2020-02-20",
@@ -56,7 +76,10 @@
   },
   {
     "ticker": "AMD",
-    "aliases": ["AMD", "Advanced Micro Devices"],
+    "aliases": [
+      "AMD",
+      "Advanced Micro Devices"
+    ],
     "cik": 2488,
     "accession": "0000002488-24-000012",
     "filing_date": "2024-01-31",
@@ -67,7 +90,10 @@
   },
   {
     "ticker": "AMD",
-    "aliases": ["AMD", "Advanced Micro Devices"],
+    "aliases": [
+      "AMD",
+      "Advanced Micro Devices"
+    ],
     "cik": 2488,
     "accession": "0000002488-23-000047",
     "filing_date": "2023-02-27",
@@ -78,7 +104,10 @@
   },
   {
     "ticker": "AMD",
-    "aliases": ["AMD", "Advanced Micro Devices"],
+    "aliases": [
+      "AMD",
+      "Advanced Micro Devices"
+    ],
     "cik": 2488,
     "accession": "0000002488-22-000016",
     "filing_date": "2022-02-03",
@@ -89,7 +118,10 @@
   },
   {
     "ticker": "AMD",
-    "aliases": ["AMD", "Advanced Micro Devices"],
+    "aliases": [
+      "AMD",
+      "Advanced Micro Devices"
+    ],
     "cik": 2488,
     "accession": "0001628280-21-001185",
     "filing_date": "2021-01-29",
@@ -100,7 +132,10 @@
   },
   {
     "ticker": "AMD",
-    "aliases": ["AMD", "Advanced Micro Devices"],
+    "aliases": [
+      "AMD",
+      "Advanced Micro Devices"
+    ],
     "cik": 2488,
     "accession": "0000002488-20-000008",
     "filing_date": "2020-02-04",
@@ -111,7 +146,11 @@
   },
   {
     "ticker": "INTC",
-    "aliases": ["INTC", "Intel", "Intel Corporation"],
+    "aliases": [
+      "INTC",
+      "Intel",
+      "Intel Corporation"
+    ],
     "cik": 50863,
     "accession": "0000050863-24-000010",
     "filing_date": "2024-01-26",
@@ -122,7 +161,11 @@
   },
   {
     "ticker": "INTC",
-    "aliases": ["INTC", "Intel", "Intel Corporation"],
+    "aliases": [
+      "INTC",
+      "Intel",
+      "Intel Corporation"
+    ],
     "cik": 50863,
     "accession": "0000050863-23-000006",
     "filing_date": "2023-01-27",
@@ -133,7 +176,11 @@
   },
   {
     "ticker": "INTC",
-    "aliases": ["INTC", "Intel", "Intel Corporation"],
+    "aliases": [
+      "INTC",
+      "Intel",
+      "Intel Corporation"
+    ],
     "cik": 50863,
     "accession": "0000050863-22-000007",
     "filing_date": "2022-01-27",
@@ -144,7 +191,11 @@
   },
   {
     "ticker": "INTC",
-    "aliases": ["INTC", "Intel", "Intel Corporation"],
+    "aliases": [
+      "INTC",
+      "Intel",
+      "Intel Corporation"
+    ],
     "cik": 50863,
     "accession": "0000050863-21-000010",
     "filing_date": "2021-01-22",
@@ -155,7 +206,11 @@
   },
   {
     "ticker": "INTC",
-    "aliases": ["INTC", "Intel", "Intel Corporation"],
+    "aliases": [
+      "INTC",
+      "Intel",
+      "Intel Corporation"
+    ],
     "cik": 50863,
     "accession": "0000050863-20-000011",
     "filing_date": "2020-01-24",
@@ -166,7 +221,11 @@
   },
   {
     "ticker": "MU",
-    "aliases": ["MU", "Micron", "Micron Technology"],
+    "aliases": [
+      "MU",
+      "Micron",
+      "Micron Technology"
+    ],
     "cik": 723125,
     "accession": "0000723125-24-000027",
     "filing_date": "2024-10-04",
@@ -177,7 +236,11 @@
   },
   {
     "ticker": "MU",
-    "aliases": ["MU", "Micron", "Micron Technology"],
+    "aliases": [
+      "MU",
+      "Micron",
+      "Micron Technology"
+    ],
     "cik": 723125,
     "accession": "0000723125-23-000054",
     "filing_date": "2023-10-06",
@@ -188,7 +251,11 @@
   },
   {
     "ticker": "MU",
-    "aliases": ["MU", "Micron", "Micron Technology"],
+    "aliases": [
+      "MU",
+      "Micron",
+      "Micron Technology"
+    ],
     "cik": 723125,
     "accession": "0000723125-22-000048",
     "filing_date": "2022-10-07",
@@ -199,7 +266,11 @@
   },
   {
     "ticker": "MU",
-    "aliases": ["MU", "Micron", "Micron Technology"],
+    "aliases": [
+      "MU",
+      "Micron",
+      "Micron Technology"
+    ],
     "cik": 723125,
     "accession": "0000723125-21-000065",
     "filing_date": "2021-10-08",
@@ -210,7 +281,11 @@
   },
   {
     "ticker": "MU",
-    "aliases": ["MU", "Micron", "Micron Technology"],
+    "aliases": [
+      "MU",
+      "Micron",
+      "Micron Technology"
+    ],
     "cik": 723125,
     "accession": "0000723125-20-000082",
     "filing_date": "2020-10-19",
@@ -218,5 +293,19 @@
     "primary_doc": "mu-20200903.htm",
     "file": "data/corpus/MU/2020-10-19_0000723125-20-000082.html",
     "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000082/mu-20200903.htm"
+  },
+  {
+    "ticker": "AMD",
+    "aliases": [
+      "AMD",
+      "Advanced Micro Devices"
+    ],
+    "cik": 2488,
+    "accession": "0000002488-25-000012",
+    "filing_date": "2025-02-05",
+    "report_date": "2024-12-28",
+    "primary_doc": "amd-20241228.htm",
+    "file": "data/corpus/AMD/2025-02-05_0000002488-25-000012.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm"
   }
 ]

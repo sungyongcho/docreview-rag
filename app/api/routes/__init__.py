@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import documents, eval, ingest, retrieve, review, runs, stream
+from app.api.routes import documents, eval, ingest, retrieve, review, runs, snapshots, stream
 
 api_router = APIRouter()
-for module in (retrieve, documents, ingest, review, runs, eval, stream):
+for module in (retrieve, documents, ingest, review, runs, eval, snapshots, stream):
     api_router.include_router(module.router)
 
 __all__ = ["api_router"]

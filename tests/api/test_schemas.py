@@ -5,6 +5,7 @@ import json
 from pydantic import ValidationError
 import pytest
 
+from app.api.review_profile import ReviewSessionProfile
 from app.api.schemas import (
     BudgetLimitFailure,
     EvidenceHit,
@@ -44,6 +45,39 @@ def test_ingest_and_review_requests_reject_empty_bodies():
         IngestRequest.model_validate_json("{}")
     with pytest.raises(ValidationError):
         ReviewRequest.model_validate_json("{}")
+
+
+def test_prompt_policy_appends_instructions_without_replacing_guard():
+    """Keep the evidence guard first while allowing bounded developer instructions."""
+    profile = ReviewSessionProfile.model_validate(
+        {"prompt_policy": {"additional_instructions": "Prefer concise answers."}}
+    )
+
+    assert profile.prompt_policy.system_prompt.startswith("Use only the supplied filing evidence")
+    assert profile.prompt_policy.system_prompt.endswith("Prefer concise answers.")
+
+
+def test_review_request_accepts_json_arrays_for_strict_tuple_fields():
+    """Normalize transport arrays without weakening strict nested values."""
+    request = ReviewRequest.model_validate_json(
+        json.dumps(
+            {
+                "query": "Revenue?",
+                "session_profile": {
+                    "issuers": ["NVDA"],
+                    "languages": ["en"],
+                    "fiscal_years": [2024],
+                    "forms": ["10-K"],
+                    "sections": ["7", None],
+                },
+                "conversation_history": [{"role": "user", "text": "Earlier question"}],
+            }
+        )
+    )
+
+    assert request.session_profile.issuers == ("NVDA",)
+    assert request.session_profile.sections == ("7", None)
+    assert request.conversation_history[0].role == "user"
 
 
 def test_successful_run_maps_to_strict_workflow_report(successful_run):

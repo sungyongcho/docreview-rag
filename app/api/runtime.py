@@ -36,6 +36,8 @@ from app.api.schemas import (
     RetrieveRequest,
     RetrieveResponse,
     ReviewRequest,
+    SnapshotComparisonResponse,
+    SnapshotResource,
 )
 from app.config import (
     DEFAULT_BM25_B,
@@ -47,7 +49,8 @@ from app.config import (
     get_settings,
 )
 from app.db.bootstrap import bootstrap_schema
-from app.db.models import Chunk, Document, EvalResult, Run, Trace
+from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, Trace
+from app.evals.snapshots import SnapshotService
 from app.ingestion.seed import (
     ManifestError,
     SeedResult,
@@ -240,6 +243,9 @@ class RuntimeApiServices(ApiServices):
         snapshot_codec: CandidateSnapshotCodec | None = None,
         intent_classifier_enabled: bool = False,
         query_routing_enabled: bool = False,
+        allow_custom_prompt_policy: bool = True,
+        snapshot_service: SnapshotService | None = None,
+        allow_snapshot_query: bool = True,
     ) -> None:
         if (llm_provider is None) != (provider_budget is None):
             raise ValueError("llm_provider and provider_budget must be configured together")
@@ -272,6 +278,9 @@ class RuntimeApiServices(ApiServices):
         self._snapshot_codec = snapshot_codec or CandidateSnapshotCodec(secrets.token_bytes(32))
         self._intent_classifier_enabled = intent_classifier_enabled
         self._query_routing_enabled = query_routing_enabled
+        self._allow_custom_prompt_policy = allow_custom_prompt_policy
+        self._snapshots = snapshot_service or SnapshotService(session_factory=session_factory)
+        self._allow_snapshot_query = allow_snapshot_query
 
     @property
     def session_factory(self) -> SessionFactory:
@@ -340,6 +349,10 @@ class RuntimeApiServices(ApiServices):
                 update={"k": legacy_k, "candidate_k": max(profile.candidate_k, legacy_k)}
             )
         explicit_filters = legacy_filters or session_profile.explicit_filters()
+        if session_profile.snapshot_id is not None and explicit_filters.snapshot_id is None:
+            explicit_filters = explicit_filters.model_copy(
+                update={"snapshot_id": session_profile.snapshot_id}
+            )
         if session_profile.retrieval_preset == "korean" and not explicit_filters.languages:
             explicit_filters = explicit_filters.model_copy(update={"languages": ("ko",)})
         try:
@@ -468,7 +481,7 @@ class RuntimeApiServices(ApiServices):
                 request.k,
             )
             routed_queries: dict[str, str] = {}
-            if self._query_routing_enabled:
+            if self._query_routing_enabled and profile.route_by_language:
                 provider = self._llm_providers.get(request.session_profile.engine)
                 budget = self._provider_budgets.get(request.session_profile.engine)
                 if provider is None or budget is None:
@@ -768,6 +781,19 @@ class RuntimeApiServices(ApiServices):
         retrieval_override: SessionRetrievalService | None,
     ) -> RunReport:
         """Execute, sanitize, and persist one public or administrator review."""
+        policy = request.session_profile.prompt_policy
+        if not self._allow_custom_prompt_policy and policy != type(policy)():
+            raise ApiProblemError(
+                status_code=403,
+                code="capability_disabled",
+                message="Custom prompt and run policies are available only in Dev.",
+            )
+        if request.session_profile.snapshot_id is not None and not self._allow_snapshot_query:
+            raise ApiProblemError(
+                status_code=403,
+                code="capability_disabled",
+                message="Snapshot queries are available only in Dev.",
+            )
         engine = request.session_profile.engine
         llm_provider = self._llm_providers.get(engine)
         provider_budget = self._provider_budgets.get(engine)
@@ -776,6 +802,13 @@ class RuntimeApiServices(ApiServices):
                 "provider_unavailable",
                 f"Review engine {engine!r} is not configured.",
             )
+        if request.session_profile.snapshot_id is not None:
+            async with self._session_factory() as validation_session:
+                selected_snapshot = await validation_session.get(
+                    EvaluationSnapshot, request.session_profile.snapshot_id
+                )
+            if selected_snapshot is None or selected_snapshot.status != "ready":
+                raise bad_request("snapshot_unavailable", "Selected snapshot is not ready.")
         profile, scope = self._resolved_request(
             request.query,
             request.session_profile,
@@ -818,11 +851,19 @@ class RuntimeApiServices(ApiServices):
             query=request.query,
             k=profile.k,
             filters=scope.filters,
-            budget=request.budget,
+            budget=(
+                policy.workflow_budget
+                if request.budget == type(request.budget)()
+                else request.budget
+            ),
             provider_budget=provider_budget,
-            max_context_chars=request.max_context_chars,
-            max_hits_per_document=profile.k if snapshot is not None else 2,
+            max_context_chars=policy.max_context_chars,
+            evidence_overfetch=policy.evidence_overfetch,
+            max_hits_per_document=(
+                profile.k if snapshot is not None else policy.max_hits_per_document
+            ),
             routing_queries=routed_queries,
+            system_prompt=policy.system_prompt,
         )
         async with translate_runtime_errors():
             async with self._session_factory() as session:
@@ -855,7 +896,7 @@ class RuntimeApiServices(ApiServices):
                             request.evidence_selection,
                             ordered_hits,
                             k=profile.k,
-                            max_context_chars=request.max_context_chars,
+                            max_context_chars=policy.max_context_chars,
                         )
                     except EvidenceSnapshotError as error:
                         raise ApiProblemError(
@@ -995,6 +1036,16 @@ class RuntimeApiServices(ApiServices):
             )
             for row in rows
         )
+
+    async def list_snapshots(self, *, public_only: bool) -> Sequence[SnapshotResource]:
+        """Return immutable evaluation snapshots through the shared DB boundary."""
+        return await self._snapshots.list(public_only=public_only)
+
+    async def compare_snapshots(
+        self, baseline_id: int, candidate_id: int
+    ) -> SnapshotComparisonResponse:
+        """Compare two stored snapshots without starting an evaluation."""
+        return await self._snapshots.compare(baseline_id, candidate_id, public_only=True)
 
 
 def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServices:

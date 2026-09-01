@@ -138,6 +138,8 @@ class FakeApiServices:
         self.runs = {}
         self.traces = {}
         self.eval_results = ()
+        self.snapshots = ()
+        self.snapshot_comparison = None
         self.retrieve_error = None
         self.ingest_error = None
         self.review_error = None
@@ -196,6 +198,16 @@ class FakeApiServices:
         """Record the requested limit and return that many results."""
         self.last_eval_limit = limit
         return self.eval_results[:limit]
+
+    async def list_snapshots(self, *, public_only):
+        """Return configured immutable snapshots."""
+        assert public_only is True
+        return self.snapshots
+
+    async def compare_snapshots(self, baseline_id, candidate_id):
+        """Return one configured read-only snapshot comparison."""
+        assert (baseline_id, candidate_id) == (1, 2)
+        return self.snapshot_comparison
 
 
 @pytest.fixture

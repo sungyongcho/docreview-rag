@@ -7,12 +7,17 @@ from pydantic import SecretStr
 import pytest
 
 from app.config import Settings
+import app.corpus_admin as corpus_admin
 from app.corpus_admin import (
     AdminCommand,
     CannedCorpusAdminService,
     RuntimeCorpusAdminService,
 )
 from app.ingestion.progress import OperationProgress
+from app.retrieval.embeddings import (
+    DeterministicEmbeddingProvider,
+    EmbeddingBackfillResult,
+)
 from tests.live_postgres import live_postgres_unavailable
 
 
@@ -133,8 +138,131 @@ def test_failed_job_is_redacted_and_retryable(tmp_path: Path) -> None:
         board = await service.jobs()
         assert retried.job_id != failed.job_id
         assert board.history[0].status == "succeeded"
+        assert board.history[0].result_refs["retry_of"] == failed.job_id
 
     asyncio.run(scenario())
+
+
+def test_queued_job_can_be_cancelled_without_running(tmp_path: Path) -> None:
+    """Remove queued work at dispatch time while allowing the active job to finish."""
+
+    async def scenario() -> None:
+        """Hold the first job, cancel the second, and inspect terminal history."""
+        gate = asyncio.Event()
+        calls: list[str] = []
+
+        async def runner(command, publish) -> str:
+            """Block the first command long enough to cancel its successor."""
+            del publish
+            calls.append(command.kind)
+            await gate.wait()
+            return "done"
+
+        service = RuntimeCorpusAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            operation_runner=runner,
+        )
+        first = await service.enqueue(AdminCommand("rebuild_bm25"))
+        second = await service.enqueue(AdminCommand("backfill_embeddings"))
+        await asyncio.sleep(0)
+        cancelled = await service.cancel(second.job_id)
+        gate.set()
+        await service._queue.join()
+        board = await service.jobs()
+
+        assert calls == [first.command.kind]
+        assert cancelled.status == "cancelled"
+        assert {job.status for job in board.history} == {"succeeded", "cancelled"}
+
+    asyncio.run(scenario())
+
+
+def test_running_backfill_cancels_at_the_next_batch_boundary(tmp_path: Path) -> None:
+    """Cooperatively stop only a running operation with a declared safe boundary."""
+
+    async def scenario() -> None:
+        """Request cancellation while a fake embedding batch is in flight."""
+        gate = asyncio.Event()
+
+        async def runner(command, publish) -> str:
+            """Publish once, wait, then hit the cancellation-aware boundary."""
+            assert command.kind == "backfill_embeddings"
+            publish(OperationProgress("embedding", 1, 2, "first batch"))
+            await gate.wait()
+            publish(OperationProgress("embedding", 2, 2, "second batch"))
+            return "unexpected completion"
+
+        service = RuntimeCorpusAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            operation_runner=runner,
+        )
+        job = await service.enqueue(AdminCommand("backfill_embeddings"))
+        await asyncio.sleep(0)
+        cancelled = await service.cancel(job.job_id)
+        gate.set()
+        await service._queue.join()
+        board = await service.jobs()
+
+        assert cancelled.status == "cancelled"
+        assert board.history[0].status == "cancelled"
+        assert board.history[0].message == "Cancelled by operator."
+
+    asyncio.run(scenario())
+
+
+def test_backfill_refuses_false_success_when_committed_count_does_not_change(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Fail the job when an UPDATE reports rows but the database postcondition disagrees."""
+
+    class FakeSession:
+        """Minimal async context used by monkeypatched count and backfill boundaries."""
+
+        async def __aenter__(self):
+            """Return the fake session."""
+            return self
+
+        async def __aexit__(self, *args):
+            """Close without suppressing errors."""
+            return False
+
+    states = iter(((0, 3), (0, 3)))
+
+    async def fake_state(session, provider):
+        """Report no committed change before or after the claimed update."""
+        del session, provider
+        return next(states)
+
+    async def fake_embed(session, provider, *, on_batch):
+        """Claim three stored rows without changing persistence."""
+        del session, provider, on_batch
+        return EmbeddingBackfillResult(selected=3, embedded=3, skipped_stale=0, batches=1)
+
+    async def fake_bootstrap(engine):
+        """Avoid database setup in the focused postcondition test."""
+        del engine
+
+    async def fake_writable(self):
+        """Treat the focused fake schema as writable."""
+        del self
+
+    monkeypatch.setattr(corpus_admin, "_embedding_state", fake_state)
+    monkeypatch.setattr(corpus_admin, "embed_missing_chunks", fake_embed)
+    monkeypatch.setattr(corpus_admin, "bootstrap_schema", fake_bootstrap)
+    monkeypatch.setattr(RuntimeCorpusAdminService, "_assert_writable_schema", fake_writable)
+    service = RuntimeCorpusAdminService(
+        settings=Settings(corpus_dir=tmp_path),
+        session_factory=FakeSession,
+        embedding_provider=DeterministicEmbeddingProvider(),
+    )
+
+    with pytest.raises(RuntimeError, match="reported rows were not committed"):
+        asyncio.run(
+            service._run_operation(
+                AdminCommand("backfill_embeddings"),
+                lambda progress: None,
+            )
+        )
 
 
 def test_manifest_resolution_is_confined_to_valid_root_entries(tmp_path: Path) -> None:

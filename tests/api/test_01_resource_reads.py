@@ -1,6 +1,14 @@
-"""M5.1 retrieve and document resource route tests."""
+"""M5.1 retrieve, document, and snapshot resource route tests."""
 
-from app.api.schemas import DocumentResource
+from datetime import UTC, datetime
+
+from app.api.schemas import (
+    DocumentResource,
+    EvalResultResource,
+    SnapshotComparisonResponse,
+    SnapshotMetricDelta,
+    SnapshotResource,
+)
 
 
 def test_retrieve_route_returns_complete_evidence_identity(
@@ -62,3 +70,44 @@ def test_documents_route_returns_typed_collection(client_factory, services):
     assert response.status_code == 200
     assert response.json()["documents"][0]["chunk_count"] == 12
     assert response.json()["documents"][0]["source_sha256"] == "d" * 64
+
+
+def test_snapshot_routes_read_stored_results_without_starting_work(client_factory, services):
+    """List and compare immutable public snapshots through typed resources."""
+    recorded = datetime(2026, 9, 1, tzinfo=UTC)
+    result = EvalResultResource(
+        result_id=9,
+        suite="sec-en",
+        config={"golden_sha256": "a" * 64},
+        metrics={"mrr": 0.5},
+        raw_artifact_path="artifact.json",
+        created_at=recorded,
+    )
+    services.snapshots = (
+        SnapshotResource(
+            snapshot_id=1,
+            label="Baseline",
+            status="ready",
+            public=True,
+            corpus_fingerprint="b" * 64,
+            profile={},
+            golden_revision_id=None,
+            eval_result=result,
+            document_count=2,
+            created_at=recorded,
+        ),
+    )
+    services.snapshot_comparison = SnapshotComparisonResponse(
+        baseline_id=1,
+        candidate_id=2,
+        directly_comparable=True,
+        warning=None,
+        metrics=(SnapshotMetricDelta(name="mrr", baseline=0.4, candidate=0.5, delta=0.1),),
+    )
+    client = client_factory(services)
+
+    listed = client.get("/snapshots")
+    compared = client.get("/snapshots/compare?baseline_id=1&candidate_id=2")
+
+    assert listed.json()["snapshots"][0]["label"] == "Baseline"
+    assert compared.json()["metrics"][0]["delta"] == 0.1

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
+from datetime import datetime
 from decimal import Decimal
+from hashlib import blake2s
 from pathlib import Path
+import secrets
 from typing import Any, Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -23,7 +26,7 @@ from app.llm.schemas import TokenPricing
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
-from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware
+from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
 from app.release.secrets import install_secret_redaction
 
 ProviderFactory = Callable[..., LLMProvider]
@@ -102,6 +105,41 @@ class ReleaseInfo(BaseModel):
     max_output_tokens: int
     max_cost_usd: str
     public_daily_cost_usd: str
+
+
+class ReleaseCapabilities(BaseModel):
+    """Non-secret controls available to this frontend mode."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    can_edit_prompt_policy: bool
+    can_edit_run_limits: bool
+    can_edit_golden: bool
+    can_build_snapshot: bool
+    can_run_evaluation: bool
+    can_change_custom_retrieval: bool
+    can_query_snapshot: bool
+    can_use_operations: bool
+    can_compare_published_snapshots: bool = True
+
+
+class ReleaseLimits(BaseModel):
+    """Configured and currently remaining public single-process limits."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    per_minute: int
+    per_day: int
+    remaining_minute: int
+    remaining_day: int
+    max_input_tokens: int
+    max_output_tokens: int
+    max_cost_usd: str
+    daily_cost_usd: str
+    remaining_daily_cost_usd: str
+    retry_after_seconds: int
+    minute_reset_seconds: int
+    day_reset_seconds: int
+    daily_cost_reset_at_utc: datetime
+    scope: Literal["single_process"] = "single_process"
 
 
 class CorpusReadiness(BaseModel):
@@ -192,6 +230,8 @@ def build_runtime_services(
         secret_values=tuple(secrets),
         intent_classifier_enabled=True,
         query_routing_enabled=True,
+        allow_custom_prompt_policy=settings.admin_mode == "live",
+        allow_snapshot_query=settings.admin_mode == "live",
     )
 
 
@@ -239,6 +279,7 @@ def create_release_app(
         reservation_usd=active_settings.openai_max_cost_usd,
     )
     enforce_public_limits = active_settings.admin_mode != "live"
+    limiter_salt = secrets.token_bytes(32)
     application.add_middleware(
         ReleaseGuardMiddleware,
         limiter=limiter,
@@ -248,6 +289,7 @@ def create_release_app(
         cost_limiter=(
             cost_limiter if active_settings.mode == "runtime" and enforce_public_limits else None
         ),
+        salt=limiter_salt,
     )
     application.add_middleware(SecurityHeadersMiddleware)
     if active_settings.admin_mode == "live" and active_settings.admin_cors_origin is not None:
@@ -267,6 +309,44 @@ def create_release_app(
     async def release_info() -> ReleaseInfo:
         """Publish active limits without naming any credential."""
         return _release_info(active_settings)
+
+    @application.get("/capabilities", response_model=ReleaseCapabilities, tags=["release"])
+    async def capabilities() -> ReleaseCapabilities:
+        """Publish authoritative UI capabilities without exposing credentials."""
+        live = active_settings.admin_mode == "live"
+        return ReleaseCapabilities(
+            can_edit_prompt_policy=live,
+            can_edit_run_limits=live,
+            can_edit_golden=live,
+            can_build_snapshot=live,
+            can_run_evaluation=live,
+            can_change_custom_retrieval=live,
+            can_query_snapshot=live,
+            can_use_operations=live,
+        )
+
+    @application.get("/limits", response_model=ReleaseLimits, tags=["release"])
+    async def limits(request: Request) -> ReleaseLimits:
+        """Inspect public allowance without consuming request or cost capacity."""
+        host = client_host(request, trust_proxy_headers=active_settings.trust_proxy_headers)
+        key = blake2s(host.encode("utf-8"), key=limiter_salt, digest_size=16).hexdigest()
+        rate = await limiter.peek(key)
+        remaining_cost, cost_reset = await cost_limiter.status()
+        return ReleaseLimits(
+            per_minute=active_settings.rate_limit_per_minute,
+            per_day=active_settings.rate_limit_per_day,
+            remaining_minute=rate.remaining_minute,
+            remaining_day=rate.remaining_day,
+            max_input_tokens=active_settings.openai_max_input_tokens,
+            max_output_tokens=active_settings.openai_max_output_tokens,
+            max_cost_usd=format(active_settings.openai_max_cost_usd, "f"),
+            daily_cost_usd=format(active_settings.public_daily_cost_usd, "f"),
+            remaining_daily_cost_usd=format(remaining_cost, "f"),
+            retry_after_seconds=rate.retry_after_seconds,
+            minute_reset_seconds=rate.minute_reset_seconds,
+            day_reset_seconds=rate.day_reset_seconds,
+            daily_cost_reset_at_utc=cost_reset,
+        )
 
     async def default_readiness_probe() -> dict[str, Any]:
         """Inspect runtime corpus state without creating or altering schema."""

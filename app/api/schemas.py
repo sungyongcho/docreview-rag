@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     JsonValue,
@@ -40,6 +41,11 @@ from app.workflow.types import (
     WorkflowReport,
     run_status_for_failure,
 )
+
+
+def _tuple_from_json_array(value: object) -> object:
+    """Accept transport JSON arrays while retaining strict nested validation."""
+    return tuple(value) if isinstance(value, list) else value
 
 
 def _require_nonblank(value: str) -> str:
@@ -228,7 +234,11 @@ class ReviewRequest(StrictApiModel):
     query: NonBlank
     session_profile: ReviewSessionProfile = Field(default_factory=ReviewSessionProfile)
     evidence_selection: EvidenceSelection | None = None
-    conversation_history: tuple[ConversationTurn, ...] = Field(max_length=6, default=())
+    conversation_history: Annotated[
+        tuple[ConversationTurn, ...],
+        BeforeValidator(_tuple_from_json_array),
+        Field(max_length=6),
+    ] = ()
     k: Annotated[StrictInt, Field(gt=0, le=100)] | None = None
     filters: RetrievalFilters | None = None
     budget: Budget = Field(default_factory=Budget)
@@ -399,6 +409,60 @@ class EvalListResponse(StrictApiModel):
     """Newest persisted evaluation resources first."""
 
     results: tuple[EvalResultResource, ...]
+
+
+class SnapshotResource(StrictApiModel):
+    """One immutable evaluation snapshot safe for public comparison."""
+
+    snapshot_id: PositiveInt
+    label: NonBlank
+    status: Literal["ready", "archived"]
+    public: StrictBool
+    corpus_fingerprint: Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
+    profile: JsonObject
+    golden_revision_id: PositiveInt | None
+    eval_result: EvalResultResource
+    document_count: NonnegativeInt
+    created_at: datetime
+
+
+class SnapshotListResponse(StrictApiModel):
+    """Newest-first immutable evaluation snapshots."""
+
+    snapshots: tuple[SnapshotResource, ...]
+
+
+class SnapshotMetricDelta(StrictApiModel):
+    """One side-by-side metric with an optional comparable delta."""
+
+    name: NonBlank
+    baseline: FiniteFloat
+    candidate: FiniteFloat
+    delta: FiniteFloat | None
+
+
+class SnapshotCaseComparison(StrictApiModel):
+    """One common stored case shown side by side across two snapshots."""
+
+    case_id: NonBlank
+    baseline_question: NonBlank
+    candidate_question: NonBlank
+    baseline_rank: PositiveInt | None
+    candidate_rank: PositiveInt | None
+    transition: Literal["stable_hit", "stable_miss", "miss_to_hit", "hit_to_miss"]
+    rank_delta: StrictInt | None
+
+
+class SnapshotComparisonResponse(StrictApiModel):
+    """Read-only comparison that never starts an evaluation."""
+
+    baseline_id: PositiveInt
+    candidate_id: PositiveInt
+    directly_comparable: StrictBool
+    warning: NonBlank | None
+    metrics: tuple[SnapshotMetricDelta, ...]
+    common_case_count: NonnegativeInt = 0
+    cases: tuple[SnapshotCaseComparison, ...] = ()
 
 
 class StreamNodeEvent(StrictApiModel):

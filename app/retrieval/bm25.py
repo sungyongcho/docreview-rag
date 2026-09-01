@@ -23,7 +23,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, BM25Idf
-from app.db.models import BM25CorpusStat, Chunk, ChunkLength, ChunkTerm, LexemeStat
+from app.db.models import (
+    BM25CorpusStat,
+    Chunk,
+    ChunkLength,
+    ChunkTerm,
+    LexemeStat,
+    SnapshotBM25CorpusStat,
+    SnapshotChunk,
+    SnapshotChunkLength,
+    SnapshotChunkTerm,
+    SnapshotLexemeStat,
+)
 from app.retrieval._sql import (
     TEXT_SEARCH_CONFIG,
     apply_filters,
@@ -262,46 +273,90 @@ def bm25_statement(
             )
         ).label("lexeme")
     ).subquery("bm25_query_terms")
-    corpus = select(
-        BM25CorpusStat.language,
-        BM25CorpusStat.n,
-        BM25CorpusStat.avgdl,
-    ).subquery("bm25_corpus")
+    if active_filters.snapshot_id is None:
+        source = Chunk
+        term_table = ChunkTerm
+        length_table = ChunkLength
+        corpus = select(
+            BM25CorpusStat.language,
+            BM25CorpusStat.n,
+            BM25CorpusStat.avgdl,
+        ).subquery("bm25_corpus")
+        lexeme_df = LexemeStat.df
+        lexeme_join = (LexemeStat.lexeme == term_table.lexeme) & (
+            LexemeStat.language == source.language
+        )
+        lexeme_table = LexemeStat
+        scope_predicates = ()
+    else:
+        source = SnapshotChunk
+        term_table = SnapshotChunkTerm
+        length_table = SnapshotChunkLength
+        corpus = (
+            select(
+                SnapshotBM25CorpusStat.language,
+                SnapshotBM25CorpusStat.n,
+                SnapshotBM25CorpusStat.avgdl,
+            )
+            .where(SnapshotBM25CorpusStat.snapshot_id == active_filters.snapshot_id)
+            .subquery("bm25_corpus")
+        )
+        lexeme_df = SnapshotLexemeStat.df
+        lexeme_join = (
+            (SnapshotLexemeStat.snapshot_id == active_filters.snapshot_id)
+            & (SnapshotLexemeStat.lexeme == term_table.lexeme)
+            & (SnapshotLexemeStat.language == source.language)
+        )
+        lexeme_table = SnapshotLexemeStat
+        scope_predicates = (
+            source.snapshot_id == active_filters.snapshot_id,
+            term_table.snapshot_id == active_filters.snapshot_id,
+            length_table.snapshot_id == active_filters.snapshot_id,
+        )
 
     k1_param = bindparam("bm25_k1", value=normalized_k1, type_=Float())
     b_param = bindparam("bm25_b", value=normalized_b, type_=Float())
-    document_length = cast(ChunkLength.dl, Float)
-    idf_term = _idf_expression(idf, corpus.c.n, LexemeStat.df)
+    document_length = cast(length_table.dl, Float)
+    idf_term = _idf_expression(idf, corpus.c.n, lexeme_df)
     length_norm = 1.0 - b_param + b_param * document_length / corpus.c.avgdl
-    saturation = (ChunkTerm.tf * (k1_param + 1.0)) / (ChunkTerm.tf + k1_param * length_norm)
+    saturation = (term_table.tf * (k1_param + 1.0)) / (term_table.tf + k1_param * length_norm)
     score = cast(func.sum(idf_term * saturation), Float).label("score")
 
     scores = (
-        select(ChunkTerm.chunk_id.label("chunk_id"), score)
-        .select_from(ChunkTerm)
-        .join(Chunk, Chunk.id == ChunkTerm.chunk_id)
+        select(term_table.chunk_id.label("chunk_id"), score)
+        .select_from(term_table)
+        .join(
+            source,
+            (Chunk.id if source is Chunk else SnapshotChunk.chunk_id) == term_table.chunk_id,
+        )
         .join(query_cte, true())
-        .join(query_terms, query_terms.c.lexeme == ChunkTerm.lexeme)
+        .join(query_terms, query_terms.c.lexeme == term_table.lexeme)
         # Statistics join on the chunk's own language, so every chunk is scored
         # within its corpus even when the table hosts more than one.
         .join(
-            LexemeStat,
-            (LexemeStat.lexeme == ChunkTerm.lexeme) & (LexemeStat.language == Chunk.language),
+            lexeme_table,
+            lexeme_join,
         )
-        .join(ChunkLength, ChunkLength.chunk_id == ChunkTerm.chunk_id)
-        .join(corpus, corpus.c.language == Chunk.language)
-        .where(Chunk.content_tsv.op("@@")(tsquery))
-        .group_by(ChunkTerm.chunk_id)
+        .join(
+            length_table,
+            (length_table.chunk_id == term_table.chunk_id)
+            & (true() if source is Chunk else length_table.snapshot_id == term_table.snapshot_id),
+        )
+        .join(corpus, corpus.c.language == source.language)
+        .where(source.content_tsv.op("@@")(tsquery), *scope_predicates)
+        .group_by(term_table.chunk_id)
         .subquery("bm25_scores")
     )
 
     statement = (
-        select(*hit_columns(scores.c.score))
-        .select_from(Chunk)
-        .join(scores, scores.c.chunk_id == Chunk.id)
+        select(*hit_columns(scores.c.score, source))
+        .select_from(source)
+        .join(
+            scores, scores.c.chunk_id == (Chunk.id if source is Chunk else SnapshotChunk.chunk_id)
+        )
     )
-    statement = apply_filters(statement, active_filters)
-    return statement.order_by(*hit_order_by(scores.c.score.desc())).limit(
+    statement = apply_filters(statement, active_filters, source)
+    return statement.order_by(*hit_order_by(scores.c.score.desc(), source)).limit(
         bindparam("bm25_k", value=k, type_=Integer())
     )
 
@@ -353,7 +408,15 @@ async def bm25_search(
             query, k, filters, k1=k1, b=b, idf=idf, text_search_config=text_search_config
         )
     )
-    stats_ready = await session.scalar(select(func.count()).select_from(BM25CorpusStat))
+    active_filters = filters or RetrievalFilters()
+    stats_statement = select(func.count()).select_from(
+        BM25CorpusStat if active_filters.snapshot_id is None else SnapshotBM25CorpusStat
+    )
+    if active_filters.snapshot_id is not None:
+        stats_statement = stats_statement.where(
+            SnapshotBM25CorpusStat.snapshot_id == active_filters.snapshot_id
+        )
+    stats_ready = await session.scalar(stats_statement)
     if not stats_ready:
         raise RuntimeError("BM25 statistics are missing or stale; rebuild them before searching")
     return [ChunkHit.model_validate(row) for row in result.mappings().all()]

@@ -16,7 +16,10 @@ ConversationIntent = Literal["document_review", "casual_chat"]
 CANNED_RESPONSES: dict[str, str] = {
     "안녕": "안녕하세요. 편하게 대화해도 되고, SEC 10-K나 DART 공시를 같이 봐도 좋아요.",
     "하이": "안녕하세요. 지금은 대화하거나 기업 공시를 검토할 수 있어요.",
+    "안녕하세요": "안녕하세요. 편하게 대화해도 되고, SEC 10-K나 DART 공시를 같이 봐도 좋아요.",
+    "hi": "Hello. We can chat, or review SEC and DART filings together.",
     "hello": "Hello. We can chat, or review SEC and DART filings together.",
+    "helloworld": "Hello. DocReview is ready for SEC and DART filing questions.",
     "뭐함": "질문을 기다리고 있어요. 편하게 말하거나 기업 공시를 물어보세요.",
     "뭐해": "대기 중이에요. 잡담도 좋고 공시 분석도 가능합니다.",
     "섹스": "그 단어에 대해 어떤 맥락으로 이야기하고 싶은지 조금 더 알려주세요.",

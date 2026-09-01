@@ -61,6 +61,7 @@ def test_profiles_converge_on_the_third_corpus_pass(
         2021: "relearned",
         2022: "saved",
         2023: "relearned",
+        2024: "saved",
     }
     assert passes[1] == {
         2019: "saved",
@@ -68,8 +69,9 @@ def test_profiles_converge_on_the_third_corpus_pass(
         2021: "saved",
         2022: "relearned",
         2023: "saved",
+        2024: "saved",
     }
-    assert passes[2] == dict.fromkeys(range(2019, 2024), "saved")
+    assert passes[2] == dict.fromkeys(range(2019, 2025), "saved")
 
 
 def test_failed_profile_is_relearned_before_it_is_saved(

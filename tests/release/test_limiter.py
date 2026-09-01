@@ -34,7 +34,26 @@ def test_minute_limit_reports_retry_and_recovers() -> None:
     assert first.allowed and first.remaining_minute == 1
     assert second.allowed and second.remaining_minute == 0
     assert not denied.allowed and denied.retry_after_seconds == 60
+    assert denied.minute_reset_seconds == 60
+    assert denied.day_reset_seconds == 86_400
     assert recovered.allowed
+
+
+def test_peek_reports_resets_without_consuming_another_slot() -> None:
+    """Expose retry and rolling-window reset estimates without changing allowance."""
+    clock = Clock()
+    limiter = InProcessRateLimiter(per_minute=1, per_day=2, max_clients=3, clock=clock)
+    assert asyncio.run(limiter.check("client")).allowed
+
+    first = asyncio.run(limiter.peek("client"))
+    second = asyncio.run(limiter.peek("client"))
+
+    assert first == second
+    assert first.allowed is False
+    assert first.remaining_minute == 0
+    assert first.retry_after_seconds == 60
+    assert first.minute_reset_seconds == 60
+    assert first.day_reset_seconds == 86_400
 
 
 def test_daily_limit_is_rolling_and_not_a_calendar_reset() -> None:

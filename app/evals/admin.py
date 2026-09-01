@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 from pathlib import Path
+import tempfile
 from typing import Any, Final, Literal, Protocol
 from uuid import uuid4
 
@@ -29,17 +30,25 @@ from app.api.admin_schemas import (
     RetrievalProfile,
 )
 from app.config import Settings, get_settings
-from app.db.models import Document, EvalResult
+from app.db.models import Document, EvalResult, GoldenRevision
 from app.evals.arms import Retriever, make_retriever
 from app.evals.artifacts import read_strict_json
 from app.evals.identity import artifact_filename
-from app.evals.loader import GOLDEN_CASES, GoldenDataError, load_golden_cases
+from app.evals.loader import (
+    GOLDEN_CASES,
+    GoldenDataError,
+    encode_golden_payload,
+    load_golden_cases,
+    validate_golden_payload,
+)
 from app.evals.retrieval_eval import (
     evaluate_retriever,
     persist_evaluation,
     write_evaluation_artifact,
 )
 from app.evals.run import _run_cli, arguments
+from app.evals.types import GoldenCase
+from app.operator.jobs import JobExecutionCoordinator, JobStore, JobTurnCancelledError
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.service import retrieve
@@ -121,6 +130,9 @@ class EvaluationAdminService:
         session_factory: SessionFactory = _default_session_factory,
         provider: EmbeddingProvider | None = None,
         artifact_dir: Path | None = None,
+        job_store: JobStore | None = None,
+        execution_lock: asyncio.Lock | None = None,
+        execution_coordinator: JobExecutionCoordinator | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._session_factory = session_factory
@@ -133,6 +145,10 @@ class EvaluationAdminService:
         self._jobs: dict[str, EvaluationJobResource] = {}
         self._history: deque[str] = deque(maxlen=MAX_EVALUATION_JOBS)
         self._worker: asyncio.Task[None] | None = None
+        self._job_store = job_store
+        self._execution_lock = execution_lock or asyncio.Lock()
+        self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
+        self._recovered_jobs = False
 
     def _definition(self, suite_id: GoldenSuiteId) -> GoldenSuiteDefinition:
         """Resolve one validated suite identifier."""
@@ -185,8 +201,11 @@ class EvaluationAdminService:
             )
         return tuple(resources)
 
-    async def enqueue(self, request: EvaluationRunRequest) -> EvaluationJobResource:
+    async def enqueue(
+        self, request: EvaluationRunRequest, *, retry_of: str | None = None
+    ) -> EvaluationJobResource:
         """Queue one quick or matrix evaluation on the single worker."""
+        await self._ensure_job_recovery()
         if self._queue.full():
             raise RuntimeError("evaluation queue is full")
         job_id = f"eval-{uuid4().hex}"
@@ -199,6 +218,16 @@ class EvaluationAdminService:
             created_at=datetime.now(UTC),
         )
         self._jobs[job_id] = job
+        if self._job_store is not None:
+            await self._job_store.create(
+                job_id=job_id,
+                domain="evaluation",
+                kind=request.mode,
+                request_json=request.model_dump(mode="json"),
+                created_at=job.created_at,
+                result_refs={"retry_of": retry_of} if retry_of is not None else {},
+            )
+        await self._execution_coordinator.register(job_id, job.created_at)
         self._queue.put_nowait(job_id)
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._work(), name="evaluation-admin-worker")
@@ -206,6 +235,7 @@ class EvaluationAdminService:
 
     async def jobs(self) -> EvaluationJobsResponse:
         """Return active, queued, and completed jobs in newest-first order."""
+        await self._ensure_job_recovery()
         return EvaluationJobsResponse(
             jobs=tuple(sorted(self._jobs.values(), key=lambda job: job.created_at, reverse=True))
         )
@@ -213,6 +243,94 @@ class EvaluationAdminService:
     async def job(self, job_id: str) -> EvaluationJobResource | None:
         """Return one job without exposing internal task objects."""
         return self._jobs.get(job_id)
+
+    async def retry(self, job_id: str) -> EvaluationJobResource:
+        """Create a new evaluation from one failed or interrupted persisted request."""
+        await self._ensure_job_recovery()
+        current = self._jobs.get(job_id)
+        if current is not None:
+            if current.status not in {"failed", "interrupted"}:
+                raise ValueError("only failed or interrupted evaluations can be retried")
+            return await self.enqueue(current.request, retry_of=job_id)
+        if self._job_store is None:
+            raise ValueError("evaluation job does not exist")
+        stored = await self._job_store.get(job_id)
+        if (
+            stored is None
+            or stored.domain != "evaluation"
+            or stored.status
+            not in {
+                "failed",
+                "interrupted",
+            }
+        ):
+            raise ValueError("only failed or interrupted evaluations can be retried")
+        return await self.enqueue(
+            EvaluationRunRequest.model_validate(stored.request_json), retry_of=job_id
+        )
+
+    async def cancel(self, job_id: str) -> EvaluationJobResource:
+        """Cancel one queued evaluation before provider or corpus work begins."""
+        await self._ensure_job_recovery()
+        job = self._jobs.get(job_id)
+        if job is None or job.status != "queued":
+            raise ValueError("only a queued evaluation can be cancelled")
+        cancelled = job.model_copy(
+            update={
+                "status": "cancelled",
+                "stage": "cancelled",
+                "message": "Cancelled by operator.",
+                "finished_at": datetime.now(UTC),
+            }
+        )
+        self._jobs[job_id] = cancelled
+        await self._execution_coordinator.cancel(job_id)
+        if self._job_store is not None:
+            await self._job_store.cancel(job_id)
+        return cancelled
+
+    async def _ensure_job_recovery(self) -> None:
+        """Interrupt stale process-owned evaluations once before accepting work."""
+        if self._recovered_jobs:
+            return
+        if self._job_store is not None:
+            await self._job_store.interrupt_incomplete("evaluation")
+        self._recovered_jobs = True
+
+    async def _persist_job(
+        self,
+        job: EvaluationJobResource,
+        *,
+        error_code: str | None = None,
+    ) -> None:
+        """Persist the newest evaluation state and result references."""
+        if self._job_store is None:
+            return
+        await self._job_store.put(
+            job.job_id,
+            status=job.status,
+            stage=job.stage,
+            current=job.current,
+            total=job.total,
+            detail_current=None,
+            detail_total=None,
+            message=job.message,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+            error_code=error_code,
+            result_refs={
+                "result_id": job.result_id,
+                "result_ids": list(job.result_ids),
+                "baseline_id": job.baseline_id,
+                "artifact_paths": list(job.artifact_paths),
+            },
+        )
+
+    async def _persist_current_job(self, job_id: str) -> None:
+        """Persist only the latest in-memory state when progress tasks run out of order."""
+        job = self._jobs.get(job_id)
+        if job is not None:
+            await self._persist_job(job)
 
     def _publish(
         self,
@@ -227,6 +345,8 @@ class EvaluationAdminService:
         self._jobs[job_id] = self._jobs[job_id].model_copy(
             update={"stage": stage, "message": message, "current": current, "total": total}
         )
+        if self._job_store is not None:
+            asyncio.create_task(self._persist_current_job(job_id))
 
     async def _corpus_fingerprint(self, session: AsyncSession) -> str:
         """Hash current document identities and source snapshots in deterministic order."""
@@ -318,23 +438,51 @@ class EvaluationAdminService:
                 return row
         return None
 
+    async def _golden_revision_payload(
+        self, request: EvaluationRunRequest
+    ) -> tuple[list[dict[str, object]], str]:
+        """Load one exact DB revision after binding it to the requested suite."""
+        assert request.golden_revision_id is not None
+        async with self._session_factory() as session:
+            revision = await session.get(GoldenRevision, request.golden_revision_id)
+        if revision is None:
+            raise ValueError("golden revision does not exist")
+        if revision.suite_id != request.suite_id:
+            raise ValueError("golden revision does not belong to the requested suite")
+        return [dict(item) for item in revision.payload], revision.sha256
+
+    async def _evaluation_cases(
+        self, request: EvaluationRunRequest
+    ) -> tuple[list[GoldenCase], str]:
+        """Resolve canonical or DB-revision cases and their exact byte identity."""
+        golden_path, manifest_path = self._suite_paths(request.suite_id)
+        if request.golden_revision_id is None:
+            cases = await asyncio.to_thread(
+                load_golden_cases,
+                golden_path,
+                manifest_path=manifest_path,
+            )
+            return cases, self._golden_sha256(golden_path)
+        payload, sha256 = await self._golden_revision_payload(request)
+        cases = await asyncio.to_thread(
+            validate_golden_payload,
+            payload,
+            manifest_path=manifest_path,
+            label=f"golden revision {request.golden_revision_id}",
+        )
+        return cases, sha256
+
     async def _quick(
         self, job_id: str, request: EvaluationRunRequest
     ) -> tuple[int, int | None, Path]:
         """Evaluate one profile against the current populated index and persist evidence."""
         definition = self._definition(request.suite_id)
-        golden_path, manifest_path = self._suite_paths(request.suite_id)
         self._publish(
             job_id, stage="golden", message="Validating golden sources", current=0, total=4
         )
-        cases = await asyncio.to_thread(
-            load_golden_cases,
-            golden_path,
-            manifest_path=manifest_path,
-        )
+        cases, golden_sha256 = await self._evaluation_cases(request)
         filters = RetrievalFilters(languages=(definition.corpus_language,))
         recorded_at = datetime.now(UTC)
-        golden_sha256 = self._golden_sha256(golden_path)
         async with self._session_factory() as session:
             corpus_fingerprint = await self._corpus_fingerprint(session)
             baseline = await self._compatible_baseline(
@@ -355,6 +503,7 @@ class EvaluationAdminService:
                 config={
                     "admin_identity": {
                         "golden_sha256": golden_sha256,
+                        "golden_revision_id": request.golden_revision_id,
                         "corpus_fingerprint": corpus_fingerprint,
                     },
                     "retrieval_profile": request.profile.model_dump(mode="json"),
@@ -384,98 +533,143 @@ class EvaluationAdminService:
     async def _matrix(self, request: EvaluationRunRequest) -> dict[str, Any]:
         """Run the existing isolated corpus matrix through its in-process boundary."""
         definition = self._definition(request.suite_id)
-        golden_path, _manifest_path = self._suite_paths(request.suite_id)
-        argv = [
-            "--suite",
-            request.suite_id,
-            "--golden",
-            str(golden_path),
-            "--manifest-name",
-            definition.manifest_name,
-            "--artifact-dir",
-            str(self._artifact_dir),
-            "--provider",
-            self._settings.embedding_provider,
-            "--target-text-chars",
-            *(str(value) for value in request.target_text_chars),
-            "--strategies",
-            *request.strategies,
-            "--lexical-rankers",
-            *request.lexical_rankers,
-            "-k",
-            str(request.profile.k),
-            "--candidate-k",
-            str(request.profile.candidate_k),
-            "--rrf-k",
-            str(request.profile.rrf_k),
-            "--bm25-k1",
-            str(request.profile.bm25_k1),
-            "--bm25-b",
-            str(request.profile.bm25_b),
-            "--bm25-idf",
-            request.profile.bm25_idf,
-            "--persist-results",
-        ]
-        parsed: argparse.Namespace = arguments(argv)
-        return await _run_cli(parsed)
+        golden_path, manifest_path = self._suite_paths(request.suite_id)
+        temporary_path: Path | None = None
+        if request.golden_revision_id is not None:
+            payload, _sha256 = await self._golden_revision_payload(request)
+            await asyncio.to_thread(
+                validate_golden_payload,
+                payload,
+                manifest_path=manifest_path,
+                label=f"golden revision {request.golden_revision_id}",
+            )
+            self._artifact_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                prefix=".golden-revision-",
+                suffix=".json",
+                dir=self._artifact_dir,
+                delete=False,
+            ) as temporary:
+                temporary.write(encode_golden_payload(payload))
+                temporary_path = Path(temporary.name)
+            golden_path = temporary_path
+        try:
+            argv = [
+                "--suite",
+                request.suite_id,
+                "--golden",
+                str(golden_path),
+                "--manifest-name",
+                definition.manifest_name,
+                "--artifact-dir",
+                str(self._artifact_dir),
+                "--provider",
+                self._settings.embedding_provider,
+                "--target-text-chars",
+                *(str(value) for value in request.target_text_chars),
+                "--strategies",
+                *request.strategies,
+                "--lexical-rankers",
+                *request.lexical_rankers,
+                "-k",
+                str(request.profile.k),
+                "--candidate-k",
+                str(request.profile.candidate_k),
+                "--rrf-k",
+                str(request.profile.rrf_k),
+                "--bm25-k1",
+                str(request.profile.bm25_k1),
+                "--bm25-b",
+                str(request.profile.bm25_b),
+                "--bm25-idf",
+                request.profile.bm25_idf,
+                "--persist-results",
+            ]
+            parsed: argparse.Namespace = arguments(argv)
+            return await _run_cli(parsed)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
-    async def _work(self) -> None:
-        """Execute queued evaluations serially and retain safe terminal state."""
-        while not self._queue.empty():
-            job_id = await self._queue.get()
-            job = self._jobs[job_id].model_copy(
+    async def _execute_job(self, job_id: str) -> None:
+        """Execute one evaluation while the shared operator lock is held."""
+        job = self._jobs[job_id].model_copy(
+            update={
+                "status": "running",
+                "stage": "starting",
+                "message": "Starting",
+                "started_at": datetime.now(UTC),
+            }
+        )
+        self._jobs[job_id] = job
+        await self._persist_job(job)
+        error_code = None
+        try:
+            if job.request.mode == "quick":
+                result_id, baseline_id, artifact_path = await self._quick(job_id, job.request)
+                updates = {
+                    "result_id": result_id,
+                    "result_ids": (result_id,),
+                    "baseline_id": baseline_id,
+                    "artifact_paths": (str(artifact_path),),
+                }
+            else:
+                self._publish(job_id, stage="matrix", message="Running isolated matrix")
+                payload = await self._matrix(job.request)
+                persisted = tuple(
+                    int(item["result_id"])
+                    for item in payload.get("persisted", [])
+                    if isinstance(item, dict) and item.get("result_id") is not None
+                )
+                updates = {
+                    "result_id": persisted[0] if persisted else None,
+                    "result_ids": persisted,
+                    "artifact_paths": tuple(str(path) for path in payload.get("artifacts", [])),
+                }
+        except Exception as error:  # noqa: BLE001 - terminal job boundary
+            error_code = type(error).__name__.lower()
+            finished = self._jobs[job_id].model_copy(
                 update={
-                    "status": "running",
-                    "stage": "starting",
-                    "message": "Starting",
-                    "started_at": datetime.now(UTC),
+                    "status": "failed",
+                    "stage": "failed",
+                    "message": f"{type(error).__name__}: {error}",
+                    "finished_at": datetime.now(UTC),
                 }
             )
-            self._jobs[job_id] = job
+        else:
+            finished = self._jobs[job_id].model_copy(
+                update={
+                    **updates,
+                    "status": "succeeded",
+                    "stage": "complete",
+                    "message": "Evaluation completed",
+                    "finished_at": datetime.now(UTC),
+                }
+            )
+        self._jobs[job_id] = finished
+        await self._persist_job(finished, error_code=error_code)
+        self._history.append(job_id)
+
+    async def _work(self) -> None:
+        """Execute evaluations serially through the shared corpus/evaluation lock."""
+        while not self._queue.empty():
+            job_id = await self._queue.get()
             try:
-                if job.request.mode == "quick":
-                    result_id, baseline_id, artifact_path = await self._quick(job_id, job.request)
-                    updates = {
-                        "result_id": result_id,
-                        "result_ids": (result_id,),
-                        "baseline_id": baseline_id,
-                        "artifact_paths": (str(artifact_path),),
-                    }
-                else:
-                    self._publish(job_id, stage="matrix", message="Running isolated matrix")
-                    payload = await self._matrix(job.request)
-                    persisted = tuple(
-                        int(item["result_id"])
-                        for item in payload.get("persisted", [])
-                        if isinstance(item, dict) and item.get("result_id") is not None
-                    )
-                    updates = {
-                        "result_id": persisted[0] if persisted else None,
-                        "result_ids": persisted,
-                        "artifact_paths": tuple(str(path) for path in payload.get("artifacts", [])),
-                    }
-            except Exception as error:  # noqa: BLE001 - terminal job boundary
-                finished = self._jobs[job_id].model_copy(
-                    update={
-                        "status": "failed",
-                        "stage": "failed",
-                        "message": f"{type(error).__name__}: {error}",
-                        "finished_at": datetime.now(UTC),
-                    }
-                )
-            else:
-                finished = self._jobs[job_id].model_copy(
-                    update={
-                        **updates,
-                        "status": "succeeded",
-                        "stage": "complete",
-                        "message": "Evaluation completed",
-                        "finished_at": datetime.now(UTC),
-                    }
-                )
-            self._jobs[job_id] = finished
-            self._history.append(job_id)
-            self._queue.task_done()
+                if self._jobs[job_id].status == "cancelled":
+                    self._history.append(job_id)
+                    continue
+                async with self._execution_coordinator.turn(job_id):
+                    async with self._execution_lock:
+                        if self._jobs[job_id].status != "cancelled":
+                            await self._execute_job(job_id)
+                        else:
+                            self._history.append(job_id)
+            except JobTurnCancelledError:
+                if job_id not in self._history:
+                    self._history.append(job_id)
+            finally:
+                self._queue.task_done()
 
     def _artifact_path(self, raw: str) -> Path:
         """Confine persisted artifact reads to the configured evaluation directory."""

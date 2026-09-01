@@ -276,6 +276,21 @@ def test_statement_applies_every_shared_filter():
     assert [2024] in params.values()
 
 
+def test_snapshot_statement_uses_frozen_membership_and_bm25_statistics():
+    """Score a snapshot only with its retained chunks and lexical statistics."""
+    sql, params = normalized_sql(
+        bm25.bm25_statement("market risk", 5, RetrievalFilters(snapshot_id=7))
+    )
+
+    assert "snapshot_chunks" in sql
+    assert "snapshot_chunk_terms" in sql
+    assert "snapshot_chunk_lengths" in sql
+    assert "snapshot_bm25_corpus_stats" in sql
+    assert "snapshot_lexeme_stats" in sql
+    assert "FROM chunk_terms" not in sql
+    assert 7 in params.values()
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -319,18 +334,25 @@ def test_search_executes_once_and_returns_typed_hits():
     mapping = hit_values(score=1.25)
 
     class Result:
+        """Expose deterministic mapping rows like a SQLAlchemy result."""
+
         def mappings(self):
+            """Return the recorded BM25 hit mapping."""
             return SimpleNamespace(all=lambda: [mapping])
 
     class Session:
+        """Record BM25 statements while returning deterministic results."""
+
         def __init__(self):
             self.statements = []
 
         async def execute(self, statement):
+            """Record and satisfy the hit query."""
             self.statements.append(statement)
             return Result()
 
         async def scalar(self, statement):
+            """Record and satisfy the statistics freshness query."""
             self.statements.append(statement)
             return 1
 
@@ -346,14 +368,21 @@ def test_search_raises_when_statistics_are_missing_or_stale():
     """Refuse to turn a missing freshness sentinel into an empty result."""
 
     class Result:
+        """Expose an empty SQLAlchemy-style mapping result."""
+
         def mappings(self):
+            """Return no BM25 hit mappings."""
             return SimpleNamespace(all=list)
 
     class Session:
+        """Return stale statistics and no candidate rows."""
+
         async def execute(self, _statement):
+            """Return the empty hit result."""
             return Result()
 
         async def scalar(self, _statement):
+            """Report that the freshness sentinel is absent."""
             return None
 
     with pytest.raises(RuntimeError, match="missing or stale"):
@@ -376,7 +405,10 @@ def test_backfill_refuses_a_session_that_is_already_in_a_transaction():
     """Reject statistic rebuilds inside an active transaction."""
 
     class Session:
+        """Represent a session with an existing transaction."""
+
         def in_transaction(self):
+            """Report the active transaction state."""
             return True
 
     with pytest.raises(RuntimeError, match="without an active transaction"):
@@ -561,6 +593,7 @@ def run_live(database_url, body) -> tuple[bool, str]:
     """Run ``body(session, connection)`` against a throwaway fixture corpus."""
 
     async def main() -> tuple[bool, str]:
+        """Create, exercise, and dispose the live database resources."""
         engine = create_async_engine(database_url, poolclass=NullPool)
         connection = None
         try:
@@ -612,6 +645,7 @@ def test_live_backfill_reproduces_the_fixture_statistics_and_is_idempotent(
     """Rebuild exact fixture statistics idempotently in PostgreSQL."""
 
     async def body(session, _connection):
+        """Assert live rebuilt statistics and idempotence."""
         first = await bm25.backfill_term_stats(session)
         second = await bm25.backfill_term_stats(session)
 
@@ -649,6 +683,7 @@ def test_live_sql_scores_agree_with_the_python_oracle(database_url, idf):
     expected = reference_scores(DOCUMENTS, QUERY, idf=idf)
 
     async def body(session, _connection):
+        """Compare live BM25 scores and ranks with the oracle."""
         await bm25.backfill_term_stats(session)
         hits = await bm25.bm25_search(session, " ".join(QUERY), len(DOCUMENTS), idf=idf)
 
@@ -670,6 +705,7 @@ def test_live_length_normalisation_reverses_the_top_two_documents(database_url):
     """Verify live length normalization changes the leading documents."""
 
     async def body(session, _connection):
+        """Compare normalized and unnormalized live rankings."""
         await bm25.backfill_term_stats(session)
         normalized = await bm25.bm25_search(session, " ".join(QUERY), 2, b=0.75)
         unnormalized = await bm25.bm25_search(session, " ".join(QUERY), 2, b=0.0)
@@ -685,6 +721,7 @@ def test_live_robertson_returns_finite_negative_scores(database_url):
     """Return finite negative Robertson scores for common terms."""
 
     async def body(session, _connection):
+        """Assert the live Robertson score shape and ordering."""
         await bm25.backfill_term_stats(session)
         hits = await bm25.bm25_search(session, " ".join(QUERY), 5, idf="robertson")
 
@@ -700,6 +737,7 @@ def test_live_chunk_writes_invalidate_statistics_and_search_fails(database_url):
     """Invalidate the singleton after relevant insert, update, and delete statements."""
 
     async def body(session, _connection):
+        """Exercise each live write path and assert fail-closed search."""
         writes = (
             sql("UPDATE chunks SET index_text = index_text || ' changed' WHERE id = 1"),
             sql(
@@ -736,6 +774,7 @@ def test_live_phrase_and_negation_match_like_relaxed_websearch(database_url):
     """Keep phrase adjacency and exclusions while scoring only positive lexemes."""
 
     async def body(session, _connection):
+        """Assert live phrase and exclusion query semantics."""
         await bm25.backfill_term_stats(session)
         phrase = await bm25.bm25_search(session, '"market risk"', 5)
         market = await bm25.bm25_search(session, "market", 5)
@@ -759,6 +798,7 @@ def test_live_filters_narrow_candidates_without_changing_corpus_statistics(
     expected = reference_scores(DOCUMENTS, QUERY)
 
     async def body(session, _connection):
+        """Assert filtering preserves corpus-wide BM25 scores."""
         await bm25.backfill_term_stats(session)
         filtered = await bm25.bm25_search(
             session,
@@ -779,6 +819,7 @@ def test_live_retrieve_switches_between_the_two_lexical_rankers(database_url):
     """Switch retrieval between native lexical and BM25 rankings."""
 
     async def body(session, _connection):
+        """Compare live retrieval rankings across lexical rankers."""
         await bm25.backfill_term_stats(session)
         provider = DeterministicEmbeddingProvider()
         rankings = {}

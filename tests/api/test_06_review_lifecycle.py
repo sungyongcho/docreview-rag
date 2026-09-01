@@ -129,10 +129,20 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         lexical_ranker="bm25",
         route_by_language=True,
     )
+    explicit_profile = {
+        "retrieval_preset": "custom",
+        "custom_retrieval": {"route_by_language": True},
+    }
 
     with TestClient(create_app(services)) as client:
-        retrieved = client.post("/retrieve", json={"query": "Revenue?", "k": 3})
-        reviewed = client.post("/review", json={"query": "Revenue?", "k": 3})
+        retrieved = client.post(
+            "/retrieve",
+            json={"query": "Revenue?", "k": 3, "session_profile": explicit_profile},
+        )
+        reviewed = client.post(
+            "/review",
+            json={"query": "Revenue?", "k": 3, "session_profile": explicit_profile},
+        )
 
     assert retrieved.status_code == 200
     assert retrieved.json()["results"][0]["chunk_id"] == hit.chunk_id
@@ -149,6 +159,31 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
     assert persisted[0][1].run_id == "run-integration"
     assert persisted[0][0] is sessions[1]
     assert sessions[1].rollbacks == 1
+
+
+def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hit):
+    """Keep provider-free evidence retrieval available when language routing is off."""
+
+    async def retrieval_service(session, query, *, provider, k, filters, **plan):
+        """Return one deterministic hit without touching an answer provider."""
+        del session, query, provider, k, filters, plan
+        return RetrievalResult(
+            hits=(hit,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=(hit.chunk_id,)),
+        )
+
+    services = RuntimeApiServices(
+        session_factory=cast(SessionFactory, FakeSession),
+        retrieval_service=retrieval_service,
+        query_routing_enabled=True,
+    )
+
+    with TestClient(create_app(services)) as client:
+        response = client.post("/retrieve", json={"query": "Revenue?"})
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["chunk_id"] == hit.chunk_id
 
 
 def test_cli_and_http_use_the_same_public_evidence_shape(

@@ -4,7 +4,7 @@ import asyncio
 from collections import OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time as datetime_time, timedelta
 from decimal import Decimal
 import math
 import time
@@ -21,6 +21,8 @@ class RateLimitDecision:
     retry_after_seconds: int
     remaining_minute: int
     remaining_day: int
+    minute_reset_seconds: int
+    day_reset_seconds: int
 
 
 @dataclass(slots=True)
@@ -86,34 +88,78 @@ class InProcessRateLimiter:
             minute_cutoff = now - MINUTE_SECONDS
             minute_count = sum(timestamp > minute_cutoff for timestamp in window.timestamps)
             day_count = len(window.timestamps)
+            minute_start = next(
+                (timestamp for timestamp in window.timestamps if timestamp > minute_cutoff), None
+            )
+            minute_reset = (
+                max(1, math.ceil(minute_start + MINUTE_SECONDS - now))
+                if minute_start is not None
+                else 0
+            )
+            day_reset = (
+                max(1, math.ceil(window.timestamps[0] + DAY_SECONDS - now))
+                if window.timestamps
+                else 0
+            )
 
             if minute_count >= self._per_minute:
-                minute_start = next(
-                    timestamp for timestamp in window.timestamps if timestamp > minute_cutoff
-                )
-                retry = max(1, math.ceil(minute_start + MINUTE_SECONDS - now))
                 return RateLimitDecision(
                     allowed=False,
-                    retry_after_seconds=retry,
+                    retry_after_seconds=minute_reset,
                     remaining_minute=0,
                     remaining_day=max(0, self._per_day - day_count),
+                    minute_reset_seconds=minute_reset,
+                    day_reset_seconds=day_reset,
                 )
             if day_count >= self._per_day:
-                retry = max(1, math.ceil(window.timestamps[0] + DAY_SECONDS - now))
                 return RateLimitDecision(
                     allowed=False,
-                    retry_after_seconds=retry,
+                    retry_after_seconds=day_reset,
                     remaining_minute=max(0, self._per_minute - minute_count),
                     remaining_day=0,
+                    minute_reset_seconds=minute_reset,
+                    day_reset_seconds=day_reset,
                 )
 
             window.timestamps.append(float(now))
+            minute_reset = max(1, math.ceil(window.timestamps[-1] + MINUTE_SECONDS - now))
+            day_reset = max(1, math.ceil(window.timestamps[0] + DAY_SECONDS - now))
             return RateLimitDecision(
                 allowed=True,
                 retry_after_seconds=0,
                 remaining_minute=self._per_minute - minute_count - 1,
                 remaining_day=self._per_day - day_count - 1,
+                minute_reset_seconds=minute_reset,
+                day_reset_seconds=day_reset,
             )
+
+    async def peek(self, client_key: str) -> RateLimitDecision:
+        """Inspect one client's remaining allowance without consuming a slot."""
+        now = self._clock()
+        if not isinstance(now, int | float) or not math.isfinite(now) or now < 0:
+            raise ValueError("clock must return a finite nonnegative value")
+        async with self._lock:
+            window = self._clients.get(client_key)
+            timestamps = () if window is None else tuple(window.timestamps)
+            minute_values = tuple(value for value in timestamps if value > now - MINUTE_SECONDS)
+            day_values = tuple(value for value in timestamps if value > now - DAY_SECONDS)
+            minute = len(minute_values)
+            day = len(day_values)
+        minute_reset = (
+            max(1, math.ceil(minute_values[0] + MINUTE_SECONDS - now)) if minute_values else 0
+        )
+        day_reset = max(1, math.ceil(day_values[0] + DAY_SECONDS - now)) if day_values else 0
+        retry = (
+            minute_reset if minute >= self._per_minute else day_reset if day >= self._per_day else 0
+        )
+        return RateLimitDecision(
+            allowed=minute < self._per_minute and day < self._per_day,
+            retry_after_seconds=retry,
+            remaining_minute=max(0, self._per_minute - minute),
+            remaining_day=max(0, self._per_day - day),
+            minute_reset_seconds=minute_reset,
+            day_reset_seconds=day_reset,
+        )
 
 
 class DailyCostLimiter:
@@ -148,3 +194,18 @@ class DailyCostLimiter:
                 return False, self._daily_limit - self._reserved
             self._reserved += self._reservation
             return True, self._daily_limit - self._reserved
+
+    async def remaining(self) -> Decimal:
+        """Return today's unreserved allowance without reserving provider spend."""
+        remaining, _reset = await self.status()
+        return remaining
+
+    async def status(self) -> tuple[Decimal, datetime]:
+        """Return unreserved allowance and the next UTC calendar reset."""
+        async with self._lock:
+            current_day = self._today()
+            if current_day != self._day:
+                self._day = current_day
+                self._reserved = Decimal("0")
+            reset = datetime.combine(current_day + timedelta(days=1), datetime_time.min, tzinfo=UTC)
+            return self._daily_limit - self._reserved, reset

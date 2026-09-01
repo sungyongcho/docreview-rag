@@ -26,7 +26,9 @@ type RetrievalStrategy = Literal["vector", "lexical", "hybrid"]
 type RerankerName = Literal["cross_encoder"]
 type GoldenSuiteId = Literal["sec-en", "sec-ko", "dart-en", "dart-ko"]
 type EvaluationMode = Literal["quick", "matrix"]
-type EvaluationJobStatus = Literal["queued", "running", "succeeded", "failed"]
+type EvaluationJobStatus = Literal[
+    "queued", "running", "succeeded", "failed", "interrupted", "cancelled"
+]
 type CorpusOperationKind = Literal[
     "acquire_edgar",
     "acquire_dart",
@@ -34,6 +36,15 @@ type CorpusOperationKind = Literal[
     "backfill_embeddings",
     "rebuild_bm25",
 ]
+type DocumentSort = Literal[
+    "doc_id",
+    "issuer",
+    "fiscal_year",
+    "filing_date",
+    "chunk_count",
+    "embedding_coverage",
+]
+type DocumentEmbeddingStatus = Literal["complete", "partial", "missing"]
 
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
 FinitePositive = Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)]
@@ -101,10 +112,68 @@ class GoldenSuiteResource(StrictAdminModel):
     source_error: str | None = None
 
 
+class GoldenRevisionResource(StrictAdminModel):
+    """One editable or published golden-suite revision."""
+
+    revision_id: PositiveInt
+    suite_id: GoldenSuiteId
+    version: PositiveInt
+    status: Literal["draft", "validated", "published"]
+    payload: tuple[dict[str, object], ...]
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    parent_id: PositiveInt | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class GoldenCanonicalResource(StrictAdminModel):
+    """Validated read-only canonical JSON for one golden suite."""
+
+    suite_id: GoldenSuiteId
+    filename: str
+    payload: tuple[dict[str, object], ...]
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class GoldenDraftRequest(StrictAdminModel):
+    """Create a draft from canonical JSON or one exact parent revision."""
+
+    parent_id: PositiveInt | None = None
+
+
+class GoldenCaseUpdateRequest(StrictAdminModel):
+    """Optimistically replace one case inside a draft revision."""
+
+    expected_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    case: dict[str, object]
+
+
+class GoldenRevisionActionRequest(StrictAdminModel):
+    """Apply one state transition only to the expected revision bytes."""
+
+    expected_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class SnapshotCreateRequest(StrictAdminModel):
+    """Create one immutable snapshot from a persisted evaluation result."""
+
+    label: Annotated[str, Field(min_length=1, max_length=128)]
+    eval_result_id: PositiveInt
+    golden_revision_id: PositiveInt | None = None
+    public: StrictBool = False
+
+
+class SnapshotVisibilityRequest(StrictAdminModel):
+    """Change only whether a ready snapshot is publicly listable."""
+
+    public: StrictBool
+
+
 class EvaluationRunRequest(StrictAdminModel):
     """Queue one quick live-index run or isolated retrieval matrix."""
 
     suite_id: GoldenSuiteId
+    golden_revision_id: PositiveInt | None = None
     mode: EvaluationMode = "quick"
     profile: RetrievalProfile = Field(default_factory=RetrievalProfile)
     target_text_chars: Annotated[
@@ -154,6 +223,130 @@ class CorpusOperationRequest(StrictAdminModel):
     expected_documents: PositiveInt | None = None
 
 
+class AdminDocumentResource(StrictAdminModel):
+    """One filing row with current chunk and embedding coverage."""
+
+    doc_id: str
+    registry: str
+    language: str
+    issuer: str
+    issuer_id: str
+    fiscal_year: StrictInt
+    form: str
+    filing_date: str
+    report_period: str
+    filing_id: str
+    source_url: str
+    parse_status: str
+    source_length: PositiveInt
+    source_sha256: str
+    chunk_count: NonnegativeInt
+    embedded_chunks: NonnegativeInt
+    text_chunks: NonnegativeInt
+    table_chunks: NonnegativeInt
+    embedding_status: DocumentEmbeddingStatus
+    snapshot_count: NonnegativeInt
+
+
+class DocumentInventoryResponse(StrictAdminModel):
+    """One filtered deterministic document page."""
+
+    documents: tuple[AdminDocumentResource, ...]
+    total: NonnegativeInt
+    next_cursor: str | None
+
+
+class DocumentFacetValue(StrictAdminModel):
+    """One filter value and its document count."""
+
+    value: str
+    count: PositiveInt
+    label: str | None = None
+
+
+class DocumentFacetsResponse(StrictAdminModel):
+    """Available document facets computed from live rows."""
+
+    registries: tuple[DocumentFacetValue, ...]
+    issuers: tuple[DocumentFacetValue, ...]
+    years: tuple[DocumentFacetValue, ...]
+    languages: tuple[DocumentFacetValue, ...]
+    forms: tuple[DocumentFacetValue, ...]
+    parse_statuses: tuple[DocumentFacetValue, ...]
+    embedding_statuses: tuple[DocumentFacetValue, ...]
+    snapshots: tuple[DocumentFacetValue, ...]
+
+
+class DocumentMetadataResource(StrictAdminModel):
+    """Immutable filing metadata for one selected document."""
+
+    doc_id: str
+    registry: str
+    language: str
+    issuer: str
+    issuer_id: str
+    fiscal_year: StrictInt
+    form: str
+    parse_status: str
+    filing_date: str
+    report_period: str
+    filing_id: str
+    source_url: str
+    source_length: PositiveInt
+    source_sha256: str
+    chunk_count: NonnegativeInt
+
+
+class DocumentChunkPreviewResource(StrictAdminModel):
+    """One bounded source-cited chunk preview."""
+
+    chunk_id: PositiveInt
+    ordinal: NonnegativeInt
+    citation: str
+    span: str
+    source_sha256: str
+    body: str
+
+
+class DocumentItemCountResource(StrictAdminModel):
+    """Chunk count for one filing section identity."""
+
+    item: str
+    count: PositiveInt
+
+
+class DocumentEmbeddingIdentityResource(StrictAdminModel):
+    """Embedding identity and coverage for one selected filing."""
+
+    provider: str
+    model: str
+    dimensions: PositiveInt
+    count: PositiveInt
+
+
+class DocumentSnapshotMembershipResource(StrictAdminModel):
+    """One immutable snapshot revision containing the selected filing."""
+
+    snapshot_id: PositiveInt
+    label: str
+    status: Literal["ready", "archived"]
+    public: StrictBool
+    created_at: datetime
+
+
+class DocumentDetailResponse(StrictAdminModel):
+    """Structured filing identity, index coverage, and source previews."""
+
+    document: DocumentMetadataResource
+    chunks: tuple[DocumentChunkPreviewResource, ...]
+    text_chunks: NonnegativeInt
+    table_chunks: NonnegativeInt
+    embedded_chunks: NonnegativeInt
+    item_counts: tuple[DocumentItemCountResource, ...]
+    embedding_identities: tuple[DocumentEmbeddingIdentityResource, ...]
+    snapshot_memberships: tuple[DocumentSnapshotMembershipResource, ...]
+
+
 class EvaluationJobResource(StrictAdminModel):
     """One background evaluation job and its bounded safe output."""
 
@@ -177,6 +370,39 @@ class EvaluationJobsResponse(StrictAdminModel):
     """Newest-first bounded evaluation job collection."""
 
     jobs: tuple[EvaluationJobResource, ...]
+
+
+class OperatorJobResource(StrictAdminModel):
+    """One persisted corpus or evaluation job with queue and progress state."""
+
+    job_id: str
+    domain: Literal["corpus", "evaluation"]
+    kind: str
+    request: dict[str, object]
+    status: Literal["queued", "running", "succeeded", "failed", "interrupted", "cancelled"]
+    stage: str
+    current: NonnegativeInt
+    total: NonnegativeInt | None
+    detail_current: NonnegativeInt | None
+    detail_total: NonnegativeInt | None
+    message: str
+    error_code: str | None
+    result_refs: dict[str, object]
+    queue_position: PositiveInt | None
+    can_cancel: StrictBool
+    can_retry: StrictBool
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    updated_at: datetime
+
+
+class OperatorJobsResponse(StrictAdminModel):
+    """Newest persisted jobs plus active and queued summary counts."""
+
+    jobs: tuple[OperatorJobResource, ...]
+    active_count: NonnegativeInt
+    queued_count: NonnegativeInt
 
 
 class UsageModelResource(StrictAdminModel):

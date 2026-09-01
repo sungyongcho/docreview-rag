@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.review_profile import PromptPolicy
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
 SECURITY_HEADERS = {
@@ -120,6 +121,35 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                     }
                 },
             )
+
+        if request.headers.get("x-docreview-public") == "true" and request.url.path in {
+            "/review",
+            "/review/stream",
+        }:
+            try:
+                payload = await request.json()
+            except ValueError:
+                payload = {}
+            profile = payload.get("session_profile", {}) if isinstance(payload, dict) else {}
+            policy = profile.get("prompt_policy") if isinstance(profile, dict) else None
+            custom_policy = (
+                policy is not None and PromptPolicy.model_validate(policy) != PromptPolicy()
+            )
+            custom_retrieval = (
+                isinstance(profile, dict) and profile.get("retrieval_preset") == "custom"
+            )
+            snapshot_query = isinstance(profile, dict) and profile.get("snapshot_id") is not None
+            if custom_policy or custom_retrieval or snapshot_query:
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": {
+                            "code": "capability_disabled",
+                            "message": "Production experiment controls are read-only.",
+                            "details": [],
+                        }
+                    },
+                )
 
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not self._enforce_rate_limit:

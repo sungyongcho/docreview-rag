@@ -9,8 +9,17 @@ from app.db.models import (
     Chunk,
     Document,
     EvalResult,
+    EvaluationSnapshot,
+    GoldenRevision,
     LexemeStat,
+    OperatorJob,
     Run,
+    SnapshotBM25CorpusStat,
+    SnapshotChunk,
+    SnapshotChunkLength,
+    SnapshotChunkTerm,
+    SnapshotDocument,
+    SnapshotLexemeStat,
     Trace,
 )
 from app.retrieval.korean import lexical_plan
@@ -145,6 +154,91 @@ def test_eval_result_schema_persists_complete_run_provenance():
         "ck_eval_results_raw_artifact_path_nonempty",
     } <= checks
     assert {index.name for index in table.indexes} == {"ix_eval_results_suite_created_at"}
+
+
+def test_experiment_schema_preserves_golden_snapshot_and_document_identity():
+    """Persist self-contained chunk, embedding, and lexical snapshot revisions."""
+    golden = GoldenRevision.__table__
+    snapshot = EvaluationSnapshot.__table__
+    membership = SnapshotDocument.__table__
+
+    assert {"suite_id", "version", "status", "payload", "sha256"} <= set(golden.columns.keys())
+    assert {
+        "label",
+        "public",
+        "corpus_fingerprint",
+        "profile",
+        "golden_revision_id",
+        "eval_result_id",
+    } <= set(snapshot.columns.keys())
+    assert set(membership.primary_key.columns.keys()) == {"snapshot_id", "doc_id"}
+    assert not membership.columns.doc_id.foreign_keys
+    assert membership.columns.source_sha256.nullable is False
+    assert set(SnapshotChunk.__table__.primary_key.columns.keys()) == {
+        "snapshot_id",
+        "chunk_id",
+    }
+    assert not SnapshotChunk.__table__.columns.chunk_id.foreign_keys
+    assert {
+        "doc_id",
+        "registry",
+        "language",
+        "issuer",
+        "fiscal_year",
+        "form",
+        "body",
+        "context_header",
+        "index_text",
+        "content_tsv",
+        "embedding",
+    } <= set(SnapshotChunk.__table__.columns.keys())
+    assert set(SnapshotChunkTerm.__table__.primary_key.columns.keys()) == {
+        "snapshot_id",
+        "chunk_id",
+        "lexeme",
+    }
+    assert set(SnapshotChunkLength.__table__.primary_key.columns.keys()) == {
+        "snapshot_id",
+        "chunk_id",
+    }
+    assert set(SnapshotBM25CorpusStat.__table__.primary_key.columns.keys()) == {
+        "snapshot_id",
+        "language",
+    }
+    assert set(SnapshotLexemeStat.__table__.primary_key.columns.keys()) == {
+        "snapshot_id",
+        "language",
+        "lexeme",
+    }
+
+
+def test_operator_job_schema_persists_queue_progress_and_result_provenance():
+    """Persist corpus and evaluation work across application restarts."""
+    table = OperatorJob.__table__
+    assert {
+        "job_id",
+        "domain",
+        "kind",
+        "request_json",
+        "status",
+        "stage",
+        "current",
+        "total",
+        "detail_current",
+        "detail_total",
+        "message",
+        "error_code",
+        "result_refs",
+        "created_at",
+        "started_at",
+        "finished_at",
+        "updated_at",
+    } == set(table.columns.keys())
+    assert table.columns.job_id.primary_key
+    assert {index.name for index in table.indexes} == {
+        "ix_operator_jobs_status_created_at",
+        "ix_operator_jobs_domain_created_at",
+    }
 
 
 def test_database_models_match_run_and_trace_mapping_contracts():

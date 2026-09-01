@@ -15,6 +15,8 @@ from app.api.schemas import (
     RetrieveRequest,
     RetrieveResponse,
     ReviewRequest,
+    SnapshotComparisonResponse,
+    SnapshotResource,
 )
 from app.ingestion.seed import SeedResult
 from app.observability.types import RunReport, StepTrace
@@ -59,6 +61,16 @@ class ApiServices(Protocol):
 
     async def list_eval_results(self, limit: int) -> Sequence[EvalResultResource]:
         """Return the newest persisted evaluation resources."""
+        ...
+
+    async def list_snapshots(self, *, public_only: bool) -> Sequence[SnapshotResource]:
+        """Return immutable stored evaluation snapshots."""
+        ...
+
+    async def compare_snapshots(
+        self, baseline_id: int, candidate_id: int
+    ) -> SnapshotComparisonResponse:
+        """Compare stored snapshot metrics without running work."""
         ...
 
 

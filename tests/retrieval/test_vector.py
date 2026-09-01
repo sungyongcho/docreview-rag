@@ -77,6 +77,21 @@ def test_statement_applies_every_shared_filter_with_and_semantics():
     assert ["table"] in params.values()
 
 
+def test_statement_confines_vector_search_to_snapshot_membership():
+    """Filter vector candidates through immutable snapshot chunk membership."""
+    sql, params = normalized_sql(
+        vector.vector_search_statement(
+            VALID_QUERY_VECTOR,
+            k=5,
+            filters=RetrievalFilters(snapshot_id=7),
+        )
+    )
+
+    assert "snapshot_chunks" in sql
+    assert "FROM chunks" not in sql
+    assert 7 in params.values()
+
+
 def test_item_null_filter_does_not_emit_an_empty_in_predicate():
     """Filter unnumbered sections without emitting an empty IN clause."""
     sql, _params = normalized_sql(
@@ -136,7 +151,10 @@ def test_search_returns_complete_chunk_hits_and_similarity_scores():
     )
 
     class Result:
+        """Expose a deterministic vector row like a SQLAlchemy result."""
+
         def mappings(self):
+            """Return the recorded vector hit mapping."""
             return SimpleNamespace(
                 all=lambda: [
                     {
@@ -168,7 +186,10 @@ def test_zero_limit_returns_without_database_access_and_negative_limit_fails():
     """Skip database access for zero limits and reject negative limits."""
 
     class Session:
+        """Fail if a zero-limit vector search reaches the database."""
+
         async def execute(self, _statement):
+            """Reject unexpected SQL execution."""
             raise AssertionError("zero-limit search must not execute SQL")
 
     session = cast(AsyncSession, Session())

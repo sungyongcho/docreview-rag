@@ -9,6 +9,8 @@ from app.db.models import Base
 
 BM25_INVALIDATION_FUNCTION = "docreview_invalidate_bm25_stats"
 BM25_INVALIDATION_TRIGGER = "docreview_chunks_invalidate_bm25_stats"
+SNAPSHOT_PROTECTION_FUNCTION = "docreview_protect_snapshot_chunks"
+SNAPSHOT_PROTECTION_TRIGGER = "docreview_chunks_protect_snapshots"
 
 
 class SchemaDriftError(RuntimeError):
@@ -57,6 +59,64 @@ async def ensure_bm25_stats_invalidation(
             """
         )
     )
+
+
+async def ensure_snapshot_chunk_protection(
+    connection: AsyncConnection, *, schema: str = "public"
+) -> None:
+    """Prevent mutation of chunk or embedding bytes retained by a snapshot."""
+    preparer = postgresql.dialect().identifier_preparer
+    namespace = preparer.quote_schema(schema)
+    chunks = f"{namespace}.{preparer.quote('chunks')}"
+    memberships = f"{namespace}.{preparer.quote('snapshot_chunks')}"
+    function = f"{namespace}.{preparer.quote(SNAPSHOT_PROTECTION_FUNCTION)}"
+    trigger = preparer.quote(SNAPSHOT_PROTECTION_TRIGGER)
+    await connection.execute(
+        text(
+            f"""
+            CREATE OR REPLACE FUNCTION {function}()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $function$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM {memberships} WHERE chunk_id = OLD.id) THEN
+                    RAISE EXCEPTION 'chunk % is retained by an evaluation snapshot', OLD.id;
+                END IF;
+                IF TG_OP = 'DELETE' THEN
+                    RETURN OLD;
+                END IF;
+                RETURN NEW;
+            END;
+            $function$
+            """
+        )
+    )
+    await connection.execute(text(f"DROP TRIGGER IF EXISTS {trigger} ON {chunks}"))
+    await connection.execute(
+        text(
+            f"""
+            CREATE TRIGGER {trigger}
+            BEFORE DELETE OR UPDATE OF source_sha256, index_text, lexical_text,
+                embedding, embedding_provider, embedding_model, embedding_dimensions
+            ON {chunks}
+            FOR EACH ROW
+            EXECUTE FUNCTION {function}()
+            """
+        )
+    )
+
+
+async def remove_snapshot_chunk_protection(
+    connection: AsyncConnection, *, schema: str = "public"
+) -> None:
+    """Remove the legacy live-chunk guard after snapshots become self-contained."""
+    preparer = postgresql.dialect().identifier_preparer
+    namespace = preparer.quote_schema(schema)
+    chunks = f"{namespace}.{preparer.quote('chunks')}"
+    function = f"{namespace}.{preparer.quote(SNAPSHOT_PROTECTION_FUNCTION)}"
+    trigger = preparer.quote(SNAPSHOT_PROTECTION_TRIGGER)
+    await connection.execute(text(f"DROP TRIGGER IF EXISTS {trigger} ON {chunks}"))
+    await connection.execute(text(f"DROP FUNCTION IF EXISTS {function}()"))
 
 
 def _collect_schema_drift(sync_connection: Connection) -> dict[str, list[str]]:
@@ -128,3 +188,4 @@ async def bootstrap_schema(engine: AsyncEngine) -> None:
         await ensure_schema_compatibility(connection)
         await connection.run_sync(Base.metadata.create_all)
         await ensure_bm25_stats_invalidation(connection)
+        await remove_snapshot_chunk_protection(connection)

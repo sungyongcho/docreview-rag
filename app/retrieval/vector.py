@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DIM, Chunk
+from app.db.models import DIM, Chunk, SnapshotChunk
 from app.retrieval._sql import apply_filters, hit_columns, hit_order_by
 from app.retrieval.embeddings import EmbeddingIdentity
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
@@ -84,16 +84,19 @@ def vector_search_statement(
         raise ValueError("vector search k must be positive")
     vector = validate_query_vector(query_vector)
     restrictions = filters or RetrievalFilters()
-    distance = Chunk.embedding.cosine_distance(vector).label("distance")
-    statement = select(*hit_columns(distance)).where(Chunk.embedding.is_not(None))
+    source = Chunk if restrictions.snapshot_id is None else SnapshotChunk
+    embedding = source.embedding
+    distance = embedding.cosine_distance(vector).label("distance")
+    statement = select(*hit_columns(distance, source)).select_from(source)
+    statement = statement.where(source.embedding.is_not(None))
     if identity is not None:
         statement = statement.where(
-            Chunk.embedding_provider == identity.provider,
-            Chunk.embedding_model == identity.model,
-            Chunk.embedding_dimensions == identity.dimensions,
+            source.embedding_provider == identity.provider,
+            source.embedding_model == identity.model,
+            source.embedding_dimensions == identity.dimensions,
         )
-    statement = apply_filters(statement, restrictions)
-    return statement.order_by(*hit_order_by(distance.asc())).limit(k)
+    statement = apply_filters(statement, restrictions, source)
+    return statement.order_by(*hit_order_by(distance.asc(), source)).limit(k)
 
 
 async def vector_search(
