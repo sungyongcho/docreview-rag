@@ -15,6 +15,23 @@ export interface RetrievalProfile {
   reranker: "cross_encoder" | null;
 }
 
+export type ReviewEngine = "openai" | "local";
+export type CorpusScope = "auto" | "sec" | "dart";
+export type RetrievalPreset = "balanced" | "korean" | "accuracy" | "custom";
+
+export interface ReviewSessionProfile {
+  engine: ReviewEngine;
+  corpus_scope: CorpusScope;
+  issuers: string[];
+  languages: Array<"en" | "ko">;
+  fiscal_years: number[];
+  forms: string[];
+  sections: Array<string | null>;
+  retrieval_preset: RetrievalPreset;
+  custom_retrieval: RetrievalProfile | null;
+  applied_from_evaluation?: string | null;
+}
+
 export interface EvidenceHit {
   chunk_id: number;
   doc_id: string;
@@ -34,7 +51,12 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   evidence?: EvidenceHit[];
+  evidenceLabel?: "Cited evidence" | "Related evidence — not direct support" | "Retrieved candidates — answer not generated";
   trace?: string;
+  question?: string;
+  candidateToken?: string;
+  pinnedChunkIds?: number[];
+  excludedChunkIds?: number[];
 }
 
 export interface ModelPolicyRole {
@@ -52,6 +74,7 @@ export interface Readiness {
   models: Record<string, ModelPolicyRole>;
   review_enabled: boolean;
   active_review_model: string | null;
+  review_engines?: Record<string, { enabled?: boolean; model?: string | null; protocol?: string; reason?: string }>;
   corpus: {
     availability: "ready" | "degraded" | "not_applicable" | "unavailable";
     database_connected: boolean | null;
@@ -96,7 +119,7 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
-  profile: RetrievalProfile | null;
+  profile: ReviewSessionProfile | null;
 }
 
 export interface GoldenSuite {
@@ -159,6 +182,21 @@ export interface EvaluationComparison {
   }>;
 }
 
+export interface EvaluationResultDetail {
+  result_id: number;
+  suite: string;
+  config: Record<string, unknown>;
+  metrics: Record<string, number>;
+  cases: Array<{
+    case_id: string;
+    question: string;
+    first_relevant_rank: number | null;
+    citations: string[];
+  }>;
+  raw_artifact_path: string;
+  created_at: string;
+}
+
 export const DEFAULT_PROFILE: RetrievalProfile = {
   strategy: "hybrid",
   k: 5,
@@ -171,3 +209,29 @@ export const DEFAULT_PROFILE: RetrievalProfile = {
   route_by_language: false,
   reranker: null,
 };
+
+export const DEFAULT_SESSION_PROFILE: ReviewSessionProfile = {
+  engine: "openai",
+  corpus_scope: "auto",
+  issuers: [],
+  languages: [],
+  fiscal_years: [],
+  forms: [],
+  sections: [],
+  retrieval_preset: "balanced",
+  custom_retrieval: null,
+  applied_from_evaluation: null,
+};
+
+export function resolvedRetrievalProfile(profile: ReviewSessionProfile): RetrievalProfile {
+  if (profile.retrieval_preset === "custom" && profile.custom_retrieval) {
+    return profile.custom_retrieval;
+  }
+  if (profile.retrieval_preset === "korean") {
+    return { ...DEFAULT_PROFILE, candidate_k: 30, lexical_ranker: "bm25" };
+  }
+  if (profile.retrieval_preset === "accuracy") {
+    return { ...DEFAULT_PROFILE, candidate_k: 50, lexical_ranker: "bm25", reranker: "cross_encoder" };
+  }
+  return DEFAULT_PROFILE;
+}

@@ -22,8 +22,8 @@ interface TargetRect {
 
 const STEPS: readonly TourStep[] = [
   { title: "Start a new review", description: "Create a clean review thread from the sidebar.", targets: ["new-review"] },
-  { title: "Ask a grounded question", description: "Type in the composer. Enter sends; Shift+Enter adds a line.", targets: ["composer"] },
-  { title: "Verify every citation", description: "Expand cited evidence after an answer. Before the first answer, try a suggested question.", targets: ["evidence-toggle", "evidence-fallback"] },
+  { title: "Ask or adjust the session", description: "Open Session profile to choose engine, corpus, companies, and retrieval preset, then type in the composer.", targets: ["composer"] },
+  { title: "Verify and reuse evidence", description: "Expand candidates, pin or exclude chunks, and re-run citation validation with the selected set.", targets: ["evidence-toggle", "evidence-fallback"] },
   { title: "Continue earlier reviews", description: "Recent reviews and retrieval profiles stay in this browser.", targets: ["recent-reviews"] },
   { title: "Experiment in Corpus Lab", description: "Inspect documents, run golden evaluations, and compare retrieval profiles.", targets: ["corpus-lab"] },
   { title: "Check runtime health", description: "See API, database, corpus, and active model policy state.", targets: ["system-status"] },

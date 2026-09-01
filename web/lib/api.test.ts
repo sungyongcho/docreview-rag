@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getReadiness, streamReview } from "./api";
+import { DEFAULT_SESSION_PROFILE } from "./types";
 
 function streamResponse(parts: string[]) {
   const encoder = new TextEncoder();
@@ -25,7 +26,13 @@ describe("API client", () => {
     vi.stubGlobal("fetch", fetch);
     const progress: string[] = [];
 
-    const report = await streamReview("question", 5, (event) => progress.push(event.node));
+    const report = await streamReview(
+      "question",
+      DEFAULT_SESSION_PROFILE,
+      null,
+      [],
+      (event) => progress.push(event.node),
+    );
 
     expect(progress).toEqual(["retrieve"]);
     expect(report.status).toBe("ok");
@@ -37,7 +44,9 @@ describe("API client", () => {
       "event: report\ndata: {\"status\":\"ok\"}\n\n",
     ])));
 
-    await expect(streamReview("question", 5, () => undefined)).rejects.toThrow("done event");
+    await expect(
+      streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined),
+    ).rejects.toThrow("done event");
   });
 
   it("returns the typed degraded readiness body from HTTP 503", async () => {

@@ -2,11 +2,13 @@ import type {
   EvaluationComparison,
   EvaluationJob,
   EvaluationRequest,
+  EvaluationResultDetail,
   EvidenceHit,
   GoldenSuite,
   ProviderUsage,
   Readiness,
   RetrievalProfile,
+  ReviewSessionProfile,
 } from "./types";
 
 const API_BASE =
@@ -41,12 +43,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-export async function retrieveEvidence(query: string, k = 5): Promise<EvidenceHit[]> {
-  const payload = await request<{ results: EvidenceHit[] }>("/retrieve", {
+export interface RetrievePayload {
+  results: EvidenceHit[];
+  candidates: EvidenceHit[];
+  candidate_token: string | null;
+  candidate_expires_at: number;
+  resolved_scope: Record<string, unknown> | null;
+}
+
+export async function retrieveEvidence(query: string, sessionProfile: ReviewSessionProfile): Promise<RetrievePayload> {
+  return request<RetrievePayload>("/retrieve", {
     method: "POST",
-    body: JSON.stringify({ query, k, filters: {} }),
+    body: JSON.stringify({ query, session_profile: sessionProfile }),
   });
-  return payload.results;
 }
 
 export async function reviewQuestion(query: string, k = 5): Promise<Record<string, unknown>> {
@@ -57,7 +66,7 @@ export async function reviewQuestion(query: string, k = 5): Promise<Record<strin
 }
 
 export interface ReviewProgress {
-  node: "retrieve" | "grade" | "check" | "report";
+  node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
   evidence_count: number;
   relevant_count: number;
   step_count: number;
@@ -75,14 +84,26 @@ function parseSseFrame(frame: string): { event: string; data: string } | null {
 
 export async function streamReview(
   query: string,
-  k: number,
+  sessionProfile: ReviewSessionProfile,
+  evidenceSelection: { candidateToken: string; pinned: number[]; excluded: number[] } | null,
+  history: Array<{ role: "user" | "assistant"; text: string }>,
   onProgress: (progress: ReviewProgress) => void,
   signal?: AbortSignal,
+  onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<Record<string, unknown>> {
   const response = await fetch(`${API_BASE}/review/stream`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query, k, filters: {} }),
+    body: JSON.stringify({
+      query,
+      session_profile: sessionProfile,
+      evidence_selection: evidenceSelection ? {
+        candidate_token: evidenceSelection.candidateToken,
+        pinned_chunk_ids: evidenceSelection.pinned,
+        excluded_chunk_ids: evidenceSelection.excluded,
+      } : null,
+      conversation_history: history.slice(-6),
+    }),
     signal,
   });
   if (!response.ok || !response.body) {
@@ -102,6 +123,10 @@ export async function streamReview(
     const payload = JSON.parse(frame.data) as Record<string, unknown>;
     if (frame.event === "node") {
       onProgress(payload as unknown as ReviewProgress);
+      return;
+    }
+    if (frame.event === "candidates") {
+      onCandidates?.(payload as unknown as RetrievePayload);
       return;
     }
     if (frame.event === "report") {
@@ -200,6 +225,10 @@ export function compareEvaluations(candidateId: number, baselineId: number) {
   return request<EvaluationComparison>(
     `/admin/evaluations/compare?candidate_id=${candidateId}&baseline_id=${baselineId}`,
   );
+}
+
+export function getEvaluationResult(resultId: number): Promise<EvaluationResultDetail> {
+  return request<EvaluationResultDetail>(`/admin/evaluations/results/${resultId}`);
 }
 
 export function getCorpusSnapshot(): Promise<Record<string, unknown>> {

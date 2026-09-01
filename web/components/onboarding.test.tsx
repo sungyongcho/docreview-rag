@@ -25,7 +25,7 @@ describe("onboarding", () => {
     fireEvent.click(screen.getByText("New review target"));
 
     expect(screen.getByText("Step 2 of 7")).toBeInTheDocument();
-    expect(screen.getByText("Ask a grounded question")).toBeInTheDocument();
+    expect(screen.getByText("Ask or adjust the session")).toBeInTheDocument();
   });
 
   it("includes the local Operations target only when available", () => {

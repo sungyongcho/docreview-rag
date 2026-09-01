@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_SUITES } from "@/lib/canned";
 import { DEFAULT_PROFILE } from "@/lib/types";
-import { CorpusLab } from "./corpus-lab";
+import { CorpusLab, deploymentLabel } from "./corpus-lab";
 
 describe("Corpus Lab", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -60,3 +60,8 @@ describe("Corpus Lab", () => {
     expect(screen.getAllByText("$0.01")).toHaveLength(2);
   });
 });
+  it("derives a text-only deployment label from the current host", () => {
+    expect(deploymentLabel("localhost")).toBe("DEV");
+    expect(deploymentLabel("127.0.0.1")).toBe("DEV");
+    expect(deploymentLabel("review.example.com")).toBe("PROD");
+  });

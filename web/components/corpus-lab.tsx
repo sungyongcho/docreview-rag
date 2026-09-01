@@ -9,6 +9,7 @@ import {
   getCorpusSnapshot,
   getCorpusJobs,
   getEvaluationJobs,
+  getEvaluationResult,
   getGoldenSuites,
   getProviderUsage,
   queueEvaluation,
@@ -19,6 +20,7 @@ import type {
   EvaluationComparison,
   EvaluationJob,
   EvaluationRequest,
+  EvaluationResultDetail,
   GoldenSuite,
   RetrievalProfile,
   ProviderUsage,
@@ -49,12 +51,22 @@ const EMPTY_USAGE: ProviderUsage = {
   models: [],
 };
 
+export function deploymentLabel(hostname: string): "DEV" | "PROD" {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost"
+    || normalized === "127.0.0.1"
+    || normalized === "::1"
+    || normalized.endsWith(".localhost")
+    ? "DEV"
+    : "PROD";
+}
+
 interface CorpusLabProps {
   live: boolean;
   ready?: boolean;
   profile: RetrievalProfile;
   onProfileChange: (profile: RetrievalProfile) => void;
-  onApplyProfile: (profile: RetrievalProfile) => void;
+  onApplyProfile: (profile: RetrievalProfile, source?: string) => void;
 }
 
 export function CorpusLab({ live, ready = true, profile, onProfileChange, onApplyProfile }: CorpusLabProps) {
@@ -83,6 +95,9 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   const [corpusJobs, setCorpusJobs] = useState<Record<string, unknown>>({ history: [] });
   const [usage, setUsage] = useState<ProviderUsage>(EMPTY_USAGE);
   const [usageError, setUsageError] = useState("");
+  const [environment, setEnvironment] = useState<"DEV" | "PROD">("PROD");
+  const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
+  const [resultDetail, setResultDetail] = useState<EvaluationResultDetail | null>(null);
 
   const evaluationRequest = useMemo<EvaluationRequest>(() => ({
     suite_id: suiteId,
@@ -95,6 +110,10 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
     strategies: ["lexical", "vector", "hybrid"],
     lexical_rankers: ["ts_rank_cd", "bm25"],
   }), [chunkTargets, mode, profile, suiteId]);
+
+  useEffect(() => {
+    setEnvironment(deploymentLabel(window.location.hostname));
+  }, []);
 
   useEffect(() => {
     setRawRequest(JSON.stringify(evaluationRequest, null, 2));
@@ -154,6 +173,22 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
     }
   }
 
+  async function openResult(resultId: number) {
+    if (!live) return;
+    setError("");
+    try {
+      setResultDetail(await getEvaluationResult(resultId));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Evaluation detail could not be loaded.");
+    }
+  }
+
+  function useSelectedResult() {
+    const job = jobs.find((item) => item.result_ids.includes(selectedResultId ?? -1));
+    if (!job || selectedResultId === null) return;
+    onApplyProfile(job.request.profile, `${job.request.suite_id}:${selectedResultId}`);
+  }
+
   async function sendRawRequest() {
     if (!live) return;
     setError("");
@@ -201,7 +236,7 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
     <section className="lab-shell">
       <header className="page-heading">
         <div><p className="eyebrow">Corpus Lab</p><h1>Measure retrieval before trusting it.</h1></div>
-        <div className={`mode-badge ${live ? "live" : ""}`}>{live ? "Local operator" : "Read-only portfolio"}</div>
+        <div className="page-badges"><span className="mode-badge">{environment}</span><span className={`mode-badge ${live ? "live" : ""}`}>{live ? "Local operator" : "Read-only portfolio"}</span></div>
       </header>
       <nav className="lab-tabs" aria-label="Corpus Lab sections">
         {tabs.map(([id, label]) => (
@@ -266,7 +301,7 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
         <section className="surface"><h2>Case changes</h2>{comparison.cases.map((item) => <article className="case-row" key={item.case_id}><div><strong>{item.case_id}</strong><p>{item.question}</p></div><span className={`transition ${item.transition}`}>{item.transition.replaceAll("_", " ")}</span></article>)}</section>
       </div>}
 
-      {tab === "jobs" && <section className="surface"><h2>Evaluation jobs</h2>{jobs.map((job) => <article className="job-row" key={job.job_id}><div><strong>{job.request.suite_id} · {job.request.mode}</strong><p>{job.message}</p></div><span>{job.status}</span>{job.status === "succeeded" && job.result_id && job.baseline_id && <button className="button ghost" type="button" onClick={() => void loadComparison(job.result_id!, job.baseline_id!)}>Compare</button>}{job.status === "succeeded" && <button className="button ghost" type="button" disabled={!live} onClick={() => onApplyProfile(job.request.profile)}>Use in current review</button>}</article>)}</section>}
+      {tab === "jobs" && <div className="two-column"><section className="surface"><div className="surface-heading"><h2>Evaluation jobs</h2><button className="button primary" type="button" disabled={!live || selectedResultId === null} onClick={useSelectedResult}>Use selected set</button></div>{jobs.map((job) => <article className="job-row" key={job.job_id}><div className="job-select"><input type="radio" name="evaluation-result" aria-label={`Select ${job.job_id}`} disabled={job.status !== "succeeded" || !job.result_id} checked={selectedResultId === job.result_id} onChange={() => setSelectedResultId(job.result_id)} /><button className="row-detail" type="button" disabled={!job.result_id} onClick={() => job.result_id && void openResult(job.result_id)}><strong>{job.request.suite_id} · {job.request.mode}</strong><p>{job.message}</p></button></div><span>{job.status}</span>{job.status === "succeeded" && job.result_id && job.baseline_id && <button className="button ghost" type="button" onClick={() => void loadComparison(job.result_id!, job.baseline_id!)}>Compare</button>}{job.result_ids.length > 1 && <div className="job-arms">{job.result_ids.map((resultId) => <label key={resultId}><input type="radio" name="evaluation-result" checked={selectedResultId === resultId} onChange={() => setSelectedResultId(resultId)} /> Result {resultId}</label>)}</div>}</article>)}</section><section className="surface detail-panel"><h2>Result details</h2>{resultDetail ? <><div className="metric-grid compact">{Object.entries(resultDetail.metrics).map(([name, value]) => <Metric key={name} icon={<Beaker />} label={name} value={value.toFixed(3)} />)}</div><pre>{JSON.stringify(resultDetail.config, null, 2)}</pre><h3>Cases</h3>{resultDetail.cases.slice(0, 10).map((item) => <article className="case-row" key={item.case_id}><div><strong>{item.case_id}</strong><p>{item.question}</p></div><span>{item.first_relevant_rank ? `rank ${item.first_relevant_rank}` : "miss"}</span></article>)}</> : <p className="helper">Select a succeeded result, then click its row to inspect metrics and cases.</p>}</section></div>}
 
       {tab === "api" && <div className="api-inspector"><section><h2>Request</h2><textarea value={rawRequest} onChange={(event) => setRawRequest(event.target.value)} spellCheck={false} /><button className="button primary" type="button" disabled={!canRun} onClick={() => void sendRawRequest()}><Braces size={15} /> Send to API</button></section><section><h2>Response</h2><pre>{rawResponse || "The typed API response will appear here."}</pre></section></div>}
 

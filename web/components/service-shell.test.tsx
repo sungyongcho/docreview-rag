@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ONBOARDING_KEY } from "@/lib/storage";
-import { ServiceShell } from "./service-shell";
+import { ServiceShell, terminalAnswer } from "./service-shell";
 
 describe("service shell", () => {
   beforeEach(() => {
@@ -22,5 +22,21 @@ describe("service shell", () => {
     expect(screen.getByText("Review filings with verifiable evidence.")).toBeInTheDocument();
     expect(documentation).toHaveAttribute("target", "_blank");
     expect(documentation).toHaveAttribute("href", "/docreview-rag-agent/docs/");
+  });
+
+  it("shows invalidated provider authentication instead of an evidence fallback", () => {
+    const answer = terminalAnswer({
+      status: "error",
+      report: null,
+      failure: {
+        code: "provider_failure",
+        status: "provider_error",
+        details: ["AuthenticationError: token_invalidated"],
+      },
+    });
+
+    expect(answer).toBe(
+      "OpenAI API authentication failed. Update the server-side API key and retry.",
+    );
   });
 });

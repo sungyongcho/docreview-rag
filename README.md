@@ -700,6 +700,27 @@ M7 — Deployment: M7.1 → M7.2 → M7.3
 | M6 demo (대기) | 1파일 595줄 | — |
 | M7 release (대기) | 7파일 509줄 | — |
 
+### Review runtime과 혼합언어 검색
+
+Review 입력은 먼저 conversation gate를 통과합니다. 완전한 인사·짧은 잡담은 retrieval 없이
+응답하고, 공시 질문은 manifest issuer alias로 corpus를 제한한 뒤 활성 언어별 query variant,
+vector, lexical lane을 실행해 RRF로 합칩니다. 사용자 원문은 answer question으로 유지하며
+검색용 번역은 provenance로만 전달됩니다. 내부 `NOT_IN_DOCS`와 citation membership 계약은
+완화하지 않습니다.
+
+Session profile은 OpenAI API 또는 server-side Local LLM, Auto/SEC/DART corpus, retrieval
+preset을 conversation별로 보관합니다. Local endpoint와 credential은 browser에 노출되지
+않습니다. Evidence candidates는 30분 signed snapshot으로 pin/exclude 후 재검증할 수 있고,
+Evaluation Jobs의 성공한 result profile은 `Use selected set`으로 현재 review에 적용합니다.
+
+OpenAI embedding 기본 모델은 `text-embedding-3-large`이며 pgvector 폭은 `dimensions=384`로
+고정합니다. Vector row에는 provider/model/dimensions identity를 함께 저장하므로 모델 변경 뒤
+기존 vector는 stale 처리되고 명시적 backfill 전까지 검색에서 제외됩니다. 실제 OpenAI
+review·translation·embedding 호출은 운영자가 유효한 key와 budget을 설정한 경우에만 수행합니다.
+
+Corpus Lab 상단의 `DEV`/`PROD`는 현재 hostname에서 자동으로 결정되며 선택 control이 아닙니다.
+Provider 인증·schema·usage 실패는 `NOT_IN_DOCS`로 숨기지 않고 typed engine error로 표시합니다.
+
 ### 대시보드
 
 브랜치·품질·이식 진행·반복 점검을 한 화면에서 봅니다. 표시만 하고 아무것도 고치지
