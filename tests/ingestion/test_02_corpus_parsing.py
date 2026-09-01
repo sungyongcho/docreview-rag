@@ -16,13 +16,14 @@ from tests.ingestion.golden import (
     PROFILE_RULES,
     SEGMENT_TYPE,
     STATUS_NVDA_FY2024,
+    measured,
 )
 
 # Block extraction regression
 
 
 def test_corpus_block_counts_match_golden(blocks_by_doc: dict[str, tuple]) -> None:
-    """Keep leaf-block and table counts stable across all 20 corpus documents."""
+    """Keep leaf-block and table counts stable for every measured corpus document."""
     actual = {
         doc: (
             len(blocks),
@@ -32,32 +33,49 @@ def test_corpus_block_counts_match_golden(blocks_by_doc: dict[str, tuple]) -> No
         for doc, (soup, blocks, _raw) in blocks_by_doc.items()
     }
 
-    assert actual == BLOCKS
+    assert measured(actual, BLOCKS) == BLOCKS
 
 
 # Segmentation and learned-rule regression
 
 
 def test_corpus_segmentation_types_match_golden(parsed: dict) -> None:
-    """Keep the expected numbered or xref strategy for every corpus document."""
-    assert {doc: result.segment_type for doc, result in parsed.items()} == SEGMENT_TYPE
+    """Keep the expected numbered or xref strategy for every measured document."""
+    actual = {doc: result.segment_type for doc, result in parsed.items()}
+    assert measured(actual, SEGMENT_TYPE) == SEGMENT_TYPE
 
 
-def test_every_corpus_document_parses_without_warnings(parsed: dict) -> None:
-    """Require all 20 filings to finish with parsed status and no validation warning."""
+def test_every_measured_document_parses_without_warnings(parsed: dict) -> None:
+    """Require the measured filings to finish with parsed status and no warning."""
     failed = {
-        doc: result.warnings for doc, result in parsed.items() if result.parse_status != "parsed"
+        doc: result.warnings
+        for doc, result in parsed.items()
+        if doc in SEGMENT_TYPE and result.parse_status != "parsed"
     }
     assert failed == {}
 
 
+def test_every_document_in_the_corpus_yields_sections(parsed: dict) -> None:
+    """Require every corpus filing, including widened additions, to yield sections."""
+    assert [doc for doc, result in parsed.items() if not result.sections] == []
+
+
+def test_no_document_invents_an_item_outside_the_sec_vocabulary(
+    parsed: dict, edgar_module: ModuleType
+) -> None:
+    """The Item vocabulary is the parser's contract, so it holds for the whole corpus."""
+    for doc, result in parsed.items():
+        items = [section.item for section in result.sections if section.item]
+        assert [item for item in items if item not in edgar_module.ORDER] == [], doc
+
+
 def test_corpus_item_counts_match_golden(parsed: dict) -> None:
-    """Preserve the expected Item count for every filing year."""
+    """Preserve the expected Item count for every measured filing year."""
     actual = {
         doc: len([section for section in result.sections if section.item])
         for doc, result in parsed.items()
     }
-    assert actual == N_ITEMS
+    assert measured(actual, N_ITEMS) == N_ITEMS
 
 
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
@@ -138,6 +156,7 @@ def test_nvda_fy2024_item15_contains_the_financial_statement_body(parsed: dict) 
 
 
 def _measure(edgar_module: ModuleType, result) -> tuple[int, int]:
+    """Measure source characters assigned to section text and table text."""
     body = sum(len(block.text) for section in result.sections for block in section.blocks)
     tables = sum(
         len(edgar_module.BeautifulSoup(block.html, "html.parser").get_text(" ", strip=True))

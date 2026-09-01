@@ -6,7 +6,7 @@ import pytest
 
 from app.config import Settings
 from app.db.models import CONTENT_TSV_SQL, LANGUAGE_FORMAT_CHECK_SQL, LEXICAL_TEXT_CHECK_SQL
-from app.evals import corpus
+import app.evals.corpus as corpus
 from app.evals.corpus import _TEMPORARY_CORPUS_DDL, build_chunking_batch, load_chunking_filings
 from app.ingestion.parser import ParsedFiling
 
@@ -18,6 +18,7 @@ def test_build_chunking_batch_reuses_supplied_filings_without_loading_manifest(m
     calls = []
 
     def build_from_filings(filings, *, chunker):
+        """Record the supplied filings and return the sentinel batch."""
         calls.append(filings)
         assert callable(chunker)
         return expected_batch
@@ -45,6 +46,7 @@ def test_load_chunking_filings_parses_the_manifest_once(monkeypatch, tmp_path):
     monkeypatch.setattr(corpus, "load_manifest", lambda path: entries if path == manifest else None)
 
     def parse_once(received, *, expected_documents):
+        """Record one manifest parse and return the prepared filings."""
         calls.append((received, expected_documents))
         return parsed_filings
 
@@ -54,7 +56,7 @@ def test_load_chunking_filings_parses_the_manifest_once(monkeypatch, tmp_path):
     result = load_chunking_filings(settings=settings)
 
     assert result is parsed_filings
-    assert calls == [(entries, 20)]
+    assert calls == [(entries, None)]
 
 
 def test_the_temporary_schema_keeps_every_populated_corpus_constraint():

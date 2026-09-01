@@ -46,7 +46,7 @@ from app.evals.retrieval_eval import (
 )
 from app.evals.types import GoldenCase
 from app.ingestion.registry import REGISTRIES, registry_for
-from app.ingestion.seed import DEFAULT_MANIFEST_NAME, EXPECTED_DOCUMENTS
+from app.ingestion.seed import DEFAULT_MANIFEST_NAME
 from app.llm.provider import LLMProvider
 from app.llm.schemas import ProviderBudget
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
@@ -85,7 +85,9 @@ class CorpusProfile:
     golden: Path
     ko_golden: Path
     manifest_name: str
-    expected_documents: int
+    # Corpora are widened from the command line, so a profile pins a count only when
+    # the comparison depends on one. ``None`` evaluates whatever the manifest holds.
+    expected_documents: int | None
 
     @property
     def language(self) -> str:
@@ -105,7 +107,7 @@ CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
         golden=DEFAULT_GOLDEN_PATH,
         ko_golden=KO_GOLDEN_PATH,
         manifest_name=DEFAULT_MANIFEST_NAME,
-        expected_documents=EXPECTED_DOCUMENTS,
+        expected_documents=None,
     ),
     "dart": CorpusProfile(
         registry="dart",
@@ -113,7 +115,7 @@ CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
         golden=DART_GOLDEN_PATH,
         ko_golden=DART_KO_GOLDEN_PATH,
         manifest_name="dart-manifest.json",
-        expected_documents=2,
+        expected_documents=None,
     ),
 }
 DETERMINISTIC_EMBEDDING_MODEL: Final[str] = "token-hash-384"

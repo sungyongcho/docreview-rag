@@ -175,7 +175,7 @@ class IngestRequest(StrictApiModel):
     """
 
     manifest_path: NonBlank
-    expected_documents: PositiveInt = 20
+    expected_documents: PositiveInt | None = None
     chunk_batch_size: PositiveInt = 500
     create_schema: StrictBool = False
 

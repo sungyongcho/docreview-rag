@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.51",
     "starlette<1",
+    "tqdm>=4.67",
     "uvicorn>=0.52.1",
 	"gradio>=5.49.1",
 ]

@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Read only by the corpus acquisition command. The DART client takes the key as an
     # argument so no library code reaches the process environment for a credential.
     dart_api_key: SecretStr | None = None
+    # Read only by the corpus acquisition command. SEC requires a declared contact in
+    # User-Agent and throttles clients that omit one, so the corpus cannot be fetched
+    # without naming an operator.
+    sec_user_agent: str | None = None
     lexical_ranker: LexicalRanker = "ts_rank_cd"
     # Commands pass this flag explicitly so measured runs record whether Korean queries
     # skipped the English lexical component. The retrieval service never reads Settings.

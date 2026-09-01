@@ -23,9 +23,10 @@ from app.ingestion.registry import REGISTRIES, registry_for, registry_name, reso
 from app.retrieval.korean import lexical_plan
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
-# names rather than to this module; EXPECTED_DOCUMENTS is the committed EDGAR corpus.
+# names rather than to this module. There is no default count: the corpus is widened
+# from the command line now, so a module that asserted a size would be asserting one
+# particular day's corpus. A caller that wants the guard passes the number it expects.
 DEFAULT_MANIFEST_NAME = "manifest.json"
-EXPECTED_DOCUMENTS = 20
 # Corpus language tags this module is willing to persist: exactly the languages some
 # registry adapter publishes in. A row tagged outside this set would silently fall
 # through every language-filtered retrieval path.
@@ -441,7 +442,7 @@ def prepare_seed_batch(
     manifest_path: Path | None = None,
     *,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
-    expected_documents: int | None = EXPECTED_DOCUMENTS,
+    expected_documents: int | None = None,
     parser: FilingParser | None = None,
     chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
 ) -> SeedBatch:
@@ -476,7 +477,7 @@ class ManifestError(Exception):
 def load_seed_batch(
     manifest_path: Path,
     *,
-    expected_documents: int | None = EXPECTED_DOCUMENTS,
+    expected_documents: int | None = None,
 ) -> SeedBatch:
     """Prepare one manifest, mapping every expected failure to a ``ManifestError``.
 
@@ -640,7 +641,7 @@ async def seed_corpus(
     session: AsyncSession,
     manifest_path: Path | None = None,
     *,
-    expected_documents: int | None = EXPECTED_DOCUMENTS,
+    expected_documents: int | None = None,
     chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
 ) -> SeedResult:
     """Prepare and persist the corpus, then rebuild BM25 statistics.
@@ -694,8 +695,8 @@ def main() -> None:
         parser.add_argument(
             "--expected-documents",
             type=int,
-            default=EXPECTED_DOCUMENTS,
-            help="Fail unless the manifest has this many documents.",
+            default=None,
+            help="Fail unless the manifest has exactly this many documents.",
         )
         parser.add_argument(
             "--chunk-batch-size",

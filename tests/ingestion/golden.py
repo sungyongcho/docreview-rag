@@ -1,8 +1,31 @@
-"""Measured regression baselines for the 20-document filing corpus.
+"""Measured regression baselines for the committed twenty-document filing corpus.
 
 This file is the single source of truth for corpus-level assertions. The values were
 measured from a clean profile state against ``data/corpus/manifest.json``.
+
+The corpus is widened from the command line, so these baselines are a **subset** of
+whatever the manifest holds today rather than an inventory of it. Compare through
+``measured`` so a filing someone added is not asserted against numbers nobody
+measured for it, while a baseline document that disappeared still fails.
 """
+
+from collections.abc import Mapping
+
+
+def measured[T](actual: Mapping[str, T], baseline: Mapping[str, T]) -> dict[str, T]:
+    """Return the measured documents' values, refusing a baseline the corpus has lost.
+
+    Parameters
+    ----------
+    actual : Mapping[str, T]
+        What this run produced, over the whole corpus.
+    baseline : Mapping[str, T]
+        The measured values, keyed by document ID.
+    """
+    missing = sorted(set(baseline) - set(actual))
+    assert not missing, f"documents measured in the baseline are gone from the corpus: {missing}"
+    return {document: value for document, value in actual.items() if document in baseline}
+
 
 # Stages 1-2: (leaf blocks, table blocks, all document tables).
 BLOCKS = {

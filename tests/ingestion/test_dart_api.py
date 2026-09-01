@@ -1,6 +1,5 @@
 """Open DART client: request validation, archive selection, and credential hygiene."""
 
-import asyncio
 import hashlib
 import io
 import json
@@ -9,7 +8,7 @@ import zipfile
 import httpx
 import pytest
 
-from app.ingestion import dart_api
+import app.ingestion.dart_api as dart_api
 from app.ingestion.dart_api import (
     AnnualReport,
     CorpCode,
@@ -27,6 +26,7 @@ from app.ingestion.dart_api import (
     select_annual_report,
     select_primary_member,
 )
+from tests.ingestion.support import client_returning, run
 
 API_KEY = "k" * 40
 RCEPT_NO = "20250311001085"
@@ -44,19 +44,12 @@ CORPCODE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def zip_bytes(members: dict[str, bytes]) -> bytes:
+    """Build an in-memory ZIP archive from named byte payloads."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
         for name, payload in members.items():
             archive.writestr(name, payload)
     return buffer.getvalue()
-
-
-def client_returning(handler) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-
-def run(coroutine):
-    return asyncio.run(coroutine)
 
 
 # --- transport and credential hygiene ---
@@ -67,6 +60,7 @@ def test_transport_failure_never_carries_the_api_key(monkeypatch):
     monkeypatch.setattr(dart_api, "RETRY_BACKOFF_SECONDS", 0.0)
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Raise a transport failure for the corp-code request."""
         raise httpx.ConnectError("boom", request=request)
 
     with pytest.raises(DartApiError) as excinfo:
@@ -86,6 +80,7 @@ def test_transport_errors_are_retried_then_succeed(monkeypatch):
     payload = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Fail once, then return a valid corp-code archive."""
         calls["count"] += 1
         if calls["count"] == 1:
             raise httpx.RemoteProtocolError("dropped", request=request)
@@ -103,6 +98,7 @@ def test_http_error_status_is_not_retried(monkeypatch):
     calls = {"count": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Return one HTTP error response while recording the attempt."""
         calls["count"] += 1
         return httpx.Response(503)
 
@@ -116,6 +112,7 @@ def test_non_zip_body_reports_the_dart_status():
     error = json.dumps({"status": "020", "message": "요청 제한을 초과하였습니다"}).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Return a DART JSON error body from the ZIP endpoint."""
         return httpx.Response(200, content=error)
 
     with pytest.raises(DartApiError) as excinfo:
@@ -154,6 +151,7 @@ def test_parse_corp_codes_rejects_a_broken_archive():
 
 
 def search_payload(rows: list[dict]) -> bytes:
+    """Encode successful annual-report search rows."""
     return json.dumps({"status": "000", "message": "정상", "list": rows}).encode()
 
 
@@ -162,6 +160,7 @@ def test_fetch_annual_report_rows_fixes_the_search_arguments():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Capture search parameters and return an empty success payload."""
         seen.update(dict(request.url.params))
         return httpx.Response(200, content=search_payload([]))
 
@@ -183,6 +182,7 @@ def test_fetch_annual_report_rows_treats_no_data_as_typed_failure():
     error = json.dumps({"status": "013", "message": "조회된 데이타가 없습니다"}).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Return the DART no-data response."""
         return httpx.Response(200, content=error)
 
     with pytest.raises(DartApiError) as excinfo:
@@ -258,6 +258,7 @@ def test_fetch_document_archive_hashes_exactly_what_was_served():
     payload = zip_bytes({f"{RCEPT_NO}.xml": b"<DOCUMENT/>"})
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Return the exact document archive payload."""
         return httpx.Response(200, content=payload)
 
     document = run(
@@ -273,6 +274,7 @@ def test_fetch_document_archive_rejects_an_error_body():
     error = json.dumps({"status": "014", "message": "파일이 존재하지 않습니다"}).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Return a DART missing-file response."""
         return httpx.Response(200, content=error)
 
     with pytest.raises(DartApiError) as excinfo:
@@ -438,3 +440,68 @@ def test_archive_document_rejects_a_broken_archive(tmp_path):
 
     with pytest.raises(DartArchiveError, match="not a readable ZIP"):
         archive_document(document, report, issuer, fiscal_year=2024, corpus_dir=tmp_path)
+
+
+# --- manifest merging ---
+
+
+def dart_entry(issuer: str, fiscal_year: int, filing_id: str) -> dict[str, object]:
+    """Build a DART manifest entry with the fields reading and merging depend on."""
+    return {
+        "issuer": issuer,
+        "fiscal_year": fiscal_year,
+        "filing_id": filing_id,
+        "file": f"data/corpus/dart/{issuer}/{filing_id}.xml",
+        "source_sha256": filing_id,
+    }
+
+
+def test_a_missing_manifest_is_a_first_run(tmp_path):
+    """Creating the manifest is the command's job, so its absence is not an error."""
+    assert dart_api.read_manifest(tmp_path / "dart-manifest.json") == []
+
+
+def test_manifest_entry_without_an_identity_is_rejected(tmp_path):
+    """An entry that names no filing and no file cannot be merged against."""
+    path = tmp_path / "dart-manifest.json"
+    path.write_text(json.dumps([{"issuer": "005930"}]), encoding="utf-8")
+    with pytest.raises(ValueError, match="entry 0 has no nonblank 'filing_id'"):
+        dart_api.read_manifest(path)
+
+
+def test_a_second_fiscal_year_does_not_erase_the_first():
+    """Writing the file wholesale used to cost the previous run's filings."""
+    existing = [dart_entry("005930", 2024, "a")]
+    merged, added = dart_api.merge_manifest(existing, [dart_entry("005930", 2023, "b")])
+
+    assert [item["fiscal_year"] for item in merged] == [2024, 2023]
+    assert [item["filing_id"] for item in added] == ["b"]
+
+
+def test_re_archiving_one_filing_replaces_its_entry():
+    """The bytes on disk were just rewritten, so the recorded digest must follow."""
+    existing = [dart_entry("005930", 2024, "a") | {"source_sha256": "stale"}]
+    merged, added = dart_api.merge_manifest(existing, [dart_entry("005930", 2024, "a")])
+
+    assert len(merged) == 1
+    assert merged[0]["source_sha256"] == "a"
+    assert added == []
+
+
+def test_two_receipts_for_one_issuer_year_stay_one_entry():
+    """The document ID is the database key: one issuer-year is one row."""
+    existing = [dart_entry("005930", 2024, "a")]
+    merged, _ = dart_api.merge_manifest(existing, [dart_entry("005930", 2024, "amended")])
+
+    assert len(merged) == 1
+    assert merged[0]["filing_id"] == "amended"
+
+
+def test_manifest_round_trips_with_korean_names_intact(tmp_path):
+    """Issuer names stay readable in the file, so a human can check what was archived."""
+    path = tmp_path / "dart-manifest.json"
+    entries = [dart_entry("005930", 2024, "a") | {"corp_name": "삼성전자"}]
+    dart_api.write_manifest(path, entries)
+
+    assert "삼성전자" in path.read_text(encoding="utf-8")
+    assert dart_api.read_manifest(path) == entries

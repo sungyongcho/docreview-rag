@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
@@ -29,6 +29,8 @@ import xml.etree.ElementTree as ElementTree
 import zipfile
 
 import httpx
+
+from app.ingestion.progress import ByteProgress
 
 DART_BASE: Final[str] = "https://opendart.fss.or.kr/api"
 DART_VIEWER: Final[str] = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo="
@@ -44,6 +46,8 @@ TRANSPORT_ATTEMPTS: Final[int] = 3
 RETRY_BACKOFF_SECONDS: Final[float] = 1.0
 OK_STATUS: Final[str] = "000"
 NO_DATA_STATUS: Final[str] = "013"
+
+DEFAULT_MANIFEST_NAME: Final[str] = "dart-manifest.json"
 
 ANNUAL_REPORT_FORM: Final[str] = "사업보고서"
 # ``pblntf_detail_ty=A001`` is accepted but not applied: the observed response also
@@ -128,10 +132,74 @@ class DocumentArchive:
     archive_sha256: str
 
 
+def _declared_length(response: httpx.Response) -> int | None:
+    """Return the length of the body the caller will count, when it is knowable.
+
+    ``Content-Length`` describes the *encoded* body. A compressed response is handed
+    back decoded, so the header does not describe what is being counted and there is
+    no total: an open-ended byte counter is honest where a percentage would run past
+    100%. Counting raw bytes instead would mean trusting a client-side counter that
+    quietly stays at zero on transports that do not stream.
+    """
+    encoding = response.headers.get("content-encoding", "").strip().lower()
+    if encoding not in ("", "identity"):
+        return None
+    raw = response.headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        length = int(raw)
+    except ValueError:
+        return None
+    return length if length > 0 else None
+
+
+async def _read_body(
+    client: httpx.AsyncClient,
+    endpoint: str,
+    *,
+    api_key: str,
+    on_progress: ByteProgress | None,
+    params: Mapping[str, str],
+) -> bytes:
+    """Stream one response, applying the status and size checks as the body arrives."""
+    async with client.stream(
+        "GET",
+        f"{DART_BASE}/{endpoint}",
+        params={"crtfc_key": api_key, **params},
+        timeout=DEFAULT_TIMEOUT,
+    ) as response:
+        if response.status_code != 200:
+            raise DartApiError(endpoint, "unexpected http status", status=response.status_code)
+        total = _declared_length(response)
+        if on_progress is not None:
+            on_progress(0, total)
+        chunks: list[bytes] = []
+        held = 0
+        async for chunk in response.aiter_bytes():
+            held += len(chunk)
+            if held > MAX_ARCHIVE_BYTES:
+                raise DartApiError(endpoint, f"response exceeds {MAX_ARCHIVE_BYTES} bytes")
+            chunks.append(chunk)
+            if on_progress is not None:
+                on_progress(held, total)
+    return b"".join(chunks)
+
+
 async def _get(
-    client: httpx.AsyncClient, endpoint: str, *, api_key: str, **params: str
-) -> httpx.Response:
+    client: httpx.AsyncClient,
+    endpoint: str,
+    *,
+    api_key: str,
+    on_progress: ByteProgress | None = None,
+    **params: str,
+) -> bytes:
     """Issue one request, keeping the credential out of every failure path.
+
+    The body is streamed rather than buffered whole by ``httpx`` so a caller can
+    watch it arrive: ``corpCode.xml`` is tens of megabytes from a slow endpoint, and
+    a command that prints nothing for a minute is indistinguishable from a hung one.
+    Streaming also moves the size ceiling ahead of the allocation it guards.
 
     A transport failure is retried because this endpoint drops connections often
     enough to fail a corpus build that is otherwise correct — roughly one request in
@@ -145,30 +213,20 @@ async def _get(
         larger than the archive ceiling.
     """
     failure = ""
-    response: httpx.Response | None = None
     for attempt in range(TRANSPORT_ATTEMPTS):
         try:
-            response = await client.get(
-                f"{DART_BASE}/{endpoint}",
-                params={"crtfc_key": api_key, **params},
-                timeout=DEFAULT_TIMEOUT,
+            return await _read_body(
+                client, endpoint, api_key=api_key, on_progress=on_progress, params=params
             )
-            break
         except httpx.RequestError as exc:
             # Only the class name is safe to keep: the message and __cause__ of an
             # httpx error carry the request URL, and the URL carries crtfc_key.
             failure = type(exc).__name__
             if attempt + 1 < TRANSPORT_ATTEMPTS:
                 await asyncio.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
-    if response is None:
-        raise DartApiError(
-            endpoint, f"request failed after {TRANSPORT_ATTEMPTS} attempts ({failure})"
-        ) from None
-    if response.status_code != 200:
-        raise DartApiError(endpoint, "unexpected http status", status=response.status_code)
-    if len(response.content) > MAX_ARCHIVE_BYTES:
-        raise DartApiError(endpoint, f"response exceeds {MAX_ARCHIVE_BYTES} bytes")
-    return response
+    raise DartApiError(
+        endpoint, f"request failed after {TRANSPORT_ATTEMPTS} attempts ({failure})"
+    ) from None
 
 
 def _require_zip(endpoint: str, body: bytes) -> bytes:
@@ -210,10 +268,12 @@ def _text_or_none(value: object) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-async def fetch_corp_code_archive(client: httpx.AsyncClient, *, api_key: str) -> bytes:
+async def fetch_corp_code_archive(
+    client: httpx.AsyncClient, *, api_key: str, on_progress: ByteProgress | None = None
+) -> bytes:
     """Download the ZIP holding every registered issuer's ``corp_code``."""
-    response = await _get(client, "corpCode.xml", api_key=api_key)
-    return _require_zip("corpCode.xml", response.content)
+    body = await _get(client, "corpCode.xml", api_key=api_key, on_progress=on_progress)
+    return _require_zip("corpCode.xml", body)
 
 
 def parse_corp_codes(archive: bytes, *, stock_codes: Collection[str]) -> dict[str, CorpCode]:
@@ -280,7 +340,7 @@ async def fetch_annual_report_rows(
     """
     if CORP_CODE_RE.fullmatch(corp_code) is None:
         raise ValueError("corp_code must be eight digits")
-    response = await _get(
+    body = await _get(
         client,
         "list.json",
         api_key=api_key,
@@ -295,7 +355,7 @@ async def fetch_annual_report_rows(
         page_count="100",
     )
     try:
-        payload = response.json()
+        payload = json.loads(body)
     except ValueError:
         raise DartApiError("list.json", "response is not JSON") from None
     if not isinstance(payload, Mapping):
@@ -376,7 +436,11 @@ def select_annual_report(
 
 
 async def fetch_document_archive(
-    client: httpx.AsyncClient, *, api_key: str, rcept_no: str
+    client: httpx.AsyncClient,
+    *,
+    api_key: str,
+    rcept_no: str,
+    on_progress: ByteProgress | None = None,
 ) -> DocumentArchive:
     """Download one disclosure's original archive and hash exactly what was served.
 
@@ -385,8 +449,10 @@ async def fetch_document_archive(
     """
     if RCEPT_NO_RE.fullmatch(rcept_no) is None:
         raise ValueError("rcept_no must be fourteen digits")
-    response = await _get(client, "document.xml", api_key=api_key, rcept_no=rcept_no)
-    body = _require_zip("document.xml", response.content)
+    served = await _get(
+        client, "document.xml", api_key=api_key, rcept_no=rcept_no, on_progress=on_progress
+    )
+    body = _require_zip("document.xml", served)
     return DocumentArchive(
         rcept_no=rcept_no,
         zip_bytes=body,
@@ -581,64 +647,166 @@ def archive_document(
     }
 
 
+def read_manifest(path: Path) -> list[dict[str, Any]]:
+    """Return the filings the DART manifest already records, empty on a first run.
+
+    A missing manifest is not a failure: creating it is this command's job. Only the
+    two fields merging reads are checked; the parser validates the rest of an entry
+    when it reads the filing itself.
+
+    Raises
+    ------
+    ValueError
+        If the file is not UTF-8 JSON, is not a list, or holds an entry without a
+        nonblank ``filing_id`` and ``file``.
+    """
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        raise ValueError(f"manifest must be UTF-8 text: {path}") from None
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"manifest is not valid JSON at line {error.lineno} column {error.colno}: {path}"
+        ) from None
+    if not isinstance(payload, list):
+        raise ValueError(f"manifest must hold a list of entries: {path}")
+    for index, entry in enumerate(payload):
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"manifest entry {index} is not an object")
+        for key in ("filing_id", "file"):
+            value = entry.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"manifest entry {index} has no nonblank {key!r}")
+    return [dict(entry) for entry in payload]
+
+
+def write_manifest(path: Path, entries: Sequence[Mapping[str, Any]]) -> None:
+    """Write the DART manifest, keeping Korean issuer and report names readable."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps([dict(entry) for entry in entries], ensure_ascii=False, indent=2)
+    path.write_text(payload + "\n", encoding="utf-8")
+
+
+def merge_manifest(
+    existing: Sequence[Mapping[str, Any]], archived: Sequence[Mapping[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return the manifest with this run's filings folded in, and which ones were new.
+
+    This replaces writing the file wholesale, which erased the previous run: asking
+    for a second fiscal year used to cost you the first. Entries keep their position,
+    and a filing that was already recorded is replaced rather than duplicated —
+    ``archive_document`` has just rewritten its bytes, so the recorded digests have to
+    be the ones on disk now.
+
+    The identity is the document ID rather than the receipt number, because that is
+    what the database keys on: two receipts for one issuer-year are one row.
+    """
+    # Imported here, like the parser in ``archive_document``: reading a filing's
+    # identity is a downstream concern, and this module stays a network boundary.
+    from app.ingestion.dart import dart_doc_id
+
+    merged = [dict(entry) for entry in existing]
+    position = {dart_doc_id(entry): index for index, entry in enumerate(merged)}
+
+    added: list[dict[str, Any]] = []
+    for entry in archived:
+        document = dart_doc_id(entry)
+        if document in position:
+            merged[position[document]] = dict(entry)
+            continue
+        position[document] = len(merged)
+        merged.append(dict(entry))
+        added.append(dict(entry))
+    return merged, added
+
+
 if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
     import argparse
     import asyncio
 
     from app.config import get_settings
+    from app.ingestion.progress import byte_bar, overall_bar
 
     DEFAULT_STOCK_CODES = ("005930", "000660")
+    DEFAULT_FISCAL_YEARS = (2024,)
 
-    async def _download(stock_codes: tuple[str, ...], fiscal_year: int, corpus_dir: Path) -> None:
-        """Fetch every requested issuer's annual report and write the DART manifest."""
-        settings = get_settings()
-        secret = settings.dart_api_key
+    async def _download(
+        stock_codes: tuple[str, ...], fiscal_years: tuple[int, ...], corpus_dir: Path
+    ) -> None:
+        """Archive every requested issuer-year and merge the result into the manifest."""
+        secret = get_settings().dart_api_key
         if secret is None:
             raise SystemExit("DART_API_KEY is not configured; add it to .env")
         api_key = secret.get_secret_value()
 
-        entries: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            bundle = await fetch_corp_code_archive(client, api_key=api_key)
-            issuers = parse_corp_codes(bundle, stock_codes=stock_codes)
-            for stock_code in stock_codes:
-                issuer = issuers[stock_code]
-                rows = await fetch_annual_report_rows(
-                    client,
-                    api_key=api_key,
-                    corp_code=issuer.corp_code,
-                    filing_year=fiscal_year + 1,
-                )
-                report = select_annual_report(
-                    rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year
-                )
-                document = await fetch_document_archive(
-                    client, api_key=api_key, rcept_no=report.rcept_no
-                )
-                entry = archive_document(
-                    document,
-                    report,
-                    issuer,
-                    fiscal_year=fiscal_year,
-                    corpus_dir=corpus_dir,
-                )
-                entries.append(entry)
-                print(
-                    f"{stock_code} {issuer.corp_name}: {entry['file']} "
-                    f"({entry['source_length']:,} chars)"
-                )
+        manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
+        try:
+            existing = read_manifest(manifest_path)
+        except ValueError as error:
+            raise SystemExit(str(error)) from None
 
-        manifest = corpus_dir / "dart-manifest.json"
-        manifest.write_text(
-            json.dumps(entries, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        print(f"wrote {manifest}")
+        targets = [(code, year) for code in stock_codes for year in fiscal_years]
+        archived: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            # The issuer index is one slow multi-megabyte download of its own, and it
+            # runs before anything else, so it gets a bar rather than dead air.
+            with byte_bar("corp codes") as on_progress:
+                bundle = await fetch_corp_code_archive(
+                    client, api_key=api_key, on_progress=on_progress
+                )
+            issuers = parse_corp_codes(bundle, stock_codes=stock_codes)
+
+            with overall_bar(len(targets), unit="filing", description="DART") as overall:
+                for stock_code, fiscal_year in targets:
+                    issuer = issuers[stock_code]
+                    label = f"{issuer.corp_name} FY{fiscal_year}"
+                    rows = await fetch_annual_report_rows(
+                        client,
+                        api_key=api_key,
+                        corp_code=issuer.corp_code,
+                        filing_year=fiscal_year + 1,
+                    )
+                    report = select_annual_report(
+                        rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year
+                    )
+                    with byte_bar(label) as on_progress:
+                        document = await fetch_document_archive(
+                            client,
+                            api_key=api_key,
+                            rcept_no=report.rcept_no,
+                            on_progress=on_progress,
+                        )
+                    entry = archive_document(
+                        document,
+                        report,
+                        issuer,
+                        fiscal_year=fiscal_year,
+                        corpus_dir=corpus_dir,
+                    )
+                    archived.append(entry)
+                    overall.advance(label)
+                    overall.write(
+                        f"{stock_code} {issuer.corp_name} FY{fiscal_year}: {entry['file']} "
+                        f"({entry['source_length']:,} chars)"
+                    )
+
+        merged, added = merge_manifest(existing, archived)
+        write_manifest(manifest_path, merged)
+        print(f"wrote {manifest_path}: {len(added)} new, {len(merged)} filing(s) recorded")
 
     ap = argparse.ArgumentParser(description="Download and archive DART annual reports.")
     ap.add_argument("--stock-codes", nargs="+", default=list(DEFAULT_STOCK_CODES))
-    ap.add_argument("--fiscal-year", type=int, default=2024)
+    ap.add_argument(
+        "--fiscal-year",
+        nargs="+",
+        type=int,
+        default=list(DEFAULT_FISCAL_YEARS),
+        help="fiscal years to archive; the API is queried once per issuer and year",
+    )
     ap.add_argument("--corpus-dir", type=Path, default=None)
     args = ap.parse_args()
 
     target = args.corpus_dir or get_settings().corpus_dir
-    asyncio.run(_download(tuple(args.stock_codes), args.fiscal_year, target))
+    asyncio.run(_download(tuple(args.stock_codes), tuple(args.fiscal_year), target))

@@ -105,8 +105,8 @@ def _add_ingest_parser(subparsers: Subparsers) -> None:
     parser.add_argument(
         "--expected-documents",
         type=int,
-        default=20,
-        help="Fail unless the manifest contains this many documents.",
+        default=None,
+        help="Fail unless the manifest contains exactly this many documents.",
     )
     parser.add_argument(
         "--chunk-batch-size",
@@ -182,7 +182,7 @@ def _validate_arguments(args: argparse.Namespace) -> None:
                 ExitCode.INVALID_INPUT,
             )
     elif args.command == "ingest":
-        if args.expected_documents <= 0:
+        if args.expected_documents is not None and args.expected_documents <= 0:
             raise CliError(
                 "invalid_expected_documents",
                 "expected-documents must be positive",

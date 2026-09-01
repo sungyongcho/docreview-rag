@@ -16,7 +16,6 @@ from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing
 from app.ingestion.parser import ParsedFiling
 from app.ingestion.seed import (
     DEFAULT_MANIFEST_NAME,
-    EXPECTED_DOCUMENTS,
     SeedBatch,
     build_seed_batch,
     build_seed_batch_from_filings,
@@ -32,7 +31,7 @@ def load_chunking_filings(
     *,
     settings: Settings | None = None,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
-    expected_documents: int | None = EXPECTED_DOCUMENTS,
+    expected_documents: int | None = None,
 ) -> tuple[ParsedFiling, ...]:
     """Parse the fixed evaluation corpus once for reuse by every chunking arm.
 
@@ -77,7 +76,7 @@ def build_chunking_batch(
     parsed_filings: Sequence[ParsedFiling] | None = None,
     settings: Settings | None = None,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
-    expected_documents: int | None = EXPECTED_DOCUMENTS,
+    expected_documents: int | None = None,
 ) -> SeedBatch:
     """Build one source-stable corpus arm from new or already parsed filings.
 
