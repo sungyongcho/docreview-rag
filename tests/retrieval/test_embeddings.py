@@ -280,7 +280,10 @@ def test_missing_batch_selects_only_null_vectors_in_stable_chunk_order():
     """Select missing vectors in stable chunk order within a bounded transaction."""
 
     class Result:
+        """Return one missing embedding row from a recorded query."""
+
         def all(self):
+            """Expose all selected rows."""
             return [SimpleNamespace(id=7, index_text="indexed evidence")]
 
     session = RecordingSession(Result())
@@ -305,11 +308,17 @@ def test_store_batch_guards_null_state_and_the_embedded_text_version():
     """Store a batch in one guarded VALUES update and count returned rows."""
 
     class ScalarResult:
+        """Expose identifiers returned by the guarded update."""
+
         def all(self):
+            """Return the stored chunk identifiers."""
             return [7]
 
     class Result:
+        """Expose the scalar projection of one update result."""
+
         def scalars(self):
+            """Return the scalar result wrapper."""
             return ScalarResult()
 
     session = RecordingSession(Result())
@@ -348,8 +357,10 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
     selected_sizes = []
     selected_cursors = []
     stored_ids = []
+    progress = []
 
     async def missing(_session, batch_size, *, after_chunk_id):
+        """Return the next stable batch after the supplied cursor."""
         selected_sizes.append(batch_size)
         selected_cursors.append(after_chunk_id)
         return [
@@ -357,6 +368,7 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
         ][:batch_size]
 
     async def store(_session, pending, _vectors):
+        """Record pending IDs while treating the first as stale."""
         stored_ids.append([item.chunk_id for item in pending])
         return sum(item.chunk_id != 1 for item in pending)
 
@@ -370,7 +382,9 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
     provider = embeddings.DeterministicEmbeddingProvider()
     session = cast(AsyncSession, RecordingSession(None))
 
-    result = asyncio.run(embeddings.embed_missing_chunks(session, provider))
+    result = asyncio.run(
+        embeddings.embed_missing_chunks(session, provider, on_batch=progress.append)
+    )
 
     assert result == embeddings.EmbeddingBackfillResult(
         selected=3,
@@ -381,6 +395,10 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
     assert selected_sizes == [2, 2, 2]
     assert selected_cursors == [None, 2, 3]
     assert stored_ids == [[1, 2], [3]]
+    assert progress == [
+        embeddings.EmbeddingBackfillResult(2, 1, 1, 1),
+        embeddings.EmbeddingBackfillResult(3, 2, 1, 2),
+    ]
 
 
 def test_backfill_rejects_invalid_batch_size_and_active_transactions():

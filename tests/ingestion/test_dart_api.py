@@ -15,6 +15,7 @@ from app.ingestion.dart_api import (
     DartApiError,
     DartArchiveError,
     DocumentArchive,
+    acquire_dart,
     archive_document,
     canonicalize,
     decode_source,
@@ -505,3 +506,48 @@ def test_manifest_round_trips_with_korean_names_intact(tmp_path):
 
     assert "삼성전자" in path.read_text(encoding="utf-8")
     assert dart_api.read_manifest(path) == entries
+
+
+def test_reusable_dart_acquisition_archives_and_merges_with_progress(tmp_path, monkeypatch):
+    """Run issuer lookup, report selection, and archive storage through one reusable call."""
+    corp_codes = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
+    document = zip_bytes(
+        {
+            f"{RCEPT_NO}.xml": (
+                '<?xml version="1.0" encoding="UTF-8"?><DOCUMENT>사업보고서 본문</DOCUMENT>'
+            ).encode()
+        }
+    )
+    updates = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve each Open DART endpoint from deterministic in-memory payloads."""
+        if request.url.path.endswith("corpCode.xml"):
+            return httpx.Response(200, content=corp_codes)
+        if request.url.path.endswith("list.json"):
+            return httpx.Response(200, json={"status": "000", "list": [ANNUAL]})
+        if request.url.path.endswith("document.xml"):
+            return httpx.Response(200, content=document)
+        raise AssertionError(request.url.path)
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
+
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",),
+            fiscal_years=(2024,),
+            corpus_dir=tmp_path,
+            api_key=API_KEY,
+            on_progress=updates.append,
+        )
+    )
+
+    assert len(result.archived) == len(result.added) == 1
+    assert result.manifest_entries == 1
+    assert (tmp_path / "dart/005930" / f"{RCEPT_NO}.xml").is_file()
+    assert updates[-1].current == updates[-1].total == 1

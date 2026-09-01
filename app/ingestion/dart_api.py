@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import codecs
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
@@ -30,7 +31,7 @@ import zipfile
 
 import httpx
 
-from app.ingestion.progress import ByteProgress
+from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
 
 DART_BASE: Final[str] = "https://opendart.fss.or.kr/api"
 DART_VIEWER: Final[str] = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo="
@@ -48,6 +49,8 @@ OK_STATUS: Final[str] = "000"
 NO_DATA_STATUS: Final[str] = "013"
 
 DEFAULT_MANIFEST_NAME: Final[str] = "dart-manifest.json"
+
+ByteProgressFactory = Callable[[str], AbstractContextManager[ByteProgress | None]]
 
 ANNUAL_REPORT_FORM: Final[str] = "사업보고서"
 # ``pblntf_detail_ty=A001`` is accepted but not applied: the observed response also
@@ -130,6 +133,15 @@ class DocumentArchive:
     rcept_no: str
     zip_bytes: bytes
     archive_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class DartAcquisitionResult:
+    """Observable manifest and source-file outcome from one DART run."""
+
+    archived: tuple[dict[str, Any], ...]
+    added: tuple[dict[str, Any], ...]
+    manifest_entries: int
 
 
 def _declared_length(response: httpx.Response) -> int | None:
@@ -722,6 +734,111 @@ def merge_manifest(
     return merged, added
 
 
+async def acquire_dart(
+    *,
+    stock_codes: Sequence[str],
+    fiscal_years: Sequence[int],
+    corpus_dir: Path,
+    api_key: str,
+    on_progress: OperationProgressCallback | None = None,
+    progress_factory: ByteProgressFactory | None = None,
+) -> DartAcquisitionResult:
+    """Download and archive requested DART filings without parsing or ingesting them."""
+    if not api_key.strip():
+        raise ValueError("DART_API_KEY is not configured; add it to .env")
+    manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
+    existing = read_manifest(manifest_path)
+    targets = [(code, year) for code in stock_codes for year in fiscal_years]
+    archived: list[dict[str, Any]] = []
+
+    def byte_progress(
+        label: str,
+        *,
+        stage: str,
+        current: int,
+        total: int | None,
+    ) -> AbstractContextManager[ByteProgress | None]:
+        """Bridge one byte stream onto terminal or administrative progress."""
+        if progress_factory is not None:
+            return progress_factory(label)
+        if on_progress is None:
+            return nullcontext(None)
+
+        @contextmanager
+        def bridge() -> Iterator[ByteProgress]:
+            """Yield a byte callback that publishes administrative progress."""
+
+            def report(read: int, length: int | None) -> None:
+                """Publish byte progress for the current DART response."""
+                on_progress(
+                    OperationProgress(
+                        stage,
+                        current,
+                        total,
+                        label,
+                        read,
+                        length,
+                    )
+                )
+
+            yield report
+
+        return bridge()
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        with byte_progress(
+            "corp codes",
+            stage="issuer_index",
+            current=0,
+            total=None,
+        ) as progress:
+            bundle = await fetch_corp_code_archive(
+                client,
+                api_key=api_key,
+                on_progress=progress,
+            )
+        issuers = parse_corp_codes(bundle, stock_codes=stock_codes)
+
+        for index, (stock_code, fiscal_year) in enumerate(targets):
+            issuer = issuers[stock_code]
+            label = f"{issuer.corp_name} FY{fiscal_year}"
+            if on_progress is not None:
+                on_progress(OperationProgress("select", index, len(targets), label))
+            rows = await fetch_annual_report_rows(
+                client,
+                api_key=api_key,
+                corp_code=issuer.corp_code,
+                filing_year=fiscal_year + 1,
+            )
+            report = select_annual_report(rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year)
+            with byte_progress(
+                label,
+                stage="download",
+                current=index,
+                total=len(targets),
+            ) as progress:
+                document = await fetch_document_archive(
+                    client,
+                    api_key=api_key,
+                    rcept_no=report.rcept_no,
+                    on_progress=progress,
+                )
+            entry = archive_document(
+                document,
+                report,
+                issuer,
+                fiscal_year=fiscal_year,
+                corpus_dir=corpus_dir,
+            )
+            archived.append(entry)
+            if on_progress is not None:
+                on_progress(OperationProgress("download", index + 1, len(targets), label))
+
+    merged, added = merge_manifest(existing, archived)
+    write_manifest(manifest_path, merged)
+    return DartAcquisitionResult(tuple(archived), tuple(added), len(merged))
+
+
 if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
     import argparse
     import asyncio
@@ -741,60 +858,26 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
             raise SystemExit("DART_API_KEY is not configured; add it to .env")
         api_key = secret.get_secret_value()
 
-        manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
         try:
-            existing = read_manifest(manifest_path)
+            result = await acquire_dart(
+                stock_codes=stock_codes,
+                fiscal_years=fiscal_years,
+                corpus_dir=corpus_dir,
+                api_key=api_key,
+                progress_factory=byte_bar,
+            )
         except ValueError as error:
             raise SystemExit(str(error)) from None
-
-        targets = [(code, year) for code in stock_codes for year in fiscal_years]
-        archived: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            # The issuer index is one slow multi-megabyte download of its own, and it
-            # runs before anything else, so it gets a bar rather than dead air.
-            with byte_bar("corp codes") as on_progress:
-                bundle = await fetch_corp_code_archive(
-                    client, api_key=api_key, on_progress=on_progress
-                )
-            issuers = parse_corp_codes(bundle, stock_codes=stock_codes)
-
-            with overall_bar(len(targets), unit="filing", description="DART") as overall:
-                for stock_code, fiscal_year in targets:
-                    issuer = issuers[stock_code]
-                    label = f"{issuer.corp_name} FY{fiscal_year}"
-                    rows = await fetch_annual_report_rows(
-                        client,
-                        api_key=api_key,
-                        corp_code=issuer.corp_code,
-                        filing_year=fiscal_year + 1,
-                    )
-                    report = select_annual_report(
-                        rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year
-                    )
-                    with byte_bar(label) as on_progress:
-                        document = await fetch_document_archive(
-                            client,
-                            api_key=api_key,
-                            rcept_no=report.rcept_no,
-                            on_progress=on_progress,
-                        )
-                    entry = archive_document(
-                        document,
-                        report,
-                        issuer,
-                        fiscal_year=fiscal_year,
-                        corpus_dir=corpus_dir,
-                    )
-                    archived.append(entry)
-                    overall.advance(label)
-                    overall.write(
-                        f"{stock_code} {issuer.corp_name} FY{fiscal_year}: {entry['file']} "
-                        f"({entry['source_length']:,} chars)"
-                    )
-
-        merged, added = merge_manifest(existing, archived)
-        write_manifest(manifest_path, merged)
-        print(f"wrote {manifest_path}: {len(added)} new, {len(merged)} filing(s) recorded")
+        with overall_bar(len(result.archived), unit="filing", description="DART") as overall:
+            for entry in result.archived:
+                label = f"{entry['issuer']} FY{entry['fiscal_year']}"
+                overall.advance(label)
+                overall.write(f"{label}: {entry['file']} ({entry['source_length']:,} chars)")
+        manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
+        print(
+            f"wrote {manifest_path}: {len(result.added)} new, "
+            f"{result.manifest_entries} filing(s) recorded"
+        )
 
     ap = argparse.ArgumentParser(description="Download and archive DART annual reports.")
     ap.add_argument("--stock-codes", nargs="+", default=list(DEFAULT_STOCK_CODES))

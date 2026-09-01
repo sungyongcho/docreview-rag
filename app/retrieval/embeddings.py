@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import hashlib
 import math
@@ -392,6 +392,7 @@ async def embed_missing_chunks(
     provider: EmbeddingProvider,
     *,
     batch_size: int | None = None,
+    on_batch: Callable[[EmbeddingBackfillResult], None] | None = None,
 ) -> EmbeddingBackfillResult:
     """Embed all currently missing chunks in bounded, resumable batches.
 
@@ -403,6 +404,8 @@ async def embed_missing_chunks(
         Provider shared by document and query embeddings.
     batch_size : int | None
         Batch-size override, or ``None`` to use application settings.
+    on_batch : Callable[[EmbeddingBackfillResult], None] | None
+        Optional cumulative progress callback invoked after each stored batch.
 
     Returns
     -------
@@ -446,6 +449,15 @@ async def embed_missing_chunks(
         stored = await _store_batch(session, pending, vectors)
         embedded += stored
         skipped_stale += len(pending) - stored
+        if on_batch is not None:
+            on_batch(
+                EmbeddingBackfillResult(
+                    selected=selected,
+                    embedded=embedded,
+                    skipped_stale=skipped_stale,
+                    batches=batches,
+                )
+            )
 
     return EmbeddingBackfillResult(
         selected=selected, embedded=embedded, skipped_stale=skipped_stale, batches=batches

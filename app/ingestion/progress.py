@@ -12,6 +12,7 @@ is drawn as a bar, which keeps ``tqdm`` out of the fetch contracts entirely.
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 from tqdm import tqdm
 
@@ -19,6 +20,21 @@ from tqdm import tqdm
 # one. Absolute rather than incremental so a retried request can restart its own
 # count without the display having to unwind anything.
 ByteProgress = Callable[[int, int | None], None]
+
+
+@dataclass(frozen=True, slots=True)
+class OperationProgress:
+    """One transport-neutral update for a long corpus operation."""
+
+    stage: str
+    current: int
+    total: int | None
+    message: str
+    detail_current: int | None = None
+    detail_total: int | None = None
+
+
+OperationProgressCallback = Callable[[OperationProgress], None]
 
 
 @contextmanager

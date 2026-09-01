@@ -10,6 +10,7 @@ import pytest
 import app.ingestion.edgar_api as edgar_api
 from app.ingestion.edgar_api import (
     EdgarApiError,
+    acquire_edgar,
     annual_reports,
     download_pending,
     fetch_document,
@@ -319,6 +320,38 @@ def test_a_failed_document_keeps_the_documents_already_fetched(tmp_path, monkeyp
 
     assert (tmp_path / entries[0]["file"]).read_bytes() == FILING
     assert not (tmp_path / entries[1]["file"]).exists()
+
+
+def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_path, monkeypatch):
+    """Drive the CLI-independent acquisition boundary without parsing or subprocesses."""
+    monkeypatch.chdir(tmp_path)
+    manifest = write_manifest(tmp_path, [entry("NVDA", "one")])
+    updates = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return one filing through the injected transport."""
+        return httpx.Response(200, content=FILING)
+
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        edgar_api.httpx,
+        "AsyncClient",
+        lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
+
+    result = run(
+        acquire_edgar(
+            manifest,
+            tickers=("NVDA",),
+            user_agent=USER_AGENT,
+            on_progress=updates.append,
+        )
+    )
+
+    assert result.manifest_entries == 1
+    assert len(result.fetched) == 1
+    assert (tmp_path / "data/corpus/NVDA/one.html").read_bytes() == FILING
+    assert updates[-1].current == updates[-1].total == 1
 
 
 # --- year range ---

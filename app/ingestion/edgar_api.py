@@ -16,8 +16,9 @@ failure twenty steps downstream, so the body is checked before it reaches disk.
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from collections.abc import AsyncIterator, Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext
+from dataclasses import dataclass
 import json
 from pathlib import Path
 from typing import Any, Final
@@ -25,7 +26,7 @@ from typing import Any, Final
 import httpx
 
 from app.ingestion.edgar import doc_id, edgar_sort_key
-from app.ingestion.progress import ByteProgress
+from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
 
 DEFAULT_MANIFEST: Final[Path] = Path("data/corpus/manifest.json")
 CORPUS_ROOT: Final[Path] = Path("data/corpus")
@@ -66,6 +67,16 @@ PARTIAL_SUFFIX: Final[str] = ".part"
 # Opens the display for one entry's download. The library calls it and passes the
 # hook on; only the command knows that the hook is drawn as a bar.
 ProgressFactory = Callable[[Mapping[str, Any]], AbstractContextManager[ByteProgress | None]]
+
+
+@dataclass(frozen=True, slots=True)
+class EdgarAcquisitionResult:
+    """Observable files and manifest growth from one acquisition run."""
+
+    manifest_entries: int
+    added: tuple[dict[str, Any], ...]
+    fetched: tuple[tuple[Path, int], ...]
+    dry_run: bool = False
 
 
 class EdgarApiError(RuntimeError):
@@ -555,50 +566,128 @@ async def download_pending(
         yield path, len(body)
 
 
+def _entry_label(entry: Mapping[str, Any]) -> str:
+    """Name one EDGAR entry for terminal and administrative progress."""
+    document = entry.get("primary_doc") or Path(entry["file"]).name
+    try:
+        identity = doc_id(dict(entry))
+    except KeyError:
+        identity = str(entry.get("ticker") or Path(entry["file"]).stem)
+    return f"{identity} · {document}"
+
+
+async def acquire_edgar(
+    manifest_path: Path = DEFAULT_MANIFEST,
+    *,
+    tickers: Sequence[str] = (),
+    years: Collection[int] | None = None,
+    user_agent: str,
+    force: bool = False,
+    dry_run: bool = False,
+    on_progress: OperationProgressCallback | None = None,
+    progress_factory: ProgressFactory | None = None,
+) -> EdgarAcquisitionResult:
+    """Discover and download missing EDGAR filings without parsing or ingesting them."""
+    declared = require_user_agent(user_agent)
+    entries = read_manifest(manifest_path)
+    added: list[dict[str, Any]] = []
+
+    if years is not None:
+        wanted = tuple(tickers) or tuple(
+            dict.fromkeys(str(entry["ticker"]) for entry in entries if entry.get("ticker"))
+        )
+        if not wanted:
+            raise ValueError("--years needs --ticker when the manifest names no issuer")
+        if on_progress is not None:
+            on_progress(OperationProgress("discover", 0, len(wanted), "Discovering EDGAR filings"))
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            discovered = await discover(
+                client,
+                tickers=wanted,
+                years=years,
+                user_agent=declared,
+            )
+        entries, added = merge_entries(entries, discovered)
+        if on_progress is not None:
+            on_progress(
+                OperationProgress(
+                    "discover",
+                    len(wanted),
+                    len(wanted),
+                    f"Discovered {len(added)} new filing(s)",
+                )
+            )
+        if dry_run:
+            return EdgarAcquisitionResult(len(entries), tuple(added), (), dry_run=True)
+        if added:
+            write_manifest(manifest_path, entries)
+
+    targets = pending(entries, force=force, tickers=tickers)
+    if not targets:
+        if on_progress is not None:
+            on_progress(OperationProgress("download", 0, 0, "Every selected filing is on disk"))
+        return EdgarAcquisitionResult(len(entries), tuple(added), ())
+
+    fetched: list[tuple[Path, int]] = []
+    completed = 0
+
+    def administrative_progress(
+        entry: Mapping[str, Any],
+    ) -> AbstractContextManager[ByteProgress | None]:
+        """Bridge byte callbacks onto the shared operation progress shape."""
+        if progress_factory is not None:
+            return progress_factory(entry)
+        if on_progress is None:
+            return nullcontext(None)
+
+        @contextmanager
+        def bridge() -> Iterator[ByteProgress]:
+            """Yield a byte callback that publishes administrative progress."""
+
+            def report(read: int, total: int | None) -> None:
+                """Publish byte progress for the current filing."""
+                on_progress(
+                    OperationProgress(
+                        "download",
+                        completed,
+                        len(targets),
+                        _entry_label(entry),
+                        read,
+                        total,
+                    )
+                )
+
+            yield report
+
+        return bridge()
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        downloads = download_pending(
+            client,
+            targets,
+            user_agent=declared,
+            progress=administrative_progress,
+        )
+        async for path, size in downloads:
+            fetched.append((path, size))
+            completed += 1
+            if on_progress is not None:
+                on_progress(
+                    OperationProgress(
+                        "download",
+                        completed,
+                        len(targets),
+                        f"Stored {path}",
+                    )
+                )
+    return EdgarAcquisitionResult(len(entries), tuple(added), tuple(fetched))
+
+
 if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
     import argparse
 
     from app.config import get_settings
     from app.ingestion.progress import byte_bar, overall_bar
-
-    def _label(entry: Mapping[str, Any]) -> str:
-        """Name one entry the way a person reading the bar would name it."""
-        document = entry.get("primary_doc") or Path(entry["file"]).name
-        return f"{doc_id(dict(entry))} · {document}"
-
-    async def _widen(
-        manifest_path: Path,
-        entries: list[dict[str, Any]],
-        *,
-        tickers: tuple[str, ...],
-        years: range,
-        user_agent: str,
-        dry_run: bool,
-    ) -> list[dict[str, Any]]:
-        """Discover filings in range and record the ones the manifest does not name."""
-        wanted = tickers or tuple(
-            dict.fromkeys(str(entry["ticker"]) for entry in entries if entry.get("ticker"))
-        )
-        if not wanted:
-            raise SystemExit("--years needs --ticker when the manifest names no issuer")
-
-        print(
-            f"discovering {ANNUAL_REPORT_FORM}s for {', '.join(wanted)} "
-            f"in {years.start}-{years.stop - 1}"
-        )
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            discovered = await discover(client, tickers=wanted, years=years, user_agent=user_agent)
-        merged, added = merge_entries(entries, discovered)
-        for entry in added:
-            print(f"  + {doc_id(entry)}  {entry['accession']}  {entry['url']}")
-        print(f"{len(added)} new filing(s), {len(merged)} in the manifest")
-
-        if dry_run:
-            print("dry run: neither the manifest nor any document was written")
-            return []
-        if added:
-            write_manifest(manifest_path, merged)
-        return merged
 
     async def _download(
         manifest_path: Path,
@@ -607,46 +696,57 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
         force: bool,
         dry_run: bool,
     ) -> None:
-        """Widen the manifest when asked, then fetch everything it names that is missing."""
+        """Run the reusable acquisition boundary with terminal progress."""
         try:
             user_agent = require_user_agent(get_settings().sec_user_agent)
-            entries = read_manifest(manifest_path)
         except ValueError as error:
             raise SystemExit(str(error)) from None
-
         if years is not None:
-            entries = await _widen(
+            wanted = tickers or tuple(
+                dict.fromkeys(
+                    str(entry["ticker"])
+                    for entry in read_manifest(manifest_path)
+                    if entry.get("ticker")
+                )
+            )
+            if not wanted:
+                raise SystemExit("--years needs --ticker when the manifest names no issuer")
+            print(
+                f"discovering {ANNUAL_REPORT_FORM}s for {', '.join(wanted)} "
+                f"in {years.start}-{years.stop - 1}"
+            )
+
+        def open_bar(entry: Mapping[str, Any]) -> AbstractContextManager[ByteProgress]:
+            """Open a byte progress bar for one manifest entry."""
+            return byte_bar(_entry_label(entry))
+
+        try:
+            result = await acquire_edgar(
                 manifest_path,
-                entries,
                 tickers=tickers,
                 years=years,
                 user_agent=user_agent,
+                force=force,
                 dry_run=dry_run,
+                progress_factory=open_bar,
             )
-            if not entries:
-                return
-
-        targets = pending(entries, force=force, tickers=tickers)
-        if not targets:
+        except ValueError as error:
+            raise SystemExit(str(error)) from None
+        for entry in result.added:
+            print(f"  + {doc_id(entry)}  {entry['accession']}  {entry['url']}")
+        if years is not None:
+            print(f"{len(result.added)} new filing(s), {result.manifest_entries} in the manifest")
+        if result.dry_run:
+            print("dry run: neither the manifest nor any document was written")
+            return
+        if not result.fetched:
             print(f"nothing to fetch; every selected entry of {manifest_path} is on disk")
             return
-
-        stored = 0
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            with overall_bar(len(targets), unit="doc", description="EDGAR") as overall:
-
-                def open_bar(entry: Mapping[str, Any]) -> AbstractContextManager[ByteProgress]:
-                    """Open a byte progress bar for one manifest entry."""
-                    return byte_bar(_label(entry))
-
-                downloads = download_pending(
-                    client, targets, user_agent=user_agent, progress=open_bar
-                )
-                async for path, size in downloads:
-                    stored += 1
-                    overall.advance(doc_id(targets[stored - 1]))
-                    overall.write(f"{path} ({size:,} bytes)")
-        print(f"fetched {stored} document(s)")
+        with overall_bar(len(result.fetched), unit="doc", description="EDGAR") as overall:
+            for path, size in result.fetched:
+                overall.advance(path.stem)
+                overall.write(f"{path} ({size:,} bytes)")
+        print(f"fetched {len(result.fetched)} document(s)")
 
     ap = argparse.ArgumentParser(
         description="Discover and download the EDGAR filings a manifest names."

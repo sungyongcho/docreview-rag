@@ -108,6 +108,12 @@ class RetrievalService(Protocol):
         ...
 
 
+type SessionRetrievalService = Callable[
+    [AsyncSession, str, int, RetrievalFilters],
+    Awaitable[RetrievalResult],
+]
+
+
 class WorkflowService(Protocol):
     """M4 workflow call shape used by the review resource."""
 
@@ -209,6 +215,16 @@ class RuntimeApiServices(ApiServices):
         self._bm25_b = bm25_b
         self._bm25_idf: BM25Idf = bm25_idf
         self._corpus_root = corpus_root
+
+    @property
+    def session_factory(self) -> SessionFactory:
+        """Expose the configured session boundary to local composed services."""
+        return self._session_factory
+
+    @property
+    def embedding_provider(self) -> EmbeddingProvider:
+        """Expose the server-selected provider without exposing its credentials."""
+        return self._embedding_provider
 
     async def _retrieve_with_session(
         self,
@@ -380,6 +396,25 @@ class RuntimeApiServices(ApiServices):
         and the resulting records are both persisted and returned, so redaction cost is
         paid a single time per run.
         """
+        return await self._review(request, on_node=on_node, retrieval_override=None)
+
+    async def review_with_retrieval(
+        self,
+        request: ReviewRequest,
+        retrieval: SessionRetrievalService,
+        on_node: NodeObserver | None = None,
+    ) -> RunReport:
+        """Run one review with an explicit request-scoped retrieval implementation."""
+        return await self._review(request, on_node=on_node, retrieval_override=retrieval)
+
+    async def _review(
+        self,
+        request: ReviewRequest,
+        *,
+        on_node: NodeObserver | None,
+        retrieval_override: SessionRetrievalService | None,
+    ) -> RunReport:
+        """Execute, sanitize, and persist one public or administrator review."""
         if self._llm_provider is None or self._provider_budget is None:
             raise unavailable(
                 "provider_unavailable",
@@ -403,7 +438,11 @@ class RuntimeApiServices(ApiServices):
                     filters: RetrievalFilters,
                 ) -> RetrievalResult:
                     """Retrieve on the session this run already holds."""
-                    result = await self._retrieve_with_session(session, query, k, filters)
+                    result = (
+                        await self._retrieve_with_session(session, query, k, filters)
+                        if retrieval_override is None
+                        else await retrieval_override(session, query, k, filters)
+                    )
                     if session.in_transaction():
                         await session.rollback()
                     return result

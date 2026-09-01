@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import LexicalRanker, get_settings
+from app.config import LexicalRanker, Settings, get_settings
 from app.db.bootstrap import bootstrap_schema
 from app.evals.ablation import (
     AblationOutcome,
@@ -89,6 +89,7 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--suite", default="m3-retrieval-v1")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
+    parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
     parser.add_argument("--provider", choices=("deterministic", "openai"), default="deterministic")
     parser.add_argument("--target-text-chars", type=positive_int, nargs="+", default=[500, 1200])
@@ -108,6 +109,9 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-k", type=positive_int, default=5)
     parser.add_argument("--candidate-k", type=positive_int, default=20)
     parser.add_argument("--rrf-k", type=positive_int, default=DEFAULT_RRF_K)
+    parser.add_argument("--bm25-k1", type=float, default=None)
+    parser.add_argument("--bm25-b", type=float, default=None)
+    parser.add_argument("--bm25-idf", choices=("lucene", "robertson"), default=None)
     parser.add_argument("--budget-queries", type=positive_int, default=QUERY_BUDGET_COUNT)
     parser.add_argument("--persist-results", action="store_true")
     parsed = parser.parse_args(argv)
@@ -179,9 +183,28 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     if args.candidate_k < args.k:
         raise ValueError("candidate_k must be at least k")
     targets = sorted(set(args.target_text_chars))
-    settings = get_settings().model_copy(update={"embedding_provider": args.provider})
+    updates: dict[str, Any] = {"embedding_provider": args.provider}
+    if args.bm25_k1 is not None:
+        updates["bm25_k1"] = args.bm25_k1
+    if args.bm25_b is not None:
+        updates["bm25_b"] = args.bm25_b
+    if args.bm25_idf is not None:
+        updates["bm25_idf"] = args.bm25_idf
+    current_settings = get_settings()
+    settings = (
+        Settings.model_validate(current_settings.model_dump() | updates)
+        if isinstance(current_settings, Settings)
+        else current_settings.model_copy(update=updates)
+    )
     provider = get_embedding_provider(settings)
-    cases = load_golden_cases(args.golden)
+    cases = (
+        load_golden_cases(args.golden)
+        if args.manifest_name == "manifest.json"
+        else load_golden_cases(
+            args.golden,
+            manifest_path=settings.corpus_dir / args.manifest_name,
+        )
+    )
     recorded_at = datetime.now(UTC)
 
     budget_strategy, budget_ranker = budget_arm_selection(args.strategies, args.lexical_rankers)
@@ -190,7 +213,11 @@ async def _run_cli(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     preparation_started_at_ns = time.perf_counter_ns()
-    parsed_filings = load_chunking_filings(settings=settings)
+    parsed_filings = (
+        load_chunking_filings(settings=settings)
+        if args.manifest_name == "manifest.json"
+        else load_chunking_filings(settings=settings, manifest_name=args.manifest_name)
+    )
     shared_preparation = SharedPreparationMeasurement(
         operation="manifest-load-and-parse",
         document_count=len(parsed_filings),
