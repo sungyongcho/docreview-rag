@@ -5,10 +5,22 @@ import type {
   EvaluationResultDetail,
   EvidenceHit,
   GoldenSuite,
+  GoldenCanonical,
   ProviderUsage,
+  PublishedSnapshot,
+  GoldenRevision,
+  SnapshotComparison,
+  DocumentDetail,
+  DocumentFacets,
+  AdminDocumentPage,
+  OperatorJob,
+  OperatorJobBoard,
   Readiness,
+  Capabilities,
+  ReleaseLimits,
   RetrievalProfile,
   ReviewSessionProfile,
+  SuiteId,
 } from "./types";
 
 const API_BASE =
@@ -102,14 +114,26 @@ export async function streamReview(
         pinned_chunk_ids: evidenceSelection.pinned,
         excluded_chunk_ids: evidenceSelection.excluded,
       } : null,
-      conversation_history: history.slice(-6),
+      conversation_history: history.slice(-sessionProfile.prompt_policy.history_turns),
     }),
     signal,
   });
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     const error = (payload.error ?? {}) as Record<string, unknown>;
-    throw new ApiError(response.status, String(error.code ?? "stream_failed"), String(error.message ?? "Review stream failed."));
+    const details = Array.isArray(error.details)
+      ? error.details.map((item) => {
+          const detail = item as Record<string, unknown>;
+          const location = Array.isArray(detail.location) ? detail.location.join(".") : "request";
+          return `${location}: ${String(detail.message ?? "invalid value")}`;
+        })
+      : [];
+    const message = String(error.message ?? "Review stream failed.");
+    throw new ApiError(
+      response.status,
+      String(error.code ?? "stream_failed"),
+      details.length ? `${message} ${details.join(" · ")}` : message,
+    );
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -185,6 +209,14 @@ export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
   return payload;
 }
 
+export function getCapabilities(): Promise<Capabilities> {
+  return request<Capabilities>("/capabilities");
+}
+
+export function getReleaseLimits(): Promise<ReleaseLimits> {
+  return request<ReleaseLimits>("/limits");
+}
+
 export async function previewRetrieval(query: string, profile: RetrievalProfile) {
   return request<{
     query: string;
@@ -248,6 +280,76 @@ export function getCorpusJobs(): Promise<Record<string, unknown>> {
 
 export function getProviderUsage(): Promise<ProviderUsage> {
   return request<ProviderUsage>("/admin/usage");
+}
+
+export async function getPublishedSnapshots(): Promise<PublishedSnapshot[]> {
+  const payload = await request<{ snapshots: PublishedSnapshot[] }>("/snapshots");
+  return payload.snapshots;
+}
+
+export function getAdminSnapshots(): Promise<PublishedSnapshot[]> {
+  return request<PublishedSnapshot[]>("/admin/snapshots");
+}
+
+export function createSnapshot(body: { label: string; eval_result_id: number; golden_revision_id: number | null; public: boolean }): Promise<PublishedSnapshot> {
+  return request<PublishedSnapshot>("/admin/snapshots", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function setSnapshotVisibility(snapshotId: number, value: boolean): Promise<PublishedSnapshot> {
+  return request<PublishedSnapshot>(`/admin/snapshots/${snapshotId}/visibility`, { method: "PUT", body: JSON.stringify({ public: value }) });
+}
+
+export function compareSnapshots(baselineId: number, candidateId: number, live: boolean): Promise<SnapshotComparison> {
+  const prefix = live ? "/admin" : "";
+  return request<SnapshotComparison>(`${prefix}/snapshots/compare?baseline_id=${baselineId}&candidate_id=${candidateId}`);
+}
+
+export function getGoldenRevisions(suiteId: SuiteId): Promise<GoldenRevision[]> {
+  return request<GoldenRevision[]>(`/admin/golden/${suiteId}/revisions`);
+}
+
+export function getGoldenCanonical(suiteId: SuiteId): Promise<GoldenCanonical> {
+  return request<GoldenCanonical>(`/admin/golden/${suiteId}/canonical`);
+}
+
+export function createGoldenDraft(suiteId: SuiteId, parentId: number | null): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/${suiteId}/drafts`, { method: "POST", body: JSON.stringify({ parent_id: parentId }) });
+}
+
+export function saveGoldenCase(revisionId: number, caseId: string, expectedSha256: string, value: Record<string, unknown>): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/cases/${caseId}`, { method: "PUT", body: JSON.stringify({ expected_sha256: expectedSha256, case: value }) });
+}
+
+export function transitionGoldenRevision(revisionId: number, action: "validate" | "publish", expectedSha256: string): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/${action}`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
+}
+
+export function getAdminDocuments(params: URLSearchParams): Promise<AdminDocumentPage> {
+  return request<AdminDocumentPage>(`/admin/documents?${params.toString()}`);
+}
+
+export function getDocumentFacets(): Promise<DocumentFacets> {
+  return request<DocumentFacets>("/admin/documents/facets");
+}
+
+export function getOperatorJobs(): Promise<OperatorJobBoard> {
+  return request<OperatorJobBoard>("/admin/jobs");
+}
+
+export function retryOperatorJob(jobId: string): Promise<OperatorJob> {
+  return request<OperatorJob>(`/admin/jobs/${encodeURIComponent(jobId)}/retry`, {
+    method: "POST",
+  });
+}
+
+export function cancelOperatorJob(jobId: string): Promise<OperatorJob> {
+  return request<OperatorJob>(`/admin/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function getDocumentDetail(docId: string): Promise<DocumentDetail> {
+  return request<DocumentDetail>(`/admin/documents/${encodeURIComponent(docId)}`);
 }
 
 export function apiBase(): string {

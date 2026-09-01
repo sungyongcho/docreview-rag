@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ONBOARDING_KEY } from "@/lib/storage";
@@ -17,6 +17,8 @@ describe("service shell", () => {
     await waitFor(() =>
       expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Data & help" }));
     const documentation = screen.getByText("Documentation").closest("a");
 
     expect(screen.getByText("Review filings with verifiable evidence.")).toBeInTheDocument();

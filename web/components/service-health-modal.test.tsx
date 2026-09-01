@@ -8,6 +8,7 @@ const handlers = {
   onReload: vi.fn(),
   onDismiss: vi.fn(),
   onOpenStatus: vi.fn(),
+  onOpenCorpusLab: vi.fn(),
 };
 
 describe("ServiceHealthModal", () => {
@@ -27,13 +28,17 @@ describe("ServiceHealthModal", () => {
     expect(handlers.onReload).toHaveBeenCalled();
   });
 
-  it("lets the user dismiss DB degradation or open status", () => {
-    render(<ServiceHealthModal kind="db_degraded" visible checking={false} {...handlers} />);
+  it("explains DB degradation and opens the repair surface without retry looping", () => {
+    render(<ServiceHealthModal kind="db_degraded" visible checking={false} degradedMessage="12 chunks still need embeddings." {...handlers} />);
 
     expect(screen.getByRole("dialog")).toHaveTextContent("Database is not ready");
+    expect(screen.getByRole("dialog")).toHaveTextContent("12 chunks still need embeddings");
+    expect(screen.queryByRole("button", { name: /Try again/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close database warning" }));
     fireEvent.click(screen.getByRole("button", { name: "Open System status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Corpus Lab" }));
     expect(handlers.onDismiss).toHaveBeenCalled();
     expect(handlers.onOpenStatus).toHaveBeenCalled();
+    expect(handlers.onOpenCorpusLab).toHaveBeenCalled();
   });
 });

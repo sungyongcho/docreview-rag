@@ -67,4 +67,22 @@ describe("API client", () => {
 
     await expect(getReadiness()).resolves.toMatchObject(payload);
   });
+
+  it("surfaces exact validation locations instead of a generic stream failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: "request_validation_failed",
+        message: "Request validation failed.",
+        details: [{
+          location: ["body", "session_profile", "languages"],
+          message: "Input should be a valid tuple",
+          error_type: "tuple_type",
+        }],
+      },
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+
+    await expect(
+      streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined),
+    ).rejects.toThrow("body.session_profile.languages: Input should be a valid tuple");
+  });
 });

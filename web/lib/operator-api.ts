@@ -27,6 +27,10 @@ export function operatorAvailable() {
   return Boolean(OPERATOR_BASE && OPERATOR_TOKEN);
 }
 
+export function operatorBase() {
+  return OPERATOR_BASE;
+}
+
 async function operatorRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!operatorAvailable()) throw new Error("Local Operations is not enabled for this build.");
   const response = await fetch(`${OPERATOR_BASE}${path}`, {

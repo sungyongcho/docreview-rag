@@ -27,6 +27,7 @@ export const CANNED_JOB: EvaluationJob = {
   job_id: "archived-crosslingual-vector-ko",
   request: {
     suite_id: "sec-ko",
+    golden_revision_id: null,
     mode: "quick",
     profile: { ...DEFAULT_PROFILE, strategy: "vector", lexical_ranker: null },
     target_text_chars: [500, 1200],

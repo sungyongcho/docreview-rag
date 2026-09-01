@@ -201,6 +201,27 @@ docker compose stop app
 
 ## Next.js 개발 모드
 
+### 통합 로컬 실행
+
+`.env`의 `MODE=dev|prod`와 host-facing 포트를 읽어 실행 구성을 선택합니다.
+
+| Mode | UI | API | 추가 서비스 |
+|---|---|---|---|
+| `dev` | `http://HOST:WEB_PORT/docreview-rag-agent/` | `http://HOST:APP_PORT` | Local Operations |
+| `prod` | `http://HOST:APP_PORT/docreview-rag-agent/` | 동일 origin | host Next/operator 없음 |
+
+```bash
+scripts/run_local.sh
+```
+
+기존 volume을 보존해 서비스를 교체하려면 `docker compose down` 후 다시 실행합니다.
+`docker compose down -v`는 PostgreSQL 데이터를 삭제하므로 일반 재시작에 사용하지 않습니다.
+
+Dev Settings에서는 conversation prompt/evidence 전송 정책과 workflow budget을 조정할 수
+있습니다. 고정 evidence guard는 교체할 수 없습니다. 공개 Prod Settings는 현재 rate/token/cost
+한도만 읽기 전용으로 보여주며 custom prompt, retrieval, eval, snapshot 생성은 차단합니다.
+Prod의 Snapshots 화면은 저장된 evaluation artifact만 비교하므로 provider 호출을 만들지 않습니다.
+
 FastAPI와 PostgreSQL은 Docker로 실행하고 Next dev server만 호스트에서 띄웁니다.
 
 ```bash
@@ -258,7 +279,8 @@ docker compose up --build -d app
 
 서비스 UI는 시작·30초 주기·탭/네트워크 복귀 때 `/health`와 `/ready`를 확인합니다. API가
 응답하지 않으면 retry/reload 전까지 blocking dialog를 표시하고, DB·schema·corpus가
-degraded면 닫을 수 있는 경고와 System status 이동을 제공합니다. 긴 대화는 workspace
+degraded면 실제 원인과 Corpus Lab/System status 이동 또는 Continue를 제공합니다. 복구되지
+않는 `Try again`은 DB degraded 경고에 표시하지 않습니다. 긴 대화는 workspace
 우측 scrollbar로 메시지만 스크롤되며 sidebar·topbar·composer는 고정됩니다.
 
 튜토리얼은 New review, composer, evidence, recent reviews, Corpus Lab, System status,
@@ -352,12 +374,21 @@ REVIEW_MODEL=gpt-5.6-terra
 Corpus Lab은 다음 영역으로 구성됩니다.
 
 - `Overview`: DB/schema/index 상태와 안전한 corpus 작업
-- `Documents`: registry·issuer·연도·언어·chunk 상태
+- `Documents`: registry·issuer·연도·언어·form·parse/embedding 상태·Snapshot membership
+  facet, Registry/회사/연도 grouping, cursor page, 구조화된 filing/index/chunk 상세
 - `Golden Tests`: SEC/DART × EN/KO suite와 retrieval profile
 - `Experiments`: baseline 대비 metric·case 변화
-- `Jobs`: quick/matrix background job
+- `Jobs`: persistent corpus/evaluation queue, progress, history, retry/cancel
 - `API Inspector`: strict JSON 요청과 typed 응답
 - `Usage`: local run/trace에 기록된 모델별 token과 예상 비용 (`live` operator 전용)
+- `Snapshots`: eval 결과, exact document/chunk membership, embedding copy, BM25 통계를
+  불변 단위로 저장하고 공개된 두 결과를 provider 호출 없이 비교
+
+Overview의 `Job activity`는 현재 corpus/evaluation 작업의 stage, committed progress,
+대기 순서와 최근 결과를 표시합니다. `Jobs`의 통합 Job Center에서는 domain/status filter,
+queue position, request/result provenance, 안전한 Retry/Cancel을 확인합니다. Job 상태는
+PostgreSQL에 저장되며 app 재시작으로 중단된 작업은 자동 재실행하지 않고 `interrupted`로
+남깁니다. Settings의 Local runtime에서 완료·실패 desktop notification을 opt-in할 수 있습니다.
 
 조절 가능한 retrieval profile:
 
@@ -369,6 +400,27 @@ Corpus Lab은 다음 영역으로 구성됩니다.
 
 빠른 실행은 현재 DB index를 사용합니다. matrix 실행은 격리 PostgreSQL corpus에서
 chunk 크기·strategy·ranker 조합을 비교하고 운영 corpus를 변경하지 않습니다.
+
+Embedding Backfill은 provider identity별 committed row count를 완료 후 다시 확인합니다.
+progress row 수와 실제 DB 상태가 다르면 성공으로 표시하지 않고 `postcondition_failed`로
+종료합니다.
+
+Local operator의 Golden Tests에서는 canonical JSON 질문 표를 항상 read-only로 확인하고,
+DB draft를 만든 뒤 질문·reference answer·category/facet·tags·expected label·source span을
+structured form 또는 single-case JSON으로 수정합니다. 연결된 eval 결과가 있으면 질문별
+hit/miss, first rank, reciprocal rank를 같은 표에 표시합니다. `Validate`는 suite uniqueness와
+exact source hash/span을 확인합니다. Quick/Matrix eval은 현재 선택한 DB revision ID와 byte hash를
+그대로 사용하며, 검증된 revision만 `Publish JSON`으로 원자적으로 반영합니다.
+Published revision과 eval result는 Snapshot에 함께 고정할 수 있습니다.
+
+Snapshot은 문서/source hash, chunk body/context/span/citation, generated FTS vector,
+embedding vector/identity, chunk term/length, 언어별 BM25 corpus·lexeme 통계를 독립 revision
+테이블에 복사합니다. 이후 live corpus를 재청킹하거나 교체해도 Dev의 `Use for review`는
+snapshot 테이블만 검색하며, Prod에서는 공개된 Snapshot 결과 비교만 허용합니다.
+Queryable Snapshot은 현재 live-index quick eval에서 만들 수 있습니다. 격리 matrix의
+chunking arm은 운영 index와 다른 임시 corpus이므로 결과 artifact 비교만 허용하며, 현재
+corpus인 것처럼 잘못 고정하려는 요청은 거부합니다. 새 chunking revision을 queryable하게
+만들려면 해당 revision을 live index로 검증한 quick eval 결과에서 Snapshot을 생성합니다.
 
 CLI 평가:
 
@@ -405,6 +457,8 @@ http://127.0.0.1:8000/docs
 | `GET` | `/runs/{run_id}` | 리뷰 실행 결과 |
 | `GET` | `/runs/{run_id}/traces` | 단계별 비용·토큰 trace |
 | `GET` | `/eval` | 저장된 평가 결과 |
+| `GET` | `/snapshots` | 공개된 불변 평가 Snapshot |
+| `GET` | `/snapshots/compare` | 저장 결과 비교, eval 재실행 없음 |
 
 `/admin/*`는 local operator API입니다. 공개 Caddy 설정에서는 `/admin/*`와 `/ingest`를
 차단하고, GCP 운영 환경에서는 SSH tunnel을 통해서만 접근합니다.
@@ -707,6 +761,11 @@ Review 입력은 먼저 conversation gate를 통과합니다. 완전한 인사·
 vector, lexical lane을 실행해 RRF로 합칩니다. 사용자 원문은 answer question으로 유지하며
 검색용 번역은 provenance로만 전달됩니다. 내부 `NOT_IN_DOCS`와 citation membership 계약은
 완화하지 않습니다.
+
+Answer provider가 설정되지 않은 Dev에서도 명확한 greeting은 provider 없이 응답합니다.
+공시 질문은 Balanced retrieval을 실행해 실제 evidence를 표시하고, 생성 답변이 없다는 점을
+명시합니다. Korean처럼 language routing을 요청한 profile만 translation provider를 요구합니다.
+Request validation 오류는 실패한 field 위치를 conversation에 함께 표시합니다.
 
 Session profile은 OpenAI API 또는 server-side Local LLM, Auto/SEC/DART corpus, retrieval
 preset을 conversation별로 보관합니다. Local endpoint와 credential은 browser에 노출되지

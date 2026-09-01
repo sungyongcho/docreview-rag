@@ -13,6 +13,7 @@ import {
   SquarePen,
   TerminalSquare,
   Trash2,
+  Settings,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -22,15 +23,20 @@ import { Onboarding } from "@/components/onboarding";
 import { Operations } from "@/components/operations";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { SystemStatus } from "@/components/system-status";
+import { SettingsModal } from "@/components/settings-modal";
+import { useNotifications } from "@/components/notifications";
 import {
   ApiError,
+  getCapabilities,
+  retrieveEvidence,
   streamReview,
 } from "@/lib/api";
 import { operatorAvailable } from "@/lib/operator-api";
 import { loadConversations, newConversation, ONBOARDING_KEY, saveConversations } from "@/lib/storage";
-import type { ChatMessage, Conversation, EvidenceHit, RetrievalProfile, ReviewSessionProfile } from "@/lib/types";
+import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionProfile } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
+import { useOperatorJobs } from "@/lib/use-operator-jobs";
 
 type View = "review" | "lab" | "status" | "operations";
 
@@ -44,11 +50,14 @@ export function ServiceShell() {
   const [tourOpen, setTourOpen] = useState(false);
   const [profile, setProfile] = useState<ReviewSessionProfile>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [progress, setProgress] = useState("");
   const reviewAbort = useRef<AbortController | null>(null);
   const adminLive = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
   const operationsAvailable = operatorAvailable();
   const runtimeHealth = useRuntimeHealth();
+  const { notify } = useNotifications();
+  const operatorJobs = useOperatorJobs(adminLive, runtimeHealth.check);
 
   useEffect(() => {
     const restored = loadConversations();
@@ -61,11 +70,28 @@ export function ServiceShell() {
   }, []);
 
   useEffect(() => () => reviewAbort.current?.abort(), []);
+  useEffect(() => {
+    void getCapabilities().then((value) => setCapabilities(adminLive ? value : {
+      ...value,
+      can_edit_prompt_policy: false,
+      can_edit_run_limits: false,
+      can_edit_golden: false,
+      can_build_snapshot: false,
+      can_run_evaluation: false,
+      can_change_custom_retrieval: false,
+      can_query_snapshot: false,
+      can_use_operations: false,
+      can_compare_published_snapshots: true,
+    })).catch(() => setCapabilities(null));
+  }, [adminLive]);
 
   const active = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
     [activeId, conversations],
   );
+  const activeSessionProfile = active?.profile ?? profile;
+  const vectorOnlyUnavailable = resolvedRetrievalProfile(activeSessionProfile).strategy === "vector"
+    && (runtimeHealth.readiness?.corpus?.pending_embeddings ?? 0) > 0;
 
   function persist(next: Conversation[]) {
     setConversations(saveConversations(next));
@@ -75,7 +101,7 @@ export function ServiceShell() {
     const conversation = newConversation();
     persist([conversation, ...conversations]);
     setActiveId(conversation.id);
-    setProfile(DEFAULT_SESSION_PROFILE);
+    setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
     setView("review");
   }
 
@@ -121,9 +147,9 @@ export function ServiceShell() {
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
     const pending = [...active.messages, userMessage];
     let preparedEvidence: EvidenceHit[] = [];
+    const selectedProfile = active.profile ?? profile;
     updateActive(pending);
     try {
-      const selectedProfile = active.profile ?? profile;
       let evidence: EvidenceHit[] = [];
       let candidateToken: string | undefined;
       const history = pending
@@ -165,10 +191,20 @@ export function ServiceShell() {
         await runtimeHealth.check();
         return;
       }
-      const evidence = preparedEvidence;
+      let evidence = preparedEvidence;
+      if (reason instanceof ApiError && reason.code === "provider_unavailable") {
+        try {
+          const retrieved = await retrieveEvidence(question, selectedProfile);
+          evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
+        } catch {
+          // Preserve the original provider error when retrieval is also unavailable.
+        }
+      }
       const message =
         reason instanceof ApiError && reason.code === "daily_cost_limit"
           ? "The daily answer budget is exhausted. Retrieved evidence is shown without an LLM answer."
+          : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
+            ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer."
           : reason instanceof Error
             ? reason.message
             : "The review could not be completed.";
@@ -210,6 +246,24 @@ export function ServiceShell() {
     updateSessionProfile({ retrieval_preset: "custom", custom_retrieval: nextProfile });
   }
 
+  function applySnapshot(snapshot: PublishedSnapshot) {
+    const storedProfile = snapshot.profile.retrieval_profile;
+    const retrieval = storedProfile && typeof storedProfile === "object"
+      ? storedProfile as RetrievalProfile
+      : resolvedRetrievalProfile(active?.profile ?? profile);
+    const next = {
+      ...(active?.profile ?? profile),
+      snapshot_id: snapshot.snapshot_id,
+      applied_from_evaluation: `snapshot:${snapshot.snapshot_id}`,
+      retrieval_preset: "custom" as const,
+      custom_retrieval: retrieval,
+    };
+    setProfile(next);
+    if (active) updateActive(active.messages, next);
+    setView("review");
+    notify(`Snapshot ${snapshot.label} applied to this review.`, "success", "snapshot-review");
+  }
+
   function markEvidence(messageId: string, chunkId: number, mode: "pin" | "exclude") {
     if (!active) return;
     const messages = active.messages.map((message) => {
@@ -241,7 +295,7 @@ export function ServiceShell() {
           pinned: message.pinnedChunkIds ?? [],
           excluded: message.excludedChunkIds ?? [],
         },
-        active.messages.slice(-6).map((item) => ({ role: item.role, text: item.text })),
+        active.messages.slice(-(active.profile ?? profile).prompt_policy.history_turns).map((item) => ({ role: item.role, text: item.text })),
         (event) => setProgress(`${event.node} · ${event.evidence_count} evidence`),
       );
       updateActive([...active.messages, {
@@ -253,7 +307,7 @@ export function ServiceShell() {
         trace: extractTrace(response),
       }]);
     } catch (reason) {
-      setProgress(reason instanceof Error ? reason.message : "Selected evidence review failed.");
+      notify(reason instanceof Error ? reason.message : "Selected evidence review failed.", "error", "evidence-review");
     } finally {
       setBusy(false);
       window.setTimeout(() => setProgress(""), 2500);
@@ -289,10 +343,7 @@ export function ServiceShell() {
         <div className="sidebar-nav">
           <button data-tour="corpus-lab" type="button" aria-pressed={view === "lab"} onClick={() => setView("lab")}><Database size={17} /><span>Corpus Lab</span></button>
           {operationsAvailable && <button data-tour="operations" type="button" aria-pressed={view === "operations"} onClick={() => setView("operations")}><TerminalSquare size={17} /><span>Operations</span></button>}
-          <a data-tour="documentation" href="/docreview-rag-agent/docs/" target="_blank" rel="noreferrer"><BookOpen size={17} /><span>Documentation</span></a>
-          <button data-tour="system-status" type="button" aria-pressed={view === "status"} onClick={() => setView("status")}><Activity size={17} /><span>System status</span></button>
-          <button type="button" onClick={openTour}><HelpCircle size={17} /><span>Show tutorial</span></button>
-          <button type="button" onClick={clearReviews}><Trash2 size={17} /><span>Clear conversations</span></button>
+          <button type="button" onClick={() => setSettingsOpen(true)}><Settings size={17} /><span>Settings</span></button>
         </div>
       </aside>
 
@@ -300,7 +351,7 @@ export function ServiceShell() {
         <header className="topbar">
           <button className="icon-button" type="button" aria-label="Toggle sidebar" onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
           <div><strong>{view === "review" ? active?.title ?? "New review" : view === "lab" ? "Corpus Lab" : view === "operations" ? "Operations" : "System status"}</strong><span>Evidence-first SEC and DART filing review</span></div>
-          <span className={`health ${healthBadge(runtimeHealth.kind)}`}><i />{healthLabel(runtimeHealth.kind)}</span>
+          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => setView("lab")}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className={`health ${healthBadge(runtimeHealth.kind)}`} onClick={() => setView("status")}><i />{healthLabel(runtimeHealth.kind)}</button></div>
         </header>
 
         {view === "review" && <section className="review-workspace">
@@ -311,14 +362,14 @@ export function ServiceShell() {
               {busy && <div className="thinking">{progress || "Retrieving and checking evidence…"}</div>}
             </div>
           </div>
-          <div className="composer-wrap" data-tour="composer"><button className="profile-chip" type="button" onClick={() => setSettingsOpen(true)}>Session profile · {(active?.profile ?? profile).engine} · {(active?.profile ?? profile).corpus_scope} · {(active?.profile ?? profile).retrieval_preset}</button><label className="composer"><textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} /><button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind !== "healthy" || !query.trim()} onClick={() => void submit()}><Send size={17} /></button></label><p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p></div>
+          <div className="composer-wrap" data-tour="composer"><button className="profile-chip" type="button" onClick={() => setSettingsOpen(true)}>Session profile · {activeSessionProfile.engine} · {activeSessionProfile.corpus_scope} · {activeSessionProfile.retrieval_preset}</button><label className="composer"><textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} /><button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || vectorOnlyUnavailable || !query.trim()} onClick={() => void submit()}><Send size={17} /></button></label>{vectorOnlyUnavailable ? <p className="danger">Vector-only retrieval is unavailable until embeddings are ready. <button className="inline-link" type="button" onClick={() => setView("lab")}>Open Corpus Lab</button></p> : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}</div>
         </section>}
 
-        {view === "lab" && <CorpusLab live={adminLive} ready={runtimeHealth.kind === "healthy"} profile={resolvedRetrievalProfile(profile)} onProfileChange={updateLabProfile} onApplyProfile={applyProfile} />}
+        {view === "lab" && <CorpusLab live={adminLive} ready={runtimeHealth.kind === "healthy"} profile={resolvedRetrievalProfile(profile)} onProfileChange={updateLabProfile} onApplyProfile={applyProfile} onApplySnapshot={applySnapshot} jobBoard={operatorJobs.board} jobsLoading={operatorJobs.loading} onRetryJob={(jobId) => void operatorJobs.retry(jobId)} onCancelJob={(jobId) => void operatorJobs.cancel(jobId)} onRefreshJobs={() => void operatorJobs.refresh()} />}
         {view === "operations" && operationsAvailable && <Operations />}
         {view === "status" && <SystemStatus readiness={runtimeHealth.readiness} loading={runtimeHealth.checking} error="" onRefresh={() => void runtimeHealth.check()} />}
       </section>
-      {settingsOpen && <aside className="settings-drawer" aria-label="Review Settings"><div className="drawer-heading"><div><p className="eyebrow">Conversation</p><h2>Review Settings</h2></div><button className="icon-button" type="button" aria-label="Close Review Settings" onClick={() => setSettingsOpen(false)}>×</button></div><label>Answer engine<select value={profile.engine} onChange={(event) => updateSessionProfile({ engine: event.target.value as ReviewSessionProfile["engine"] })}><option value="openai">OpenAI API</option><option value="local" disabled={!runtimeHealth.readiness?.review_engines?.local?.enabled}>Local LLM</option></select></label><label>Corpus<select value={profile.corpus_scope} onChange={(event) => updateSessionProfile({ corpus_scope: event.target.value as ReviewSessionProfile["corpus_scope"] })}><option value="auto">Auto</option><option value="sec">SEC</option><option value="dart">DART</option></select></label><label>Companies<input value={profile.issuers.join(" ")} placeholder="005930 NVDA" onChange={(event) => updateSessionProfile({ issuers: event.target.value.split(/[\s,]+/).filter(Boolean) })} /></label><label>Retrieval<select value={profile.retrieval_preset} onChange={(event) => updateSessionProfile({ retrieval_preset: event.target.value as ReviewSessionProfile["retrieval_preset"], custom_retrieval: event.target.value === "custom" ? profile.custom_retrieval ?? DEFAULT_PROFILE : null })}><option value="balanced">Balanced</option><option value="korean">Korean</option><option value="accuracy">Accuracy</option><option value="custom">Custom</option></select></label>{!runtimeHealth.readiness?.review_engines?.local?.enabled && <p className="helper">Set LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL on the server to enable Local LLM.</p>}</aside>}
+      <SettingsModal open={settingsOpen} profile={active?.profile ?? profile} capabilities={capabilities ?? { can_edit_prompt_policy: adminLive, can_edit_run_limits: adminLive, can_edit_golden: adminLive, can_build_snapshot: adminLive, can_run_evaluation: adminLive, can_change_custom_retrieval: adminLive, can_query_snapshot: adminLive, can_use_operations: operationsAvailable, can_compare_published_snapshots: true }} readiness={runtimeHealth.readiness} onChange={(next) => { setProfile(next); if (active) updateActive(active.messages, next); }} onClose={() => setSettingsOpen(false)} onOpenLab={() => { setSettingsOpen(false); setView("lab"); }} onOpenOperations={() => { setSettingsOpen(false); setView("operations"); }} onOpenStatus={() => { setSettingsOpen(false); setView("status"); }} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
       {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} />}
       <ServiceHealthModal
         kind={runtimeHealth.kind}
@@ -328,6 +379,10 @@ export function ServiceShell() {
         onReload={() => window.location.reload()}
         onDismiss={runtimeHealth.dismissWarning}
         onOpenStatus={() => { runtimeHealth.dismissWarning(); setView("status"); }}
+        onOpenCorpusLab={() => { runtimeHealth.dismissWarning(); setView("lab"); }}
+        degradedMessage={runtimeHealth.readiness?.corpus?.pending_embeddings
+          ? `${runtimeHealth.readiness.corpus.pending_embeddings.toLocaleString()} chunks still need embeddings. Open Corpus Lab and run Backfill embeddings.`
+          : runtimeHealth.readiness?.corpus?.schema_message || undefined}
       />
     </main>
   );
