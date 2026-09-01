@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
@@ -16,12 +17,14 @@ from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.runtime import RuntimeApiServices
 from app.llm.provider import LLMProvider, OpenAILLMProvider
+from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware
 from app.release.secrets import install_secret_redaction
 
 ProviderFactory = Callable[..., LLMProvider]
+ReadinessProbe = Callable[[], Awaitable[dict[str, Any]]]
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parents[2] / "web" / "out"
 PUBLIC_BASE_PATH = "/docreview-rag-agent"
 
@@ -53,6 +56,38 @@ class ReleaseInfo(BaseModel):
     max_output_tokens: int
     max_cost_usd: str
     public_daily_cost_usd: str
+
+
+class CorpusReadiness(BaseModel):
+    """Non-secret corpus readiness, including explicit unknown states."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    availability: Literal["ready", "degraded", "not_applicable", "unavailable"]
+    database_connected: bool | None = None
+    schema_status: str | None = None
+    schema_message: str | None = None
+    documents: int | None = None
+    chunks: int | None = None
+    embedded_chunks: int | None = None
+    pending_embeddings: int | None = None
+    bm25_ready: bool | None = None
+    writable: bool | None = None
+
+
+class ReleaseReadiness(BaseModel):
+    """Typed readiness for configured capabilities without provider probing."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["ready", "degraded"]
+    mode: Literal["canned", "runtime"]
+    admin_mode: AdminMode
+    policy_revision: str
+    models: dict[str, object]
+    review_enabled: bool
+    active_review_model: str | None
+    corpus: CorpusReadiness
 
 
 def build_runtime_services(
@@ -96,6 +131,7 @@ def create_release_app(
     *,
     services: RuntimeApiServices | None = None,
     static_dir: Path | None = None,
+    readiness_probe: ReadinessProbe | None = None,
 ) -> FastAPI:
     """Create one guarded API with an optional static Next.js service shell."""
     active_settings = settings or ReleaseSettings()
@@ -147,6 +183,85 @@ def create_release_app(
     async def release_info() -> ReleaseInfo:
         """Publish active limits without naming any credential."""
         return _release_info(active_settings)
+
+    async def default_readiness_probe() -> dict[str, Any]:
+        """Inspect runtime corpus state without creating or altering schema."""
+        from app.corpus_admin import RuntimeCorpusAdminService
+
+        return asdict(await RuntimeCorpusAdminService().snapshot())
+
+    @application.get(
+        "/ready",
+        response_model=ReleaseReadiness,
+        responses={503: {"model": ReleaseReadiness}},
+        tags=["release"],
+    )
+    async def readiness() -> ReleaseReadiness | JSONResponse:
+        """Report configured runtime readiness without contacting OpenAI."""
+        if active_settings.mode == "canned":
+            return ReleaseReadiness(
+                status="ready",
+                mode="canned",
+                admin_mode=active_settings.admin_mode,
+                policy_revision=POLICY_REVISION,
+                models=openai_policy_snapshot()["roles"],
+                review_enabled=False,
+                active_review_model=None,
+                corpus=CorpusReadiness(availability="not_applicable"),
+            )
+
+        probe = readiness_probe or default_readiness_probe
+        try:
+            snapshot = await probe()
+            raw_status = snapshot.get("status", {})
+            if not isinstance(raw_status, dict):
+                raise ValueError("corpus readiness status must be an object")
+            database_connected = raw_status.get("database_connected") is True
+            schema_status = str(raw_status.get("schema_status", "unavailable"))
+            documents = int(raw_status.get("documents", 0))
+            chunks = int(raw_status.get("chunks", 0))
+            pending_embeddings = int(raw_status.get("pending_embeddings", 0))
+            corpus_ready = (
+                database_connected
+                and schema_status == "compatible"
+                and documents > 0
+                and chunks > 0
+                and pending_embeddings == 0
+            )
+            corpus = CorpusReadiness(
+                availability="ready" if corpus_ready else "degraded",
+                database_connected=database_connected,
+                schema_status=schema_status,
+                schema_message=str(raw_status.get("schema_message", "")),
+                documents=documents,
+                chunks=chunks,
+                embedded_chunks=int(raw_status.get("embedded_chunks", 0)),
+                pending_embeddings=pending_embeddings,
+                bm25_ready=raw_status.get("bm25_ready") is True,
+                writable=raw_status.get("writable") is True,
+            )
+        except Exception as error:
+            corpus_ready = False
+            corpus = CorpusReadiness(
+                availability="unavailable",
+                schema_message=type(error).__name__,
+            )
+
+        payload = ReleaseReadiness(
+            status="ready" if corpus_ready else "degraded",
+            mode="runtime",
+            admin_mode=active_settings.admin_mode,
+            policy_revision=POLICY_REVISION,
+            models=openai_policy_snapshot()["roles"],
+            review_enabled=active_settings.openai_enabled,
+            active_review_model=(
+                active_settings.openai_model if active_settings.openai_enabled else None
+            ),
+            corpus=corpus,
+        )
+        if corpus_ready:
+            return payload
+        return JSONResponse(status_code=503, content=payload.model_dump(mode="json"))
 
     frontend = (static_dir or DEFAULT_STATIC_DIR).resolve()
     if frontend.is_dir():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 import math
 from types import MappingProxyType
 from typing import Annotated, Final, Literal, Self
@@ -62,11 +63,23 @@ class StepTrace(StrictSchema):
     api_url: NonBlank
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
+    cached_input_tokens: NonNegativeInt = 0
+    cache_write_input_tokens: NonNegativeInt = 0
+    reasoning_tokens: NonNegativeInt = 0
     estimated_cost_usd: NonNegativeDecimal
     request_time_ms: NonNegativeFloat
     llm_output: StrictStr
     retries: NonNegativeInt
     error: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def validate_usage_details(self) -> Self:
+        """Keep detailed token counters within their provider totals."""
+        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        if self.reasoning_tokens > self.output_tokens:
+            raise ValueError("reasoning_tokens must not exceed output_tokens")
+        return self
 
 
 class RunReport(StrictSchema):
@@ -78,6 +91,10 @@ class RunReport(StrictSchema):
     total_requests: NonNegativeInt
     total_input_tokens: NonNegativeInt
     total_output_tokens: NonNegativeInt
+    total_cached_input_tokens: NonNegativeInt = 0
+    total_cache_write_input_tokens: NonNegativeInt = 0
+    total_reasoning_tokens: NonNegativeInt = 0
+    total_estimated_cost_usd: NonNegativeDecimal = Decimal("0")
     total_time_seconds: NonNegativeFloat
     system_prompt: NonBlank
     node_path: tuple[WorkflowNode, ...]
@@ -155,7 +172,7 @@ def derived_totals(
     *,
     node_path: tuple[WorkflowNode, ...] | list[WorkflowNode],
     steps: tuple[StepTrace, ...] | list[StepTrace],
-) -> dict[str, int]:
+) -> dict[str, int | Decimal]:
     """Return the cumulative counters implied by the entered nodes and raw traces.
 
     The keys are ``RunReport`` field names, so this is the single definition both the
@@ -166,6 +183,13 @@ def derived_totals(
         "total_requests": sum(1 + trace.retries for trace in steps),
         "total_input_tokens": sum(trace.input_tokens for trace in steps),
         "total_output_tokens": sum(trace.output_tokens for trace in steps),
+        "total_cached_input_tokens": sum(trace.cached_input_tokens for trace in steps),
+        "total_cache_write_input_tokens": sum(trace.cache_write_input_tokens for trace in steps),
+        "total_reasoning_tokens": sum(trace.reasoning_tokens for trace in steps),
+        "total_estimated_cost_usd": sum(
+            (trace.estimated_cost_usd for trace in steps),
+            Decimal("0"),
+        ),
     }
 
 
@@ -212,6 +236,10 @@ def build_run_report(
         total_requests=totals["total_requests"],
         total_input_tokens=totals["total_input_tokens"],
         total_output_tokens=totals["total_output_tokens"],
+        total_cached_input_tokens=totals["total_cached_input_tokens"],
+        total_cache_write_input_tokens=totals["total_cache_write_input_tokens"],
+        total_reasoning_tokens=totals["total_reasoning_tokens"],
+        total_estimated_cost_usd=totals["total_estimated_cost_usd"],
         total_time_seconds=total_time_seconds,
         system_prompt=system_prompt,
         node_path=tuple(node_path),

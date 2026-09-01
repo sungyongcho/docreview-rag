@@ -18,6 +18,7 @@ from pydantic import (
 )
 from pydantic.functional_validators import model_validator
 
+from app.llm.schemas import NonNegativeDecimal
 from app.observability.persistence import redact_sensitive_text, sanitize_json
 from app.observability.types import (
     Budget,
@@ -213,6 +214,10 @@ class RunResponse(StrictApiModel):
     total_requests: NonnegativeInt
     total_input_tokens: NonnegativeInt
     total_output_tokens: NonnegativeInt
+    total_cached_input_tokens: NonnegativeInt
+    total_cache_write_input_tokens: NonnegativeInt
+    total_reasoning_tokens: NonnegativeInt
+    total_estimated_cost_usd: NonNegativeDecimal
     total_time_seconds: NonnegativeFloat
     system_prompt: NonBlank
     node_path: tuple[WorkflowNode, ...]
@@ -297,6 +302,10 @@ class RunResponse(StrictApiModel):
             total_requests=run.total_requests,
             total_input_tokens=run.total_input_tokens,
             total_output_tokens=run.total_output_tokens,
+            total_cached_input_tokens=run.total_cached_input_tokens,
+            total_cache_write_input_tokens=run.total_cache_write_input_tokens,
+            total_reasoning_tokens=run.total_reasoning_tokens,
+            total_estimated_cost_usd=run.total_estimated_cost_usd,
             total_time_seconds=run.total_time_seconds,
             system_prompt=redact_sensitive_text(run.system_prompt),
             node_path=run.node_path,

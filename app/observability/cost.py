@@ -9,19 +9,26 @@ from typing import Final
 
 from app.llm.schemas import TokenPricing
 from app.observability.types import StepTrace
+from app.openai_models import OpenAIModelRole, resolve_openai_model
+
 
 # Published launch prices are pinned so historical trace estimates never drift. The
 # mapping is read-only because rebinding is not the way the table would be corrupted.
+def _policy_price(role: OpenAIModelRole, model: str) -> TokenPricing:
+    """Convert one validated policy price into the generic budget schema."""
+    selection = resolve_openai_model(role, model)
+    return TokenPricing(
+        input_per_million_usd=selection.pricing.input_per_million_usd,
+        output_per_million_usd=selection.pricing.output_per_million_usd,
+        cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
+        cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
+    )
+
+
 MODEL_PRICES: Final[Mapping[str, TokenPricing]] = MappingProxyType(
     {
-        "gpt-4.1-mini": TokenPricing(
-            input_per_million_usd=Decimal("0.40"),
-            output_per_million_usd=Decimal("1.60"),
-        ),
-        "gpt-4.1-mini-2025-04-14": TokenPricing(
-            input_per_million_usd=Decimal("0.40"),
-            output_per_million_usd=Decimal("1.60"),
-        ),
+        "gpt-5.6-terra": _policy_price("review", "gpt-5.6-terra"),
+        "gpt-5.6-luna": _policy_price("translation", "gpt-5.6-luna"),
     }
 )
 
@@ -42,6 +49,8 @@ def estimate_cost_usd(
     input_tokens: int,
     output_tokens: int,
     *,
+    cached_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
     prices: Mapping[str, TokenPricing] | None = None,
 ) -> Decimal:
     """Estimate uncached token cost from a pinned price table.
@@ -84,7 +93,15 @@ def estimate_cost_usd(
         pricing = table[model_name]
     except KeyError as exc:
         raise UnknownModelPriceError(f"no pinned price for model {model_name!r}") from exc
-    return pricing.estimate(input_count, output_count)
+    return pricing.estimate(
+        input_count,
+        output_count,
+        cached_input_tokens=_token_count(cached_input_tokens, "cached_input_tokens"),
+        cache_write_input_tokens=_token_count(
+            cache_write_input_tokens,
+            "cache_write_input_tokens",
+        ),
+    )
 
 
 def estimate_trace_cost_usd(steps: tuple[StepTrace, ...] | list[StepTrace]) -> Decimal:

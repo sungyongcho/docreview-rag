@@ -747,7 +747,7 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Query-path variants to cross with every hybrid arm.",
     )
     parser.add_argument("--lexical-ranker", choices=LEXICAL_RANKERS, default="ts_rank_cd")
-    parser.add_argument("--translator-model", default="gpt-4.1-mini")
+    parser.add_argument("--translator-model", default="gpt-5.6-luna")
     parser.add_argument("-k", type=positive_int, default=5)
     parser.add_argument("--candidate-k", type=positive_int, default=20)
     parser.add_argument("--rrf-k", type=positive_int, default=DEFAULT_RRF_K)
@@ -842,9 +842,12 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
     """
     from app.llm.provider import OpenAILLMProvider
     from app.llm.schemas import TokenPricing
+    from app.openai_models import resolve_openai_model
 
+    selection = resolve_openai_model("translation", model_name)
     provider = OpenAILLMProvider(
-        model_name=model_name,
+        model_name=selection.model,
+        role="translation",
         api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
     )
     budget = ProviderBudget(
@@ -852,8 +855,10 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
         max_output_tokens=TRANSLATION_MAX_OUTPUT_TOKENS,
         max_cost_usd=Decimal("0.05"),
         pricing=TokenPricing(
-            input_per_million_usd=Decimal("0.4"),
-            output_per_million_usd=Decimal("1.6"),
+            input_per_million_usd=selection.pricing.input_per_million_usd,
+            output_per_million_usd=selection.pricing.output_per_million_usd,
+            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
+            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
         ),
     )
     return provider, budget

@@ -115,6 +115,7 @@ def _payload(
     lexical_ranker: LexicalRanker = "ts_rank_cd",
     route_by_language: bool = False,
     bm25_stats: TermStatCounts | None = None,
+    embedding_usage: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build JSON output without exposing component-native scores.
 
@@ -124,6 +125,7 @@ def _payload(
         "query": query,
         "provider": provider,
         "backfill": asdict(backfill) if backfill is not None else None,
+        "embedding_usage": embedding_usage,
         "lexical_ranker": lexical_ranker,
         "route_by_language": route_by_language,
         "bm25_stats": asdict(bm25_stats) if bm25_stats is not None else None,
@@ -223,6 +225,15 @@ async def _run(
             lexical_ranker=lexical_ranker,
             route_by_language=route_by_language,
             bm25_stats=bm25_stats,
+            embedding_usage=(
+                {
+                    "requests": provider.usage.requests,
+                    "input_tokens": provider.usage.input_tokens,
+                    "estimated_cost_usd": format(provider.usage.estimated_cost_usd, "f"),
+                }
+                if hasattr(provider, "usage")
+                else None
+            ),
         )
     finally:
         await engine.dispose()

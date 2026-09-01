@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
@@ -19,10 +21,13 @@ from app.api.admin_schemas import (
     RetrievalProfile,
     ReviewPreviewRequest,
     ReviewPreviewResponse,
+    UsageModelResource,
+    UsageResponse,
 )
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import EvidenceHit, ReviewRequest, RunResponse
 from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
+from app.db.models import Run, Trace
 from app.evals.admin import EvaluationAdminService
 from app.evals.arms import make_retriever
 from app.retrieval.cross_encoder import CrossEncoderReranker
@@ -85,6 +90,66 @@ class RuntimeAdminApiServices:
     async def evaluation_jobs(self) -> EvaluationJobsResponse:
         """Return newest-first evaluation job state."""
         return await self._evaluations.jobs()
+
+    async def usage(self) -> UsageResponse:
+        """Aggregate locally persisted provider usage without contacting OpenAI."""
+        async with self._runtime.session_factory() as session:
+            totals = (
+                await session.execute(
+                    select(
+                        func.count(Run.run_id),
+                        func.coalesce(func.sum(Run.total_requests), 0),
+                        func.coalesce(func.sum(Run.total_input_tokens), 0),
+                        func.coalesce(func.sum(Run.total_cached_input_tokens), 0),
+                        func.coalesce(func.sum(Run.total_cache_write_input_tokens), 0),
+                        func.coalesce(func.sum(Run.total_output_tokens), 0),
+                        func.coalesce(func.sum(Run.total_reasoning_tokens), 0),
+                        func.coalesce(func.sum(Run.total_estimated_cost_usd), Decimal("0")),
+                        func.max(Run.created_at),
+                    )
+                )
+            ).one()
+            model_rows = (
+                await session.execute(
+                    select(
+                        Trace.model_name,
+                        func.sum(1 + Trace.retries),
+                        func.sum(Trace.input_tokens),
+                        func.sum(Trace.cached_input_tokens),
+                        func.sum(Trace.cache_write_input_tokens),
+                        func.sum(Trace.output_tokens),
+                        func.sum(Trace.reasoning_tokens),
+                        func.sum(Trace.estimated_cost_usd),
+                    )
+                    .group_by(Trace.model_name)
+                    .order_by(Trace.model_name)
+                )
+            ).all()
+        models = tuple(
+            UsageModelResource(
+                model_name=row[0],
+                requests=int(row[1] or 0),
+                input_tokens=int(row[2] or 0),
+                cached_input_tokens=int(row[3] or 0),
+                cache_write_input_tokens=int(row[4] or 0),
+                output_tokens=int(row[5] or 0),
+                reasoning_tokens=int(row[6] or 0),
+                estimated_cost_usd=Decimal(row[7] or 0),
+            )
+            for row in model_rows
+        )
+        return UsageResponse(
+            runs=int(totals[0] or 0),
+            requests=int(totals[1] or 0),
+            input_tokens=int(totals[2] or 0),
+            cached_input_tokens=int(totals[3] or 0),
+            cache_write_input_tokens=int(totals[4] or 0),
+            output_tokens=int(totals[5] or 0),
+            reasoning_tokens=int(totals[6] or 0),
+            estimated_cost_usd=Decimal(totals[7] or 0),
+            latest_run_at=totals[8],
+            models=models,
+        )
 
     async def evaluation_job(self, job_id: str) -> EvaluationJobResource | None:
         """Return one evaluation job when known."""

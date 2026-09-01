@@ -1,6 +1,7 @@
 """Hand-rolled Thought → Tool → Observation loop with fail-closed budgets."""
 
 from collections.abc import Callable, Mapping
+from decimal import Decimal
 import functools
 import time
 from typing import Any
@@ -300,6 +301,10 @@ async def run_agent(
     evidence: dict[int, AgentCitation] = {}
     total_input = 0
     total_output = 0
+    total_cached_input = 0
+    total_cache_write_input = 0
+    total_reasoning = 0
+    total_cost = Decimal("0")
     started = wall_clock()
 
     def elapsed() -> float:
@@ -324,6 +329,10 @@ async def run_agent(
                 "iterations": len(steps),
                 "total_input_tokens": total_input,
                 "total_output_tokens": total_output,
+                "total_cached_input_tokens": total_cached_input,
+                "total_cache_write_input_tokens": total_cache_write_input,
+                "total_reasoning_tokens": total_reasoning,
+                "total_estimated_cost_usd": total_cost,
                 "total_time_seconds": elapsed(),
                 "steps": tuple(steps),
             }
@@ -352,10 +361,11 @@ async def run_agent(
     while len(steps) < limits.max_iterations:
         remaining_output = limits.max_total_output_tokens - total_output
         out_of_input = total_input >= limits.max_total_input_tokens
-        if out_of_input or remaining_output < MIN_TURN_OUTPUT_TOKENS:
+        out_of_cost = total_cost >= limits.max_total_cost_usd
+        if out_of_input or out_of_cost or remaining_output < MIN_TURN_OUTPUT_TOKENS:
             return finish(
                 "budget_exceeded",
-                failure="token budget exhausted before the run could finish",
+                failure="token budget or cost budget exhausted before the run could finish",
             )
         _compact_exchanges(input_items, exchange_ends)
         request_started = wall_clock()
@@ -376,17 +386,32 @@ async def run_agent(
             raise ValueError("agent wall clock must be monotonic")
         total_input += turn.input_tokens
         total_output += turn.output_tokens
+        total_cached_input += turn.cached_input_tokens
+        total_cache_write_input += turn.cache_write_input_tokens
+        total_reasoning += turn.reasoning_tokens
+        turn_cost = provider.pricing.estimate(
+            turn.input_tokens,
+            turn.output_tokens,
+            cached_input_tokens=turn.cached_input_tokens,
+            cache_write_input_tokens=turn.cache_write_input_tokens,
+        )
+        total_cost += turn_cost
         usage = StepUsage(
             model_name=provider.model_name,
             api_url=provider.api_url,
             input_tokens=turn.input_tokens,
             output_tokens=turn.output_tokens,
+            cached_input_tokens=turn.cached_input_tokens,
+            cache_write_input_tokens=turn.cache_write_input_tokens,
+            reasoning_tokens=turn.reasoning_tokens,
+            estimated_cost_usd=turn_cost,
             request_time_ms=request_ms,
         )
 
         if (
             total_input > limits.max_total_input_tokens
             or total_output > limits.max_total_output_tokens
+            or total_cost > limits.max_total_cost_usd
         ):
             record_step(turn, (), usage)
             return finish(

@@ -23,6 +23,8 @@ from tests.live_postgres import live_postgres_unavailable
 
 
 class _ConnectionContext:
+    """Async context manager returning one mocked database connection."""
+
     def __init__(self, connection: AsyncMock) -> None:
         self.connection = connection
 
@@ -72,6 +74,7 @@ def test_schema_drift_error_lists_tables_columns_and_remedy() -> None:
     assert "'documents' is missing columns: language, registry" in message
     assert "DROP TABLE chunks CASCADE" in message
     assert "DROP TABLE documents CASCADE" in message
+    assert "app.db.migrate --plan" in message
     assert "--create-schema" in message
 
 

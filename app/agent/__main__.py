@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 from collections.abc import Sequence
+from decimal import Decimal, InvalidOperation
 import json
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,17 @@ def _bounded_int(name: str, ceiling: int, value: str) -> int:
     return parsed
 
 
+def _positive_decimal(name: str, value: str) -> Decimal:
+    """Parse one finite positive decimal command-line allowance."""
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as error:
+        raise argparse.ArgumentTypeError(f"{name} must be a decimal") from error
+    if not parsed.is_finite() or parsed <= 0:
+        raise argparse.ArgumentTypeError(f"{name} must be greater than zero")
+    return parsed
+
+
 def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse agent acceptance arguments."""
     parser = argparse.ArgumentParser(description="Run the evidence-checked filing agent.")
@@ -50,7 +62,17 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "answers NOT_IN_DOCS; openai runs the real tool-calling loop."
         ),
     )
-    parser.add_argument("--model", default="gpt-5-mini", help="OpenAI model for --provider openai.")
+    parser.add_argument(
+        "--model",
+        default="gpt-5.6-terra",
+        help="Policy-approved OpenAI model for --provider openai.",
+    )
+    parser.add_argument(
+        "--max-cost-usd",
+        type=lambda value: _positive_decimal("--max-cost-usd", value),
+        default=Decimal("0.25"),
+        help="Cumulative OpenAI cost ceiling for one agent run.",
+    )
     parser.add_argument(
         "--max-iterations",
         type=lambda value: _bounded_int("--max-iterations", MAX_ITERATIONS_CEILING, value),
@@ -158,7 +180,10 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             args.question,
             registry=registry,
             provider=provider,
-            budget=AgentBudget(max_iterations=args.max_iterations),
+            budget=AgentBudget(
+                max_iterations=args.max_iterations,
+                max_total_cost_usd=args.max_cost_usd,
+            ),
         )
     finally:
         if openai_provider is not None:

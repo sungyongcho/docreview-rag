@@ -1,5 +1,6 @@
 """Strict value objects for the M9 tool-calling agent."""
 
+from decimal import Decimal
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, StrictInt, StrictStr
@@ -8,6 +9,7 @@ from pydantic.functional_validators import model_validator
 from app.llm.schemas import (
     AnswerLabel,
     NonBlank,
+    NonNegativeDecimal,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveInt,
@@ -28,6 +30,7 @@ class AgentBudget(StrictSchema):
     max_iterations: Annotated[StrictInt, Field(gt=0, le=64)] = 8
     max_total_input_tokens: PositiveInt = 60_000
     max_total_output_tokens: PositiveInt = 8_000
+    max_total_cost_usd: NonNegativeDecimal = Decimal("0.25")
 
 
 class ToolCall(StrictSchema):
@@ -67,8 +70,21 @@ class StepUsage(StrictSchema):
     api_url: NonBlank
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
+    cached_input_tokens: NonNegativeInt = 0
+    cache_write_input_tokens: NonNegativeInt = 0
+    reasoning_tokens: NonNegativeInt = 0
+    estimated_cost_usd: NonNegativeDecimal = Decimal("0")
     request_time_ms: NonNegativeFloat
     retries: NonNegativeInt = 0
+
+    @model_validator(mode="after")
+    def validate_usage_details(self) -> Self:
+        """Keep detailed token counters within their provider totals."""
+        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        if self.reasoning_tokens > self.output_tokens:
+            raise ValueError("reasoning_tokens must not exceed output_tokens")
+        return self
 
 
 class AgentStep(StrictSchema):
@@ -155,6 +171,10 @@ class AgentResult(StrictSchema):
     iterations: NonNegativeInt
     total_input_tokens: NonNegativeInt
     total_output_tokens: NonNegativeInt
+    total_cached_input_tokens: NonNegativeInt = 0
+    total_cache_write_input_tokens: NonNegativeInt = 0
+    total_reasoning_tokens: NonNegativeInt = 0
+    total_estimated_cost_usd: NonNegativeDecimal = Decimal("0")
     total_time_seconds: NonNegativeFloat
     steps: tuple[AgentStep, ...]
 

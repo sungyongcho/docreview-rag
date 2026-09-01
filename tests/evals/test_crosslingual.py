@@ -10,8 +10,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.evals import arms, crosslingual
+import app.evals.arms as arms
 from app.evals.bilingual import BilingualSuite
+import app.evals.crosslingual as crosslingual
 from app.evals.crosslingual import (
     CROSSLINGUAL_SUITE,
     CROSSLINGUAL_TARGET_TEXT_CHARS,
@@ -257,6 +258,7 @@ def test_lexical_coverage_counts_the_collapse_instead_of_assuming_it():
     cases = suite().ko
 
     async def latin_only(query: str, k: int):
+        """Return one candidate only for the Latin-bearing Korean question."""
         # Korean questions still carry Latin tokens, and the English tsquery can match
         # them, so the collapse is partial. The number says how partial.
         return [hit(1, start=100)] if "AMD" in query else []
@@ -294,7 +296,10 @@ def scripted(monkeypatch, per_language):
     """Replace ``make_retriever`` with a scripted, database-free retriever."""
 
     def factory(session, **kwargs):
+        """Build one scripted retriever for the requested language."""
+
         async def retriever(query: str, k: int):
+            """Return the scripted hits for the query language."""
             language = (
                 "ko" if any(question == query for _, question in QUESTIONS.values()) else "en"
             )
@@ -353,6 +358,7 @@ def test_handling_selects_the_query_path_through_one_shared_retriever(monkeypatc
     calls = []
 
     async def fake_retrieve(session, query, **kwargs):
+        """Record routing and BM25 options while returning one hit."""
         calls.append((kwargs["route_by_language"], kwargs["lexical_ranker"], kwargs["bm25_k1"]))
         return SimpleNamespace(hits=(hit(1, start=100),))
 
@@ -377,7 +383,10 @@ def test_translated_handling_rewrites_the_query_and_records_what_it_sent(monkeyp
     scripted(monkeypatch, {"en": [hit(1, start=100)], "ko": []})
 
     def factory(session, **kwargs):
+        """Build a retriever that records the translated query."""
+
         async def retriever(query: str, k: int):
+            """Record the query and return one relevant hit."""
             seen.append(query)
             return [hit(1, start=100)]
 
@@ -386,6 +395,7 @@ def test_translated_handling_rewrites_the_query_and_records_what_it_sent(monkeyp
     monkeypatch.setattr(crosslingual, "make_retriever", factory)
 
     async def fake_translate(query, *, llm_provider, provider_budget, target_language="en"):
+        """Return a fixed validated English translation."""
         return SimpleNamespace(translated_query="AMD revenue?", source_language="ko")
 
     monkeypatch.setattr(crosslingual, "translate_query", fake_translate)
@@ -528,10 +538,10 @@ def test_the_translation_boundary_resolves_its_deferred_sdk_import():
     # boundary here is what makes a moved or renamed SDK symbol fail a test rather
     # than every invocation of the command.
     provider, budget = crosslingual.translation_boundary(
-        "gpt-4.1-mini", Settings(openai_api_key=SecretStr("sk-not-a-real-key"))
+        "gpt-5.6-luna", Settings(openai_api_key=SecretStr("sk-not-a-real-key"))
     )
     try:
-        assert provider.model_name == "gpt-4.1-mini"
+        assert provider.model_name == "gpt-5.6-luna"
         assert budget.max_input_tokens == crosslingual.TRANSLATION_MAX_INPUT_TOKENS
         assert budget.max_output_tokens == crosslingual.TRANSLATION_MAX_OUTPUT_TOKENS
     finally:
@@ -711,9 +721,11 @@ def test_every_arm_pins_its_corpus_language_filter(monkeypatch):
     seen = {}
 
     def factory(_session, **kwargs):
+        """Capture the bound corpus filter and return an empty retriever."""
         seen.update(kwargs)
 
         async def run(_query, _k):
+            """Return no hits for the filter-binding assertion."""
             return ()
 
         return run

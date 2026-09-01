@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 import hashlib
 import math
 import re
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db.models import Chunk
+from app.openai_models import resolve_openai_model
 from app.retrieval.types import finite_float
 
 
@@ -190,6 +192,15 @@ class DeterministicEmbeddingProvider(EmbeddingProvider):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class EmbeddingUsage:
+    """Cumulative OpenAI embedding usage and exact estimated cost."""
+
+    requests: int = 0
+    input_tokens: int = 0
+    estimated_cost_usd: Decimal = Decimal("0")
+
+
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     """OpenAI embedding provider with explicit output dimensions."""
 
@@ -201,12 +212,15 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         client: EmbeddingClient | None = None,
         api_key: str | None = None,
     ) -> None:
-        if not model:
-            raise ValueError("embedding model must be nonempty")
-        if dimensions <= 0:
-            raise ValueError("embedding dimensions must be positive")
-        self.model = model
+        selection = resolve_openai_model("embedding", model)
+        if dimensions != selection.dimensions:
+            raise ValueError(
+                f"embedding dimensions must be {selection.dimensions} for {selection.model}"
+            )
+        self.model = selection.model
         self.dimensions = dimensions
+        self._input_price = selection.pricing.input_per_million_usd
+        self._usage = EmbeddingUsage()
         if client is None:
             from openai import AsyncOpenAI
 
@@ -225,6 +239,10 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             dimensions=self.dimensions,
             encoding_format="float",
         )
+        usage = getattr(response, "usage", None)
+        input_tokens = getattr(usage, "prompt_tokens", None)
+        if not isinstance(input_tokens, int) or input_tokens < 0:
+            raise ValueError("OpenAI embedding response did not include token usage")
         by_index: dict[int, Sequence[float]] = {}
         for item in response.data:
             if not isinstance(item.index, int) or item.index in by_index:
@@ -233,11 +251,23 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         if set(by_index) != set(range(len(inputs))):
             raise ValueError("embedding provider returned incomplete response indices")
         ordered = [by_index[index] for index in range(len(inputs))]
-        return validate_embeddings(
+        vectors = validate_embeddings(
             ordered,
             expected_count=len(inputs),
             dimensions=self.dimensions,
         )
+        self._usage = EmbeddingUsage(
+            requests=self._usage.requests + 1,
+            input_tokens=self._usage.input_tokens + input_tokens,
+            estimated_cost_usd=self._usage.estimated_cost_usd
+            + Decimal(input_tokens) * self._input_price / Decimal(1_000_000),
+        )
+        return vectors
+
+    @property
+    def usage(self) -> EmbeddingUsage:
+        """Return cumulative usage for requests this provider instance issued."""
+        return self._usage
 
 
 def get_embedding_provider(

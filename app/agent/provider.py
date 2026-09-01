@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any, Self, cast
 
 from openai import AsyncOpenAI
@@ -9,7 +10,8 @@ from openai.types.responses import ResponseInputParam, ToolParam
 from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
-from app.llm.schemas import NonNegativeInt, StrictSchema
+from app.llm.schemas import NonNegativeInt, StrictSchema, TokenPricing
+from app.openai_models import resolve_openai_model
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
@@ -21,6 +23,9 @@ class ProviderTurn(StrictSchema):
     tool_calls: tuple[ToolCall, ...]
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
+    cached_input_tokens: NonNegativeInt = 0
+    cache_write_input_tokens: NonNegativeInt = 0
+    reasoning_tokens: NonNegativeInt = 0
     request_id: str | None = None
     incomplete: bool = False
 
@@ -30,6 +35,10 @@ class ProviderTurn(StrictSchema):
         call_ids = [call.call_id for call in self.tool_calls]
         if len(call_ids) != len(set(call_ids)):
             raise ValueError("provider tool call ids must be unique")
+        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        if self.reasoning_tokens > self.output_tokens:
+            raise ValueError("reasoning_tokens must not exceed output_tokens")
         return self
 
 
@@ -44,6 +53,7 @@ class ToolCallingProvider(ABC):
     provider_name: str
     model_name: str
     api_url: str
+    pricing: TokenPricing
 
     @abstractmethod
     async def turn(
@@ -84,6 +94,10 @@ class DeterministicToolProvider(ToolCallingProvider):
 
     provider_name = "deterministic"
     api_url = "deterministic://local"
+    pricing = TokenPricing(
+        input_per_million_usd=Decimal("0"),
+        output_per_million_usd=Decimal("0"),
+    )
 
     def __init__(
         self,
@@ -155,11 +169,17 @@ class OpenAIToolProvider(ToolCallingProvider):
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
-        if not model_name.strip():
-            raise ValueError("model_name must not be blank")
+        selection = resolve_openai_model("agent", model_name)
         if base_url is not None and not base_url.strip():
             raise ValueError("base_url must not be blank")
-        self.model_name = model_name
+        self.model_name = selection.model
+        self.reasoning_effort = selection.reasoning_effort
+        self.pricing = TokenPricing(
+            input_per_million_usd=selection.pricing.input_per_million_usd,
+            output_per_million_usd=selection.pricing.output_per_million_usd,
+            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
+            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
+        )
         if client is None:
             owned = AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
             self._owned_client: AsyncOpenAI | None = owned
@@ -233,6 +253,7 @@ class OpenAIToolProvider(ToolCallingProvider):
             input=cast(ResponseInputParam, list(input_items)),
             tools=cast(list[ToolParam], list(tools)),
             max_output_tokens=max_output_tokens,
+            reasoning={"effort": self.reasoning_effort},
             store=False,
         )
         usage = getattr(response, "usage", None)
@@ -240,12 +261,25 @@ class OpenAIToolProvider(ToolCallingProvider):
         output_tokens = getattr(usage, "output_tokens", None)
         if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
             raise ValueError("OpenAI response did not include token usage")
+        input_details = getattr(usage, "input_tokens_details", None)
+        output_details = getattr(usage, "output_tokens_details", None)
+        cached_input_tokens = getattr(input_details, "cached_tokens", 0)
+        cache_write_input_tokens = getattr(input_details, "cache_write_tokens", 0)
+        reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
+        if not all(
+            isinstance(value, int)
+            for value in (cached_input_tokens, cache_write_input_tokens, reasoning_tokens)
+        ):
+            raise ValueError("OpenAI response included invalid token usage details")
         output_text = getattr(response, "output_text", "")
         return ProviderTurn(
             output_text=output_text if isinstance(output_text, str) else "",
             tool_calls=_turn_tool_calls(response),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cached_input_tokens=cached_input_tokens,
+            cache_write_input_tokens=cache_write_input_tokens,
+            reasoning_tokens=reasoning_tokens,
             request_id=getattr(response, "id", None),
             incomplete=getattr(response, "status", None) == "incomplete",
         )

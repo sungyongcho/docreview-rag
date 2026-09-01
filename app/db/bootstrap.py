@@ -106,7 +106,8 @@ async def ensure_schema_compatibility(connection: AsyncConnection) -> None:
     drop_statements = " ".join(f"DROP TABLE {table} CASCADE;" for table in sorted(drift))
     raise SchemaDriftError(
         f"The live database schema is behind the ORM models: {details}. "
-        "This project migrates by rebuild, not by ALTER: rerun seeding with "
+        "Run `python -m app.db.migrate --plan` and apply a registered additive "
+        "migration when one covers this drift. If drift remains, rerun seeding with "
         "--recreate-schema, or drop the listed tables yourself "
         f"(e.g. {drop_statements}) and rerun with --create-schema; "
         "re-seeding restores all derived state."

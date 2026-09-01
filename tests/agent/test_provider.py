@@ -31,7 +31,7 @@ def openai_provider(response):
     """Build the OpenAI adapter around one staged response."""
     responses = FakeResponses(response)
     provider = OpenAIToolProvider(
-        model_name="test-agent-model",
+        model_name="gpt-5.6-terra",
         client=cast(AsyncOpenAI, SimpleNamespace(responses=responses)),
     )
     return provider, responses
@@ -83,6 +83,7 @@ def test_openai_adapter_sends_tools_and_parses_function_calls():
     assert call["tools"] == specs
     assert call["store"] is False
     assert call["max_output_tokens"] == 64
+    assert call["reasoning"] == {"effort": "medium"}
     assert result.tool_calls[0].name == "search_filings"
     assert result.tool_calls[0].arguments_json == '{"query":"revenue"}'
     assert result.request_id == "resp-1"
@@ -140,7 +141,7 @@ def test_openai_adapter_wires_base_url_and_disables_hidden_sdk_retries(monkeypat
     monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
 
     provider = OpenAIToolProvider(
-        model_name="test-agent-model",
+        model_name="gpt-5.6-terra",
         api_key="sk-test",
         base_url="https://gateway.example/v1",
     )
@@ -149,7 +150,7 @@ def test_openai_adapter_wires_base_url_and_disables_hidden_sdk_retries(monkeypat
     assert captured["base_url"] == "https://gateway.example/v1"
     assert provider.api_url == "https://gateway.example/v1/responses"
 
-    OpenAIToolProvider(model_name="test-agent-model", api_key="sk-test")
+    OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
     assert captured["base_url"] is None
 
 
@@ -173,12 +174,12 @@ def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):
     module = sys.modules[OpenAIToolProvider.__module__]
     monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
 
-    owned = OpenAIToolProvider(model_name="test-agent-model", api_key="sk-test")
+    owned = OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
     asyncio.run(owned.aclose())
     assert closed == [True]
 
     injected = OpenAIToolProvider(
-        model_name="test-agent-model",
+        model_name="gpt-5.6-terra",
         client=cast(AsyncOpenAI, SimpleNamespace(responses=SimpleNamespace())),
     )
     asyncio.run(injected.aclose())

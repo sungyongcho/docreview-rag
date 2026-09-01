@@ -45,6 +45,7 @@ from app.observability.persistence import (
     report_to_records,
 )
 from app.observability.types import JsonObject, RunReport, StepTrace
+from app.openai_models import resolve_openai_model
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingProvider,
@@ -536,12 +537,10 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
     if configured.review_model is not None:
         from app.llm.provider import OpenAILLMProvider
 
-        input_price = configured.review_input_price_per_million_usd
-        output_price = configured.review_output_price_per_million_usd
-        if input_price is None or output_price is None:
-            raise ValueError("review pricing must be configured with the review model")
+        selection = resolve_openai_model("review", configured.review_model)
         llm_provider = OpenAILLMProvider(
-            model_name=configured.review_model,
+            model_name=selection.model,
+            role="review",
             api_key=(
                 configured.openai_api_key.get_secret_value()
                 if configured.openai_api_key is not None
@@ -553,8 +552,12 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
             max_output_tokens=configured.review_max_output_tokens,
             max_cost_usd=configured.review_max_cost_usd,
             pricing=TokenPricing(
-                input_per_million_usd=input_price,
-                output_per_million_usd=output_price,
+                input_per_million_usd=selection.pricing.input_per_million_usd,
+                output_per_million_usd=selection.pricing.output_per_million_usd,
+                cached_input_per_million_usd=(selection.pricing.cached_input_per_million_usd),
+                cache_write_input_per_million_usd=(
+                    selection.pricing.cache_write_input_per_million_usd
+                ),
             ),
         )
     secret_values = tuple(

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictBool,
@@ -36,6 +38,12 @@ type CorpusOperationKind = Literal[
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
 FinitePositive = Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)]
 UnitFloat = Annotated[StrictFloat, Field(ge=0, le=1, allow_inf_nan=False)]
+NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
+
+
+def _tuple_from_json_array(value: object) -> object:
+    """Normalize the JSON array representation without coercing child values."""
+    return tuple(value) if isinstance(value, list) else value
 
 
 class StrictAdminModel(BaseModel):
@@ -99,9 +107,18 @@ class EvaluationRunRequest(StrictAdminModel):
     suite_id: GoldenSuiteId
     mode: EvaluationMode = "quick"
     profile: RetrievalProfile = Field(default_factory=RetrievalProfile)
-    target_text_chars: tuple[PositiveInt, ...] = (500, 1200)
-    strategies: tuple[RetrievalStrategy, ...] = ("lexical", "vector", "hybrid")
-    lexical_rankers: tuple[LexicalRanker, ...] = ("ts_rank_cd", "bm25")
+    target_text_chars: Annotated[
+        tuple[PositiveInt, ...],
+        BeforeValidator(_tuple_from_json_array),
+    ] = (500, 1200)
+    strategies: Annotated[
+        tuple[RetrievalStrategy, ...],
+        BeforeValidator(_tuple_from_json_array),
+    ] = ("lexical", "vector", "hybrid")
+    lexical_rankers: Annotated[
+        tuple[LexicalRanker, ...],
+        BeforeValidator(_tuple_from_json_array),
+    ] = ("ts_rank_cd", "bm25")
 
     @model_validator(mode="after")
     def validate_matrix(self) -> Self:
@@ -125,8 +142,14 @@ class CorpusOperationRequest(StrictAdminModel):
     """One safe corpus operation accepted by the local operator API."""
 
     kind: CorpusOperationKind
-    identifiers: tuple[str, ...] = ()
-    years: tuple[PositiveInt, ...] = ()
+    identifiers: Annotated[
+        tuple[str, ...],
+        BeforeValidator(_tuple_from_json_array),
+    ] = ()
+    years: Annotated[
+        tuple[PositiveInt, ...],
+        BeforeValidator(_tuple_from_json_array),
+    ] = ()
     manifest: str | None = None
     expected_documents: PositiveInt | None = None
 
@@ -154,6 +177,34 @@ class EvaluationJobsResponse(StrictAdminModel):
     """Newest-first bounded evaluation job collection."""
 
     jobs: tuple[EvaluationJobResource, ...]
+
+
+class UsageModelResource(StrictAdminModel):
+    """One model's locally recorded token and estimated-cost totals."""
+
+    model_name: str
+    requests: NonnegativeInt
+    input_tokens: NonnegativeInt
+    cached_input_tokens: NonnegativeInt
+    cache_write_input_tokens: NonnegativeInt
+    output_tokens: NonnegativeInt
+    reasoning_tokens: NonnegativeInt
+    estimated_cost_usd: Decimal = Field(ge=0, allow_inf_nan=False)
+
+
+class UsageResponse(StrictAdminModel):
+    """Locally accounted provider usage without an OpenAI account API call."""
+
+    runs: NonnegativeInt
+    requests: NonnegativeInt
+    input_tokens: NonnegativeInt
+    cached_input_tokens: NonnegativeInt
+    cache_write_input_tokens: NonnegativeInt
+    output_tokens: NonnegativeInt
+    reasoning_tokens: NonnegativeInt
+    estimated_cost_usd: Decimal = Field(ge=0, allow_inf_nan=False)
+    latest_run_at: datetime | None
+    models: tuple[UsageModelResource, ...]
 
 
 class RetrievalPreviewRequest(StrictAdminModel):

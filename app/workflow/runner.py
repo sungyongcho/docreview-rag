@@ -153,10 +153,15 @@ def _reasons_json(state: WorkflowState) -> list[JsonValue]:
     return [reason.model_dump(mode="json") for reason in state.reasons]
 
 
-def _used_tokens(state: WorkflowState) -> tuple[int, int]:
-    """Return the input and output tokens the run's traces already account for."""
+def _used_tokens(state: WorkflowState) -> tuple[int, int, int, int]:
+    """Return total and priced-detail input tokens already consumed."""
     totals = derived_totals(node_path=state.node_path, steps=state.steps)
-    return totals["total_input_tokens"], totals["total_output_tokens"]
+    return (
+        totals["total_input_tokens"],
+        totals["total_output_tokens"],
+        totals["total_cached_input_tokens"],
+        totals["total_cache_write_input_tokens"],
+    )
 
 
 def _effective_provider_budget(request: WorkflowRequest) -> ProviderBudget:
@@ -211,11 +216,13 @@ def _provider_allowance(
     ``ProviderBudget.exhausted_by`` is the single definition of exhaustion, so the
     refusal this returns and the one the provider raises mid-call cannot disagree.
     """
-    used_input, used_output = _used_tokens(state)
+    used_input, used_output, used_cached, used_cache_write = _used_tokens(state)
     effective = _effective_provider_budget(request)
     if exceeded := effective.exhausted_by(
         input_tokens=used_input,
         output_tokens=used_output,
+        cached_input_tokens=used_cached,
+        cache_write_input_tokens=used_cache_write,
         attempts=1,
         inclusive=True,
     ):
@@ -225,7 +232,12 @@ def _provider_allowance(
             attempts=1,
             details=(f"{exceeded.which}: used={exceeded.used} limit={exceeded.limit}",),
         )
-    spent = effective.pricing.estimate(used_input, used_output)
+    spent = effective.pricing.estimate(
+        used_input,
+        used_output,
+        cached_input_tokens=used_cached,
+        cache_write_input_tokens=used_cache_write,
+    )
     return ProviderBudget(
         max_input_tokens=effective.max_input_tokens - used_input,
         max_output_tokens=effective.max_output_tokens - used_output,

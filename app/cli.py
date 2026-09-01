@@ -307,6 +307,15 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
         "query": args.query,
         "provider": settings.embedding_provider,
         "backfill": asdict(backfill) if backfill is not None else None,
+        "embedding_usage": (
+            {
+                "requests": provider.usage.requests,
+                "input_tokens": provider.usage.input_tokens,
+                "estimated_cost_usd": format(provider.usage.estimated_cost_usd, "f"),
+            }
+            if hasattr(provider, "usage")
+            else None
+        ),
         "hits": [_evidence_payload(hit) for hit in result.hits],
         "component_rankings": result.component_rankings.model_dump(mode="json"),
     }

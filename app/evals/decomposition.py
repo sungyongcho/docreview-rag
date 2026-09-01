@@ -6,6 +6,7 @@ import argparse
 import asyncio
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -192,7 +193,7 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--suite", default="m9-decomposition-v1")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
-    parser.add_argument("--model", default="gpt-5-mini")
+    parser.add_argument("--model", default="gpt-5.6-terra")
     parser.add_argument("-k", type=positive_int, default=5)
     parser.add_argument("--candidate-k", type=positive_int, default=20)
     parser.add_argument("--rrf-k", type=positive_int, default=DEFAULT_RRF_K)
@@ -209,15 +210,16 @@ def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, Provider
     for its pure comparison helpers never loads it. The key travels through
     ``Settings`` exactly as it does for the embedding provider.
     """
-    from decimal import Decimal
-
     from app.config import get_settings
     from app.llm.provider import OpenAILLMProvider
     from app.llm.schemas import ProviderBudget, TokenPricing
+    from app.openai_models import resolve_openai_model
 
     settings = get_settings()
+    selection = resolve_openai_model("decomposition", model_name)
     provider = OpenAILLMProvider(
-        model_name=model_name,
+        model_name=selection.model,
+        role="decomposition",
         api_key=(settings.openai_api_key.get_secret_value() if settings.openai_api_key else None),
     )
     budget = ProviderBudget(
@@ -225,8 +227,10 @@ def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, Provider
         max_output_tokens=DECOMPOSITION_MAX_OUTPUT_TOKENS,
         max_cost_usd=Decimal("0.05"),
         pricing=TokenPricing(
-            input_per_million_usd=Decimal("0.4"),
-            output_per_million_usd=Decimal("1.6"),
+            input_per_million_usd=selection.pricing.input_per_million_usd,
+            output_per_million_usd=selection.pricing.output_per_million_usd,
+            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
+            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
         ),
     )
     return provider, budget

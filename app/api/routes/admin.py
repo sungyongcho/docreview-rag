@@ -16,6 +16,7 @@ from app.api.admin_schemas import (
     RetrievalPreviewResponse,
     ReviewPreviewRequest,
     ReviewPreviewResponse,
+    UsageResponse,
 )
 from app.api.errors import not_found, translate_runtime_errors
 from app.api.schemas import ErrorResponse
@@ -85,6 +86,13 @@ async def enqueue_evaluation(
 async def evaluation_runs(services: AdminServices) -> EvaluationJobsResponse:
     """Return newest-first evaluation job state."""
     return await services.evaluation_jobs()
+
+
+@router.get("/usage", response_model=UsageResponse)
+async def provider_usage(services: AdminServices) -> UsageResponse:
+    """Return locally persisted token and estimated-cost totals."""
+    async with translate_runtime_errors():
+        return await services.usage()
 
 
 @router.get(

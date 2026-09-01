@@ -21,7 +21,7 @@ from app.demo import (
     render_result,
 )
 from app.observability.cost import estimate_cost_usd
-from app.observability.types import JsonObject, RunReport, RunStatus, StepTrace, WorkflowNode
+from app.observability.types import JsonObject, RunReport, RunStatus, StepTrace, build_run_report
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
@@ -64,14 +64,10 @@ def _run_report(
     steps: tuple[StepTrace, ...] = (),
 ) -> RunReport:
     """Build one run report around the given payload and traces."""
-    node_path = cast(tuple[WorkflowNode, ...], tuple(step.node for step in steps))
-    return RunReport(
+    node_path = tuple(step.node for step in steps)
+    return build_run_report(
         run_id="demo-run",
         status=status,
-        iterations=len(node_path),
-        total_requests=sum(1 + step.retries for step in steps),
-        total_input_tokens=sum(step.input_tokens for step in steps),
-        total_output_tokens=sum(step.output_tokens for step in steps),
         total_time_seconds=0.1,
         system_prompt="Use only retrieved evidence.",
         node_path=node_path,
@@ -246,11 +242,11 @@ def test_runtime_review_uses_typed_answer_citations_and_cost() -> None:
     trace = StepTrace(
         step=1,
         node="check",
-        model_name="gpt-4.1-mini",
+        model_name="gpt-5.6-terra",
         api_url="https://example.test/responses",
         input_tokens=10,
         output_tokens=5,
-        estimated_cost_usd=estimate_cost_usd("gpt-4.1-mini", 10, 5),
+        estimated_cost_usd=estimate_cost_usd("gpt-5.6-terra", 10, 5),
         request_time_ms=1.0,
         llm_output="{}",
         retries=0,
@@ -275,7 +271,7 @@ def test_runtime_review_uses_typed_answer_citations_and_cost() -> None:
     assert result.supported is True
     assert tuple(item.chunk_id for item in result.evidence) == (hit.chunk_id,)
     assert result.trace.status == "ok"
-    assert result.trace.estimated_cost_usd == "0.000012"
+    assert result.trace.estimated_cost_usd == "0.00008"
 
 
 def test_runtime_review_not_in_docs_discards_retrieval_candidates() -> None:

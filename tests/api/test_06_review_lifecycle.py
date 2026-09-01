@@ -195,9 +195,7 @@ def test_build_runtime_services_composes_from_settings():
             "query_language_routing": True,
             "bm25_k1": 1.4,
             "openai_api_key": "sk-review-test-key",
-            "review_model": "gpt-5-mini",
-            "review_input_price_per_million_usd": Decimal("0.25"),
-            "review_output_price_per_million_usd": Decimal("2.0"),
+            "review_model": "gpt-5.6-terra",
         }
     )
 
@@ -208,9 +206,9 @@ def test_build_runtime_services_composes_from_settings():
     assert services._route_by_language is True
     assert services._bm25_k1 == 1.4
     assert isinstance(services._llm_provider, OpenAILLMProvider)
-    assert services._llm_provider.model_name == "gpt-5-mini"
+    assert services._llm_provider.model_name == "gpt-5.6-terra"
     assert services._provider_budget is not None
-    assert services._provider_budget.pricing.output_per_million_usd == Decimal("2.0")
+    assert services._provider_budget.pricing.output_per_million_usd == Decimal("12.0")
     assert "sk-review-test-key" in services._secret_values
     assert services._corpus_root == settings.corpus_dir
 

@@ -239,6 +239,10 @@ class Run(Base):
     total_requests: Mapped[int] = mapped_column(nullable=False)
     total_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
     total_output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_cached_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_cache_write_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_reasoning_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_estimated_cost_usd: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
     total_time_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     node_path: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
@@ -256,6 +260,22 @@ class Run(Base):
         CheckConstraint("total_requests >= 0", name="ck_runs_requests_nonnegative"),
         CheckConstraint("total_input_tokens >= 0", name="ck_runs_input_tokens_nonnegative"),
         CheckConstraint("total_output_tokens >= 0", name="ck_runs_output_tokens_nonnegative"),
+        CheckConstraint(
+            "total_cached_input_tokens >= 0",
+            name="ck_runs_cached_input_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "total_cache_write_input_tokens >= 0",
+            name="ck_runs_cache_write_input_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "total_reasoning_tokens >= 0",
+            name="ck_runs_reasoning_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "total_estimated_cost_usd >= 0",
+            name="ck_runs_cost_nonnegative",
+        ),
         CheckConstraint("total_time_seconds >= 0", name="ck_runs_time_nonnegative"),
         CheckConstraint("btrim(system_prompt) <> ''", name="ck_runs_system_prompt_nonempty"),
         CheckConstraint("jsonb_typeof(node_path) = 'array'", name="ck_runs_node_path_array"),
@@ -282,6 +302,9 @@ class Trace(Base):
     api_url: Mapped[str] = mapped_column(Text, nullable=False)
     input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cached_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cache_write_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reasoning_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
     estimated_cost_usd: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
     request_time_ms: Mapped[float] = mapped_column(Float, nullable=False)
     llm_output: Mapped[str] = mapped_column(Text, nullable=False)
@@ -302,6 +325,18 @@ class Trace(Base):
         CheckConstraint("btrim(api_url) <> ''", name="ck_traces_api_url_nonempty"),
         CheckConstraint("input_tokens >= 0", name="ck_traces_input_tokens_nonnegative"),
         CheckConstraint("output_tokens >= 0", name="ck_traces_output_tokens_nonnegative"),
+        CheckConstraint(
+            "cached_input_tokens >= 0",
+            name="ck_traces_cached_input_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "cache_write_input_tokens >= 0",
+            name="ck_traces_cache_write_input_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "reasoning_tokens >= 0",
+            name="ck_traces_reasoning_tokens_nonnegative",
+        ),
         CheckConstraint("estimated_cost_usd >= 0", name="ck_traces_cost_nonnegative"),
         CheckConstraint("request_time_ms >= 0", name="ck_traces_time_nonnegative"),
         CheckConstraint("retries >= 0", name="ck_traces_retries_nonnegative"),

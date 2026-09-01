@@ -54,12 +54,21 @@ class Prompt(StrictSchema):
 
 
 class TokenPricing(StrictSchema):
-    """Caller-supplied provider prices in USD per million tokens."""
+    """Provider prices in USD per million detailed token categories."""
 
     input_per_million_usd: NonNegativeDecimal
     output_per_million_usd: NonNegativeDecimal
+    cached_input_per_million_usd: NonNegativeDecimal | None = None
+    cache_write_input_per_million_usd: NonNegativeDecimal | None = None
 
-    def estimate(self, input_tokens: int, output_tokens: int) -> Decimal:
+    def estimate(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        cached_input_tokens: int = 0,
+        cache_write_input_tokens: int = 0,
+    ) -> Decimal:
         """Return the exact cost estimate for explicit token counts.
 
         Parameters
@@ -79,11 +88,35 @@ class TokenPricing(StrictSchema):
         ValueError
             If either token count is negative.
         """
-        if input_tokens < 0 or output_tokens < 0:
+        if any(
+            value < 0
+            for value in (
+                input_tokens,
+                output_tokens,
+                cached_input_tokens,
+                cache_write_input_tokens,
+            )
+        ):
             raise ValueError("token counts must be nonnegative")
+        detailed_input = cached_input_tokens + cache_write_input_tokens
+        if detailed_input > input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        regular_input_tokens = input_tokens - detailed_input
+        cached_price = (
+            self.input_per_million_usd
+            if self.cached_input_per_million_usd is None
+            else self.cached_input_per_million_usd
+        )
+        cache_write_price = (
+            self.input_per_million_usd
+            if self.cache_write_input_per_million_usd is None
+            else self.cache_write_input_per_million_usd
+        )
         million = Decimal(1_000_000)
         return (
-            Decimal(input_tokens) * self.input_per_million_usd
+            Decimal(regular_input_tokens) * self.input_per_million_usd
+            + Decimal(cached_input_tokens) * cached_price
+            + Decimal(cache_write_input_tokens) * cache_write_price
             + Decimal(output_tokens) * self.output_per_million_usd
         ) / million
 
@@ -101,6 +134,8 @@ class ProviderBudget(StrictSchema):
         *,
         input_tokens: int,
         output_tokens: int,
+        cached_input_tokens: int = 0,
+        cache_write_input_tokens: int = 0,
         attempts: int,
         inclusive: bool = False,
         schema_errors: tuple[str, ...] = (),
@@ -136,7 +171,12 @@ class ProviderBudget(StrictSchema):
         zero cost ceiling, so the inclusive cost boundary applies only when at least one
         token price is positive.
         """
-        spent = self.pricing.estimate(input_tokens, output_tokens)
+        spent = self.pricing.estimate(
+            input_tokens,
+            output_tokens,
+            cached_input_tokens=cached_input_tokens,
+            cache_write_input_tokens=cache_write_input_tokens,
+        )
 
         def reached(used: int | Decimal, limit: int | Decimal) -> bool:
             """Compare one usage against its limit on the requested boundary."""
@@ -220,8 +260,20 @@ class RawProviderResponse(StrictSchema):
     output_text: StrictStr
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
+    cached_input_tokens: NonNegativeInt = 0
+    cache_write_input_tokens: NonNegativeInt = 0
+    reasoning_tokens: NonNegativeInt = 0
     request_id: NonBlank | None = None
     refusal: NonBlank | None = None
+
+    @model_validator(mode="after")
+    def validate_usage_details(self) -> Self:
+        """Keep provider detail counters within their authoritative totals."""
+        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        if self.reasoning_tokens > self.output_tokens:
+            raise ValueError("reasoning_tokens must not exceed output_tokens")
+        return self
 
 
 class SchemaRejected(StrictSchema):
@@ -286,6 +338,9 @@ class ProviderMetadata(StrictSchema):
     api_url: NonBlank
     input_tokens: NonNegativeInt
     output_tokens: NonNegativeInt
+    cached_input_tokens: NonNegativeInt = 0
+    cache_write_input_tokens: NonNegativeInt = 0
+    reasoning_tokens: NonNegativeInt = 0
     estimated_cost_usd: NonNegativeDecimal
     request_time_ms: NonNegativeFloat
     retries: Annotated[StrictInt, Field(ge=0, le=1)]
@@ -304,6 +359,10 @@ class ProviderMetadata(StrictSchema):
             raise ValueError("llm_output must equal the final raw output")
         if len(self.request_ids) > len(self.raw_outputs):
             raise ValueError("request ids cannot outnumber provider attempts")
+        if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
+            raise ValueError("detailed input tokens must not exceed input_tokens")
+        if self.reasoning_tokens > self.output_tokens:
+            raise ValueError("reasoning_tokens must not exceed output_tokens")
         return self
 
 

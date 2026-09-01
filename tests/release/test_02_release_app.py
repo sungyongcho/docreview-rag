@@ -22,6 +22,7 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
     with TestClient(create_release_app(static_dir=tmp_path)) as client:
         health = client.get("/health")
         release = client.get("/release")
+        ready = client.get("/ready")
         home = client.get("/")
 
     assert health.status_code == 200
@@ -30,16 +31,85 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
     assert release.json()["openai_enabled"] is False
     assert release.json()["admin_mode"] == "readonly"
     assert release.json()["key_persisted"] is False
-    assert release.json()["max_cost_usd"] == "0.01"
+    assert release.json()["max_cost_usd"] == "0.04"
+    assert ready.status_code == 200
+    assert ready.json()["corpus"]["availability"] == "not_applicable"
+    assert ready.json()["models"]["agent"]["default"] == "gpt-5.6-terra"
     assert secret not in release.text
     assert home.status_code == 200
     assert "Evidence-first SEC and DART filing review" in home.text
     assert release.json()["frontend"] == "next-static"
 
 
+def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monkeypatch) -> None:
+    """Separate live corpus readiness from provider availability and liveness."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    async def ready_probe():
+        """Return one compatible populated corpus snapshot."""
+        return {
+            "status": {
+                "database_connected": True,
+                "schema_status": "compatible",
+                "schema_message": "compatible",
+                "documents": 2,
+                "chunks": 20,
+                "embedded_chunks": 20,
+                "pending_embeddings": 0,
+                "bm25_ready": True,
+                "writable": True,
+            }
+        }
+
+    async def degraded_probe():
+        """Return schema drift without mutating the database."""
+        return {
+            "status": {
+                "database_connected": True,
+                "schema_status": "drifted",
+                "schema_message": "traces is missing columns",
+                "documents": 0,
+                "chunks": 0,
+                "embedded_chunks": 0,
+                "pending_embeddings": 0,
+                "bm25_ready": False,
+                "writable": False,
+            }
+        }
+
+    settings = ReleaseSettings(mode="runtime", host="127.0.0.1", _env_file=None)
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(),
+            readiness_probe=ready_probe,
+        )
+    ) as client:
+        ready = client.get("/ready")
+    assert ready.status_code == 200
+    assert ready.json()["status"] == "ready"
+    assert ready.json()["review_enabled"] is False
+
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(),
+            readiness_probe=degraded_probe,
+        )
+    ) as client:
+        degraded = client.get("/ready")
+    assert degraded.status_code == 503
+    assert degraded.json()["status"] == "degraded"
+    assert degraded.json()["corpus"]["schema_status"] == "drifted"
+
+
 def test_release_app_blocks_ingest_and_rate_limits_post_requests() -> None:
     """Block ingestion, refuse an unconfigured review, and rate limit, all with headers set."""
-    settings = ReleaseSettings(rate_limit_per_minute=1, rate_limit_per_day=1)
+    settings = ReleaseSettings(
+        _env_file=None,
+        rate_limit_per_minute=1,
+        rate_limit_per_day=1,
+    )
     request = {"query": "What revenue was reported?", "k": 1, "filters": {}}
 
     with TestClient(create_release_app(settings)) as client:
@@ -70,11 +140,11 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
         )
 
     services = build_runtime_services(
-        ReleaseSettings(mode="runtime"),
+        ReleaseSettings(mode="runtime", _env_file=None),
         provider_factory=provider_factory,
     )
 
-    assert captured == {"model_name": "gpt-4.1-mini", "api_key": secret}
+    assert captured == {"model_name": "gpt-5.6-terra", "api_key": secret}
     assert services._secret_values == (secret,)
     assert secret not in repr(services)
 
@@ -84,7 +154,7 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("DOCREVIEW_OPENAI_API_KEY", raising=False)
 
-    services = build_runtime_services(ReleaseSettings(mode="runtime"))
+    services = build_runtime_services(ReleaseSettings(mode="runtime", _env_file=None))
 
     assert services._llm_provider is None
     assert services._provider_budget is None
@@ -92,10 +162,17 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch) -> None:
 
 def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
     """Expose administrator routes only in explicit loopback live mode."""
-    with TestClient(create_release_app(ReleaseSettings(admin_mode="off"))) as client:
+    with TestClient(
+        create_release_app(ReleaseSettings(admin_mode="off", _env_file=None))
+    ) as client:
         hidden_paths = set(client.get("/openapi.json").json()["paths"])
 
-    live_settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1")
+    live_settings = ReleaseSettings(
+        mode="runtime",
+        admin_mode="live",
+        host="127.0.0.1",
+        _env_file=None,
+    )
     with TestClient(create_release_app(live_settings, services=RuntimeApiServices())) as client:
         live_paths = set(client.get("/openapi.json").json()["paths"])
 
@@ -106,7 +183,12 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
 
 def test_live_operator_disables_only_public_request_limits() -> None:
     """Wire loopback live mode without public rate or daily-cost enforcement."""
-    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1")
+    settings = ReleaseSettings(
+        mode="runtime",
+        admin_mode="live",
+        host="127.0.0.1",
+        _env_file=None,
+    )
     application = create_release_app(settings, services=RuntimeApiServices())
     guard = next(
         middleware

@@ -1,6 +1,7 @@
 """Administrator route injection and public-surface isolation."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from app.api.admin_schemas import (
     EvaluationJobResource,
     EvaluationJobsResponse,
     EvaluationRunRequest,
+    UsageResponse,
 )
 from app.api.app import create_api_app
 
@@ -60,6 +62,21 @@ class FakeAdminServices:
         """Return no job for this route fixture."""
         return None
 
+    async def usage(self):
+        """Return one empty local usage ledger."""
+        return UsageResponse(
+            runs=0,
+            requests=0,
+            input_tokens=0,
+            cached_input_tokens=0,
+            cache_write_input_tokens=0,
+            output_tokens=0,
+            reasoning_tokens=0,
+            estimated_cost_usd=Decimal("0"),
+            latest_run_at=None,
+            models=(),
+        )
+
     async def compare(self, candidate_id, baseline_id):
         """Leave comparison unused in this focused route test."""
         raise AssertionError((candidate_id, baseline_id))
@@ -88,13 +105,33 @@ def test_admin_routes_are_injected_and_typed() -> None:
         corpus = client.get("/admin/corpus")
         queued = client.post(
             "/admin/evaluations/runs",
-            json={"suite_id": "sec-en", "mode": "quick", "profile": {}},
+            json={
+                "suite_id": "sec-en",
+                "mode": "quick",
+                "profile": {},
+                "target_text_chars": [500, 1200],
+                "strategies": ["lexical", "vector", "hybrid"],
+                "lexical_rankers": ["ts_rank_cd", "bm25"],
+            },
+        )
+        corpus_job = client.post(
+            "/admin/corpus/jobs",
+            json={
+                "kind": "acquire_edgar",
+                "identifiers": ["NVDA"],
+                "years": [2024],
+            },
         )
         missing = client.get("/admin/jobs/missing")
+        usage = client.get("/admin/usage")
 
     assert corpus.status_code == 200
     assert corpus.json()["status"]["schema_status"] == "compatible"
     assert queued.status_code == 200
     assert queued.json()["job_id"] == "eval-1"
+    assert corpus_job.status_code == 200
+    assert corpus_job.json()["kind"] == "acquire_edgar"
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "evaluation_job_not_found"
+    assert usage.status_code == 200
+    assert usage.json()["estimated_cost_usd"] == "0"

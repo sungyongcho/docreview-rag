@@ -320,7 +320,7 @@ def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_cli
     )
     client = FakeClient(response)
     provider = OpenAILLMProvider(
-        model_name="test-structured-model",
+        model_name="gpt-5.6-terra",
         client=client,
         clock=TickClock(),
     )
@@ -338,9 +338,10 @@ def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_cli
     assert len(mechanisms) == 1
     call.pop(mechanisms[0])
     assert call == {
-        "model": "test-structured-model",
+        "model": "gpt-5.6-terra",
         "instructions": "Return one strict evidence decision.",
         "input": "What changed?",
+        "reasoning": {"effort": "medium"},
         "max_output_tokens": 100,
         "store": False,
     }
@@ -358,7 +359,7 @@ def test_openai_adapter_maps_structured_refusal_without_network_or_retry():
     )
     client = FakeClient(response)
     provider = OpenAILLMProvider(
-        model_name="test-structured-model",
+        model_name="gpt-5.6-terra",
         client=client,
         clock=TickClock(),
     )
@@ -382,7 +383,7 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
     )
     client = FakeClient(response)
     provider = OpenAILLMProvider(
-        model_name="test-structured-model",
+        model_name="gpt-5.6-terra",
         client=client,
         clock=TickClock(),
     )
@@ -399,11 +400,11 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
 def test_provider_closes_only_the_client_it_opened_itself():
     """Own the shutdown of a self-built client and leave an injected one alone."""
     injected = FakeClient(SimpleNamespace())
-    borrower = OpenAILLMProvider(model_name="test-structured-model", client=injected)
+    borrower = OpenAILLMProvider(model_name="gpt-5.6-terra", client=injected)
 
     asyncio.run(borrower.aclose())
 
-    owner = OpenAILLMProvider(model_name="test-structured-model", api_key="test-key")
+    owner = OpenAILLMProvider(model_name="gpt-5.6-terra", api_key="test-key")
     assert owner._owned_client is not None
     assert not owner._owned_client.is_closed()
 
@@ -462,7 +463,7 @@ def test_legacy_flag_keeps_the_sdk_parsed_path():
     )
     client = FakeClient(response)
     provider = OpenAILLMProvider(
-        model_name="test-structured-model",
+        model_name="gpt-5.6-terra",
         client=client,
         structured_output=False,
         clock=TickClock(),
@@ -505,7 +506,7 @@ def test_repair_loop_still_guards_the_strict_path():
     )
     responses = SequencedResponses([invalid, repaired])
     provider = OpenAILLMProvider(
-        model_name="test-structured-model",
+        model_name="gpt-5.6-terra",
         client=SimpleNamespace(responses=responses),
         clock=TickClock(),
     )

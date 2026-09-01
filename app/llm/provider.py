@@ -23,6 +23,7 @@ from app.llm.schemas import (
     RawProviderResponse,
     SchemaRejected,
 )
+from app.openai_models import OpenAIModelRole, resolve_openai_model
 
 type Clock = Callable[[], int]
 
@@ -201,6 +202,9 @@ class LLMProvider(ABC):
         request_ids: list[str] = []
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cached_input_tokens = 0
+        total_cache_write_input_tokens = 0
+        total_reasoning_tokens = 0
         total_request_time_ms = 0.0
 
         def failed(failure: CompletionFailure) -> ProviderResult[OutputT]:
@@ -214,6 +218,9 @@ class LLMProvider(ABC):
                     request_ids=request_ids,
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
+                    cached_input_tokens=total_cached_input_tokens,
+                    cache_write_input_tokens=total_cache_write_input_tokens,
+                    reasoning_tokens=total_reasoning_tokens,
                     request_time_ms=total_request_time_ms,
                     budget=budget,
                 ),
@@ -224,7 +231,12 @@ class LLMProvider(ABC):
                 max_input_tokens=budget.max_input_tokens - total_input_tokens,
                 max_output_tokens=budget.max_output_tokens - total_output_tokens,
                 max_cost_usd=budget.max_cost_usd
-                - budget.pricing.estimate(total_input_tokens, total_output_tokens),
+                - budget.pricing.estimate(
+                    total_input_tokens,
+                    total_output_tokens,
+                    cached_input_tokens=total_cached_input_tokens,
+                    cache_write_input_tokens=total_cache_write_input_tokens,
+                ),
                 pricing=budget.pricing,
             )
             started = self._clock()
@@ -252,6 +264,9 @@ class LLMProvider(ABC):
                 request_ids.append(raw.request_id)
             total_input_tokens += raw.input_tokens
             total_output_tokens += raw.output_tokens
+            total_cached_input_tokens += raw.cached_input_tokens
+            total_cache_write_input_tokens += raw.cache_write_input_tokens
+            total_reasoning_tokens += raw.reasoning_tokens
             if raw.refusal is not None:
                 return failed(
                     ProviderRefusal(
@@ -264,6 +279,8 @@ class LLMProvider(ABC):
             if failure := budget.exhausted_by(
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                cached_input_tokens=total_cached_input_tokens,
+                cache_write_input_tokens=total_cache_write_input_tokens,
                 attempts=attempt,
             ):
                 return failed(failure)
@@ -274,6 +291,8 @@ class LLMProvider(ABC):
                     if failure := budget.exhausted_by(
                         input_tokens=total_input_tokens,
                         output_tokens=total_output_tokens,
+                        cached_input_tokens=total_cached_input_tokens,
+                        cache_write_input_tokens=total_cache_write_input_tokens,
                         attempts=1,
                         inclusive=True,
                         schema_errors=errors,
@@ -288,6 +307,9 @@ class LLMProvider(ABC):
                 request_ids=request_ids,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                cached_input_tokens=total_cached_input_tokens,
+                cache_write_input_tokens=total_cache_write_input_tokens,
+                reasoning_tokens=total_reasoning_tokens,
                 request_time_ms=total_request_time_ms,
                 budget=budget,
             )
@@ -302,6 +324,9 @@ class LLMProvider(ABC):
         request_ids: Sequence[str],
         input_tokens: int,
         output_tokens: int,
+        cached_input_tokens: int,
+        cache_write_input_tokens: int,
+        reasoning_tokens: int,
         request_time_ms: float,
         budget: ProviderBudget,
     ) -> ProviderMetadata:
@@ -312,7 +337,15 @@ class LLMProvider(ABC):
             api_url=self.api_url,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            estimated_cost_usd=budget.pricing.estimate(input_tokens, output_tokens),
+            cached_input_tokens=cached_input_tokens,
+            cache_write_input_tokens=cache_write_input_tokens,
+            reasoning_tokens=reasoning_tokens,
+            estimated_cost_usd=budget.pricing.estimate(
+                input_tokens,
+                output_tokens,
+                cached_input_tokens=cached_input_tokens,
+                cache_write_input_tokens=cache_write_input_tokens,
+            ),
             request_time_ms=request_time_ms,
             retries=len(raw_outputs) - 1,
             request_ids=tuple(request_ids),
@@ -468,16 +501,19 @@ class OpenAILLMProvider(LLMProvider):
         self,
         *,
         model_name: str,
+        role: OpenAIModelRole = "review",
         client: object | None = None,
         api_key: str | None = None,
         api_url: str = "https://api.openai.com/v1/responses",
         structured_output: bool = True,
         clock: Clock = time.perf_counter_ns,
     ) -> None:
-        if not model_name.strip() or not api_url.strip():
-            raise ValueError("model_name and api_url must not be blank")
+        selection = resolve_openai_model(role, model_name)
+        if not api_url.strip():
+            raise ValueError("api_url must not be blank")
         super().__init__(clock=clock)
-        self.model_name = model_name
+        self.model_name = selection.model
+        self.reasoning_effort = selection.reasoning_effort
         self.api_url = api_url
         self._structured_output = structured_output
         self._owned_client = AsyncOpenAI(api_key=api_key) if client is None else None
@@ -527,6 +563,7 @@ class OpenAILLMProvider(LLMProvider):
                 instructions=prompt.system,
                 input=prompt.user,
                 text={"format": strict_response_format(schema)},
+                reasoning={"effort": self.reasoning_effort},
                 max_output_tokens=budget.max_output_tokens,
                 store=False,
             )
@@ -536,6 +573,7 @@ class OpenAILLMProvider(LLMProvider):
                 instructions=prompt.system,
                 input=prompt.user,
                 text_format=schema,
+                reasoning={"effort": self.reasoning_effort},
                 max_output_tokens=budget.max_output_tokens,
                 store=False,
             )
@@ -554,10 +592,23 @@ class OpenAILLMProvider(LLMProvider):
         output_tokens = getattr(usage, "output_tokens", None)
         if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
             raise ValueError("OpenAI response did not include token usage")
+        input_details = getattr(usage, "input_tokens_details", None)
+        output_details = getattr(usage, "output_tokens_details", None)
+        cached_input_tokens = getattr(input_details, "cached_tokens", 0)
+        cache_write_input_tokens = getattr(input_details, "cache_write_tokens", 0)
+        reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
+        if not all(
+            isinstance(value, int)
+            for value in (cached_input_tokens, cache_write_input_tokens, reasoning_tokens)
+        ):
+            raise ValueError("OpenAI response included invalid token usage details")
         return RawProviderResponse(
             output_text=output_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cached_input_tokens=cached_input_tokens,
+            cache_write_input_tokens=cache_write_input_tokens,
+            reasoning_tokens=reasoning_tokens,
             request_id=getattr(response, "id", None),
             refusal=_openai_refusal(response),
         )

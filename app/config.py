@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from app.openai_models import resolve_openai_model
+from app.settings_sources import DotenvFirstSettings
 
 EmbeddingProviderName = Literal["openai", "deterministic", "sbert"]
 LexicalRanker = Literal["ts_rank_cd", "bm25"]
@@ -17,7 +20,7 @@ DEFAULT_BM25_B = 0.75
 DEFAULT_BM25_IDF: BM25Idf = "lucene"
 
 
-class Settings(BaseSettings):
+class Settings(DotenvFirstSettings):
     """Runtime settings for corpus persistence and vector storage."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -57,6 +60,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_openai_api_key(self) -> Self:
         """Require an explicit nonblank API key for the OpenAI provider."""
+        resolve_openai_model("embedding", self.embedding_model)
         if self.embedding_provider == "openai" and (
             self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip()
         ):
@@ -67,19 +71,22 @@ class Settings(BaseSettings):
     def require_review_configuration(self) -> Self:
         """Require the key and both prices whenever a review model is configured."""
         if self.review_model is None:
+            if (
+                self.review_input_price_per_million_usd is not None
+                or self.review_output_price_per_million_usd is not None
+            ):
+                raise ValueError("manual review pricing was removed; model policy owns prices")
             return self
         if not self.review_model.strip():
             raise ValueError("REVIEW_MODEL must not be blank when set")
         if self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip():
             raise ValueError("OPENAI_API_KEY is required when REVIEW_MODEL is set")
+        resolve_openai_model("review", self.review_model)
         if (
-            self.review_input_price_per_million_usd is None
-            or self.review_output_price_per_million_usd is None
+            self.review_input_price_per_million_usd is not None
+            or self.review_output_price_per_million_usd is not None
         ):
-            raise ValueError(
-                "REVIEW_INPUT_PRICE_PER_MILLION_USD and REVIEW_OUTPUT_PRICE_PER_MILLION_USD "
-                "are required when REVIEW_MODEL is set"
-            )
+            raise ValueError("manual review pricing was removed; model policy owns prices")
         return self
 
 

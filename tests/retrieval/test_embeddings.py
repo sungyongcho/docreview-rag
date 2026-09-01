@@ -30,6 +30,7 @@ class FakeEmbeddingResponse:
 
     def __init__(self, data: list[FakeEmbeddingData]) -> None:
         self.data = data
+        self.usage = SimpleNamespace(prompt_tokens=6, total_tokens=6)
 
 
 class FakeEmbeddingsResource:
@@ -152,6 +153,8 @@ def test_openai_provider_requests_384_floats_and_restores_response_order():
     ]
     assert vectors[0][0] == 1.0
     assert vectors[1][0] == 2.0
+    assert provider.usage.requests == 1
+    assert provider.usage.input_tokens == 6
 
 
 @pytest.mark.parametrize(

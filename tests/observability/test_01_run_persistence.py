@@ -7,9 +7,11 @@ import pytest
 from sqlalchemy import MetaData, select, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.runtime import RuntimeApiServices
 from app.config import get_settings
 from app.db.models import Base
 from app.observability.persistence import REDACTED, persist_run_report
@@ -100,9 +102,12 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                         await session.execute(
                             text(
                                 "INSERT INTO runs (run_id, status, iterations, total_requests,"
-                                " total_input_tokens, total_output_tokens, total_time_seconds,"
+                                " total_input_tokens, total_output_tokens,"
+                                " total_cached_input_tokens, total_cache_write_input_tokens,"
+                                " total_reasoning_tokens, total_estimated_cost_usd,"
+                                " total_time_seconds,"
                                 " system_prompt, node_path, report) VALUES"
-                                f" ('run-rejected', 'ok', 1, 1, 0, 0, 0.0, {prompt},"
+                                f" ('run-rejected', 'ok', 1, 1, 0, 0, 0, 0, 0, 0.0, 0.0, {prompt},"
                                 f" {node_path}, NULL)"
                             )
                         )
@@ -112,12 +117,23 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                     await session.execute(
                         text(
                             "INSERT INTO traces (run_id, step, node, model_name, api_url,"
-                            " input_tokens, output_tokens, estimated_cost_usd, request_time_ms,"
+                            " input_tokens, output_tokens, cached_input_tokens,"
+                            " cache_write_input_tokens, reasoning_tokens, estimated_cost_usd,"
+                            " request_time_ms,"
                             " llm_output, retries) VALUES"
-                            f" ('{report.run_id}', 0, 'grade', 'gpt-4.1-mini', 'https://api.test',"
-                            " 1, 1, 0.0, 1.0, '{}', 0)"
+                            f" ('{report.run_id}', 0, 'grade', 'gpt-5.6-terra',"
+                            " 'https://api.test', 1, 1, 0, 0, 0, 0.0, 1.0, '{}', 0)"
                         )
                     )
+        factory = async_sessionmaker(bind=connection, expire_on_commit=False)
+        usage = await RuntimeAdminApiServices(
+            runtime=RuntimeApiServices(session_factory=factory)
+        ).usage()
+        assert usage.runs == 1
+        assert usage.requests == 3
+        assert usage.input_tokens == 140
+        assert usage.estimated_cost_usd == Decimal("0.0001008")
+        assert [model.model_name for model in usage.models] == ["gpt-4.1-mini"]
         return True, ""
     finally:
         if connection is not None:
