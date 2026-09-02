@@ -82,6 +82,10 @@ export interface ChatMessage {
   /** Citations the report actually made; the evidence list above is the wider candidate pool. */
   citations?: number;
   trace?: string;
+  /** Run and failure facts for the diagnostic table, in display order. */
+  diagnostics?: Array<{ label: string; value: string }>;
+  /** Settings destination that would change the outcome, when one exists. */
+  failureFix?: { label: string; category: "limits" | "runtime" };
   question?: string;
   candidateToken?: string;
   pinnedChunkIds?: number[];

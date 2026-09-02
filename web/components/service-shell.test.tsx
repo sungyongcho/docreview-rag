@@ -504,6 +504,47 @@ describe("service shell", () => {
     expect(hooks[0]).toBe(blocks[1]);
   });
 
+  it("shows a failed run's own numbers and a way to the limit it hit", async () => {
+    const failure = {
+      code: "budget_exceeded", resource: "wall_clock_s", limit: 120, observed: 138.6, blocked_node: "check",
+    };
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/review/stream")) {
+        const frames = [
+          'event: node\ndata: {"node":"grade","evidence_count":4,"relevant_count":2,"step_count":1}',
+          `event: report\ndata: ${JSON.stringify({ run: { run_id: "run-42", status: "budget_exceeded", report: null, failure, total_requests: 2, total_input_tokens: 2539, total_output_tokens: 589, total_time_seconds: 369.1, node_path: ["gate", "retrieve", "grade"] } })}`,
+          "event: done\ndata: {}",
+        ];
+        return new Response(`${frames.join("\n\n")}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      let payload: unknown = {};
+      if (url.endsWith("/health")) payload = { status: "ok" };
+      else if (url.endsWith("/ready")) payload = READY_RUNTIME;
+      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+      else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ServiceShell />);
+
+    const textarea = await screen.findByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(textarea, { target: { value: "why did it stop" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByText(/wall-clock limit of 120s/)).toBeInTheDocument());
+    // The run identifier is the only handle for correlating this with the server traces.
+    expect(screen.getByText("run-42")).toBeInTheDocument();
+    expect(screen.getByText("138.6")).toBeInTheDocument();
+    expect(screen.getByText("gate → retrieve → grade")).toBeInTheDocument();
+    expect(screen.getByText("wall_clock_s")).toBeInTheDocument();
+
+    // The category's nav label differs by build, so assert the panel it opened.
+    fireEvent.click(screen.getByRole("button", { name: "Open run limits" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Input token ceiling")).toBeInTheDocument();
+  });
+
   it("renders a conversation reply without a verdict pill", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);

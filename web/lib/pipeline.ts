@@ -414,47 +414,92 @@ function answerModelDraft(readiness: Readiness | null): Draft {
   };
 }
 
+/** A settings destination that would let the reader change the limit they just hit. */
+export interface FailureFix {
+  label: string;
+  category: "limits" | "runtime";
+}
+
+export interface FailureReport {
+  text: string;
+  /** Absent when no reachable setting would change the outcome. */
+  fix?: FailureFix;
+}
+
+/** Where the workflow Budget fields are edited; the label matches the Settings nav. */
+const RUN_LIMITS: FailureFix = { label: "Open run limits", category: "limits" };
+
 /**
- * Turn one run failure into a sentence that names the cause.
+ * Explain one run failure and, where one exists, name the setting that would change it.
  *
- * Matching is on `failure.status`, whose four values are a closed contract, rather than
- * on `node`. Only the exception class at the head of `details[0]` is parsed; the text
- * after it is a provider message and not a contract. Advice that only an operator can
- * act on is withheld from a public build, which cannot run a local model at all.
+ * Budget failures carry `resource`, which says which ceiling stopped the run; a
+ * wall-clock stop is not a token budget and pointing at the wrong field wastes the
+ * reader's time. Provider failures are matched on `status`, whose four values are a
+ * closed contract. Only the exception class at the head of `details[0]` is read, because
+ * the provider text after it is not one. Advice an operator alone can act on, and the
+ * Settings categories a public build does not render, are withheld from that build.
  */
-export function failureMessage(failure: Record<string, unknown>): string {
+export function failureReport(failure: Record<string, unknown>): FailureReport {
   const detail = JSON.stringify(failure);
   if (/AuthenticationError|token_invalidated|invalidated/i.test(detail)) {
-    return "OpenAI API authentication failed. Update the server-side API key and retry.";
+    return { text: "OpenAI API authentication failed. Update the server-side API key and retry." };
   }
   const status = String(failure.status ?? failure.code ?? "provider failure");
+  const at = (key: string) => (typeof failure[key] === "string" ? ` at the ${String(failure[key])} step` : "");
+  const tried = typeof failure.attempts === "number" && failure.attempts > 1 ? ` after ${failure.attempts} attempts` : "";
+
+  if (status === "budget_exceeded") {
+    const node = at("blocked_node");
+    const observed = typeof failure.observed === "number" ? failure.observed : null;
+    const limit = typeof failure.limit === "number" ? failure.limit : null;
+    const reached = observed !== null && limit !== null ? ` (${observed} of ${limit})` : "";
+    if (failure.resource === "wall_clock_s") {
+      const advice = LOCAL_ENGINE_VISIBLE ? " A local model on CPU usually needs a longer one." : "";
+      return {
+        text: `The run passed its wall-clock limit${limit === null ? "" : ` of ${limit}s`}${node}.${advice}`,
+        fix: RUN_LIMITS,
+      };
+    }
+    if (failure.resource === "iterations") {
+      return { text: `The run used all of its allowed steps${reached}${node}.`, fix: RUN_LIMITS };
+    }
+    const half = failure.resource === "output_tokens" ? "output" : "input";
+    return { text: `The run exceeded its ${half} token budget${reached}${node}.`, fix: RUN_LIMITS };
+  }
+
   if (status === "schema_rejected") {
     const advice = LOCAL_ENGINE_VISIBLE
       ? " Smaller local models often fail structured output; try the OpenAI engine for this question."
       : "";
-    return `The model returned output that did not match the required schema.${advice}`;
+    return { text: `The model returned output that did not match the required schema${tried}.${advice}` };
   }
-  if (status === "budget_exceeded") {
-    // `resource` says which ceiling stopped the run. A wall-clock stop is not a token
-    // budget, and saying so would send the reader to the wrong setting.
-    const node = typeof failure.blocked_node === "string" ? ` at the ${failure.blocked_node} step` : "";
-    if (failure.resource === "wall_clock_s") {
-      const limit = typeof failure.limit === "number" ? ` of ${failure.limit}s` : "";
-      const advice = LOCAL_ENGINE_VISIBLE ? " A local model on CPU usually needs a longer one." : "";
-      return `The run passed its wall-clock limit${limit}${node}. Raise it in Settings › Prompt & evidence.${advice}`;
-    }
-    if (failure.resource === "iterations") {
-      return `The run used all of its allowed steps${node}.`;
-    }
-    return `The run exceeded its token budget${node}.`;
-  }
+
   if (status === "provider_error" && LOCAL_ENGINE_VISIBLE) {
     if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) {
-      return "The model did not answer within the time limit. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.";
+      return {
+        text: `The model did not answer within the time limit${tried}. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.`,
+        fix: { label: "Open local runtime", category: "runtime" },
+      };
     }
     if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) {
-      return "The model host is unreachable. Check that the local-llm compose profile is running.";
+      return {
+        text: "The model host is unreachable. Check that the local-llm compose profile is running.",
+        fix: { label: "Open local runtime", category: "runtime" },
+      };
     }
   }
-  return `The answer could not be generated (${status}).`;
+
+  if (status === "node_error") {
+    const kind = typeof failure.error_type === "string" ? failure.error_type : "step";
+    const message = typeof failure.message === "string" ? `: ${failure.message}` : "";
+    return { text: `A ${kind} stopped the run${at("node")}${message}` };
+  }
+
+  const first = Array.isArray(failure.details) && typeof failure.details[0] === "string" ? ` ${failure.details[0]}` : "";
+  return { text: `The answer could not be generated (${status})${at("node")}${tried}.${first}` };
+}
+
+/** The failure sentence alone, for callers with nowhere to put an action. */
+export function failureMessage(failure: Record<string, unknown>): string {
+  return failureReport(failure).text;
 }

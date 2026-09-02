@@ -35,7 +35,7 @@ import {
   streamReview,
 } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
-import { failureMessage } from "@/lib/pipeline";
+import { failureMessage, failureReport } from "@/lib/pipeline";
 import { helpScreen } from "@/lib/help-content";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
@@ -255,6 +255,8 @@ export function ServiceShell() {
         evidenceLabel: terminalEvidenceLabel(response),
         citations: terminalCitationCount(response),
         trace: extractTrace(response),
+        diagnostics: runDiagnostics(response),
+        failureFix: terminalFailureFix(response),
         question,
         candidateToken,
         pinnedChunkIds: [],
@@ -391,6 +393,8 @@ export function ServiceShell() {
         evidenceLabel: terminalEvidenceLabel(response),
         citations: terminalCitationCount(response),
         trace: extractTrace(response),
+        diagnostics: runDiagnostics(response),
+        failureFix: terminalFailureFix(response),
       });
     } catch (reason) {
       noteDailyBudget(reason);
@@ -547,6 +551,7 @@ export function ServiceShell() {
                   busy={busy}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
+                  onOpenFix={openSettings}
                 />
               ))}
               {busy && <div className="thinking">{progress ? <ReviewProgressSteps state={progress} /> : "Retrieving and checking evidence…"}</div>}
@@ -638,6 +643,8 @@ export function ServiceShell() {
 
 interface ReviewMessageProps {
   message: ChatMessage;
+  /** Opens Settings at the category that owns the limit this run hit. */
+  onOpenFix?: (category: "limits" | "runtime") => void;
   /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
   latestEvidence: boolean;
   busy: boolean;
@@ -656,7 +663,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected }: ReviewMessageProps) {
+function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
   const pill = message.role === "assistant" ? verdictPill(message) : null;
   const pinned = message.pinnedChunkIds ?? [];
   const excluded = message.excludedChunkIds ?? [];
@@ -701,7 +708,23 @@ function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected }:
             </details>
           </>
         ) : null}
-        {message.trace && <details className="trace-details"><summary>Run trace</summary><pre className="trace">{message.trace}</pre></details>}
+        {message.diagnostics?.length ? (
+          <details className="trace-details" data-help="review.run-trace">
+            <summary>Run trace{message.failureFix ? " · why it stopped" : ""}</summary>
+            <dl className="status-list run-diagnostics">
+              {message.diagnostics.map((row) => (
+                <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>
+              ))}
+            </dl>
+            {message.failureFix && onOpenFix && (
+              <button className="button" type="button" onClick={() => onOpenFix(message.failureFix!.category)}>
+                {message.failureFix.label}
+              </button>
+            )}
+          </details>
+        ) : message.trace ? (
+          <details className="trace-details" data-help="review.run-trace"><summary>Run trace</summary><pre className="trace">{message.trace}</pre></details>
+        ) : null}
       </div>
     </article>
   );
@@ -759,4 +782,65 @@ function extractTrace(payload: Record<string, unknown>): string {
   const root = (payload.run ?? payload) as Record<string, unknown>;
   const values = ["status", "total_requests", "total_input_tokens", "total_output_tokens", "total_time_seconds"];
   return values.filter((key) => root[key] !== undefined).map((key) => `${key}=${String(root[key])}`).join(" · ");
+}
+
+const RUN_FACTS: ReadonlyArray<readonly [string, string]> = [
+  ["status", "Status"],
+  ["run_id", "Run id"],
+  ["iterations", "Iterations"],
+  ["total_requests", "Provider requests"],
+  ["total_input_tokens", "Input tokens"],
+  ["total_output_tokens", "Output tokens"],
+  ["total_estimated_cost_usd", "Estimated cost"],
+  ["total_time_seconds", "Elapsed seconds"],
+];
+
+/** Failure fields worth naming, keyed by the shape that carries them. */
+const FAILURE_FACTS: ReadonlyArray<readonly [string, string]> = [
+  ["code", "Failure"],
+  ["resource", "Exhausted resource"],
+  ["limit", "Limit"],
+  ["observed", "Observed"],
+  ["blocked_node", "Blocked at"],
+  ["status", "Provider status"],
+  ["node", "Node"],
+  ["attempts", "Attempts"],
+  ["error_type", "Error type"],
+  ["message", "Message"],
+];
+
+/**
+ * Flatten one terminal response into labelled rows.
+ *
+ * The run identifier is included deliberately: it is the only handle a reader has for
+ * correlating a failure with `/runs/{id}` and its step traces, and the browser was
+ * discarding it. Node paths are joined rather than dropped so the route a run took
+ * before failing is visible.
+ */
+/** The settings destination for a terminal failure, when the failure names one. */
+function terminalFailureFix(payload: Record<string, unknown>): ChatMessage["failureFix"] {
+  const root = (payload.run ?? payload) as Record<string, unknown>;
+  const failure = root.failure as Record<string, unknown> | null;
+  return failure ? failureReport(failure).fix : undefined;
+}
+
+function runDiagnostics(payload: Record<string, unknown>): Array<{ label: string; value: string }> {
+  const root = (payload.run ?? payload) as Record<string, unknown>;
+  const rows: Array<{ label: string; value: string }> = [];
+  for (const [key, label] of RUN_FACTS) {
+    if (root[key] !== undefined && root[key] !== null) rows.push({ label, value: String(root[key]) });
+  }
+  if (Array.isArray(root.node_path) && root.node_path.length) {
+    rows.push({ label: "Node path", value: root.node_path.join(" → ") });
+  }
+  const failure = root.failure as Record<string, unknown> | null;
+  if (failure) {
+    for (const [key, label] of FAILURE_FACTS) {
+      if (failure[key] !== undefined && failure[key] !== null) rows.push({ label, value: String(failure[key]) });
+    }
+    if (Array.isArray(failure.details) && failure.details.length) {
+      rows.push({ label: "Details", value: failure.details.map(String).join(" · ") });
+    }
+  }
+  return rows;
 }

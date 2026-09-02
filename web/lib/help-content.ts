@@ -326,6 +326,18 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.readiness", "build.stage.answer_model"],
   },
   {
+    id: "review.run-trace",
+    title: "Run trace",
+    body: [
+      "What the run actually did: its identifier, how many provider requests it made, tokens in and out, elapsed seconds, and the node path it took.",
+      "When a run stops early this is also where the reason lives. A budget failure names the exhausted resource with its limit and the observed value; a provider failure names the status, the attempts and the exception; a node failure names the step and its message.",
+      "The run identifier is the handle for correlating a failure with the server-side step traces at /runs/{id}/traces.",
+    ],
+    tune: "The wall clock, iteration and token ceilings are in Settings › Run limits. Evidence size is separate, in Prompt & evidence. The button in the trace opens whichever one the failure names.",
+    seeAlso: ["review.send", "system.status"],
+    optional: true,
+  },
+  {
     id: "review.evidence",
     title: "Evidence, pins and exclusions",
     body: [

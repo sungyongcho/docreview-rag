@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, STAGE_ORDER } from "./pipeline";
+import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, failureReport, STAGE_ORDER } from "./pipeline";
 import type { Pipeline, PipelineInput, Stage, StageId } from "./pipeline";
 import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./types";
 
@@ -454,13 +454,15 @@ describe("derivePipeline", () => {
     const refused = { code: "provider_failure", node: "check", status: "provider_error", details: ["ConnectError: Connection refused"] };
 
     // A public bundle cannot act on local advice, so it keeps the neutral sentence.
-    expect(failureMessage(timeout)).toBe("The answer could not be generated (provider_error).");
+    expect(failureMessage(timeout)).toBe(
+      "The answer could not be generated (provider_error) at the check step. ReadTimeout: timed out",
+    );
     expect(failureMessage({ code: "provider_failure", status: "schema_rejected", details: ["x"] })).toBe(
       "The model returned output that did not match the required schema.",
     );
     expect(
       failureMessage({ code: "budget_exceeded", resource: "output_tokens", blocked_node: "grade" }),
-    ).toBe("The run exceeded its token budget at the grade step.");
+    ).toBe("The run exceeded its output token budget at the grade step.");
     // A wall-clock stop is a different setting, so it must not be called a token budget.
     const clock = failureMessage({ code: "budget_exceeded", resource: "wall_clock_s", limit: 120, blocked_node: "check" });
     expect(clock).toContain("wall-clock limit of 120s at the check step");
@@ -479,6 +481,36 @@ describe("derivePipeline", () => {
     expect(operator.failureMessage(timeout)).toContain("LOCAL_LLM_TIMEOUT_S");
     expect(operator.failureMessage(refused)).toContain("local-llm compose profile");
     expect(operator.failureMessage({ status: "schema_rejected", details: ["x"] })).toContain("Smaller local models");
+  });
+
+  it("sends a budget failure to the settings category that owns the limit", async () => {
+    // The wall clock lives in Run limits, not in Prompt & evidence; naming the wrong
+    // category is what cost an afternoon when a local run kept stopping at 120 seconds.
+    const clock = failureReport({ code: "budget_exceeded", resource: "wall_clock_s", limit: 120, observed: 138, blocked_node: "check" });
+    expect(clock.text).toContain("wall-clock limit of 120s at the check step");
+    expect(clock.fix).toEqual({ label: "Open run limits", category: "limits" });
+
+    const tokens = failureReport({ code: "budget_exceeded", resource: "input_tokens", limit: 60000, observed: 60210, blocked_node: "grade" });
+    expect(tokens.text).toBe("The run exceeded its input token budget (60210 of 60000) at the grade step.");
+    expect(tokens.fix?.category).toBe("limits");
+
+    // A provider failure a public build cannot act on names no destination.
+    expect(failureReport({ status: "provider_error", details: ["ReadTimeout: x"] }).fix).toBeUndefined();
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./pipeline");
+    expect(operator.failureReport({ status: "provider_error", details: ["ReadTimeout: x"] }).fix?.category).toBe("runtime");
+  });
+
+  it("keeps a node failure's own words instead of printing its code", () => {
+    const report = failureReport({ code: "node_error", node: "retrieve", error_type: "DatabaseUnavailable", message: "connection refused" });
+    expect(report.text).toBe("A DatabaseUnavailable stopped the run at the retrieve step: connection refused");
+    expect(report.fix).toBeUndefined();
+  });
+
+  it("counts attempts when a run retried before giving up", () => {
+    expect(failureReport({ status: "schema_rejected", attempts: 3 }).text).toContain("after 3 attempts");
+    expect(failureReport({ status: "schema_rejected", attempts: 1 }).text).not.toContain("attempts");
   });
 
   it("still says something when a public bundle suppresses the only enabled engine", () => {

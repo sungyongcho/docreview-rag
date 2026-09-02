@@ -606,3 +606,9 @@ select.chip { appearance: auto; padding-right: 6px; }
 .local-policy-list > div { grid-template-columns: 110px minmax(0, 1fr); row-gap: 2px; }
 .local-policy-list small { grid-column: 2; }
 .local-policy-list .policy-locked strong, .local-policy-list .policy-locked span, .local-policy-list .policy-locked small { color: var(--muted); }
+
+/* Run diagnostics: the same status list as System, narrowed for the message column. */
+.run-diagnostics { margin-top: 8px; }
+.run-diagnostics > div { grid-template-columns: 150px minmax(0, 1fr); }
+.run-diagnostics dd { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.trace-details .button { margin-top: 10px; }
