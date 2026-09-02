@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import json
@@ -27,6 +27,7 @@ from app.db.models import (
 from app.ingestion.dart_api import acquire_dart
 from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.progress import OperationProgress
+from app.ingestion.registry import resolve_registry
 from app.ingestion.seed import load_seed_batch, persist_seed_batch_with_stats
 from app.observability.persistence import redact_sensitive_text
 from app.operator.jobs import (
@@ -103,13 +104,36 @@ async def _embedding_state(session: AsyncSession, provider: EmbeddingProvider) -
     return ready, total - ready
 
 
+def _manifest_registry(entries: Sequence[Mapping[str, object]]) -> str | None:
+    """Name the registry adapter the first manifest entry resolves to, if any."""
+    for entry in entries:
+        try:
+            return resolve_registry(entry).name
+        except ValueError:
+            return None
+    return None
+
+
+def _source_present(entry: Mapping[str, object]) -> bool:
+    """Apply the acquisition rule: a listed source exists when its ``file`` path does."""
+    file = entry.get("file")
+    return isinstance(file, str) and Path(file).exists()
+
+
 @dataclass(frozen=True, slots=True)
 class ManifestSummary:
-    """One selectable corpus manifest confined to the configured root."""
+    """One selectable corpus manifest confined to the configured root.
+
+    ``registry`` and ``sources_present`` are ``None`` for an invalid manifest. For a
+    valid one, ``sources_present`` counts entries whose listed source file exists on
+    disk, which is the same check acquisition uses to skip a download.
+    """
 
     name: str
     documents: int | None
     valid: bool
+    registry: str | None = None
+    sources_present: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,8 +491,8 @@ class CannedCorpusAdminService:
                 provider="deterministic",
             ),
             manifests=(
-                ManifestSummary("manifest.json", 20, True),
-                ManifestSummary("dart-manifest.json", 2, True),
+                ManifestSummary("manifest.json", 20, True, registry="sec", sources_present=20),
+                ManifestSummary("dart-manifest.json", 2, True, registry="dart", sources_present=2),
             ),
             documents=self._documents,
         )
@@ -625,7 +649,20 @@ class RuntimeCorpusAdminService:
             except OSError, UnicodeError, json.JSONDecodeError:
                 valid = False
                 documents = None
-            summaries.append(ManifestSummary(path.name, documents, valid))
+            registry = sources_present = None
+            if valid:
+                entries = [entry for entry in payload if isinstance(entry, dict)]
+                registry = _manifest_registry(entries)
+                sources_present = sum(1 for entry in entries if _source_present(entry))
+            summaries.append(
+                ManifestSummary(
+                    path.name,
+                    documents,
+                    valid,
+                    registry=registry,
+                    sources_present=sources_present,
+                )
+            )
         return tuple(summaries)
 
     async def _counts(self, tables: set[str]) -> tuple[int, int, int, bool]:

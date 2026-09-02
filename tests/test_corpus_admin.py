@@ -1,6 +1,7 @@
 """Deterministic corpus administrator service and job-queue tests."""
 
 import asyncio
+import json
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -33,6 +34,10 @@ def test_canned_snapshot_is_read_only_filterable_and_db_free() -> None:
     assert snapshot.status.database_connected is False
     assert snapshot.status.writable is False
     assert [document.registry for document in snapshot.documents] == ["dart"]
+    assert [(item.registry, item.sources_present) for item in snapshot.manifests] == [
+        ("sec", 20),
+        ("dart", 2),
+    ]
     assert detail is not None
     assert len(detail.chunks) == 1
     assert len(detail.chunks[0].body) <= 1_000
@@ -276,6 +281,31 @@ def test_manifest_resolution_is_confined_to_valid_root_entries(tmp_path: Path) -
         service._resolve_manifest("../outside.json")
     with pytest.raises(ValueError, match="selectable"):
         service._resolve_manifest("notes.json")
+
+
+def test_manifest_summaries_report_registry_and_sources_on_disk(tmp_path: Path) -> None:
+    """Count listed sources that exist on disk and name each manifest's registry."""
+    present = tmp_path / "present.html"
+    present.write_text("<html></html>", encoding="utf-8")
+    entries = [
+        {"ticker": "NVDA", "file": str(present)},
+        {"ticker": "AMD", "file": str(tmp_path / "missing.html")},
+    ]
+    (tmp_path / "manifest.json").write_text(json.dumps(entries), encoding="utf-8")
+    (tmp_path / "dart-manifest.json").write_text("[]\n", encoding="utf-8")
+    (tmp_path / "broken-manifest.json").write_text("{", encoding="utf-8")
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+
+    summaries = {item.name: item for item in service._manifest_summaries()}
+
+    assert summaries["manifest.json"].registry == "sec"
+    assert summaries["manifest.json"].documents == 2
+    assert summaries["manifest.json"].sources_present == 1
+    assert summaries["dart-manifest.json"].registry is None
+    assert summaries["dart-manifest.json"].sources_present == 0
+    assert summaries["broken-manifest.json"].valid is False
+    assert summaries["broken-manifest.json"].registry is None
+    assert summaries["broken-manifest.json"].sources_present is None
 
 
 @pytest.mark.live_postgres
