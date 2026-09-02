@@ -581,6 +581,18 @@ const SYSTEM: HelpTopic[] = [
     seeAlso: ["build.runtime", "build.stage.answer_model"],
   },
   {
+    id: "system.local-policy",
+    title: "Local model policy",
+    body: [
+      "What the local engine serves when a session selects it: answers and citation checks, query translation, intent classification and casual replies.",
+      "Embeddings are never local. Each vector stores the model that produced it, so switching would strand the whole corpus until it was re-embedded.",
+      "The footer says whether the model host is reachable, and why not when it is not.",
+    ],
+    tune: "Model, protocol and budgets come from .env and need an app restart. The engine itself is chosen per session in Settings.",
+    seeAlso: ["system.status", "build.stage.answer_model"],
+    optional: true,
+  },
+  {
     id: "system.operations",
     title: "Operations",
     body: [

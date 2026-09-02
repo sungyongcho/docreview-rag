@@ -95,6 +95,15 @@ export interface ModelPolicyRole {
   dimensions: number | null;
 }
 
+/** One entry of `/ready.review_engines`: what an engine is, and why it is not serving. */
+export interface ReviewEngineState {
+  enabled?: boolean;
+  model?: string | null;
+  protocol?: string;
+  reason?: string;
+  key_slot?: string | null;
+}
+
 export interface Readiness {
   status: "ready" | "degraded";
   mode: "canned" | "runtime";
@@ -103,7 +112,7 @@ export interface Readiness {
   models: Record<string, ModelPolicyRole>;
   review_enabled: boolean;
   active_review_model: string | null;
-  review_engines?: Record<string, { enabled?: boolean; model?: string | null; protocol?: string; reason?: string; key_slot?: string | null }>;
+  review_engines?: Record<string, ReviewEngineState>;
   corpus: {
     availability: "ready" | "degraded" | "not_applicable" | "unavailable";
     database_connected: boolean | null;
