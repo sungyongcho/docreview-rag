@@ -724,8 +724,12 @@ class EvaluationAdminService:
             "k"
         ):
             raise ValueError("evaluation cutoffs are not compatible")
-        candidate_payload = read_strict_json(self._artifact_path(candidate.raw_artifact_path))
-        baseline_payload = read_strict_json(self._artifact_path(baseline.raw_artifact_path))
+        candidate_payload = read_strict_json(
+            self._artifact_path(candidate.raw_artifact_path), error=ValueError
+        )
+        baseline_payload = read_strict_json(
+            self._artifact_path(baseline.raw_artifact_path), error=ValueError
+        )
         if not isinstance(candidate_payload, dict) or not isinstance(baseline_payload, dict):
             raise ValueError("evaluation artifact root must be an object")
         metric_names = ("recall_at_k", "hit_rate_at_k", "mrr", "mean_latency_ms")
@@ -802,7 +806,7 @@ class EvaluationAdminService:
             result = await session.get(EvalResult, result_id)
         if result is None:
             return None
-        payload = read_strict_json(self._artifact_path(result.raw_artifact_path))
+        payload = read_strict_json(self._artifact_path(result.raw_artifact_path), error=ValueError)
         if not isinstance(payload, dict):
             raise ValueError("evaluation artifact root must be an object")
         raw_metrics = payload.get("metrics")

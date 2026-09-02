@@ -342,7 +342,8 @@ async def evaluation_result(
     services: AdminServices,
 ) -> EvaluationResultDetailResponse:
     """Return absolute metrics and bounded case details for one result."""
-    detail = await services.evaluation_result(result_id)
+    async with translate_runtime_errors():
+        detail = await services.evaluation_result(result_id)
     if detail is None:
         raise not_found("evaluation_result", str(result_id))
     return detail
