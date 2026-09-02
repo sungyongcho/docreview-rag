@@ -61,7 +61,7 @@ PostgreSQL + pgvector + language-aware lexical index
 - [uv](https://docs.astral.sh/uv/)
 - Docker Engine과 Docker Compose
 - Node.js 24+와 npm 11+ — Next 개발·테스트 시
-- 선택: `OPENAI_API_KEY` — 실제 LLM 리뷰
+- 선택: `OPENAI_API_KEY`, 또는 `MODE`별 슬롯 `OPENAI_API_KEY_LOCAL`(dev)·`OPENAI_API_KEY_PROD`(prod) — 실제 LLM 리뷰
 - 선택: `DART_API_KEY` — DART 원문 수집
 - SEC 수집 시 연락처를 포함한 `SEC_USER_AGENT`
 
@@ -89,11 +89,18 @@ cp .env.example .env
 ```dotenv
 SEC_USER_AGENT=Jane Doe jane@example.com
 DART_API_KEY=<your-dart-key>
-OPENAI_API_KEY=<your-openai-key>
+OPENAI_API_KEY_LOCAL=<your-dev-openai-key>
+OPENAI_API_KEY_PROD=<your-prod-openai-key>
 ```
 
 키는 사용하는 기능에만 필요합니다. 기본 deterministic embedding과 retrieval 테스트는
 OpenAI 키 없이 실행됩니다.
+
+OpenAI 키는 세 슬롯 중 하나로 둡니다. `OPENAI_API_KEY`가 있으면 항상 그 키를 씁니다.
+없으면 `MODE=dev`(기본)는 `OPENAI_API_KEY_LOCAL`, `MODE=prod`는 `OPENAI_API_KEY_PROD`를
+읽습니다. dev(live operator)는 공개 rate/cost 한도를 적용하지 않고 prod(readonly)는
+적용하므로, 슬롯마다 다른 프로젝트 키를 두면 비용 경계가 분리됩니다. `/ready`의
+`review_engines.openai.key_slot`이 어느 슬롯이 쓰였는지 값 없이 알려 줍니다.
 
 로컬 실행에서는 checkout의 `.env`가 process 환경변수보다 우선합니다. OpenAI embedding
 backfill까지 사용하려면 다음 선택을 함께 둡니다.
@@ -261,7 +268,8 @@ SSH tunnel UI에는 command URL이나 token이 없으므로 화면 자체가 나
 corpus 수집·ingest·embedding·BM25 작업은 기존 Corpus Lab에 남고, DB reset·volume 삭제·
 deploy·Git stage/commit은 웹 명령으로 제공하지 않습니다.
 
-local Compose는 `.env`의 `OPENAI_API_KEY`, `DART_API_KEY`, `SEC_USER_AGENT`, 선택적
+local Compose는 `.env`의 `OPENAI_API_KEY`(또는 `MODE`와 `OPENAI_API_KEY_LOCAL`·
+`OPENAI_API_KEY_PROD` 슬롯), `DART_API_KEY`, `SEC_USER_AGENT`, 선택적
 `EMBEDDING_PROVIDER`를 app container에 전달합니다. 코드나 frontend가 바뀐 뒤에는
 Operations의 **Build and start app** 또는 다음 명령으로 image를 다시 만듭니다.
 

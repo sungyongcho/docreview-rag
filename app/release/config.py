@@ -4,12 +4,12 @@ from decimal import Decimal
 from ipaddress import ip_address
 from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.openai_models import resolve_openai_model
-from app.settings_sources import DotenvFirstSettings
+from app.settings_sources import DotenvFirstSettings, Environment, KeySlot, resolve_openai_key
 
 type AdminMode = Literal["off", "readonly", "live"]
 
@@ -49,6 +49,19 @@ class ReleaseSettings(DotenvFirstSettings):
         default=None,
         validation_alias=AliasChoices("DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY"),
     )
+    # `.env` may hold one key per environment; `MODE` picks the slot when no explicit
+    # key is set. Public deployments keep a single explicit key.
+    environment: Environment = Field(
+        default="dev", validation_alias=AliasChoices("MODE", "DOCREVIEW_ENVIRONMENT")
+    )
+    openai_api_key_dev: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV"),
+    )
+    openai_api_key_prod: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY_PROD")
+    )
+    _openai_key_slot: KeySlot | None = PrivateAttr(default=None)
     openai_model: str = "gpt-5.6-terra"
     openai_max_input_tokens: int = Field(default=12_000, ge=1, le=100_000)
     openai_max_output_tokens: int = Field(default=600, ge=1, le=4_000)
@@ -75,6 +88,8 @@ class ReleaseSettings(DotenvFirstSettings):
 
     @field_validator(
         "openai_api_key",
+        "openai_api_key_dev",
+        "openai_api_key_prod",
         "local_llm_base_url",
         "local_llm_model",
         "local_llm_api_key",
@@ -86,6 +101,25 @@ class ReleaseSettings(DotenvFirstSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def resolve_openai_key_slot(self) -> Self:
+        """Fill the OpenAI key from the environment's slot when no explicit key is set."""
+        key, slot = resolve_openai_key(
+            explicit=self.openai_api_key,
+            dev=self.openai_api_key_dev,
+            prod=self.openai_api_key_prod,
+            environment=self.environment,
+        )
+        # The model is frozen; assign through `object` during validation only.
+        object.__setattr__(self, "openai_api_key", key)
+        self._openai_key_slot = slot
+        return self
+
+    @property
+    def openai_key_slot(self) -> KeySlot | None:
+        """Report which slot supplied the OpenAI key without exposing its value."""
+        return self._openai_key_slot
 
     @model_validator(mode="after")
     def validate_release_limits(self) -> Self:

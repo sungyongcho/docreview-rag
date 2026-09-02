@@ -10,8 +10,8 @@ from app.release.config import ReleaseSettings
 
 def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> None:
     """Default to the offline mode with ingestion, proxy trust and the provider all off."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("DOCREVIEW_OPENAI_API_KEY", raising=False)
+    for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
+        monkeypatch.delenv(name, raising=False)
 
     settings = ReleaseSettings(_env_file=None)
 
@@ -46,6 +46,27 @@ def test_operator_key_is_secret_and_only_enables_explicit_runtime(monkeypatch) -
     assert runtime.openai_api_key.get_secret_value() == secret
     assert secret not in repr(runtime)
     assert secret not in str(runtime)
+
+
+def test_environment_slot_enables_runtime_without_an_explicit_key(monkeypatch) -> None:
+    """Enable the provider from the MODE-selected slot and report the slot, not the key."""
+    secret = "sk-dev-slot-only"
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DOCREVIEW_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY_PROD", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
+
+    dev = ReleaseSettings(mode="runtime", _env_file=None)
+    monkeypatch.setenv("MODE", "prod")
+    prod = ReleaseSettings(mode="runtime", _env_file=None)
+
+    assert dev.openai_enabled is True
+    assert dev.openai_key_slot == "dev"
+    assert dev.openai_api_key is not None
+    assert dev.openai_api_key.get_secret_value() == secret
+    assert secret not in repr(dev)
+    assert prod.openai_enabled is False
+    assert prod.openai_key_slot is None
 
 
 def test_provider_budget_uses_explicit_caps_and_policy_prices() -> None:

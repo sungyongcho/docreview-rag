@@ -43,7 +43,8 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
 
 def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monkeypatch) -> None:
     """Separate live corpus readiness from provider availability and liveness."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    for name in ("OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV", "MODE"):
+        monkeypatch.delenv(name, raising=False)
 
     async def ready_probe():
         """Return one compatible populated corpus snapshot."""
@@ -89,6 +90,7 @@ def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monke
     assert ready.status_code == 200
     assert ready.json()["status"] == "ready"
     assert ready.json()["review_enabled"] is False
+    assert ready.json()["review_engines"]["openai"]["key_slot"] is None
 
     with TestClient(
         create_release_app(
@@ -151,8 +153,8 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
 
 def test_runtime_without_key_keeps_review_fail_closed(monkeypatch) -> None:
     """Leave the provider and its budget unset when no key was configured."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("DOCREVIEW_OPENAI_API_KEY", raising=False)
+    for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
+        monkeypatch.delenv(name, raising=False)
 
     services = build_runtime_services(ReleaseSettings(mode="runtime", _env_file=None))
 

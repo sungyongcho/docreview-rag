@@ -124,9 +124,19 @@ def test_invalid_settings_are_a_typed_exit_without_values(monkeypatch, capsys):
     assert "input_value" not in payload["error"]["message"]
 
 
-def test_provider_override_revalidates_the_openai_key_guard():
+def test_provider_override_revalidates_the_openai_key_guard(monkeypatch, tmp_path):
     """Run the fail-closed key guard when the provider is overridden per invocation."""
-    base = Settings.model_validate({**get_settings().model_dump(), "openai_api_key": None})
+    # Re-validation reads `.env` from the working directory again, so isolate the
+    # checkout dotenv and every key slot rather than only the explicit key.
+    monkeypatch.chdir(tmp_path)
+    for name in (
+        "OPENAI_API_KEY",
+        "OPENAI_API_KEY_LOCAL",
+        "OPENAI_API_KEY_DEV",
+        "OPENAI_API_KEY_PROD",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    base = Settings(_env_file=None)
 
     with pytest.raises(ValidationError, match="OPENAI_API_KEY is required"):
         cli._provider_settings(base, "openai")

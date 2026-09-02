@@ -1,6 +1,41 @@
-"""Shared settings source order for local dotenv-first execution."""
+"""Shared settings source order and OpenAI key-slot resolution for dotenv-first execution."""
 
+from typing import Literal
+
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+
+type Environment = Literal["dev", "prod"]
+type KeySlot = Literal["explicit", "dev", "prod"]
+
+
+def _present(value: SecretStr | None) -> SecretStr | None:
+    """Treat a blank secret, such as an empty Compose substitution, as absent."""
+    if value is None or not value.get_secret_value().strip():
+        return None
+    return value
+
+
+def resolve_openai_key(
+    *,
+    explicit: SecretStr | None,
+    dev: SecretStr | None,
+    prod: SecretStr | None,
+    environment: Environment,
+) -> tuple[SecretStr | None, KeySlot | None]:
+    """Pick the OpenAI key for one environment and report which slot supplied it.
+
+    An explicit ``OPENAI_API_KEY`` always wins so single-key deployments keep working.
+    Otherwise ``MODE=dev`` reads the local slot and ``MODE=prod`` reads the production
+    slot, which lets the two environments hold separate project keys and cost limits.
+    """
+    if _present(explicit) is not None:
+        return explicit, "explicit"
+    if environment == "dev" and _present(dev) is not None:
+        return dev, "dev"
+    if environment == "prod" and _present(prod) is not None:
+        return prod, "prod"
+    return None, None
 
 
 class DotenvFirstSettings(BaseSettings):

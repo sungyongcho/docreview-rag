@@ -37,7 +37,8 @@ tar --null --create --file=- --directory="$M7_SOURCE_ROOT" \
     --files-from="$M7_FILE_LIST" | tar --extract --file=- --directory="$M7_ARCHIVE_ROOT"
 
 cd "$M7_ARCHIVE_ROOT"
-unset OPENAI_API_KEY DOCREVIEW_OPENAI_API_KEY
+unset OPENAI_API_KEY DOCREVIEW_OPENAI_API_KEY \
+    OPENAI_API_KEY_LOCAL OPENAI_API_KEY_DEV OPENAI_API_KEY_PROD MODE
 export DOCREVIEW_MODE=canned
 export UV_PROJECT_ENVIRONMENT="$M7_ARCHIVE_ROOT/.venv"
 

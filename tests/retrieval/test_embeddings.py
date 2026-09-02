@@ -260,6 +260,7 @@ def test_settings_require_nonblank_api_key_for_openai_provider(
     """Reject an OpenAI provider configured without an explicit usable API key."""
     with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
         Settings(
+            _env_file=None,
             embedding_provider="openai",
             openai_api_key=api_key,
         )

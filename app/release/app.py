@@ -433,6 +433,7 @@ def create_release_app(
                         active_settings.openai_model if active_settings.openai_enabled else None
                     ),
                     "protocol": "responses",
+                    "key_slot": active_settings.openai_key_slot,
                 },
                 "local": {
                     **local_readiness,

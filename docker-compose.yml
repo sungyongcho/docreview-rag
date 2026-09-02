@@ -30,6 +30,11 @@ services:
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-large}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # One key slot per environment: MODE=dev reads OPENAI_API_KEY_LOCAL, MODE=prod
+      # reads OPENAI_API_KEY_PROD, and an explicit OPENAI_API_KEY always wins.
+      MODE: ${MODE:-dev}
+      OPENAI_API_KEY_LOCAL: ${OPENAI_API_KEY_LOCAL:-}
+      OPENAI_API_KEY_PROD: ${OPENAI_API_KEY_PROD:-}
       DART_API_KEY: ${DART_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-}
       DOCREVIEW_MODE: runtime

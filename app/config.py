@@ -5,11 +5,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from app.openai_models import resolve_openai_model
-from app.settings_sources import DotenvFirstSettings
+from app.settings_sources import DotenvFirstSettings, Environment, KeySlot, resolve_openai_key
 
 EmbeddingProviderName = Literal["openai", "deterministic", "sbert"]
 LexicalRanker = Literal["ts_rank_cd", "bm25"]
@@ -33,6 +33,19 @@ class Settings(DotenvFirstSettings):
     embed_dim: Literal[384] = 384
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
     openai_api_key: SecretStr | None = None
+    # `.env` may hold one key per environment; `MODE` picks the slot when no explicit
+    # key is set, so dev and prod can keep separate project keys and cost boundaries.
+    environment: Environment = Field(
+        default="dev", validation_alias=AliasChoices("MODE", "DOCREVIEW_ENVIRONMENT")
+    )
+    openai_api_key_dev: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV"),
+    )
+    openai_api_key_prod: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY_PROD")
+    )
+    _openai_key_slot: KeySlot | None = PrivateAttr(default=None)
     # Read only by the corpus acquisition command. The DART client takes the key as an
     # argument so no library code reaches the process environment for a credential.
     dart_api_key: SecretStr | None = None
@@ -80,6 +93,25 @@ class Settings(DotenvFirstSettings):
     def blank_local_values_are_unset(cls, value: object) -> object:
         """Treat blank Compose substitutions as absent local configuration."""
         return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def resolve_openai_key_slot(self) -> Self:
+        """Fill the OpenAI key from the environment's slot when no explicit key is set."""
+        key, slot = resolve_openai_key(
+            explicit=self.openai_api_key,
+            dev=self.openai_api_key_dev,
+            prod=self.openai_api_key_prod,
+            environment=self.environment,
+        )
+        # Assign through `object` so the same code also works on frozen settings.
+        object.__setattr__(self, "openai_api_key", key)
+        self._openai_key_slot = slot
+        return self
+
+    @property
+    def openai_key_slot(self) -> KeySlot | None:
+        """Report which slot supplied the OpenAI key without exposing its value."""
+        return self._openai_key_slot
 
     @model_validator(mode="after")
     def require_openai_api_key(self) -> Self:
