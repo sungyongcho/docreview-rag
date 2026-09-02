@@ -457,3 +457,37 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
   .runtime-strip { font-size: 12px; }
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* Shell IA: Build / Measure / System. Append-only block; tokens reuse :root plus --warn. */
+.sidebar-nav .nav-secondary { color: var(--muted); }
+.sidebar-nav .nav-secondary:hover, .sidebar-nav .nav-secondary[aria-pressed="true"] { color: var(--text); }
+.sidebar-nav button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.nav-dot { width: 6px; height: 6px; flex: none; margin-left: auto; border-radius: 50%; background: var(--warn); }
+.build-workspace .runtime-strip { margin-top: 0; }
+.system-workspace .status-page.embedded { padding: 0; overflow: visible; }
+.system-workspace .operations-page { padding: 0; overflow: visible; }
+.runtime-strip .runtime-actions { display: flex; gap: 6px; }
+.empty-state h2 { margin: 0; color: var(--text); }
+.empty-state .button { margin-top: 4px; }
+.run-workspace { align-items: start; }
+.run-results { min-width: 0; }
+.run-results .job-row { align-items: center; }
+.run-workspace details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.run-workspace details[open] > summary { margin-bottom: 10px; }
+.playground { align-items: start; }
+.playground details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.playground details[open] > summary { margin-bottom: 10px; }
+.playground textarea { width: 100%; min-height: 72px; resize: vertical; }
+.playground-results { min-width: 0; }
+.playground-results h3 { margin: 16px 0 8px; font-size: 13px; font-weight: 560; color: var(--muted); }
+.playground-rankings table td:first-child { color: var(--muted); width: 48px; }
+.playground-rankings table td { font-variant-numeric: tabular-nums; }
+.playground-evidence { display: grid; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
+.playground-evidence .evidence-hit:first-child { border-top: 0; }
+.playground-evidence .helper { margin: 10px 13px; }
+.playground-report p:not(.helper):not(.notice) { margin: 0 0 12px; line-height: 1.6; }
+.playground-report .evidence-hit { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 8px; }
+@media (max-width: 640px) {
+  .run-workspace, .playground { grid-template-columns: 1fr; }
+  .playground-rankings table td, .playground-rankings table th { padding: 7px 6px; }
+}

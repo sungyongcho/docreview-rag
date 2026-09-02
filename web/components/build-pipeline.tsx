@@ -31,6 +31,9 @@ export interface BuildPipelineProps {
   writable?: boolean | null;
   /** "dev key" / "prod key" / "explicit key" / "local" / "off"; `null` while readiness is unknown. */
   answerModel?: string | null;
+  /** Local Operations reachable from this build; the strip then offers service buttons instead of commands. */
+  operationsAvailable?: boolean;
+  onRunOperation?: (commandId: string) => void;
   onCancelJob: (jobId: string) => void;
   onDownload: () => void;
   onIngestAll: () => void;
@@ -94,6 +97,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         schemaMessage={props.schemaMessage ?? null}
         writable={props.writable ?? null}
         answerModel={props.answerModel ?? null}
+        onRunOperation={props.operationsAvailable && props.onRunOperation ? props.onRunOperation : null}
         onRefresh={props.onRefresh}
       />
       <NextStep pipeline={pipeline} handler={handler} disabled={disabled} onAsk={props.onAsk} onEvaluate={props.onEvaluate} onCompareSnapshots={props.onCompareSnapshots} onRefresh={props.onRefresh} onCancelJob={props.onCancelJob} />
@@ -129,10 +133,20 @@ interface RuntimeStripProps {
   schemaMessage: string | null;
   writable: boolean | null;
   answerModel: string | null;
+  /** Set only when Local Operations can run the fix for a problem from the browser. */
+  onRunOperation: ((commandId: string) => void) | null;
   onRefresh: () => void;
 }
 
-function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaMessage, writable, answerModel, onRefresh }: RuntimeStripProps) {
+interface RuntimeProblem {
+  reason: string;
+  /** Command line shown when no local operator is attached. */
+  fix: string;
+  /** Operations registry commands that perform the fix, in order. */
+  commands: Array<{ id: string; label: string }>;
+}
+
+function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
   if (pipeline.readOnly) {
     return <div className="runtime-strip"><div className="runtime-items"><span>Read-only portfolio · stored snapshots + live retrieval</span></div></div>;
   }
@@ -144,24 +158,29 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
   if (answerModel) items.push(`Answer model: ${answerModel}`);
   if (!apiDown && databaseConnected === null && schemaStatus === null && writable === null) items.push("Checking runtime…");
 
-  const problems: Array<{ reason: string; fix: string }> = [];
+  const problems: RuntimeProblem[] = [];
   if (databaseConnected === false) {
-    problems.push({ reason: schemaMessage || "The database is not connected.", fix: "docker compose up -d db" });
+    problems.push({ reason: schemaMessage || "The database is not connected.", fix: "docker compose up -d db", commands: [{ id: "db-start", label: "Start database" }] });
   } else if (schemaStatus === "drifted" || schemaStatus === "unavailable") {
-    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, fix: "uv run python -m app.db.migrate --plan" });
+    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, fix: "uv run python -m app.db.migrate --plan", commands: [{ id: "db-migrate-plan", label: "Plan migrations" }, { id: "db-migrate-apply", label: "Apply migrations" }] });
   }
   if (writable === false) {
-    problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files.", fix: "HOST_GID=$(id -g) docker compose up -d app" });
+    problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files. Set HOST_GID=$(id -g) in .env, then rebuild the app.", fix: "HOST_GID=$(id -g) docker compose up -d app", commands: [{ id: "app-start", label: "Rebuild app" }] });
   }
 
   return (
     <div className="runtime-strip">
       <div className="runtime-items">{items.map((item, index) => <Fragment key={item}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{item}</span></Fragment>)}</div>
-      {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} /> Refresh</button>}
+      <div className="runtime-actions">
+        {live && onRunOperation && !problems.length && <button className="button ghost" type="button" onClick={() => onRunOperation("app-start")}>Rebuild app</button>}
+        {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} /> Refresh</button>}
+      </div>
       {problems.map((problem) => (
         <div className="notice error" role="alert" key={problem.fix}>
           <p>{problem.reason}</p>
-          <code>{problem.fix}</code>
+          {onRunOperation
+            ? <div className="action-row">{problem.commands.map((command) => <button className="button" type="button" key={command.id} onClick={() => onRunOperation(command.id)}>{command.label}</button>)}</div>
+            : <code>{problem.fix}</code>}
         </div>
       ))}
     </div>

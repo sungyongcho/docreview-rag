@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
-  return render(<SettingsModal open profile={DEFAULT_SESSION_PROFILE} capabilities={capabilities} readiness={null} onChange={vi.fn()} onClose={onClose} onOpenLab={vi.fn()} onOpenOperations={vi.fn()} onOpenStatus={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
+  return render(<SettingsModal open profile={DEFAULT_SESSION_PROFILE} capabilities={capabilities} readiness={null} onChange={vi.fn()} onClose={onClose} onOpenMeasure={vi.fn()} onOpenSystem={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
 }
 
 describe("Settings modal", () => {

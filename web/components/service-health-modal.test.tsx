@@ -8,7 +8,7 @@ const handlers = {
   onReload: vi.fn(),
   onDismiss: vi.fn(),
   onOpenStatus: vi.fn(),
-  onOpenCorpusLab: vi.fn(),
+  onOpenBuild: vi.fn(),
 };
 
 describe("ServiceHealthModal", () => {
@@ -36,9 +36,9 @@ describe("ServiceHealthModal", () => {
     expect(screen.queryByRole("button", { name: /Try again/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close database warning" }));
     fireEvent.click(screen.getByRole("button", { name: "Open System status" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open Corpus Lab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Build" }));
     expect(handlers.onDismiss).toHaveBeenCalled();
     expect(handlers.onOpenStatus).toHaveBeenCalled();
-    expect(handlers.onOpenCorpusLab).toHaveBeenCalled();
+    expect(handlers.onOpenBuild).toHaveBeenCalled();
   });
 });

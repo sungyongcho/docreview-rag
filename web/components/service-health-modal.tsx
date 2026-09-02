@@ -10,7 +10,7 @@ interface ServiceHealthModalProps {
   onReload: () => void;
   onDismiss: () => void;
   onOpenStatus: () => void;
-  onOpenCorpusLab: () => void;
+  onOpenBuild: () => void;
   degradedMessage?: string;
 }
 
@@ -22,7 +22,7 @@ export function ServiceHealthModal({
   onReload,
   onDismiss,
   onOpenStatus,
-  onOpenCorpusLab,
+  onOpenBuild,
   degradedMessage,
 }: ServiceHealthModalProps) {
   if (!visible || (kind !== "api_down" && kind !== "db_degraded")) return null;
@@ -38,7 +38,7 @@ export function ServiceHealthModal({
         <div className="health-modal-actions">
           {!apiDown && <button className="button" type="button" onClick={onOpenStatus}>Open System status</button>}
           {!apiDown && <button className="button" type="button" onClick={onDismiss}>Continue</button>}
-          {!apiDown && <button className="button primary" type="button" onClick={onOpenCorpusLab}>Open Corpus Lab</button>}
+          {!apiDown && <button className="button primary" type="button" onClick={onOpenBuild}>Open Build</button>}
           {apiDown && <button className="button" type="button" onClick={onReload}><RotateCw size={15} /> Reload page</button>}
           {apiDown && <button className="button primary" type="button" disabled={checking} onClick={onRetry}><RefreshCw size={15} /> {checking ? "Checking…" : "Try again"}</button>}
         </div>

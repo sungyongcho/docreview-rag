@@ -2,28 +2,25 @@
 
 import {
   Activity,
-  BookOpen,
-  Database,
-  HelpCircle,
+  FlaskConical,
+  Hammer,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
   Send,
   SquarePen,
-  TerminalSquare,
   Trash2,
   Settings,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CorpusLab } from "@/components/corpus-lab";
+import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
 import { MarkdownMessage } from "@/components/markdown-message";
+import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding } from "@/components/onboarding";
-import { Operations } from "@/components/operations";
 import { ServiceHealthModal } from "@/components/service-health-modal";
-import { SystemStatus } from "@/components/system-status";
-import { SettingsModal } from "@/components/settings-modal";
+import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
+import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { useNotifications } from "@/components/notifications";
 import {
   ApiError,
@@ -31,25 +28,37 @@ import {
   retrieveEvidence,
   streamReview,
 } from "@/lib/api";
-import { operatorAvailable } from "@/lib/operator-api";
+import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, newConversation, ONBOARDING_KEY, saveConversations } from "@/lib/storage";
 import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionProfile } from "@/lib/types";
-import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
+import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
 import { useOperatorJobs } from "@/lib/use-operator-jobs";
 
-type View = "review" | "lab" | "status" | "operations";
+type View = "review" | "build" | "measure" | "system";
+
+/** One deep-link target for every navigation call site: sidebar, topbar, modals, and workspaces. */
+export type NavigationTarget =
+  | { view: "review" }
+  | { view: "build"; tab?: BuildTab }
+  | { view: "measure"; tab?: MeasureTab; resultId?: number }
+  | { view: "system"; tab?: SystemTab };
 
 export function ServiceShell() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<View>("review");
+  const [buildTab, setBuildTab] = useState<BuildTab>("pipeline");
+  const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
+  const [systemTab, setSystemTab] = useState<SystemTab>("status");
+  const [measureResultId, setMeasureResultId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [tourOpen, setTourOpen] = useState(false);
   const [profile, setProfile] = useState<ReviewSessionProfile>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [progress, setProgress] = useState("");
   const reviewAbort = useRef<AbortController | null>(null);
@@ -97,12 +106,27 @@ export function ServiceShell() {
     setConversations(saveConversations(next));
   }
 
+  function navigate(target: NavigationTarget) {
+    if (target.view === "build" && target.tab) setBuildTab(target.tab);
+    if (target.view === "measure") {
+      if (target.tab) setMeasureTab(target.tab);
+      setMeasureResultId(target.resultId ?? null);
+    }
+    if (target.view === "system" && target.tab) setSystemTab(target.tab);
+    setView(target.view);
+  }
+
+  function openSettings(category?: SettingsCategory) {
+    setSettingsCategory(category);
+    setSettingsOpen(true);
+  }
+
   function createReview() {
     const conversation = newConversation();
     persist([conversation, ...conversations]);
     setActiveId(conversation.id);
     setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
-    setView("review");
+    navigate({ view: "review" });
   }
 
   function removeReview(id: string) {
@@ -233,7 +257,7 @@ export function ServiceShell() {
     };
     setProfile(sessionProfile);
     if (active) updateActive(active.messages, sessionProfile);
-    setView("review");
+    navigate({ view: "review" });
   }
 
   function updateSessionProfile(update: Partial<ReviewSessionProfile>) {
@@ -260,7 +284,7 @@ export function ServiceShell() {
     };
     setProfile(next);
     if (active) updateActive(active.messages, next);
-    setView("review");
+    navigate({ view: "review" });
     notify(`Snapshot ${snapshot.label} applied to this review.`, "success", "snapshot-review");
   }
 
@@ -324,6 +348,32 @@ export function ServiceShell() {
     setTourOpen(true);
   }
 
+  const readiness = runtimeHealth.readiness;
+  /**
+   * Build needs the operator: a degraded runtime, a switched-off answer model, or a
+   * failed job. Corpus-level "action" states live behind `/admin/corpus`, which only
+   * Build fetches, so readiness stands in for them here.
+   */
+  const buildNeedsAttention = adminLive && (
+    (readiness !== null && (readiness.status === "degraded" || readiness.review_enabled === false))
+    || operatorJobs.board.jobs.some((job) => job.status === "failed" || job.status === "interrupted")
+  );
+
+  async function runOperation(commandId: string) {
+    try {
+      const command = (await getOperatorCommands()).find((item) => item.command_id === commandId);
+      if (!command) throw new Error(`Operations does not offer ${commandId}.`);
+      if (command.confirmation && !window.confirm(command.confirmation)) return;
+      await startOperatorJob(command.command_id);
+      notify(`${command.label} started. Follow it under System › Operations.`, "success", "operations-run");
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : "Command could not start.", "error", "operations-run");
+    }
+  }
+  const topbarTitle = view === "review"
+    ? active?.title ?? "New review"
+    : view === "build" ? "Build" : view === "measure" ? "Measure" : "System";
+
   return (
     <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
       <aside className="sidebar">
@@ -333,7 +383,7 @@ export function ServiceShell() {
         <div className="conversation-list" data-tour="recent-reviews">
           {conversations.map((conversation) => (
             <div className="conversation-row" key={conversation.id}>
-              <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => { setActiveId(conversation.id); setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE); setView("review"); }}>
+              <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => { setActiveId(conversation.id); setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE); navigate({ view: "review" }); }}>
                 <MessageSquare size={15} /><span>{conversation.title}</span>
               </button>
               <button className="delete-review" type="button" aria-label={`Delete ${conversation.title}`} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>
@@ -341,17 +391,18 @@ export function ServiceShell() {
           ))}
         </div>
         <div className="sidebar-nav">
-          <button data-tour="corpus-lab" type="button" aria-pressed={view === "lab"} onClick={() => setView("lab")}><Database size={17} /><span>Corpus Lab</span></button>
-          {operationsAvailable && <button data-tour="operations" type="button" aria-pressed={view === "operations"} onClick={() => setView("operations")}><TerminalSquare size={17} /><span>Operations</span></button>}
-          <button type="button" onClick={() => setSettingsOpen(true)}><Settings size={17} /><span>Settings</span></button>
+          <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>Build</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">, needs attention</span></>}</button>
+          <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>Measure</span></button>
+          <button data-tour="system" className="nav-secondary" type="button" aria-pressed={view === "system"} onClick={() => navigate({ view: "system" })}><Activity size={17} /><span>System</span></button>
+          <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>Settings</span></button>
         </div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <button className="icon-button" type="button" aria-label="Toggle sidebar" onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
-          <div><strong>{view === "review" ? active?.title ?? "New review" : view === "lab" ? "Corpus Lab" : view === "operations" ? "Operations" : "System status"}</strong><span>Evidence-first SEC and DART filing review</span></div>
-          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => setView("lab")}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className={`health ${healthBadge(runtimeHealth.kind)}`} onClick={() => setView("status")}><i />{healthLabel(runtimeHealth.kind)}</button></div>
+          <div><strong>{topbarTitle}</strong><span>Evidence-first SEC and DART filing review</span></div>
+          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className={`health ${healthBadge(runtimeHealth.kind)}`} onClick={() => navigate({ view: "system", tab: "status" })}><i />{healthLabel(runtimeHealth.kind)}</button></div>
         </header>
 
         {view === "review" && <section className="review-workspace">
@@ -362,14 +413,53 @@ export function ServiceShell() {
               {busy && <div className="thinking">{progress || "Retrieving and checking evidence…"}</div>}
             </div>
           </div>
-          <div className="composer-wrap" data-tour="composer"><button className="profile-chip" type="button" onClick={() => setSettingsOpen(true)}>Session profile · {activeSessionProfile.engine} · {activeSessionProfile.corpus_scope} · {activeSessionProfile.retrieval_preset}</button><label className="composer"><textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} /><button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || vectorOnlyUnavailable || !query.trim()} onClick={() => void submit()}><Send size={17} /></button></label>{vectorOnlyUnavailable ? <p className="danger">Vector-only retrieval is unavailable until embeddings are ready. <button className="inline-link" type="button" onClick={() => setView("lab")}>Open Corpus Lab</button></p> : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}</div>
+          <div className="composer-wrap" data-tour="composer"><button className="profile-chip" type="button" onClick={() => openSettings()}>Session profile · {activeSessionProfile.engine} · {activeSessionProfile.corpus_scope} · {activeSessionProfile.retrieval_preset}</button><label className="composer"><textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} /><button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || vectorOnlyUnavailable || !query.trim()} onClick={() => void submit()}><Send size={17} /></button></label>{vectorOnlyUnavailable ? <p className="danger">Vector-only retrieval is unavailable until embeddings are ready. <button className="inline-link" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>Open Build</button></p> : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}</div>
         </section>}
 
-        {view === "lab" && <CorpusLab live={adminLive} ready={runtimeHealth.kind === "healthy"} profile={resolvedRetrievalProfile(profile)} onProfileChange={updateLabProfile} onApplyProfile={applyProfile} onApplySnapshot={applySnapshot} jobBoard={operatorJobs.board} jobsLoading={operatorJobs.loading} onRetryJob={(jobId) => void operatorJobs.retry(jobId)} onCancelJob={(jobId) => void operatorJobs.cancel(jobId)} onRefreshJobs={() => void operatorJobs.refresh()} readiness={runtimeHealth.readiness} healthKind={runtimeHealth.kind} onNavigate={(target) => setView(target)} onRecheck={() => void runtimeHealth.check()} />}
-        {view === "operations" && operationsAvailable && <Operations />}
-        {view === "status" && <SystemStatus readiness={runtimeHealth.readiness} loading={runtimeHealth.checking} error="" onRefresh={() => void runtimeHealth.check()} />}
+        {view === "build" && <BuildWorkspace
+          live={adminLive}
+          ready={runtimeHealth.kind === "healthy"}
+          readiness={runtimeHealth.readiness}
+          healthKind={runtimeHealth.kind}
+          profile={resolvedRetrievalProfile(activeSessionProfile)}
+          jobBoard={operatorJobs.board}
+          jobsLoading={operatorJobs.loading}
+          onRetryJob={(jobId) => void operatorJobs.retry(jobId)}
+          onCancelJob={(jobId) => void operatorJobs.cancel(jobId)}
+          onRefreshJobs={() => void operatorJobs.refresh()}
+          onRecheck={() => void runtimeHealth.check()}
+          operationsAvailable={operationsAvailable}
+          onRunOperation={(commandId) => void runOperation(commandId)}
+          tab={buildTab}
+          onTabChange={setBuildTab}
+          onNavigate={navigate}
+        />}
+        {view === "measure" && <MeasureWorkspace
+          live={adminLive}
+          ready={runtimeHealth.kind === "healthy"}
+          profile={resolvedRetrievalProfile(activeSessionProfile)}
+          onProfileChange={updateLabProfile}
+          onApplyProfile={applyProfile}
+          onApplySnapshot={applySnapshot}
+          jobBoard={operatorJobs.board}
+          onRefreshJobs={() => void operatorJobs.refresh()}
+          tab={measureTab}
+          onTabChange={setMeasureTab}
+          onOpenSettings={(category) => openSettings(category)}
+          focusResultId={measureResultId}
+        />}
+        {view === "system" && <SystemWorkspace
+          live={adminLive}
+          ready={runtimeHealth.kind === "healthy"}
+          readiness={runtimeHealth.readiness}
+          checking={runtimeHealth.checking}
+          onRefresh={() => void runtimeHealth.check()}
+          operationsAvailable={operationsAvailable}
+          tab={systemTab}
+          onTabChange={setSystemTab}
+        />}
       </section>
-      <SettingsModal open={settingsOpen} profile={active?.profile ?? profile} capabilities={capabilities ?? { can_edit_prompt_policy: adminLive, can_edit_run_limits: adminLive, can_edit_golden: adminLive, can_build_snapshot: adminLive, can_run_evaluation: adminLive, can_change_custom_retrieval: adminLive, can_query_snapshot: adminLive, can_use_operations: operationsAvailable, can_compare_published_snapshots: true }} readiness={runtimeHealth.readiness} onChange={(next) => { setProfile(next); if (active) updateActive(active.messages, next); }} onClose={() => setSettingsOpen(false)} onOpenLab={() => { setSettingsOpen(false); setView("lab"); }} onOpenOperations={() => { setSettingsOpen(false); setView("operations"); }} onOpenStatus={() => { setSettingsOpen(false); setView("status"); }} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
+      <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={capabilities ?? { can_edit_prompt_policy: adminLive, can_edit_run_limits: adminLive, can_edit_golden: adminLive, can_build_snapshot: adminLive, can_run_evaluation: adminLive, can_change_custom_retrieval: adminLive, can_query_snapshot: adminLive, can_use_operations: operationsAvailable, can_compare_published_snapshots: true }} readiness={runtimeHealth.readiness} onChange={(next) => { setProfile(next); if (active) updateActive(active.messages, next); }} onClose={() => setSettingsOpen(false)} onOpenMeasure={(tab) => { setSettingsOpen(false); navigate({ view: "measure", tab }); }} onOpenSystem={(tab) => { setSettingsOpen(false); navigate({ view: "system", tab }); }} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
       {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} />}
       <ServiceHealthModal
         kind={runtimeHealth.kind}
@@ -378,10 +468,10 @@ export function ServiceShell() {
         onRetry={() => void runtimeHealth.check()}
         onReload={() => window.location.reload()}
         onDismiss={runtimeHealth.dismissWarning}
-        onOpenStatus={() => { runtimeHealth.dismissWarning(); setView("status"); }}
-        onOpenCorpusLab={() => { runtimeHealth.dismissWarning(); setView("lab"); }}
+        onOpenStatus={() => { runtimeHealth.dismissWarning(); navigate({ view: "system", tab: "status" }); }}
+        onOpenBuild={() => { runtimeHealth.dismissWarning(); navigate({ view: "build", tab: "pipeline" }); }}
         degradedMessage={runtimeHealth.readiness?.corpus?.pending_embeddings
-          ? `${runtimeHealth.readiness.corpus.pending_embeddings.toLocaleString()} chunks still need embeddings. Open Corpus Lab and run Backfill embeddings.`
+          ? `${runtimeHealth.readiness.corpus.pending_embeddings.toLocaleString()} chunks still need embeddings. Open Build and run Backfill embeddings.`
           : runtimeHealth.readiness?.corpus?.schema_message || undefined}
       />
     </main>

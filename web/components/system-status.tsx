@@ -7,6 +7,8 @@ interface SystemStatusProps {
   loading: boolean;
   error: string;
   onRefresh: () => void;
+  /** Inside the System workspace the host owns the page heading and the Refresh button. */
+  embedded?: boolean;
 }
 
 function value(value: unknown) {
@@ -15,17 +17,17 @@ function value(value: unknown) {
   return String(value);
 }
 
-export function SystemStatus({ readiness, loading, error, onRefresh }: SystemStatusProps) {
+export function SystemStatus({ readiness, loading, error, onRefresh, embedded = false }: SystemStatusProps) {
   const corpus = readiness?.corpus;
   const models = readiness?.models ?? {};
   return (
-    <section className="status-page">
-      <div className="page-heading">
+    <section className={embedded ? "status-page embedded" : "status-page"}>
+      {!embedded && <div className="page-heading">
         <div><p className="eyebrow">System status</p><h1>Runtime readiness</h1></div>
         <button className="button" type="button" disabled={loading} onClick={onRefresh}>
           <RefreshCw size={15} /> {loading ? "Checking…" : "Refresh"}
         </button>
-      </div>
+      </div>}
       {error && <div className="notice error" role="alert">{error}</div>}
       <div className="metric-grid status-metrics">
         <div className="metric"><span>Overall</span><strong>{readiness?.status ?? "Unknown"}</strong></div>

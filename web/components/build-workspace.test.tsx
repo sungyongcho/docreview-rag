@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
 import type { Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
-import { CorpusLab, deploymentLabel } from "./corpus-lab";
+import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
 
 const READY_RUNTIME: Readiness = {
   status: "ready",
@@ -29,19 +30,6 @@ const READY_RUNTIME: Readiness = {
   },
 };
 
-const EMPTY_USAGE_FIXTURE = {
-  runs: 0,
-  requests: 0,
-  input_tokens: 0,
-  cached_input_tokens: 0,
-  cache_write_input_tokens: 0,
-  output_tokens: 0,
-  reasoning_tokens: 0,
-  estimated_cost_usd: "0",
-  latest_run_at: null,
-  models: [],
-};
-
 const EMPTY_DOCUMENT_FACETS_FIXTURE = {
   registries: [],
   issuers: [],
@@ -53,88 +41,59 @@ const EMPTY_DOCUMENT_FACETS_FIXTURE = {
   snapshots: [],
 };
 
-describe("Corpus Lab", () => {
+function jsonResponse(payload: unknown) {
+  return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+type HarnessProps = Partial<Omit<BuildWorkspaceProps, "tab" | "onTabChange">>;
+
+/** The shell owns the tab; this harness stands in for it so tab switches re-render. */
+function Harness(props: HarnessProps) {
+  const [tab, setTab] = useState<BuildTab>("pipeline");
+  return (
+    <BuildWorkspace
+      live={false}
+      ready
+      readiness={null}
+      healthKind="healthy"
+      profile={DEFAULT_PROFILE}
+      jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
+      jobsLoading={false}
+      onRetryJob={() => undefined}
+      onCancelJob={() => undefined}
+      onRefreshJobs={() => undefined}
+      onRecheck={() => undefined}
+      onNavigate={() => undefined}
+      {...props}
+      tab={tab}
+      onTabChange={setTab}
+    />
+  );
+}
+
+describe("Build workspace", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
   });
 
   it("keeps real corpus operations disabled in the public read-only mode", () => {
-    render(
-      <CorpusLab
-        live={false}
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
+    render(<Harness live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ingest all manifests" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
   });
 
-  it("shows locally persisted usage only in live operator mode", async () => {
+  it("shows active progress on the pipeline and opens the Job Center from it", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/suites")) payload = CANNED_SUITES;
-      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
-      else if (url.endsWith("/admin/corpus/jobs")) payload = { history: [] };
+      if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
       else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
-      else if (url.endsWith("/admin/usage")) payload = {
-        runs: 2, requests: 3, input_tokens: 100, cached_input_tokens: 20,
-        cache_write_input_tokens: 10, output_tokens: 30, reasoning_tokens: 5,
-        estimated_cost_usd: "0.01", latest_run_at: null,
-        models: [{ model_name: "gpt-5.6-terra", requests: 3, input_tokens: 100,
-          cached_input_tokens: 20, cache_write_input_tokens: 10, output_tokens: 30,
-          reasoning_tokens: 5, estimated_cost_usd: "0.01" }],
-      };
-      return new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }));
-    render(
-      <CorpusLab
-        live
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: "Usage" }));
-
-    await waitFor(() => expect(screen.getByText("gpt-5.6-terra")).toBeInTheDocument());
-    expect(screen.getAllByText("$0.01")).toHaveLength(2);
-  });
-
-  it("shows active progress and queue position in Overview and Job Center", () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/suites")) payload = CANNED_SUITES;
-      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
-      else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
-      else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
+      else if (url.endsWith("/admin/documents/facets")) payload = EMPTY_DOCUMENT_FACETS_FIXTURE;
       else if (url.endsWith("/admin/snapshots")) payload = [];
-      else if (url.includes("/admin/golden/")) payload = [];
-      else if (url.endsWith("/admin/usage")) payload = { ...EMPTY_USAGE_FIXTURE };
-      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+      return jsonResponse(payload);
     }));
     const active = {
       job_id: "admin-progress",
@@ -158,22 +117,9 @@ describe("Corpus Lab", () => {
       finished_at: null,
       updated_at: "2026-09-01T12:00:02Z",
     };
-    render(
-      <CorpusLab
-        live
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [active], active_count: 1, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
+    render(<Harness live jobBoard={{ jobs: [active], active_count: 1, queued_count: 0 }} />);
 
-    expect(screen.getByText("50 / 100 · 50%")).toBeInTheDocument();
+    expect(screen.getAllByText("50 / 100 · 50%")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "View all jobs" }));
     expect(screen.getByRole("heading", { name: "Job Center" })).toBeInTheDocument();
     expect(screen.getAllByText("Embedded 50").length).toBeGreaterThan(0);
@@ -183,8 +129,7 @@ describe("Corpus Lab", () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/suites")) payload = CANNED_SUITES;
-      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
+      if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
       else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
       else if (url.endsWith("/admin/documents/facets")) payload = {
         registries: [{ value: "sec", count: 1 }],
@@ -225,25 +170,10 @@ describe("Corpus Lab", () => {
         snapshot_memberships: [{ snapshot_id: 3, label: "Baseline", status: "ready", public: true, created_at: "2026-09-01T12:00:00Z" }],
       };
       else if (url.endsWith("/admin/snapshots")) payload = [];
-      else if (url.includes("/admin/golden/")) payload = [];
-      else if (url.endsWith("/admin/usage")) payload = { ...EMPTY_USAGE_FIXTURE };
-      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+      return jsonResponse(payload);
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(
-      <CorpusLab
-        live
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
+    render(<Harness live />);
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByRole("combobox", { name: "Filter company" })).toBeInTheDocument();
@@ -257,56 +187,6 @@ describe("Corpus Lab", () => {
     expect(screen.getByRole("heading", { name: "Index revisions & snapshot membership" })).toBeInTheDocument();
     expect(screen.getByText("Revision #3 · Baseline")).toBeInTheDocument();
     expect(screen.getByText("ACME FY2024 · Item 7")).toBeInTheDocument();
-  });
-
-  it("shows canonical golden questions before a mutable draft exists", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      let payload: unknown = {};
-      if (url.endsWith("/admin/evaluations/suites")) payload = CANNED_SUITES;
-      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
-      else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
-      else if (url.includes("/admin/documents?")) payload = { documents: [], total: 0, next_cursor: null };
-      else if (url.endsWith("/admin/documents/facets")) payload = EMPTY_DOCUMENT_FACETS_FIXTURE;
-      else if (url.endsWith("/admin/golden/sec-en/revisions")) payload = [];
-      else if (url.endsWith("/admin/golden/sec-en/canonical")) payload = {
-        suite_id: "sec-en",
-        filename: "retrieval.json",
-        sha256: "a".repeat(64),
-        payload: [{
-          id: "test-01", question: "Which policy is absent?", category: "absent",
-          facet: "policy", tags: ["negative"], answers: [], expected_label: "NOT_IN_DOCS",
-          reference_answer: "NOT_IN_DOCS", note: "Deliberate negative.",
-          curation_status: "agent-curated", approval_status: "pending-author-approval",
-          human_verified: false,
-        }],
-      };
-      else if (url.endsWith("/admin/snapshots")) payload = [];
-      else if (url.endsWith("/admin/usage")) payload = { ...EMPTY_USAGE_FIXTURE };
-      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
-    }));
-    render(
-      <CorpusLab
-        live
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Golden Tests" }));
-    expect(await screen.findByText("Which policy is absent?")).toBeInTheDocument();
-    expect(screen.getByText("retrieval.json")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "test-01" }));
-    expect(screen.getByText("Read-only source")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save case" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Create draft" })).toBeEnabled();
   });
 
   it("orders build steps from the administrator snapshot", async () => {
@@ -333,26 +213,10 @@ describe("Corpus Lab", () => {
         registries: [{ value: "sec", count: 20 }, { value: "dart", count: 9 }],
       };
       else if (url.endsWith("/admin/snapshots")) payload = [];
-      else if (url.includes("/admin/golden/")) payload = [];
-      else if (url.endsWith("/admin/usage")) payload = { ...EMPTY_USAGE_FIXTURE };
-      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+      return jsonResponse(payload);
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(
-      <CorpusLab
-        live
-        readiness={READY_RUNTIME}
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
+    render(<Harness live readiness={READY_RUNTIME} />);
 
     expect(await screen.findByText("1 listed filing not ingested yet (SEC)")).toBeInTheDocument();
     expect(screen.getByText("All steps done")).toBeInTheDocument();
@@ -378,23 +242,10 @@ describe("Corpus Lab", () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       const payload: unknown = url.endsWith("/snapshots") ? { snapshots: [] } : {};
-      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+      return jsonResponse(payload);
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(
-      <CorpusLab
-        live={false}
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
-      />,
-    );
+    render(<Harness live={false} />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -402,24 +253,23 @@ describe("Corpus Lab", () => {
     expect(screen.getAllByText("Portfolio fixture").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Compare published snapshots" })).toBeInTheDocument();
     expect(screen.getAllByText("Runs on the local operator build.").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    expect(screen.getByText("NVDA-FY2024")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    expect(screen.getByText("Jobs run on the local operator build.")).toBeInTheDocument();
   });
 
   it("shows the answer-model fix when review is disabled", () => {
     const onRecheck = vi.fn();
     render(
-      <CorpusLab
+      <Harness
         live={false}
         readiness={{ ...READY_RUNTIME, review_enabled: false, active_review_model: null, review_engines: { openai: { enabled: false }, local: { enabled: false, reason: "not_configured" } } }}
         onRecheck={onRecheck}
-        profile={DEFAULT_PROFILE}
-        onProfileChange={vi.fn()}
-        onApplyProfile={vi.fn()}
-        onApplySnapshot={vi.fn()}
-        jobBoard={{ jobs: [], active_count: 0, queued_count: 0 }}
-        jobsLoading={false}
-        onRetryJob={vi.fn()}
-        onCancelJob={vi.fn()}
-        onRefreshJobs={vi.fn()}
       />,
     );
 
@@ -427,9 +277,52 @@ describe("Corpus Lab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
     expect(onRecheck).toHaveBeenCalledTimes(1);
   });
-});
-  it("derives a text-only deployment label from the current host", () => {
-    expect(deploymentLabel("localhost")).toBe("DEV");
-    expect(deploymentLabel("127.0.0.1")).toBe("DEV");
-    expect(deploymentLabel("review.example.com")).toBe("PROD");
+
+  it("routes cross-workspace links through onNavigate", () => {
+    const onNavigate = vi.fn();
+    render(<Harness live={false} onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));
+    expect(onNavigate).toHaveBeenCalledWith({ view: "measure", tab: "snapshots" });
+    // The next-step callout and the Ask stage card both offer the same action.
+    fireEvent.click(screen.getAllByRole("button", { name: "Ask a question" })[0]);
+    expect(onNavigate).toHaveBeenCalledWith({ view: "review" });
   });
+
+  it("queues a quick evaluation with a non-empty chunk target list", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      let payload: unknown = {};
+      if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") payload = { ...CANNED_JOB, job_id: "eval-new", status: "queued", result_id: null, result_ids: [] };
+      else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
+      else if (url.endsWith("/admin/corpus")) payload = {
+        status: {
+          database_connected: true, schema_status: "compatible", schema_message: "ok",
+          documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0,
+          bm25_ready: true, writable: true, provider: "deterministic",
+        },
+        manifests: [{ name: "manifest.json", registry: "sec", documents: 21, valid: true, sources_present: 21 }],
+        documents: [],
+      };
+      else if (url.endsWith("/admin/documents/facets")) payload = { ...EMPTY_DOCUMENT_FACETS_FIXTURE, registries: [{ value: "sec", count: 21 }, { value: "dart", count: 9 }] };
+      else if (url.includes("/admin/golden/")) payload = [];
+      else if (url.endsWith("/admin/snapshots")) payload = [];
+      return jsonResponse(payload);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Harness live readiness={READY_RUNTIME} />);
+
+    // The next-step callout and the Evaluate card offer the same action.
+    const buttons = await screen.findAllByRole("button", { name: "Run quick evaluation" });
+    fireEvent.click(buttons[0]);
+
+    await waitFor(() => {
+      const posted = fetchMock.mock.calls.find(([value, init]) => String(value).endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST");
+      expect(posted).toBeDefined();
+      const body = JSON.parse(String((posted?.[1] as RequestInit).body)) as Record<string, unknown>;
+      expect(body.mode).toBe("quick");
+      expect(body.golden_revision_id).toBeNull();
+      expect(Array.isArray(body.target_text_chars) && (body.target_text_chars as number[]).length > 0).toBe(true);
+    });
+  });
+});

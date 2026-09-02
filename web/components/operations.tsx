@@ -13,7 +13,8 @@ import {
 } from "@/lib/operator-api";
 import { useNotifications } from "@/components/notifications";
 
-export function Operations() {
+/** `embedded` drops the page heading so a host workspace keeps the only h1. */
+export function Operations({ embedded = false }: { embedded?: boolean } = {}) {
   const [commands, setCommands] = useState<OperatorCommand[]>([]);
   const [jobs, setJobs] = useState<OperatorJob[]>([]);
   const { notify } = useNotifications();
@@ -63,11 +64,13 @@ export function Operations() {
 
   const latest = jobs[0] ?? null;
   return (
-    <section className="operations-page">
-      <header className="page-heading">
-        <div><p className="eyebrow">Local checkout only</p><h1>Operations</h1><p>Run fixed verification and service commands without exposing a shell.</p></div>
-        <button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
-      </header>
+    <section className={`operations-page${embedded ? " embedded" : ""}`}>
+      {embedded
+        ? <div className="surface-heading"><div><h2>Operations</h2><p className="helper">Local checkout only. Run fixed verification and service commands without exposing a shell.</p></div><button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button></div>
+        : <header className="page-heading">
+            <div><p className="eyebrow">Local checkout only</p><h1>Operations</h1><p>Run fixed verification and service commands without exposing a shell.</p></div>
+            <button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
+          </header>}
       <div className="command-grid">
         {commands.map((command) => (
           <article className="command-card" key={command.command_id}>
