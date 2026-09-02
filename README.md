@@ -109,6 +109,57 @@ backfill까지 사용하려면 다음 선택을 함께 둡니다.
 EMBEDDING_PROVIDER=openai
 ```
 
+### dev / prod Compose 이원화
+
+`docker-compose.yml`은 `db`와 `app`만 정의하는 공통 base이고, overlay 두 개가 그 위에
+얹힙니다. `docker-compose.dev.yml`은 prod에서 고를 수 없는 개발 전용 기능을 더하고,
+`docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서 재현합니다.
+
+`.env.example`의 `COMPOSE_FILE`이 dev overlay를 기본으로 잡으므로 평소에는 명령이
+바뀌지 않습니다. prod 화면은 명시적으로 지정합니다. `-f`가 `COMPOSE_FILE`을 이기고,
+웹 번들 성격이 image 빌드 인자라 `--build`가 필요합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+```
+
+운영 VM용 파일은 `deploy/gcp/docker-compose.deploy.yml`이며 배포 스크립트가 그것만
+복사하므로 개발 overlay는 배포 경로에 닿지 않습니다.
+
+### 로컬 모델로 답변하기 (선택)
+
+답변 모델을 OpenAI 대신 이 기계의 모델로 돌릴 수 있습니다. 검색은 그대로입니다.
+모델 host는 dev overlay의 `local-llm` profile에 있고, 가중치는 named volume에 한 번만
+내려받습니다.
+
+```bash
+docker compose --profile local-llm up -d ollama
+docker compose --profile local-llm exec ollama ollama pull gemma4:e4b
+```
+
+그다음 `.env`에 endpoint와 모델을 둡니다. compose network 안에서 서비스 이름으로
+찾아가므로 host 주소가 아닙니다. Ollama URL에 `/v1`을 붙이면 OpenAI Responses
+프로토콜로 잘못 해석되므로 붙이지 않습니다.
+
+```dotenv
+LOCAL_LLM_BASE_URL=http://ollama:11434
+LOCAL_LLM_MODEL=gemma4:e4b
+```
+
+`docker compose up -d app`으로 재기동한 뒤 Settings › Review session에서 Answer
+engine을 Local LLM으로 바꾸면 사이드바에 `LOCAL MODEL` 배지가 뜹니다. 상태는 System ›
+System status의 Local model policy panel이 보여 줍니다. 임베딩은 이 경로로 바뀌지
+않습니다. 벡터마다 생성 모델 정체성이 저장되어 있어 바꾸면 전체를 다시 임베딩해야
+합니다.
+
+CPU 전용 기계에서는 구조화 출력이 느립니다. 기본 제한 시간은 120초이고
+`LOCAL_LLM_TIMEOUT_S`, `LOCAL_LLM_MAX_OUTPUT_TOKENS`로 조정합니다. 실패하면 화면이
+제한 시간 초과인지 host 미도달인지 스키마 위반인지 문장으로 알려 줍니다.
+
+**배포에는 이 경로가 없습니다.** `MODE=prod`면 endpoint 값이 남아 있어도 엔진이 켜지지
+않고 `/ready`가 `disabled_in_prod`를 보고하며, 공개 번들에는 선택 UI 자체가 컴파일되지
+않습니다.
+
 ## 5분 로컬 실행
 
 ### 1. 원문 준비
@@ -271,7 +322,8 @@ runtime strip이 DB 시작·migration plan/apply·app 재빌드를 같은 regist
 
 local Compose는 `.env`의 `OPENAI_API_KEY`(또는 `MODE`와 `OPENAI_API_KEY_LOCAL`·
 `OPENAI_API_KEY_PROD` 슬롯), `DART_API_KEY`, `SEC_USER_AGENT`, 선택적
-`EMBEDDING_PROVIDER`를 app container에 전달합니다. 코드나 frontend가 바뀐 뒤에는
+`EMBEDDING_PROVIDER`를 app container에 전달합니다. `LOCAL_LLM_*` 키는 dev overlay
+에서만 전달되며 `MODE=prod`에서는 값이 있어도 엔진이 켜지지 않습니다. 코드나 frontend가 바뀐 뒤에는
 Operations의 **Build and start app** 또는 다음 명령으로 image를 다시 만듭니다.
 
 Linux bind mount 쓰기는 host data group으로 맞춥니다. 기본 GID는 1000이며 다른 환경은
@@ -657,6 +709,7 @@ uv run python -m app.cli ingest \
 | Release UI | verified | test, typecheck, isolated static build, fixed shell chrome, canned build never calls `/admin/*` | static live and canned builds and local browser QA |
 | Build pipeline | verified | client-derived stage state from `/ready`, `/admin/corpus`, `/admin/jobs`; manifest registry and on-disk source counts; canned fixture labelled as such | pipeline unit tests, admin ordering tests, and a local browser job run |
 | Key slots | verified | `MODE`-selected OpenAI key (`OPENAI_API_KEY_LOCAL` / `_PROD`) with explicit override, `key_slot` in `/ready` | settings tests and local `/ready` on the rebuilt container |
+| Local answer engine | implemented | `MODE=prod` refuses the local engine and `/ready` says `disabled_in_prod`; dev/prod Compose overlays with an opt-in Ollama profile; public bundles compile the engine out; System status reports what it serves and locks the embedding row | settings, readiness, Compose-layer and web tests; browser run pending a pulled model |
 | Job ledger | verified | coalesced progress writes, terminal write last with retry, worker survives ledger failures | offline ledger tests, live PostgreSQL suite, stuck ingest reproduced and fixed locally |
 <!-- product-roadmap:end -->
 
