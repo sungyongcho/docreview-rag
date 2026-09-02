@@ -447,7 +447,9 @@ class RetrievalPreviewResponse(StrictAdminModel):
     query: str
     profile: RetrievalProfile
     score_stage: Literal["rrf", "reranker"]
-    component_rankings: dict[str, tuple[PositiveInt, ...]]
+    # `vector`/`lexical` hold one rank list each; the `*_by_language` entries nest one
+    # list per routed query language, mirroring `ComponentRankings`.
+    component_rankings: dict[str, tuple[PositiveInt, ...] | dict[str, tuple[PositiveInt, ...]]]
     results: tuple[EvidenceHit, ...]
 
 

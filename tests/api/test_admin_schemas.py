@@ -3,7 +3,12 @@
 from pydantic import ValidationError
 import pytest
 
-from app.api.admin_schemas import EvaluationRunRequest, RetrievalProfile
+from app.api.admin_schemas import (
+    EvaluationRunRequest,
+    RetrievalPreviewResponse,
+    RetrievalProfile,
+)
+from app.retrieval.service import ComponentRankings
 
 
 def test_default_profile_is_explicit_hybrid_ts_rank() -> None:
@@ -41,3 +46,23 @@ def test_matrix_axes_must_be_unique_and_nonempty() -> None:
             mode="matrix",
             target_text_chars=(500, 500),
         )
+
+
+def test_retrieval_preview_carries_per_language_component_rankings() -> None:
+    """Accept the routed per-language rank lists the retrieval service records."""
+    rankings = ComponentRankings(
+        vector=(1, 2),
+        lexical=(),
+        lexical_by_language={"ko": (3,), "en": (2, 1)},
+    )
+
+    response = RetrievalPreviewResponse(
+        query="메모리 사업 위험",
+        profile=RetrievalProfile(route_by_language=True),
+        score_stage="rrf",
+        component_rankings=rankings.model_dump(mode="python"),
+        results=(),
+    )
+
+    assert response.component_rankings["vector"] == (1, 2)
+    assert response.component_rankings["lexical_by_language"] == {"ko": (3,), "en": (2, 1)}
