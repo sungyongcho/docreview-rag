@@ -48,7 +48,12 @@ from app.evals.retrieval_eval import (
 )
 from app.evals.run import _run_cli, arguments
 from app.evals.types import GoldenCase
-from app.operator.jobs import JobExecutionCoordinator, JobStore, JobTurnCancelledError
+from app.operator.jobs import (
+    JobExecutionCoordinator,
+    JobStore,
+    JobTurnCancelledError,
+    ProgressPersister,
+)
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.service import retrieve
@@ -149,6 +154,7 @@ class EvaluationAdminService:
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._recovered_jobs = False
+        self._persister = ProgressPersister(self._persist_current_job)
 
     def _definition(self, suite_id: GoldenSuiteId) -> GoldenSuiteDefinition:
         """Resolve one validated suite identifier."""
@@ -346,7 +352,7 @@ class EvaluationAdminService:
             update={"stage": stage, "message": message, "current": current, "total": total}
         )
         if self._job_store is not None:
-            asyncio.create_task(self._persist_current_job(job_id))
+            self._persister.schedule(job_id)
 
     async def _corpus_fingerprint(self, session: AsyncSession) -> str:
         """Hash current document identities and source snapshots in deterministic order."""
@@ -603,7 +609,8 @@ class EvaluationAdminService:
             }
         )
         self._jobs[job_id] = job
-        await self._persist_job(job)
+        if self._job_store is not None:
+            self._persister.schedule(job_id)
         error_code = None
         try:
             if job.request.mode == "quick":
@@ -648,8 +655,29 @@ class EvaluationAdminService:
                 }
             )
         self._jobs[job_id] = finished
-        await self._persist_job(finished, error_code=error_code)
+        await self._persister.write_final(
+            job_id, lambda: self._persist_job(finished, error_code=error_code)
+        )
         self._history.append(job_id)
+
+    async def _abandon_job(self, job_id: str, error: Exception) -> None:
+        """Record a worker-level failure so a broken evaluation never stays running."""
+        current = self._jobs.get(job_id)
+        if current is not None and current.status in {"queued", "running"}:
+            finished = current.model_copy(
+                update={
+                    "status": "failed",
+                    "stage": "failed",
+                    "message": f"{type(error).__name__}: {error}",
+                    "finished_at": datetime.now(UTC),
+                }
+            )
+            self._jobs[job_id] = finished
+            await self._persister.write_final(
+                job_id, lambda: self._persist_job(finished, error_code="worker_error")
+            )
+        if job_id not in self._history:
+            self._history.append(job_id)
 
     async def _work(self) -> None:
         """Execute evaluations serially through the shared corpus/evaluation lock."""
@@ -662,7 +690,10 @@ class EvaluationAdminService:
                 async with self._execution_coordinator.turn(job_id):
                     async with self._execution_lock:
                         if self._jobs[job_id].status != "cancelled":
-                            await self._execute_job(job_id)
+                            try:
+                                await self._execute_job(job_id)
+                            except Exception as error:  # noqa: BLE001 - the worker outlives one job
+                                await self._abandon_job(job_id, error)
                         else:
                             self._history.append(job_id)
             except JobTurnCancelledError:

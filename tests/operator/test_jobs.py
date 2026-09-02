@@ -13,8 +13,74 @@ from app.config import Settings, get_settings
 from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
 from app.db.models import OperatorJob
 from app.ingestion.progress import OperationProgress
-from app.operator.jobs import JobStore
+from app.operator.jobs import JobStore, ProgressPersister
 from tests.live_postgres import live_postgres_unavailable
+
+
+def test_progress_persister_coalesces_bursts_and_lands_the_terminal_write_last() -> None:
+    """Write one snapshot at a time, catch up once, and let the final write land last."""
+
+    async def scenario() -> None:
+        """Block the first write, burst progress behind it, then finish the job."""
+        gate = asyncio.Event()
+        states = {"catch-up": "p1", "final": "p1"}
+        writes: list[tuple[str, str]] = []
+
+        async def write(job_id: str) -> None:
+            """Record the snapshot seen at write time, holding the first write of each job."""
+            snapshot = states[job_id]
+            if snapshot == "p1":
+                await gate.wait()
+            writes.append((job_id, snapshot))
+
+        persister = ProgressPersister(write)
+        for job_id in states:
+            persister.schedule(job_id)
+        await asyncio.sleep(0)
+        for job_id in states:
+            states[job_id] = "p2"
+            persister.schedule(job_id)
+            states[job_id] = "p3"
+            persister.schedule(job_id)
+        states["final"] = "done"
+        gate.set()
+        assert await persister.write_final("final") is True
+        await persister.flush("catch-up")
+        persister.schedule("final")
+        await asyncio.sleep(0)
+
+        final_writes = [snapshot for job_id, snapshot in writes if job_id == "final"]
+        catch_up_writes = [snapshot for job_id, snapshot in writes if job_id == "catch-up"]
+        assert final_writes == ["p1", "done"]
+        assert catch_up_writes == ["p1", "p3"]
+
+    asyncio.run(scenario())
+
+
+def test_progress_persister_retries_the_terminal_write_and_never_raises() -> None:
+    """Retry a failing terminal write a bounded number of times and report the outcome."""
+
+    async def scenario() -> None:
+        """Fail twice then succeed for one job; fail every time for another."""
+        failures = {"flaky": 2, "broken": 99}
+        calls: list[str] = []
+
+        async def write(job_id: str) -> None:
+            """Raise while the job still has failures left."""
+            calls.append(job_id)
+            if failures[job_id] > 0:
+                failures[job_id] -= 1
+                raise RuntimeError("ledger unavailable")
+
+        persister = ProgressPersister(write)
+        persister.schedule("flaky")
+        await asyncio.sleep(0)
+        assert await persister.write_final("flaky") is True
+        assert await persister.write_final("broken") is False
+        assert calls.count("flaky") == 3
+        assert calls.count("broken") == 3
+
+    asyncio.run(scenario())
 
 
 async def _exercise() -> tuple[bool, str]:

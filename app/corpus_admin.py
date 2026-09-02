@@ -34,6 +34,7 @@ from app.operator.jobs import (
     JobExecutionCoordinator,
     JobStore,
     JobTurnCancelledError,
+    ProgressPersister,
     StoredJob,
 )
 from app.retrieval.bm25 import backfill_term_stats
@@ -580,6 +581,7 @@ class RuntimeCorpusAdminService:
         self._worker: asyncio.Task[None] | None = None
         self._recovered_jobs = False
         self._cancel_events: dict[str, asyncio.Event] = {}
+        self._persister = ProgressPersister(self._persist_current_job)
 
     @property
     def read_only(self) -> bool:
@@ -988,7 +990,7 @@ class RuntimeCorpusAdminService:
             detail_total=progress.detail_total,
         )
         if self._job_store is not None:
-            asyncio.create_task(self._persist_current_job(job_id))
+            self._persister.schedule(job_id)
 
     async def _ensure_job_recovery(self) -> None:
         """Mark stale process-owned jobs interrupted once before accepting work."""
@@ -1142,7 +1144,8 @@ class RuntimeCorpusAdminService:
             started_at=_utc_now(),
         )
         self._jobs[queued.job_id] = running
-        await self._persist_current_job(queued.job_id)
+        if self._job_store is not None:
+            self._persister.schedule(queued.job_id)
         try:
             job_id = queued.job_id
             message = await self._run_operation(
@@ -1184,8 +1187,25 @@ class RuntimeCorpusAdminService:
                 },
             )
         self._jobs[queued.job_id] = finished
-        await self._persist_current_job(queued.job_id)
+        await self._persister.write_final(queued.job_id)
         self._history.append(queued.job_id)
+        self._cancel_events.pop(queued.job_id, None)
+
+    async def _abandon_job(self, queued: AdminJob, error: Exception) -> None:
+        """Record a worker-level failure so a broken job never stays running."""
+        current = self._jobs.get(queued.job_id, queued)
+        if current.status in {"queued", "running"}:
+            self._jobs[queued.job_id] = replace(
+                current,
+                status="failed",
+                stage="failed",
+                message=self._redact(f"{type(error).__name__}: {error}"),
+                error_code="worker_error",
+                finished_at=_utc_now(),
+            )
+            await self._persister.write_final(queued.job_id)
+        if queued.job_id not in self._history:
+            self._history.append(queued.job_id)
         self._cancel_events.pop(queued.job_id, None)
 
     async def _work(self) -> None:
@@ -1199,7 +1219,10 @@ class RuntimeCorpusAdminService:
                 async with self._execution_coordinator.turn(queued.job_id):
                     async with self._execution_lock:
                         if self._jobs.get(queued.job_id, queued).status != "cancelled":
-                            await self._execute_job(queued)
+                            try:
+                                await self._execute_job(queued)
+                            except Exception as error:  # noqa: BLE001 - the worker outlives one job
+                                await self._abandon_job(queued, error)
                         else:
                             self._history.append(queued.job_id)
             except JobTurnCancelledError:

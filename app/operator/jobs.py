@@ -1,10 +1,11 @@
 """Persistent job ledger shared by corpus and evaluation workers."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 from typing import Literal, cast
 
 from sqlalchemy import select, update
@@ -14,6 +15,8 @@ from app.db.models import OperatorJob
 
 type JobDomain = Literal["corpus", "evaluation"]
 type JobStatus = Literal["queued", "running", "succeeded", "failed", "interrupted", "cancelled"]
+
+logger = logging.getLogger(__name__)
 
 
 def _default_session_factory() -> AsyncSession:
@@ -48,6 +51,83 @@ class StoredJob:
 
 class JobTurnCancelledError(RuntimeError):
     """Signal that a queued ticket was removed before execution."""
+
+
+class ProgressPersister:
+    """Write one job's newest state with at most one database write in flight.
+
+    Progress callbacks arrive in bursts. A task per callback holds a pooled connection
+    while the writes serialize on the job row lock, and a late progress write can land
+    after the terminal write and leave a finished job persisted as running. Here one
+    write per job runs at a time, a snapshot that arrives during a write triggers
+    exactly one more write, and the terminal write waits for the in-flight one first.
+    """
+
+    def __init__(self, write: Callable[[str], Awaitable[None]]) -> None:
+        self._write = write
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._dirty: set[str] = set()
+        self._closed: set[str] = set()
+
+    def schedule(self, job_id: str) -> None:
+        """Record that the job's newest state should be written soon."""
+        if job_id in self._closed:
+            return
+        task = self._tasks.get(job_id)
+        if task is not None and not task.done():
+            self._dirty.add(job_id)
+            return
+        self._tasks[job_id] = asyncio.create_task(self._drain(job_id))
+
+    async def flush(self, job_id: str) -> None:
+        """Wait for the job's in-flight write and drop any pending re-write."""
+        self._dirty.discard(job_id)
+        task = self._tasks.pop(job_id, None)
+        if task is not None and not task.done():
+            await task
+
+    async def write_final(
+        self,
+        job_id: str,
+        write: Callable[[], Awaitable[None]] | None = None,
+        *,
+        attempts: int = 3,
+    ) -> bool:
+        """Flush progress, then write the terminal state, retrying transient failures.
+
+        Returns whether the terminal write landed. The caller keeps its in-memory
+        state either way; ``False`` means the ledger lags until a restart marks the
+        job interrupted. Later progress writes for the job are ignored.
+        """
+        self._closed.add(job_id)
+        await self.flush(job_id)
+        run = write or (lambda: self._write(job_id))
+        for attempt in range(1, attempts + 1):
+            try:
+                await run()
+                return True
+            except Exception as error:  # noqa: BLE001 - the ledger must not kill the worker
+                logger.warning(
+                    "job %s terminal write %d/%d failed: %s",
+                    job_id,
+                    attempt,
+                    attempts,
+                    type(error).__name__,
+                )
+                if attempt < attempts:
+                    await asyncio.sleep(0.2 * attempt)
+        return False
+
+    async def _drain(self, job_id: str) -> None:
+        """Write the latest snapshot, then once more if a newer one arrived meanwhile."""
+        while True:
+            self._dirty.discard(job_id)
+            try:
+                await self._write(job_id)
+            except Exception as error:  # noqa: BLE001 - progress writes are best effort
+                logger.warning("job %s progress write failed: %s", job_id, type(error).__name__)
+            if job_id not in self._dirty:
+                return
 
 
 class JobExecutionCoordinator:
