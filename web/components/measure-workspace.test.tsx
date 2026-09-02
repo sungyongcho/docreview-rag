@@ -143,6 +143,7 @@ describe("Measure workspace", () => {
     expect(screen.getByRole("heading", { name: "Published snapshots" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
     expect(screen.getByRole("heading", { name: "Case changes" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Case changes" }).closest('[data-help="measure.compare.cases"]')).not.toBeNull();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));

@@ -149,6 +149,7 @@ describe("ComposerToolbar", () => {
   it("shows the snapshot chip only when set and clears it with the × button", () => {
     const props = renderToolbar({ profile: { ...DEFAULT_SESSION_PROFILE, snapshot_id: 7, applied_from_evaluation: "eval-1" } });
     expect(screen.getByText("Snapshot #7")).toBeInTheDocument();
+    expect(screen.getByText("Snapshot #7").closest('[data-help="review.snapshot"]')).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Clear snapshot" }));
     expect(props.onChange).toHaveBeenCalledWith({ snapshot_id: null, applied_from_evaluation: null });
     cleanup();

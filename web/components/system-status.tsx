@@ -9,6 +9,8 @@ interface SystemStatusProps {
   onRefresh: () => void;
   /** Inside the System workspace the host owns the page heading and the Refresh button. */
   embedded?: boolean;
+  /** `data-help` topic id for Help mode. */
+  helpId?: string;
 }
 
 function value(value: unknown) {
@@ -17,11 +19,11 @@ function value(value: unknown) {
   return String(value);
 }
 
-export function SystemStatus({ readiness, loading, error, onRefresh, embedded = false }: SystemStatusProps) {
+export function SystemStatus({ readiness, loading, error, onRefresh, embedded = false, helpId }: SystemStatusProps) {
   const corpus = readiness?.corpus;
   const models = readiness?.models ?? {};
   return (
-    <section className={embedded ? "status-page embedded" : "status-page"}>
+    <section className={embedded ? "status-page embedded" : "status-page"} data-help={helpId}>
       {!embedded && <div className="page-heading">
         <div><p className="eyebrow">System status</p><h1>Runtime readiness</h1></div>
         <button className="button" type="button" disabled={loading} onClick={onRefresh}>

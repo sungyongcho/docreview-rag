@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ONBOARDING_KEY, saveConversations } from "@/lib/storage";
+import { HELP_KEY, ONBOARDING_KEY, saveConversations } from "@/lib/storage";
 import type { Readiness } from "@/lib/types";
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
@@ -359,6 +359,107 @@ describe("service shell", () => {
     await flushEffects();
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("toggles Help from the topbar button and the ? key, and persists it", async () => {
+    stubPublicApi();
+    render(<ServiceShell />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "healthy" })).toBeInTheDocument());
+
+    const toggle = screen.getByRole("button", { name: "Toggle help" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ask" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Help 1: Corpus scope" })).toBeInTheDocument();
+    expect(window.localStorage.getItem(HELP_KEY)).toBe("open");
+
+    fireEvent.keyDown(window, { key: "?" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+    expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+
+    // Help follows the workspace: Build › Pipeline has its own topics, Build › Documents none yet.
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    expect(screen.getByRole("heading", { name: "Build · Pipeline" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Help 2: Next step" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    expect(screen.getByText("No help topics for this screen yet.")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+  });
+
+  it("restores a persisted open Help and ignores ? typed into the composer", async () => {
+    stubPublicApi();
+    window.localStorage.setItem(HELP_KEY, "open");
+    render(<ServiceShell />);
+
+    expect(await screen.findByRole("complementary", { name: "Help" })).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.keyDown(textarea, { key: "?" });
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Toggle help" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("closes Help when the tour opens and keeps it closed while the tour runs", async () => {
+    stubPublicApi();
+    window.localStorage.setItem(HELP_KEY, "open");
+    render(<ServiceShell />);
+    expect(await screen.findByRole("complementary", { name: "Help" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Data & help" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show tutorial" }));
+    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+    expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+
+    for (let step = 0; step < 6; step += 1) fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Need details on any screen? Press ? for Help.")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Finish"));
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+  });
+
+  it("leaves Help alone while a modal owns the screen", async () => {
+    stubPublicApi();
+    window.localStorage.setItem(HELP_KEY, "open");
+    render(<ServiceShell />);
+    expect(await screen.findByRole("complementary", { name: "Help" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog");
+    // ? behind the scrim would flip a panel the user cannot see, and Escape belongs to the dialog.
+    fireEvent.keyDown(dialog, { key: "?" });
+    expect(screen.getByRole("button", { name: "Toggle help" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+    expect(window.localStorage.getItem(HELP_KEY)).toBe("open");
+  });
+
+  it("hooks help onto the newest answered message only", async () => {
+    stubPublicApi();
+    seedAnsweredConversation();
+    // A second answer: the marker must sit beside it, not beside the first one scrolled away above.
+    const stored = JSON.parse(window.localStorage.getItem("docreview:conversations:v2")!) as Array<{ messages: unknown[] }>;
+    const answered = stored[0].messages[1] as Record<string, unknown>;
+    stored[0].messages.push({ ...answered, id: "a2", text: "Gross margin rose on mix." });
+    window.localStorage.setItem("docreview:conversations:v2", JSON.stringify(stored));
+    render(<ServiceShell />);
+    await waitFor(() => expect(screen.getByText("Gross margin rose on mix.")).toBeInTheDocument());
+
+    const hooks = document.querySelectorAll('[data-help="review.evidence"]');
+    const blocks = document.querySelectorAll("details.evidence");
+    expect(blocks).toHaveLength(2);
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0]).toBe(blocks[1]);
   });
 
   it("renders a conversation reply without a verdict pill", async () => {

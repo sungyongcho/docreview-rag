@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  CircleHelp,
   FlaskConical,
   Hammer,
   MessageSquare,
@@ -16,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
+import { HelpOverlay } from "@/components/help-overlay";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
@@ -31,8 +33,9 @@ import {
   retrieveEvidence,
   streamReview,
 } from "@/lib/api";
+import { helpScreen } from "@/lib/help-content";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
-import { loadConversations, newConversation, ONBOARDING_KEY, saveConversations } from "@/lib/storage";
+import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
 import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionProfile } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
@@ -59,6 +62,7 @@ export function ServiceShell() {
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [tourOpen, setTourOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [profile, setProfile] = useState<ReviewSessionProfile>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
@@ -84,6 +88,8 @@ export function ServiceShell() {
     setConversations(initial);
     setActiveId(initial[0].id);
     setTourOpen(shouldOpenTour);
+    // The tour owns the screen on a first visit; a persisted open Help state waits until it is dismissed.
+    setHelpOpen(!shouldOpenTour && loadHelpOpen());
     if (window.innerWidth <= 560) setSidebarOpen(shouldOpenTour);
   }, []);
 
@@ -108,6 +114,7 @@ export function ServiceShell() {
     [activeId, conversations],
   );
   const activeSessionProfile = active?.profile ?? profile;
+  const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
   const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt });
   const sendBlocked = banner?.kind === "empty" || banner?.kind === "vector";
 
@@ -398,8 +405,32 @@ export function ServiceShell() {
 
   function openTour() {
     setSidebarOpen(true);
+    setHelp(false);
     setTourOpen(true);
   }
+
+  function setHelp(open: boolean) {
+    saveHelpOpen(open);
+    setHelpOpen(open);
+  }
+
+  /** `?` toggles Help anywhere except inside a text control, and never behind the tour or a modal. */
+  const modalOpen = settingsOpen || runtimeHealth.modalVisible;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "?" || tourOpen || modalOpen) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable || target.hasAttribute("contenteditable"))) return;
+      event.preventDefault();
+      setHelp(!helpOpen);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [helpOpen, tourOpen, modalOpen]);
+  const currentTab = view === "build" ? buildTab : view === "measure" ? measureTab : view === "system" ? systemTab : "";
+  const location = `${view}/${buildTab}/${measureTab}/${systemTab}`;
+  /** The workspace reserves room for the panel only while it is actually on screen. */
+  const helpVisible = helpOpen && !tourOpen;
 
   const readiness = runtimeHealth.readiness;
   /** First-run routing: an empty live corpus with nothing asked yet opens on Build, unless the user already went somewhere. */
@@ -442,7 +473,7 @@ export function ServiceShell() {
     : view === "build" ? "Build" : view === "measure" ? "Measure" : "System";
 
   return (
-    <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
+    <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}`}>
       <aside className="sidebar">
         <div className="brand"><span>D</span><strong>DocReview</strong></div>
         <button className="new-review" data-tour="new-review" type="button" onClick={createReview}><SquarePen size={17} /><span>New review</span></button>
@@ -469,7 +500,7 @@ export function ServiceShell() {
         <header className="topbar">
           <button className="icon-button" type="button" aria-label="Toggle sidebar" onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
           <div><strong>{topbarTitle}</strong><span>Evidence-first SEC and DART filing review</span></div>
-          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className={`health ${healthBadge(runtimeHealth.kind)}`} onClick={() => navigate({ view: "system", tab: "status" })}><i />{healthLabel(runtimeHealth.kind)}</button></div>
+          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className="icon-button help-toggle" aria-label="Toggle help" aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button><button type="button" className={`health ${healthBadge(runtimeHealth.kind)}`} onClick={() => navigate({ view: "system", tab: "status" })}><i />{healthLabel(runtimeHealth.kind)}</button></div>
         </header>
 
         {view === "review" && <section className="review-workspace">
@@ -498,6 +529,7 @@ export function ServiceShell() {
                 <ReviewMessage
                   key={message.id}
                   message={message}
+                  latestEvidence={message.id === latestEvidenceId}
                   busy={busy}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
@@ -518,8 +550,8 @@ export function ServiceShell() {
               onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
             />
             <label className="composer">
-              <textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} />
-              <button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
+              <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} />
+              <button data-tour="send" data-help="review.send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
             {banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
@@ -571,7 +603,8 @@ export function ServiceShell() {
         />}
       </section>
       <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={capabilities ?? { can_edit_prompt_policy: adminLive, can_edit_run_limits: adminLive, can_edit_golden: adminLive, can_build_snapshot: adminLive, can_run_evaluation: adminLive, can_change_custom_retrieval: adminLive, can_query_snapshot: adminLive, can_use_operations: operationsAvailable, can_compare_published_snapshots: true }} readiness={runtimeHealth.readiness} onChange={(next) => { setProfile(next); if (active) updateActive(active.messages, next); }} onClose={() => setSettingsOpen(false)} onOpenMeasure={(tab) => { setSettingsOpen(false); navigate({ view: "measure", tab }); }} onOpenSystem={(tab) => { setSettingsOpen(false); navigate({ view: "system", tab }); }} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
-      {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={`${view}/${buildTab}/${measureTab}/${systemTab}`} />}
+      {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
+      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} onClose={() => setHelp(false)} location={location} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
         visible={runtimeHealth.modalVisible}
@@ -591,6 +624,8 @@ export function ServiceShell() {
 
 interface ReviewMessageProps {
   message: ChatMessage;
+  /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
+  latestEvidence: boolean;
   busy: boolean;
   onMark: (chunkId: number, mode: "pin" | "exclude") => void;
   onUseSelected: () => void;
@@ -607,7 +642,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, busy, onMark, onUseSelected }: ReviewMessageProps) {
+function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected }: ReviewMessageProps) {
   const pill = message.role === "assistant" ? verdictPill(message) : null;
   const pinned = message.pinnedChunkIds ?? [];
   const excluded = message.excludedChunkIds ?? [];
@@ -621,7 +656,7 @@ function ReviewMessage({ message, busy, onMark, onUseSelected }: ReviewMessagePr
         {message.evidence?.length ? (
           <>
             {notInDocs && <p className="notice">Related evidence is shown below, but it is not direct support.</p>}
-            <details className="evidence">
+            <details className="evidence" data-help={latestEvidence ? "review.evidence" : undefined}>
               <summary data-tour="evidence-toggle">{message.evidenceLabel ?? "Retrieved candidates"} · {message.evidence.length}</summary>
               {message.evidence.map((hit) => {
                 const isPinned = pinned.includes(hit.chunk_id);

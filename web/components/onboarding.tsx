@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRight, Pointer, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { cardPosition, sameRect, targetRect, type TargetRect } from "@/lib/spotlight";
+
 /** Workspace the shell must show before a step's target can be spotlighted. */
 export type TourView = "build" | "review" | "measure" | "system";
 
@@ -14,15 +16,6 @@ interface TourStep {
   view: TourView;
   tab?: string;
   optional?: "operations";
-}
-
-interface TargetRect {
-  top: number;
-  left: number;
-  right: number;
-  bottom: number;
-  width: number;
-  height: number;
 }
 
 const STEPS: readonly TourStep[] = [
@@ -38,46 +31,6 @@ const STEPS: readonly TourStep[] = [
 
 /** Every `data-tour` name a step can spotlight, so a test can assert the shell renders each one. */
 export const TOUR_TARGETS: readonly string[] = [...new Set(STEPS.flatMap((item) => item.targets))];
-
-function sameRect(left: TargetRect, right: TargetRect): boolean {
-  return left.top === right.top && left.left === right.left && left.right === right.right && left.bottom === right.bottom;
-}
-
-function targetRect(element: HTMLElement): TargetRect {
-  const value = element.getBoundingClientRect();
-  const padding = 7;
-  const top = Math.max(6, value.top - padding);
-  const left = Math.max(6, value.left - padding);
-  const right = Math.min(window.innerWidth - 6, value.right + padding);
-  const bottom = Math.min(window.innerHeight - 6, value.bottom + padding);
-  return {
-    top,
-    left,
-    right,
-    bottom,
-    width: Math.max(0, right - left),
-    height: Math.max(0, bottom - top),
-  };
-}
-
-function cardPosition(rect: TargetRect | null): CSSProperties {
-  if (!rect) return { left: "50%", top: "50%", transform: "translate(-50%, -50%)" };
-  const width = Math.min(380, window.innerWidth - 32);
-  const gap = 18;
-  let left = rect.right + gap;
-  let top = rect.top;
-  if (left + width > window.innerWidth - 16) left = rect.left - width - gap;
-  if (left < 16) {
-    left = Math.min(Math.max(16, rect.left), window.innerWidth - width - 16);
-    top = rect.bottom + gap;
-    if (top + 270 > window.innerHeight) top = Math.max(16, rect.top - 270 - gap);
-  }
-  return {
-    left,
-    top: Math.min(Math.max(16, top), Math.max(16, window.innerHeight - 286)),
-    width,
-  };
-}
 
 export function Onboarding({
   onClose,
@@ -181,6 +134,7 @@ export function Onboarding({
         <p className="eyebrow">Step {step + 1} of {steps.length}</p>
         <h2 id="tour-title">{active.title}</h2>
         <p>{active.description}</p>
+        {step === steps.length - 1 && <p className="tour-help-hint">Need details on any screen? Press ? for Help.</p>}
         <p className="tour-target-hint">Click the highlighted control or use Next.</p>
         <div className="tour-progress" aria-label={`Tutorial step ${step + 1} of ${steps.length}`} style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
           {steps.map((item, index) => <span key={item.title} className={index <= step ? "done" : ""} />)}

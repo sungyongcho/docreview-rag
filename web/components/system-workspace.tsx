@@ -75,8 +75,8 @@ export function SystemWorkspace({ live, ready = true, readiness, checking, onRef
         ))}
       </nav>
 
-      {activeTab === "status" && <SystemStatus readiness={readiness} loading={checking} error="" onRefresh={onRefresh} embedded />}
-      {activeTab === "operations" && operationsAvailable && <Operations embedded />}
+      {activeTab === "status" && <SystemStatus readiness={readiness} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" />}
+      {activeTab === "operations" && operationsAvailable && <Operations embedded helpId="system.operations" />}
       {activeTab === "api" && live && <ApiInspector ready={ready} />}
       {activeTab === "usage" && live && <UsagePanel />}
     </section>
@@ -110,7 +110,7 @@ function ApiInspector({ ready }: { ready: boolean }) {
   }
 
   return (
-    <div className="api-inspector">
+    <div className="api-inspector" data-help="system.api">
       <section>
         <h2>Request</h2>
         <textarea aria-label="API request body" value={rawRequest} onChange={(event) => setRawRequest(event.target.value)} spellCheck={false} />
@@ -137,7 +137,7 @@ function UsagePanel() {
   }, []);
 
   return (
-    <div className="panel-stack">
+    <div className="panel-stack" data-help="system.usage">
       {usageError && <div className="notice error" role="alert">{usageError}</div>}
       <div className="metric-grid">
         <Metric icon={<Activity />} label="Runs" value={String(usage.runs)} />

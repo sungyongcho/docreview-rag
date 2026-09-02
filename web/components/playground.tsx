@@ -141,11 +141,11 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
     <div className="two-column playground">
       <section className="surface form-stack">
         <div className="surface-heading"><div><h2>Playground</h2><p className="helper">One query through an explicit retrieval profile. Nothing is persisted.</p></div></div>
-        <label>Question<textarea aria-label="Playground question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} /></label>
-        <details open><summary>Retrieval profile</summary><ProfileFields profile={profile} onChange={onProfileChange} /></details>
+        <label>Question<textarea aria-label="Playground question" data-help="measure.playground.question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} /></label>
+        <details open><summary>Retrieval profile</summary><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" /></details>
         <div className="action-row">
-          <button className="button primary" type="button" aria-disabled={busy !== null || !question.trim()} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? "Previewing…" : "Preview retrieval"}</button>
-          <button className="button" type="button" aria-disabled={busy !== null || !question.trim()} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? "Reviewing…" : "Preview review"}</button>
+          <button className="button primary" type="button" data-help="measure.playground.preview_retrieval" aria-disabled={busy !== null || !question.trim()} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? "Previewing…" : "Preview retrieval"}</button>
+          <button className="button" type="button" data-help="measure.playground.preview_review" aria-disabled={busy !== null || !question.trim()} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? "Reviewing…" : "Preview review"}</button>
         </div>
         <p className="helper">Preview review calls the answer model once and records provider usage.</p>
       </section>
@@ -154,16 +154,16 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
         {shown === "retrieval" && retrieval && <>
           <div className="surface-heading"><div><h2>Retrieval preview</h2><p className="helper">Score stage · {retrieval.score_stage}</p></div></div>
           <h3>Component rankings</h3>
-          {rankingKeys.length ? <div className="table-wrap playground-rankings"><table><thead><tr><th>Rank</th>{rankingKeys.map((key) => <th key={key}>{key}</th>)}</tr></thead><tbody>
+          {rankingKeys.length ? <div className="table-wrap playground-rankings" data-help="measure.playground.rankings"><table><thead><tr><th>Rank</th>{rankingKeys.map((key) => <th key={key}>{key}</th>)}</tr></thead><tbody>
             {Array.from({ length: rankingDepth }, (_item, index) => <tr key={index}><td>{index + 1}</td>{rankingKeys.map((key) => <td key={key}>{retrieval.component_rankings[key][index] ?? "—"}</td>)}</tr>)}
           </tbody></table></div> : <p className="helper">No component rankings were returned.</p>}
           <h3>Fused results · {retrieval.results.length}</h3>
-          <div className="playground-evidence">
+          <div className="playground-evidence" data-help="measure.playground.results">
             {retrieval.results.map((hit) => <article className="evidence-hit" key={hit.chunk_id}><strong>{hit.citation}</strong><span>chunk {hit.chunk_id} · {hit.doc_id} · chars {hit.start_char}–{hit.end_char}</span><p>{hit.body}</p></article>)}
             {!retrieval.results.length && <p className="helper">No chunk passed the retrieval profile.</p>}
           </div>
         </>}
-        {shown === "review" && review && <div className="playground-report">
+        {shown === "review" && review && <div className="playground-report" data-help="measure.playground.review">
           <div className="surface-heading"><div><h2>Review preview</h2><p className="helper">Report label</p></div><span className={`mode-badge ${review.label === "SUPPORTED" ? "live" : ""}`}>{review.label}</span></div>
           {review.failure ? <p className="notice error">{review.failure}</p> : <>
             {review.answer && <p>{review.answer}</p>}

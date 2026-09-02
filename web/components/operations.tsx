@@ -13,8 +13,8 @@ import {
 } from "@/lib/operator-api";
 import { useNotifications } from "@/components/notifications";
 
-/** `embedded` drops the page heading so a host workspace keeps the only h1. */
-export function Operations({ embedded = false }: { embedded?: boolean } = {}) {
+/** `embedded` drops the page heading so a host workspace keeps the only h1; `helpId` is the Help mode hook. */
+export function Operations({ embedded = false, helpId }: { embedded?: boolean; helpId?: string } = {}) {
   const [commands, setCommands] = useState<OperatorCommand[]>([]);
   const [jobs, setJobs] = useState<OperatorJob[]>([]);
   const { notify } = useNotifications();
@@ -64,7 +64,7 @@ export function Operations({ embedded = false }: { embedded?: boolean } = {}) {
 
   const latest = jobs[0] ?? null;
   return (
-    <section className={`operations-page${embedded ? " embedded" : ""}`}>
+    <section className={`operations-page${embedded ? " embedded" : ""}`} data-help={helpId}>
       {embedded
         ? <div className="surface-heading"><div><h2>Operations</h2><p className="helper">Local checkout only. Run fixed verification and service commands without exposing a shell.</p></div><button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button></div>
         : <header className="page-heading">

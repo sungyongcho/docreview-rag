@@ -7,6 +7,8 @@ export const ONBOARDING_KEY = "docreview:onboarding:v1";
 const DEFAULT_PROFILE_KEY = "docreview:profile-defaults:v1";
 const DESKTOP_JOB_NOTIFICATIONS_KEY = "docreview:desktop-job-notifications:v1";
 const EXPERIMENT_DEFAULTS_KEY = "docreview:experiment-defaults:v1";
+/** Help mode open/closed; separate from the frozen onboarding key so the tour sentinel never changes. */
+export const HELP_KEY = "docreview:help:v1";
 const MAX_CONVERSATIONS = 30;
 const MAX_MESSAGES = 100;
 
@@ -109,6 +111,16 @@ export function setDesktopJobNotifications(enabled: boolean): void {
   if (typeof window === "undefined") return;
   if (enabled) window.localStorage.setItem(DESKTOP_JOB_NOTIFICATIONS_KEY, "enabled");
   else window.localStorage.removeItem(DESKTOP_JOB_NOTIFICATIONS_KEY);
+}
+
+export function loadHelpOpen(): boolean {
+  return typeof window !== "undefined" && window.localStorage.getItem(HELP_KEY) === "open";
+}
+
+export function saveHelpOpen(open: boolean): void {
+  if (typeof window === "undefined") return;
+  if (open) window.localStorage.setItem(HELP_KEY, "open");
+  else window.localStorage.removeItem(HELP_KEY);
 }
 
 export function browserStorageUsage(): number {

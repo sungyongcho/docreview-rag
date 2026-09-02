@@ -108,22 +108,22 @@ export function ComposerToolbar({ profile, onChange, canUseCustom, onLocked, onO
   return (
     <div className="composer-toolbar">
       <div className="chip-group">
-        <Segmented label="Corpus scope" options={SCOPE_OPTIONS} value={profile.corpus_scope} onChange={(value) => onChange({ corpus_scope: value })} />
-        <select className="chip" aria-label="Retrieval preset" value={profile.retrieval_preset} onChange={(event) => choosePreset(event.target.value as RetrievalPreset)}>
+        <Segmented label="Corpus scope" helpId="review.scope" options={SCOPE_OPTIONS} value={profile.corpus_scope} onChange={(value) => onChange({ corpus_scope: value })} />
+        <select className="chip" aria-label="Retrieval preset" data-help="review.preset" value={profile.retrieval_preset} onChange={(event) => choosePreset(event.target.value as RetrievalPreset)}>
           <option value="balanced">Balanced</option>
           <option value="korean">Korean</option>
           <option value="accuracy">Accuracy</option>
           {(canUseCustom || profile.retrieval_preset === "custom") && <option value="custom">Custom</option>}
         </select>
-        <button className="chip" type="button" onClick={onOpenFilters}>{filters > 0 ? `Filters · ${filters}` : "Filters"}</button>
+        <button className="chip" type="button" data-help="review.filters" onClick={onOpenFilters}>{filters > 0 ? `Filters · ${filters}` : "Filters"}</button>
         {profile.snapshot_id !== null && (
-          <span className="chip snapshot">
+          <span className="chip snapshot" data-help="review.snapshot">
             Snapshot #{profile.snapshot_id}
             <button type="button" aria-label="Clear snapshot" onClick={() => onChange({ snapshot_id: null, applied_from_evaluation: null })}>×</button>
           </span>
         )}
       </div>
-      <button className="chip readiness" type="button" onClick={onOpenBuild}>{readinessChipLabel(readiness, live)}</button>
+      <button className="chip readiness" type="button" data-help="review.readiness" onClick={onOpenBuild}>{readinessChipLabel(readiness, live)}</button>
     </div>
   );
 }

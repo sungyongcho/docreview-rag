@@ -149,7 +149,7 @@ interface RuntimeProblem {
 
 function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
   if (pipeline.readOnly) {
-    return <div className="runtime-strip"><div className="runtime-items"><span>Read-only portfolio · stored snapshots + live retrieval</span></div></div>;
+    return <div className="runtime-strip" data-help="build.runtime"><div className="runtime-items"><span>Read-only portfolio · stored snapshots + live retrieval</span></div></div>;
   }
   const apiDown = isApiDown(pipeline);
   const items: string[] = [apiDown ? "API unavailable" : "API ok"];
@@ -170,7 +170,7 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
   }
 
   return (
-    <div className="runtime-strip">
+    <div className="runtime-strip" data-help="build.runtime">
       <div className="runtime-items">{items.map((item, index) => <Fragment key={item}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{item}</span></Fragment>)}</div>
       <div className="runtime-actions">
         {live && onRunOperation && !problems.length && <button className="button ghost" type="button" onClick={() => onRunOperation("app-start")}>Rebuild app</button>}
