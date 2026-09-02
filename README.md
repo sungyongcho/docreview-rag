@@ -16,8 +16,8 @@ SEC 10-K와 한국 DART 사업보고서를 원문 근거와 함께 검토하는 
 - pgvector exact vector search와 `ts_rank_cd`/BM25 lexical search
 - RRF 융합, 선택적 cross-encoder reranking, 한국어 n-gram lexical 경로
 - 인용 검증 LLM workflow와 `NOT_IN_DOCS` fail-closed 종료
-- 최근 대화·인용 카드·5단계 온보딩을 갖춘 Next.js 서비스
-- corpus 상태, 골든셋, 실험 비교, API Inspector를 갖춘 Corpus Lab
+- 순서형 Build 파이프라인(원문 → 파싱·청킹 → 임베딩 → BM25 → 질문 → 답변 모델 → 평가), 인용 카드, 단계형 튜토리얼을 갖춘 Next.js 서비스
+- Playground·골든셋·평가 실행·스냅샷 비교를 갖춘 Measure와 readiness·Operations·API inspector·Usage를 갖춘 System
 - Recall@k·Hit Rate@k·MRR·latency, 교차언어 parity, ablation 평가
 - FastAPI·SSE·MCP agent·Gradio 내부 evidence fixture
 - Firebase Hosting, GCP VM, Caddy, Cloudflare Worker 배포 구성
@@ -53,7 +53,7 @@ PostgreSQL + pgvector + language-aware lexical index
 | `app/api/` | public API와 SSH-only administrator API |
 | `app/agent/` | citation-required tool loop와 MCP stdio server |
 | `app/release/` | rate/cost guard, secret redaction, Next 정적 서비스 |
-| `web/` | Next.js App Router 서비스, Corpus Lab, localStorage 대화 |
+| `web/` | Next.js App Router 서비스, Build/Measure/System 워크스페이스, localStorage 대화 |
 | `data/` | corpus manifest, golden suite, profiles, evaluation artifacts |
 
 ## 요구사항
@@ -245,7 +245,7 @@ http://127.0.0.1:3000/docreview-rag-agent/
 ```
 
 operator 모드는 실제 `/admin/*` API를 사용합니다. 공개 Firebase build는 같은 화면을
-보여주지만 Corpus Lab 실행 버튼은 비활성화되고 저장된 측정 결과만 표시합니다.
+보여주지만 Build·Measure의 실행 버튼은 비활성화되고 저장된 측정 결과만 표시합니다.
 
 ### 로컬 Operations
 
@@ -265,8 +265,9 @@ DOCREVIEW_OPERATOR_WEB_PORT=3010 scripts/run_local_operator_web.sh
 
 Operations는 registry에 고정된 argv만 `shell=False`로 실행합니다. public build와 원격
 SSH tunnel UI에는 command URL이나 token이 없으므로 화면 자체가 나타나지 않습니다.
-corpus 수집·ingest·embedding·BM25 작업은 기존 Corpus Lab에 남고, DB reset·volume 삭제·
-deploy·Git stage/commit은 웹 명령으로 제공하지 않습니다.
+corpus 수집·ingest·embedding·BM25 작업은 Build 파이프라인에 남고, DB reset·volume 삭제·
+deploy·Git stage/commit은 웹 명령으로 제공하지 않습니다. operator가 붙어 있으면 Build의
+runtime strip이 DB 시작·migration plan/apply·app 재빌드를 같은 registry 명령으로 실행합니다.
 
 local Compose는 `.env`의 `OPENAI_API_KEY`(또는 `MODE`와 `OPENAI_API_KEY_LOCAL`·
 `OPENAI_API_KEY_PROD` 슬롯), `DART_API_KEY`, `SEC_USER_AGENT`, 선택적
@@ -275,7 +276,7 @@ Operations의 **Build and start app** 또는 다음 명령으로 image를 다시
 
 Linux bind mount 쓰기는 host data group으로 맞춥니다. 기본 GID는 1000이며 다른 환경은
 `.env`에 `HOST_GID=<id -g 결과>`를 설정합니다. host-owned `data/`는 group write 권한을
-유지해야 Corpus Lab의 artifact·manifest 작업이 동작합니다.
+유지해야 Build·Measure의 artifact·manifest 작업이 동작합니다.
 
 ```bash
 docker compose up --build -d app
@@ -287,14 +288,15 @@ docker compose up --build -d app
 
 서비스 UI는 시작·30초 주기·탭/네트워크 복귀 때 `/health`와 `/ready`를 확인합니다. API가
 응답하지 않으면 retry/reload 전까지 blocking dialog를 표시하고, DB·schema·corpus가
-degraded면 실제 원인과 Corpus Lab/System status 이동 또는 Continue를 제공합니다. 복구되지
+degraded면 실제 원인과 Build/System status 이동 또는 Continue를 제공합니다. 복구되지
 않는 `Try again`은 DB degraded 경고에 표시하지 않습니다. 긴 대화는 workspace
 우측 scrollbar로 메시지만 스크롤되며 sidebar·topbar·composer는 고정됩니다.
 
-튜토리얼은 New review, composer, evidence, recent reviews, Corpus Lab, System status,
-local Operations, Documentation의 실제 control을 spotlight합니다. 강조된 control을 직접
+튜토리얼은 Build 파이프라인의 순서를 그대로 따릅니다. Build, 단계 카드 목록, Next step
+콜아웃, New review, composer, evidence, Measure(operator 모드에서는 Operations까지)의 실제
+control을 spotlight하며 단계마다 해당 화면으로 먼저 이동합니다. 강조된 control을 직접
 클릭해 동작시키거나 Next로 진행할 수 있고 reduced-motion 환경에서는 pointer animation을
-멈춥니다.
+멈춥니다. live operator가 빈 corpus로 처음 열면 Build에서 시작합니다.
 
 <!-- operator-commands:start -->
 | ID | Command | Purpose | Confirmation |
@@ -343,9 +345,11 @@ uv run python -m app.ingestion.dart_api \
 
 모든 수집 작업은 재실행 가능하며 기존 manifest 항목을 보존합니다. DART는 manifest의
 파일 길이와 SHA-256이 원문과 일치하면 해당 회사·사업연도를 API 호출 전에 건너뜁니다.
-Corpus Lab의
-`Overview`에서는 누락 문서 수집, manifest ingest, embedding backfill, BM25 통계
-재구축을 background job으로 실행할 수 있습니다.
+Build의 `Pipeline`에서는
+단계 카드로 누락 문서 수집, `Ingest all manifests`(manifest별 순차 job), embedding backfill,
+BM25 통계 재구축을 background job으로 실행할 수 있습니다. 2단계 카드는 manifest 항목 수와
+실제 인제스트 수의 차이를, 1단계 카드는 manifest별 원문 파일 존재 수(`sources_present`)를
+표시합니다.
 
 ## 검색과 리뷰
 
@@ -377,26 +381,47 @@ REVIEW_MODEL=gpt-5.6-terra
 공개 release는 IP당 분·일 제한, 요청당 비용 제한, UTC 일일 비용 상한을 적용합니다.
 한도가 소진되면 프런트는 LLM 답변 대신 실제 retrieval evidence를 표시합니다.
 
-## Corpus Lab과 골든 평가
+## Build, Measure, System
 
-Corpus Lab은 다음 영역으로 구성됩니다.
+사이드바는 Build → Measure → System 순서이며 각 워크스페이스는 탭으로 나뉩니다.
 
-- `Overview`: DB/schema/index 상태와 안전한 corpus 작업
+Build:
+
+- `Pipeline`: Filings → Parse & chunk → Embeddings → Lexical index (BM25) → Ask →
+  Answer model → Evaluate 일곱 단계 카드. 각 카드는 `/ready`·`/admin/corpus`·`/admin/jobs`에서
+  도출한 상태(Done / Action needed / Running / Failed / Blocked / Read-only)와 실제 숫자,
+  하나의 주 버튼, "Why this matters"를 보여 주고, 상단 runtime strip과 Next step 콜아웃이
+  지금 해야 할 한 가지를 가리킵니다
 - `Documents`: registry·issuer·연도·언어·form·parse/embedding 상태·Snapshot membership
   facet, Registry/회사/연도 grouping, cursor page, 구조화된 filing/index/chunk 상세
-- `Golden Tests`: SEC/DART × EN/KO suite와 retrieval profile
-- `Experiments`: baseline 대비 metric·case 변화
 - `Jobs`: persistent corpus/evaluation queue, progress, history, retry/cancel
-- `API Inspector`: strict JSON 요청과 typed 응답
-- `Usage`: local run/trace에 기록된 모델별 token과 예상 비용 (`live` operator 전용)
+
+Measure:
+
+- `Playground`: 질문 하나를 명시적 retrieval profile로 `/admin/retrieval/preview`·
+  `/admin/review/preview`에 보내 component ranking(vector·lexical·언어별)과 융합 결과,
+  리뷰 라벨을 바로 비교 (`live` operator 전용)
+- `Golden Tests`: SEC/DART × EN/KO suite의 canonical 질문과 DB draft 편집
+- `Runs`: New run(suite·revision·quick/matrix·retrieval profile)과 Results(결과 선택,
+  Use selected set, Compare, 상세)
+- `Compare`: baseline 대비 metric·case 변화
 - `Snapshots`: eval 결과, exact document/chunk membership, embedding copy, BM25 통계를
   불변 단위로 저장하고 공개된 두 결과를 provider 호출 없이 비교
 
-Overview의 `Job activity`는 현재 corpus/evaluation 작업의 stage, committed progress,
-대기 순서와 최근 결과를 표시합니다. `Jobs`의 통합 Job Center에서는 domain/status filter,
-queue position, request/result provenance, 안전한 Retry/Cancel을 확인합니다. Job 상태는
-PostgreSQL에 저장되며 app 재시작으로 중단된 작업은 자동 재실행하지 않고 `interrupted`로
-남깁니다. Settings의 Local runtime에서 완료·실패 desktop notification을 opt-in할 수 있습니다.
+System:
+
+- `System status`: readiness, corpus 카운터, 모델 정책, 활성 키 슬롯
+- `Operations`: 고정 명령 registry (host operator 실행 시)
+- `API inspector`: strict JSON 요청과 typed 응답 (`live` 전용)
+- `Usage`: local run/trace에 기록된 모델별 token과 예상 비용 (`live` 전용)
+
+Pipeline의 단계 카드는 해당 corpus/evaluation 작업의 stage, committed progress, 대기 순서를
+카드 안에 표시하고 Next step 콜아웃에서 실행 중 job을 취소할 수 있습니다. `Jobs`의 통합
+Job Center에서는 domain/status filter, queue position, request/result provenance, 안전한
+Retry/Cancel을 확인합니다. Job 상태는 PostgreSQL에 저장되며 진행 기록은 job마다 한 번에
+하나만 쓰고 종료 상태를 마지막에 기록합니다. app 재시작으로 중단된 작업은 자동 재실행하지
+않고 `interrupted`로 남깁니다. Settings의 Local runtime에서 완료·실패 desktop notification을
+opt-in할 수 있습니다.
 
 조절 가능한 retrieval profile:
 
@@ -413,7 +438,7 @@ Embedding Backfill은 provider identity별 committed row count를 완료 후 다
 progress row 수와 실제 DB 상태가 다르면 성공으로 표시하지 않고 `postcondition_failed`로
 종료합니다.
 
-Local operator의 Golden Tests에서는 canonical JSON 질문 표를 항상 read-only로 확인하고,
+Local operator의 Measure › Golden Tests에서는 canonical JSON 질문 표를 항상 read-only로 확인하고,
 DB draft를 만든 뒤 질문·reference answer·category/facet·tags·expected label·source span을
 structured form 또는 single-case JSON으로 수정합니다. 연결된 eval 결과가 있으면 질문별
 hit/miss, first rank, reciprocal rank를 같은 표에 표시합니다. `Validate`는 suite uniqueness와
@@ -625,10 +650,14 @@ uv run python -m app.cli ingest \
 | Model policy | verified | role allowlist, reasoning, cached/cache-write pricing, Agent USD cap | Python policy/provider tests |
 | Schema migration | verified | explicit additive usage-accounting migration with row preservation | live PostgreSQL migration test and local ledger |
 | Readiness | verified | typed `/ready`, policy and corpus state, 200/503 split | release API tests and local `/ready` response |
-| Review UX | verified | SSE progress/cancel, safe GFM, right-edge scroll, runtime modal, target-click tour | Vitest and local browser health/tour QA |
-| Corpus Lab | verified | public read-only, local live operator, usage, golden evaluation jobs | component/API tests and successful local quick evaluation |
+| Review UX | verified | composer toolbar and readiness banners, six-step SSE progress, verdict-first answer cards, cancel, safe GFM, right-edge scroll, runtime modal, target-click tour | Vitest and local browser review QA (Supported · N citations, stepper, evidence fold) |
+| Build / Measure / System | verified | ordered Build pipeline with per-stage state and one action, Ingest all manifests, Measure Playground/golden/runs/compare/snapshots, System status/Operations/API inspector/usage, public read-only parity | component/API tests, local Ingest all manifests → backfill run, Playground rankings and quick evaluation in the browser |
 | Local Operations | verified | authenticated fixed command registry, logs, cancel, service confirmation | operator API tests and browser Git-status run |
-| Release UI | verified | test, typecheck, isolated static build, fixed shell chrome | static build and local browser QA |
+| Runtime strip shortcuts | implemented | Build's runtime strip runs `db-start`, migration plan/apply, and `app-start` through Local Operations when an operator is attached; command lines otherwise | build-pipeline component tests; browser run pending an operator session |
+| Release UI | verified | test, typecheck, isolated static build, fixed shell chrome, canned build never calls `/admin/*` | static live and canned builds and local browser QA |
+| Build pipeline | verified | client-derived stage state from `/ready`, `/admin/corpus`, `/admin/jobs`; manifest registry and on-disk source counts; canned fixture labelled as such | pipeline unit tests, admin ordering tests, and a local browser job run |
+| Key slots | verified | `MODE`-selected OpenAI key (`OPENAI_API_KEY_LOCAL` / `_PROD`) with explicit override, `key_slot` in `/ready` | settings tests and local `/ready` on the rebuilt container |
+| Job ledger | verified | coalesced progress writes, terminal write last with retry, worker survives ledger failures | offline ledger tests, live PostgreSQL suite, stuck ingest reproduced and fixed locally |
 <!-- product-roadmap:end -->
 
 ## 재조립 기록
@@ -785,7 +814,7 @@ OpenAI embedding 기본 모델은 `text-embedding-3-large`이며 pgvector 폭은
 기존 vector는 stale 처리되고 명시적 backfill 전까지 검색에서 제외됩니다. 실제 OpenAI
 review·translation·embedding 호출은 운영자가 유효한 key와 budget을 설정한 경우에만 수행합니다.
 
-Corpus Lab 상단의 `DEV`/`PROD`는 현재 hostname에서 자동으로 결정되며 선택 control이 아닙니다.
+Build·Measure 상단의 `DEV`/`PROD`는 현재 hostname에서 자동으로 결정되며 선택 control이 아닙니다.
 Provider 인증·schema·usage 실패는 `NOT_IN_DOCS`로 숨기지 않고 typed engine error로 표시합니다.
 
 ### 대시보드
