@@ -435,7 +435,17 @@ export function failureMessage(failure: Record<string, unknown>): string {
     return `The model returned output that did not match the required schema.${advice}`;
   }
   if (status === "budget_exceeded") {
-    const node = typeof failure.node === "string" ? ` at the ${failure.node} step` : "";
+    // `resource` says which ceiling stopped the run. A wall-clock stop is not a token
+    // budget, and saying so would send the reader to the wrong setting.
+    const node = typeof failure.blocked_node === "string" ? ` at the ${failure.blocked_node} step` : "";
+    if (failure.resource === "wall_clock_s") {
+      const limit = typeof failure.limit === "number" ? ` of ${failure.limit}s` : "";
+      const advice = LOCAL_ENGINE_VISIBLE ? " A local model on CPU usually needs a longer one." : "";
+      return `The run passed its wall-clock limit${limit}${node}. Raise it in Settings › Prompt & evidence.${advice}`;
+    }
+    if (failure.resource === "iterations") {
+      return `The run used all of its allowed steps${node}.`;
+    }
     return `The run exceeded its token budget${node}.`;
   }
   if (status === "provider_error" && LOCAL_ENGINE_VISIBLE) {

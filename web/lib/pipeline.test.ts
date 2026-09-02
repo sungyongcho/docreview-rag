@@ -458,8 +458,15 @@ describe("derivePipeline", () => {
     expect(failureMessage({ code: "provider_failure", status: "schema_rejected", details: ["x"] })).toBe(
       "The model returned output that did not match the required schema.",
     );
-    expect(failureMessage({ code: "budget_exceeded", status: "budget_exceeded", node: "grade" })).toBe(
-      "The run exceeded its token budget at the grade step.",
+    expect(
+      failureMessage({ code: "budget_exceeded", resource: "output_tokens", blocked_node: "grade" }),
+    ).toBe("The run exceeded its token budget at the grade step.");
+    // A wall-clock stop is a different setting, so it must not be called a token budget.
+    const clock = failureMessage({ code: "budget_exceeded", resource: "wall_clock_s", limit: 120, blocked_node: "check" });
+    expect(clock).toContain("wall-clock limit of 120s at the check step");
+    expect(clock).not.toContain("token budget");
+    expect(failureMessage({ code: "budget_exceeded", resource: "iterations", blocked_node: "grade" })).toContain(
+      "all of its allowed steps",
     );
     expect(failureMessage({ status: "provider_error", details: ["AuthenticationError: bad key"] })).toContain(
       "OpenAI API authentication failed",
