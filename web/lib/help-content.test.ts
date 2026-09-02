@@ -62,7 +62,7 @@ describe("help content", () => {
     expect(helpScreen("system", "usage")).toBe("system");
     expect(helpScreen("build", "pipeline")).toBe("build");
     expect(helpScreen("build", "documents")).toBeNull();
-    expect(helpScreen("build", "jobs")).toBeNull();
+    expect(helpScreen("build", "jobs")).toBe("build.jobs");
     for (const tab of ["playground", "golden", "runs", "compare", "snapshots"]) expect(helpScreen("measure", tab)).toBe(`measure.${tab}`);
     expect(helpScreen("measure", "other")).toBeNull();
   });

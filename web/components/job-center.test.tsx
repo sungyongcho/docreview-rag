@@ -69,6 +69,12 @@ describe("JobCenter", () => {
     expect(screen.getByRole("button", { name: "Retry as new job" })).toBeInTheDocument();
   });
 
+  it("carries the help hook so the Jobs tab can be explained", () => {
+    // The topic lives on its own screen, because the Job Center is not on the pipeline tab.
+    renderCenter([job()]);
+    expect(document.querySelector('[data-help="build.jobs.center"]')).not.toBeNull();
+  });
+
   it("says why an interrupted job is not resumed, and offers no sentence when nothing failed", () => {
     renderCenter([job({ status: "interrupted", error_code: "process_restarted", message: "Interrupted by application restart; retry explicitly." })]);
     fireEvent.click(screen.getByRole("button", { name: /Ingest manifest/ }));

@@ -8,6 +8,7 @@ import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 
 export type HelpScreen =
   | "build"
+  | "build.jobs"
   | "review"
   | "measure.playground"
   | "measure.golden"
@@ -28,6 +29,7 @@ export interface HelpTopic {
 
 export const HELP_SCREEN_TITLES: Record<HelpScreen, string> = {
   build: "Build · Pipeline",
+  "build.jobs": "Build · Jobs",
   review: "Ask",
   "measure.playground": "Measure · Playground",
   "measure.golden": "Measure · Golden Tests",
@@ -183,18 +185,6 @@ const BUILD: HelpTopic[] = [
       "Its button is the same action as on the stage card, so you can drive the whole pipeline from here.",
     ],
     seeAlso: ["build.stage.filings", "build.stage.evaluate"],
-  },
-  {
-    id: "build.jobs",
-    title: "Job Center",
-    body: [
-      "Every long operation runs as a persisted job, so a page reload never loses one. Six states: queued and running are live, succeeded, failed and cancelled are terminal, and interrupted means the application restarted mid-flight.",
-      "Interrupted work is never resumed automatically, because a half-finished ingest cannot be safely continued from an unknown point. Retry it explicitly; failed and interrupted jobs offer that button, cancelled ones do not.",
-      "The detail pane names the error code, a sentence explaining it, the message the job wrote, and the request it was given.",
-    ],
-    tune: "Cancel only reaches a job that is still queued or running. A stuck job usually means the worker died, which shows as worker_error.",
-    seeAlso: ["build.next-step", "build.runtime"],
-    optional: true,
   },
   {
     id: "build.stage.filings",
@@ -594,6 +584,20 @@ const SNAPSHOTS: HelpTopic[] = [
   },
 ];
 
+const BUILD_JOBS: HelpTopic[] = [
+  {
+    id: "build.jobs.center",
+    title: "Job Center",
+    body: [
+      "Every long operation runs as a persisted job, so a page reload never loses one. Six states: queued and running are live, succeeded, failed and cancelled are terminal, and interrupted means the application restarted mid-flight.",
+      "Interrupted work is never resumed automatically, because a half-finished ingest cannot be safely continued from an unknown point. Retry it explicitly; failed and interrupted jobs offer that button, cancelled ones do not.",
+      "The detail pane names the error code, a sentence explaining it, the message the job wrote, and the request it was given.",
+    ],
+    tune: "Cancel only reaches a job that is still queued or running. A stuck job usually means the worker died, which shows as worker_error.",
+    seeAlso: ["build.next-step", "build.runtime"],
+  },
+];
+
 const SYSTEM: HelpTopic[] = [
   {
     id: "system.status",
@@ -648,6 +652,7 @@ const SYSTEM: HelpTopic[] = [
 
 export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
   build: BUILD,
+  "build.jobs": BUILD_JOBS,
   review: REVIEW,
   "measure.playground": PLAYGROUND,
   "measure.golden": GOLDEN,
@@ -663,7 +668,7 @@ const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "r
 export function helpScreen(view: "review" | "build" | "measure" | "system", tab: string): HelpScreen | null {
   if (view === "review") return "review";
   if (view === "system") return "system";
-  if (view === "build") return tab === "pipeline" ? "build" : null;
+  if (view === "build") return tab === "pipeline" ? "build" : tab === "jobs" ? "build.jobs" : null;
   return MEASURE_SCREENS.has(tab) ? `measure.${tab}` as HelpScreen : null;
 }
 
