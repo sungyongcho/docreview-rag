@@ -4,6 +4,7 @@ import { Play, Search } from "lucide-react";
 import { useState } from "react";
 
 import { previewRetrieval, previewReview } from "@/lib/api";
+import { failureMessage } from "@/lib/pipeline";
 import type { EvidenceHit, RetrievalProfile } from "@/lib/types";
 import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
@@ -90,9 +91,8 @@ function toReviewSummary(payload: Record<string, unknown>): ReviewSummary {
     label: String(root.status ?? "failed"),
     answer: null,
     citations: [],
-    failure: failure
-      ? String(failure.message ?? failure.status ?? failure.code ?? "provider failure")
-      : "Review completed without a report.",
+    // The same sentence the review workspace shows, so one failure does not read two ways.
+    failure: failure ? failureMessage(failure) : "Review completed without a report.",
   };
 }
 

@@ -413,3 +413,38 @@ function answerModelDraft(readiness: Readiness | null): Draft {
     action: { label: "Re-check", kind: "recheck" },
   };
 }
+
+/**
+ * Turn one run failure into a sentence that names the cause.
+ *
+ * Matching is on `failure.status`, whose four values are a closed contract, rather than
+ * on `node`. Only the exception class at the head of `details[0]` is parsed; the text
+ * after it is a provider message and not a contract. Advice that only an operator can
+ * act on is withheld from a public build, which cannot run a local model at all.
+ */
+export function failureMessage(failure: Record<string, unknown>): string {
+  const detail = JSON.stringify(failure);
+  if (/AuthenticationError|token_invalidated|invalidated/i.test(detail)) {
+    return "OpenAI API authentication failed. Update the server-side API key and retry.";
+  }
+  const status = String(failure.status ?? failure.code ?? "provider failure");
+  if (status === "schema_rejected") {
+    const advice = LOCAL_ENGINE_VISIBLE
+      ? " Smaller local models often fail structured output; try the OpenAI engine for this question."
+      : "";
+    return `The model returned output that did not match the required schema.${advice}`;
+  }
+  if (status === "budget_exceeded") {
+    const node = typeof failure.node === "string" ? ` at the ${failure.node} step` : "";
+    return `The run exceeded its token budget${node}.`;
+  }
+  if (status === "provider_error" && LOCAL_ENGINE_VISIBLE) {
+    if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) {
+      return "The model did not answer within the time limit. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.";
+    }
+    if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) {
+      return "The model host is unreachable. Check that the local-llm compose profile is running.";
+    }
+  }
+  return `The answer could not be generated (${status}).`;
+}

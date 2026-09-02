@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ANSWER_MODEL_HINT, derivePipeline, STAGE_ORDER } from "./pipeline";
+import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, STAGE_ORDER } from "./pipeline";
 import type { Pipeline, PipelineInput, Stage, StageId } from "./pipeline";
 import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./types";
 
@@ -447,6 +447,31 @@ describe("derivePipeline", () => {
     expect(stage(listed, "answer_model").numbers).toEqual(["OpenAI · gpt-5.6-terra · prod key", "Local · qwen3"]);
     expect(stage(blocked, "answer_model").numbers).toEqual(["openai · disabled", "local · not_configured"]);
     expect(operator.ANSWER_MODEL_HINT).toContain("LOCAL_LLM_BASE_URL");
+  });
+
+  it("names the cause of a failure instead of printing its status code", async () => {
+    const timeout = { code: "provider_failure", node: "check", status: "provider_error", details: ["ReadTimeout: timed out"] };
+    const refused = { code: "provider_failure", node: "check", status: "provider_error", details: ["ConnectError: Connection refused"] };
+
+    // A public bundle cannot act on local advice, so it keeps the neutral sentence.
+    expect(failureMessage(timeout)).toBe("The answer could not be generated (provider_error).");
+    expect(failureMessage({ code: "provider_failure", status: "schema_rejected", details: ["x"] })).toBe(
+      "The model returned output that did not match the required schema.",
+    );
+    expect(failureMessage({ code: "budget_exceeded", status: "budget_exceeded", node: "grade" })).toBe(
+      "The run exceeded its token budget at the grade step.",
+    );
+    expect(failureMessage({ status: "provider_error", details: ["AuthenticationError: bad key"] })).toContain(
+      "OpenAI API authentication failed",
+    );
+
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./pipeline");
+
+    expect(operator.failureMessage(timeout)).toContain("LOCAL_LLM_TIMEOUT_S");
+    expect(operator.failureMessage(refused)).toContain("local-llm compose profile");
+    expect(operator.failureMessage({ status: "schema_rejected", details: ["x"] })).toContain("Smaller local models");
   });
 
   it("still says something when a public bundle suppresses the only enabled engine", () => {

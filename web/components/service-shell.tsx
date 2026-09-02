@@ -35,6 +35,7 @@ import {
   streamReview,
 } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
+import { failureMessage } from "@/lib/pipeline";
 import { helpScreen } from "@/lib/help-content";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
@@ -733,13 +734,7 @@ export function terminalAnswer(payload: Record<string, unknown>): string {
     return typeof report.rationale === "string" ? report.rationale : "The filings do not contain direct support for this question.";
   }
   const failure = root.failure as Record<string, unknown> | null;
-  if (failure) {
-    const detail = JSON.stringify(failure);
-    if (/AuthenticationError|token_invalidated|invalidated/i.test(detail)) {
-      return "OpenAI API authentication failed. Update the server-side API key and retry.";
-    }
-    return `The answer could not be generated (${String(failure.status ?? failure.code ?? "provider failure")}).`;
-  }
+  if (failure) return failureMessage(failure);
   throw new Error("Review completed without a valid terminal report or failure.");
 }
 
