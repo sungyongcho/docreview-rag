@@ -4,6 +4,8 @@
  * part matches `HelpScreen`, so a renamed hook fails the coverage tests.
  */
 
+import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
+
 export type HelpScreen =
   | "build"
   | "review"
@@ -235,7 +237,9 @@ const BUILD: HelpTopic[] = [
     title: "6 · Answer model",
     body: [
       "The LLM that writes the answer and checks every citation. It is optional: without it, Ask still returns evidence.",
-      "In dev, OPENAI_API_KEY_LOCAL in .env is used; OPENAI_API_KEY_PROD when MODE=prod. A local model needs LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL instead.",
+      LOCAL_ENGINE_VISIBLE
+        ? "In dev, OPENAI_API_KEY_LOCAL in .env is used; OPENAI_API_KEY_PROD when MODE=prod. A local model needs LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL instead."
+        : "In dev, OPENAI_API_KEY_LOCAL in .env is used; OPENAI_API_KEY_PROD when MODE=prod.",
       "The model never sees the corpus directly, only the evidence from step 5, and provider failures are shown as failures rather than disguised as NOT_IN_DOCS.",
     ],
     tune: "After changing .env run docker compose up -d app, then Re-check.",

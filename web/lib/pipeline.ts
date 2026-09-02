@@ -1,3 +1,4 @@
+import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import { CANNED_CORPUS } from "./canned";
 import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./types";
 import type { RuntimeHealthKind } from "./use-runtime-health";
@@ -110,7 +111,12 @@ export const STAGE_COPY: Record<StageId, StageCopy> = {
   },
 };
 
-export const ANSWER_MODEL_HINT = "No answer model. In dev, set OPENAI_API_KEY_LOCAL in .env (OPENAI_API_KEY_PROD is used when MODE=prod), then run docker compose up -d app. For a local model set LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL instead. Ask keeps working in evidence-only mode.";
+const OPENAI_KEY_HINT = "No answer model. In dev, set OPENAI_API_KEY_LOCAL in .env (OPENAI_API_KEY_PROD is used when MODE=prod), then run docker compose up -d app.";
+const EVIDENCE_ONLY_HINT = "Ask keeps working in evidence-only mode.";
+/** A public build never names the local engine, because that build cannot run one. */
+export const ANSWER_MODEL_HINT = LOCAL_ENGINE_VISIBLE
+  ? `${OPENAI_KEY_HINT} For a local model set LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL instead. ${EVIDENCE_ONLY_HINT}`
+  : `${OPENAI_KEY_HINT} ${EVIDENCE_ONLY_HINT}`;
 
 export function stageStatusLabel(status: StageStatus): string {
   switch (status) {
@@ -392,13 +398,17 @@ function answerModelDraft(readiness: Readiness | null): Draft {
   if (readiness.review_enabled) {
     const numbers: string[] = [];
     if (openai.enabled) numbers.push(`OpenAI · ${openai.model ?? readiness.active_review_model ?? "configured"}${openai.key_slot ? ` · ${openai.key_slot} key` : ""}`);
-    if (local.enabled) numbers.push(`Local · ${local.model ?? "configured"}`);
+    if (LOCAL_ENGINE_VISIBLE && local.enabled) numbers.push(`Local · ${local.model ?? "configured"}`);
+    // A public build suppresses the local row, so say something rather than nothing.
+    if (!numbers.length) numbers.push("Configured");
     return { status: "done", numbers, action: null };
   }
   return {
     status: "blocked",
     statusDetail: "No answer model",
-    numbers: [`openai · ${openai.enabled ? "enabled" : "disabled"}`, `local · ${local.reason ?? (local.enabled ? "enabled" : "not configured")}`],
+    numbers: LOCAL_ENGINE_VISIBLE
+      ? [`openai · ${openai.enabled ? "enabled" : "disabled"}`, `local · ${local.reason ?? (local.enabled ? "enabled" : "not configured")}`]
+      : [`openai · ${openai.enabled ? "enabled" : "disabled"}`],
     hint: ANSWER_MODEL_HINT,
     action: { label: "Re-check", kind: "recheck" },
   };

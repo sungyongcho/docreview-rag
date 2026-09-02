@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ANSWER_MODEL_HINT, derivePipeline, STAGE_ORDER } from "./pipeline";
 import type { Pipeline, PipelineInput, Stage, StageId } from "./pipeline";
@@ -117,6 +117,11 @@ function statuses(pipeline: Pipeline): Record<StageId, Stage["status"]> {
 }
 
 describe("derivePipeline", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it("orders the seven stages 1..7 following STAGE_ORDER", () => {
     const pipeline = derivePipeline(liveInput());
     expect(pipeline.stages.map((item) => item.id)).toEqual([...STAGE_ORDER]);
@@ -394,7 +399,8 @@ describe("derivePipeline", () => {
     const answerModel = stage(pipeline, "answer_model");
     expect(answerModel.status).toBe("blocked");
     expect(answerModel.statusDetail).toBe("No answer model");
-    expect(answerModel.numbers).toEqual(["openai · disabled", "local · not_configured"]);
+    // The public bundle is compiled without the local engine, so it names only OpenAI.
+    expect(answerModel.numbers).toEqual(["openai · disabled"]);
     expect(answerModel.hint).toBe(ANSWER_MODEL_HINT);
     expect(answerModel.action).toEqual({ label: "Re-check", kind: "recheck" });
 
@@ -403,7 +409,7 @@ describe("derivePipeline", () => {
     expect(pipeline.corpusReady).toBe(true);
   });
 
-  it("lists a local engine next to OpenAI when both are enabled", () => {
+  it("hides the local engine from a bundle that cannot run one", () => {
     const readiness = baseReadiness({
       review_engines: {
         openai: { enabled: true, model: "gpt-5.6-terra", key_slot: "prod" },
@@ -411,7 +417,44 @@ describe("derivePipeline", () => {
       },
     });
     const pipeline = derivePipeline(liveInput({ readiness }));
-    expect(stage(pipeline, "answer_model").numbers).toEqual(["OpenAI · gpt-5.6-terra · prod key", "Local · qwen3"]);
+    expect(stage(pipeline, "answer_model").numbers).toEqual(["OpenAI · gpt-5.6-terra · prod key"]);
+    expect(ANSWER_MODEL_HINT).not.toContain("LOCAL_LLM");
+  });
+
+  it("lists a local engine next to OpenAI in an operator bundle", async () => {
+    // The visibility flag is a build-time constant, so the module has to be re-evaluated.
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./pipeline");
+    const readiness = baseReadiness({
+      review_engines: {
+        openai: { enabled: true, model: "gpt-5.6-terra", key_slot: "prod" },
+        local: { enabled: true, model: "qwen3" },
+      },
+    });
+
+    const listed = operator.derivePipeline(liveInput({ readiness }));
+    const blocked = operator.derivePipeline(
+      liveInput({
+        readiness: baseReadiness({
+          review_enabled: false,
+          active_review_model: null,
+          review_engines: { openai: { enabled: false }, local: { enabled: false, reason: "not_configured" } },
+        }),
+      }),
+    );
+
+    expect(stage(listed, "answer_model").numbers).toEqual(["OpenAI · gpt-5.6-terra · prod key", "Local · qwen3"]);
+    expect(stage(blocked, "answer_model").numbers).toEqual(["openai · disabled", "local · not_configured"]);
+    expect(operator.ANSWER_MODEL_HINT).toContain("LOCAL_LLM_BASE_URL");
+  });
+
+  it("still says something when a public bundle suppresses the only enabled engine", () => {
+    const readiness = baseReadiness({
+      review_engines: { local: { enabled: true, model: "qwen3" } },
+      active_review_model: null,
+    });
+    expect(stage(derivePipeline(liveInput({ readiness })), "answer_model").numbers).toEqual(["Configured"]);
   });
 
   // Case 10: static public build with no API at all; the portfolio fixture stands in.

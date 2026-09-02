@@ -21,6 +21,8 @@ const DEV: Capabilities = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.resetModules();
   window.localStorage.clear();
 });
 
@@ -29,6 +31,26 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
 }
 
 describe("Settings modal", () => {
+  it("offers the answer engine only in a bundle that can run a local model", async () => {
+    renderSettings(DEV);
+    fireEvent.click(screen.getByRole("button", { name: "Review session" }));
+    expect(screen.queryByLabelText("Answer engine")).not.toBeInTheDocument();
+    cleanup();
+
+    // The visibility flag is inlined at build time, so the module tree has to reload.
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const { SettingsModal: OperatorSettings } = await import("./settings-modal");
+    render(
+      <OperatorSettings open profile={DEFAULT_SESSION_PROFILE} capabilities={DEV} readiness={null} onChange={vi.fn()} onClose={vi.fn()} onOpenMeasure={vi.fn()} onOpenSystem={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Review session" }));
+
+    const engine = screen.getByLabelText("Answer engine");
+    expect(engine).toBeEnabled();
+    expect(screen.getByRole("option", { name: "Local LLM" })).toBeInTheDocument();
+  });
+
   it("shows developer prompt policy while preserving the immutable guard", () => {
     renderSettings(DEV);
     fireEvent.click(screen.getByRole("button", { name: "Prompt & evidence" }));

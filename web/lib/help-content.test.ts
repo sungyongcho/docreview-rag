@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { findHelpTopic, HELP_SCREEN_TITLES, HELP_TOPICS, helpScreen, type HelpScreen } from "./help-content";
 
@@ -65,5 +65,26 @@ describe("help content", () => {
     expect(helpScreen("build", "jobs")).toBeNull();
     for (const tab of ["playground", "golden", "runs", "compare", "snapshots"]) expect(helpScreen("measure", tab)).toBe(`measure.${tab}`);
     expect(helpScreen("measure", "other")).toBeNull();
+  });
+});
+
+describe("build flavour", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("keeps the local engine out of a bundle that cannot run one", async () => {
+    const publicTopic = HELP_TOPICS.build.find((topic) => topic.id === "build.stage.answer_model");
+    expect(publicTopic?.body.join(" ")).not.toContain("LOCAL_LLM");
+
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./help-content");
+    const operatorTopic = operator.HELP_TOPICS.build.find(
+      (topic) => topic.id === "build.stage.answer_model",
+    );
+
+    expect(operatorTopic?.body.join(" ")).toContain("LOCAL_LLM_BASE_URL");
   });
 });
