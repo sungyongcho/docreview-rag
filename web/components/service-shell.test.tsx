@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HELP_KEY, ONBOARDING_KEY, saveConversations } from "@/lib/storage";
 import type { Readiness } from "@/lib/types";
+import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
@@ -122,6 +123,8 @@ describe("service shell", () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    // The build-mode constant is module level, so a stubbed build must not leak forward.
+    vi.resetModules();
   });
 
   it("navigates between Build, Measure and System from the sidebar", async () => {
@@ -425,6 +428,45 @@ describe("service shell", () => {
     fireEvent.click(screen.getByText("Finish"));
     fireEvent.keyDown(window, { key: "?" });
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+  });
+
+  it("marks the sidebar while a local model is answering, and only in an operator build", async () => {
+    stubPublicApi();
+    // A public bundle cannot select the engine, so the badge cannot exist there.
+    saveConversations([{
+      id: "local", title: "Local", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z",
+      messages: [], profile: { ...DEFAULT_SESSION_PROFILE, engine: "local" },
+    }]);
+    render(<ServiceShell />);
+    expect(await screen.findByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
+    expect(screen.queryByText("LOCAL MODEL")).toBeNull();
+    cleanup();
+
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./service-shell");
+    stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    render(<operator.ServiceShell />);
+
+    const badge = await screen.findByRole("note");
+    expect(badge).toHaveTextContent("LOCAL MODEL");
+    // The explanation is real text, so a keyboard or screen-reader user reaches it.
+    expect(badge).toHaveTextContent(/not OpenAI/);
+  });
+
+  it("drops the sidebar mark when the session goes back to OpenAI", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const operator = await import("./service-shell");
+    stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    saveConversations([{
+      id: "openai", title: "OpenAI", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z",
+      messages: [], profile: { ...DEFAULT_SESSION_PROFILE, engine: "openai" },
+    }]);
+    render(<operator.ServiceShell />);
+
+    expect(await screen.findByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
+    expect(screen.queryByRole("note")).toBeNull();
   });
 
   it("leaves Help alone while a modal owns the screen", async () => {

@@ -12,6 +12,7 @@ import {
   SquarePen,
   Trash2,
   Settings,
+  TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -33,6 +34,7 @@ import {
   retrieveEvidence,
   streamReview,
 } from "@/lib/api";
+import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { helpScreen } from "@/lib/help-content";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
@@ -494,6 +496,17 @@ export function ServiceShell() {
           <button data-tour="system" className="nav-secondary" type="button" aria-pressed={view === "system"} onClick={() => navigate({ view: "system" })}><Activity size={17} /><span>System</span></button>
           <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>Settings</span></button>
         </div>
+        {LOCAL_ENGINE_VISIBLE && activeSessionProfile.engine === "local" && (
+          <div className="local-mode-badge" role="note">
+            <TriangleAlert size={14} aria-hidden="true" />
+            <span className="local-mode-label">LOCAL MODEL</span>
+            <span className="local-mode-note">
+              Answers come from the model on this machine, not OpenAI. Quality, citation
+              discipline and latency are not comparable, and nothing leaves the machine.
+              Change it in Settings › Review session.
+            </span>
+          </div>
+        )}
       </aside>
 
       <section className="workspace">

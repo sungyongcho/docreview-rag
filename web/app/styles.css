@@ -587,3 +587,16 @@ select.chip { appearance: auto; padding-right: 6px; }
   .help-panel { max-height: 45dvh; }
   .help-marker { z-index: 37; }
 }
+
+/* Local model badge: ambient state, not an event, so the note is real text revealed on
+   hover and focus rather than a title attribute a keyboard or touch user cannot reach. */
+.local-mode-badge { position: relative; margin-top: auto; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--text); font-size: 11px; letter-spacing: .06em; }
+.local-mode-badge svg { flex: none; color: var(--warn); }
+.local-mode-note { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 40; width: 232px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); box-shadow: 0 8px 24px rgba(0, 0, 0, .34); color: var(--text); font-size: 12px; letter-spacing: normal; line-height: 1.5; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.local-mode-badge:hover .local-mode-note, .local-mode-badge:focus-within .local-mode-note { opacity: 1; }
+/* The 820px rail hides every sidebar label, so the badge keeps only its triangle. */
+@media (max-width: 820px) {
+  .local-mode-label { display: none; }
+  .local-mode-badge { justify-content: center; }
+  .local-mode-note { left: 50%; transform: translateX(-50%); }
+}
