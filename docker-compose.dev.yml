@@ -19,7 +19,9 @@ services:
   # `docker compose up` and `docker compose config` unaffected when it is absent.
   ollama:
     profiles: ["local-llm"]
-    image: ollama/ollama:0.12.11
+    # Pinned for reproducibility, but recent enough to pull current models: an older
+    # server refuses their manifests with a 412 and tells the reader to upgrade.
+    image: ollama/ollama:0.30.7
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       # Reloading several gigabytes per request dominates latency on a CPU-only host.

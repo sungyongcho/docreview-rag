@@ -2,6 +2,7 @@
 
 import asyncio
 from decimal import Decimal
+import json
 
 import httpx
 
@@ -70,3 +71,38 @@ def test_local_provider_fails_closed_when_usage_is_missing() -> None:
 
     assert result.status == "provider_error"
     assert result.metadata.input_tokens == 0
+
+
+def test_ollama_request_asks_for_a_window_that_fits_the_budget() -> None:
+    """Ollama defaults to a small context and silently drops the overflow.
+
+    Notes
+    -----
+    A truncated evidence prompt would yield an answer about filings the model never read,
+    so the request states the window the caller's budget already assumes.
+    """
+    sent: list[dict[str, object]] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": '{"answer":"hello"}'},
+                "prompt_eval_count": 8,
+                "eval_count": 3,
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
+    provider = LocalLLMProvider(
+        base_url="http://127.0.0.1:11434", model_name="test", protocol="ollama", client=client
+    )
+
+    asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
+    asyncio.run(client.aclose())
+
+    options = sent[0]["options"]
+    assert isinstance(options, dict)
+    assert options["num_ctx"] == 150, "the window must cover both halves of the budget"
+    assert options["num_predict"] == 50

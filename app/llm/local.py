@@ -110,7 +110,16 @@ class LocalLLMProvider(LLMProvider):
         schema: type[OutputT],
         budget: ProviderBudget,
     ) -> RawProviderResponse:
-        """Call Ollama native chat with a Pydantic JSON schema."""
+        """Call Ollama native chat with a Pydantic JSON schema.
+
+        Notes
+        -----
+        `num_ctx` is sent explicitly. Ollama otherwise loads the model with its own
+        default window, commonly 4096 tokens, and silently drops whatever does not fit.
+        A truncated evidence prompt would produce an answer about filings the model never
+        saw, which is the one failure this system must not hide, so the window is asked
+        to match the budget the caller already enforces.
+        """
         headers = {"authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         response = await self._client.post(
             f"{self._base_url}/api/chat",
@@ -123,7 +132,11 @@ class LocalLLMProvider(LLMProvider):
                 ],
                 "format": schema.model_json_schema(),
                 "stream": False,
-                "options": {"num_predict": budget.max_output_tokens, "temperature": 0},
+                "options": {
+                    "num_predict": budget.max_output_tokens,
+                    "num_ctx": budget.max_input_tokens + budget.max_output_tokens,
+                    "temperature": 0,
+                },
             },
         )
         response.raise_for_status()

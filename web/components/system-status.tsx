@@ -38,7 +38,7 @@ export function SystemStatus({ readiness, loading, error, onRefresh, embedded = 
         <div className="metric"><span>Database</span><strong>{value(corpus?.database_connected)}</strong></div>
         <div className="metric"><span>Schema</span><strong>{corpus?.schema_status ?? corpus?.availability ?? "Unknown"}</strong></div>
       </div>
-      <div className={`two-column status-columns${LOCAL_ENGINE_VISIBLE ? " with-local" : ""}`}>
+      <div className="two-column status-columns">
         <section className="surface">
           <h2>Corpus</h2>
           <dl className="status-list">
@@ -98,7 +98,7 @@ function LocalModelPolicy({ readiness }: { readiness: Readiness | null }) {
     <section className="surface" data-help="system.local-policy">
       <h2>Local model policy</h2>
       <p className="helper">Not governed by the OpenAI model policy. The model is whatever LOCAL_LLM_MODEL names.</p>
-      <div className="policy-list">
+      <div className="policy-list local-policy-list">
         {LOCAL_ROLES.map(([role, detail]) => (
           <div key={role}>
             <strong>{role}</strong>
