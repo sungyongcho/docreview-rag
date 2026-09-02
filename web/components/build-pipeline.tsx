@@ -4,6 +4,7 @@ import { Check, RefreshCw } from "lucide-react";
 import { Fragment } from "react";
 
 import { elapsedLabel, JobProgress } from "@/components/job-center";
+import { Segmented } from "@/components/segmented";
 import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeline";
 import { stageStatusLabel } from "@/lib/pipeline";
 import type { ManifestSummary } from "@/lib/types";
@@ -259,16 +260,6 @@ function ActionButton({ stage, primary, handler, disabled }: { stage: Stage; pri
 function StatusPill({ status, detail }: { status: StageStatus; detail: string }) {
   const label = stageStatusLabel(status);
   return <span className={`stage-status ${status}`}>{label}{detail && detail !== label && <em>{detail}</em>}</span>;
-}
-
-function Segmented<T extends string>({ label, options, value, disabled, onChange }: { label: string; options: Array<{ value: T; label: string }>; value: T; disabled?: boolean; onChange: (value: T) => void }) {
-  return (
-    <div className="segmented" role="group" aria-label={label}>
-      {options.map((option) => (
-        <button key={option.value} type="button" aria-pressed={value === option.value} disabled={disabled} onClick={() => onChange(option.value)}>{option.label}</button>
-      ))}
-    </div>
-  );
 }
 
 interface StageCardProps {

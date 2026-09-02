@@ -79,6 +79,8 @@ export interface ChatMessage {
   text: string;
   evidence?: EvidenceHit[];
   evidenceLabel?: "Cited evidence" | "Related evidence — not direct support" | "Retrieved candidates — answer not generated";
+  /** Citations the report actually made; the evidence list above is the wider candidate pool. */
+  citations?: number;
   trace?: string;
   question?: string;
   candidateToken?: string;
@@ -490,6 +492,11 @@ export interface ReleaseLimits {
   day_reset_seconds: number;
   daily_cost_reset_at_utc: string;
   scope: "single_process";
+}
+
+/** Session fields for choosing a preset: only Custom keeps an explicit retrieval profile. */
+export function applyRetrievalPreset(profile: ReviewSessionProfile, preset: RetrievalPreset): Pick<ReviewSessionProfile, "retrieval_preset" | "custom_retrieval"> {
+  return { retrieval_preset: preset, custom_retrieval: preset === "custom" ? profile.custom_retrieval ?? DEFAULT_PROFILE : null };
 }
 
 export function resolvedRetrievalProfile(profile: ReviewSessionProfile): RetrievalProfile {

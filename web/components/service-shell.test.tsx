@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ONBOARDING_KEY } from "@/lib/storage";
@@ -106,6 +106,62 @@ describe("service shell", () => {
     expect(documentation).toHaveAttribute("href", "/docreview-rag-agent/docs/");
   });
 
+  it("shows the evidence-only banner and fallback when the answer model is off", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/review/stream")) {
+        return new Response(
+          JSON.stringify({ error: { code: "provider_unavailable", message: "Review engine 'openai' is not configured." } }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+      let payload: unknown = {};
+      if (url.endsWith("/health")) payload = { status: "ok" };
+      else if (url.endsWith("/ready")) payload = { ...READY_RUNTIME, review_enabled: false, active_review_model: null };
+      else if (url.endsWith("/capabilities")) payload = { can_change_custom_retrieval: false, can_compare_published_snapshots: true };
+      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+      else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
+      else if (url.endsWith("/retrieve")) payload = {
+        results: [],
+        candidates: [
+          { chunk_id: 1, doc_id: "NVDA-FY2025", item: "7", kind: "text", citation: "NVDA FY2025 Item 7", start_char: 0, end_char: 120, source_sha256: "a", body: "Data center revenue grew.", context_header: "Item 7", score: 0.9 },
+          { chunk_id: 2, doc_id: "NVDA-FY2025", item: "7", kind: "table", citation: "NVDA FY2025 Item 7 table", start_char: 120, end_char: 240, source_sha256: "a", body: "Revenue by segment.", context_header: "Item 7", score: 0.8 },
+        ],
+        candidate_token: null,
+        candidate_expires_at: 0,
+        resolved_scope: null,
+      };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ServiceShell />);
+
+    await waitFor(() => expect(screen.getByText(/Answer model is off — evidence only\./)).toBeInTheDocument());
+    const textarea = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(textarea, { target: { value: "What drove NVIDIA data center revenue growth?" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByText(/See Build › step 6\./)).toBeInTheDocument());
+    expect(screen.getByText("Answer not generated")).toBeInTheDocument();
+    expect(screen.getByText("Retrieved candidates — answer not generated · 2")).toBeInTheDocument();
+    expect(screen.getByText("table")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([value]) => String(value).endsWith("/retrieve"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+  });
+
+  it("changes the corpus scope from the composer toolbar", async () => {
+    stubPublicApi();
+    render(<ServiceShell />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "healthy" })).toBeInTheDocument());
+
+    const scope = screen.getByRole("group", { name: "Corpus scope" });
+    expect(within(scope).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(scope).getByRole("button", { name: "SEC" }));
+    expect(within(scope).getByRole("button", { name: "SEC" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(scope).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Read-only corpus")).toBeInTheDocument();
+  });
+
   it("shows invalidated provider authentication instead of an evidence fallback", () => {
     const answer = terminalAnswer({
       status: "error",
@@ -120,5 +176,36 @@ describe("service shell", () => {
     expect(answer).toBe(
       "OpenAI API authentication failed. Update the server-side API key and retry.",
     );
+  });
+
+  it("renders a conversation reply without a verdict pill", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/review/stream")) {
+        const frames = [
+          'event: node\ndata: {"node":"gate","evidence_count":0,"relevant_count":0,"step_count":1}',
+          'event: report\ndata: {"run":{"status":"ok","report":{"report_kind":"conversation","answer":"Hello! Ask me about a filing.","response_source":"engine"},"failure":null,"total_requests":1}}',
+          "event: done\ndata: {}",
+        ];
+        return new Response(`${frames.join("\n\n")}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      let payload: unknown = {};
+      if (url.endsWith("/health")) payload = { status: "ok" };
+      else if (url.endsWith("/ready")) payload = READY_RUNTIME;
+      else if (url.endsWith("/capabilities")) payload = { can_change_custom_retrieval: false, can_compare_published_snapshots: true };
+      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+      else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ServiceShell />);
+
+    const textarea = await screen.findByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(textarea, { target: { value: "hi there" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("Hello! Ask me about a filing.")).toBeInTheDocument());
+    expect(document.querySelector(".verdict")).toBeNull();
+    expect(screen.queryByText("Answer not generated")).toBeNull();
   });
 });

@@ -15,16 +15,19 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
+import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding } from "@/components/onboarding";
+import { ReviewProgressSteps, reviewProgressFromEvent, type ReviewProgressState } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
-import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
+import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { useNotifications } from "@/components/notifications";
 import {
   ApiError,
   getCapabilities,
+  getReleaseLimits,
   retrieveEvidence,
   streamReview,
 } from "@/lib/api";
@@ -40,7 +43,7 @@ type View = "review" | "build" | "measure" | "system";
 /** One deep-link target for every navigation call site: sidebar, topbar, modals, and workspaces. */
 export type NavigationTarget =
   | { view: "review" }
-  | { view: "build"; tab?: BuildTab }
+  | { view: "build"; tab?: BuildTab; stage?: number }
   | { view: "measure"; tab?: MeasureTab; resultId?: number }
   | { view: "system"; tab?: SystemTab };
 
@@ -60,7 +63,11 @@ export function ServiceShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [progress, setProgress] = useState("");
+  const [progress, setProgress] = useState<ReviewProgressState | null>(null);
+  /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error; cleared by the next successful review. */
+  const [resetAt, setResetAt] = useState<string | null>(null);
+  /** Build stage card to scroll into view once the Build workspace has rendered. */
+  const [pendingStage, setPendingStage] = useState<number | null>(null);
   const reviewAbort = useRef<AbortController | null>(null);
   const adminLive = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
   const operationsAvailable = operatorAvailable();
@@ -99,8 +106,14 @@ export function ServiceShell() {
     [activeId, conversations],
   );
   const activeSessionProfile = active?.profile ?? profile;
-  const vectorOnlyUnavailable = resolvedRetrievalProfile(activeSessionProfile).strategy === "vector"
-    && (runtimeHealth.readiness?.corpus?.pending_embeddings ?? 0) > 0;
+  const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt });
+  const sendBlocked = banner?.kind === "empty" || banner?.kind === "vector";
+
+  useEffect(() => {
+    if (pendingStage === null || view !== "build" || buildTab !== "pipeline") return;
+    document.getElementById(`stage-${pendingStage}`)?.scrollIntoView({ block: "start" });
+    setPendingStage(null);
+  }, [pendingStage, view, buildTab]);
 
   function persist(next: Conversation[]) {
     setConversations(saveConversations(next));
@@ -108,6 +121,7 @@ export function ServiceShell() {
 
   function navigate(target: NavigationTarget) {
     if (target.view === "build" && target.tab) setBuildTab(target.tab);
+    if (target.view === "build" && target.stage !== undefined) setPendingStage(target.stage);
     if (target.view === "measure") {
       if (target.tab) setMeasureTab(target.tab);
       setMeasureResultId(target.resultId ?? null);
@@ -142,37 +156,60 @@ export function ServiceShell() {
     setActiveId(conversation.id);
   }
 
-  function updateActive(messages: ChatMessage[], selectedProfile = active?.profile ?? null) {
-    if (!active) return;
-    const firstQuestion = messages.find((message) => message.role === "user")?.text ?? "New review";
-    const next = conversations.map((conversation) =>
-      conversation.id === active.id
+  function conversationTitle(messages: ChatMessage[]): string {
+    return (messages.find((message) => message.role === "user")?.text ?? "New review").slice(0, 52);
+  }
+
+  /**
+   * Replace the active conversation's messages. Reads the current list at update time
+   * so a change made while a review streams (a toolbar edit, a pin) is not reverted.
+   */
+  function updateActive(messages: ChatMessage[], selectedProfile?: ReviewSessionProfile | null) {
+    const targetId = activeId;
+    setConversations((current) => saveConversations(current.map((conversation) =>
+      conversation.id === targetId
         ? {
             ...conversation,
-            title: firstQuestion.slice(0, 52),
+            title: conversationTitle(messages),
             updatedAt: new Date().toISOString(),
             messages,
-            profile: selectedProfile,
+            profile: selectedProfile === undefined ? conversation.profile : selectedProfile,
           }
         : conversation,
-    );
-    persist(next);
+    )));
+  }
+
+  /** Append one message to the conversation a review started in, even if the user moved on. */
+  function appendMessage(conversationId: string, message: ChatMessage) {
+    setConversations((current) => saveConversations(current.map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      const messages = [...conversation.messages, message];
+      return { ...conversation, title: conversationTitle(messages), updatedAt: new Date().toISOString(), messages };
+    })));
+  }
+
+  /** One-off read of the reset time after a `daily_cost_limit` error so the banner can say when answers resume. */
+  function noteDailyBudget(reason: unknown) {
+    if (reason instanceof ApiError && reason.code === "daily_cost_limit") {
+      void getReleaseLimits().then((limits) => setResetAt(limits.daily_cost_reset_at_utc)).catch(() => undefined);
+    }
   }
 
   async function submit() {
     const question = query.trim();
-    if (!question || busy || !active) return;
+    if (!question || busy || !active || sendBlocked) return;
     setQuery("");
     setBusy(true);
-    setProgress("Retrieving evidence");
+    setProgress(null);
     reviewAbort.current?.abort();
     const controller = new AbortController();
     reviewAbort.current = controller;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
+    const conversationId = active.id;
     const pending = [...active.messages, userMessage];
     let preparedEvidence: EvidenceHit[] = [];
     const selectedProfile = active.profile ?? profile;
-    updateActive(pending);
+    appendMessage(conversationId, userMessage);
     try {
       let evidence: EvidenceHit[] = [];
       let candidateToken: string | undefined;
@@ -186,29 +223,31 @@ export function ServiceShell() {
         selectedProfile,
         null,
         history,
-        (event) => setProgress(`${event.node} · ${event.evidence_count} evidence · ${event.step_count} model steps`),
+        (event) => setProgress(reviewProgressFromEvent(event)),
         controller.signal,
         (payload) => {
           evidence = payload.candidates.length ? payload.candidates : payload.results;
           preparedEvidence = evidence;
           candidateToken = payload.candidate_token ?? undefined;
-          setProgress(`${payload.candidates.length} candidates retrieved`);
+          setProgress({ node: "candidates", evidence: payload.candidates.length, relevant: 0, steps: 0 });
         },
       );
       const answer = terminalAnswer(response);
+      setResetAt(null);
       const assistant: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
         text: answer,
         evidence,
         evidenceLabel: terminalEvidenceLabel(response),
+        citations: terminalCitationCount(response),
         trace: extractTrace(response),
         question,
         candidateToken,
         pinnedChunkIds: [],
         excludedChunkIds: [],
       };
-      updateActive([...pending, assistant]);
+      appendMessage(conversationId, assistant);
     } catch (reason) {
       if (isInfrastructureFailure(reason)) {
         setQuery(question);
@@ -216,7 +255,9 @@ export function ServiceShell() {
         return;
       }
       let evidence = preparedEvidence;
-      if (reason instanceof ApiError && reason.code === "provider_unavailable") {
+      // The provider gate and the daily cost limiter both reject before retrieval runs,
+      // so fetch the evidence separately for the evidence-only reply.
+      if (reason instanceof ApiError && ["provider_unavailable", "daily_cost_limit"].includes(reason.code) && !evidence.length) {
         try {
           const retrieved = await retrieveEvidence(question, selectedProfile);
           evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
@@ -224,21 +265,25 @@ export function ServiceShell() {
           // Preserve the original provider error when retrieval is also unavailable.
         }
       }
+      noteDailyBudget(reason);
       const message =
         reason instanceof ApiError && reason.code === "daily_cost_limit"
           ? "The daily answer budget is exhausted. Retrieved evidence is shown without an LLM answer."
           : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
-            ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer."
+            ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer. See Build › step 6."
           : reason instanceof Error
             ? reason.message
             : "The review could not be completed.";
-      updateActive([
-        ...pending,
-        { id: crypto.randomUUID(), role: "assistant", text: message, evidence },
-      ]);
+      appendMessage(conversationId, {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: message,
+        evidence,
+        evidenceLabel: "Retrieved candidates — answer not generated",
+      });
     } finally {
       setBusy(false);
-      setProgress("");
+      setProgress(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
     }
   }
@@ -309,7 +354,9 @@ export function ServiceShell() {
   async function useSelectedEvidence(message: ChatMessage) {
     if (!active || !message.question || !message.candidateToken || busy) return;
     setBusy(true);
-    setProgress("Revalidating selected evidence");
+    const conversationId = active.id;
+    const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
+    setProgress({ node: "retrieve", evidence: selected, relevant: 0, steps: 0, revalidating: true });
     try {
       const response = await streamReview(
         message.question,
@@ -320,21 +367,24 @@ export function ServiceShell() {
           excluded: message.excludedChunkIds ?? [],
         },
         active.messages.slice(-(active.profile ?? profile).prompt_policy.history_turns).map((item) => ({ role: item.role, text: item.text })),
-        (event) => setProgress(`${event.node} · ${event.evidence_count} evidence`),
+        (event) => setProgress({ ...reviewProgressFromEvent(event), revalidating: true }),
       );
-      updateActive([...active.messages, {
+      setResetAt(null);
+      appendMessage(conversationId, {
         id: crypto.randomUUID(),
         role: "assistant",
         text: terminalAnswer(response),
         evidence: message.evidence?.filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)),
         evidenceLabel: terminalEvidenceLabel(response),
+        citations: terminalCitationCount(response),
         trace: extractTrace(response),
-      }]);
+      });
     } catch (reason) {
+      noteDailyBudget(reason);
       notify(reason instanceof Error ? reason.message : "Selected evidence review failed.", "error", "evidence-review");
     } finally {
       setBusy(false);
-      window.setTimeout(() => setProgress(""), 2500);
+      setProgress(null);
     }
   }
 
@@ -408,12 +458,56 @@ export function ServiceShell() {
         {view === "review" && <section className="review-workspace">
           <div className="messages">
             <div className="messages-inner">
-              {!active?.messages.length && <div className="welcome"><p className="eyebrow">Grounded by design</p><h1>Review filings with verifiable evidence.</h1><p>Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.</p><div className="suggestions" data-tour="evidence-fallback"><button type="button" onClick={() => setQuery("What drove NVIDIA data center revenue growth?")}>NVIDIA growth drivers</button><button type="button" onClick={() => setQuery("삼성전자 메모리 사업의 주요 위험은 무엇인가요?")}>삼성전자 메모리 위험</button></div></div>}
-              {active?.messages.map((message) => <article className={`message ${message.role}`} key={message.id}><div className="message-role">{message.role === "user" ? "You" : "DocReview"}</div><div className="message-body">{message.role === "assistant" ? <MarkdownMessage>{message.text}</MarkdownMessage> : <p>{message.text}</p>}{message.evidence?.length ? <details className="evidence"><summary data-tour="evidence-toggle">{message.evidenceLabel ?? "Retrieved candidates"} · {message.evidence.length}</summary>{message.evidence.map((hit) => <div className="evidence-hit" key={hit.chunk_id}><div className="evidence-actions"><button type="button" aria-pressed={(message.pinnedChunkIds ?? []).includes(hit.chunk_id)} onClick={() => markEvidence(message.id, hit.chunk_id, "pin")}>Pin</button><button type="button" aria-pressed={(message.excludedChunkIds ?? []).includes(hit.chunk_id)} onClick={() => markEvidence(message.id, hit.chunk_id, "exclude")}>Exclude</button></div><strong>{hit.citation}</strong><span>{hit.doc_id} · chars {hit.start_char}–{hit.end_char}</span><p>{hit.body}</p></div>)}{message.candidateToken && <button className="button primary use-evidence" type="button" onClick={() => void useSelectedEvidence(message)}>Use selected evidence</button>}</details> : null}{message.trace && <pre className="trace">{message.trace}</pre>}</div></article>)}
-              {busy && <div className="thinking">{progress || "Retrieving and checking evidence…"}</div>}
+              {!active?.messages.length && (
+                <div className="welcome">
+                  <p className="eyebrow">Grounded by design</p>
+                  <h1>Review filings with verifiable evidence.</h1>
+                  <p>Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.</p>
+                  {adminLive && readiness?.corpus?.documents === 0 ? (
+                    <div className="next-step" data-tour="evidence-fallback">
+                      <h2>Corpus is empty</h2>
+                      <p>Download and ingest filings first.</p>
+                      <div className="action-row"><button className="button primary" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>Open Build</button></div>
+                    </div>
+                  ) : (
+                    <div className="suggestions" data-tour="evidence-fallback">
+                      <button type="button" onClick={() => setQuery("What drove NVIDIA data center revenue growth?")}>NVIDIA growth drivers</button>
+                      <button type="button" onClick={() => setQuery("삼성전자 메모리 사업의 주요 위험은 무엇인가요?")}>삼성전자 메모리 위험</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {active?.messages.map((message) => (
+                <ReviewMessage
+                  key={message.id}
+                  message={message}
+                  busy={busy}
+                  onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
+                  onUseSelected={() => void useSelectedEvidence(message)}
+                />
+              ))}
+              {busy && <div className="thinking">{progress ? <ReviewProgressSteps state={progress} /> : "Retrieving and checking evidence…"}</div>}
             </div>
           </div>
-          <div className="composer-wrap" data-tour="composer"><button className="profile-chip" type="button" onClick={() => openSettings()}>Session profile · {activeSessionProfile.engine} · {activeSessionProfile.corpus_scope} · {activeSessionProfile.retrieval_preset}</button><label className="composer"><textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} /><button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || vectorOnlyUnavailable || !query.trim()} onClick={() => void submit()}><Send size={17} /></button></label>{vectorOnlyUnavailable ? <p className="danger">Vector-only retrieval is unavailable until embeddings are ready. <button className="inline-link" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>Open Build</button></p> : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}</div>
+          <div className="composer-wrap" data-tour="composer">
+            <ComposerToolbar
+              profile={activeSessionProfile}
+              onChange={updateSessionProfile}
+              canUseCustom={capabilities?.can_change_custom_retrieval ?? adminLive}
+              onLocked={() => notify(PROD_LOCKED_MESSAGE, "warning", "prod-locked")}
+              onOpenFilters={() => openSettings("review")}
+              readiness={readiness}
+              live={adminLive}
+              onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
+            />
+            <label className="composer">
+              <textarea value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} />
+              <button data-tour="send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
+            </label>
+            {banner
+              ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
+              : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}
+          </div>
         </section>}
 
         {view === "build" && <BuildWorkspace
@@ -478,6 +572,75 @@ export function ServiceShell() {
   );
 }
 
+interface ReviewMessageProps {
+  message: ChatMessage;
+  busy: boolean;
+  onMark: (chunkId: number, mode: "pin" | "exclude") => void;
+  onUseSelected: () => void;
+}
+
+/** Verdict pill derived from the terminal label; conversation replies carry no label and get no pill. */
+function verdictPill(message: ChatMessage): { className: string; text: string } | null {
+  if (message.evidenceLabel === "Cited evidence") {
+    const count = message.citations ?? message.evidence?.length ?? 0;
+    return { className: "supported", text: `Supported · ${count} citation${count === 1 ? "" : "s"}` };
+  }
+  if (message.evidenceLabel === "Related evidence — not direct support") return { className: "not-in-docs", text: "Not in documents" };
+  if (message.evidenceLabel === "Retrieved candidates — answer not generated") return { className: "failed", text: "Answer not generated" };
+  return null;
+}
+
+function ReviewMessage({ message, busy, onMark, onUseSelected }: ReviewMessageProps) {
+  const pill = message.role === "assistant" ? verdictPill(message) : null;
+  const pinned = message.pinnedChunkIds ?? [];
+  const excluded = message.excludedChunkIds ?? [];
+  const notInDocs = message.evidenceLabel === "Related evidence — not direct support";
+  return (
+    <article className={`message ${message.role}`}>
+      <div className="message-role">{message.role === "user" ? "You" : "DocReview"}</div>
+      <div className="message-body">
+        {pill && <span className={`verdict ${pill.className}`}>{pill.text}</span>}
+        {message.role === "assistant" ? <MarkdownMessage>{message.text}</MarkdownMessage> : <p>{message.text}</p>}
+        {message.evidence?.length ? (
+          <>
+            {notInDocs && <p className="notice">Related evidence is shown below, but it is not direct support.</p>}
+            <details className="evidence">
+              <summary data-tour="evidence-toggle">{message.evidenceLabel ?? "Retrieved candidates"} · {message.evidence.length}</summary>
+              {message.evidence.map((hit) => {
+                const isPinned = pinned.includes(hit.chunk_id);
+                const isExcluded = excluded.includes(hit.chunk_id);
+                return (
+                  <div className={`evidence-hit${isPinned ? " pinned" : ""}${isExcluded ? " excluded" : ""}`} key={hit.chunk_id}>
+                    <div className="evidence-meta">
+                      <strong>{hit.citation}</strong>
+                      <span aria-hidden="true">·</span>
+                      <span className="doc-chip">{hit.doc_id}</span>
+                      {hit.kind === "table" && <><span aria-hidden="true">·</span><span className="kind-badge">table</span></>}
+                      <span aria-hidden="true">·</span>
+                      <span>chars {hit.start_char}–{hit.end_char}</span>
+                    </div>
+                    <p>{hit.body}</p>
+                    <div className="evidence-actions">
+                      <button type="button" aria-pressed={isPinned} onClick={() => onMark(hit.chunk_id, "pin")}>Pin</button>
+                      <button type="button" aria-pressed={isExcluded} onClick={() => onMark(hit.chunk_id, "exclude")}>Exclude</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {message.candidateToken && pinned.length + excluded.length > 0 && (
+                <button className="button primary use-evidence" type="button" disabled={busy} onClick={onUseSelected}>
+                  Use selected evidence · {pinned.length} pinned · {excluded.length} excluded
+                </button>
+              )}
+            </details>
+          </>
+        ) : null}
+        {message.trace && <details className="trace-details"><summary>Run trace</summary><pre className="trace">{message.trace}</pre></details>}
+      </div>
+    </article>
+  );
+}
+
 function isInfrastructureFailure(reason: unknown): boolean {
   return reason instanceof TypeError || (
     reason instanceof ApiError
@@ -501,8 +664,8 @@ export function terminalAnswer(payload: Record<string, unknown>): string {
   if (report?.report_kind === "conversation" && typeof report.answer === "string") return report.answer;
   if (report?.label === "SUPPORTED" && typeof report.answer === "string") return report.answer;
   if (report?.label === "NOT_IN_DOCS") {
-    const rationale = typeof report.rationale === "string" ? report.rationale : "The filings do not contain direct support for this question.";
-    return `${rationale}\n\nRelated filing evidence is available below, but it should not be treated as direct support.`;
+    // The card adds the "related evidence" notice itself, so the text carries only the rationale.
+    return typeof report.rationale === "string" ? report.rationale : "The filings do not contain direct support for this question.";
   }
   const failure = root.failure as Record<string, unknown> | null;
   if (failure) {
@@ -515,12 +678,21 @@ export function terminalAnswer(payload: Record<string, unknown>): string {
   throw new Error("Review completed without a valid terminal report or failure.");
 }
 
+/** Evidence label for a terminal report; conversation replies and other unlabelled reports get none. */
 function terminalEvidenceLabel(payload: Record<string, unknown>): ChatMessage["evidenceLabel"] {
   const root = (payload.run ?? payload) as Record<string, unknown>;
   const report = root.report as Record<string, unknown> | null;
   if (report?.label === "SUPPORTED") return "Cited evidence";
   if (report?.label === "NOT_IN_DOCS") return "Related evidence — not direct support";
+  if (report) return undefined;
   return "Retrieved candidates — answer not generated";
+}
+
+/** Citations the report made, as opposed to the candidate pool the stream sent earlier. */
+function terminalCitationCount(payload: Record<string, unknown>): number | undefined {
+  const root = (payload.run ?? payload) as Record<string, unknown>;
+  const report = root.report as Record<string, unknown> | null;
+  return Array.isArray(report?.citations) ? report.citations.length : undefined;
 }
 
 function extractTrace(payload: Record<string, unknown>): string {
