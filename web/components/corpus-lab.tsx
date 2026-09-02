@@ -9,7 +9,6 @@ import {
   compareSnapshots,
   createGoldenDraft,
   createSnapshot,
-  getAdminDocuments,
   getAdminSnapshots,
   getCorpusSnapshot,
   getEvaluationJobs,
@@ -19,8 +18,6 @@ import {
   getGoldenRevisions,
   getProviderUsage,
   getPublishedSnapshots,
-  getDocumentDetail,
-  getDocumentFacets,
   queueEvaluation,
   queueCorpusOperation,
   saveGoldenCase,
@@ -40,14 +37,12 @@ import type {
   PublishedSnapshot,
   GoldenRevision,
   GoldenCanonical,
-  OperatorJob,
   OperatorJobBoard,
   SnapshotComparison,
   AdminDocument,
-  DocumentDetail,
-  DocumentEmbeddingStatus,
-  DocumentFacets,
 } from "@/lib/types";
+import { DocumentInventory } from "@/components/document-inventory";
+import { JobActivityPanel, JobCenter } from "@/components/job-center";
 import { useNotifications } from "@/components/notifications";
 import { loadExperimentDefaults } from "@/lib/storage";
 
@@ -75,19 +70,6 @@ const EMPTY_USAGE: ProviderUsage = {
   latest_run_at: null,
   models: [],
 };
-
-const EMPTY_DOCUMENT_FACETS: DocumentFacets = {
-  registries: [],
-  issuers: [],
-  years: [],
-  languages: [],
-  forms: [],
-  parse_statuses: [],
-  embedding_statuses: [],
-  snapshots: [],
-};
-
-type DocumentGroup = "none" | "registry" | "issuer" | "fiscal_year";
 
 export function deploymentLabel(hostname: string): "DEV" | "PROD" {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -144,22 +126,6 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   const [resultDetail, setResultDetail] = useState<EvaluationResultDetail | null>(null);
   const [snapshots, setSnapshots] = useState<PublishedSnapshot[]>([]);
   const [snapshotIds, setSnapshotIds] = useState<[number | null, number | null]>([experimentDefaults.baseline_snapshot_id, experimentDefaults.snapshot_id]);
-  const [documentQuery, setDocumentQuery] = useState("");
-  const [documentRegistry, setDocumentRegistry] = useState("all");
-  const [documentIssuer, setDocumentIssuer] = useState("all");
-  const [documentYear, setDocumentYear] = useState("all");
-  const [documentLanguage, setDocumentLanguage] = useState("all");
-  const [documentForm, setDocumentForm] = useState("all");
-  const [documentParseStatus, setDocumentParseStatus] = useState("all");
-  const [documentEmbeddingStatus, setDocumentEmbeddingStatus] = useState<"all" | DocumentEmbeddingStatus>("all");
-  const [documentSnapshot, setDocumentSnapshot] = useState("all");
-  const [documentSort, setDocumentSort] = useState("doc_id");
-  const [documentDescending, setDocumentDescending] = useState(false);
-  const [documentGroup, setDocumentGroup] = useState<DocumentGroup>("none");
-  const [documentDetail, setDocumentDetail] = useState<DocumentDetail | null>(null);
-  const [documentFacets, setDocumentFacets] = useState<DocumentFacets>(EMPTY_DOCUMENT_FACETS);
-  const [documentTotal, setDocumentTotal] = useState(0);
-  const [documentNextCursor, setDocumentNextCursor] = useState<string | null>(null);
   const [goldenRevisions, setGoldenRevisions] = useState<GoldenRevision[]>([]);
   const [goldenCanonical, setGoldenCanonical] = useState<GoldenCanonical | null>(null);
   const [selectedGoldenRevision, setSelectedGoldenRevision] = useState<number | null>(experimentDefaults.golden_revision_id);
@@ -204,8 +170,6 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
       setSuites(suiteRows);
       setJobs(jobRows);
       setCorpus(corpusSnapshot);
-      const documentPage = await getAdminDocuments(new URLSearchParams({ limit: "100" }));
-      setCorpus((current) => ({ ...current, documents: documentPage.documents }));
       const snapshotRows = await getAdminSnapshots();
       setSnapshots(Array.isArray(snapshotRows) ? snapshotRows : []);
       setUsageError("");
@@ -243,72 +207,6 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
       setGoldenCaseJson("");
     }).catch((reason) => notify(String(reason), "error", "golden-revisions"));
   }, [live, suiteId, notify, experimentDefaults.golden_revision_id]);
-  useEffect(() => {
-    if (!live) return;
-    const timer = window.setTimeout(() => {
-      const params = documentParams();
-      void getAdminDocuments(params).then((page) => {
-        setCorpus((current) => ({ ...current, documents: page.documents }));
-        setDocumentTotal(page.total);
-        setDocumentNextCursor(page.next_cursor);
-      }).catch((reason) => notify(String(reason), "error", "documents"));
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [live, documentQuery, documentRegistry, documentIssuer, documentYear, documentLanguage, documentForm, documentParseStatus, documentEmbeddingStatus, documentSnapshot, documentSort, documentDescending, notify]);
-  useEffect(() => {
-    if (live) void getDocumentFacets().then(setDocumentFacets).catch((reason) => notify(String(reason), "error", "document-facets"));
-  }, [live, notify]);
-
-  function documentParams(cursor?: string) {
-    const params = new URLSearchParams({
-      query: documentQuery,
-      sort: documentSort,
-      descending: String(documentDescending),
-      limit: "50",
-    });
-    for (const [key, value] of [
-      ["registry", documentRegistry],
-      ["issuer", documentIssuer],
-      ["fiscal_year", documentYear],
-      ["language", documentLanguage],
-      ["form", documentForm],
-      ["parse_status", documentParseStatus],
-      ["embedding_status", documentEmbeddingStatus],
-      ["snapshot_id", documentSnapshot],
-    ]) {
-      if (value !== "all") params.set(key, value);
-    }
-    if (cursor) params.set("cursor", cursor);
-    return params;
-  }
-
-  async function loadMoreDocuments() {
-    if (!documentNextCursor) return;
-    const params = documentParams(documentNextCursor);
-    try {
-      const page = await getAdminDocuments(params);
-      setCorpus((current) => ({ ...current, documents: [...(Array.isArray(current.documents) ? current.documents : []), ...page.documents] }));
-      setDocumentNextCursor(page.next_cursor);
-    } catch (reason) {
-      notify(String(reason), "error", "documents-more");
-    }
-  }
-
-  function resetDocumentFilters() {
-    setDocumentQuery("");
-    setDocumentRegistry("all");
-    setDocumentIssuer("all");
-    setDocumentYear("all");
-    setDocumentLanguage("all");
-    setDocumentForm("all");
-    setDocumentParseStatus("all");
-    setDocumentEmbeddingStatus("all");
-    setDocumentSnapshot("all");
-    setDocumentSort("doc_id");
-    setDocumentDescending(false);
-    setDocumentGroup("none");
-  }
-
   async function runEvaluation() {
     if (!live) { notify("Production experiment controls are locked. Compare published snapshots instead.", "warning", "prod-eval"); return; }
     if (!ready) return;
@@ -484,8 +382,6 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   const corpusDocuments = Array.isArray(corpus.documents)
     ? (corpus.documents as AdminDocument[])
     : [];
-  const visibleDocuments = live ? corpusDocuments : corpusDocuments.filter((document) => (documentRegistry === "all" || document.registry === documentRegistry) && `${document.doc_id} ${document.issuer}`.toLowerCase().includes(documentQuery.toLowerCase())).toSorted((left, right) => String(left[documentSort as keyof AdminDocument] ?? "").localeCompare(String(right[documentSort as keyof AdminDocument] ?? ""), undefined, { numeric: true }));
-  const documentGroups = groupDocuments(visibleDocuments, documentGroup);
   const activeGoldenRevision = goldenRevisions.find((item) => item.revision_id === selectedGoldenRevision) ?? null;
   const activeGoldenCases = activeGoldenRevision?.payload ?? goldenCanonical?.payload ?? [];
   const visibleGoldenCases = activeGoldenCases.filter((item) => `${String(item.id)} ${String(item.question)} ${String(item.category)} ${String(item.facet)} ${Array.isArray(item.tags) ? item.tags.join(" ") : ""}`.toLowerCase().includes(goldenCaseQuery.toLowerCase())).toSorted((left, right) => String(left[goldenCaseSort] ?? "").localeCompare(String(right[goldenCaseSort] ?? ""), undefined, { numeric: true }));
@@ -534,32 +430,7 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
         </section>
       </div>}
 
-      {tab === "documents" && <div className="document-workspace">
-        <section className="surface document-inventory">
-          <div className="document-inventory-heading">
-            <div><h2>Document inventory</h2><p className="helper">Showing {visibleDocuments.length.toLocaleString()} of {(live ? documentTotal : visibleDocuments.length).toLocaleString()} filings</p></div>
-            <button className="button ghost" type="button" onClick={resetDocumentFilters}>Reset filters</button>
-          </div>
-          <div className="document-filters">
-            <label className="document-search">Search<input aria-label="Search documents" placeholder="Document, issuer, or stock code" value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} /></label>
-            <FacetSelect label="Registry" value={documentRegistry} allLabel="All registries" facets={documentFacets.registries} onChange={setDocumentRegistry} />
-            <FacetSelect label="Company" value={documentIssuer} allLabel="All companies" facets={documentFacets.issuers} onChange={setDocumentIssuer} />
-            <FacetSelect label="Fiscal year" value={documentYear} allLabel="All years" facets={documentFacets.years} onChange={setDocumentYear} />
-            <FacetSelect label="Language" value={documentLanguage} allLabel="All languages" facets={documentFacets.languages} onChange={setDocumentLanguage} />
-            <FacetSelect label="Form" value={documentForm} allLabel="All forms" facets={documentFacets.forms} onChange={setDocumentForm} />
-            <FacetSelect label="Parse status" value={documentParseStatus} allLabel="All parse states" facets={documentFacets.parse_statuses} onChange={setDocumentParseStatus} />
-            <FacetSelect label="Embedding" value={documentEmbeddingStatus} allLabel="All embedding states" facets={documentFacets.embedding_statuses} onChange={(value) => setDocumentEmbeddingStatus(value as "all" | DocumentEmbeddingStatus)} />
-            <FacetSelect label="Snapshot membership" value={documentSnapshot} allLabel="All snapshots" facets={documentFacets.snapshots} onChange={setDocumentSnapshot} />
-            <label>Group by<select aria-label="Group documents" value={documentGroup} onChange={(event) => setDocumentGroup(event.target.value as DocumentGroup)}><option value="none">No grouping</option><option value="registry">Registry</option><option value="issuer">Company</option><option value="fiscal_year">Fiscal year</option></select></label>
-            <label>Sort by<select aria-label="Sort documents" value={documentSort} onChange={(event) => setDocumentSort(event.target.value)}><option value="doc_id">Document</option><option value="issuer">Issuer</option><option value="fiscal_year">Year</option><option value="filing_date">Filing date</option><option value="chunk_count">Chunks</option><option value="embedding_coverage">Embedding coverage</option></select></label>
-            <label>Direction<select aria-label="Sort direction" value={documentDescending ? "descending" : "ascending"} onChange={(event) => setDocumentDescending(event.target.value === "descending")}><option value="ascending">Ascending</option><option value="descending">Descending</option></select></label>
-          </div>
-          <div className="document-table-scroll"><table><thead><tr><th>Document</th><th>Registry</th><th>Issuer</th><th>Year</th><th>Filed</th><th>Form</th><th>Language</th><th>Chunks</th><th>Embedding</th><th>Snapshots</th><th>Status</th></tr></thead>{documentGroups.map(([groupLabel, rows]) => <tbody key={groupLabel || "all"}>{groupLabel && <tr className="document-group-row"><th colSpan={11}>{groupLabel}<span>{rows.length} filings</span></th></tr>}{rows.map((document) => { const embedded = document.embedded_chunks ?? 0; const chunks = document.chunk_count ?? 0; const coverage = chunks > 0 ? Math.round(embedded / chunks * 100) : 0; return <tr key={document.doc_id} className={documentDetail?.document.doc_id === document.doc_id ? "selected" : ""}><td><button className="row-detail" type="button" disabled={!live} onClick={() => live && void getDocumentDetail(document.doc_id).then(setDocumentDetail).catch((reason) => notify(String(reason), "error", "document-detail"))}>{document.doc_id}</button></td><td>{document.registry.toUpperCase()}</td><td>{document.issuer}</td><td>{document.fiscal_year}</td><td>{document.filing_date || "—"}</td><td>{document.form || "—"}</td><td>{document.language}</td><td>{chunks.toLocaleString()}</td><td><span className={`coverage-badge ${document.embedding_status ?? "missing"}`}>{coverage}%</span><small>{embedded.toLocaleString()}/{chunks.toLocaleString()}</small></td><td>{(document.snapshot_count ?? 0).toLocaleString()}</td><td>{document.parse_status}</td></tr>; })}</tbody>)}</table></div>
-          {!visibleDocuments.length && <p className="helper document-empty">No documents match these filters.</p>}
-          {documentNextCursor && <button className="button document-load-more" type="button" onClick={() => void loadMoreDocuments()}>Load next 50</button>}
-        </section>
-        <DocumentDetailPanel detail={documentDetail} />
-      </div>}
+      {tab === "documents" && <DocumentInventory live={live} fallbackDocuments={corpusDocuments} />}
 
       {tab === "golden" && <div className="golden-workspace">
         <section className="surface form-stack golden-controls">
@@ -612,106 +483,10 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   );
 }
 
-function FacetSelect({ label, value, allLabel, facets, onChange }: { label: string; value: string; allLabel: string; facets: DocumentFacets["registries"]; onChange: (value: string) => void }) {
-  return <label>{label}<select aria-label={`Filter ${label.toLowerCase()}`} value={value} onChange={(event) => onChange(event.target.value)}><option value="all">{allLabel}</option>{facets.map((facet) => <option key={facet.value} value={facet.value}>{facet.label ?? facet.value} ({facet.count})</option>)}</select></label>;
-}
-
 function goldenAnswers(value: Record<string, unknown>): Array<Record<string, unknown>> {
   return Array.isArray(value.answers)
     ? value.answers.filter((answer): answer is Record<string, unknown> => typeof answer === "object" && answer !== null)
     : [];
-}
-
-function groupDocuments(documents: AdminDocument[], group: DocumentGroup): Array<[string, AdminDocument[]]> {
-  if (group === "none") return [["", documents]];
-  const grouped = new Map<string, AdminDocument[]>();
-  for (const document of documents) {
-    const value = String(document[group]);
-    const label = group === "registry"
-      ? `Registry · ${value.toUpperCase()}`
-      : group === "issuer"
-      ? `Company · ${value}`
-      : `Fiscal year · ${value}`;
-    grouped.set(label, [...(grouped.get(label) ?? []), document]);
-  }
-  return [...grouped.entries()].toSorted(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
-}
-
-function formatBytes(value: number): string {
-  if (value < 1_000) return `${value} B`;
-  if (value < 1_000_000) return `${(value / 1_000).toFixed(1)} KB`;
-  return `${(value / 1_000_000).toFixed(1)} MB`;
-}
-
-function DocumentDetailPanel({ detail }: { detail: DocumentDetail | null }) {
-  if (!detail) return <section className="surface document-detail"><h2>Document details</h2><p className="helper">Select a document to inspect filing identity, section distribution, embedding coverage, snapshot revisions, and source-cited chunks.</p></section>;
-  const { document } = detail;
-  const missing = Math.max(document.chunk_count - detail.embedded_chunks, 0);
-  const coverage = document.chunk_count > 0 ? Math.round(detail.embedded_chunks / document.chunk_count * 100) : 0;
-  return <section className="surface document-detail">
-    <header className="document-detail-heading"><div><p className="eyebrow">{document.registry.toUpperCase()} · {document.language.toUpperCase()}</p><h2>{document.doc_id}</h2><p>{document.issuer} · FY{document.fiscal_year} · {document.form}</p></div><span className={`coverage-badge ${missing === 0 ? "complete" : detail.embedded_chunks > 0 ? "partial" : "missing"}`}>{coverage}% embedded</span></header>
-    <section className="document-detail-section"><h3>Filing identity</h3><dl className="document-meta-grid"><div><dt>Issuer identity</dt><dd>{document.issuer_id}</dd></div><div><dt>Filing identity</dt><dd>{document.filing_id}</dd></div><div><dt>Filed</dt><dd>{document.filing_date}</dd></div><div><dt>Report period</dt><dd>{document.report_period}</dd></div><div><dt>Source size</dt><dd>{formatBytes(document.source_length)}</dd></div><div><dt>Parse status</dt><dd>{document.parse_status}</dd></div><div className="wide"><dt>Source</dt><dd><a href={document.source_url} target="_blank" rel="noreferrer">{document.source_url}</a></dd></div><div className="wide"><dt>Source SHA-256</dt><dd><code>{document.source_sha256}</code></dd></div></dl></section>
-    <section className="document-detail-section"><h3>Chunk & index coverage</h3><div className="document-stat-grid"><div><span>Total chunks</span><strong>{document.chunk_count.toLocaleString()}</strong></div><div><span>Text / table</span><strong>{detail.text_chunks.toLocaleString()} / {detail.table_chunks.toLocaleString()}</strong></div><div><span>Embedded</span><strong>{detail.embedded_chunks.toLocaleString()}</strong></div><div><span>Missing vectors</span><strong className={missing > 0 ? "negative" : "positive"}>{missing.toLocaleString()}</strong></div></div></section>
-    <section className="document-detail-section"><h3>Section distribution</h3>{detail.item_counts.length ? <div className="document-section-list">{detail.item_counts.map((item) => <div key={item.item}><span>{item.item}</span><strong>{item.count.toLocaleString()}</strong><progress max={document.chunk_count || 1} value={item.count} /></div>)}</div> : <p className="helper">No section identities were recorded.</p>}</section>
-    <section className="document-detail-section"><h3>Embedding identities</h3>{detail.embedding_identities.length ? <div className="embedding-list">{detail.embedding_identities.map((identity) => <article key={`${identity.provider}:${identity.model}:${identity.dimensions}`}><strong>{identity.provider} · {identity.model}</strong><p>{identity.dimensions} dimensions · {identity.count.toLocaleString()} chunks</p></article>)}</div> : <p className="helper">No persisted embedding identity is available.</p>}</section>
-    <section className="document-detail-section"><h3>Index revisions & snapshot membership</h3>{detail.snapshot_memberships.length ? <div className="snapshot-memberships">{detail.snapshot_memberships.map((snapshot) => <article key={snapshot.snapshot_id}><div><strong>Revision #{snapshot.snapshot_id} · {snapshot.label}</strong><p>{snapshot.status} · {snapshot.public ? "published" : "private"} · {new Date(snapshot.created_at).toLocaleString()}</p></div></article>)}</div> : <p className="helper">This filing is not frozen in an evaluation snapshot yet.</p>}</section>
-    <section className="document-detail-section"><h3>Source-cited chunk previews</h3><div className="chunk-preview-list">{detail.chunks.map((chunk) => <article key={chunk.chunk_id}><header><strong>Chunk {chunk.chunk_id} · ordinal {chunk.ordinal}</strong><span>{chunk.span}</span></header><p className="chunk-citation">{chunk.citation}</p><p>{chunk.body}</p><code>{chunk.source_sha256}</code></article>)}</div></section>
-  </section>;
-}
-
-const JOB_COPY: Record<string, { label: string; purpose: string }> = {
-  acquire_edgar: { label: "Acquire SEC filings", purpose: "Download missing EDGAR filings into the corpus." },
-  acquire_dart: { label: "Acquire DART filings", purpose: "Download missing Korean business reports." },
-  ingest_manifest: { label: "Ingest manifest", purpose: "Parse filings and replace the active retrieval corpus." },
-  backfill_embeddings: { label: "Backfill embeddings", purpose: "Persist missing vectors for semantic retrieval." },
-  rebuild_bm25: { label: "Rebuild BM25", purpose: "Recompute lexical term and document statistics." },
-  quick: { label: "Quick evaluation", purpose: "Measure one profile against the current live index." },
-  matrix: { label: "Matrix evaluation", purpose: "Compare isolated chunking and retrieval arms." },
-};
-
-function jobCopy(job: OperatorJob) {
-  return JOB_COPY[job.kind] ?? {
-    label: job.kind.replaceAll("_", " "),
-    purpose: "Run one persisted operator task.",
-  };
-}
-
-function elapsedLabel(job: OperatorJob): string {
-  if (!job.started_at) return "Not started";
-  const end = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
-  const seconds = Math.max(0, Math.floor((end - new Date(job.started_at).getTime()) / 1000));
-  const minutes = Math.floor(seconds / 60);
-  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
-}
-
-function JobProgress({ job }: { job: OperatorJob }) {
-  const percent = job.total && job.total > 0
-    ? Math.min(100, Math.round((job.current / job.total) * 100))
-    : null;
-  return <div className="job-progress"><div><span>{job.stage}</span><strong>{job.total === null ? job.current : `${job.current.toLocaleString()} / ${job.total.toLocaleString()}${percent === null ? "" : ` · ${percent}%`}`}</strong></div>{job.total !== null && <progress max={Math.max(job.total, 1)} value={Math.min(job.current, job.total)} />}{job.detail_total !== null && <><div><span>Current item</span><strong>{job.detail_current ?? 0} / {job.detail_total}</strong></div><progress max={Math.max(job.detail_total, 1)} value={Math.min(job.detail_current ?? 0, job.detail_total)} /></>}</div>;
-}
-
-function JobActivityPanel({ board, loading, onOpenJobs }: { board: OperatorJobBoard; loading: boolean; onOpenJobs: () => void }) {
-  const active = board.jobs.find((job) => job.status === "running") ?? null;
-  const queued = board.jobs.filter((job) => job.status === "queued").toSorted((left, right) => (left.queue_position ?? 0) - (right.queue_position ?? 0));
-  const latest = board.jobs.find((job) => ["succeeded", "failed", "interrupted", "cancelled"].includes(job.status)) ?? null;
-  return <section className="surface job-activity"><div className="surface-heading"><div><h2>Job activity</h2><p className="helper">Persistent corpus and evaluation queue</p></div><button className="button" type="button" onClick={onOpenJobs}>View all jobs</button></div>{loading && !board.jobs.length ? <p className="helper">Loading job activity…</p> : active ? <article className="active-job"><div className="job-title"><div><strong>{jobCopy(active).label}</strong><p>{jobCopy(active).purpose}</p></div><span className={`job-status ${active.status}`}>{active.status}</span></div><JobProgress job={active} /><p className="helper">{active.message}</p><p className="helper">Started {active.started_at ? new Date(active.started_at).toLocaleTimeString() : "—"} · elapsed {elapsedLabel(active)}</p></article> : <p className="helper">No job is running.{latest ? ` Latest: ${jobCopy(latest).label} · ${latest.status}.` : ""}</p>}{queued.length > 0 && <div className="queued-jobs"><strong>Queued · {queued.length}</strong>{queued.slice(0, 3).map((job) => <span key={job.job_id}>#{job.queue_position} {jobCopy(job).label}</span>)}</div>}</section>;
-}
-
-function JobCenter({ board, loading, onRetry, onCancel, onRefresh, onOpenResult }: { board: OperatorJobBoard; loading: boolean; onRetry: (jobId: string) => void; onCancel: (jobId: string) => void; onRefresh: () => void; onOpenResult: (resultId: number) => void }) {
-  const [domain, setDomain] = useState<"all" | OperatorJob["domain"]>("all");
-  const [group, setGroup] = useState<"all" | "active" | "queued" | "history">("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const visible = board.jobs.filter((job) => {
-    if (domain !== "all" && job.domain !== domain) return false;
-    if (group === "active" && job.status !== "running") return false;
-    if (group === "queued" && job.status !== "queued") return false;
-    if (group === "history" && ["queued", "running"].includes(job.status)) return false;
-    return true;
-  });
-  const selected = board.jobs.find((job) => job.job_id === selectedId) ?? visible[0] ?? null;
-  const resultId = typeof selected?.result_refs.result_id === "number" ? selected.result_refs.result_id : null;
-  return <div className="job-center"><section className="surface"><div className="surface-heading"><div><h2>Job Center</h2><p className="helper">{board.active_count} active · {board.queued_count} queued</p></div><button className="button" type="button" disabled={loading} onClick={onRefresh}><RefreshCw size={14} /> Refresh</button></div><div className="job-filters"><div>{(["all", "corpus", "evaluation"] as const).map((value) => <button key={value} type="button" aria-pressed={domain === value} onClick={() => setDomain(value)}>{value}</button>)}</div><div>{(["all", "active", "queued", "history"] as const).map((value) => <button key={value} type="button" aria-pressed={group === value} onClick={() => setGroup(value)}>{value}</button>)}</div></div><div className="job-list">{visible.map((job) => <button className="job-list-row" type="button" key={job.job_id} aria-pressed={selected?.job_id === job.job_id} onClick={() => setSelectedId(job.job_id)}><span className={`job-status ${job.status}`}>{job.status}</span><div><strong>{jobCopy(job).label}</strong><p>{job.queue_position ? `Queue #${job.queue_position} · ` : ""}{job.message}</p></div><span>{job.total === null ? job.stage : `${Math.min(100, Math.round(job.current / Math.max(job.total, 1) * 100))}%`}</span></button>)}</div>{!visible.length && <p className="helper">No jobs match this filter.</p>}</section><section className="surface job-detail"><h2>Job details</h2>{selected ? <><div className="job-title"><div><strong>{jobCopy(selected).label}</strong><p>{jobCopy(selected).purpose}</p></div><span className={`job-status ${selected.status}`}>{selected.status}</span></div><JobProgress job={selected} /><dl className="status-list"><div><dt>Domain</dt><dd>{selected.domain}</dd></div><div><dt>Created</dt><dd>{new Date(selected.created_at).toLocaleString()}</dd></div><div><dt>Started</dt><dd>{selected.started_at ? new Date(selected.started_at).toLocaleString() : "—"}</dd></div><div><dt>Finished</dt><dd>{selected.finished_at ? new Date(selected.finished_at).toLocaleString() : "—"}</dd></div><div><dt>Elapsed</dt><dd>{elapsedLabel(selected)}</dd></div><div><dt>Error</dt><dd>{selected.error_code ?? "—"}</dd></div></dl><p>{selected.message}</p><div className="action-row">{resultId !== null && <button className="button" type="button" onClick={() => onOpenResult(resultId)}>View result #{resultId}</button>}{selected.can_retry && <button className="button" type="button" onClick={() => onRetry(selected.job_id)}>Retry as new job</button>}{selected.can_cancel && <button className="button danger-button" type="button" onClick={() => onCancel(selected.job_id)}>Cancel job</button>}</div><details><summary>Request and results</summary><pre>{JSON.stringify({ request: selected.request, result_refs: selected.result_refs }, null, 2)}</pre></details></> : <p className="helper">Select a job to inspect its progress and provenance.</p>}</section></div>;
 }
 
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
