@@ -1,5 +1,11 @@
-const OPERATOR_BASE = process.env.NEXT_PUBLIC_OPERATOR_BASE_URL ?? "";
-const OPERATOR_TOKEN = process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "";
+// Read at call time: Next inlines NEXT_PUBLIC_* either way, and tests can stub the env per case.
+function operatorBaseUrl() {
+  return process.env.NEXT_PUBLIC_OPERATOR_BASE_URL ?? "";
+}
+
+function operatorToken() {
+  return process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "";
+}
 
 export type OperatorJobStatus = "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
 
@@ -24,20 +30,20 @@ export interface OperatorJob {
 }
 
 export function operatorAvailable() {
-  return Boolean(OPERATOR_BASE && OPERATOR_TOKEN);
+  return Boolean(operatorBaseUrl() && operatorToken());
 }
 
 export function operatorBase() {
-  return OPERATOR_BASE;
+  return operatorBaseUrl();
 }
 
 async function operatorRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!operatorAvailable()) throw new Error("Local Operations is not enabled for this build.");
-  const response = await fetch(`${OPERATOR_BASE}${path}`, {
+  const response = await fetch(`${operatorBaseUrl()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${OPERATOR_TOKEN}`,
+      authorization: `Bearer ${operatorToken()}`,
       ...init?.headers,
     },
   });

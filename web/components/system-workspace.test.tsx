@@ -63,6 +63,9 @@ describe("System workspace", () => {
     cleanup();
 
     renderSystem({ operationsAvailable: true, onTabChange });
+    // The tour's optional last step spotlights this tab button and nothing else in the strip.
+    expect(screen.getByRole("button", { name: "Operations" })).toHaveAttribute("data-tour", "operations");
+    expect(screen.getByRole("button", { name: "System status" })).not.toHaveAttribute("data-tour");
     fireEvent.click(screen.getByRole("button", { name: "Operations" }));
     expect(onTabChange).toHaveBeenCalledWith("operations");
   });

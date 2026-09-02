@@ -2,12 +2,17 @@
 
 import { ArrowLeft, ArrowRight, Pointer, X } from "lucide-react";
 import type { CSSProperties } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+/** Workspace the shell must show before a step's target can be spotlighted. */
+export type TourView = "build" | "review" | "measure" | "system";
 
 interface TourStep {
   title: string;
   description: string;
   targets: readonly string[];
+  view: TourView;
+  tab?: string;
   optional?: "operations";
 }
 
@@ -21,15 +26,22 @@ interface TargetRect {
 }
 
 const STEPS: readonly TourStep[] = [
-  { title: "Start a new review", description: "Create a clean review thread from the sidebar.", targets: ["new-review"] },
-  { title: "Ask or adjust the session", description: "Open Session profile to choose engine, corpus, companies, and retrieval preset, then type in the composer.", targets: ["composer"] },
-  { title: "Verify and reuse evidence", description: "Expand candidates, pin or exclude chunks, and re-run citation validation with the selected set.", targets: ["evidence-toggle", "evidence-fallback"] },
-  { title: "Continue earlier reviews", description: "Recent reviews and retrieval profiles stay in this browser.", targets: ["recent-reviews"] },
-  { title: "Experiment in Corpus Lab", description: "Inspect documents, run golden evaluations, and compare retrieval profiles.", targets: ["corpus-lab"] },
-  { title: "Check runtime health", description: "See API, database, corpus, and active model policy state.", targets: ["system-status"] },
-  { title: "Run local operations", description: "Use allowlisted local verification and service commands without exposing a shell.", targets: ["operations"], optional: "operations" },
-  { title: "Open the documentation", description: "Read architecture, local build, deployment, and operating guidance.", targets: ["documentation"] },
+  { title: "Start with Build", description: "The pipeline runs top to bottom: filings, chunks, embeddings, BM25 index, then asking, answering and evaluating.", targets: ["build"], view: "build" },
+  { title: "Seven steps, in order", description: "Each card shows real numbers, its status, and one action. Blocked steps tell you which step to finish first.", targets: ["stage-list"], view: "build", tab: "pipeline" },
+  { title: "One obvious next action", description: "This callout always points at the first step that needs you.", targets: ["next-step"], view: "build", tab: "pipeline" },
+  { title: "Start a new review", description: "Create a clean review thread from the sidebar.", targets: ["new-review"], view: "review" },
+  { title: "Ask or adjust the session", description: "Pick scope and preset inline, then type. The readiness chip tells you what the corpus can do right now.", targets: ["composer"], view: "review" },
+  { title: "Verify and reuse evidence", description: "Expand citations, pin or exclude chunks, and re-run the citation check with your selection.", targets: ["evidence-toggle", "evidence-fallback"], view: "review" },
+  { title: "Measure before trusting", description: "Golden questions, runs, comparisons and snapshots live here.", targets: ["measure"], view: "measure" },
+  { title: "Run local operations", description: "System › Operations runs allowlisted verification and service commands without a shell.", targets: ["operations"], view: "system", tab: "operations", optional: "operations" },
 ] as const;
+
+/** Every `data-tour` name a step can spotlight, so a test can assert the shell renders each one. */
+export const TOUR_TARGETS: readonly string[] = [...new Set(STEPS.flatMap((item) => item.targets))];
+
+function sameRect(left: TargetRect, right: TargetRect): boolean {
+  return left.top === right.top && left.left === right.left && left.right === right.right && left.bottom === right.bottom;
+}
 
 function targetRect(element: HTMLElement): TargetRect {
   const value = element.getBoundingClientRect();
@@ -70,9 +82,15 @@ function cardPosition(rect: TargetRect | null): CSSProperties {
 export function Onboarding({
   onClose,
   includeOperations = false,
+  onStepChange,
+  location,
 }: {
   onClose: () => void;
   includeOperations?: boolean;
+  /** Lets the shell switch workspace and tab before the step's target is measured. */
+  onStepChange?: (step: { view: TourView; tab?: string }) => void;
+  /** The shell's committed workspace and tab; a change re-measures the step's target once the shell has navigated. */
+  location?: string;
 }) {
   const steps = useMemo(
     () => STEPS.filter((item) => item.optional !== "operations" || includeOperations),
@@ -87,6 +105,19 @@ export function Onboarding({
     else setStep((value) => value + 1);
   }, [onClose, step, steps.length]);
 
+  // Refs carry the latest callbacks so the effects below run on step or location changes only,
+  // never because the shell re-rendered with a new inline function.
+  const stepChange = useRef(onStepChange);
+  const advanceRef = useRef(advance);
+  useLayoutEffect(() => {
+    stepChange.current = onStepChange;
+    advanceRef.current = advance;
+  });
+  // Before paint: the shell navigates first, then the measurement below runs again with the new `location`.
+  useLayoutEffect(() => {
+    stepChange.current?.(active.tab === undefined ? { view: active.view } : { view: active.view, tab: active.tab });
+  }, [active]);
+
   useLayoutEffect(() => {
     let target: HTMLElement | null = null;
     for (const name of active.targets) {
@@ -100,21 +131,28 @@ export function Onboarding({
     if (typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
-    const update = () => setRect(targetRect(target as HTMLElement));
-    const onClick = () => advance();
+    const update = () => {
+      const next = targetRect(target as HTMLElement);
+      setRect((current) => (current && sameRect(current, next) ? current : next));
+    };
+    const onClick = () => advanceRef.current();
     update();
     target.addEventListener("click", onClick);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
-    observer?.observe(target);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    resizeObserver?.observe(target);
+    // Content arriving next to the target (job progress, corpus numbers) moves it without resizing it.
+    const mutationObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(update);
+    mutationObserver?.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
     return () => {
       target?.removeEventListener("click", onClick);
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
-      observer?.disconnect();
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
     };
-  }, [active, advance]);
+  }, [active, location]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

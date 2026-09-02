@@ -147,4 +147,21 @@ describe("BuildPipeline", () => {
     fireEvent.click(screen.getByRole("button", { name: "View all jobs" }));
     expect(handlers.onOpenJobs).toHaveBeenCalledTimes(1);
   });
+
+  it("offers Operations buttons for runtime problems only when an operator is attached", () => {
+    const onRunOperation = vi.fn();
+    const input = liveInput({ corpus: { database_connected: false, schema_status: "unavailable", schema_message: "db down", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, bm25_ready: false, writable: true } });
+    renderPipeline(input, { databaseConnected: false, schemaStatus: "unavailable", schemaMessage: "db down", operationsAvailable: true, onRunOperation });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start database" }));
+    expect(onRunOperation).toHaveBeenCalledWith("db-start");
+    expect(screen.queryByText("docker compose up -d db")).toBeNull();
+    cleanup();
+
+    // A handler alone is not enough: the button only appears when a local operator is attached.
+    renderPipeline(input, { databaseConnected: false, schemaStatus: "unavailable", schemaMessage: "db down", operationsAvailable: false, onRunOperation });
+    expect(screen.getByText("docker compose up -d db")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start database" })).toBeNull();
+    expect(onRunOperation).toHaveBeenCalledTimes(1);
+  });
 });

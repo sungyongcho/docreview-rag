@@ -1,9 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ONBOARDING_KEY } from "@/lib/storage";
+import { ONBOARDING_KEY, saveConversations } from "@/lib/storage";
 import type { Readiness } from "@/lib/types";
+import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
+
+const OPERATOR_URL = "http://operator.test";
 
 const READY_RUNTIME: Readiness = {
   status: "ready",
@@ -26,6 +29,63 @@ const READY_RUNTIME: Readiness = {
     writable: false,
   },
 };
+
+const EMPTY_CORPUS: Readiness["corpus"] = {
+  availability: "ready", database_connected: true, schema_status: "compatible", schema_message: "ok",
+  documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, bm25_ready: false, writable: true,
+};
+
+function liveReadiness(corpus: Readiness["corpus"]): Readiness {
+  return { ...READY_RUNTIME, status: corpus.documents ? "ready" : "degraded", admin_mode: "live", corpus };
+}
+
+/** Live-build API stub: runtime endpoints plus empty `/admin/*` and operator lists; `ready` lets a test hold back `/ready`. */
+function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness> = async () => liveReadiness(corpus)) {
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+  const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    let payload: unknown = {};
+    if (url.endsWith("/health")) payload = { status: "ok" };
+    else if (url.endsWith("/ready")) payload = await ready();
+    else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+    else if (url.endsWith("/snapshots")) payload = url.includes("/admin/") ? [] : { snapshots: [] };
+    else if (url.endsWith("/admin/jobs")) payload = { jobs: [], active_count: 0, queued_count: 0 };
+    else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
+    else if (url.endsWith("/admin/corpus")) payload = { status: { ...corpus, provider: "deterministic" }, manifests: [], documents: [] };
+    else if (url.endsWith("/admin/documents/facets")) payload = {};
+    else if (url.startsWith(OPERATOR_URL)) payload = [];
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+/** One answered review in storage, so the evidence toggle exists and the welcome suggestions do not. */
+function seedAnsweredConversation() {
+  saveConversations([{
+    id: "seeded", title: "NVIDIA data center", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z", profile: null,
+    messages: [
+      { id: "q", role: "user", text: "What drove data center revenue?" },
+      {
+        id: "a", role: "assistant", text: "Data center revenue grew on Hopper demand.", evidenceLabel: "Cited evidence", citations: 1,
+        evidence: [{
+          chunk_id: 1, doc_id: "NVDA-FY2024-10K", item: "Item 7", kind: "text", citation: "[NVDA FY2024 §7 c1]", start_char: 0, end_char: 120,
+          source_sha256: "abc", body: "Data Center revenue was up 217%.", context_header: "Item 7", score: 0.9,
+        }],
+      },
+    ],
+  }]);
+}
+
+/** Passive effects such as first-run routing run after the DOM a `findBy*` query resolved on; flush them before asserting the view. */
+async function flushEffects() {
+  await act(async () => undefined);
+}
+
+/** Records which tour targets the shell renders right now. */
+function noteTargets(seen: Set<string>) {
+  for (const name of TOUR_TARGETS) if (document.querySelector(`[data-tour="${name}"]`)) seen.add(name);
+}
 
 /** Public-build API stub: runtime endpoints plus the public `/snapshots` list; everything else is `{}`. */
 function stubPublicApi() {
@@ -61,6 +121,7 @@ describe("service shell", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("navigates between Build, Measure and System from the sidebar", async () => {
@@ -176,6 +237,128 @@ describe("service shell", () => {
     expect(answer).toBe(
       "OpenAI API authentication failed. Update the server-side API key and retry.",
     );
+  });
+
+  it("tour targets exist on the screens the tour opens", async () => {
+    stubPublicApi();
+    window.localStorage.removeItem(ONBOARDING_KEY);
+    seedAnsweredConversation();
+    render(<ServiceShell />);
+    const seen = new Set<string>();
+
+    expect(await screen.findByText("Step 1 of 7")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
+    noteTargets(seen);
+
+    fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Step 2 of 7")).toBeInTheDocument();
+    expect(document.querySelector(".tour-spotlight")).not.toBeNull();
+    noteTargets(seen);
+    fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
+    noteTargets(seen);
+
+    fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Step 4 of 7")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
+    noteTargets(seen);
+    // Back to a Build target that is absent at click time: the shell navigates first, then the spotlight lands on it.
+    fireEvent.click(screen.getByText("Back"));
+    expect(screen.getByText("Step 3 of 7")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
+    expect(document.querySelector('[data-tour="next-step"]')).not.toBeNull();
+    expect(document.querySelector(".tour-spotlight")).not.toBeNull();
+    fireEvent.click(screen.getByText("Next"));
+    fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Step 5 of 7")).toBeInTheDocument();
+    noteTargets(seen);
+    fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Step 6 of 7")).toBeInTheDocument();
+    expect(document.querySelector(".tour-spotlight")).not.toBeNull();
+    noteTargets(seen);
+    fireEvent.click(screen.getByText("Next"));
+    expect(screen.getByText("Step 7 of 7")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Measure" })).toHaveAttribute("aria-pressed", "true");
+    noteTargets(seen);
+
+    // The answered review hides the welcome suggestions; the operator run below covers those and Operations.
+    expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-fallback", "operations"]);
+
+    fireEvent.click(screen.getByText("Finish"));
+    expect(window.localStorage.getItem(ONBOARDING_KEY)).toBe("done");
+    expect(screen.queryByText("Step 7 of 7")).toBeNull();
+  });
+
+  it("spotlights the Operations tab on the optional last step of the operator build", async () => {
+    vi.stubEnv("NEXT_PUBLIC_OPERATOR_BASE_URL", OPERATOR_URL);
+    vi.stubEnv("NEXT_PUBLIC_OPERATOR_TOKEN", "operator-token");
+    stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    window.localStorage.removeItem(ONBOARDING_KEY);
+    render(<ServiceShell />);
+    const seen = new Set<string>();
+
+    expect(await screen.findByText("Step 1 of 8")).toBeInTheDocument();
+    for (let step = 1; step <= 7; step += 1) {
+      noteTargets(seen);
+      fireEvent.click(screen.getByText("Next"));
+    }
+    expect(screen.getByText("Step 8 of 8")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Operations" })).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector('[data-tour="operations"]')).not.toBeNull();
+    expect(document.querySelector(".tour-spotlight")).not.toBeNull();
+    noteTargets(seen);
+    // A fresh review has no answer yet, so only the evidence toggle is missing here.
+    expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-toggle"]);
+
+    fireEvent.click(screen.getByText("Finish"));
+    expect(window.localStorage.getItem(ONBOARDING_KEY)).toBe("done");
+  });
+
+  it("starts on Build when the live corpus is empty", async () => {
+    stubLiveApi(EMPTY_CORPUS);
+    render(<ServiceShell />);
+
+    expect(await screen.findByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Local operator")).toBeInTheDocument();
+  });
+
+  it("stays on Review when the live corpus already has filings", async () => {
+    stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    render(<ServiceShell />);
+
+    expect(await screen.findByRole("button", { name: "29 filings · hybrid ready" })).toBeInTheDocument();
+    await flushEffects();
+    expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("stays on Review when a restored review already has messages", async () => {
+    stubLiveApi(EMPTY_CORPUS);
+    seedAnsweredConversation();
+    render(<ServiceShell />);
+
+    expect(await screen.findByRole("button", { name: "Corpus empty" })).toBeInTheDocument();
+    await flushEffects();
+    expect(screen.getByText("Data center revenue grew on Hopper demand.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps the view the user chose while the first readiness is still loading", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    stubLiveApi(EMPTY_CORPUS, async () => { await gate; return liveReadiness(EMPTY_CORPUS); });
+    render(<ServiceShell />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Measure" }));
+    expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
+    release();
+
+    expect(await screen.findByText("db degraded")).toBeInTheDocument();
+    await flushEffects();
+    expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("renders a conversation reply without a verdict pill", async () => {

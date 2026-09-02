@@ -71,7 +71,7 @@ export function SystemWorkspace({ live, ready = true, readiness, checking, onRef
       </header>
       <nav className="lab-tabs" aria-label="System sections">
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={activeTab === id} onClick={() => onTabChange(id)}>{label}</button>
+          <button key={id} type="button" aria-pressed={activeTab === id} data-tour={id === "operations" ? "operations" : undefined} onClick={() => onTabChange(id)}>{label}</button>
         ))}
       </nav>
 

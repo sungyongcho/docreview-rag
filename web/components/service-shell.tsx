@@ -18,7 +18,7 @@ import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
-import { Onboarding } from "@/components/onboarding";
+import { Onboarding, type TourView } from "@/components/onboarding";
 import { ReviewProgressSteps, reviewProgressFromEvent, type ReviewProgressState } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
@@ -69,6 +69,8 @@ export function ServiceShell() {
   /** Build stage card to scroll into view once the Build workspace has rendered. */
   const [pendingStage, setPendingStage] = useState<number | null>(null);
   const reviewAbort = useRef<AbortController | null>(null);
+  /** First-run routing fires once per page load and is cancelled by any explicit navigation before it. */
+  const firstRunRouted = useRef(false);
   const adminLive = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
   const operationsAvailable = operatorAvailable();
   const runtimeHealth = useRuntimeHealth();
@@ -120,6 +122,7 @@ export function ServiceShell() {
   }
 
   function navigate(target: NavigationTarget) {
+    firstRunRouted.current = true;
     if (target.view === "build" && target.tab) setBuildTab(target.tab);
     if (target.view === "build" && target.stage !== undefined) setPendingStage(target.stage);
     if (target.view === "measure") {
@@ -399,6 +402,20 @@ export function ServiceShell() {
   }
 
   const readiness = runtimeHealth.readiness;
+  /** First-run routing: an empty live corpus with nothing asked yet opens on Build, unless the user already went somewhere. */
+  useEffect(() => {
+    if (firstRunRouted.current || !adminLive || readiness === null || !conversations.length) return;
+    firstRunRouted.current = true;
+    if (readiness.corpus.documents === 0 && conversations.every((conversation) => !conversation.messages.length)) setView("build");
+  }, [adminLive, readiness, conversations]);
+
+  /** Tour steps name a workspace; the shell switches there before the step's target is spotlighted. */
+  function openTourStep(step: { view: TourView; tab?: string }) {
+    if (step.view === "build") navigate({ view: "build", tab: "pipeline" });
+    else if (step.view === "measure") navigate({ view: "measure" });
+    else if (step.view === "system") navigate({ view: "system", tab: operationsAvailable ? "operations" : "status" });
+    else navigate({ view: "review" });
+  }
   /**
    * Build needs the operator: a degraded runtime, a switched-off answer model, or a
    * failed job. Corpus-level "action" states live behind `/admin/corpus`, which only
@@ -554,7 +571,7 @@ export function ServiceShell() {
         />}
       </section>
       <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={capabilities ?? { can_edit_prompt_policy: adminLive, can_edit_run_limits: adminLive, can_edit_golden: adminLive, can_build_snapshot: adminLive, can_run_evaluation: adminLive, can_change_custom_retrieval: adminLive, can_query_snapshot: adminLive, can_use_operations: operationsAvailable, can_compare_published_snapshots: true }} readiness={runtimeHealth.readiness} onChange={(next) => { setProfile(next); if (active) updateActive(active.messages, next); }} onClose={() => setSettingsOpen(false)} onOpenMeasure={(tab) => { setSettingsOpen(false); navigate({ view: "measure", tab }); }} onOpenSystem={(tab) => { setSettingsOpen(false); navigate({ view: "system", tab }); }} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
-      {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} />}
+      {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={`${view}/${buildTab}/${measureTab}/${systemTab}`} />}
       <ServiceHealthModal
         kind={runtimeHealth.kind}
         visible={runtimeHealth.modalVisible}
