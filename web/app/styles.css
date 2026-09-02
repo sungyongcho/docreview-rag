@@ -612,3 +612,6 @@ select.chip { appearance: auto; padding-right: 6px; }
 .run-diagnostics > div { grid-template-columns: 150px minmax(0, 1fr); }
 .run-diagnostics dd { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .trace-details .button { margin-top: 10px; }
+
+/* A job's error code glossed into a sentence, above the message the job itself wrote. */
+.job-detail .job-error { margin: 10px 0 0; color: var(--warn); font-size: 12px; }

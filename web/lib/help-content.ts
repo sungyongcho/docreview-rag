@@ -185,6 +185,18 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.filings", "build.stage.evaluate"],
   },
   {
+    id: "build.jobs",
+    title: "Job Center",
+    body: [
+      "Every long operation runs as a persisted job, so a page reload never loses one. Six states: queued and running are live, succeeded, failed and cancelled are terminal, and interrupted means the application restarted mid-flight.",
+      "Interrupted work is never resumed automatically, because a half-finished ingest cannot be safely continued from an unknown point. Retry it explicitly; failed and interrupted jobs offer that button, cancelled ones do not.",
+      "The detail pane names the error code, a sentence explaining it, the message the job wrote, and the request it was given.",
+    ],
+    tune: "Cancel only reaches a job that is still queued or running. A stuck job usually means the worker died, which shows as worker_error.",
+    seeAlso: ["build.next-step", "build.runtime"],
+    optional: true,
+  },
+  {
     id: "build.stage.filings",
     title: "1 · Filings",
     body: [
