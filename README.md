@@ -673,6 +673,13 @@ scripts/run_operator_web.sh
 | BM25 stale | ingest 또는 BM25 stats rebuild 실행 |
 | `sbert`/reranker import 오류 | `uv sync --extra cpu` |
 | Next 클릭이 동작하지 않음 | 개발 URL과 `allowedDevOrigins`, browser console |
+| 리뷰가 답 없이 끝남 | 메시지의 **Run trace**를 편다. 실패 종류와 걸린 한도, 멈춘 단계가 그대로 나오고 해당 설정을 여는 버튼이 붙는다 |
+| `budget_exceeded` | `resource`가 어느 한도인지 본다. `wall_clock_s` 기본값은 120초이며 토큰 예산이 아니다. 셋 다 Settings › Run limits |
+| `provider_failure` | `status`와 `details`. 로컬 모델이면 대개 제한 시간 초과나 host 미도달, 또는 스키마 미준수 |
+| `node_error` | `error_type`과 `message`. 모델이 아니라 그 앞 단계가 실패한 것이다 |
+| job이 `interrupted` | 애플리케이션 재시작에 잘린 것이다. 자동으로 이어받지 않으므로 Retry를 직접 누른다 |
+
+리뷰 실패의 세 모양과 각 필드의 뜻은 `AGENTS.md` §11에 정리돼 있습니다.
 
 등록된 additive migration만 명시적 plan/apply로 실행하며 startup에서는 DDL을 수행하지
 않습니다. 등록 migration으로 해결되지 않는 drift의 마지막 수단은 재구축입니다. 다음

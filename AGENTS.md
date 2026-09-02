@@ -122,7 +122,8 @@ M5는 `M5.1, M5.4` → `M5.3` → `M5.2` 세 덩이인데, 라우트만 있고 �
 ## 7. 커밋 산출 형식
 
 한 줄 conventional commit이 전역 기본이지만 **이 저장소는 본문을 쓴다.**
-`git add` 블록과 히어독을 항상 함께 낸다. `Co-Authored-By`·도구 귀속 푸터 금지.
+`git add` 블록과 히어독을 항상 함께 낸다. `Co-Authored-By`·도구 귀속 푸터 금지. 커밋 메세지는 무조건 영어로 작성한다.
+작성 페르소나 톤은 world TOP level swe/ai/ml engineer 스타일로. 양이 길필요 없음 웬만하면 축약.
 
 ```
 type(scope): concise outcome
@@ -180,3 +181,61 @@ git config core.hooksPath .githooks
 한 커밋만 건너뛰려면 `DASH_NO_STAMP=1 git commit ...`.
 
 모듈별 리뷰 초점은 같은 파일의 리뷰 초점 표에 있다(§4-1).
+
+## 10. 로컬 스택
+
+Compose는 base 하나에 overlay 둘이다. `docker-compose.yml`이 `db`와 `app`,
+`docker-compose.dev.yml`이 개발 전용(로컬 모델 엔진, `local-llm` profile의 `ollama`),
+`docker-compose.prod.yml`이 방문자가 보는 화면의 재현이다. `.env`의 `COMPOSE_FILE`이
+dev overlay를 기본으로 잡으므로 평소에는 명령이 바뀌지 않는다.
+
+```bash
+docker compose up -d db                      # DB만
+docker compose up --build -d app             # 전체 (dev)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+```
+
+prod 미리보기에 `--build`가 필요한 이유는 웹 번들 성격이 `NEXT_PUBLIC_ADMIN_MODE`
+빌드 인자로 이미지에 구워지기 때문이다. 환경변수만 바꿔서는 바뀌지 않는다.
+
+배포 산출물은 `deploy/gcp/docker-compose.deploy.yml`이고 배포 스크립트가 그것만
+복사한다. 개발 overlay는 배포 경로에 닿지 않는다.
+
+`MODE`는 OpenAI 키 슬롯을 고르고(dev는 `OPENAI_API_KEY_LOCAL`, prod는 `_PROD`),
+`MODE=prod`는 로컬 모델 엔진을 값이 남아 있어도 거부한다. 화면을 가르는 것은
+`DOCREVIEW_ADMIN_MODE`(백엔드 권한)와 `NEXT_PUBLIC_ADMIN_MODE`(번들 성격)이지 `MODE`가
+아니다. 셋을 혼동하면 "설정을 바꿨는데 화면이 그대로"인 상태에 빠진다.
+
+로컬 모델 절차와 `.env` 항목은 README의 "로컬 모델로 답변하기"에 있다. 엔드투엔드
+게이트는 `scripts/verify_clean_checkout.sh`이며, §5의 ruff·format·`git diff --check`
+삼종은 그보다 좁은 상시 점검이다. 둘은 다른 것이다.
+
+## 11. 실패 읽는 법
+
+리뷰 실행이 실패하면 응답의 `failure`가 세 모양 중 하나다. 셋을 구분하지 않으면
+엉뚱한 설정을 만지게 된다.
+
+| 모양 | 뜻 | 진단에 쓰는 필드 |
+|---|---|---|
+| `budget_exceeded` | 누적 한도에 걸림 | `resource`, `limit`, `observed`, `blocked_node` |
+| `provider_failure` | 모델 호출 자체가 실패 | `status`, `attempts`, `details`, `node` |
+| `node_error` | 모델 아닌 단계가 실패 | `error_type`, `message`, `node` |
+
+`resource`는 `wall_clock_s`, `iterations`, `input_tokens`, `output_tokens` 중 하나다.
+**wall clock 기본값은 120초이고 이건 토큰 예산이 아니다.** 예산은 한 호출이 아니라
+run 전체(분류·라우팅·grade·check와 스키마 실패 재시도)에 누적된다. CPU에서 도는 로컬
+모델은 이 120초를 거의 항상 넘긴다.
+
+고치는 자리가 둘로 나뉘어 있다는 사실이 함정이다. wall clock·반복·토큰 한도는
+**Settings › Run limits**, 근거 크기(`max_context_chars`, overfetch, 문서당 hit 수)는
+**Prompt & evidence**다. 화면의 Run trace가 실패한 run의 필드를 그대로 펼치고 해당
+설정을 여는 버튼을 함께 낸다.
+
+job 상태는 여섯 개다. queued·running은 살아 있고, succeeded·failed·cancelled는 종료,
+`interrupted`는 애플리케이션 재시작에 잘린 것이다. **중단된 일은 자동으로 이어받지
+않는다.** 절반 끝난 ingest를 어디서부터 이어야 할지 알 수 없기 때문이다. failed와
+interrupted만 retry를 제공한다.
+
+서버에는 아직 UI가 없는 관측 자산이 있다. `GET /runs/{run_id}`와
+`GET /runs/{run_id}/traces`이고, 후자의 `error`가 provider 실패의 원문 기록이다. Run
+trace가 run id를 보여 주므로 손으로 조회할 수 있다. run 목록 route는 없다.
