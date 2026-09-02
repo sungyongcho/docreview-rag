@@ -400,3 +400,60 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 @media (prefers-reduced-motion: reduce) {
   .tour-pointer { animation: none; }
 }
+
+/* Build pipeline (Corpus Lab › Build). Append-only block; tokens reuse :root plus --warn. */
+:root { --warn: #d6a545; }
+.runtime-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 14px; color: var(--muted); font-size: 13px; }
+.runtime-strip .runtime-items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
+.runtime-strip .sep, .stage-numbers .sep { margin: 0 6px; }
+.runtime-strip .notice { flex-basis: 100%; margin: 0; color: var(--bad); }
+.runtime-strip .notice p { margin: 0; }
+.runtime-strip .notice code { display: block; margin-top: 6px; color: var(--text); font-size: 12px; }
+.next-step { padding: 16px 16px 16px 20px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 13px; background: var(--surface-2); }
+.next-step h2 { margin: 0 0 6px; font-size: 17px; font-weight: 580; }
+.next-step p { margin: 0; color: var(--muted); line-height: 1.5; }
+.next-step .action-row { margin-top: 12px; }
+.stage-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.stage-card { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-2); }
+.stage-card.next { border-color: var(--accent); }
+.stage-index { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--muted); font-size: 13px; font-weight: 600; }
+.stage-index.done { border-color: var(--good); background: var(--good); color: var(--accent-text); }
+.stage-index.action { border-color: var(--warn); color: var(--warn); }
+.stage-index.running, .stage-index.queued { border-color: var(--accent); color: var(--text); }
+.stage-index.failed { border-color: var(--bad); color: var(--bad); }
+.stage-body { min-width: 0; display: grid; gap: 8px; }
+.stage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.stage-head h3 { margin: 0; font-size: 16px; font-weight: 580; }
+.stage-status { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; background: var(--surface); color: var(--muted); font-size: 11px; }
+.stage-status em { font-style: normal; opacity: .85; }
+.stage-status.done { color: var(--good); }
+.stage-status.action { color: var(--warn); }
+.stage-status.running, .stage-status.queued { color: var(--accent); background: var(--surface-2); }
+.stage-status.failed { color: var(--bad); }
+.stage-status.blocked, .stage-status.readonly, .stage-status.unknown { color: var(--muted); }
+.stage-description { margin: 0; line-height: 1.5; }
+.stage-numbers { margin: 0; color: var(--muted); font-size: 13px; }
+.stage-summary { margin: 0; font-size: 13px; }
+.stage-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.stage-hint { margin: 0; font-size: 13px; line-height: 1.5; }
+.stage-note { margin: 0; color: var(--muted); font-size: 12px; }
+.stage-job { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.stage-job .helper { margin: 0; }
+.stage-why, .stage-advanced { font-size: 13px; }
+.stage-why summary, .stage-advanced summary { cursor: pointer; color: var(--muted); }
+.stage-why p { margin: 8px 0 0; color: var(--muted); line-height: 1.5; }
+.stage-advanced > div { display: grid; gap: 10px; margin-top: 10px; }
+.stage-advanced .helper { margin: 0; }
+.manifest-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.segmented { width: fit-content; display: inline-flex; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; }
+.segmented button { border: 0; background: transparent; color: var(--muted); padding: 7px 11px; cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.segmented button:disabled { opacity: .4; cursor: default; }
+@media (max-width: 640px) {
+  .stage-card { grid-template-columns: 1fr; }
+  .stage-index { display: none; }
+  .next-step { position: sticky; top: 0; z-index: 3; }
+  .runtime-strip { font-size: 12px; }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

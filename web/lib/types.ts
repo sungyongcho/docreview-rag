@@ -101,7 +101,7 @@ export interface Readiness {
   models: Record<string, ModelPolicyRole>;
   review_enabled: boolean;
   active_review_model: string | null;
-  review_engines?: Record<string, { enabled?: boolean; model?: string | null; protocol?: string; reason?: string }>;
+  review_engines?: Record<string, { enabled?: boolean; model?: string | null; protocol?: string; reason?: string; key_slot?: string | null }>;
   corpus: {
     availability: "ready" | "degraded" | "not_applicable" | "unavailable";
     database_connected: boolean | null;
@@ -264,6 +264,30 @@ export interface SnapshotComparison {
     transition: "stable_hit" | "stable_miss" | "miss_to_hit" | "hit_to_miss";
     rank_delta: number | null;
   }>;
+}
+
+/** One selectable corpus manifest as reported by `/admin/corpus`. */
+export interface ManifestSummary {
+  name: string;
+  registry: string | null;
+  documents: number | null;
+  valid: boolean;
+  /** Listed entries whose source file exists on disk; `null` for an invalid manifest. */
+  sources_present: number | null;
+}
+
+/** Field subset shared by `/ready`.corpus and `/admin/corpus`.status. */
+export interface CorpusCounts {
+  database_connected: boolean | null;
+  schema_status: string | null;
+  schema_message: string | null;
+  documents: number | null;
+  chunks: number | null;
+  embedded_chunks: number | null;
+  pending_embeddings: number | null;
+  bm25_ready: boolean | null;
+  writable: boolean | null;
+  provider?: string | null;
 }
 
 export type DocumentEmbeddingStatus = "complete" | "partial" | "missing";

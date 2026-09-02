@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Beaker, Braces, Database, FileSearch, Play, RefreshCw } from "lucide-react";
+import { Activity, Beaker, Braces, Database, Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -11,6 +11,7 @@ import {
   createSnapshot,
   getAdminSnapshots,
   getCorpusSnapshot,
+  getDocumentFacets,
   getEvaluationJobs,
   getEvaluationResult,
   getGoldenSuites,
@@ -24,13 +25,17 @@ import {
   setSnapshotVisibility,
   transitionGoldenRevision,
 } from "@/lib/api";
-import { CANNED_COMPARISON, CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { CANNED_COMPARISON, CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { derivePipeline } from "@/lib/pipeline";
 import type {
+  CorpusCounts,
   EvaluationComparison,
   EvaluationJob,
   EvaluationRequest,
   EvaluationResultDetail,
   GoldenSuite,
+  ManifestSummary,
+  Readiness,
   RetrievalProfile,
   ProviderUsage,
   SuiteId,
@@ -41,15 +46,17 @@ import type {
   SnapshotComparison,
   AdminDocument,
 } from "@/lib/types";
+import type { RuntimeHealthKind } from "@/lib/use-runtime-health";
+import { BuildPipeline, splitList } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
-import { JobActivityPanel, JobCenter } from "@/components/job-center";
+import { JobCenter } from "@/components/job-center";
 import { useNotifications } from "@/components/notifications";
 import { loadExperimentDefaults } from "@/lib/storage";
 
-type LabTab = "overview" | "documents" | "golden" | "experiments" | "snapshots" | "jobs" | "api" | "usage";
+type LabTab = "build" | "documents" | "golden" | "experiments" | "snapshots" | "jobs" | "api" | "usage";
 
 const TABS: Array<[LabTab, string]> = [
-  ["overview", "Overview"],
+  ["build", "Build"],
   ["documents", "Documents"],
   ["golden", "Golden Tests"],
   ["experiments", "Experiments"],
@@ -81,6 +88,48 @@ export function deploymentLabel(hostname: string): "DEV" | "PROD" {
     : "PROD";
 }
 
+/** Read the `/admin/corpus` status object defensively; unknown fields become `null`. */
+function toCorpusCounts(value: unknown): CorpusCounts {
+  const source = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+  const bool = (key: string) => (typeof source[key] === "boolean" ? source[key] as boolean : null);
+  const num = (key: string) => (typeof source[key] === "number" ? source[key] as number : null);
+  const str = (key: string) => (typeof source[key] === "string" ? source[key] as string : null);
+  return {
+    database_connected: bool("database_connected"),
+    schema_status: str("schema_status"),
+    schema_message: str("schema_message"),
+    documents: num("documents"),
+    chunks: num("chunks"),
+    embedded_chunks: num("embedded_chunks"),
+    pending_embeddings: num("pending_embeddings"),
+    bm25_ready: bool("bm25_ready"),
+    writable: bool("writable"),
+    provider: str("provider"),
+  };
+}
+
+function toManifests(value: unknown): ManifestSummary[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item !== "object" || item === null || typeof (item as Record<string, unknown>).name !== "string") return [];
+    const row = item as Record<string, unknown>;
+    return [{
+      name: row.name as string,
+      registry: typeof row.registry === "string" ? row.registry : null,
+      documents: typeof row.documents === "number" ? row.documents : null,
+      valid: row.valid === true,
+      sources_present: typeof row.sources_present === "number" ? row.sources_present : null,
+    }];
+  });
+}
+
+/** `manifest.json` (SEC) first, then the registry manifests by name: the README ingest order. */
+function ingestOrder(manifests: ManifestSummary[]): ManifestSummary[] {
+  return manifests
+    .filter((item) => item.valid)
+    .toSorted((left, right) => left.name === "manifest.json" ? -1 : right.name === "manifest.json" ? 1 : left.name.localeCompare(right.name));
+}
+
 interface CorpusLabProps {
   live: boolean;
   ready?: boolean;
@@ -93,23 +142,25 @@ interface CorpusLabProps {
   onRetryJob: (jobId: string) => void;
   onCancelJob: (jobId: string) => void;
   onRefreshJobs: () => void;
+  readiness?: Readiness | null;
+  healthKind?: RuntimeHealthKind;
+  onNavigate?: (target: "review" | "status") => void;
+  onRecheck?: () => void;
 }
 
-export function CorpusLab({ live, ready = true, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs }: CorpusLabProps) {
+export function CorpusLab({ live, ready = true, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs, readiness = null, healthKind = "healthy", onNavigate, onRecheck }: CorpusLabProps) {
   const { notify } = useNotifications();
   const [experimentDefaults] = useState(loadExperimentDefaults);
-  const [tab, setTab] = useState<LabTab>("overview");
+  const [tab, setTab] = useState<LabTab>("build");
   const [suites, setSuites] = useState<GoldenSuite[]>(CANNED_SUITES);
   const [suiteId, setSuiteId] = useState<SuiteId>(experimentDefaults.suite_id);
-  const [jobs, setJobs] = useState<EvaluationJob[]>([CANNED_JOB]);
+  // Fixtures seed only the public build; a live build waits for the administrator API.
+  const [jobs, setJobs] = useState<EvaluationJob[]>(() => (live ? [] : [CANNED_JOB]));
   const [comparison, setComparison] = useState<EvaluationComparison>(CANNED_COMPARISON);
-  const [corpus, setCorpus] = useState<Record<string, unknown>>({
-    status: { documents: 22, chunks: 10452, embedded_chunks: 10452, bm25_ready: true },
-    documents: [
-      { doc_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", fiscal_year: 2024, language: "en", chunk_count: 612, parse_status: "parsed" },
-      { doc_id: "005930-FY2024", registry: "dart", issuer: "005930", fiscal_year: 2024, language: "ko", chunk_count: 668, parse_status: "parsed" },
-    ],
-  });
+  const [corpus, setCorpus] = useState<Record<string, unknown>>(() => (live ? {} : { ...CANNED_CORPUS }));
+  /** True once `/admin/corpus` replaced the portfolio fixture. */
+  const [adminLoaded, setAdminLoaded] = useState(false);
+  const [registryCounts, setRegistryCounts] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"quick" | "matrix">(experimentDefaults.mode);
   const [chunkTargets, setChunkTargets] = useState("500 1200");
@@ -118,7 +169,6 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   const [registry, setRegistry] = useState<"sec" | "dart">("sec");
   const [identifiers, setIdentifiers] = useState("NVDA AMD");
   const [years, setYears] = useState("2023 2024");
-  const [manifest, setManifest] = useState("manifest.json");
   const [usage, setUsage] = useState<ProviderUsage>(EMPTY_USAGE);
   const [usageError, setUsageError] = useState("");
   const [environment, setEnvironment] = useState<"DEV" | "PROD">("PROD");
@@ -164,12 +214,15 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   async function refresh() {
     if (!live) return;
     try {
-      const [suiteRows, jobRows, corpusSnapshot] = await Promise.all([
-        getGoldenSuites(), getEvaluationJobs(), getCorpusSnapshot(),
+      const [suiteRows, jobRows, corpusSnapshot, facets] = await Promise.all([
+        getGoldenSuites(), getEvaluationJobs(), getCorpusSnapshot(), getDocumentFacets().catch(() => null),
       ]);
-      setSuites(suiteRows);
-      setJobs(jobRows);
-      setCorpus(corpusSnapshot);
+      setSuites(Array.isArray(suiteRows) ? suiteRows : []);
+      setJobs(Array.isArray(jobRows) ? jobRows : []);
+      setCorpus(typeof corpusSnapshot === "object" && corpusSnapshot !== null ? corpusSnapshot : {});
+      setAdminLoaded(true);
+      const registries = facets && Array.isArray(facets.registries) ? facets.registries : [];
+      setRegistryCounts(Object.fromEntries(registries.filter((item) => typeof item.value === "string" && typeof item.count === "number").map((item) => [item.value, item.count])));
       const snapshotRows = await getAdminSnapshots();
       setSnapshots(Array.isArray(snapshotRows) ? snapshotRows : []);
       setUsageError("");
@@ -188,9 +241,9 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
   }, [live]);
   useEffect(() => {
     if (!live) return;
-    void getEvaluationJobs().then(setJobs).catch(() => undefined);
+    void getEvaluationJobs().then((rows) => setJobs(Array.isArray(rows) ? rows : [])).catch(() => undefined);
   }, [live, jobBoard]);
-  useEffect(() => { if (!live) void getPublishedSnapshots().then(setSnapshots).catch(() => undefined); }, [live]);
+  useEffect(() => { if (!live) void getPublishedSnapshots().then((rows) => setSnapshots(Array.isArray(rows) ? rows : [])).catch(() => undefined); }, [live]);
   useEffect(() => {
     if (!live) return;
     void Promise.all([getGoldenRevisions(suiteId), getGoldenCanonical(suiteId)]).then(([value, canonical]) => {
@@ -207,12 +260,12 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
       setGoldenCaseJson("");
     }).catch((reason) => notify(String(reason), "error", "golden-revisions"));
   }, [live, suiteId, notify, experimentDefaults.golden_revision_id]);
-  async function runEvaluation() {
+  async function runEvaluation(override: Partial<EvaluationRequest> = {}) {
     if (!live) { notify("Production experiment controls are locked. Compare published snapshots instead.", "warning", "prod-eval"); return; }
     if (!ready) return;
     setBusy(true);
     try {
-      const job = await queueEvaluation(evaluationRequest);
+      const job = await queueEvaluation({ ...evaluationRequest, ...override });
       setJobs((current) => [job, ...current]);
       onRefreshJobs();
       setTab("jobs");
@@ -278,6 +331,31 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Queue one `ingest_manifest` job per valid manifest, in pipeline order, as a single operator action. */
+  async function ingestAllManifests() {
+    if (!live) return;
+    const ordered = ingestOrder(manifests);
+    if (!ordered.length) { notify("No valid manifest to ingest.", "warning", "corpus-operation"); return; }
+    setBusy(true);
+    try {
+      for (const item of ordered) await queueCorpusOperation({ kind: "ingest_manifest", manifest: item.name });
+      onRefreshJobs();
+      notify(`Ingest queued for ${ordered.length} manifest${ordered.length === 1 ? "" : "s"}.`, "success", "corpus-operation");
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : "Corpus operation failed.", "error", "corpus-operation");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function downloadFilings() {
+    void queueCorpus({
+      kind: registry === "sec" ? "acquire_edgar" : "acquire_dart",
+      identifiers: splitList(identifiers),
+      years: splitList(years).map(Number).filter(Number.isInteger),
+    });
   }
 
   async function newGoldenDraft() {
@@ -377,11 +455,33 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
     }
   }
 
-  const status = (corpus.status ?? {}) as Record<string, unknown>;
+  const status = useMemo(() => toCorpusCounts(corpus.status), [corpus]);
+  const manifests = useMemo(() => toManifests(corpus.manifests), [corpus]);
   const selectedSuite = suites.find((suite) => suite.suite_id === suiteId) ?? suites[0];
   const corpusDocuments = Array.isArray(corpus.documents)
     ? (corpus.documents as AdminDocument[])
     : [];
+  const evaluationResults = jobs.filter((job) => job.status === "succeeded" && job.result_id !== null).length;
+  const pipeline = useMemo(() => derivePipeline({
+    live,
+    healthKind,
+    readiness,
+    corpus: live && adminLoaded ? status : null,
+    manifests,
+    registryCounts,
+    jobs: Array.isArray(jobBoard.jobs) ? jobBoard.jobs : [],
+    evaluationResults,
+    snapshots: snapshots.length,
+  }), [live, healthKind, readiness, adminLoaded, status, manifests, registryCounts, jobBoard.jobs, evaluationResults, snapshots.length]);
+  /** Runtime flags for the strip: the administrator snapshot once loaded, otherwise `/ready`. */
+  const runtimeCounts: CorpusCounts | null = live && adminLoaded ? status : readiness?.corpus ?? null;
+  const answerModelLabel = readiness === null
+    ? null
+    : !readiness.review_enabled
+      ? "off"
+      : readiness.review_engines?.openai?.enabled
+        ? `${readiness.review_engines.openai.key_slot ?? "explicit"} key`
+        : "local";
   const activeGoldenRevision = goldenRevisions.find((item) => item.revision_id === selectedGoldenRevision) ?? null;
   const activeGoldenCases = activeGoldenRevision?.payload ?? goldenCanonical?.payload ?? [];
   const visibleGoldenCases = activeGoldenCases.filter((item) => `${String(item.id)} ${String(item.question)} ${String(item.category)} ${String(item.facet)} ${Array.isArray(item.tags) ? item.tags.join(" ") : ""}`.toLowerCase().includes(goldenCaseQuery.toLowerCase())).toSorted((left, right) => String(left[goldenCaseSort] ?? "").localeCompare(String(right[goldenCaseSort] ?? ""), undefined, { numeric: true }));
@@ -403,32 +503,35 @@ export function CorpusLab({ live, ready = true, profile, onProfileChange, onAppl
         ))}
       </nav>
 
-      {tab === "overview" && <div className="panel-stack">
-        <div className="metric-grid">
-          <Metric icon={<Database />} label="Documents" value={String(status.documents ?? 22)} />
-          <Metric icon={<FileSearch />} label="Chunks" value={String(status.chunks ?? 10452)} />
-          <Metric icon={<Activity />} label="Embeddings" value={String(status.embedded_chunks ?? 10452)} />
-          <Metric icon={<Beaker />} label="BM25" value={status.bm25_ready === false ? "Not ready" : "Ready"} />
-        </div>
-        <button className="button" type="button" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh status</button>
-        {live && <JobActivityPanel board={jobBoard} loading={jobsLoading} onOpenJobs={() => setTab("jobs")} />}
-        <section className="surface form-stack">
-          <h2>Safe corpus operations</h2>
-          <div className="profile-grid">
-            <label>Registry<select value={registry} onChange={(event) => setRegistry(event.target.value as "sec" | "dart")}><option value="sec">SEC EDGAR</option><option value="dart">DART</option></select></label>
-            <label>Tickers / stock codes<input value={identifiers} onChange={(event) => setIdentifiers(event.target.value)} /></label>
-            <label>Fiscal years<input value={years} onChange={(event) => setYears(event.target.value)} /></label>
-            <label>Manifest<select value={manifest} onChange={(event) => setManifest(event.target.value)}><option value="manifest.json">manifest.json</option><option value="dart-manifest.json">dart-manifest.json</option></select></label>
-          </div>
-          <div className="action-row">
-            <button className="button" type="button" disabled={!canOperateCorpus || busy} onClick={() => void queueCorpus({ kind: registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: identifiers.split(/[\s,]+/).filter(Boolean), years: years.split(/[\s,]+/).map(Number).filter(Number.isInteger) })}>Acquire missing filings</button>
-            <button className="button" type="button" disabled={!canOperateCorpus || busy} onClick={() => void queueCorpus({ kind: "ingest_manifest", manifest })}>Ingest manifest</button>
-            <button className="button" type="button" disabled={!canOperateCorpus || busy} onClick={() => void queueCorpus({ kind: "backfill_embeddings" })}>Backfill embeddings</button>
-            <button className="button" type="button" disabled={!canOperateCorpus || busy} onClick={() => void queueCorpus({ kind: "rebuild_bm25" })}>Rebuild BM25</button>
-          </div>
-          {!live && <p className="helper">Actual acquisition and indexing are available only through the SSH operator tunnel.</p>}
-        </section>
-      </div>}
+      {tab === "build" && <BuildPipeline
+        pipeline={pipeline}
+        live={live}
+        busy={busy}
+        canOperateCorpus={canOperateCorpus}
+        acquisition={{ registry, identifiers, years }}
+        onAcquisitionChange={(next) => { setRegistry(next.registry); setIdentifiers(next.identifiers); setYears(next.years); }}
+        manifests={manifests}
+        registryCounts={registryCounts}
+        answerModel={answerModelLabel}
+        onCancelJob={onCancelJob}
+        databaseConnected={runtimeCounts?.database_connected ?? null}
+        schemaStatus={runtimeCounts?.schema_status ?? null}
+        schemaMessage={runtimeCounts?.schema_message ?? null}
+        writable={runtimeCounts?.writable ?? null}
+        onDownload={downloadFilings}
+        onIngestAll={() => void ingestAllManifests()}
+        onIngest={(name) => void queueCorpus({ kind: "ingest_manifest", manifest: name })}
+        onBackfill={() => void queueCorpus({ kind: "backfill_embeddings" })}
+        onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25" })}
+        onAsk={() => onNavigate?.("review")}
+        onRecheck={() => onRecheck?.()}
+        onEvaluate={() => void runEvaluation({ mode: "quick" })}
+        onCompareSnapshots={() => setTab("snapshots")}
+        onOpenDocuments={() => setTab("documents")}
+        onOpenJobs={() => setTab("jobs")}
+        onOpenStatus={() => onNavigate?.("status")}
+        onRefresh={() => void refresh()}
+      />}
 
       {tab === "documents" && <DocumentInventory live={live} fallbackDocuments={corpusDocuments} />}
 
