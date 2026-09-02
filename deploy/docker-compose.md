@@ -4,8 +4,20 @@
 FastAPI `app`을 제공합니다. DB 통합 테스트만 할 때는 `db`만 시작하고, 브라우저
 서비스까지 확인할 때는 두 서비스를 함께 시작합니다.
 
-운영 GCP VM용 설정은 `docker-compose.prod.yml`이며 Caddy, 비공개 PostgreSQL,
-persistent host directory와 Docker secrets를 추가합니다.
+여기에 overlay 두 개가 얹힙니다. `docker-compose.dev.yml`은 개발 전용 기능인 로컬
+모델 엔진과 `local-llm` profile의 `ollama` 서비스를 더합니다. `.env`의
+`COMPOSE_FILE`이 이 overlay를 기본으로 잡으므로 평소에는 `docker compose up`만으로
+개발 구성이 뜹니다. `docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서
+재현합니다. `-f`가 `COMPOSE_FILE`을 이기므로 명시적으로 지정하고, 웹 번들 성격이
+빌드 인자라 `--build`가 필요합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+```
+
+운영 GCP VM용 설정은 `deploy/gcp/docker-compose.deploy.yml`이며 Caddy, 비공개
+PostgreSQL, persistent host directory와 Docker secrets를 추가합니다. 배포 스크립트가
+이 파일만 VM으로 복사하므로 개발 overlay는 배포 경로에 닿지 않습니다.
 
 ## DB만 실행
 
@@ -76,8 +88,10 @@ Next 개발 URL:
 http://127.0.0.1:3000/docreview-rag-agent/
 ```
 
-로컬 Compose는 root `.env`의 `OPENAI_API_KEY`, `DART_API_KEY`, `SEC_USER_AGENT`와
-선택적 `EMBEDDING_PROVIDER`를 app에 전달합니다. `.env`가 있으면 application settings도
+로컬 Compose는 root `.env`의 `OPENAI_API_KEY`, `OPENAI_API_KEY_LOCAL`,
+`OPENAI_API_KEY_PROD`, `MODE`, `DART_API_KEY`, `SEC_USER_AGENT`와 선택적
+`EMBEDDING_PROVIDER`를 app에 전달합니다. 로컬 모델 키(`LOCAL_LLM_*`)는 dev overlay
+에서만 전달되며 `MODE=prod`에서는 값이 있어도 엔진이 켜지지 않습니다. `.env`가 있으면 application settings도
 같은 이름의 process 환경변수보다 `.env` 값을 우선합니다. public deployment에서는
 administrator와 Usage route를 계속 노출하지 않습니다.
 
@@ -194,7 +208,7 @@ docker compose down -v
 
 ## GCP 운영 Compose
 
-`docker-compose.prod.yml`은 다음 경계를 추가합니다.
+`deploy/gcp/docker-compose.deploy.yml`은 다음 경계를 추가합니다.
 
 - PostgreSQL은 Docker network 내부에만 노출
 - FastAPI는 VM loopback `127.0.0.1:8000`에만 publish

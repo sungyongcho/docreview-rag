@@ -1,61 +1,15 @@
+# Production overlay: what a visitor sees, reproduced on this machine.
+# Run it explicitly, because -f overrides the COMPOSE_FILE default in .env:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+# --build is required because NEXT_PUBLIC_ADMIN_MODE is baked into the image.
+# Add DOCREVIEW_MODE=canned to see the fully offline Hugging Face shape instead.
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: filing
-      POSTGRES_USER: filing
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-    secrets: [postgres_password]
-    volumes:
-      - /var/lib/docreview/postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U filing -d filing"]
-      interval: 3s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-
   app:
-    image: ${DOCREVIEW_IMAGE:?Set DOCREVIEW_IMAGE}
+    build:
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+        NEXT_PUBLIC_ADMIN_MODE: canned
     environment:
-      CORPUS_DIR: /app/data/corpus
-      DATABASE_URL: postgresql+asyncpg://filing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/filing
-      EMBEDDING_PROVIDER: deterministic
-      DOCREVIEW_MODE: runtime
-      DOCREVIEW_ADMIN_MODE: live
-      DOCREVIEW_HOST: 127.0.0.1
-      DOCREVIEW_ADMIN_CORS_ORIGIN: ${DOCREVIEW_ADMIN_CORS_ORIGIN:-http://127.0.0.1:3000}
-      DOCREVIEW_TRUST_PROXY_HEADERS: "true"
-      DOCREVIEW_RATE_LIMIT_PER_MINUTE: "5"
-      DOCREVIEW_RATE_LIMIT_PER_DAY: "25"
-      DOCREVIEW_OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
-      DOCREVIEW_PUBLIC_DAILY_COST_USD: "1.00"
-      DOCREVIEW_OPENAI_MAX_COST_USD: "0.01"
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - /var/lib/docreview/corpus:/app/data/corpus
-      - /var/lib/docreview/eval-runs:/app/data/eval_runs
-    ports:
-      - "${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${DOCREVIEW_ORIGIN_PORT:-8000}:8000"
-    restart: unless-stopped
-    init: true
-    security_opt: ["no-new-privileges:true"]
-    cap_drop: ["ALL"]
-
-  caddy:
-    image: caddy:2.10-alpine
-    environment:
-      DOCREVIEW_ORIGIN_HOST: ${DOCREVIEW_ORIGIN_HOST:?Set DOCREVIEW_ORIGIN_HOST}
-    depends_on: [app]
-    ports: ["${DOCREVIEW_HTTP_PORT:-80}:80", "${DOCREVIEW_HTTPS_PORT:-443}:443"]
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /var/lib/docreview/caddy-data:/data
-      - /var/lib/docreview/caddy-config:/config
-    restart: unless-stopped
-
-secrets:
-  postgres_password:
-    file: ${POSTGRES_PASSWORD_FILE:?Set POSTGRES_PASSWORD_FILE}
+      # Selects the production OpenAI key slot and, with it, refuses the local engine.
+      MODE: prod
+      DOCREVIEW_ADMIN_MODE: readonly

@@ -42,9 +42,6 @@ services:
       DOCREVIEW_HOST: 127.0.0.1
       DOCREVIEW_ADMIN_CORS_ORIGIN: ${DOCREVIEW_ADMIN_CORS_ORIGIN:-http://127.0.0.1:3000}
       DOCREVIEW_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-}
-      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-}
-      LOCAL_LLM_PROTOCOL: ${LOCAL_LLM_PROTOCOL:-auto}
     depends_on:
       db:
         condition: service_healthy
