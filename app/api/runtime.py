@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
@@ -1100,35 +1099,25 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         )
         providers["openai"] = llm_provider
         budgets["openai"] = provider_budget
-    if configured.local_llm_base_url is not None and configured.local_llm_model is not None:
-        from app.llm.local import LocalLLMProvider
+    if configured.local_llm_enabled:
+        from app.llm.local_engine import build_local_provider, local_provider_budget
 
-        protocol = configured.local_llm_protocol
-        if protocol == "auto":
-            protocol = (
-                "openai_responses"
-                if configured.local_llm_base_url.rstrip("/").endswith("/v1")
-                else "ollama"
-            )
-        local_provider = LocalLLMProvider(
+        assert configured.local_llm_base_url is not None
+        assert configured.local_llm_model is not None
+        providers["local"] = build_local_provider(
             base_url=configured.local_llm_base_url,
             model_name=configured.local_llm_model,
-            protocol=protocol,
+            protocol=configured.local_llm_protocol,
             api_key=(
                 configured.local_llm_api_key.get_secret_value()
                 if configured.local_llm_api_key is not None
                 else None
             ),
+            timeout_s=configured.local_llm_timeout_s,
         )
-        providers["local"] = local_provider
-        budgets["local"] = ProviderBudget(
+        budgets["local"] = local_provider_budget(
             max_input_tokens=configured.local_llm_max_input_tokens,
             max_output_tokens=configured.local_llm_max_output_tokens,
-            max_cost_usd=Decimal("0"),
-            pricing=TokenPricing(
-                input_per_million_usd=Decimal("0"),
-                output_per_million_usd=Decimal("0"),
-            ),
         )
     secret_values = tuple(
         secret.get_secret_value()

@@ -5,11 +5,25 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    PrivateAttr,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import SettingsConfigDict
 
 from app.openai_models import resolve_openai_model
-from app.settings_sources import DotenvFirstSettings, Environment, KeySlot, resolve_openai_key
+from app.settings_sources import (
+    DEFAULT_LOCAL_TIMEOUT_S,
+    DotenvFirstSettings,
+    Environment,
+    KeySlot,
+    resolve_openai_key,
+)
 
 EmbeddingProviderName = Literal["openai", "deterministic", "sbert"]
 LexicalRanker = Literal["ts_rank_cd", "bm25"]
@@ -85,14 +99,52 @@ class Settings(DotenvFirstSettings):
         default=None,
         validation_alias=AliasChoices("LOCAL_LLM_API_KEY", "DOCREVIEW_LOCAL_LLM_API_KEY"),
     )
-    local_llm_max_input_tokens: int = Field(default=12_000, gt=0)
-    local_llm_max_output_tokens: int = Field(default=600, gt=0)
+    local_llm_max_input_tokens: int = Field(
+        default=12_000,
+        gt=0,
+        validation_alias=AliasChoices(
+            "LOCAL_LLM_MAX_INPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_INPUT_TOKENS"
+        ),
+    )
+    local_llm_max_output_tokens: int = Field(
+        default=600,
+        gt=0,
+        validation_alias=AliasChoices(
+            "LOCAL_LLM_MAX_OUTPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_OUTPUT_TOKENS"
+        ),
+    )
+    local_llm_timeout_s: float = Field(
+        default=DEFAULT_LOCAL_TIMEOUT_S,
+        gt=0,
+        le=600,
+        validation_alias=AliasChoices("LOCAL_LLM_TIMEOUT_S", "DOCREVIEW_LOCAL_LLM_TIMEOUT_S"),
+    )
 
     @field_validator("local_llm_base_url", "local_llm_model", mode="before")
     @classmethod
     def blank_local_values_are_unset(cls, value: object) -> object:
         """Treat blank Compose substitutions as absent local configuration."""
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator(
+        "local_llm_max_input_tokens",
+        "local_llm_max_output_tokens",
+        "local_llm_timeout_s",
+        mode="before",
+    )
+    @classmethod
+    def blank_local_numbers_use_defaults(cls, value: object, info: ValidationInfo) -> object:
+        """Fall back to the field default when Compose substitutes an unset numeric key.
+
+        Notes
+        -----
+        Compose writes an empty string for `${VAR:-}` when the caller has no value, and
+        an empty string is not a number. Without this the app would refuse to start for
+        anyone whose dotenv omits the optional local budgets.
+        """
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[str(info.field_name)].default
+        return value
 
     @model_validator(mode="after")
     def resolve_openai_key_slot(self) -> Self:
@@ -112,6 +164,23 @@ class Settings(DotenvFirstSettings):
     def openai_key_slot(self) -> KeySlot | None:
         """Report which slot supplied the OpenAI key without exposing its value."""
         return self._openai_key_slot
+
+    @property
+    def local_llm_enabled(self) -> bool:
+        """Report whether the optional local engine may be assembled at all.
+
+        Notes
+        -----
+        `MODE=prod` disables it whatever the endpoint keys say. A deployment must not be
+        able to answer from an unvetted local model just because a stray variable
+        survived in the environment, and this property is the only gate the provider
+        map and the readiness probe both consult.
+        """
+        return (
+            self.environment != "prod"
+            and self.local_llm_base_url is not None
+            and self.local_llm_model is not None
+        )
 
     @model_validator(mode="after")
     def require_openai_api_key(self) -> Self:

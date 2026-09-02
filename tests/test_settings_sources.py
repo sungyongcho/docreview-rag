@@ -78,3 +78,25 @@ def test_explicit_key_wins_and_blank_explicit_falls_back_to_the_slot(monkeypatch
     assert fallback.openai_key_slot == "dev"
     assert unmatched.openai_api_key is None
     assert unmatched.openai_key_slot is None
+
+
+def test_runtime_settings_disable_the_local_engine_under_prod(monkeypatch, tmp_path):
+    """The same MODE that picks the key slot also decides whether a local model may run.
+
+    Notes
+    -----
+    Both settings classes carry this guard, so a process launched from either surface
+    fails closed. The endpoint values survive so the reason can be reported.
+    """
+    for name in ("LOCAL_LLM_BASE_URL", "LOCAL_LLM_MODEL", "MODE"):
+        monkeypatch.delenv(name, raising=False)
+    pair = "LOCAL_LLM_BASE_URL=http://ollama:11434\nLOCAL_LLM_MODEL=gemma4:e4b\n"
+    dev = tmp_path / "dev.env"
+    dev.write_text(f"MODE=dev\n{pair}", encoding="utf-8")
+    prod = tmp_path / "prod.env"
+    prod.write_text(f"MODE=prod\n{pair}", encoding="utf-8")
+
+    assert Settings(_env_file=dev).local_llm_enabled is True
+    disabled = Settings(_env_file=prod)
+    assert disabled.local_llm_enabled is False
+    assert disabled.local_llm_base_url == "http://ollama:11434"

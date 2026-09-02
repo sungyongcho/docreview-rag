@@ -4,12 +4,26 @@ from decimal import Decimal
 from ipaddress import ip_address
 from typing import Literal, Self
 
-from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    PrivateAttr,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import SettingsConfigDict
 
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.openai_models import resolve_openai_model
-from app.settings_sources import DotenvFirstSettings, Environment, KeySlot, resolve_openai_key
+from app.settings_sources import (
+    DEFAULT_LOCAL_TIMEOUT_S,
+    DotenvFirstSettings,
+    Environment,
+    KeySlot,
+    resolve_openai_key,
+)
 
 type AdminMode = Literal["off", "readonly", "live"]
 
@@ -85,6 +99,41 @@ class ReleaseSettings(DotenvFirstSettings):
         default=None,
         validation_alias=AliasChoices("LOCAL_LLM_API_KEY", "DOCREVIEW_LOCAL_LLM_API_KEY"),
     )
+    # These carry explicit aliases because `env_prefix` alone would only accept the
+    # prefixed spelling, while Compose forwards the bare `LOCAL_LLM_*` names.
+    local_llm_max_input_tokens: int = Field(
+        default=12_000,
+        gt=0,
+        validation_alias=AliasChoices(
+            "LOCAL_LLM_MAX_INPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_INPUT_TOKENS"
+        ),
+    )
+    local_llm_max_output_tokens: int = Field(
+        default=600,
+        gt=0,
+        validation_alias=AliasChoices(
+            "LOCAL_LLM_MAX_OUTPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_OUTPUT_TOKENS"
+        ),
+    )
+    local_llm_timeout_s: float = Field(
+        default=DEFAULT_LOCAL_TIMEOUT_S,
+        gt=0,
+        le=600,
+        validation_alias=AliasChoices("LOCAL_LLM_TIMEOUT_S", "DOCREVIEW_LOCAL_LLM_TIMEOUT_S"),
+    )
+
+    @field_validator(
+        "local_llm_max_input_tokens",
+        "local_llm_max_output_tokens",
+        "local_llm_timeout_s",
+        mode="before",
+    )
+    @classmethod
+    def blank_local_numbers_use_defaults(cls, value: object, info: ValidationInfo) -> object:
+        """Fall back to the field default when Compose substitutes an unset numeric key."""
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[str(info.field_name)].default
+        return value
 
     @field_validator(
         "openai_api_key",
@@ -157,9 +206,16 @@ class ReleaseSettings(DotenvFirstSettings):
 
     @property
     def local_llm_enabled(self) -> bool:
-        """Report whether a complete local model pair is configured in runtime mode."""
+        """Report whether a complete local model pair may serve reviews.
+
+        Notes
+        -----
+        `MODE=prod` disables it whatever the endpoint keys say, so a published build
+        cannot answer from an unvetted local model even if a stray variable reaches it.
+        """
         return (
             self.mode == "runtime"
+            and self.environment != "prod"
             and self.local_llm_base_url is not None
             and self.local_llm_model is not None
         )

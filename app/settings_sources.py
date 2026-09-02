@@ -8,6 +8,12 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 type Environment = Literal["dev", "prod"]
 type KeySlot = Literal["explicit", "dev", "prod"]
 
+# Structured output from a CPU-hosted local model over a full evidence prompt routinely
+# runs past a minute, so the default has to let the first attempt finish. It lives here
+# rather than beside the provider because importing `app.llm` from settings would drag
+# the OpenAI SDK into every process that only wanted to read configuration.
+DEFAULT_LOCAL_TIMEOUT_S = 120.0
+
 
 def _present(value: SecretStr | None) -> SecretStr | None:
     """Treat a blank secret, such as an empty Compose substitution, as absent."""

@@ -138,3 +138,43 @@ def test_admin_cors_origin_is_loopback_only() -> None:
     assert settings.admin_cors_origin == "http://127.0.0.1:3000"
     with pytest.raises(ValidationError, match="loopback"):
         ReleaseSettings(_env_file=None, admin_cors_origin="https://sungyongcho.com")
+
+
+def test_prod_disables_the_local_engine_even_with_a_complete_endpoint_pair(monkeypatch) -> None:
+    """A published build must not answer from an unvetted local model.
+
+    Notes
+    -----
+    The guard lives on `local_llm_enabled` rather than on a compose file, so it holds
+    however the process was launched. It disables rather than raises, because a developer
+    previewing production keeps the local keys in their dotenv.
+    """
+    for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL"):
+        monkeypatch.delenv(name, raising=False)
+    # `mode` resolves through its DOCREVIEW_ alias, so it has to arrive as an env var.
+    monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
+    local = {"LOCAL_LLM_BASE_URL": "http://ollama:11434", "LOCAL_LLM_MODEL": "gemma4:e4b"}
+
+    monkeypatch.setenv("MODE", "dev")
+    assert ReleaseSettings(_env_file=None, **local).local_llm_enabled is True
+
+    monkeypatch.setenv("MODE", "prod")
+    prod = ReleaseSettings(_env_file=None, **local)
+    assert prod.local_llm_enabled is False
+    assert prod.local_llm_base_url == "http://ollama:11434"
+
+
+def test_local_budgets_accept_blank_compose_substitutions(monkeypatch) -> None:
+    """`${LOCAL_LLM_TIMEOUT_S:-}` reaches the app as an empty string, not as an absent key."""
+    monkeypatch.delenv("MODE", raising=False)
+
+    settings = ReleaseSettings(
+        _env_file=None,
+        LOCAL_LLM_TIMEOUT_S="",
+        LOCAL_LLM_MAX_INPUT_TOKENS="",
+        LOCAL_LLM_MAX_OUTPUT_TOKENS="",
+    )
+
+    assert settings.local_llm_timeout_s == 120.0
+    assert settings.local_llm_max_input_tokens == 12_000
+    assert settings.local_llm_max_output_tokens == 600

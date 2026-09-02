@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import datetime
-from decimal import Decimal
 from hashlib import blake2s
 from pathlib import Path
 import secrets
@@ -22,7 +21,6 @@ from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.runtime import RuntimeApiServices
 from app.llm.provider import LLMProvider, OpenAILLMProvider
-from app.llm.schemas import TokenPricing
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
@@ -38,6 +36,9 @@ PUBLIC_BASE_PATH = "/docreview-rag-agent"
 async def _local_engine_readiness(settings: ReleaseSettings) -> dict[str, object]:
     """Probe local model inventory without generating text or exposing its endpoint."""
     if not settings.local_llm_enabled:
+        # A published build must not even reach out, so name the reason instead of probing.
+        if settings.environment == "prod" and settings.local_llm_base_url is not None:
+            return {"enabled": False, "reason": "disabled_in_prod"}
         return {"enabled": False, "reason": "not_configured"}
     base = settings.local_llm_base_url.rstrip("/")
     headers = (
@@ -193,33 +194,24 @@ def build_runtime_services(
         budgets["openai"] = settings.provider_budget()
         secrets.append(api_key)
     if settings.local_llm_enabled:
-        from app.llm.local import LocalLLMProvider
+        from app.llm.local_engine import build_local_provider, local_provider_budget
 
-        protocol = settings.local_llm_protocol
-        if protocol == "auto":
-            protocol = (
-                "openai_responses"
-                if settings.local_llm_base_url.rstrip("/").endswith("/v1")
-                else "ollama"
-            )
-        providers["local"] = LocalLLMProvider(
+        providers["local"] = build_local_provider(
             base_url=settings.local_llm_base_url,
             model_name=settings.local_llm_model,
-            protocol=protocol,
+            protocol=settings.local_llm_protocol,
             api_key=(
                 settings.local_llm_api_key.get_secret_value()
                 if settings.local_llm_api_key is not None
                 else None
             ),
+            timeout_s=settings.local_llm_timeout_s,
         )
-        budgets["local"] = settings.provider_budget().model_copy(
-            update={
-                "max_cost_usd": Decimal("0"),
-                "pricing": TokenPricing(
-                    input_per_million_usd=Decimal("0"),
-                    output_per_million_usd=Decimal("0"),
-                ),
-            }
+        # The local budget is its own definition, not the OpenAI one with prices zeroed:
+        # the token limits belong to the local model, which is usually much smaller.
+        budgets["local"] = local_provider_budget(
+            max_input_tokens=settings.local_llm_max_input_tokens,
+            max_output_tokens=settings.local_llm_max_output_tokens,
         )
         if settings.local_llm_api_key is not None:
             secrets.append(settings.local_llm_api_key.get_secret_value())

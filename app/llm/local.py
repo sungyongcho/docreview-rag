@@ -26,6 +26,7 @@ class LocalLLMProvider(LLMProvider):
         model_name: str,
         protocol: LocalLlmProtocol,
         api_key: str | None = None,
+        timeout_s: float = 120.0,
         client: httpx.AsyncClient | None = None,
         clock: Clock = time.perf_counter_ns,
     ) -> None:
@@ -33,6 +34,8 @@ class LocalLLMProvider(LLMProvider):
             raise ValueError("local LLM base URL and model must be nonblank")
         if protocol not in {"openai_responses", "ollama"}:
             raise ValueError("unsupported local LLM protocol")
+        if timeout_s <= 0:
+            raise ValueError("local LLM timeout must be positive")
         super().__init__(clock=clock)
         self.model_name = model_name.strip()
         self.protocol = protocol
@@ -40,7 +43,7 @@ class LocalLLMProvider(LLMProvider):
         self.api_url = f"local://{local_kind}"
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
-        self._owned_client = httpx.AsyncClient(timeout=30.0) if client is None else None
+        self._owned_client = httpx.AsyncClient(timeout=timeout_s) if client is None else None
         self._client = client or self._owned_client
 
     async def aclose(self) -> None:
