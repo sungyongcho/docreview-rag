@@ -1,10 +1,13 @@
 import { RefreshCw } from "lucide-react";
 
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
-import type { Readiness, ReviewEngineState } from "@/lib/types";
+import { localEngineStatus } from "@/lib/local-models";
+import type { Readiness } from "@/lib/types";
 
 interface SystemStatusProps {
   readiness: Readiness | null;
+  localModel?: string | null;
+  localAllowed?: boolean;
   loading: boolean;
   error: string;
   onRefresh: () => void;
@@ -20,7 +23,7 @@ function value(value: unknown) {
   return String(value);
 }
 
-export function SystemStatus({ readiness, loading, error, onRefresh, embedded = false, helpId }: SystemStatusProps) {
+export function SystemStatus({ readiness, localModel, localAllowed = false, loading, error, onRefresh, embedded = false, helpId }: SystemStatusProps) {
   const corpus = readiness?.corpus;
   const models = readiness?.models ?? {};
   return (
@@ -34,7 +37,7 @@ export function SystemStatus({ readiness, loading, error, onRefresh, embedded = 
       {error && <div className="notice error" role="alert">{error}</div>}
       <div className="metric-grid status-metrics">
         <div className="metric"><span>Overall</span><strong>{readiness?.status ?? "Unknown"}</strong></div>
-        <div className="metric"><span>Mode</span><strong>{readiness?.mode ?? "Unknown"}</strong></div>
+        <div className="metric"><span>Mode</span><strong>{readiness?.environment?.toUpperCase() ?? "Unknown"}</strong></div>
         <div className="metric"><span>Database</span><strong>{value(corpus?.database_connected)}</strong></div>
         <div className="metric"><span>Schema</span><strong>{corpus?.schema_status ?? corpus?.availability ?? "Unknown"}</strong></div>
       </div>
@@ -65,7 +68,7 @@ export function SystemStatus({ readiness, loading, error, onRefresh, embedded = 
           </div>
           <p className="helper">Review capability: {readiness?.review_enabled ? readiness.active_review_model : "disabled"}</p>
         </section>
-        {LOCAL_ENGINE_VISIBLE && <LocalModelPolicy readiness={readiness} />}
+        {LOCAL_ENGINE_VISIBLE && localAllowed && readiness?.environment === "dev" && <LocalModelPolicy readiness={readiness} selected={localModel} />}
       </div>
     </section>
   );
@@ -79,25 +82,17 @@ const LOCAL_ROLES: ReadonlyArray<readonly [string, string]> = [
   ["chat", "casual replies"],
 ];
 
-/** Why the local engine is not serving, in the reader's terms rather than the API's. */
-export function localEngineStatus(engine: ReviewEngineState | undefined): string {
-  if (engine?.enabled) return `Reachable: ${engine.model ?? "configured"} over ${engine.protocol ?? "its protocol"}.`;
-  switch (engine?.reason) {
-    case "disabled_in_prod": return "Disabled because MODE=prod. A production build never answers from a local model.";
-    case "model_unreachable_or_missing": return "The host did not report this model. Pull it, or check that the local-llm profile is up.";
-    case "not_configured": return "Not configured. Set LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL to use one.";
-    default: return "Not configured. Set LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL to use one.";
-  }
-}
-
-function LocalModelPolicy({ readiness }: { readiness: Readiness | null }) {
+function LocalModelPolicy({ readiness, selected }: { readiness: Readiness | null; selected?: string | null }) {
   const local = readiness?.review_engines?.local;
-  const model = local?.model ?? "—";
+  const unavailable = selected && (!local?.enabled || !local.models?.some((item) => item.name === selected && item.selectable));
+  const model = unavailable ? `${selected} (Unavailable)` : selected ?? local?.model ?? (local?.enabled ? "Select a model" : "Unavailable");
   const embedding = readiness?.models?.embedding?.default ?? "—";
   return (
     <section className="surface" data-help="system.local-policy">
       <h2>Local model policy</h2>
-      <p className="helper">Not governed by the OpenAI model policy. The model is whatever LOCAL_LLM_MODEL names.</p>
+      <p className="helper">The selected local model serves these roles when the conversation uses Local LLM.</p>
+      <p className="helper" role="status">{localEngineStatus(local)}</p>
+      {local?.checked_at && <p className="helper">Last checked: {new Date(local.checked_at).toLocaleTimeString()}</p>}
       <div className="policy-list local-policy-list">
         {LOCAL_ROLES.map(([role, detail]) => (
           <div key={role}>
@@ -112,7 +107,20 @@ function LocalModelPolicy({ readiness }: { readiness: Readiness | null }) {
           <small>never local; vectors carry their embedding identity</small>
         </div>
       </div>
-      <p className="helper">{localEngineStatus(local)}</p>
+      {!!local?.models?.length && <>
+        <h3>Installed models</h3>
+        <div className="policy-list local-policy-list local-model-inventory">
+          {local.models.map((item) => <div key={item.name}>
+            <strong>{item.name}</strong>
+            <span>{item.size_bytes === null ? "Size not provided" : `${(item.size_bytes / 1_000_000_000).toFixed(2)} GB`}</span>
+            <small>{[item.family, item.parameter_size, item.quantization_level].filter(Boolean).join(" · ") || "Details not provided"}<br />
+              {item.capabilities?.join(" · ") ?? "Capabilities not provided"}<br />
+              {item.loaded === null ? "Load state not provided" : item.loaded ? "Loaded" : "Not loaded"}
+              {item.selectable ? item.capabilities === null ? " · Selectable; verify server support" : " · Answer model" : " · Not available for answers"}
+            </small>
+          </div>)}
+        </div>
+      </>}
     </section>
   );
 }

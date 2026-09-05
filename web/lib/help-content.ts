@@ -14,6 +14,7 @@ export type HelpScreen =
   | "measure.golden"
   | "measure.runs"
   | "measure.compare"
+  | "measure.defaults"
   | "measure.snapshots"
   | "system";
 
@@ -36,6 +37,7 @@ export const HELP_SCREEN_TITLES: Record<HelpScreen, string> = {
   "measure.runs": "Measure · Runs",
   "measure.compare": "Measure · Compare",
   "measure.snapshots": "Measure · Snapshots",
+  "measure.defaults": "Measure · Defaults",
   system: "System",
 };
 
@@ -240,11 +242,11 @@ const BUILD: HelpTopic[] = [
     body: [
       "The LLM that writes the answer and checks every citation. It is optional: without it, Ask still returns evidence.",
       LOCAL_ENGINE_VISIBLE
-        ? "In dev, OPENAI_API_KEY_LOCAL in .env is used; OPENAI_API_KEY_PROD when MODE=prod. A local model needs LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL instead."
+        ? "In dev, OPENAI_API_KEY_LOCAL in .env is used; OPENAI_API_KEY_PROD when MODE=prod. Connect a model server in Settings › Local LLM; available models are discovered automatically."
         : "In dev, OPENAI_API_KEY_LOCAL in .env is used; OPENAI_API_KEY_PROD when MODE=prod.",
       "The model never sees the corpus directly, only the evidence from step 5, and provider failures are shown as failures rather than disguised as NOT_IN_DOCS.",
     ],
-    tune: "After changing .env run docker compose up -d app, then Re-check.",
+    tune: LOCAL_ENGINE_VISIBLE ? "Local model connections apply immediately from Settings › Local LLM. After changing an OpenAI key, restart the selected local mode and Re-check." : "After changing an OpenAI key, restart the service and Re-check.",
     seeAlso: ["review.readiness", "system.status"],
   },
   {
@@ -259,6 +261,7 @@ const BUILD: HelpTopic[] = [
 ];
 
 const REVIEW: HelpTopic[] = [
+
   {
     id: "review.scope",
     title: "Corpus scope",
@@ -284,7 +287,7 @@ const REVIEW: HelpTopic[] = [
     id: "review.filters",
     title: "Filters",
     body: [
-      "Opens Settings › Review session, where issuers, fiscal years, forms, sections and languages narrow retrieval before ranking.",
+      "Opens Filters above the conversation input, where issuers, fiscal years, forms, sections and languages narrow retrieval before ranking.",
       "The count on the chip is the number of active filter values; the languages filter also selects which lexical lanes run.",
     ],
     seeAlso: ["review.scope", "measure.playground.route_by_language"],
@@ -335,7 +338,7 @@ const REVIEW: HelpTopic[] = [
       "When a run stops early this is also where the reason lives. A budget failure names the exhausted resource with its limit and the observed value; a provider failure names the status, the attempts and the exception; a node failure names the step and its message.",
       "The run identifier is the handle for correlating a failure with the server-side step traces at /runs/{id}/traces.",
     ],
-    tune: "The wall clock, iteration and token ceilings are in Settings › Run limits. Evidence size is separate, in Prompt & evidence. The button in the trace opens whichever one the failure names.",
+    tune: "The wall clock, iteration and token ceilings are under RAG settings › Run limits above the input. Evidence size is in Evidence. Trace buttons open the relevant panel or System status for connection failures.",
     seeAlso: ["review.send", "system.status"],
     optional: true,
   },
@@ -349,6 +352,11 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["measure.playground.candidate_k"],
     optional: true,
   },
+  { id: "review.rag", title: "Conversation RAG settings", body: ["Opens the panel above the input. Retrieval, evidence size and run budgets apply to this conversation; a running request keeps its original settings."], optional: true },
+  { id: "review.retrieval", title: "Custom retrieval", body: ["Customize the current conversation here without leaving the chat. Conversation candidate pools are limited to 100 and must be at least k."], optional: true },
+  { id: "review.evidence-policy", title: "Evidence sent to the model", body: ["Controls conversation history and evidence size. These are separate from the limits for the complete run."], optional: true },
+  { id: "review.run-limits", title: "Run limits", body: ["Iteration, token and wall-clock limits apply across the complete run, including retries. Zero blocks a resource; wall clock is measured in seconds."], optional: true },
+  ...profileFieldTopics("review.retrieval", true),
 ];
 
 const PLAYGROUND: HelpTopic[] = [
@@ -599,6 +607,7 @@ const BUILD_JOBS: HelpTopic[] = [
 ];
 
 const SYSTEM: HelpTopic[] = [
+
   {
     id: "system.status",
     title: "System status",
@@ -614,9 +623,9 @@ const SYSTEM: HelpTopic[] = [
     body: [
       "What the local engine serves when a session selects it: answers and citation checks, query translation, intent classification and casual replies.",
       "Embeddings are never local. Each vector stores the model that produced it, so switching would strand the whole corpus until it was re-embedded.",
-      "The footer says whether the model host is reachable, and why not when it is not.",
+      "The panel refreshes automatically every 30 seconds while visible, showing connection state, installed models and their capabilities. Unavailable selections cannot receive questions.",
     ],
-    tune: "Model, protocol and budgets come from .env and need an app restart. The engine itself is chosen per session in Settings.",
+    tune: "Connect, disconnect or reset the server URL and protocol in Settings › Local LLM. Saved connections apply immediately. One answer model is selected automatically; with several models, choose one below the conversation input. Models refresh without an app restart.",
     seeAlso: ["system.status", "build.stage.answer_model"],
     optional: true,
   },
@@ -648,6 +657,7 @@ const SYSTEM: HelpTopic[] = [
     seeAlso: ["measure.playground.preview_review"],
     optional: true,
   },
+  { id: "system.runtime", title: "Runtime and allowance details", body: ["Development shows API, database and Operations endpoints here. Deployment shows read-only rate, token and cost allowances."], optional: true },
 ];
 
 export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
@@ -659,10 +669,11 @@ export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
   "measure.runs": RUNS,
   "measure.compare": COMPARE,
   "measure.snapshots": SNAPSHOTS,
-  system: SYSTEM,
+  "measure.defaults": [{ id: "measure.defaults.form", title: "Experiment defaults", body: ["Save the golden suite and revision, run mode, snapshots and new-conversation retrieval preset here. Saving does not start a run or replace prompt defaults."] }],
+  system: SYSTEM.filter((topic) => LOCAL_ENGINE_VISIBLE || topic.id !== "system.local-policy"),
 };
 
-const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "runs", "compare", "snapshots"]);
+const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "runs", "compare", "snapshots", "defaults"]);
 
 /** Map the shell's view and tab to a help screen; null where no topics exist (Build › Documents and Jobs). */
 export function helpScreen(view: "review" | "build" | "measure" | "system", tab: string): HelpScreen | null {

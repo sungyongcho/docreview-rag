@@ -37,12 +37,13 @@ import type {
 } from "@/lib/types";
 import { deploymentLabel } from "@/lib/deployment";
 import { loadExperimentDefaults } from "@/lib/storage";
+import { ExperimentDefaultsForm } from "@/components/experiment-defaults";
 import { Metric } from "@/components/metric";
 import { Playground } from "@/components/playground";
 import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
 
-export type MeasureTab = "playground" | "golden" | "runs" | "compare" | "snapshots";
+export type MeasureTab = "playground" | "golden" | "runs" | "compare" | "snapshots" | "defaults";
 
 export const MEASURE_TABS: Array<[MeasureTab, string]> = [
   ["playground", "Playground"],
@@ -50,9 +51,11 @@ export const MEASURE_TABS: Array<[MeasureTab, string]> = [
   ["runs", "Runs"],
   ["compare", "Compare"],
   ["snapshots", "Snapshots"],
+  ["defaults", "Defaults"],
 ];
 
 export interface MeasureWorkspaceProps {
+  environment?: "dev" | "prod";
   live: boolean;
   ready: boolean;
   profile: RetrievalProfile;
@@ -63,7 +66,6 @@ export interface MeasureWorkspaceProps {
   onRefreshJobs: () => void;
   tab: MeasureTab;
   onTabChange: (tab: MeasureTab) => void;
-  onOpenSettings: (category: "experiments" | "review") => void;
   focusResultId?: number | null;
 }
 
@@ -84,9 +86,9 @@ function toCanonical(value: unknown): GoldenCanonical | null {
     : null;
 }
 
-export function MeasureWorkspace({ live, ready, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, onOpenSettings, focusResultId = null }: MeasureWorkspaceProps) {
+export function MeasureWorkspace({ live, ready, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, environment }: MeasureWorkspaceProps) {
   const { notify } = useNotifications();
-  const [experimentDefaults] = useState(loadExperimentDefaults);
+  const [experimentDefaults, setExperimentDefaults] = useState(loadExperimentDefaults);
   // Fixtures seed only the public build; a live build waits for the administrator API.
   const [suites, setSuites] = useState<GoldenSuite[]>(() => (live ? [] : CANNED_SUITES));
   const [suiteId, setSuiteId] = useState<SuiteId>(experimentDefaults.suite_id);
@@ -95,7 +97,6 @@ export function MeasureWorkspace({ live, ready, profile, onProfileChange, onAppl
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"quick" | "matrix">(experimentDefaults.mode);
   const [chunkTargets, setChunkTargets] = useState("500 1200");
-  const [environment, setEnvironment] = useState<"DEV" | "PROD">("PROD");
   const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
   const [resultDetail, setResultDetail] = useState<EvaluationResultDetail | null>(null);
   const [snapshots, setSnapshots] = useState<PublishedSnapshot[]>([]);
@@ -127,9 +128,6 @@ export function MeasureWorkspace({ live, ready, profile, onProfileChange, onAppl
     catch { return null; }
   }, [goldenCaseJson]);
 
-  useEffect(() => {
-    setEnvironment(deploymentLabel(window.location.hostname));
-  }, []);
 
   async function refresh() {
     if (!live) return;
@@ -329,13 +327,15 @@ export function MeasureWorkspace({ live, ready, profile, onProfileChange, onAppl
     <section className="lab-shell measure-workspace">
       <header className="page-heading">
         <div><p className="eyebrow">Measure</p><h1>Measure retrieval before trusting it.</h1></div>
-        <div className="page-badges"><span className="mode-badge">{environment}</span><span className={`mode-badge ${live ? "live" : ""}`}>{live ? "Local operator" : "Read-only portfolio"}</span></div>
+        <div className="page-badges"><span className="mode-badge">{deploymentLabel(environment)}</span><span className={`mode-badge ${live ? "live" : ""}`}>{live ? "Local operator" : "Read-only portfolio"}</span></div>
       </header>
       <nav className="lab-tabs" aria-label="Measure sections">
-        {MEASURE_TABS.map(([id, label]) => (
+        {MEASURE_TABS.filter(([id]) => live || id !== "defaults").map(([id, label]) => (
           <button key={id} type="button" aria-pressed={tab === id} onClick={() => onTabChange(id)}>{label}</button>
         ))}
       </nav>
+
+      {tab === "defaults" && live && <ExperimentDefaultsForm profile={profile} onSaved={(defaults) => { setExperimentDefaults(defaults); setSuiteId(defaults.suite_id); setMode(defaults.mode); setSelectedGoldenRevision(defaults.golden_revision_id); setSnapshotIds([defaults.baseline_snapshot_id, defaults.snapshot_id]); }} />}
 
       {tab === "playground" && <Playground live={live} profile={profile} onProfileChange={onProfileChange} onOpenSnapshots={() => onTabChange("snapshots")} />}
 
@@ -363,8 +363,8 @@ export function MeasureWorkspace({ live, ready, profile, onProfileChange, onAppl
           <details data-help="measure.runs.profile"><summary>Retrieval profile · {profileSummary(profile)}</summary><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" /></details>
           <button className="button primary" type="button" data-help="measure.runs.queue" aria-disabled={!canRun || busy} onClick={() => void runEvaluation()}><Play size={15} /> {busy ? "Queueing…" : "Queue evaluation"}</button>
           {!ready && <p className="helper">Corpus not ready. Finish Build steps 2–4.</p>}
-          <p className="helper">Uses the current review&apos;s retrieval profile. Change presets in Settings › Review session.</p>
-          <button className="button ghost" type="button" onClick={() => onOpenSettings("experiments")}>Defaults</button>
+          <p className="helper">Uses the current review&apos;s retrieval profile. Change presets beside the conversation input.</p>
+          <button className="button ghost" type="button" onClick={() => onTabChange("defaults")}>Defaults</button>
         </section>
         <div className="panel-stack run-results">
           <section className="surface">

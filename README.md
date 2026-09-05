@@ -59,7 +59,7 @@ PostgreSQL + pgvector + language-aware lexical index
 ## 요구사항
 
 - [uv](https://docs.astral.sh/uv/)
-- Docker Engine과 Docker Compose
+- Docker Engine과 Docker Compose 2.24.4+
 - Node.js 24+와 npm 11+ — Next 개발·테스트 시
 - 선택: `OPENAI_API_KEY`, 또는 `MODE`별 슬롯 `OPENAI_API_KEY_LOCAL`(dev)·`OPENAI_API_KEY_PROD`(prod) — 실제 LLM 리뷰
 - 선택: `DART_API_KEY` — DART 원문 수집
@@ -97,68 +97,249 @@ OPENAI_API_KEY_PROD=<your-prod-openai-key>
 OpenAI 키 없이 실행됩니다.
 
 OpenAI 키는 세 슬롯 중 하나로 둡니다. `OPENAI_API_KEY`가 있으면 항상 그 키를 씁니다.
-없으면 `MODE=dev`(기본)는 `OPENAI_API_KEY_LOCAL`, `MODE=prod`는 `OPENAI_API_KEY_PROD`를
-읽습니다. dev(live operator)는 공개 rate/cost 한도를 적용하지 않고 prod(readonly)는
+없으면 `rag-dev`는 `OPENAI_API_KEY_LOCAL`, `rag-prod`는 `OPENAI_API_KEY_PROD`를 읽습니다.
+모드는 명령이 지정하므로 `.env`에 `MODE`를 적지 않습니다. dev(live operator)는 공개 rate/cost 한도를 적용하지 않고 prod(readonly)는
 적용하므로, 슬롯마다 다른 프로젝트 키를 두면 비용 경계가 분리됩니다. `/ready`의
 `review_engines.openai.key_slot`이 어느 슬롯이 쓰였는지 값 없이 알려 줍니다.
 
-로컬 실행에서는 checkout의 `.env`가 process 환경변수보다 우선합니다. OpenAI embedding
-backfill까지 사용하려면 다음 선택을 함께 둡니다.
+일반 설정과 API 키는 기존 `.env` 우선 규칙을 유지합니다. 명령이 지정한 모드는 오래된
+`.env` 값보다 우선하며, 로컬 모델 연결의 별도 우선순위는 아래에 설명합니다.
+OpenAI embedding backfill까지 사용하려면 다음 선택을 함께 둡니다.
 
 ```dotenv
 EMBEDDING_PROVIDER=openai
 ```
 
-### dev / prod Compose 이원화
+### dev / prod는 명령으로 선택
 
-`docker/docker-compose.yml`은 `db`와 `app`만 정의하는 공통 base이고, overlay 두 개가 그 위에
-얹힙니다. `docker-compose.dev.yml`은 prod에서 고를 수 없는 개발 전용 기능을 더하고,
-`docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서 재현합니다.
+기본 `docker/docker-compose.yml`은 `db`·`app`·`web`을 포함하는 dev 스택입니다. 기본 명령은
+`docker compose --project-directory . -f docker/docker-compose.yml up -d`와 `docker compose --project-directory . -f docker/docker-compose.yml down`이며 `.env`의 `MODE`나 `COMPOSE_FILE`로
+모드를 선택하지 않습니다. 다음 프로젝트 명령은 Local Operations까지 함께 관리합니다.
 
-`.env.example`의 `COMPOSE_FILE`이 dev overlay를 기본으로 잡으므로 평소에는 명령이
-바뀌지 않습니다. prod 화면은 명시적으로 지정합니다. `-f`가 `COMPOSE_FILE`을 이기고,
-웹 번들 성격이 image 빌드 인자라 `--build`가 필요합니다.
+저장소에서 한 번 별칭을 불러옵니다. 매 터미널에서 사용하려면 자신의 `.zshrc`에
+이 파일의 **실제 절대 경로**를 사용하는 `source` 한 줄을 추가합니다. 이미 등록했다면
+중복 추가할 필요가 없습니다.
 
 ```bash
-docker compose --project-directory . -f docker/docker-compose.yml -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+source ./alias.sh
+rag-dev up -d
 ```
 
-운영 VM용 파일은 `deploy/gcp/docker-compose.deploy.yml`이며 배포 스크립트가 그것만
-복사하므로 개발 overlay는 배포 경로에 닿지 않습니다.
+```bash
+rag-dev down
+rag-prod up -d
+rag-prod down
+rag-dev logs -f
+rag-prod ps
+```
+
+`rag-dev-up/down`, `rag-prod-up/down`도 같은 동작의 단축 명령입니다. 어느 디렉터리에서
+실행해도 별칭을 등록한 이 저장소를 대상으로 합니다. 다른 프로젝트의 `dev-up` 등은 바꾸지
+않습니다. 별칭 없이도 `bash scripts/run_local.sh dev up -d`처럼 실행할 수 있습니다.
+
+**두 모드에서 여는 웹 주소는 같습니다.**
+
+```text
+http://localhost:8000/docreview-rag-agent/
+```
+
+`127.0.0.1:8000`도 사용할 수 있습니다. 포트를 바꾸려면 `.env`에 `APP_PORT`를 지정합니다.
+브라우저가 웹과 API에 같은 주소로 요청하고 Next가 내부 API로 전달하므로 별도의 3000번
+화면이나 API 주소를 선택할 필요가 없습니다. API를 중지해도 웹과 상태 안내는 열립니다.
+
+| 실행 | 화면·권한 | 소스 수정 |
+|---|---|---|
+| `rag-dev up -d` | 개발 도구, 로컬 모델, Prompt·RAG 편집, Build·Measure 실행 | 웹·API 자동 반영 |
+| `rag-prod up -d` | 공개 화면 미리보기, 개발용 변경 작업과 Local LLM 차단 | 웹·API 자동 반영 |
+| 실제 배포 | 공개 정적 웹과 배포 API | 배포용 빌드·배포 필요 |
+
+로컬 prod는 **공개 화면을 편집하며 확인하는 미리보기**입니다. 소스가 갱신돼도 prod 권한은
+유지됩니다. 실제 배포 구성에는 개발 서버와 소스 마운트가 들어가지 않습니다. dev/prod는
+같은 로컬 스택을 전환해서 사용하며 DB와 데이터 볼륨은 유지합니다. `down -v`는 데이터를
+지우므로 프로젝트 명령에서는 허용하지 않습니다.
 
 ### 로컬 모델로 답변하기 (선택)
 
-답변 모델을 OpenAI 대신 이 기계의 모델로 돌릴 수 있습니다. 검색은 그대로입니다.
-모델 host는 dev overlay의 `local-llm` profile에 있고, 가중치는 named volume에 한 번만
-내려받습니다.
+**Ollama는 사용자가 별도로 설치하고 실행하는 모델 서버입니다. 이 프로젝트의 Compose에는
+Ollama 컨테이너가 없습니다.** DocReview는 실행 중인 Ollama에 질문을 보내 답변을 받습니다.
+
+```text
+브라우저 → DocReview 앱 → HTTP 요청 → 사용자가 실행한 Ollama → 선택한 모델
+```
+
+#### 먼저 알아둘 주소의 차이
+
+`127.0.0.1` 또는 `localhost`는 **지금 그 프로그램이 실행되는 곳의 자기 자신**입니다.
+PC에서 실행한 앱이라면 PC 자신이지만, Docker 안의 앱이라면 그 컨테이너 자신을 가리킵니다.
+따라서 PC에 설치한 Ollama를 Docker의 앱에서 찾을 때 `127.0.0.1`을 넣으면 다른 곳을 찾게 됩니다.
+
+Compose의 `extra_hosts` 설정은 `host.docker.internal`이라는 이름으로 PC에 접근할 수 있게
+해 줍니다. **이 이름이 있다고 Ollama의 접속 허용 설정까지 바뀌지는 않습니다.** Ollama가
+PC 내부에서만 요청을 받도록 실행 중이면 Docker의 앱은 접속할 수 없습니다.
+
+| 어디에 입력하는 주소인가 | 기본 예시 |
+|---|---|
+| 브라우저에서 DocReview 열기 | `http://localhost:8000/docreview-rag-agent/` |
+| Docker의 DocReview가 같은 PC의 Ollama에 연결 | `http://host.docker.internal:11434` |
+| PC에서 직접 실행한 앱이 같은 PC의 Ollama에 연결 | `http://127.0.0.1:11434` |
+| 다른 PC의 Ollama에 연결 | 그 PC의 접근 가능한 주소와 포트 |
+
+웹 Settings의 Server URL은 **백엔드가 모델 서버에 접근할 주소**입니다. 기본값이 자동으로
+채워져 있어도 Ollama 실행, 설치 모델, 백엔드에서 접근 가능한 수신 주소가 필요합니다.
+
+#### 1. 기존 서버와 설치 모델 확인
+
+설치 전이라면 [공식 Linux 설치 안내](https://docs.ollama.com/linux)를 따릅니다.
+systemd 서비스로 설치했다면 상태를 확인하고, 꺼져 있을 때 시작합니다.
 
 ```bash
-docker compose --project-directory . -f docker/docker-compose.yml --profile local-llm up -d ollama
-docker compose --project-directory . -f docker/docker-compose.yml --profile local-llm exec ollama ollama pull gemma4:e4b
+systemctl status ollama --no-pager
+sudo systemctl start ollama
+ollama list
+ollama ps
 ```
 
-그다음 `.env`에 endpoint와 모델을 둡니다. compose network 안에서 서비스 이름으로
-찾아가므로 host 주소가 아닙니다. Ollama URL에 `/v1`을 붙이면 OpenAI Responses
-프로토콜로 잘못 해석되므로 붙이지 않습니다.
+`ollama list`는 **설치된 모델**, `ollama ps`는 **현재 메모리에 올라간 모델**을 보여 줍니다.
+서버는 켜져 있어도 모델을 아직 사용하지 않았다면 `ps`가 비어 있을 수 있습니다.
+`ollama status`는 서버 상태 확인 명령이 아닙니다.
+
+원하는 모델이 설치되어 있지 않을 때만 내려받습니다.
+
+```bash
+ollama pull gemma4:e4b
+```
+
+서비스 계정과 일반 사용자 계정은 모델 저장소가 다를 수 있습니다. 서버를 다른 계정으로
+새로 띄웠을 때 목록이 비었다면 기존 서버와 저장소부터 확인하고 다시 다운로드하지 않습니다.
+
+#### 2. Docker에서 접속할 수 있도록 서버 수신 주소 확인
+
+```bash
+ss -ltn 'sport = :11434'
+```
+
+`127.0.0.1:11434`에서만 수신하면 Docker에서는 접근할 수 없습니다. 기존 systemd 서비스는
+다음처럼 **별도 설정 파일**을 추가합니다. 원본 서비스 파일은 바꾸지 않습니다.
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0:11434"\n' | sudo tee /etc/systemd/system/ollama.service.d/99-docreview-listen.conf >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+```
+
+이 설정은 다른 네트워크 인터페이스에서도 연결을 받게 하므로 신뢰하는 개발 환경에서
+사용합니다. 프로젝트와 진단 스크립트는 서비스나 방화벽을 자동 변경하지 않습니다.
+편집기로 `systemctl edit`을 쓴다면 실제로 설정이 저장됐는지 `systemctl cat ollama`로 확인합니다.
+
+systemd 없이 직접 실행하고 **같은 포트에 기존 서버가 없을 때**는 다음 명령도 가능합니다.
+
+```bash
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+```
+
+이 명령은 서버 프로세스라 터미널을 사용합니다. 계속 백그라운드로 서빙하려면 이미 설치된
+systemd 서비스를 사용합니다. 별도 터미널의 `OLLAMA_HOST` 값은 실행 중인 서비스에 적용되지
+않습니다. `address already in use`라면 두 번째 서버를 띄우지 말고 기존 서비스를 확인합니다.
+[Ollama의 수신 주소 설명](https://docs.ollama.com/faq#how-can-i-expose-ollama-on-my-network)
+
+#### 3. 대화 프롬프트 없이 모델만 준비
+
+```bash
+ollama run gemma4:e4b "" --keepalive=-1s
+ollama ps
+```
+
+빈 문자열은 대화를 시작하지 않고 모델만 메모리에 올립니다. 명령이 끝나면 터미널로
+돌아오고 Ollama 서비스는 계속 요청을 받습니다. `ps`의 `Forever`로 현재 유지 상태를
+확인합니다. 웹에서 질문할 때도 모델은 필요에 따라 로드되므로 미리 올리는 단계는 선택입니다.
+
+`Forever`는 재부팅이나 서비스 재시작 뒤의 자동 로드를 뜻하지 않습니다. 이후 요청의
+유지 시간 설정에 따라 해제될 수도 있습니다. 모델만 메모리에서 내리려면 다음을 사용합니다.
+
+```bash
+ollama stop gemma4:e4b
+```
+
+이는 서버 종료와 다릅니다. 서버 자체의 시작·중지는 사용자가 관리합니다.
+[모델 미리 로드와 유지 시간](https://docs.ollama.com/faq#how-can-i-preload-a-model-into-ollama-to-get-faster-response-times)
+
+#### 4. Settings에서 연결하고 대화창에서 모델 선택
+
+`Settings → Local LLM`에서 주소를 확인하고 **Connect & save**를 누릅니다. 모델명은
+미리 설정하지 않습니다. 서버와 모델 정보가 확인되면 즉시 화면에 반영됩니다.
+
+- **Connect & save:** 확인한 연결을 앱에 저장합니다. 새 주소 확인에 실패하면 기존 연결은 유지됩니다.
+- **Disconnect:** 비활성 상태를 저장합니다. 기본값으로 다시 자동 연결하지 않습니다.
+- **Reset to initial connection:** 웹 저장값 대신 초기 설정으로 되돌아갑니다.
+
+서버 주소는 앱 전체에 적용하고, 대화 입력창 아래의 Answer engine·Local model 선택은
+대화별로 저장합니다. 답변 가능한 모델 하나는 자동 적용하고 여러 개면 선택합니다.
+엔진은 자동으로 OpenAI에서 Local LLM으로 전환하지 않습니다.
+
+초기 설정의 우선순위는 다음과 같습니다.
+
+```text
+웹에서 저장한 연결 > 프로세스 환경변수 > .env > 기본값
+```
+
+직접 실행한 호스트 앱은 `http://127.0.0.1:11434`, Compose는
+`http://host.docker.internal:11434`를 기본값으로 사용합니다. `.env`는 선택적인 초기값입니다.
 
 ```dotenv
-LOCAL_LLM_BASE_URL=http://ollama:11434
-LOCAL_LLM_MODEL=gemma4:e4b
+LOCAL_LLM_BASE_URL=http://host.docker.internal:11434
 ```
 
-`docker compose --project-directory . -f docker/docker-compose.yml up -d app`으로 재기동한 뒤 Settings › Review session에서 Answer
-engine을 Local LLM으로 바꾸면 사이드바에 `LOCAL MODEL` 배지가 뜹니다. 상태는 System ›
-System status의 Local model policy panel이 보여 줍니다. 임베딩은 이 경로로 바뀌지
-않습니다. 벡터마다 생성 모델 정체성이 저장되어 있어 바꾸면 전체를 다시 임베딩해야
-합니다.
+웹에 저장한 값은 `data/local-settings/local-llm.json`에 보존되며 앱 재시작 후에도 유지됩니다.
+`.env`를 바꿔도 웹 저장값이 우선하므로 초기값을 사용하려면 Reset을 누릅니다. 초기 환경변수를
+변경했을 때만 `rag-dev up -d`로 앱을 재생성합니다. Settings의 변경에는 재생성이 필요 없습니다.
+명시적 Disconnect와 prod 차단은 어떤 초기 주소보다 우선합니다.
 
-CPU 전용 기계에서는 구조화 출력이 느립니다. 기본 제한 시간은 120초이고
-`LOCAL_LLM_TIMEOUT_S`, `LOCAL_LLM_MAX_OUTPUT_TOKENS`로 조정합니다. 실패하면 화면이
-제한 시간 초과인지 host 미도달인지 스키마 위반인지 문장으로 알려 줍니다.
+HTTP/HTTPS와 사용자 지정 포트를 지원합니다. 사용자 지정 URL에 포트를 생략하면 HTTP는
+80, HTTPS는 443이며 11434를 자동으로 붙이지 않습니다. HTTPS 서버는 실제 TLS와 신뢰할 수
+있는 인증서가 필요합니다. HTTP 주소의 글자만 바꾸어서는 연결되지 않습니다.
+[HTTPX 인증서 검증](https://www.python-httpx.org/advanced/ssl/)
 
-**배포에는 이 경로가 없습니다.** `MODE=prod`면 endpoint 값이 남아 있어도 엔진이 켜지지
-않고 `/ready`가 `disabled_in_prod`를 보고하며, 공개 번들에는 선택 UI 자체가 컴파일되지
-않습니다.
+Ollama URL에는 `/v1`을 붙이지 않습니다. Auto detect에서 `/v1`은 기존 OpenAI Responses
+호환 서버를 구분하는 접미사입니다. Protocol에서 명시적으로 선택할 수도 있습니다.
+
+#### 5. 상태 표시와 진단
+
+Settings와 System의 Local model policy는 설치 모델·용량·파라미터·양자화·지원 기능·로드
+상태를 표시합니다. 답변용으로 확인되지 않은 모델과 임베딩 전용 모델은 답변 선택에서 제외됩니다.
+서버 연결 성공과 답변 모델 존재 여부는 별도로 표시합니다. 검색용 임베딩 설정은 바뀌지 않습니다.
+
+화면이 보이는 동안 30초마다 확인하고 숨겨진 탭에서는 중지합니다. 화면 복귀·온라인 복구와
+연결 저장 직후에도 확인합니다. 백엔드는 10초 캐시를 공유하며 상세 정보는 digest별로 재사용하고
+전체 모델 조회는 2초로 제한합니다. 상태 조회는 다운로드·모델 로드·추론을 실행하지 않습니다.
+선택 모델이 삭제되거나 연결이 끊기면 선택을 유지하면서 실행을 막고 복구를 자동 반영합니다.
+
+```bash
+rag-diagnose
+# 별칭 없이 실행하거나 웹 포트를 별도로 지정할 때
+bash scripts/diagnose_ollama.sh
+bash scripts/diagnose_ollama.sh --web-url http://localhost:18080
+```
+
+진단은 현재 앱의 모드와 활성 설정을 먼저 읽고, 웹·API → 백엔드의 모델 서버 접근 → 모델
+목록·지원 기능·로드 상태 → 웹 반영 순서로 확인합니다. `.env`의 예전 주소로 대신 검사하지
+않습니다. Docker health 표시만으로 성공을 판단하지 않고 HTTP 응답을 확인합니다.
+
+| 출력 | 의미와 조치 |
+|---|---|
+| `PASS` | 해당 단계가 확인됨. 미로드 모델도 정상 대기 상태일 수 있음 |
+| `FAIL` | 설정·연결 문제. 함께 표시된 주소·서비스·TLS·인증 안내를 확인 |
+| `SKIP` | 도구나 실행 환경 때문에 미확인, 또는 prod에서 의도적으로 생략 |
+| 종료 코드 `0 / 1 / 2` | 확인 완료 / 확인된 문제 / 진단 불완전 |
+
+호스트 HTTP는 성공하지만 Docker에서 실패하고 loopback 수신이 확인되면 위 2단계로 안내합니다.
+원격 Ollama를 쓴다면 PC에 Ollama CLI가 없어도 됩니다. 진단은 서비스·방화벽·설정 파일을
+바꾸거나 모델을 다운로드·로드·추론하지 않습니다. prod에서는 로컬 서버에 요청하지 않습니다.
+
+CPU 모델의 실제 답변은 상태 조회보다 오래 걸릴 수 있습니다. 개별 호출 기본 제한은 120초이고
+고급 설정은 `LOCAL_LLM_TIMEOUT_S`·`LOCAL_LLM_MAX_INPUT_TOKENS`·`LOCAL_LLM_MAX_OUTPUT_TOKENS`입니다.
+대화 전체 한도는 RAG settings → Run limits에서 조절합니다. 연결 성공이 답변 품질 검증 완료를
+뜻하지는 않으며, 실패 원인은 응답의 Run trace에서 확인합니다.
 
 ## 5분 로컬 실행
 
@@ -247,7 +428,7 @@ http://127.0.0.1:8000/docreview-rag-agent/
 상태와 로그는 다음과 같이 확인합니다.
 
 ```bash
-curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/docreview-rag-agent/api/health/
 docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 ```
 
@@ -257,98 +438,65 @@ docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 docker compose --project-directory . -f docker/docker-compose.yml stop app
 ```
 
-## Next.js 개발 모드
+## Next.js 로컬 라이브 편집
 
-### 통합 로컬 실행
+dev와 prod 미리보기 모두 `web/` 소스를 직접 마운트하고 Next 개발 서버로 엽니다.
+`node_modules`와 `.next`는 별도 볼륨이며 API는 읽기 전용 `app/` 소스를 감지해 자동 reload합니다.
+호스트 소스 경로는 Dockerfile이 아니라 Compose에서 연결합니다.
 
-`.env`의 `MODE=dev|prod`와 host-facing 포트를 읽어 실행 구성을 선택합니다.
+| 변경한 것 | 반영 방법 |
+|---|---|
+| `web/` 코드·CSS | 저장하면 두 로컬 모드 모두 자동 반영 |
+| `app/` Python 코드 | 저장하면 API 자동 재시작; 실행 중 작업은 interrupted가 될 수 있음 |
+| 웹 의존성·lockfile | 현재 모드의 `rag-dev restart web` 또는 `rag-prod restart web` |
+| Python 의존성·lockfile | 현재 모드 명령에 `up --build -d` 사용 |
+| 웹에서 저장한 Local LLM 연결 | 즉시 적용; 재시작 불필요 |
+| `.env`의 초기 연결값·포트 | 현재 모드 명령으로 `up -d`; 웹 저장값은 계속 우선 |
+| dev/prod 전환 | `rag-dev up -d` / `rag-prod up -d` |
+| 실제 배포용 코드 | 정적 빌드·배포 절차 사용; 로컬 prod 미리보기와 구분 |
 
-| Mode | UI | API | 추가 서비스 |
-|---|---|---|---|
-| `dev` | `http://HOST:WEB_PORT/docreview-rag-agent/` | `http://HOST:APP_PORT` | Local Operations |
-| `prod` | `http://HOST:APP_PORT/docreview-rag-agent/` | 동일 origin | host Next/operator 없음 |
+현재 모드·capability를 기준으로 화면과 API가 같은 권한을 적용합니다. localhost라는 이유로
+prod를 DEV로 표시하지 않습니다. 같은 주소에서 기존 dev 대화를 prod로 열었을 때 허용되지
+않는 설정이 있으면 전송을 막고 새 대화를 안내하며, 원래 저장값이나 엔진을 임의 변경하지 않습니다.
+이전 3000번 origin의 브라우저 대화는 8000번으로 자동 이전되지 않고 원래 저장소에 남습니다.
 
-```bash
-scripts/run_local.sh
-```
+### 대화 설정 위치
 
-기존 volume을 보존해 서비스를 교체하려면 `docker compose --project-directory . -f docker/docker-compose.yml down` 후 다시 실행합니다.
-`docker compose --project-directory . -f docker/docker-compose.yml down -v`는 PostgreSQL 데이터를 삭제하므로 일반 재시작에 사용하지 않습니다.
+| 위치 | 설정 |
+|---|---|
+| 입력창 아래 | Answer engine·Local model·선택 상태 |
+| 입력창 주변 | Corpus·retrieval preset·Filters·준비 상태 |
+| 입력창 위 확장 패널 | Filters / Retrieval / Evidence / Run limits |
+| Settings → Prompt | 현재 대화 지침·보호 지침·미리보기·프롬프트만 새 대화 기본값으로 저장 |
+| Settings → Local LLM | 앱 전체 서버 연결·저장·해제·초기값 복귀 |
+| Settings → Data & help | 저장 용량·튜토리얼·문서·초기화·대화 삭제 |
+| Measure → Defaults / Snapshots | 실험 기본값 / 공개 snapshot 조회·비교 |
+| System → System status / Operations | 상태·환경 정보 / 로컬 작업·알림 |
 
-Dev Settings에서는 conversation prompt/evidence 전송 정책과 workflow budget을 조정할 수
-있습니다. 고정 evidence guard는 교체할 수 없습니다. 공개 Prod Settings는 현재 rate/token/cost
-한도만 읽기 전용으로 보여주며 custom prompt, retrieval, eval, snapshot 생성은 차단합니다.
-Prod의 Snapshots 화면은 저장된 evaluation artifact만 비교하므로 provider 호출을 만들지 않습니다.
+대화 설정은 대화별로 저장되며 실행 중인 요청은 시작 당시 설정을 유지합니다. Prompt 기본값
+저장은 추가 지침만 바꾸고 기존 대화나 다른 기본값을 덮어쓰지 않습니다. 공개 화면에서는
+허용된 필터·preset·snapshot 비교만 제공하며 개발용 설정과 Local LLM 메뉴는 표시하지 않습니다.
 
-FastAPI와 PostgreSQL은 Docker로 실행하고 Next dev server만 호스트에서 띄웁니다.
-
-```bash
-docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
-
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
-  scripts/run_operator_web.sh
-```
-
-개발 화면:
-
-```text
-http://127.0.0.1:3000/docreview-rag-agent/
-```
-
-operator 모드는 실제 `/admin/*` API를 사용합니다. 공개 Firebase build는 같은 화면을
-보여주지만 Build·Measure의 실행 버튼은 비활성화되고 저장된 측정 결과만 표시합니다.
+하단 메뉴 위의 `DEV MODE` / `PROD MODE` 배지는 서버의 실제 모드를 표시합니다.
+Local model 사용 배지와 별개이며, 하단 System 버튼에서 API·DB 상태를 확인합니다. 시스템 healthy와 모델 사용 가능 여부는
+별개입니다. 답변 대기 표시의 6단계는 실제 서버 이벤트만 반영하고 작은 글리프는 장식입니다.
+Build의 준비·검증 7단계는 완료 후에도 번호를 유지하며, 평가하지 않은 상태를 품질 검증
+완료로 표시하지 않습니다. 튜토리얼과 오류 이동 버튼은 이 단계 번호와 실제 설정 위치를 따릅니다.
 
 ### 로컬 Operations
 
-현재 checkout의 검사와 로컬 Docker 서비스를 웹에서 제어하려면 host 전용 console을
-실행합니다. 이 스크립트는 임시 인증 token, `127.0.0.1:18001` Operations API, Next dev
-server를 함께 띄웁니다. app container를 중지해도 `http://127.0.0.1:3000` 화면은 남습니다.
+`rag-dev up -d`는 호스트의 loopback Operations API와 임시 토큰을 관리합니다. 명령은
+registry의 고정 argv만 `shell=False`로 실행하며 Docker 소켓이나 루트 `.env` 전체를 웹에
+전달하지 않습니다. `rag-dev down`과 prod 전환은 이 프로젝트가 시작한 Operations만 종료합니다.
+API를 중지해도 단일 웹 화면은 남아 상태 확인과 가능한 복구 작업을 할 수 있습니다.
 
-```bash
-scripts/run_local_operator_web.sh
-```
+기본 `docker compose --project-directory . -f docker/docker-compose.yml up -d`만 사용할 수도 있지만 호스트 Operations는 연결되지 않습니다.
+필요하면 `rag-dev up -d`를 사용합니다. `scripts/run_local_operator_web.sh`는 같은 dev 실행의
+호환 진입점입니다. prod와 공개 화면에는 Operations URL·토큰·메뉴를 제공하지 않습니다.
 
-3000번이 사용 중이면 다른 고정 포트를 양쪽 service에 함께 전달합니다.
-
-```bash
-DOCREVIEW_OPERATOR_WEB_PORT=3010 scripts/run_local_operator_web.sh
-```
-
-Operations는 registry에 고정된 argv만 `shell=False`로 실행합니다. public build와 원격
-SSH tunnel UI에는 command URL이나 token이 없으므로 화면 자체가 나타나지 않습니다.
-corpus 수집·ingest·embedding·BM25 작업은 Build 파이프라인에 남고, DB reset·volume 삭제·
-deploy·Git stage/commit은 웹 명령으로 제공하지 않습니다. operator가 붙어 있으면 Build의
-runtime strip이 DB 시작·migration plan/apply·app 재빌드를 같은 registry 명령으로 실행합니다.
-
-local Compose는 `.env`의 `OPENAI_API_KEY`(또는 `MODE`와 `OPENAI_API_KEY_LOCAL`·
-`OPENAI_API_KEY_PROD` 슬롯), `DART_API_KEY`, `SEC_USER_AGENT`, 선택적
-`EMBEDDING_PROVIDER`를 app container에 전달합니다. `LOCAL_LLM_*` 키는 dev overlay
-에서만 전달되며 `MODE=prod`에서는 값이 있어도 엔진이 켜지지 않습니다. 코드나 frontend가 바뀐 뒤에는
-Operations의 **Build and start app** 또는 다음 명령으로 image를 다시 만듭니다.
-
-Linux bind mount 쓰기는 host data group으로 맞춥니다. 기본 GID는 1000이며 다른 환경은
-`.env`에 `HOST_GID=<id -g 결과>`를 설정합니다. host-owned `data/`는 group write 권한을
-유지해야 Build·Measure의 artifact·manifest 작업이 동작합니다.
-
-```bash
-docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
-```
-
-배포본은 현재 `canned/read-only` 정책을 유지합니다. `/admin/*`, Usage, local Operations는
-노출하지 않습니다. 배포 환경에서 live 관리 기능을 열려면 인증·감사 log·원격 job 취소·
-비용 상한을 별도 설계한 뒤에만 확장합니다.
-
-서비스 UI는 시작·30초 주기·탭/네트워크 복귀 때 `/health`와 `/ready`를 확인합니다. API가
-응답하지 않으면 retry/reload 전까지 blocking dialog를 표시하고, DB·schema·corpus가
-degraded면 실제 원인과 Build/System status 이동 또는 Continue를 제공합니다. 복구되지
-않는 `Try again`은 DB degraded 경고에 표시하지 않습니다. 긴 대화는 workspace
-우측 scrollbar로 메시지만 스크롤되며 sidebar·topbar·composer는 고정됩니다.
-
-튜토리얼은 Build 파이프라인의 순서를 그대로 따릅니다. Build, 단계 카드 목록, Next step
-콜아웃, New review, composer, evidence, Measure(operator 모드에서는 Operations까지)의 실제
-control을 spotlight하며 단계마다 해당 화면으로 먼저 이동합니다. 강조된 control을 직접
-클릭해 동작시키거나 Next로 진행할 수 있고 reduced-motion 환경에서는 pointer animation을
-멈춥니다. live operator가 빈 corpus로 처음 열면 Build에서 시작합니다.
+Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 권한이 필요합니다.
+기본 GID는 1000이며 다른 환경은 `.env`의 `HOST_GID`를 자신의 `id -g` 결과에 맞춥니다.
+스크립트는 DB reset·볼륨 삭제·배포·Git stage/commit을 자동 실행하지 않습니다.
 
 <!-- operator-commands:start -->
 | ID | Command | Purpose | Confirmation |
@@ -472,7 +620,7 @@ Pipeline의 단계 카드는 해당 corpus/evaluation 작업의 stage, committed
 Job Center에서는 domain/status filter, queue position, request/result provenance, 안전한
 Retry/Cancel을 확인합니다. Job 상태는 PostgreSQL에 저장되며 진행 기록은 job마다 한 번에
 하나만 쓰고 종료 상태를 마지막에 기록합니다. app 재시작으로 중단된 작업은 자동 재실행하지
-않고 `interrupted`로 남깁니다. Settings의 Local runtime에서 완료·실패 desktop notification을
+않고 `interrupted`로 남깁니다. System › Operations에서 완료·실패 desktop notification을
 opt-in할 수 있습니다.
 
 조절 가능한 retrieval profile:
@@ -615,7 +763,7 @@ scripts/verify_clean_checkout.sh
 
 ## Docker와 데이터 수명주기
 
-로컬 Compose는 `db`와 `app` 두 서비스를 제공합니다. DB만 실행하거나 전체 서비스를
+로컬 Compose는 `db`·`app`·`web` 세 서비스를 제공합니다. DB만 실행하거나 전체 서비스를
 실행할 수 있습니다.
 
 ```bash
@@ -674,7 +822,7 @@ scripts/run_operator_web.sh
 | `sbert`/reranker import 오류 | `uv sync --extra cpu` |
 | Next 클릭이 동작하지 않음 | 개발 URL과 `allowedDevOrigins`, browser console |
 | 리뷰가 답 없이 끝남 | 메시지의 **Run trace**를 편다. 실패 종류와 걸린 한도, 멈춘 단계가 그대로 나오고 해당 설정을 여는 버튼이 붙는다 |
-| `budget_exceeded` | `resource`가 어느 한도인지 본다. `wall_clock_s` 기본값은 120초이며 토큰 예산이 아니다. 셋 다 Settings › Run limits |
+| `budget_exceeded` | `resource`가 어느 한도인지 본다. `wall_clock_s` 기본값은 120초이며 토큰 예산이 아니다. 한도는 대화창의 RAG settings › Run limits |
 | `provider_failure` | `status`와 `details`. 로컬 모델이면 대개 제한 시간 초과나 host 미도달, 또는 스키마 미준수 |
 | `node_error` | `error_type`과 `message`. 모델이 아니라 그 앞 단계가 실패한 것이다 |
 | job이 `interrupted` | 애플리케이션 재시작에 잘린 것이다. 자동으로 이어받지 않으므로 Retry를 직접 누른다 |
@@ -715,8 +863,8 @@ uv run python -m app.cli ingest \
 | Runtime strip shortcuts | implemented | Build's runtime strip runs `db-start`, migration plan/apply, and `app-start` through Local Operations when an operator is attached; command lines otherwise | build-pipeline component tests; browser run pending an operator session |
 | Release UI | verified | test, typecheck, isolated static build, fixed shell chrome, canned build never calls `/admin/*` | static live and canned builds and local browser QA |
 | Build pipeline | verified | client-derived stage state from `/ready`, `/admin/corpus`, `/admin/jobs`; manifest registry and on-disk source counts; canned fixture labelled as such | pipeline unit tests, admin ordering tests, and a local browser job run |
-| Key slots | verified | `MODE`-selected OpenAI key (`OPENAI_API_KEY_LOCAL` / `_PROD`) with explicit override, `key_slot` in `/ready` | settings tests and local `/ready` on the rebuilt container |
-| Local answer engine | implemented | `MODE=prod` refuses the local engine and `/ready` says `disabled_in_prod`; dev/prod Compose overlays with an opt-in Ollama profile; public bundles compile the engine out; System status reports what it serves and locks the embedding row | settings, readiness, Compose-layer and web tests; browser run pending a pulled model |
+| Key slots | verified | `rag-dev`/`rag-prod`-selected OpenAI key (`OPENAI_API_KEY_LOCAL` / `_PROD`) with explicit override, `key_slot` in `/ready` | settings tests and local `/ready` on the rebuilt container |
+| Local answer engine | verified | Command-selected prod blocks local discovery and execution; dev supports persisted web connection settings, automatic metadata and per-conversation model selection | 218 focused Python tests, 176 web tests, real Ollama RAG response with a citation, prod HTTP/UI block, connection persistence across down/up |
 | Job ledger | verified | coalesced progress writes, terminal write last with retry, worker survives ledger failures | offline ledger tests, live PostgreSQL suite, stuck ingest reproduced and fixed locally |
 <!-- product-roadmap:end -->
 

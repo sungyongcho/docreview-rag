@@ -1,5 +1,7 @@
 "use client";
 
+import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
+
 import {
   Activity,
   CircleHelp,
@@ -17,12 +19,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
+import { ConversationSettings, type ConversationSettingsTab } from "@/components/conversation-settings";
+import { LocalEngineSettings } from "@/components/local-engine-settings";
 import { ComposerBanner, ComposerToolbar, composerBanner } from "@/components/composer-toolbar";
 import { HelpOverlay } from "@/components/help-overlay";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
-import { ReviewProgressSteps, reviewProgressFromEvent, type ReviewProgressState } from "@/components/review-progress";
+import { ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, type ReviewProgressState } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
@@ -35,6 +39,7 @@ import {
   streamReview,
 } from "@/lib/api";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
+import { profileCompatibilityIssue } from "@/lib/profile-compatibility";
 import { failureMessage, failureReport } from "@/lib/pipeline";
 import { helpScreen } from "@/lib/help-content";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
@@ -68,6 +73,8 @@ export function ServiceShell() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [profile, setProfile] = useState<ReviewSessionProfile>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [conversationTab, setConversationTab] = useState<ConversationSettingsTab | null>(null);
+  const ragTrigger = useRef<HTMLButtonElement>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [progress, setProgress] = useState<ReviewProgressState | null>(null);
@@ -78,18 +85,20 @@ export function ServiceShell() {
   const reviewAbort = useRef<AbortController | null>(null);
   /** First-run routing fires once per page load and is cancelled by any explicit navigation before it. */
   const firstRunRouted = useRef(false);
-  const adminLive = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
-  const operationsAvailable = operatorAvailable();
+  const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
   const runtimeHealth = useRuntimeHealth();
+  const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
+  const environment = permissions?.environment ?? runtimeHealth.readiness?.environment;
+  const modeLabel = `${environment?.toUpperCase() ?? "CHECKING"} MODE`;
+  const adminLive = adminBuild && permissions?.can_edit_prompt_policy === true;
+  const localAllowed = LOCAL_ENGINE_VISIBLE && permissions?.environment === "dev" && permissions.can_configure_local_llm;
+  const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
+  const initialized = useRef(false);
   const { notify } = useNotifications();
-  const operatorJobs = useOperatorJobs(adminLive, runtimeHealth.check);
+  const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check);
 
   useEffect(() => {
-    const restored = loadConversations();
-    const initial = restored.length ? restored : [newConversation()];
     const shouldOpenTour = window.localStorage.getItem(ONBOARDING_KEY) !== "done";
-    setConversations(initial);
-    setActiveId(initial[0].id);
     setTourOpen(shouldOpenTour);
     // The tour owns the screen on a first visit; a persisted open Help state waits until it is dismissed.
     setHelpOpen(!shouldOpenTour && loadHelpOpen());
@@ -98,19 +107,32 @@ export function ServiceShell() {
 
   useEffect(() => () => reviewAbort.current?.abort(), []);
   useEffect(() => {
-    void getCapabilities().then((value) => setCapabilities(adminLive ? value : {
-      ...value,
-      can_edit_prompt_policy: false,
-      can_edit_run_limits: false,
-      can_edit_golden: false,
-      can_build_snapshot: false,
-      can_run_evaluation: false,
-      can_change_custom_retrieval: false,
-      can_query_snapshot: false,
-      can_use_operations: false,
-      can_compare_published_snapshots: true,
-    })).catch(() => setCapabilities(null));
-  }, [adminLive]);
+    let cancelled = false;
+    void getCapabilities().then((value) => {
+      if (cancelled) return;
+      if (!["dev", "prod"].includes(value.environment)) { setCapabilities(null); return; }
+      if (!initialized.current) {
+        initialized.current = true;
+        const restored = loadConversations();
+        const initial = restored.length ? restored : [newConversation(adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
+        setConversations(initial);
+        setActiveId(initial[0].id);
+      }
+      setCapabilities(adminBuild ? value : {
+        ...value,
+        can_edit_prompt_policy: false,
+        can_edit_run_limits: false,
+        can_edit_golden: false,
+        can_build_snapshot: false,
+        can_run_evaluation: false,
+        can_change_custom_retrieval: false,
+        can_query_snapshot: false,
+        can_use_operations: false,
+        can_configure_local_llm: false,
+      });
+    }).catch(() => { if (!cancelled) setCapabilities(null); });
+    return () => { cancelled = true; };
+  }, [adminBuild, runtimeHealth.checkedAt]);
 
   const active = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
@@ -119,7 +141,19 @@ export function ServiceShell() {
   const activeSessionProfile = active?.profile ?? profile;
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
   const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt });
-  const sendBlocked = banner?.kind === "empty" || banner?.kind === "vector";
+  const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
+  const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
+  const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
+  const sendBlocked = banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
+
+  useEffect(() => {
+    if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
+    const targetId = active.id;
+    setConversations((current) => saveConversations(current.map((conversation) => {
+      if (conversation.id !== targetId || conversation.profile?.local_model) return conversation;
+      return { ...conversation, profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), local_model: localModel } };
+    })));
+  }, [active?.id, activeSessionProfile.engine, activeSessionProfile.local_model, localModel, localAllowed, compatibilityIssue]);
 
   useEffect(() => {
     if (pendingStage === null || view !== "build" || buildTab !== "pipeline") return;
@@ -143,13 +177,28 @@ export function ServiceShell() {
     setView(target.view);
   }
 
-  function openSettings(category?: SettingsCategory) {
+  function openConversationSettings(tab: ConversationSettingsTab) {
+    setSettingsOpen(false);
+    navigate({ view: "review" });
+    setConversationTab(tab);
+  }
+
+  // Saved error actions keep their old category identifiers but open the current owner.
+  function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
+    if (category === "review") return openConversationSettings("filters");
+    if (category === "limits") {
+      if (adminLive) return openConversationSettings("limits");
+      return navigate({ view: "system", tab: "status" });
+    }
+    if (category === "runtime") return navigate({ view: "system", tab: "status" });
+    if (category === "experiments") return navigate({ view: "measure", tab: "defaults" });
+    if (category === "snapshot") return navigate({ view: "measure", tab: "snapshots" });
     setSettingsCategory(category);
     setSettingsOpen(true);
   }
 
   function createReview() {
-    const conversation = newConversation();
+    const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
     persist([conversation, ...conversations]);
     setActiveId(conversation.id);
     setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
@@ -158,13 +207,13 @@ export function ServiceShell() {
 
   function removeReview(id: string) {
     const remaining = conversations.filter((conversation) => conversation.id !== id);
-    const next = remaining.length ? remaining : [newConversation()];
+    const next = remaining.length ? remaining : [newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE)];
     persist(next);
     if (activeId === id) setActiveId(next[0].id);
   }
 
   function clearReviews() {
-    const conversation = newConversation();
+    const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
     persist([conversation]);
     setActiveId(conversation.id);
   }
@@ -221,7 +270,7 @@ export function ServiceShell() {
     const conversationId = active.id;
     const pending = [...active.messages, userMessage];
     let preparedEvidence: EvidenceHit[] = [];
-    const selectedProfile = active.profile ?? profile;
+    const selectedProfile = { ...(active.profile ?? profile), local_model: localModel };
     appendMessage(conversationId, userMessage);
     try {
       let evidence: EvidenceHit[] = [];
@@ -315,15 +364,19 @@ export function ServiceShell() {
       custom_retrieval: nextProfile,
       applied_from_evaluation: source ?? null,
     };
-    setProfile(sessionProfile);
-    if (active) updateActive(active.messages, sessionProfile);
+    updateSessionProfile(sessionProfile);
     navigate({ view: "review" });
   }
 
+  /** Patch preferences without replacing messages appended by an in-flight response. */
   function updateSessionProfile(update: Partial<ReviewSessionProfile>) {
-    const next = { ...(active?.profile ?? profile), ...update };
-    setProfile(next);
-    if (active) updateActive(active.messages, next);
+    const targetId = active?.id;
+    setProfile((current) => ({ ...current, ...update }));
+    if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
+      conversation.id === targetId
+        ? { ...conversation, updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
+        : conversation,
+    )));
   }
 
   function updateLabProfile(nextProfile: RetrievalProfile) {
@@ -342,8 +395,7 @@ export function ServiceShell() {
       retrieval_preset: "custom" as const,
       custom_retrieval: retrieval,
     };
-    setProfile(next);
-    if (active) updateActive(active.messages, next);
+    updateSessionProfile(next);
     navigate({ view: "review" });
     notify(`Snapshot ${snapshot.label} applied to this review.`, "success", "snapshot-review");
   }
@@ -367,7 +419,7 @@ export function ServiceShell() {
   }
 
   async function useSelectedEvidence(message: ChatMessage) {
-    if (!active || !message.question || !message.candidateToken || busy) return;
+    if (!active || !message.question || !message.candidateToken || busy || sendBlocked) return;
     setBusy(true);
     const conversationId = active.id;
     const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
@@ -465,6 +517,7 @@ export function ServiceShell() {
   );
 
   async function runOperation(commandId: string) {
+    if (!operationsAvailable) return;
     try {
       const command = (await getOperatorCommands()).find((item) => item.command_id === commandId);
       if (!command) throw new Error(`Operations does not offer ${commandId}.`);
@@ -495,20 +548,22 @@ export function ServiceShell() {
             </div>
           ))}
         </div>
+        <div className={`runtime-mode-badge ${environment ?? "checking"}`} role="note" aria-label={modeLabel} title={`Server environment: ${modeLabel}`}>
+          <strong>{environment?.toUpperCase() ?? "CHECKING"}</strong><span>MODE</span>
+        </div>
         <div className="sidebar-nav">
           <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>Build</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">, needs attention</span></>}</button>
           <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>Measure</span></button>
-          <button data-tour="system" className="nav-secondary" type="button" aria-pressed={view === "system"} onClick={() => navigate({ view: "system" })}><Activity size={17} /><span>System</span></button>
+          <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={`System · ${healthLabel(runtimeHealth.kind)}`} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>System</span><span className="system-health"><i aria-hidden="true" />{healthLabel(runtimeHealth.kind)}</span></button>
           <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>Settings</span></button>
         </div>
-        {LOCAL_ENGINE_VISIBLE && activeSessionProfile.engine === "local" && (
+        {localAllowed && activeSessionProfile.engine === "local" && (
           <div className="local-mode-badge" role="note">
             <TriangleAlert size={14} aria-hidden="true" />
-            <span className="local-mode-label">LOCAL MODEL</span>
+            <span className="local-mode-label">LOCAL MODEL{localModel ? ` · ${localModel}` : ""}{localIssue ? " · Unavailable" : ""}</span>
             <span className="local-mode-note">
-              Answers come from the model on this machine, not OpenAI. Quality, citation
-              discipline and latency are not comparable, and nothing leaves the machine.
-              Change it in Settings › Review session.
+              Answers use the selected model server. Choose an engine and model below the conversation input.
+              API health and model availability are checked separately.
             </span>
           </div>
         )}
@@ -516,9 +571,9 @@ export function ServiceShell() {
 
       <section className="workspace">
         <header className="topbar">
-          <button className="icon-button" type="button" aria-label="Toggle sidebar" onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
+          <button className="icon-button" type="button" aria-label="Toggle sidebar" title={modeLabel} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
           <div><strong>{topbarTitle}</strong><span>Evidence-first SEC and DART filing review</span></div>
-          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className="icon-button help-toggle" aria-label="Toggle help" aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button><button type="button" className={`health ${healthBadge(runtimeHealth.kind)}`} onClick={() => navigate({ view: "system", tab: "status" })}><i />{healthLabel(runtimeHealth.kind)}</button></div>
+          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className="icon-button help-toggle" aria-label="Toggle help" aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
         {view === "review" && <section className="review-workspace">
@@ -548,22 +603,23 @@ export function ServiceShell() {
                   key={message.id}
                   message={message}
                   latestEvidence={message.id === latestEvidenceId}
-                  busy={busy}
+                  busy={busy || sendBlocked}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
                   onOpenFix={openSettings}
                 />
               ))}
-              {busy && <div className="thinking">{progress ? <ReviewProgressSteps state={progress} /> : "Retrieving and checking evidence…"}</div>}
+              {busy && <div className="thinking">{progress ? <ReviewProgressSteps state={progress} /> : <><WaitingGlyph /> Retrieving and checking evidence…</>}</div>}
             </div>
           </div>
           <div className="composer-wrap" data-tour="composer">
+            {conversationTab && <ConversationSettings tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => { setConversationTab(null); (ragTrigger.current ?? document.querySelector<HTMLButtonElement>('button[data-help="review.filters"]'))?.focus(); }} />}
             <ComposerToolbar
               profile={activeSessionProfile}
               onChange={updateSessionProfile}
-              canUseCustom={capabilities?.can_change_custom_retrieval ?? adminLive}
+              canUseCustom={adminBuild && permissions?.can_change_custom_retrieval === true}
               onLocked={() => notify(PROD_LOCKED_MESSAGE, "warning", "prod-locked")}
-              onOpenFilters={() => openSettings("review")}
+              onOpenFilters={() => conversationTab === "filters" ? setConversationTab(null) : openConversationSettings("filters")}
               readiness={readiness}
               live={adminLive}
               onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
@@ -572,6 +628,12 @@ export function ServiceShell() {
               <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
+            <div className="composer-controls">
+              {localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
+              {adminLive && <button ref={ragTrigger} className="chip" type="button" data-help="review.rag" aria-expanded={conversationTab !== null} onClick={() => conversationTab ? setConversationTab(null) : openConversationSettings("retrieval")}>RAG settings</button>}
+            </div>
+            {compatibilityIssue && <p className="notice error" role="alert">{compatibilityIssue}</p>}
+            {localIssue && <p className="helper" role="status">{localIssue} <button className="inline-link" type="button" onClick={() => openSettings("local")}>Open Local LLM settings</button></p>}
             {banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
               : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}
@@ -579,7 +641,7 @@ export function ServiceShell() {
         </section>}
 
         {view === "build" && <BuildWorkspace
-          live={adminLive}
+          live={adminBuild && permissions?.can_build_snapshot === true}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
@@ -597,7 +659,8 @@ export function ServiceShell() {
           onNavigate={navigate}
         />}
         {view === "measure" && <MeasureWorkspace
-          live={adminLive}
+          environment={permissions?.environment}
+          live={adminBuild && permissions?.can_run_evaluation === true}
           ready={runtimeHealth.kind === "healthy"}
           profile={resolvedRetrievalProfile(activeSessionProfile)}
           onProfileChange={updateLabProfile}
@@ -607,13 +670,14 @@ export function ServiceShell() {
           onRefreshJobs={() => void operatorJobs.refresh()}
           tab={measureTab}
           onTabChange={setMeasureTab}
-          onOpenSettings={(category) => openSettings(category)}
           focusResultId={measureResultId}
         />}
         {view === "system" && <SystemWorkspace
           live={adminLive}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
+          localModel={localModel}
+          localAllowed={localAllowed}
           checking={runtimeHealth.checking}
           onRefresh={() => void runtimeHealth.check()}
           operationsAvailable={operationsAvailable}
@@ -621,7 +685,7 @@ export function ServiceShell() {
           onTabChange={setSystemTab}
         />}
       </section>
-      <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={capabilities ?? { can_edit_prompt_policy: adminLive, can_edit_run_limits: adminLive, can_edit_golden: adminLive, can_build_snapshot: adminLive, can_run_evaluation: adminLive, can_change_custom_retrieval: adminLive, can_query_snapshot: adminLive, can_use_operations: operationsAvailable, can_compare_published_snapshots: true }} readiness={runtimeHealth.readiness} onChange={(next) => { setProfile(next); if (active) updateActive(active.messages, next); }} onClose={() => setSettingsOpen(false)} onOpenMeasure={(tab) => { setSettingsOpen(false); navigate({ view: "measure", tab }); }} onOpenSystem={(tab) => { setSettingsOpen(false); navigate({ view: "system", tab }); }} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
+      <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
       {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} onClose={() => setHelp(false)} location={location} />
       <ServiceHealthModal

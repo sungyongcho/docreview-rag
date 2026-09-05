@@ -46,6 +46,7 @@ export interface PromptPolicy {
 
 export interface ReviewSessionProfile {
   engine: ReviewEngine;
+  local_model?: string | null;
   corpus_scope: CorpusScope;
   issuers: string[];
   languages: Array<"en" | "ko">;
@@ -99,16 +100,30 @@ export interface ModelPolicyRole {
   dimensions: number | null;
 }
 
+export interface LocalModelInfo {
+  name: string;
+  selectable: boolean;
+  size_bytes: number | null;
+  family: string | null;
+  parameter_size: string | null;
+  quantization_level: string | null;
+  capabilities: string[] | null;
+  loaded: boolean | null;
+}
+
 /** One entry of `/ready.review_engines`: what an engine is, and why it is not serving. */
 export interface ReviewEngineState {
   enabled?: boolean;
   model?: string | null;
   protocol?: string;
-  reason?: string;
+  reason?: string | null;
   key_slot?: string | null;
+  models?: LocalModelInfo[];
+  checked_at?: string;
 }
 
 export interface Readiness {
+  environment?: "dev" | "prod";
   status: "ready" | "degraded";
   mode: "canned" | "runtime";
   admin_mode: "off" | "readonly" | "live";
@@ -453,6 +468,7 @@ export const DEFAULT_EXPERIMENT_DEFAULTS: ExperimentDefaults = {
 
 export const DEFAULT_SESSION_PROFILE: ReviewSessionProfile = {
   engine: "openai",
+  local_model: null,
   corpus_scope: "auto",
   issuers: [],
   languages: [],
@@ -479,6 +495,8 @@ export const DEFAULT_SESSION_PROFILE: ReviewSessionProfile = {
 };
 
 export interface Capabilities {
+  environment: "dev" | "prod";
+  can_configure_local_llm: boolean;
   can_edit_prompt_policy: boolean;
   can_edit_run_limits: boolean;
   can_edit_golden: boolean;
@@ -488,6 +506,15 @@ export interface Capabilities {
   can_query_snapshot: boolean;
   can_use_operations: boolean;
   can_compare_published_snapshots: boolean;
+}
+
+export interface LocalLLMConnection {
+  base_url: string | null;
+  initial_base_url: string;
+  protocol: "auto" | "ollama" | "openai_responses";
+  source: "saved" | "environment" | "dotenv" | "default" | "disabled" | "invalid";
+  error: string | null;
+  local: ReviewEngineState;
 }
 
 export interface ReleaseLimits {

@@ -10,7 +10,7 @@ export interface ComposerToolbarProps {
   /** `capabilities.can_change_custom_retrieval`; a public build choosing Custom calls `onLocked` instead. */
   canUseCustom: boolean;
   onLocked: () => void;
-  /** Opens Settings › Review session. */
+  /** Opens Filters above the conversation input. */
   onOpenFilters: () => void;
   readiness: Readiness | null;
   live: boolean;

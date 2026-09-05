@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { Metric } from "@/components/metric";
 import { useNotifications } from "@/components/notifications";
+import { DesktopJobNotifications, RuntimeSettings } from "@/components/runtime-settings";
 import { Operations } from "@/components/operations";
 import { SystemStatus } from "@/components/system-status";
 import { apiBase, getProviderUsage } from "@/lib/api";
@@ -20,6 +21,8 @@ export interface SystemWorkspaceProps {
   /** Runtime is healthy; raw administrator requests stay disabled while the API is down or degraded. */
   ready?: boolean;
   readiness: Readiness | null;
+  localModel?: string | null;
+  localAllowed?: boolean;
   checking: boolean;
   onRefresh: () => void;
   operationsAvailable: boolean;
@@ -54,9 +57,9 @@ function sampleEvaluationRequest(): EvaluationRequest {
   };
 }
 
-export function SystemWorkspace({ live, ready = true, readiness, checking, onRefresh, operationsAvailable, tab, onTabChange }: SystemWorkspaceProps) {
+export function SystemWorkspace({ live, ready = true, readiness, localModel, localAllowed = false, checking, onRefresh, operationsAvailable, tab, onTabChange }: SystemWorkspaceProps) {
   const tabs: Array<[SystemTab, string]> = [["status", "System status"]];
-  if (operationsAvailable) tabs.push(["operations", "Operations"]);
+  if (live && operationsAvailable) tabs.push(["operations", "Operations"]);
   if (live) tabs.push(["api", "API inspector"], ["usage", "Usage"]);
   const activeTab: SystemTab = tabs.some(([id]) => id === tab) ? tab : "status";
 
@@ -75,8 +78,8 @@ export function SystemWorkspace({ live, ready = true, readiness, checking, onRef
         ))}
       </nav>
 
-      {activeTab === "status" && <SystemStatus readiness={readiness} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" />}
-      {activeTab === "operations" && operationsAvailable && <Operations embedded helpId="system.operations" />}
+      {activeTab === "status" && <><SystemStatus readiness={readiness} localModel={localModel} localAllowed={localAllowed} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" /><RuntimeSettings readiness={readiness} live={live} /></>}
+      {activeTab === "operations" && live && <><DesktopJobNotifications />{operationsAvailable ? <Operations embedded helpId="system.operations" /> : <p className="helper">Start scripts/run_local.sh to connect Local Operations.</p>}</>}
       {activeTab === "api" && live && <ApiInspector ready={ready} />}
       {activeTab === "usage" && live && <UsagePanel />}
     </section>

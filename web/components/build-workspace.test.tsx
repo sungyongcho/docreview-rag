@@ -219,7 +219,7 @@ describe("Build workspace", () => {
     render(<Harness live readiness={READY_RUNTIME} />);
 
     expect(await screen.findByText("1 listed filing not ingested yet (SEC)")).toBeInTheDocument();
-    expect(screen.getByText("All steps done")).toBeInTheDocument();
+    expect(screen.getByText("Corpus ready · evaluation recorded")).toBeInTheDocument();
     expect(screen.getByText("30 / 30 filings on disk")).toBeInTheDocument();
     const ingestButtons = screen.getAllByRole("button", { name: "Ingest all manifests" });
     for (const button of ingestButtons) expect(button).toBeEnabled();

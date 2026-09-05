@@ -85,6 +85,6 @@ describe("build flavour", () => {
       (topic) => topic.id === "build.stage.answer_model",
     );
 
-    expect(operatorTopic?.body.join(" ")).toContain("LOCAL_LLM_BASE_URL");
+    expect(operatorTopic?.body.join(" ")).toContain("Settings › Local LLM");
   });
 });

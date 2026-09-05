@@ -17,6 +17,7 @@ import type {
   OperatorJobBoard,
   Readiness,
   Capabilities,
+  LocalLLMConnection,
   ReleaseLimits,
   RetrievalProfile,
   ReviewSessionProfile,
@@ -211,6 +212,24 @@ export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
 
 export function getCapabilities(): Promise<Capabilities> {
   return request<Capabilities>("/capabilities");
+}
+
+export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/connection", { signal });
+}
+
+export function saveLocalLLMConnection(base_url: string, protocol: LocalLLMConnection["protocol"]): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/connection", {
+    method: "POST", body: JSON.stringify({ base_url, protocol }),
+  });
+}
+
+export function disconnectLocalLLM(): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/disconnect", { method: "POST" });
+}
+
+export function resetLocalLLMConnection(): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/reset", { method: "POST" });
 }
 
 export function getReleaseLimits(): Promise<ReleaseLimits> {

@@ -446,7 +446,7 @@ describe("derivePipeline", () => {
 
     expect(stage(listed, "answer_model").numbers).toEqual(["OpenAI · gpt-5.6-terra · prod key", "Local · qwen3"]);
     expect(stage(blocked, "answer_model").numbers).toEqual(["openai · disabled", "local · not_configured"]);
-    expect(operator.ANSWER_MODEL_HINT).toContain("LOCAL_LLM_BASE_URL");
+    expect(operator.ANSWER_MODEL_HINT).toContain("Settings › Local LLM");
   });
 
   it("names the cause of a failure instead of printing its status code", async () => {
@@ -479,7 +479,7 @@ describe("derivePipeline", () => {
     const operator = await import("./pipeline");
 
     expect(operator.failureMessage(timeout)).toContain("LOCAL_LLM_TIMEOUT_S");
-    expect(operator.failureMessage(refused)).toContain("local-llm compose profile");
+    expect(operator.failureMessage(refused)).toContain("separately installed model server");
     expect(operator.failureMessage({ status: "schema_rejected", details: ["x"] })).toContain("Smaller local models");
   });
 
@@ -674,18 +674,22 @@ describe("derivePipeline", () => {
     expect(pipeline.next).toBeNull();
   });
 
-  it("counts a succeeded evaluation job as measured even before results are listed", () => {
+  it("does not treat a succeeded job without evaluation results as measured", () => {
     const succeeded = job({ job_id: "eval-1", domain: "evaluation", kind: "quick", status: "succeeded" });
     const pipeline = derivePipeline(liveInput({ evaluationResults: 0, jobs: [succeeded] }));
-    expect(stage(pipeline, "evaluate").status).toBe("done");
+    expect(stage(pipeline, "evaluate").status).toBe("action");
+    expect(stage(pipeline, "evaluate").statusDetail).toBe("No results");
     expect(stage(pipeline, "evaluate").numbers).toEqual(["0 results", "0 snapshots"]);
+    expect(pipeline.corpusReady).toBe(true);
+    expect(stage(pipeline, "ask").status).toBe("done");
   });
 
   it("asks for a quick evaluation when retrieval is ready but nothing was measured", () => {
     const pipeline = derivePipeline(liveInput({ evaluationResults: 0 }));
     const evaluate = stage(pipeline, "evaluate");
     expect(evaluate.status).toBe("action");
-    expect(evaluate.numbers).toEqual(["Not measured yet."]);
+    expect(evaluate.statusDetail).toBe("Not run");
+    expect(evaluate.numbers).toEqual(["0 results", "0 snapshots"]);
     expect(evaluate.hint).toContain("quick evaluation");
     expect(pipeline.next?.id).toBe("evaluate");
   });

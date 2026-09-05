@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HELP_KEY, ONBOARDING_KEY, saveConversations } from "@/lib/storage";
+import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile } from "@/lib/storage";
 import type { Readiness } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { TOUR_TARGETS } from "./onboarding";
@@ -10,6 +10,7 @@ import { ServiceShell, terminalAnswer } from "./service-shell";
 const OPERATOR_URL = "http://operator.test";
 
 const READY_RUNTIME: Readiness = {
+  environment: "prod",
   status: "ready",
   mode: "runtime",
   admin_mode: "readonly",
@@ -37,7 +38,7 @@ const EMPTY_CORPUS: Readiness["corpus"] = {
 };
 
 function liveReadiness(corpus: Readiness["corpus"]): Readiness {
-  return { ...READY_RUNTIME, status: corpus.documents ? "ready" : "degraded", admin_mode: "live", corpus };
+  return { ...READY_RUNTIME, environment: "dev", status: corpus.documents ? "ready" : "degraded", admin_mode: "live", corpus };
 }
 
 /** Live-build API stub: runtime endpoints plus empty `/admin/*` and operator lists; `ready` lets a test hold back `/ready`. */
@@ -48,7 +49,8 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
     let payload: unknown = {};
     if (url.endsWith("/health")) payload = { status: "ok" };
     else if (url.endsWith("/ready")) payload = await ready();
-    else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+    else if (url.endsWith("/capabilities")) payload = { environment: "dev", can_configure_local_llm: true, can_edit_prompt_policy: true, can_edit_run_limits: true, can_edit_golden: true, can_build_snapshot: true, can_run_evaluation: true, can_change_custom_retrieval: true, can_query_snapshot: true, can_use_operations: true, can_compare_published_snapshots: true };
+    else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
     else if (url.endsWith("/snapshots")) payload = url.includes("/admin/") ? [] : { snapshots: [] };
     else if (url.endsWith("/admin/jobs")) payload = { jobs: [], active_count: 0, queued_count: 0 };
     else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
@@ -96,6 +98,7 @@ function stubPublicApi() {
     if (url.endsWith("/health")) payload = { status: "ok" };
     else if (url.endsWith("/ready")) payload = READY_RUNTIME;
     else if (url.endsWith("/capabilities")) payload = {
+      environment: "prod", can_configure_local_llm: false,
       can_edit_prompt_policy: false, can_edit_run_limits: false, can_edit_golden: false,
       can_build_snapshot: false, can_run_evaluation: false, can_change_custom_retrieval: false,
       can_query_snapshot: false, can_use_operations: false, can_compare_published_snapshots: true,
@@ -112,6 +115,92 @@ function stubPublicApi() {
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
+
+it("keeps restored development settings intact in prod, blocks both review paths, and creates safe new conversations", async () => {
+  cleanup();
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+  vi.stubEnv("NEXT_PUBLIC_OPERATOR_BASE_URL", OPERATOR_URL);
+  vi.stubEnv("NEXT_PUBLIC_OPERATOR_TOKEN", "test-token");
+  const original = { ...DEFAULT_SESSION_PROFILE, engine: "local" as const, local_model: "saved-model", prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, additional_instructions: "Saved experiment" } };
+  saveDefaultProfile(original);
+  saveConversations([{ id: "saved-dev", title: "Saved dev review", createdAt: "2026-09-04", updatedAt: "2026-09-04", profile: original, messages: [{ id: "evidence", role: "assistant", text: "Prior evidence", question: "Saved question", candidateToken: "saved-token", pinnedChunkIds: [1], evidence: [{ chunk_id: 1, doc_id: "doc", item: "7", kind: "text", citation: "c1", start_char: 0, end_char: 1, source_sha256: "abc", body: "Evidence", context_header: "7", score: 1 }] }] }]);
+  const fetchMock = stubPublicApi();
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    render(<LiveShell />);
+    await screen.findByRole("button", { name: "Saved dev review" });
+    expect(screen.getByRole("alert")).toHaveTextContent("Its saved settings have not been changed.");
+    fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "New question" } });
+    expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByPlaceholderText("Ask a question about the filing corpus"), { key: "Enter" });
+    expect(screen.queryByLabelText("Answer engine")).not.toBeInTheDocument();
+    const modeBadge = screen.getByRole("note", { name: "PROD MODE" });
+    expect(modeBadge).toHaveAttribute("title", "Server environment: PROD MODE");
+    expect(modeBadge.nextElementSibling).toHaveClass("sidebar-nav");
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "PROD MODE");
+    expect(screen.getByRole("button", { name: /Use selected evidence/, hidden: true })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
+    expect(screen.queryByRole("button", { name: "Operations" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Local model policy" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("PROD").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "New review" }));
+    expect(loadConversations().find((item) => item.id === "saved-dev")?.profile).toEqual(original);
+    expect(loadConversations().find((item) => item.id !== "saved-dev")?.profile).toEqual(DEFAULT_SESSION_PROFILE);
+    expect(loadDefaultProfile()).toEqual(original);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).startsWith(OPERATOR_URL) && !String(url).includes("/review/stream"))).toBe(true);
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
+});
+
+it("makes no administrator or local connection calls before capabilities are known", async () => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus);
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith("/capabilities") ? new Promise<Response>(() => undefined) : ordinaryFetch(input, init));
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    render(<LiveShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).startsWith(OPERATOR_URL))).toBe(true);
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); }
+});
+
+it("keeps the sidebar mode unknown until the server reports development", async () => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus);
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/capabilities") || String(input).endsWith("/ready")) await pending;
+    return ordinaryFetch(input, init);
+  });
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    render(<LiveShell />);
+    expect(screen.getByRole("note", { name: "CHECKING MODE" })).toBeInTheDocument();
+    expect(screen.queryByRole("note", { name: "DEV MODE" })).not.toBeInTheDocument();
+    await act(async () => release());
+    const modeBadge = await screen.findByRole("note", { name: "DEV MODE" });
+    expect(modeBadge).toHaveAttribute("title", "Server environment: DEV MODE");
+    expect(modeBadge.nextElementSibling).toHaveClass("sidebar-nav");
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "DEV MODE");
+    expect(screen.queryByText(/LOCAL MODEL/)).not.toBeInTheDocument();
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); }
+});
 
 describe("service shell", () => {
   beforeEach(() => {
@@ -130,7 +219,7 @@ describe("service shell", () => {
   it("navigates between Build, Measure and System from the sidebar", async () => {
     const fetchMock = stubPublicApi();
     render(<ServiceShell />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "healthy" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "System · healthy" })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
     expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
@@ -141,7 +230,7 @@ describe("service shell", () => {
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Playground" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "System" }));
+    fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
     expect(screen.getByRole("heading", { name: "Runtime readiness" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "System status" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "Operations" })).not.toBeInTheDocument();
@@ -182,8 +271,8 @@ describe("service shell", () => {
       let payload: unknown = {};
       if (url.endsWith("/health")) payload = { status: "ok" };
       else if (url.endsWith("/ready")) payload = { ...READY_RUNTIME, review_enabled: false, active_review_model: null };
-      else if (url.endsWith("/capabilities")) payload = { can_change_custom_retrieval: false, can_compare_published_snapshots: true };
-      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+      else if (url.endsWith("/capabilities")) payload = { environment: "prod", can_configure_local_llm: false, can_change_custom_retrieval: false, can_compare_published_snapshots: true };
+      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
       else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
       else if (url.endsWith("/retrieve")) payload = {
         results: [],
@@ -216,7 +305,7 @@ describe("service shell", () => {
   it("changes the corpus scope from the composer toolbar", async () => {
     stubPublicApi();
     render(<ServiceShell />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "healthy" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "System · healthy" })).toBeInTheDocument());
 
     const scope = screen.getByRole("group", { name: "Corpus scope" });
     expect(within(scope).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
@@ -367,7 +456,7 @@ describe("service shell", () => {
   it("toggles Help from the topbar button and the ? key, and persists it", async () => {
     stubPublicApi();
     render(<ServiceShell />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "healthy" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "System · healthy" })).toBeInTheDocument());
 
     const toggle = screen.getByRole("button", { name: "Toggle help" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -448,10 +537,10 @@ describe("service shell", () => {
     stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     render(<operator.ServiceShell />);
 
-    const badge = await screen.findByRole("note");
+    const badge = (await screen.findByText(/^LOCAL MODEL/)).closest('[role="note"]');
     expect(badge).toHaveTextContent("LOCAL MODEL");
     // The explanation is real text, so a keyboard or screen-reader user reaches it.
-    expect(badge).toHaveTextContent(/not OpenAI/);
+    expect(badge).toHaveTextContent(/selected model server/);
   });
 
   it("drops the sidebar mark when the session goes back to OpenAI", async () => {
@@ -466,7 +555,8 @@ describe("service shell", () => {
     render(<operator.ServiceShell />);
 
     expect(await screen.findByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
-    expect(screen.queryByRole("note")).toBeNull();
+    expect(await screen.findByRole("note", { name: "DEV MODE" })).toBeInTheDocument();
+    expect(screen.queryAllByRole("note").filter((note) => note.textContent?.includes("LOCAL MODEL"))).toHaveLength(0);
   });
 
   it("leaves Help alone while a modal owns the screen", async () => {
@@ -521,7 +611,8 @@ describe("service shell", () => {
       let payload: unknown = {};
       if (url.endsWith("/health")) payload = { status: "ok" };
       else if (url.endsWith("/ready")) payload = READY_RUNTIME;
-      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+      else if (url.endsWith("/capabilities")) payload = { environment: "prod", can_configure_local_llm: false, can_change_custom_retrieval: false, can_compare_published_snapshots: true };
+      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
       else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
       return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
     });
@@ -539,9 +630,10 @@ describe("service shell", () => {
     expect(screen.getByText("gate → retrieve → grade")).toBeInTheDocument();
     expect(screen.getByText("wall_clock_s")).toBeInTheDocument();
 
-    // The category's nav label differs by build, so assert the panel it opened.
+    // Public builds show read-only allowances in System rather than editable run limits.
     fireEvent.click(screen.getByRole("button", { name: "Open run limits" }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Limits & availability" })).toBeInTheDocument();
     expect(screen.getByText("Input token ceiling")).toBeInTheDocument();
   });
 
@@ -559,8 +651,8 @@ describe("service shell", () => {
       let payload: unknown = {};
       if (url.endsWith("/health")) payload = { status: "ok" };
       else if (url.endsWith("/ready")) payload = READY_RUNTIME;
-      else if (url.endsWith("/capabilities")) payload = { can_change_custom_retrieval: false, can_compare_published_snapshots: true };
-      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z" };
+      else if (url.endsWith("/capabilities")) payload = { environment: "prod", can_configure_local_llm: false, can_change_custom_retrieval: false, can_compare_published_snapshots: true };
+      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
       else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
       return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
     });
@@ -575,4 +667,73 @@ describe("service shell", () => {
     expect(document.querySelector(".verdict")).toBeNull();
     expect(screen.queryByText("Answer not generated")).toBeNull();
   });
+});
+
+it("automatically stores a single local model and blocks sending after it disappears", async () => {
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const model = { name: "answer", selectable: true, size_bytes: 123, family: "test", parameter_size: "4B", quantization_level: "Q4", capabilities: ["completion"], loaded: true };
+  let local: NonNullable<Readiness["review_engines"]>[string] = { enabled: true, protocol: "ollama", models: [model] };
+  stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { local } }));
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  saveConversations([{ id: "local", title: "Local question", createdAt: "2026-09-01", updatedAt: "2026-09-01", messages: [], profile: { ...DEFAULT_SESSION_PROFILE, engine: "local" } }]);
+  render(<LiveShell />);
+  await waitFor(() => expect(loadConversations()[0].profile?.local_model).toBe("answer"));
+  expect(loadConversations()[0].profile?.engine).toBe("local");
+  fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "test question" } });
+  expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled();
+  local = { enabled: false, reason: "unreachable", models: [] };
+  await act(async () => { window.dispatchEvent(new Event("online")); });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled());
+  expect(loadConversations()[0].profile?.local_model).toBe("answer");
+  expect(loadConversations()[0].profile?.engine).toBe("local");
+  local = { enabled: true, protocol: "ollama", models: [model] };
+  await act(async () => { window.dispatchEvent(new Event("online")); });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+});
+
+it("preserves streamed messages and the submitted settings while background discovery updates a profile", async () => {
+  cleanup();
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  let local: NonNullable<Readiness["review_engines"]>[string] = { enabled: false, reason: "not_configured", models: [] };
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { local } }));
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { finish = resolve; });
+  let submitted: { session_profile: typeof DEFAULT_SESSION_PROFILE } | undefined;
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/review/stream")) {
+      submitted = JSON.parse(String(init?.body));
+      return pending;
+    }
+    return ordinaryFetch(input, init);
+  });
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    saveConversations([{ id: "keep", title: "New review", createdAt: "2026-09-04", updatedAt: "2026-09-04", messages: [], profile: DEFAULT_SESSION_PROFILE }]);
+    render(<LiveShell />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "System · healthy" })).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "Keep this question" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+    await waitFor(() => expect(submitted).toBeDefined());
+    expect(document.querySelector(".waiting-glyph")).toHaveAttribute("aria-hidden", "true");
+    fireEvent.click(screen.getByRole("button", { name: "RAG settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
+    fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
+    local = { enabled: true, protocol: "ollama", models: [{ name: "answer", selectable: true, size_bytes: null, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], loaded: false }] };
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    finish(new Response('event: report\ndata: {"run":{"run_id":"concurrency-check","status":"budget_exceeded","report":null,"failure":{"code":"budget_exceeded","resource":"iterations","limit":3,"observed":4,"blocked_node":"grade"}}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
+    await waitFor(() => expect(loadConversations()[0].messages).toHaveLength(2));
+    await waitFor(() => expect(loadConversations()[0].profile?.local_model).toBe("answer"));
+    expect(loadConversations()[0].messages[0].text).toBe("Keep this question");
+    expect(loadConversations()[0].profile?.prompt_policy.history_turns).toBe(4);
+    expect(submitted?.session_profile.prompt_policy.history_turns).toBe(6);
+    expect(loadConversations()[0].profile?.engine).toBe("openai");
+    expect(document.querySelector(".waiting-glyph")).not.toBeInTheDocument();
+  } finally {
+    cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules();
+  }
 });

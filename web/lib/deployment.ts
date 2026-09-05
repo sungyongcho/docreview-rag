@@ -1,10 +1,4 @@
-/** Text-only deployment label derived from the page host; never a selectable control. */
-export function deploymentLabel(hostname: string): "DEV" | "PROD" {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return normalized === "localhost"
-    || normalized === "127.0.0.1"
-    || normalized === "::1"
-    || normalized.endsWith(".localhost")
-    ? "DEV"
-    : "PROD";
+/** Display the server's selected environment, including local production previews. */
+export function deploymentLabel(environment?: "dev" | "prod"): "DEV" | "PROD" | "Checking mode…" {
+  return environment === "dev" ? "DEV" : environment === "prod" ? "PROD" : "Checking mode…";
 }

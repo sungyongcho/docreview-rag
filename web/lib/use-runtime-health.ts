@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getHealth, getReadiness } from "./api";
-import type { Readiness } from "./types";
+import type { Readiness, ReviewEngineState } from "./types";
 
 export type RuntimeHealthKind = "checking" | "healthy" | "api_down" | "db_degraded";
 
@@ -23,6 +23,12 @@ function issueKey(state: RuntimeHealthState): string | null {
   return `db:${corpus?.schema_status ?? "unknown"}:${corpus?.schema_message ?? ""}`;
 }
 
+/** Keep last-known metadata without presenting stale local connectivity as available. */
+function unavailableReadiness(readiness: Readiness | null): Readiness | null {
+  if (!readiness?.review_engines?.local) return readiness;
+  return { ...readiness, review_engines: { ...readiness.review_engines, local: { ...readiness.review_engines.local, enabled: false, reason: "api_unavailable" } } };
+}
+
 export function useRuntimeHealth() {
   const [state, setState] = useState<RuntimeHealthState>({
     kind: "checking",
@@ -32,12 +38,10 @@ export function useRuntimeHealth() {
   const [checking, setChecking] = useState(true);
   const [dismissedIssue, setDismissedIssue] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
-  const inFlight = useRef(false);
   const mounted = useRef(true);
 
-  const check = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+  const check = useCallback(async (force = false) => {
+    if (controller.current && !force) return;
     setChecking(true);
     controller.current?.abort();
     const request = new AbortController();
@@ -48,7 +52,7 @@ export function useRuntimeHealth() {
       if (health.status !== "ok") throw new Error("API health response was not ok.");
       const readiness = await getReadiness(request.signal);
       const healthy = readiness.status === "ready" || readiness.corpus.availability === "not_applicable";
-      if (!mounted.current) return;
+      if (!mounted.current || controller.current !== request) return;
       setState({
         kind: healthy ? "healthy" : "db_degraded",
         readiness,
@@ -56,18 +60,28 @@ export function useRuntimeHealth() {
       });
       if (healthy) setDismissedIssue(null);
     } catch {
-      if (!mounted.current) return;
+      if (!mounted.current || controller.current !== request) return;
       setState((current) => ({
         kind: "api_down",
-        readiness: current.readiness,
+        readiness: unavailableReadiness(current.readiness),
         checkedAt: new Date().toISOString(),
       }));
     } finally {
       window.clearTimeout(timeout);
-      if (mounted.current) setChecking(false);
-      inFlight.current = false;
+      if (controller.current === request) {
+        controller.current = null;
+        if (mounted.current) setChecking(false);
+      }
     }
   }, []);
+
+  /** Invalidate an older poll before exposing a successful connection change. */
+  const refreshLocal = useCallback((local: ReviewEngineState) => {
+    setState((current) => ({ ...current, readiness: current.readiness ? {
+      ...current.readiness, review_engines: { ...current.readiness.review_engines, local },
+    } : null }));
+    void check(true);
+  }, [check]);
 
   useEffect(() => {
     mounted.current = true;
@@ -80,7 +94,10 @@ export function useRuntimeHealth() {
     };
     const onOnline = () => void check();
     const onOffline = () => {
-      setState((current) => ({ ...current, kind: "api_down", checkedAt: new Date().toISOString() }));
+      controller.current?.abort();
+      controller.current = null;
+      setChecking(false);
+      setState((current) => ({ ...current, readiness: unavailableReadiness(current.readiness), kind: "api_down", checkedAt: new Date().toISOString() }));
     };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
@@ -88,6 +105,7 @@ export function useRuntimeHealth() {
     return () => {
       mounted.current = false;
       controller.current?.abort();
+      controller.current = null;
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
@@ -103,6 +121,7 @@ export function useRuntimeHealth() {
     ...state,
     checking,
     check,
+    refreshLocal,
     modalVisible,
     dismissWarning: () => {
       if (state.kind === "db_degraded") setDismissedIssue(currentIssue);

@@ -1,5 +1,7 @@
 "use client";
 
+import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
+
 import { ArrowLeft, ArrowRight, Pointer, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -20,10 +22,10 @@ interface TourStep {
 
 const STEPS: readonly TourStep[] = [
   { title: "Start with Build", description: "The pipeline runs top to bottom: filings, chunks, embeddings, BM25 index, then asking, answering and evaluating.", targets: ["build"], view: "build" },
-  { title: "Seven steps, in order", description: "Each card shows real numbers, its status, and one action. Blocked steps tell you which step to finish first.", targets: ["stage-list"], view: "build", tab: "pipeline" },
+  { title: "Seven steps, in order", description: "Build setup steps 1–7 keep their numbers even when done. Each card explains its result and dependencies; these are separate from the answer progress steps.", targets: ["stage-list"], view: "build", tab: "pipeline" },
   { title: "One obvious next action", description: "This callout always points at the first step that needs you.", targets: ["next-step"], view: "build", tab: "pipeline" },
   { title: "Start a new review", description: "Create a clean review thread from the sidebar.", targets: ["new-review"], view: "review" },
-  { title: "Ask or adjust the session", description: "Pick scope and preset inline, then type. The readiness chip tells you what the corpus can do right now.", targets: ["composer"], view: "review" },
+  { title: "Ask or adjust the session", description: LOCAL_ENGINE_VISIBLE ? "Choose scope and preset beside the input, select an engine and model below it, and open Filters or RAG settings without leaving the conversation." : "Pick scope and preset inline, then type. The readiness chip tells you what the corpus can do right now.", targets: ["composer"], view: "review" },
   { title: "Verify and reuse evidence", description: "Expand citations, pin or exclude chunks, and re-run the citation check with your selection.", targets: ["evidence-toggle", "evidence-fallback"], view: "review" },
   { title: "Measure before trusting", description: "Golden questions, runs, comparisons and snapshots live here.", targets: ["measure"], view: "measure" },
   { title: "Run local operations", description: "System › Operations runs allowlisted verification and service commands without a shell.", targets: ["operations"], view: "system", tab: "operations", optional: "operations" },

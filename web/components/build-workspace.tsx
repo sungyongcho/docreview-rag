@@ -113,7 +113,7 @@ function ingestOrder(manifests: ManifestSummary[]): ManifestSummary[] {
 
 export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate }: BuildWorkspaceProps) {
   const { notify } = useNotifications();
-  const [environment, setEnvironment] = useState<"DEV" | "PROD">("PROD");
+  const environment = deploymentLabel(readiness?.environment);
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
   // Fixtures seed only the public build; a live build waits for the administrator API.
   const [corpus, setCorpus] = useState<Record<string, unknown>>(() => (live ? {} : { ...CANNED_CORPUS }));
@@ -126,7 +126,6 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
   useEffect(() => {
-    setEnvironment(deploymentLabel(window.location.hostname));
     setExperimentDefaults(loadExperimentDefaults());
   }, []);
 
@@ -264,7 +263,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         <div>
           <p className="eyebrow">Build</p>
           <h1>From filings to verified answers.</h1>
-          <p>Each step feeds the next. Finish anything marked Action needed, then ask.</p>
+          <p>Complete corpus setup to ask questions. Evaluation measures retrieval quality separately.</p>
         </div>
         <div className="page-badges">
           <span className="mode-badge">{environment}</span>

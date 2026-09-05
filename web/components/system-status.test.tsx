@@ -2,9 +2,10 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Readiness, ReviewEngineState } from "@/lib/types";
-import { localEngineStatus, SystemStatus } from "./system-status";
+import { SystemStatus } from "./system-status";
 
 const READINESS: Readiness = {
+  environment: "dev",
   status: "ready",
   mode: "runtime",
   admin_mode: "live",
@@ -31,19 +32,6 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe("localEngineStatus", () => {
-  it("translates every reason the readiness probe can report", () => {
-    expect(localEngineStatus({ enabled: true, model: "gemma4:e4b", protocol: "ollama" })).toBe(
-      "Reachable: gemma4:e4b over ollama.",
-    );
-    expect(localEngineStatus({ enabled: false, reason: "disabled_in_prod" })).toContain("MODE=prod");
-    expect(localEngineStatus({ enabled: false, reason: "model_unreachable_or_missing" })).toContain("local-llm profile");
-    expect(localEngineStatus({ enabled: false, reason: "not_configured" })).toContain("LOCAL_LLM_BASE_URL");
-    // An unknown or absent engine reads as unconfigured rather than as an internal enum.
-    expect(localEngineStatus(undefined)).toContain("Not configured");
-  });
-});
-
 describe("SystemStatus", () => {
   it("omits the local policy panel from a build that cannot run a local model", () => {
     render(<SystemStatus readiness={withLocal({ enabled: true, model: "gemma4:e4b" })} loading={false} error="" onRefresh={vi.fn()} />);
@@ -58,6 +46,7 @@ describe("SystemStatus", () => {
     const operator = await import("./system-status");
     render(
       <operator.SystemStatus
+        localAllowed
         readiness={withLocal({ enabled: true, model: "gemma4:e4b", protocol: "ollama" })}
         loading={false}
         error=""
@@ -76,22 +65,24 @@ describe("SystemStatus", () => {
     expect(locked).toHaveTextContent("embedding");
     expect(locked).toHaveTextContent("text-embedding-3-large");
     expect(locked).toHaveTextContent("never local");
-    expect(screen.getByText("Reachable: gemma4:e4b over ollama.")).toBeInTheDocument();
+    expect(screen.getByText(/Connected over ollama/)).toBeInTheDocument();
   });
 
-  it("explains a production build instead of pretending the engine is missing", async () => {
+  it("hides local policy when a dev bundle talks to a production runtime", async () => {
     vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
     vi.resetModules();
     const operator = await import("./system-status");
     render(
       <operator.SystemStatus
-        readiness={withLocal({ enabled: false, reason: "disabled_in_prod" })}
+        localAllowed
+        readiness={{ ...withLocal({ enabled: false, reason: "disabled_in_prod" }), environment: "prod" }}
         loading={false}
         error=""
         onRefresh={vi.fn()}
       />,
     );
 
-    expect(screen.getByText(/Disabled because MODE=prod/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Local model policy" })).not.toBeInTheDocument();
+    expect(screen.getByText("PROD")).toBeInTheDocument();
   });
 });

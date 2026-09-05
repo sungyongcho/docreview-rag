@@ -1,0 +1,38 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); });
+import { RuntimeSettings, DesktopJobNotifications } from "./runtime-settings";
+  it("shows production token ceilings and non-consuming reset estimates", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      per_minute: 5,
+      per_day: 25,
+      remaining_minute: 0,
+      remaining_day: 20,
+      max_input_tokens: 12000,
+      max_output_tokens: 600,
+      max_cost_usd: "0.04",
+      daily_cost_usd: "1.00",
+      remaining_daily_cost_usd: "0.80",
+      retry_after_seconds: 42,
+      minute_reset_seconds: 42,
+      day_reset_seconds: 3600,
+      daily_cost_reset_at_utc: "2026-09-02T00:00:00Z",
+      scope: "single_process",
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    render(<RuntimeSettings live={false} readiness={null} />);
+
+    expect(await screen.findByText("12,000")).toBeInTheDocument();
+    expect(screen.getByText("600")).toBeInTheDocument();
+    expect(screen.getAllByText("42s").length).toBeGreaterThan(0);
+    expect(screen.getByText(/reset 1h 0m/)).toBeInTheDocument();
+  });
+
+  it("enables desktop completion notifications only after browser permission", async () => {
+    const requestPermission = vi.fn().mockResolvedValue("granted");
+    vi.stubGlobal("Notification", { permission: "default", requestPermission });
+    render(<DesktopJobNotifications />);
+    fireEvent.click(screen.getByRole("button", { name: "Enable desktop job notifications" }));
+
+    await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
+    expect(screen.getByText("Enabled")).toBeInTheDocument();
+  });

@@ -62,7 +62,7 @@ describe("System workspace", () => {
     expect(screen.getByRole("heading", { name: "OpenAI model policy" })).toBeInTheDocument();
     cleanup();
 
-    renderSystem({ operationsAvailable: true, onTabChange });
+    renderSystem({ live: true, operationsAvailable: true, onTabChange });
     // The tour's optional last step spotlights this tab button and nothing else in the strip.
     expect(screen.getByRole("button", { name: "Operations" })).toHaveAttribute("data-tour", "operations");
     expect(screen.getByRole("button", { name: "System status" })).not.toHaveAttribute("data-tour");

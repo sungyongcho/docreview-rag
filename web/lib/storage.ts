@@ -35,7 +35,7 @@ export function saveConversations(conversations: Conversation[]): Conversation[]
   return bounded;
 }
 
-export function newConversation(): Conversation {
+export function newConversation(profile: ReviewSessionProfile = loadDefaultProfile()): Conversation {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
@@ -43,7 +43,7 @@ export function newConversation(): Conversation {
     createdAt: now,
     updatedAt: now,
     messages: [],
-    profile: loadDefaultProfile(),
+    profile,
   };
 }
 
@@ -59,6 +59,12 @@ export function loadDefaultProfile(): ReviewSessionProfile {
 
 export function saveDefaultProfile(profile: ReviewSessionProfile): void {
   if (typeof window !== "undefined") window.localStorage.setItem(DEFAULT_PROFILE_KEY, JSON.stringify(profile));
+}
+
+/** Save only the prompt text; other defaults and existing conversations stay intact. */
+export function saveDefaultPrompt(additional_instructions: string): void {
+  const defaults = loadDefaultProfile();
+  saveDefaultProfile({ ...defaults, prompt_policy: { ...defaults.prompt_policy, additional_instructions } });
 }
 
 export function resetDefaultProfile(): void {

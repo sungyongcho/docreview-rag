@@ -216,9 +216,10 @@ function NextStep({ pipeline, handler, disabled, onAsk, onEvaluate, onCompareSna
     actions = job && <button className="button" type="button" disabled={!job.can_cancel} onClick={() => onCancelJob(job.job_id)}>Cancel</button>;
   } else if (pipeline.next) {
     const stage = pipeline.next;
-    title = `Next step · ${stage.order} ${stage.title}`;
-    text = stage.hint;
-    actions = stage.action && <ActionButton stage={stage} primary handler={handler} disabled={disabled} />;
+    const evaluationPending = stage.id === "evaluate" && stage.status === "action" && pipeline.corpusReady;
+    title = evaluationPending ? "Corpus ready · evaluation pending" : `Next step · ${stage.order} ${stage.title}`;
+    text = evaluationPending ? `You can ask questions now. Retrieval quality has no recorded evaluation results yet. ${stage.hint}` : stage.hint;
+    actions = <>{evaluationPending && <button className="button" type="button" onClick={onAsk}>Ask a question</button>}{stage.action && <ActionButton stage={stage} primary handler={handler} disabled={disabled} />}</>;
   } else if (pipeline.readOnly) {
     title = "Explore";
     text = "This build is read-only. Ask a question against the published corpus or compare snapshots.";
@@ -233,12 +234,12 @@ function NextStep({ pipeline, handler, disabled, onAsk, onEvaluate, onCompareSna
     text = blocked.hint;
     actions = blocked.action && <ActionButton stage={blocked} primary handler={handler} disabled={disabled} />;
   } else if (doneWithHint) {
-    title = "All steps done";
+    title = "Corpus ready · evaluation recorded";
     text = doneWithHint.hint;
     actions = doneWithHint.action && <ActionButton stage={doneWithHint} primary handler={handler} disabled={disabled} />;
   } else {
-    title = "All steps done";
-    text = "The corpus is ready. Ask a question or run an evaluation.";
+    title = "Corpus ready · evaluation recorded";
+    text = "Ask a question, inspect the evaluation results, or run another evaluation.";
     actions = <><button className="button primary" type="button" onClick={onAsk}>Ask a question</button><button className="button" type="button" disabled={disabled("evaluate")} onClick={onEvaluate}>Run quick evaluation</button></>;
   }
 
@@ -298,7 +299,7 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
         <div className={`stage-index ${stage.status}`} aria-hidden="true">{stage.status === "done" ? <Check size={15} /> : stage.order}</div>
         <div className="stage-body">
           <div className="stage-head">
-            <h3><span className="sr-only">Step {stage.order} · </span>{stage.title}</h3>
+            <h3>{stage.order}. {stage.title}</h3>
             <StatusPill status={stage.status} detail={stage.statusDetail} />
           </div>
           <p className="stage-description">{stage.description}</p>
@@ -324,7 +325,7 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
           </div>
           {showHint && <p className="stage-hint">{stage.hint}</p>}
           {readOnlyNote && <p className="stage-note">{READ_ONLY_NOTE}</p>}
-          <details className="stage-why"><summary>Why this matters</summary><p>{stage.why}</p></details>
+          <p className="stage-why"><strong>Why it matters:</strong> {stage.why}</p>
           {stage.id === "filings" && (
             <details className="stage-advanced">
               <summary>Change…</summary>

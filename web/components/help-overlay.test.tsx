@@ -38,7 +38,7 @@ describe("HelpOverlay", () => {
     expect(expected.length).toBeGreaterThan(0);
     expect([...markers].map((marker) => marker.getAttribute("aria-label"))).toEqual(expected);
     const missing = REVIEW.filter((topic) => !document.querySelector(`[data-help="${topic.id}"]`)).map((topic) => topic.id);
-    expect(missing).toEqual(["review.snapshot", "review.run-trace", "review.evidence"]);
+    expect(missing).toEqual(REVIEW.filter((topic) => topic.optional).map((topic) => topic.id));
     expect(screen.getAllByText("Not on this screen right now")).toHaveLength(missing.length);
     for (const id of missing) expect(document.querySelector(`[data-help-item="${id}"]`)).toHaveClass("absent");
   });

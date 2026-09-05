@@ -103,6 +103,31 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
 }
 
 describe("BuildPipeline", () => {
+  it("distinguishes a ready corpus from an unmeasured evaluation without blocking questions", () => {
+    const handlers = renderPipeline(liveInput({
+      corpus: { database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 21, chunks: 100, embedded_chunks: 100, pending_embeddings: 0, bm25_ready: true, writable: true, provider: "deterministic" },
+      evaluationResults: 0,
+    }));
+    expect(screen.getByRole("heading", { name: "Corpus ready · evaluation pending" })).toBeInTheDocument();
+    expect(screen.getByText("Not run")).toBeInTheDocument();
+    expect(screen.queryByText("All steps done")).not.toBeInTheDocument();
+    const summary = document.querySelector('.next-step')!;
+    const ask = [...summary.querySelectorAll('button')].find((button) => button.textContent === "Ask a question")!;
+    expect(ask).toBeEnabled();
+    fireEvent.click(ask);
+    expect(handlers.onAsk).toHaveBeenCalledOnce();
+  });
+
+  it("keeps every setup number and its purpose visible after completion", () => {
+    renderPipeline(liveInput({
+      corpus: { database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 21, chunks: 100, embedded_chunks: 100, pending_embeddings: 0, bm25_ready: true, writable: true, provider: "deterministic" },
+      evaluationResults: 1,
+    }));
+    const titles = ["Filings", "Parse & chunk", "Embeddings", "Lexical index (BM25)", "Ask", "Answer model", "Evaluate"];
+    titles.forEach((title, index) => expect(screen.getByRole("heading", { name: `${index + 1}. ${title}` })).toBeVisible());
+    expect(screen.getAllByText("Why it matters:")).toHaveLength(7);
+  });
+
   afterEach(cleanup);
 
   it("points at the next stage and wires its primary action", () => {

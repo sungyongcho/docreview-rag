@@ -1,7 +1,8 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useRuntimeHealth } from "./use-runtime-health";
+import type { ReviewEngineState } from "./types";
 
 const READY = {
   status: "ready",
@@ -33,7 +34,7 @@ function response(payload: unknown, status = 200) {
 }
 
 describe("useRuntimeHealth", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
   it("separates healthy, DB-degraded, and dismissed warning state", async () => {
     let degraded = false;
@@ -82,4 +83,59 @@ describe("useRuntimeHealth", () => {
 
     await waitFor(() => expect(fetch.mock.calls.length).toBeGreaterThan(calls));
   });
+});
+
+it("refreshes a changed connection immediately and ignores an older in-flight readiness response", async () => {
+  let resolveOld!: (value: Response) => void;
+  const delayed = new Promise<Response>((resolve) => { resolveOld = resolve; });
+  let readyRequests = 0;
+  const fresh: ReviewEngineState = { enabled: true, model: "new-model", protocol: "ollama", models: [] };
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/health")) return response({ status: "ok" });
+    readyRequests += 1;
+    if (readyRequests === 2) return delayed;
+    return response({ ...READY, review_engines: { local: readyRequests === 1 ? { enabled: false } : fresh } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const { result } = renderHook(() => useRuntimeHealth());
+    await waitFor(() => expect(result.current.kind).toBe("healthy"));
+    act(() => { void result.current.check(); });
+    await waitFor(() => expect(readyRequests).toBe(2));
+    act(() => result.current.refreshLocal(fresh));
+    expect(result.current.readiness?.review_engines?.local).toEqual(fresh);
+    await waitFor(() => expect(readyRequests).toBe(3));
+    await act(async () => { resolveOld(response({ ...READY, review_engines: { local: { enabled: true, model: "old-model" } } })); });
+    expect(result.current.readiness?.review_engines?.local).toEqual(fresh);
+    expect(result.current.kind).toBe("healthy");
+  } finally { cleanup(); vi.unstubAllGlobals(); }
+});
+
+it("polls visible tabs every 30 seconds, pauses while hidden, and resumes on focus", async () => {
+  vi.useFakeTimers();
+  let visibility = "visible";
+  vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility as DocumentVisibilityState);
+  const fetch = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/health") ? response({ status: "ok" }) : response(READY));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    const { unmount } = renderHook(() => useRuntimeHealth());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    visibility = "hidden";
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetch).toHaveBeenCalledTimes(4);
+    visibility = "visible";
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(fetch).toHaveBeenCalledTimes(6);
+    unmount();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetch).toHaveBeenCalledTimes(6);
+  } finally {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
 });

@@ -77,7 +77,6 @@ function MeasureHost({ initialTab }: { initialTab: MeasureTab }) {
       onRefreshJobs={vi.fn()}
       tab={tab}
       onTabChange={setTab}
-      onOpenSettings={vi.fn()}
     />
   );
 }
@@ -153,7 +152,7 @@ describe("help topic coverage", () => {
     });
     render(<ServiceShell />);
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "healthy" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "System · healthy" })).toBeInTheDocument());
     expect(coverage("review").missing).toEqual([]);
   });
 

@@ -115,7 +115,7 @@ const OPENAI_KEY_HINT = "No answer model. In dev, set OPENAI_API_KEY_LOCAL in .e
 const EVIDENCE_ONLY_HINT = "Ask keeps working in evidence-only mode.";
 /** A public build never names the local engine, because that build cannot run one. */
 export const ANSWER_MODEL_HINT = LOCAL_ENGINE_VISIBLE
-  ? `${OPENAI_KEY_HINT} For a local model set LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL instead. ${EVIDENCE_ONLY_HINT}`
+  ? `${OPENAI_KEY_HINT} For a local model connect a server in Settings › Local LLM, then select a discovered model below the conversation input. ${EVIDENCE_ONLY_HINT}`
   : `${OPENAI_KEY_HINT} ${EVIDENCE_ONLY_HINT}`;
 
 export function stageStatusLabel(status: StageStatus): string {
@@ -277,14 +277,14 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   // Step 7 — Evaluate
   {
     const succeeded = input.jobs.some((job) => job.domain === "evaluation" && job.status === "succeeded");
-    const measured = readOnly ? input.snapshots > 0 : input.evaluationResults > 0 || succeeded;
+    const measured = readOnly ? input.snapshots > 0 : input.evaluationResults > 0;
     const numbers = readOnly
       ? [`${n(input.snapshots)} published snapshot${input.snapshots === 1 ? "" : "s"}`]
       : [`${n(input.evaluationResults)} result${input.evaluationResults === 1 ? "" : "s"}`, `${n(input.snapshots)} snapshot${input.snapshots === 1 ? "" : "s"}`];
     if (source === "pending" || drafts.index.status === "unknown") drafts.evaluate = { ...checking };
     else if (measured) drafts.evaluate = { status: "done", numbers };
     else if (chunks === 0) drafts.evaluate = { status: "blocked", statusDetail: "after steps 2–4", numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
-    else drafts.evaluate = { status: "action", numbers: ["Not measured yet."], hint: "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot." };
+    else drafts.evaluate = { status: "action", statusDetail: succeeded ? "No results" : "Not run", numbers: readOnly ? ["Not measured yet."] : numbers, hint: succeeded ? "A job finished, but no evaluation results are available. Refresh results or run a quick evaluation to measure retrieval quality." : "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot." };
     drafts.evaluate.action = readOnly
       ? { label: "Compare published snapshots", kind: "compare" }
       : { label: "Run quick evaluation", kind: "evaluate" };
@@ -478,13 +478,13 @@ export function failureReport(failure: Record<string, unknown>): FailureReport {
     if (/ReadTimeout|ConnectTimeout|TimeoutException/i.test(detail)) {
       return {
         text: `The model did not answer within the time limit${tried}. Raise LOCAL_LLM_TIMEOUT_S, or choose a smaller model.`,
-        fix: { label: "Open local runtime", category: "runtime" },
+        fix: { label: "Open System status", category: "runtime" },
       };
     }
     if (/ConnectError|Connection refused|ConnectionError/i.test(detail)) {
       return {
-        text: "The model host is unreachable. Check that the local-llm compose profile is running.",
-        fix: { label: "Open local runtime", category: "runtime" },
+        text: "The model host is unreachable. Check that the separately installed model server is running and LOCAL_LLM_BASE_URL is reachable from the app.",
+        fix: { label: "Open System status", category: "runtime" },
       };
     }
   }

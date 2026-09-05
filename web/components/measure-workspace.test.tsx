@@ -32,7 +32,6 @@ function Host({ live, ready = true, initialTab = "playground", onApplyProfile = 
       onRefreshJobs={onRefreshJobs}
       tab={tab}
       onTabChange={setTab}
-      onOpenSettings={vi.fn()}
     />
   );
 }
@@ -91,7 +90,7 @@ describe("Measure workspace", () => {
     render(<Host live initialTab="runs" onRefreshJobs={onRefreshJobs} />);
 
     expect(await screen.findByRole("heading", { name: "New run" })).toBeInTheDocument();
-    expect(screen.getByText("Uses the current review's retrieval profile. Change presets in Settings › Review session.")).toBeInTheDocument();
+    expect(screen.getByText("Uses the current review's retrieval profile. Change presets beside the conversation input.")).toBeInTheDocument();
     expect(screen.getByText("Retrieval profile · hybrid · ts_rank_cd · k 5")).toBeInTheDocument();
     const queue = screen.getByRole("button", { name: "Queue evaluation" });
     expect(queue).toHaveAttribute("aria-disabled", "false");

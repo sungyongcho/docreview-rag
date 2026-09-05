@@ -38,11 +38,16 @@ export function progressCountsLabel({ evidence, relevant, steps }: ReviewProgres
   return `${evidence} candidates · ${relevant} relevant · ${steps} model steps`;
 }
 
+/** A decorative two-character indicator; progress still comes only from server events. */
+export function WaitingGlyph() {
+  return <span className="waiting-glyph" aria-hidden="true">◐</span>;
+}
+
 export function ReviewProgressSteps({ state }: { state: ReviewProgressState }) {
   const current = currentStepIndex(state.node);
   const step = REVIEW_STEPS[current];
   return (
-    <div className="review-progress" role="status" aria-live="polite">
+    <div className="review-progress" role="status" aria-live="polite"><WaitingGlyph />
       {state.revalidating && <p className="review-progress-prefix">Re-checking selected evidence</p>}
       {state.node === "chat" ? (
         <p className="review-progress-label">Replying…</p>

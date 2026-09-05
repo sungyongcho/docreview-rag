@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadConversations, loadExperimentDefaults, newConversation, resetExperimentDefaults, saveConversations, saveExperimentDefaults } from "./storage";
-import { DEFAULT_EXPERIMENT_DEFAULTS } from "./types";
+import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
 
 describe("conversation storage", () => {
   beforeEach(() => {
@@ -64,4 +64,14 @@ describe("conversation storage", () => {
 
     expect(loadExperimentDefaults()).toEqual(DEFAULT_EXPERIMENT_DEFAULTS);
   });
+});
+
+it("restores old conversation profiles without a model and remembers new selections", () => {
+  window.localStorage.clear();
+  const { local_model: _removed, ...oldProfile } = DEFAULT_SESSION_PROFILE;
+  const conversation = { ...newConversation(), profile: { ...oldProfile, engine: "local" as const } };
+  saveConversations([conversation]);
+  expect(loadConversations()[0].profile?.local_model).toBeNull();
+  saveConversations([{ ...conversation, profile: { ...conversation.profile, local_model: "chosen" } }]);
+  expect(loadConversations()[0].profile?.local_model).toBe("chosen");
 });
