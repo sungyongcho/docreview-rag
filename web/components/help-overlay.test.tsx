@@ -4,7 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { findHelpTopic } from "@/lib/help-content";
 import { HELP_GROUPS, getHelpPrimer } from "@/lib/help-primer";
-import { HelpOverlay } from "./help-overlay";
+import { HelpOverlay as HelpOverlayComponent, type HelpOverlayProps } from "./help-overlay";
+import type { Capabilities } from "@/lib/types";
+
+const DEV_CAPABILITIES: Capabilities = { environment: "dev", can_configure_local_llm: true, can_edit_prompt_policy: true, can_edit_run_limits: true, can_edit_golden: true, can_build_snapshot: true, can_run_evaluation: true, can_change_custom_retrieval: true, can_query_snapshot: true, can_use_operations: true, can_compare_published_snapshots: true };
+
+function HelpOverlay(props: HelpOverlayProps) {
+  return <HelpOverlayComponent capabilities={DEV_CAPABILITIES} {...props} />;
+}
 
 /** Represent actual hooks without mounting services or running the explained actions. */
 function ReviewStage() {
@@ -37,6 +44,47 @@ function openTopic(id: string) {
 
 describe("HelpOverlay", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("keeps restricted controls out of public recommendations, search, related topics, and navigation", () => {
+    const navigate = vi.fn();
+    render(<><ReviewStage /><button data-help="review.retrieval">Private control</button><HelpOverlay capabilities={null} screen="review" open onClose={vi.fn()} location="review" onNavigateTopic={navigate} /></>);
+    const panel = screen.getByRole("complementary", { name: "Help" });
+    expect(panel.querySelector('[data-help-item="review.retrieval"]')).toBeNull();
+    fireEvent.change(within(panel).getByRole("textbox", { name: "Search help" }), { target: { value: "review.retrieval" } });
+    expect(panel.querySelector('[data-help-item="review.retrieval"]')).toBeNull();
+    openTopic("review.preset");
+    expect(panel.querySelector(".help-topic-detail")).not.toHaveTextContent("Choose Custom");
+    expect(panel.querySelector('[data-help-item="review.snapshot"]')).toBeNull();
+    expect(panel.querySelector(".development-badge")).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+    openTopic("build.documents.detail");
+    expect(panel.querySelector(".help-topic-detail")).not.toHaveTextContent("next preparation step");
+    expect(panel.querySelector(".development-badge")).toBeNull();
+    expect(within(panel).getByRole("link", { name: "Read the full guide" })).toHaveAttribute("target", "_blank");
+  });
+
+  it("marks allowed development topics and immediately drops a selected topic when access is revoked", () => {
+    const navigate = vi.fn();
+    const content = (capabilities: Capabilities | null) => <HelpOverlay capabilities={capabilities} screen="review" open onClose={vi.fn()} location="review" onNavigateTopic={navigate} />;
+    const { rerender } = render(content(DEV_CAPABILITIES));
+    const panel = openTopic("review.retrieval");
+    expect(panel.querySelector(".help-topic-detail .development-badge")).toHaveAttribute("aria-label", "DEV only");
+    rerender(content(null));
+    expect(panel.querySelector(".help-topic-detail")).toBeNull();
+    expect(panel.querySelector('[data-help-item="review.retrieval"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Go to/ })).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps preview help read-only even if development permissions were accidentally supplied", () => {
+    render(<HelpOverlay publicPreview capabilities={DEV_CAPABILITIES} screen="review" open onClose={vi.fn()} location="review" />);
+    const panel = screen.getByRole("complementary", { name: "Help" });
+    fireEvent.change(within(panel).getByRole("textbox", { name: "Search help" }), { target: { value: "review.send" } });
+    expect(panel.querySelector('[data-help-item="review.send"]')).toBeNull();
+    openTopic("review.filters");
+    expect(panel.querySelector(".help-topic-detail")).toHaveTextContent("This preview is read-only; questions and server changes are not executed.");
+    expect(panel.querySelector(".development-badge")).toBeNull();
+  });
 
   it("renders nothing while closed", () => {
     render(<><ReviewStage /><HelpOverlay screen="review" open={false} onClose={vi.fn()} location="review" /></>);

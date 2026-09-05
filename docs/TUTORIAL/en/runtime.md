@@ -4,6 +4,9 @@ Three different views answer different questions: **System → System status** c
 
 ## Status and job lifecycle {#states}
 
+> [!DEV]
+> Starting, cancelling, and retrying corpus or evaluation jobs requires DEV. Reading a public review result is not an administrator job action.
+
 | State | Meaning and next action |
 |---|---|
 | `queued` | Accepted and waiting. Inspect queue position and request scope. |
@@ -17,9 +20,21 @@ Failed and interrupted jobs offer **Retry as new job** when the server supports 
 
 Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text.
 
+<!-- capture:08-jobs -->
+
+![An existing successful SEC manifest ingestion job is selected.](../assets/08-jobs.en.jpg)
+
+*An existing successful SEC manifest ingestion job is selected. Its actual target, progress and result are shown; this is historical work, not a job started for the guide.*
+
 ## Execution summary and real timing {#timings}
 
 Open a completed or failed answer's **Execution summary** for the stages actually reached. Auto scope preserves the user's Auto choice while separately showing the registry, companies, years, and reason reported by the server. Before routing resolves, the interface waits; it does not infer a confirmed decision from the question in the browser.
+
+<!-- capture:16-run-trace -->
+
+![The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed.](../assets/16-run-trace.en.jpg)
+
+*The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed. These are historical recorded values, not a new measurement.*
 
 **Execution performance** separates request time measured by the browser from server execution time. Its ASCII bars scale to the longest measured stage in that result. They are elapsed-duration comparisons, not progress percentages or estimated completion times. Stage and model-call rows remain in recorded order, including repeated stages and retries.
 
@@ -34,7 +49,16 @@ Open a completed or failed answer's **Execution summary** for the stages actuall
 
 The accessible table supplies exact values beside the visual bars. Original node IDs, model names, and logs stay intact even when the surrounding labels are translated. CPU/GPU placement remains uncollected unless supported by actual evidence; a long duration alone does not establish a hardware bottleneck. Older saved runs can lack telemetry without being corrupt.
 
+<!-- capture:20-routing-performance -->
+
+![This existing failed request collected 31ms of browser request time but no server routing, stage timings, model calls or CPU/GPU placement.](../assets/20-routing-performance.en.jpg)
+
+*This existing failed request collected 31ms of browser request time but no server routing, stage timings, model calls or CPU/GPU placement. The interface explicitly shows uncollected data instead of inventing measurements.*
+
 ## Run limits versus provider limits {#limits}
+
+> [!DEV]
+> Changing run budgets requires DEV. Recorded failure fields and collected timings can still be read wherever the result is available.
 
 The default conversation budget is 6 iterations, 60,000 input tokens, 4,000 output tokens, and **120 wall-clock seconds**. These are cumulative run limits across model calls and retries. Inspect the submitted profile because existing conversations can have different values.
 
@@ -50,6 +74,9 @@ Adjust a run budget under **Review settings → Run limits**. Prompt/evidence si
 
 ## Local-model facts {#local-models}
 
+> [!DEV]
+> Local-server configuration and model selection controls require DEV. Public requests use the release configuration; they do not expose local-server controls.
+
 **System → System status** distinguishes role configuration from installed models. **Settings → Local LLM** offers **Default**, saved servers, and **Add a server…**. Use **Run connection diagnostics** to inspect a candidate before explicitly connecting, then choose the answer engine and discovered model in the conversation. Saving a connection does not switch the engine automatically.
 
 If replacement discovery or saving fails, the working connection is preserved. Resolve the reported endpoint or model-capability error before trying again. A server responding to health checks can still fail an actual generation request. Changing the answer engine also does not replace the embedding identity already stored in the corpus.
@@ -57,6 +84,9 @@ If replacement discovery or saving fails, the working connection is preserved. R
 Installed, loaded, and answer-capable are separate facts. An installed model can be unloaded during normal standby; an unavailable inventory is unconfirmed, not a count of zero. DocReview only displays metadata actually returned by the server. It does not collect maximum/loaded context values or infer execution hardware from a model name. The [Ollama guide](ollama.md#models) explains independent model inspection. `rag-ollama-check` provides read-only connection diagnostics; [CLI reference](cli.md#diagnose-local-model-connectivity) defines its options.
 
 ## Stop and continue later {#resume}
+
+> [!DEV]
+> The commands below stop and start the operator’s local stack. Visitors should simply use the deployed application rather than manage its services.
 
 Normal shutdown preserves the database volume and files:
 
@@ -74,5 +104,11 @@ rag-dev up -d
 Reuse services that are already running. Refresh System, inspect Documents and Jobs, then return to the saved conversation. Do not repeat download, ingestion, embedding, or evaluation when the required result is already present. Inspect interrupted jobs explicitly before retrying; they are not resumed automatically.
 
 Saved conversations and their profiles remain in that browser. In-page workspace navigation preserves open editors, selections, and scroll; an unfinished question draft is not a promise of persistence across a page reload or browser-data deletion. Ordinary shutdown does not require [runtime reset](troubleshooting.md#reset).
+
+<!-- capture:14-browser-data -->
+
+![Data & help separates browser conversations and preference resets from server documents and job history.](../assets/14-browser-data.en.jpg)
+
+*Data & help separates browser conversations and preference resets from server documents and job history. No cleanup or reset action was executed.*
 
 **Production preview** does not switch the running backend to production or submit a review. Its header identifies the DEV backend and read-only scope. Use **Exit preview** to resume your retained DEV workspace. A preview of the interface does not create execution timings or prove the production image’s permissions; inspect real run records and the final image separately. See [environment boundaries](environment.md#environment-boundaries).

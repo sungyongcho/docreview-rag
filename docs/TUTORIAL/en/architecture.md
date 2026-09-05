@@ -4,6 +4,12 @@ DocReview RAG v2 connects SEC and DART acquisition, citable document processing,
 
 Use this map to find the layer responsible for a behavior. Start with the workflow document linked beside each area before reading implementation details.
 
+<!-- capture:23-creator-about -->
+
+![About uses the shared DocReview RAG v2 branding and creator attribution.](../assets/23-creator-about.en.jpg)
+
+*About uses the shared DocReview RAG v2 branding and creator attribution. Product identity and current environment remain explicit.*
+
 ## From filing to evidence and evaluation {#flow}
 
 1. **Acquire source files.** SEC and DART acquisition write source files and manifest metadata. Company names are display metadata; stable issuer codes remain request identifiers.
@@ -29,6 +35,9 @@ Use this map to find the layer responsible for a behavior. Start with the workfl
 The browser sends the selected profile and keeps that submitted configuration separate from the next request's controls. Server-resolved scope and execution metadata travel back with the run. The UI displays recorded evidence; it does not establish a routing decision or timing by guessing locally.
 
 ## Storage, permissions, and public boundaries {#boundaries}
+
+> [!DEV]
+> Writing corpus data, editing datasets, and changing server or publication settings are DEV operations. The architecture and shared manual remain readable in both environments.
 
 Source files and manifests, PostgreSQL documents/chunks, evaluation artifacts, and browser conversations are different stores. Downloading is not ingestion. Saving a browser conversation is not saving a search snapshot. Clearing browser conversations does not remove server documents.
 

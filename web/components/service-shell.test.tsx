@@ -432,19 +432,19 @@ describe("service shell", () => {
     expect(screen.getByRole("heading", { name: "Result details · #16" })).toBeVisible();
   });
 
-  it("renders the review shell and opens documentation in a new window", async () => {
+  it("renders the review shell with guides and development links in the same tab", async () => {
     render(<ServiceShell />);
 
     await waitFor(() =>
       expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Data & help" }));
-    const documentation = screen.getByText("Documentation").closest("a");
+    const documentation = screen.getByRole("link", { name: "User guide" });
 
     expect(screen.getByText("Review filings with verifiable evidence.")).toBeInTheDocument();
-    expect(documentation).toHaveAttribute("target", "_blank");
-    expect(documentation).toHaveAttribute("href", "/docreview-rag-agent/docs/");
+    expect(documentation).not.toHaveAttribute("target");
+    expect(documentation).toHaveAttribute("href", "/docreview-rag-agent/docs/en/");
+    expect(screen.getByRole("navigation", { name: "Guides & development" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/development/");
   });
 
   it("shows the evidence-only banner and fallback when the answer model is off", async () => {
@@ -667,9 +667,10 @@ describe("service shell", () => {
     // Help follows the workspace, including document-specific controls.
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
     expect(screen.getByRole("heading", { name: "Choose a topic" })).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Recommended" })).getByRole("button", { name: "Next step" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Recommended" })).queryByRole("button", { name: "Next step" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(screen.getByRole("heading", { name: "Choose a topic" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Recommended" })).getByRole("button", { name: "Document inventory" })).toBeInTheDocument();
     expect(document.querySelector(".help-marker")).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
@@ -1053,7 +1054,7 @@ describe("isolated production presentation preview", () => {
     const trigger = screen.getByRole("button", { name: "Production preview" });
     trigger.focus();
     fireEvent.click(trigger);
-    expect(screen.getByTitle("Production preview interface")).toHaveAttribute("src", "/docreview-rag-agent/production-preview/?locale=en");
+    expect(screen.getByTitle("Production preview interface")).toHaveAttribute("src", "/docreview-rag-agent/production-preview/?locale=en&theme=system");
     expect(question).not.toBeVisible();
     expect(screen.getByText("Data center revenue grew on Hopper demand.")).not.toBeVisible();
     expect(screen.queryByRole("button", { name: "System · healthy" })).toBeNull();

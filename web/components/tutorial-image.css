@@ -1,0 +1,28 @@
+.tutorial-image-trigger { display: block; cursor: zoom-in; }
+.tutorial-image-trigger:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; border-radius: 8px; }
+.tutorial-image-overlay { position: fixed; inset: 0; z-index: 220; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(0 0 0 / 82%); }
+.tutorial-image-dialog { width: min(96vw, 1680px); max-height: calc(100dvh - 32px); height: calc(100dvh - 32px); display: flex; flex-direction: column; color: #ededed; }
+.tutorial-image-controls { display: flex; align-items: center; gap: 12px; flex: none; min-height: 52px; padding-bottom: 8px; }
+.tutorial-image-zoom { display: flex; align-items: center; gap: 4px; margin-right: auto; }
+.tutorial-image-controls button, .tutorial-image-controls a { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgb(255 255 255 / 24%); border-radius: 6px; color: inherit; background: rgb(10 10 10 / 40%); cursor: pointer; padding: 8px; text-decoration: none; font-size: 12px; }
+.tutorial-image-controls button:disabled { opacity: .4; cursor: default; }
+.tutorial-image-controls output { min-width: 48px; text-align: center; font: 12px/1.4 ui-monospace, monospace; }
+.tutorial-image-controls .tutorial-image-close { border-color: transparent; background: transparent; }
+.tutorial-image-dialog :is(button, a, [tabindex]):focus-visible { outline: 2px solid #ededed; outline-offset: 3px; }
+.tutorial-image-stage { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; border: 1px solid rgb(255 255 255 / 18%); border-radius: 7px; scrollbar-color: #8d8d8d #292929; background: rgb(10 10 10 / 28%); }
+.tutorial-image-canvas { min-width: 100%; min-height: 100%; display: flex; align-items: center; justify-content: center; }
+.tutorial-image-canvas img { display: block; flex: none; height: auto; margin: 0; cursor: zoom-in; user-select: none; }
+.tutorial-image-footer { flex: none; max-height: 24dvh; overflow: auto; padding: 13px 16px 0; text-align: center; line-height: 1.6; }
+.tutorial-image-footer p { max-width: 110ch; margin: 0 auto; font-size: 13px; }
+.tutorial-image-wheel-hint { display: none; margin-top: 7px; color: #bdbdbd; font-size: 11px; }
+@media (hover: hover) and (pointer: fine) { .tutorial-image-wheel-hint { display: block; } }
+@media (max-width: 700px) {
+  .tutorial-image-overlay { padding: 8px; }
+  .tutorial-image-dialog { width: 100%; height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
+  .tutorial-image-controls { gap: 6px; }
+  .tutorial-image-controls button, .tutorial-image-controls a { min-width: 44px; min-height: 44px; }
+  .tutorial-image-controls a { font-size: 11px; }
+  .tutorial-image-zoom { gap: 2px; }
+  .tutorial-image-footer { padding: 10px 6px 0; }
+  .tutorial-image-footer p { font-size: 12px; }
+}

@@ -3,6 +3,7 @@ import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 
 import { PipelineReference } from "@/components/pipeline-reference";
+import { DevelopmentBadge } from "@/components/development-badge";
 import { WipeRuntime } from "@/components/wipe-runtime";
 import { Activity, ArrowDown, ArrowRight, Check, RefreshCw } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
@@ -309,6 +310,7 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
         <div className="stage-body">
           <div className="stage-head">
             <StatusPill status={stage.status} detail={stage.statusDetail} />
+            {OPERATOR_STAGES.has(stage.id) && <DevelopmentBadge locale={locale} compact />}
           </div>
           <p className="stage-description">{t(stage.description)}</p>
           {stage.numbers.length > 0 && (

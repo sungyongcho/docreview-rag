@@ -80,6 +80,7 @@ services:
     volumes:
       - ./web:/web
       - ./docs/TUTORIAL:/docs/TUTORIAL:ro
+      - ./docs:/docs:ro
       - web_node_modules:/web/node_modules
       - web_next:/web/.next
     environment:

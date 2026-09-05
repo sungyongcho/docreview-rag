@@ -29,11 +29,20 @@ Sending may incur embedding, translation, and answer-model costs. The answer wor
 **Stop request** interrupts an active request. The UI never simulates completed stages or estimates time
 remaining. Returning to an earlier phase can make later phases wait again.
 
+<!-- capture:15-cited-answer -->
+
+![An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown.](../assets/15-cited-answer.en.jpg)
+
+*An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown. It was not rerun for this guide; candidate count and the single actual citation are distinct, and old evidence selections may be read-only.*
+
 ## Choose an answer engine {#engines}
 
 The controls follow **corpus scope → answer engine/local model → retrieval preset → Review settings →
 Inspect request**. Mobile keeps scope and engine selection visible. Engine availability and corpus readiness
 are separate checks; a displayed model name does not prove it is installed or callable.
+
+> [!DEV]
+> Changing the answer engine/model or configuring a local server requires DEV. Normal public questions use the configured release policy and do not need these controls.
 
 OpenAI uses the configured answer policy and a valid local development key. Inspect current model IDs in
 [CLI configuration](cli.md#installation-and-configuration); do not change a model or budget just to make

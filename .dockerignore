@@ -8,6 +8,7 @@
 .claude
 tests
 docs/*
+!docs/DEVELOPMENT_STORY_OUTLINE.md
 !docs/TUTORIAL/
 docs/TUTORIAL/*
 !docs/TUTORIAL/ko/

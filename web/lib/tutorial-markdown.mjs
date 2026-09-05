@@ -8,7 +8,7 @@ function nodeText(node) {
   return node.value ?? (node.children ?? []).map(nodeText).join("");
 }
 
-export function renderTutorial(source, { locale = "ko", renderCode, assetVersion, registry = DOCUMENTATION_REGISTRY } = {}) {
+export function renderTutorial(source, { locale = "ko", renderCode, renderDevelopmentNotice, renderImage, assetVersion, registry = DOCUMENTATION_REGISTRY } = {}) {
   const steps = documentationDocuments(registry)
     .filter((document) => document.locale === locale)
     .flatMap((document) => document.steps.map((step) => ({ ...step, source: document.source })))
@@ -20,6 +20,13 @@ export function renderTutorial(source, { locale = "ko", renderCode, assetVersion
     return (tree) => {
       const definitions = new Map(tree.children.filter((n) => n.type === "definition").map((n) => [n.identifier.toLowerCase(), n]));
       function visit(node) {
+        for (const [index, child] of (node.children ?? []).entries()) {
+          const picture = child.type === "paragraph" && child.children.length === 1 ? child.children[0] : null;
+          const following = node.children[index + 1];
+          if ((picture?.type === "image" || picture?.type === "imageReference") && following?.type === "paragraph" && following.children.length === 1 && following.children[0].type === "emphasis") {
+            picture.data = { ...picture.data, hProperties: { ...picture.data?.hProperties, "data-tutorial-caption": nodeText(following) } };
+          }
+        }
         if (node.children) node.children = node.children.map((child) => child.type === "html" && child.value.trim() === "<!-- tutorial-steps -->" ? {
           type: "list", ordered: true, start: 1, spread: false,
           children: steps.map((step) => ({ type: "listItem", spread: false, children: [{ type: "paragraph", children: [{ type: "link", url: `${step.source}#${step.anchor}`, children: [{ type: "text", value: step.title }] }] }] })),
@@ -30,6 +37,14 @@ export function renderTutorial(source, { locale = "ko", renderCode, assetVersion
           node.type = node.type === "imageReference" ? "image" : "link";
           node.url = definition.url;
           node.title = definition.title;
+        }
+        if (node.type === "blockquote" && node.children[0]?.type === "paragraph") {
+          const first = node.children[0].children[0];
+          if (first?.type === "text" && /^\[!DEV\](?:\n|$)/.test(first.value)) {
+            first.value = first.value.replace(/^\[!DEV\]\n?/, "");
+            if (!nodeText(node.children[0]).trim()) node.children.shift();
+            node.data = { ...node.data, hProperties: { "data-development-only": "true" } };
+          }
         }
         if (node.type === "heading") {
           const explicit = nodeText(node).match(/\s+\{#([a-z][a-z0-9-]*)\}\s*$/);
@@ -82,10 +97,20 @@ export function renderTutorial(source, { locale = "ko", renderCode, assetVersion
     skipHtml: true,
     remarkPlugins: [remarkGfm, prepare],
     components: {
+      a: ({ children, href }) => {
+        const external = /^https?:\/\//i.test(href ?? "");
+        return createElement("a", { href, ...(external ? { target: "_blank", rel: "noopener noreferrer" } : {}) }, children,
+          external ? createElement("span", { className: "visually-hidden" }, locale === "ko" ? " · 새 탭에서 열림" : " · Opens in a new tab") : null);
+      },
+      blockquote: ({ children, node }) => node.properties["data-development-only"] === "true"
+        ? (renderDevelopmentNotice?.(children) ?? createElement("aside", { className: "docs-development-notice" }, createElement("strong", null, locale === "ko" ? "개발 모드 전용" : "DEV only"), children))
+        : createElement("blockquote", null, children),
       ...(renderCode ? { pre: ({ children }) => renderCode(codes[Number(children.props["data-code-index"])]) } : {}),
       ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((depth) => [`h${depth}`, ({ children, id }) => createElement(`h${depth}`, { id }, createElement("a", { href: `#${encodeURIComponent(id)}`, className: "docs-heading-link" }, children, createElement("span", { "aria-hidden": true, className: "docs-heading-hash" }, " #")))])),
       table: ({ children }) => createElement("div", { className: "markdown-table-wrap", tabIndex: 0, role: "region", "aria-label": locale === "ko" ? "가로로 스크롤할 수 있는 표" : "Scrollable table" }, createElement("table", null, children)),
-      img: ({ src, alt, title }) => createElement("a", { href: src, target: "_blank", rel: "noopener noreferrer", "aria-label": `${alt} · ${locale === "ko" ? "전체 크기로 보기" : "Open full size"}` }, createElement("img", { src, alt, title, loading: "lazy" })),
+      img: ({ src, alt, title, node }) => renderImage
+        ? renderImage({ src, alt, title, caption: node.properties["data-tutorial-caption"] || alt, locale })
+        : createElement("a", { href: src, target: "_blank", rel: "noopener noreferrer", "aria-label": `${alt} · ${locale === "ko" ? "전체 크기로 보기" : "Open full size"}` }, createElement("img", { src, alt, title, loading: "lazy" })),
     },
     children: source,
   });

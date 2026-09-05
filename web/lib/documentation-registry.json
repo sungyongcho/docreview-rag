@@ -32,7 +32,7 @@
       "legacyAnchors": { "ko": { "2-이미-준비된-데이터-확인하기": "step-2" }, "en": { "2-check-existing-data": "step-2" } }
     },
     {
-      "id": "acquisition", "icon": "Download", "slug": "acquisition", "group": "prepare", "order": 4, "source": "acquisition.md",
+      "id": "acquisition", "developmentOnly": true, "icon": "Download", "slug": "acquisition", "group": "prepare", "order": 4, "source": "acquisition.md",
       "title": { "ko": "원문 수집", "en": "Acquisition" },
       "summary": { "ko": "SEC·DART의 회사·회계연도와 누락 원문 선택", "en": "Select SEC or DART companies, fiscal years, and missing filings" },
       "related": ["documents", "indexing", "cli"],
@@ -43,7 +43,7 @@
       "legacyAnchors": { "ko": { "3-nvidia-원문-수집하기": "step-3", "dart-보고서-추가하기": "sources" }, "en": { "3-download-nvidia-filings": "step-3", "add-dart": "sources" } }
     },
     {
-      "id": "indexing", "icon": "Database", "slug": "indexing", "group": "prepare", "order": 5, "source": "indexing.md",
+      "id": "indexing", "developmentOnly": true, "icon": "Database", "slug": "indexing", "group": "prepare", "order": 5, "source": "indexing.md",
       "title": { "ko": "인덱싱", "en": "Indexing" },
       "summary": { "ko": "파싱·청킹 뒤 임베딩과 BM25를 각각 준비", "en": "Parse and chunk filings, then prepare embeddings and BM25 separately" },
       "related": ["retrieval", "runtime", "troubleshooting"],
@@ -71,7 +71,7 @@
       "legacyAnchors": { "ko": { "7-답변-설정과-첫-질문": "step-9", "ollama로-답변-엔진-바꾸기": "engines" }, "en": { "7-configure-and-ask-your-first-question": "step-9", "try-ollama-answers": "engines" } }
     },
     {
-      "id": "evaluation", "icon": "ChartColumn", "slug": "evaluation", "group": "measure", "order": 9, "source": "evaluation.md",
+      "id": "evaluation", "developmentOnly": true, "icon": "ChartColumn", "slug": "evaluation", "group": "measure", "order": 9, "source": "evaluation.md",
       "title": { "ko": "평가", "en": "Evaluation" },
       "summary": { "ko": "데이터셋·원본과 초안·평가 작업과 결과", "en": "Understand datasets, sources and drafts, evaluation jobs, and results" },
       "related": ["retrieval", "snapshots", "runtime"],
@@ -114,7 +114,7 @@
       "related": ["overview", "indexing", "runtime"], "steps": []
     },
     {
-      "id": "cli", "icon": "Terminal", "slug": "cli", "group": "reference", "order": 14, "source": "cli.md",
+      "id": "cli", "developmentOnly": true, "icon": "Terminal", "slug": "cli", "group": "reference", "order": 14, "source": "cli.md",
       "title": { "ko": "CLI 명령 안내", "en": "CLI reference" },
       "summary": { "ko": "실행 명령·환경·소유권과 안전한 사용", "en": "Commands, environment, ownership, and safe usage" },
       "related": ["environment", "acquisition", "troubleshooting"], "steps": [],
@@ -144,7 +144,7 @@
       ]
     },
     {
-      "id": "ollama", "icon": "Cpu", "slug": "ollama", "group": "reference", "order": 15, "source": "ollama.md",
+      "id": "ollama", "developmentOnly": true, "icon": "Cpu", "slug": "ollama", "group": "reference", "order": 15, "source": "ollama.md",
       "title": { "ko": "Ollama 설치와 연결", "en": "Ollama setup" },
       "summary": { "ko": "macOS·Linux의 로컬 Ollama 설치·연결·진단", "en": "Install, connect, and diagnose a local Ollama server on macOS or Linux" },
       "related": ["environment", "settings", "runtime", "cli"], "steps": []

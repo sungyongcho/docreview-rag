@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { resolve, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderTutorial } from "../lib/tutorial-markdown.mjs";
-import { documentationDocuments, validateDocumentationRegistry } from "../lib/documentation-registry.mjs";
+import { DEVELOPMENT_STORY_SOURCE, documentationDocuments, validateDocumentationRegistry } from "../lib/documentation-registry.mjs";
 
 export const DOCUMENTATION_REGISTRY_FILE = fileURLToPath(new URL("../lib/documentation-registry.json", import.meta.url));
 
@@ -61,6 +61,11 @@ export async function prepareTutorial(root = resolve(process.cwd(), "../docs/TUT
     }
     documents.set(item.file, document);
   }
+  const storySource = await readFile(resolve(root, DEVELOPMENT_STORY_SOURCE), "utf8");
+  digest.update(DEVELOPMENT_STORY_SOURCE + "\0" + storySource + "\0");
+  const story = renderTutorial(storySource, { locale: "ko", registry });
+  if (story.headings.filter((heading) => heading.depth === 1).length !== 1) throw new Error(`Development log requires one main heading: ${DEVELOPMENT_STORY_SOURCE}`);
+  documents.set(DEVELOPMENT_STORY_SOURCE, story);
   const copies = new Map();
   for (const [file, document] of documents) {
     for (const link of document.links) {

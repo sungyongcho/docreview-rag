@@ -5,6 +5,11 @@
  */
 
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
+import type { Capabilities } from "./types";
+
+export type HelpCapability = Exclude<keyof Capabilities, "environment">;
+export interface HelpAccess { capabilities?: Capabilities | null; publicPreview?: boolean }
+export interface HelpGuide { summary: string; steps: readonly string[] }
 
 export type HelpScreen =
   | "build"
@@ -27,6 +32,38 @@ export interface HelpTopic {
   seeAlso?: string[];
   /** true when the element lives inside collapsed details or only exists on live builds */
   optional?: boolean;
+  /** The actual capability required to use this control; omitted for public browsing. */
+  capability?: HelpCapability;
+  requiredCapabilities?: readonly HelpCapability[];
+  availableInPreview?: boolean;
+  publicContent?: { capabilities: readonly HelpCapability[]; body: string[]; guide: HelpGuide };
+  guide?: HelpGuide;
+}
+
+/** Match effective UI permissions, with a hard local-operation boundary in production. */
+function capabilityAllowed(capability: HelpCapability, access: HelpAccess): boolean {
+  if (access.publicPreview && capability !== "can_compare_published_snapshots") return false;
+  if ((capability === "can_configure_local_llm" || capability === "can_use_operations") && access.capabilities?.environment !== "dev") return false;
+  return access.capabilities?.[capability] === true;
+}
+
+export function developmentHelpTopic(topic: HelpTopic): boolean {
+  return !!topic.capability && topic.capability !== "can_compare_published_snapshots";
+}
+
+/** Use one topic policy for search, recommendations, details, links, and page help. */
+export function accessibleHelpTopic(topic: HelpTopic, access: HelpAccess = {}): HelpTopic | null {
+  if (access.publicPreview && topic.availableInPreview === false) return null;
+  if (topic.capability && !capabilityAllowed(topic.capability, access)) return null;
+  if (topic.requiredCapabilities?.some((capability) => !capabilityAllowed(capability, access))) return null;
+  const visible = topic.publicContent?.capabilities.some((capability) => !capabilityAllowed(capability, access))
+    ? { ...topic, body: topic.publicContent.body, tune: undefined, guide: topic.publicContent.guide } : topic;
+  return access.publicPreview ? { ...visible, guide: { summary: visible.guide?.summary ?? visible.body[0], steps: ["Open the related control.", "Read the available values or recorded results.", "This preview is read-only; questions and server changes are not executed."] } } : visible;
+}
+
+/** Attach the owning workspace permission while preserving narrower per-control requirements. */
+function restrictedTopics(topics: HelpTopic[], capability: HelpCapability, parent?: HelpCapability): HelpTopic[] {
+  return topics.map((topic) => ({ ...topic, capability: topic.capability ?? capability, requiredCapabilities: [...(topic.requiredCapabilities ?? []), ...(topic.capability && topic.capability !== capability ? [capability] : []), ...(parent ? [parent] : [])] }));
 }
 
 export const HELP_SCREEN_TITLES: Record<HelpScreen, string> = {
@@ -239,7 +276,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["review.composer", "build.stage.answer_model"],
   },
   {
-    id: "build.stage.answer_model",
+    id: "build.stage.answer_model", capability: "can_edit_prompt_policy",
     title: "6 · Answer model",
     body: [
       "The LLM that writes the answer and checks every citation. It is optional: without it, Ask still returns evidence.",
@@ -252,7 +289,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["review.readiness", "system.status"],
   },
   {
-    id: "build.stage.evaluate",
+    id: "build.stage.evaluate", capability: "can_run_evaluation",
     title: "7 · Evaluate",
     body: [
       "Scores retrieval against golden questions so you can trust, or fix, the steps above. Recall@k, hit rate and MRR measure retrieval only, not answer factuality.",
@@ -275,7 +312,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.filters", "review.preset"],
   },
   {
-    id: "review.preset",
+    id: "review.preset", publicContent: {"capabilities": ["can_change_custom_retrieval"], "body": ["Compare the built-in retrieval presets and inspect their effective settings."], "guide": {"summary": "Compare the built-in retrieval presets and inspect their effective settings.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Retrieval preset",
     body: [
       "Balanced is hybrid retrieval with ts_rank_cd, k 5, candidate_k 20 and rrf_k 60. Korean adds BM25, candidate_k 30 and route by language. Accuracy adds BM25, candidate_k 50 and the cross-encoder reranker.",
@@ -296,7 +333,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.scope", "measure.playground.route_by_language"],
   },
   {
-    id: "review.snapshot",
+    id: "review.snapshot", capability: "can_query_snapshot",
     title: "Snapshot chip",
     body: [
       "Shown when the session queries a frozen evaluation snapshot instead of the live corpus, after Use for review in Measure › Snapshots.",
@@ -307,7 +344,7 @@ const REVIEW: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "review.readiness",
+    id: "review.readiness", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Read published corpus availability. Public document counts describe published filings, not private runtime totals."], "guide": {"summary": "Read published corpus availability. Public document counts describe published filings, not private runtime totals.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Readiness chip",
     body: [
       "Summarises what the corpus can do right now: empty, embeddings pending (lexical only), vector only when BM25 is not built, or the filing count with hybrid ready.",
@@ -316,7 +353,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["build.stage.embeddings", "build.stage.lexical"],
   },
   {
-    id: "review.composer",
+    id: "review.composer", availableInPreview: false,
     title: "Question",
     body: [
       "Enter sends, Shift+Enter adds a line. The last six turns of the conversation travel with the question so follow-ups keep their context.",
@@ -325,7 +362,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.send", "review.evidence"],
   },
   {
-    id: "review.send",
+    id: "review.send", availableInPreview: false,
     title: "Send",
     body: [
       "Disabled while a review runs, while the API is down or still being checked, when the corpus is empty, or when Vector retrieval is selected but embeddings are pending.",
@@ -335,7 +372,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.readiness", "build.stage.answer_model"],
   },
   {
-    id: "review.run-trace",
+    id: "review.run-trace", publicContent: {"capabilities": ["can_edit_run_limits"], "body": ["Read the recorded stages, measurements, and failure details without changing execution limits."], "guide": {"summary": "Read the recorded stages, measurements, and failure details without changing execution limits.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}}, availableInPreview: false,
     title: "Run trace",
     body: [
       "What the run actually did: its identifier, how many provider requests it made, tokens in and out, elapsed seconds, and the node path it took.",
@@ -348,7 +385,7 @@ const REVIEW: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "review.evidence",
+    id: "review.evidence", availableInPreview: false,
     title: "Evidence, pins and exclusions",
     body: [
       "Each answer lists the candidate chunks it was checked against, with the citation, document id and character span.",
@@ -357,11 +394,11 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["measure.playground.candidate_k"],
     optional: true,
   },
-  { id: "review.rag", title: "Review settings", body: ["Open one conversation panel for Filters and the Search, Evidence, and Run limits sections permitted in this environment. Running requests retain their original settings."], optional: true },
-  { id: "review.retrieval", title: "Custom retrieval", body: ["Customize the current conversation here without leaving the chat. Conversation candidate pools are limited to 100 and must be at least k."], optional: true },
-  { id: "review.evidence-policy", title: "Evidence sent to the model", body: ["Controls conversation history and evidence size. These are separate from the limits for the complete run."], optional: true },
-  { id: "review.run-limits", title: "Run limits", body: ["Iteration, token and wall-clock limits apply across the complete run, including retries. Zero blocks a resource; wall clock is measured in seconds."], optional: true },
-  ...profileFieldTopics("review.retrieval", true),
+  { id: "review.rag", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Open Review settings to inspect this conversation and adjust its available filters."], "guide": {"summary": "Open Review settings to inspect this conversation and adjust its available filters.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}}, title: "Review settings", body: ["Open one conversation panel for Filters and the Search, Evidence, and Run limits sections permitted in this environment. Running requests retain their original settings."], optional: true },
+  { id: "review.retrieval", capability: "can_change_custom_retrieval", requiredCapabilities: ["can_edit_prompt_policy"], title: "Custom retrieval", body: ["Customize the current conversation here without leaving the chat. Conversation candidate pools are limited to 100 and must be at least k."], optional: true },
+  { id: "review.evidence-policy", capability: "can_edit_prompt_policy", title: "Evidence sent to the model", body: ["Controls conversation history and evidence size. These are separate from the limits for the complete run."], optional: true },
+  { id: "review.run-limits", capability: "can_edit_run_limits", requiredCapabilities: ["can_edit_prompt_policy"], title: "Run limits", body: ["Iteration, token and wall-clock limits apply across the complete run, including retries. Zero blocks a resource; wall clock is measured in seconds."], optional: true },
+  ...restrictedTopics(profileFieldTopics("review.retrieval", true), "can_change_custom_retrieval", "can_edit_prompt_policy"),
 ];
 
 const PLAYGROUND: HelpTopic[] = [
@@ -443,7 +480,7 @@ const GOLDEN: HelpTopic[] = [
     seeAlso: ["measure.runs.results", "measure.golden.revision"],
   },
   {
-    id: "measure.golden.revision",
+    id: "measure.golden.revision", capability: "can_edit_golden",
     title: "Golden revision",
     body: [
       "Selects which revision the table and a queued run use; the empty choice is the canonical file. Only a draft is editable.",
@@ -561,7 +598,7 @@ const COMPARE: HelpTopic[] = [
 
 const SNAPSHOTS: HelpTopic[] = [
   {
-    id: "measure.snapshots.freeze",
+    id: "measure.snapshots.freeze", capability: "can_build_snapshot", requiredCapabilities: ["can_run_evaluation"],
     title: "Save result as snapshot",
     body: [
       "In Result details, enter a snapshot label and choose Save result as snapshot. It freezes current documents, chunks, embeddings and BM25 with the selected result for later reuse.",
@@ -571,7 +608,7 @@ const SNAPSHOTS: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "measure.snapshots.list",
+    id: "measure.snapshots.list", publicContent: {"capabilities": ["can_build_snapshot", "can_query_snapshot", "can_run_evaluation"], "body": ["Browse published snapshots and inspect their labels, document counts, datasets, and recorded results."], "guide": {"summary": "Browse published snapshots and inspect their labels, document counts, datasets, and recorded results.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Snapshots",
     body: [
       "Every stored snapshot with its label, document count, suite and result id. Use for review makes the active session query the snapshot instead of the live corpus; Publish or Hide toggles public visibility.",
@@ -579,7 +616,7 @@ const SNAPSHOTS: HelpTopic[] = [
     seeAlso: ["review.snapshot", "measure.snapshots.compare"],
   },
   {
-    id: "measure.snapshots.compare",
+    id: "measure.snapshots.compare", capability: "can_compare_published_snapshots",
     title: "Compare stored results",
     body: [
       "Compares the baseline and candidate snapshots from their stored artifacts only; no retrieval and no provider request runs.",
@@ -588,7 +625,7 @@ const SNAPSHOTS: HelpTopic[] = [
     seeAlso: ["measure.snapshots.comparison", "measure.compare.overview"],
   },
   {
-    id: "measure.snapshots.comparison",
+    id: "measure.snapshots.comparison", capability: "can_compare_published_snapshots",
     title: "Snapshot comparison",
     body: [
       "Metric deltas, the number of common cases, and each case's baseline and candidate rank with its transition and rank delta.",
@@ -614,7 +651,7 @@ const BUILD_JOBS: HelpTopic[] = [
 const SYSTEM: HelpTopic[] = [
 
   {
-    id: "system.status",
+    id: "system.status", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Inspect available service health and published corpus readiness. Private inventory totals are withheld."], "guide": {"summary": "Inspect available service health and published corpus readiness. Private inventory totals are withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "System status",
     body: [
       "The /ready payload as a page: overall status and mode, database and schema state, corpus counters (documents, chunks, embedded, pending, BM25) and the model policy per role.",
@@ -623,7 +660,7 @@ const SYSTEM: HelpTopic[] = [
     seeAlso: ["build.runtime", "build.stage.answer_model"],
   },
   {
-    id: "system.local-policy",
+    id: "system.local-policy", capability: "can_configure_local_llm",
     title: "Local model policy",
     body: [
       "What the local engine serves when a session selects it: answers and citation checks, query translation, intent classification and casual replies.",
@@ -635,7 +672,7 @@ const SYSTEM: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "system.operations",
+    id: "system.operations", capability: "can_use_operations", requiredCapabilities: ["can_edit_prompt_policy"],
     title: "Operations",
     body: [
       "Runs allowlisted verification and service commands through the local operator (scripts/run_local.sh) without opening a shell; output streams into Latest run.",
@@ -645,7 +682,7 @@ const SYSTEM: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "system.api",
+    id: "system.api", capability: "can_run_evaluation", requiredCapabilities: ["can_edit_prompt_policy"],
     title: "API inspector",
     body: [
       "Posts a raw EvaluationRequest to /admin/evaluations/runs and shows the typed response, for reproducing a run outside the form. Live builds only, and disabled while the runtime is not healthy.",
@@ -654,7 +691,7 @@ const SYSTEM: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "system.usage",
+    id: "system.usage", capability: "can_edit_prompt_policy",
     title: "Usage",
     body: [
       "Provider usage aggregated from locally persisted run traces: requests, input, cached and output tokens, reasoning tokens and the estimated cost per model. It does not query the provider's billing.",
@@ -662,24 +699,24 @@ const SYSTEM: HelpTopic[] = [
     seeAlso: ["measure.playground.preview_review"],
     optional: true,
   },
-  { id: "system.runtime", title: "Runtime and allowance details", body: ["Development shows API, database and Operations endpoints here. Deployment shows read-only rate, token and cost allowances."], optional: true },
+  { id: "system.runtime", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Read the service request, token, and cost allowances without exposing private server settings."], "guide": {"summary": "Read the service request, token, and cost allowances without exposing private server settings.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}}, title: "Runtime and allowance details", body: ["Development shows API, database and Operations endpoints here. Deployment shows read-only rate, token and cost allowances."], optional: true },
 ];
 
 export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
-  build: BUILD,
-  "build.jobs": BUILD_JOBS,
+  build: restrictedTopics(BUILD, "can_build_snapshot"),
+  "build.jobs": restrictedTopics(BUILD_JOBS, "can_build_snapshot"),
   "build.documents": [
     { id: "build.documents.filters", title: "Document filters", body: ["Search by company code or name. Choose a fiscal year and expand Filters for source, language, report type and readiness. Remove an applied chip to broaden the list."] },
     { id: "build.documents.list", title: "Document inventory", body: ["Select a document to open its source information and search readiness. Drag the divider on a wide screen to adjust the list width; use Back to documents on a narrow screen."] },
-    { id: "build.documents.detail", title: "Document details", body: ["Inspect original source information, chunk coverage and the next preparation step. Public visitors can only inspect filings in published snapshots."], optional: true },
+    { id: "build.documents.detail", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Inspect the original source, citations, and search coverage for a published document."], "guide": {"summary": "Inspect the original source, citations, and search coverage for a published document.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}}, title: "Document details", body: ["Inspect original source information, chunk coverage and the next preparation step. Public visitors can only inspect filings in published snapshots."], optional: true },
   ],
   review: REVIEW,
-  "measure.playground": PLAYGROUND,
-  "measure.golden": GOLDEN,
-  "measure.runs": RUNS,
-  "measure.compare": COMPARE,
+  "measure.playground": restrictedTopics(PLAYGROUND, "can_run_evaluation"),
+  "measure.golden": restrictedTopics(GOLDEN, "can_run_evaluation"),
+  "measure.runs": restrictedTopics(RUNS, "can_run_evaluation"),
+  "measure.compare": restrictedTopics(COMPARE, "can_run_evaluation"),
   "measure.snapshots": SNAPSHOTS,
-  "measure.defaults": [{ id: "measure.defaults.form", title: "Experiment defaults", body: ["Save the golden suite and revision, run mode, snapshots and new-conversation retrieval preset here. Saving does not start a run or replace prompt defaults."] }],
+  "measure.defaults": [{ id: "measure.defaults.form", capability: "can_run_evaluation", title: "Experiment defaults", body: ["Save the golden suite and revision, run mode, snapshots and new-conversation retrieval preset here. Saving does not start a run or replace prompt defaults."] }],
   system: SYSTEM.filter((topic) => LOCAL_ENGINE_VISIBLE || topic.id !== "system.local-policy"),
 };
 

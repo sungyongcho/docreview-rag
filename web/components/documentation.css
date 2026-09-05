@@ -16,9 +16,22 @@
 .docs-related ul { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0; margin: 0; list-style: none; }
 .docs-related a { color: var(--text); text-underline-offset: 3px; }
 .docs-site .docs-content { max-width: 760px; }
+.docs-mode-guide { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 24px; padding: 12px 0; border-block: 1px solid var(--border); }
+.docs-mode-guide > :is(.development-badge, .docs-mode-shared) { flex: none; margin-top: 2px; }
+.docs-mode-shared { padding: 3px 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.docs-mode-guide p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.docs-development-notice { margin: 0 0 20px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.docs-development-notice > div { margin-top: 8px; font-size: 13px; line-height: 1.7; }
+.docs-development-notice > div > :last-child { margin-bottom: 0; }
+.docs-site .docs-menu .development-badge { margin: 3px 0 0 3px; padding: 1px 4px; font-size: 9px; }
+.docs-site .docs-menu .development-badge svg { margin-top: 0; }
 @media (max-width: 700px) {
+  .docs-mode-guide { flex-direction: column; gap: 8px; }
   .docs-site .docs-menu nav a { min-height: 44px; align-items: center; }
   .docs-related a { display: inline-flex; min-height: 44px; align-items: center; }
   .docs-pagination { gap: 10px; }
   .docs-pagination .docs-next { padding: 14px 10px; font-size: 13px; }
+}
+@media (max-width: 560px) {
+  .docs-site .docs-brand .product-ascii-compact { display: none; }
 }

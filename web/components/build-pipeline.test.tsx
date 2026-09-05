@@ -103,6 +103,13 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
 }
 
 describe("BuildPipeline", () => {
+  it("marks operator execution stages without marking the public question path", () => {
+    renderPipeline(liveInput(), { focusStage: "filings" });
+    expect(document.querySelector(".stage-head .development-badge")).toHaveAttribute("title", "DEV only");
+    fireEvent.click(screen.getByRole("button", { name: "Select Ask" }));
+    expect(document.querySelector(".stage-head .development-badge")).toBeNull();
+  });
+
   it("distinguishes a ready corpus from an unmeasured evaluation without blocking questions", () => {
     const handlers = renderPipeline(liveInput({
       corpus: { database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 21, chunks: 100, embedded_chunks: 100, pending_embeddings: 0, bm25_ready: true, writable: true, provider: "deterministic" },

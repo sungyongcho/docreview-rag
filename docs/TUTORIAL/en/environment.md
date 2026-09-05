@@ -7,6 +7,9 @@ for those connections.
 
 ## Before opening the service {#prerequisites}
 
+> [!DEV]
+> Installing dependencies, configuring credentials, and starting this local stack are operator setup tasks. Reading the deployed application does not require these changes.
+
 For a first installation, follow [installation and configuration](cli.md#installation-and-configuration)
 and [initial schema setup](cli.md#initial-schema-setup). Reuse an existing compatible
 database. Keep credentials in the local configuration described there; they are not
@@ -59,6 +62,12 @@ Corpus counts and model policy describe separate aspects of the same environment
 | Corpus | Counts and readiness are collected, including honest empty or partial states. | That all displayed vectors were produced by the intended model. |
 | Model availability | The selected engine is available, or its missing prerequisite is explained. | That a model request has succeeded or that an answer will be supported. |
 
+<!-- capture:01-system-status -->
+
+![System status separates actual API/database/schema health, corpus readiness and model availability.](../assets/01-system-status.en.jpg)
+
+*System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.*
+
 **Completion criteria:** the API responds, the DB is connected, and the schema is usable.
 You know whether this environment allows document preparation. An empty corpus does not
 invalidate those checks; identifying existing data is the next step. Unknown fields
@@ -79,7 +88,16 @@ The development stack supports source reload and live documentation updates. API
 restarts can interrupt queued work; check Jobs before deciding that an interrupted
 operation needs a retry. [Runtime](runtime.md) explains job and execution states.
 
+> [!DEV]
+> Production preview is a DEV-only inspection tool. It leaves the backend in DEV and does not grant production operator permissions.
+
 In a running DEV environment, **Production preview** in the top bar opens the visitor interface while the backend remains DEV. It is read-only: question execution and server changes are disabled. Finish the current request and close dialogs before opening it. **Exit preview** returns to the retained DEV conversation, selections, and scroll position. The preview uses separate temporary browser state, so inspecting it does not overwrite your DEV conversations.
+
+<!-- capture:28-production-preview -->
+
+![The isolated public-interface preview is explicitly labeled as using a DEV backend.](../assets/28-production-preview.en.jpg)
+
+*The isolated public-interface preview is explicitly labeled as using a DEV backend. It has no private conversation history and disables question execution and server changes; Exit preview returns to retained DEV work.*
 
 Open **Preview limits** to distinguish this interface check from a production-image check. The preview reuses the public interface in the development bundle; actual production permissions and build-time exclusions still require verification in the production image.
 

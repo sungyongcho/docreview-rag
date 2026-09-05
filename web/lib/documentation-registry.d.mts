@@ -3,13 +3,13 @@ export interface TutorialStep { number: number; anchor: string; title: string }
 export interface TutorialDocument {
   id: string; slug: string; group: string; groupTitle: string; order: number;
   source: string; locale: DocumentationLocale; file: string; title: string; label: string; icon?: string;
-  summary: string; href: string; related: string[]; steps: TutorialStep[];
+  summary: string; href: string; related: string[]; steps: TutorialStep[]; developmentOnly?: boolean;
 }
 export interface DocumentationRegistry {
   locales: DocumentationLocale[];
   groups: Array<{ id: string; title: Record<DocumentationLocale, string> }>;
   documents: Array<{
-    id: string; slug: string; group: string; order: number; source: string; icon?: string;
+    id: string; slug: string; group: string; order: number; source: string; icon?: string; developmentOnly?: boolean;
     title: Record<DocumentationLocale, string>; summary: Record<DocumentationLocale, string>;
     related: string[]; steps: Array<{ number: number; anchor: string; title: Record<DocumentationLocale, string> }>;
     legacyFiles?: string[]; legacyAnchors?: Partial<Record<DocumentationLocale, Record<string, string>>>;
@@ -18,6 +18,8 @@ export interface DocumentationRegistry {
 }
 export const DOCUMENTATION_REGISTRY: DocumentationRegistry;
 export const DOCUMENTATION_BASE: string;
+export const DEVELOPMENT_STORY_SOURCE: string;
+export function developmentStoryDocument(locale?: DocumentationLocale): TutorialDocument;
 export const DOCUMENTS: TutorialDocument[];
 export function validateDocumentationRegistry(value?: DocumentationRegistry): DocumentationRegistry;
 export function documentationDocuments(value?: DocumentationRegistry): TutorialDocument[];

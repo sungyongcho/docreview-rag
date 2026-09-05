@@ -12,9 +12,10 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 /** Watch only temporary canonical fixtures; never modify the actual documentation. */
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "docreview-tutorial-watch-"));
-  cleanups.push(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, "assets"));
+  const directory = await mkdtemp(join(tmpdir(), "docreview-tutorial-watch-"));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const root = join(directory, "TUTORIAL");
+  await mkdir(join(root, "assets"), { recursive: true });
   await writeTutorialFixtures(root);
   const output = join(root, "output");
   const revisionFile = join(root, ".tutorial/revision.ts");
@@ -75,4 +76,19 @@ it("watches documents registered while the same development process is running",
   const registered = await readFile(revisionFile, "utf8");
   await writeFile(join(root, "en/additional.md"), "# Additional\n\nUpdated without a restart.");
   await vi.waitFor(async () => expect(await readFile(revisionFile, "utf8")).not.toBe(registered));
+});
+
+it("refreshes the development outline and recovers after an incomplete save", async () => {
+  const { root, revisionFile } = await fixture();
+  const original = await readFile(revisionFile, "utf8");
+  const storyFile = join(root, "../DEVELOPMENT_STORY_OUTLINE.md");
+  const source = await readFile(storyFile, "utf8");
+  await writeFile(storyFile + ".saving", source + "\n\nDraft edit.");
+  await rename(storyFile + ".saving", storyFile);
+  await vi.waitFor(async () => expect(await readFile(revisionFile, "utf8")).not.toBe(original));
+  const edited = await readFile(revisionFile, "utf8");
+  await writeFile(storyFile, "## Missing title");
+  await vi.waitFor(async () => expect(await readFile(revisionFile, "utf8")).toContain("Development log requires one main heading"));
+  await writeFile(storyFile, source + "\n\nDraft edit.");
+  await vi.waitFor(async () => expect(await readFile(revisionFile, "utf8")).toBe(edited));
 });

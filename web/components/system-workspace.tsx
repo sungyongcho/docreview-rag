@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { RetainedPanel } from "@/components/retained-panel";
+import { DevelopmentBadge } from "@/components/development-badge";
 import { Metric } from "@/components/metric";
 import { useNotifications } from "@/components/notifications";
 import { DesktopJobNotifications, RuntimeSettings } from "@/components/runtime-settings";
@@ -74,12 +75,12 @@ export function SystemWorkspace({ live, ready = true, readiness, localModel, loc
         <div><p className="eyebrow">{t("System")}</p><h1>{t("Runtime readiness")}</h1></div>
         <div className="page-badges">
           {activeTab === "status" && <button className="button" type="button" disabled={checking} onClick={onRefresh}><RefreshCw size={15} /> {checking ? t("Checking…") : t("Refresh")}</button>}
-          <Link href="/docs/" target="_blank" rel="noreferrer" className="button" data-tour="documentation">{t("Documentation")}</Link>
+          <Link href={`/docs/${locale}/`} className="button" data-tour="documentation">{t("User guide")}</Link>
         </div>
       </header>
       <nav className="lab-tabs" aria-label={t("System sections")}>
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={activeTab === id} data-tour={id === "operations" ? "operations" : undefined} onClick={() => onTabChange(id)}>{t(label)}</button>
+          <button key={id} type="button" aria-pressed={activeTab === id} title={id !== "status" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} data-tour={id === "operations" ? "operations" : undefined} onClick={() => onTabChange(id)}>{t(label)}{id !== "status" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>
         ))}
       </nav>
 

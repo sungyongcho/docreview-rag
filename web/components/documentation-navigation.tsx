@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Activity, ArrowUpRight, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
 import type { TutorialHeading, TutorialDocument } from "@/lib/tutorial-markdown.mjs";
 import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
+import { DevelopmentBadge } from "@/components/development-badge";
 
 const DOCUMENT_ICONS: Record<string, LucideIcon> = { Activity, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal };
 
@@ -53,7 +54,11 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
   const disclosure = useResponsiveDisclosure("(min-width: 701px)");
   const groups = [...new Set(documents.map((document) => document.group))];
   return <details ref={disclosure} className="docs-menu" open>
-    <summary>{locale === "ko" ? "문서 둘러보기" : "Documentation"}</summary>
+    <summary>{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</summary>
+    <nav className="docs-nav-group" aria-label={locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}>
+      <Link href={`/docs/${locale}/`} aria-current={current === "overview" ? "page" : undefined}><BookOpen size={16} aria-hidden="true" /><span>{locale === "ko" ? "사용 가이드" : "User guide"}</span></Link>
+      <Link href={`/docs/${locale}/development/`} aria-current={current === "development" ? "page" : undefined}><Terminal size={16} aria-hidden="true" /><span>{locale === "ko" ? "개발 기록" : "Development log"}</span></Link>
+    </nav>
     <nav aria-label={locale === "ko" ? "문서 선택" : "Choose a document"}>
       {groups.map((group) => <section className="docs-nav-group" key={group} aria-labelledby={`docs-group-${group}`}>
         <h2 id={`docs-group-${group}`}>{documents.find((document) => document.group === group)!.groupTitle}</h2>
@@ -61,7 +66,7 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
           const Icon = DOCUMENT_ICONS[document.icon ?? ""] ?? BookOpen;
           return <Link key={document.id} href={document.href.replace(DOCUMENTATION_BASE, "")} aria-current={current === document.id ? "page" : undefined}>
           <Icon size={16} aria-hidden="true" />
-          <span>{document.title}{current === document.id && <small>{document.summary}</small>}</span>
+          <span>{document.title}{document.developmentOnly && <> <DevelopmentBadge locale={locale} compact /></>}{current === document.id && <small>{document.summary}</small>}</span>
         </Link>; })}
       </section>)}
     </nav>

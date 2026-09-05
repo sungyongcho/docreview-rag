@@ -4,6 +4,7 @@ import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 
 import { RetainedPanel } from "@/components/retained-panel";
+import { DevelopmentBadge } from "@/components/development-badge";
 import { WorkflowHelp } from "@/components/workflow-help";
 
 import "./evaluation-workspace.css";
@@ -30,6 +31,7 @@ import {
   transitionGoldenRevision,
 } from "@/lib/api";
 import type {
+  Capabilities,
   EvaluationComparison,
   EvaluationJob,
   EvaluationRequest,
@@ -63,6 +65,8 @@ export const MEASURE_TABS: Array<[MeasureTab, string]> = [
 ];
 
 export interface MeasureWorkspaceProps {
+  capabilities?: Capabilities | null;
+  publicPreview?: boolean;
   active?: boolean;
   environment?: "dev" | "prod";
   live: boolean;
@@ -98,7 +102,7 @@ function toCanonical(value: unknown): GoldenCanonical | null {
     : null;
 }
 
-export function MeasureWorkspace({ active = true, live, ready, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange }: MeasureWorkspaceProps) {
+export function MeasureWorkspace({ capabilities, publicPreview, active = true, live, ready, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange }: MeasureWorkspaceProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [experimentDefaults, setExperimentDefaults] = useState(loadExperimentDefaults);
@@ -465,9 +469,9 @@ export function MeasureWorkspace({ active = true, live, ready, profile, onProfil
       </header>
       <nav className="lab-tabs workflow-tabs" aria-label={t("Measure sections")}>
         {([["playground", "1. Search trial"], ["golden", "2. Golden dataset"], ["runs", "3. Run evaluation"], ["compare", "4. Compare and save"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={tab === id || (id === "compare" && tab === "snapshots")} onClick={() => changeTab(id)}>{t(label)}</button>)}
-        {live && <button type="button" className="workflow-settings" aria-pressed={tab === "defaults"} onClick={() => changeTab("defaults")}>{t("Evaluation settings")}</button>}
+        {live && <button type="button" className="workflow-settings" aria-pressed={tab === "defaults"} title={locale === "ko" ? "개발 모드 전용" : "DEV only"} onClick={() => changeTab("defaults")}>{t("Evaluation settings")}<span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span></button>}
       </nav>
-      <div className="workflow-section-heading"><h2>{tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "defaults" ? t("Evaluation settings") : tab === "snapshots" ? t("Saved search snapshots") : t("Compare evaluation results")}</h2><WorkflowHelp screen={`measure.${tab}`} /></div>
+      <div className="workflow-section-heading"><h2>{tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "defaults" ? t("Evaluation settings") : tab === "snapshots" ? t("Saved search snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs", "defaults"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp screen={`measure.${tab}`} capabilities={capabilities} publicPreview={publicPreview} /></div>
       <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : "Read-only workspace · published snapshots come from the server")}</p>
       <p className="workflow-intro">{tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t("Select a question to inspect it. Create a draft to edit, save your changes, then validate before publishing.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "defaults" ? t("Defaults apply to the next new evaluation. Existing conversations and results are unchanged.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Read how evidence hits, rank, and latency changed before saving a snapshot.")}</p>
       {(tab === "compare" || tab === "snapshots") && <nav className="result-tabs"><button type="button" aria-pressed={tab === "compare"} onClick={() => changeTab("compare")}>{t("Compare results")}</button><button type="button" aria-pressed={tab === "snapshots"} onClick={() => changeTab("snapshots")}>{t("Saved snapshots")}</button></nav>}
@@ -531,7 +535,7 @@ export function MeasureWorkspace({ active = true, live, ready, profile, onProfil
           <div className="surface-heading"><h2>{t("Result details")} · #{resultDetail.result_id}</h2><div className="action-row"><button className="button" type="button" data-help="measure.runs.use_selected" disabled={selectedResultId === null} onClick={applySelectedResult}>{t("Use selected set")}</button>{selectedJob?.baseline_id && <button className="button" type="button" onClick={() => void loadComparison(resultDetail.result_id, selectedJob.baseline_id!)}>{t("Compare")}</button>}</div></div>
           <div className="metric-grid compact">{Object.entries(resultDetail.metrics).map(([name, value]) => <Metric key={name} icon={<Beaker />} label={name} value={value.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })} />)}</div>
           <details><summary>{t("Recorded configuration")}</summary><pre>{JSON.stringify(resultDetail.config, null, 2)}</pre></details><h3>{t("Cases")}</h3>{resultDetail.cases.slice(0, 10).map((item) => <article className="case-row" key={item.case_id}><div><strong>{item.case_id}</strong><p>{item.question}</p></div><span>{item.first_relevant_rank ? t("rank {p0}", { p0: item.first_relevant_rank }) : t("miss")}</span></article>)}
-          <div className="evaluation-save"><label>{t("Snapshot label")}<input value={snapshotLabel} onChange={(event) => setSnapshotLabel(event.target.value)} placeholder={t("BM25 tuned baseline")} /></label><button className="button" type="button" data-help="measure.snapshots.freeze" disabled={selectedResultId === null || !snapshotLabel.trim()} onClick={() => void freezeSnapshot()}>{t("Save result as snapshot")}</button></div>
+          <div className="evaluation-save"><label>{t("Snapshot label")}<input value={snapshotLabel} onChange={(event) => setSnapshotLabel(event.target.value)} placeholder={t("BM25 tuned baseline")} /></label><button className="button" type="button" data-help="measure.snapshots.freeze" title={locale === "ko" ? "개발 모드 전용" : "DEV only"} disabled={selectedResultId === null || !snapshotLabel.trim()} onClick={() => void freezeSnapshot()}>{t("Save result as snapshot")}<span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span></button></div>
         </section>}
         {active && tab === "runs" && setupOpen && createPortal(<div className="evaluation-setup-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !busy) setSetupOpen(false); }}><section ref={setupRef} className="surface form-stack evaluation-setup" role="dialog" aria-modal="true" aria-labelledby="new-evaluation-heading" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) setSetupOpen(false); } }}>
           <div className="surface-heading"><div><p className="eyebrow">{t("Evaluation setup")}</p><h2 id="new-evaluation-heading">{t("New evaluation")}</h2></div><button className="button icon" type="button" aria-label={t("Close evaluation setup")} disabled={busy} onClick={() => setSetupOpen(false)}><X size={18} /></button></div>

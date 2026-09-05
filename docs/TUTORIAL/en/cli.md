@@ -1,5 +1,8 @@
 # Local command reference
 
+> [!DEV]
+> These commands are for the operator of a local checkout and its services. They are not actions available to visitors through the public interface.
+
 `rag_alias.sh` registers commands for starting, stopping, and inspecting this checkout in Bash or Zsh.
 For the twelve-step screen-led exercise, start with the [DocReview RAG v2 overview](overview.md).
 Use [environment setup](environment.md#step-1), [acquisition](acquisition.md#step-3), and
@@ -169,7 +172,7 @@ an open development Documentation page automatically. Store shared images in `do
 and reference them as below; VS Code Markdown preview and the website use the same original.
 
 ```markdown
-![Alternative text describing what to inspect](../assets/02-pipeline.jpg)
+![Alternative text describing what to inspect](../assets/02-pipeline.en.jpg)
 ```
 
 New referenced images and replacements at the same filename update automatically. Click a screenshot
@@ -463,9 +466,11 @@ Queued/running jobs are active; succeeded/failed/cancelled jobs are finished. In
 restarted mid-work. Failed and interrupted jobs offer Retry; cancelled jobs do not. Inspect completed work
 and remaining scope before retrying paid embedding.
 
-![Localized trace and usage of a saved successful run](../assets/16-run-trace.jpg)
+<!-- capture:16-run-trace -->
 
-*This trace belongs to a saved successful run. Usage and the node path retain their recorded values, and unperformed phases remain gray. Inspect status and error details in the same place when diagnosing a failure. No new model call was made for capture.*
+![The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed.](../assets/16-run-trace.en.jpg)
+
+*The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed. These are historical recorded values, not a new measurement.*
 
 ## Remove command registration
 

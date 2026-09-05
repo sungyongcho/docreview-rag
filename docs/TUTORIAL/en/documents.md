@@ -28,6 +28,12 @@ clearing filters; proceed to acquisition instead of selecting an unrelated recor
 available, chunk counts, embedding identities, snapshot membership, and related work.
 The list starts at full width before selection; it does not preselect the first filing. The detail header makes the company name and **FY** badge prominent, with the stable document ID, issuer code, and form underneath. If a company name is unavailable, the identifier remains visible; the interface does not invent a name.
 
+<!-- capture:03-document -->
+
+![A real Samsung Electronics filing highlights its supplied company name and FY 2022.](../assets/03-document.en.jpg)
+
+*A real Samsung Electronics filing highlights its supplied company name and FY 2022. The document ID, issuer code, source, and 1,393 chunks remain available below.*
+
 | Inspect | What it tells you | Next missing work |
 |---|---|---|
 | Company, fiscal year, source and filing identity | Whether this is the intended original report. | Correct the search or [choose acquisition inputs](acquisition.md#step-3). |
@@ -71,6 +77,12 @@ and filter values; a missing or conflicting company name can leave only the code
 Fiscal year describes the report's fiscal period, which need not match the calendar
 year in its filing date. Read the report period and filing date in details.
 
+<!-- capture:22-company-filters -->
+
+![Company and fiscal-year filters use actual catalog values.](../assets/22-company-filters.en.jpg)
+
+*Company and fiscal-year filters use actual catalog values. Samsung Electronics and FY2022 are selected, with removable filter chips and the advanced filters visible.*
+
 ## Lists, details, and returning to work {#navigation}
 
 When the actual content area reaches 1100 px, selecting a document opens a split view.
@@ -85,6 +97,9 @@ between workspaces keep the relevant state during the session. When returning to
 conversation after a readiness check, use the explicit **Back to conversation** action.
 
 ## Development and public visibility {#visibility}
+
+> [!DEV]
+> Unpublished filings and administrator metadata are visible only in DEV. Public lists and details follow ready, published snapshot membership.
 
 The development catalog can show documents that have not been published. The public
 catalog is restricted to documents belonging to ready, public snapshots; its counts,

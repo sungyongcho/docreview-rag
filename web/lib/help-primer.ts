@@ -366,7 +366,7 @@ export const HELP_GROUPS: readonly HelpGroup[] = GROUP_DEFINITIONS.map((group) =
 
 /** Lead with one clear meaning and three small actions; full definitions remain available. */
 export function getHelpPrimer(topic: HelpTopic): HelpPrimer {
-  const primer = PRIMERS[topic.id] ?? PRIMERS[`field:${topic.id.split(".").at(-1)}`] ?? {
+  const primer = topic.guide ?? PRIMERS[topic.id] ?? PRIMERS[`field:${topic.id.split(".").at(-1)}`] ?? {
     summary: topic.body[0],
     steps: ["Open the related control.", "Check its current value or recorded result.", "Use its explicit action only when ready."],
   };

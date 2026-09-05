@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOCUMENTATION_REGISTRY, DOCUMENTS, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
+import { DEVELOPMENT_STORY_SOURCE, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
 
 describe("documentation registry", () => {
   it("provides fifteen paired documents and twelve unique tutorial steps", () => {
@@ -36,5 +36,13 @@ describe("documentation registry", () => {
     expect(localizedDocumentationRoute("/docs/cli/", "en", "#초기-schema-준비")).toBe("/docs/en/cli/#initial-schema-setup");
     expect(localizedDocumentationRoute("/docs/en/ollama/", "ko", "#diagnostics")).toBe("/docs/ko/ollama/#diagnostics");
     expect(localizedDocumentationRoute("/docs/en/unknown/", "ko")).toBeNull();
+  });
+
+  it("keeps the Korean development draft separate and preserves its route during language changes", () => {
+    expect(developmentStoryDocument("ko")).toMatchObject({ title: "개발 기록", file: DEVELOPMENT_STORY_SOURCE });
+    expect(developmentStoryDocument("en")).toMatchObject({ title: "Development log", file: DEVELOPMENT_STORY_SOURCE });
+    expect(DOCUMENTS).toHaveLength(30);
+    expect(localizedDocumentationRoute("/docreview-rag-agent/docs/ko/development/", "en", "#References")).toBe("/docreview-rag-agent/docs/en/development/#References");
+    expect(localizedDocumentationRoute("/docs/en/development/", "ko", "#시작과-학습")).toBe(`/docs/ko/development/#${encodeURIComponent("시작과-학습")}`);
   });
 });

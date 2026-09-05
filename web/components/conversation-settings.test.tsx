@@ -22,6 +22,8 @@ it("edits only the current conversation policy and reads the next conversation's
   const onChange = vi.fn();
   const props = { editable: true, onChange, onTabChange: vi.fn(), onClose: vi.fn() };
   const { rerender } = render(<ConversationSettings {...props} tab="limits" profile={DEFAULT_SESSION_PROFILE} />);
+  expect(screen.getByRole("button", { name: "Run limits" })).toHaveAttribute("title", "DEV only");
+  expect(screen.getByRole("button", { name: "Filters" }).querySelector(".development-badge")).toBeNull();
   fireEvent.change(screen.getByLabelText("Maximum wall clock seconds"), { target: { value: "240" } });
   expect(onChange).toHaveBeenCalledWith({ prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 240 } } });
   rerender(<ConversationSettings {...props} tab="limits" profile={{ ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 90 } } }} />);
@@ -47,6 +49,7 @@ it("keeps allowed filters but hides developer controls in public mode", async ()
   expect(screen.getByLabelText("Companies")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Run limits" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Maximum wall clock seconds")).not.toBeInTheDocument();
+  expect(document.querySelector(".conversation-settings-sections .development-badge")).toBeNull();
   await screen.findByRole("button", { name: "English (en)" });
   expect(api.getPublishedDocumentFacets).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
   expect(api.getDocumentFacets).not.toHaveBeenCalled();

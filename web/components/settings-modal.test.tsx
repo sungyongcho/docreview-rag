@@ -34,6 +34,8 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
 
   it("shows developer prompt policy while preserving the immutable guard", () => {
     renderSettings(DEV);
+    expect(screen.getByRole("button", { name: "Prompt" })).toHaveAttribute("title", "DEV only");
+    expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
     expect(screen.getByLabelText("Immutable evidence guard")).toHaveAttribute("readonly");
@@ -46,6 +48,7 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
 
     expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data & help" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -67,15 +70,17 @@ it("saves only prompt defaults and leaves existing conversation settings untouch
   expect(screen.getByRole("button", { name: /Show tutorial/ })).toBeInTheDocument();
 });
 
-it("opens documentation separately without changing the current conversation", () => {
+it("links to both guides in the same tab without changing the current conversation", () => {
   const onChange = vi.fn();
   const onClear = vi.fn();
   render(<SettingsModal open profile={DEFAULT_SESSION_PROFILE} capabilities={DEV} onChange={onChange} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={onClear} />);
   fireEvent.click(screen.getByRole("button", { name: "Data & help" }));
-  const link = screen.getByRole("link", { name: "Documentation (New tab)" });
-  expect(link).toHaveAttribute("href", "/docreview-rag-agent/docs/");
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noreferrer noopener");
+  const link = screen.getByRole("link", { name: "User guide" });
+  expect(link).toHaveAttribute("href", "/docreview-rag-agent/docs/en/");
+  expect(link).not.toHaveAttribute("target");
+  expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/development/");
+  fireEvent.click(screen.getByRole("button", { name: "About" }));
+  expect(screen.getByRole("link", { name: "Development log" })).not.toHaveAttribute("target");
   expect(onChange).not.toHaveBeenCalled();
   expect(onClear).not.toHaveBeenCalled();
 });

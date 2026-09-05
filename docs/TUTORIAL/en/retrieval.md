@@ -5,6 +5,9 @@ is correct. Read a promising excerpt against the original report before choosing
 
 ## 8. Test retrieval and read the source {#step-8}
 
+> [!DEV]
+> Live Search trial and its answer preview require the local operator build. The public version links to published snapshots; normal public conversation requests follow their own release policy.
+
 - **Goal:** check that the prepared index finds evidence relevant to a concrete question.
 - **Prerequisites:** the report has chunks and the selected retrieval lanes are ready;
   complete [index preparation](indexing.md) as needed.
@@ -26,6 +29,12 @@ What drove NVIDIA data center revenue growth in fiscal 2024?
 OpenAI query embeddings can incur cost even when corpus embeddings are ready. **Preview review** is a
 separate answer operation with provider usage and a recorded run. Do not invoke it just to inspect
 retrieval. Preview retrieval does not persist an evaluation result or alter a conversation profile.
+
+<!-- capture:09-retrieval-inputs -->
+
+![Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5.](../assets/09-retrieval-inputs.en.jpg)
+
+*Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5. Retrieval and answer preview remain separate explicit actions.*
 
 ## Read the ranking information {#rankings}
 

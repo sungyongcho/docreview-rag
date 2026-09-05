@@ -1,9 +1,17 @@
-import { HELP_TOPICS, HELP_SCREEN_TITLES, type HelpScreen, type HelpTopic } from "./help-content";
+import { accessibleHelpTopic, HELP_TOPICS, HELP_SCREEN_TITLES, type HelpAccess, type HelpScreen, type HelpTopic } from "./help-content";
 import { translate, type Locale } from "./i18n";
 
 export interface HelpSearchEntry { screen: HelpScreen; topic: HelpTopic; index: number }
 
 export const HELP_ENTRIES: HelpSearchEntry[] = Object.entries(HELP_TOPICS).flatMap(([screen, topics]) => topics.map((topic, index) => ({ screen: screen as HelpScreen, topic, index })));
+
+/** Project the complete catalog once before any public search or navigation surface uses it. */
+export function helpEntriesForAccess(access: HelpAccess = {}): HelpSearchEntry[] {
+  return HELP_ENTRIES.flatMap((entry) => {
+    const topic = accessibleHelpTopic(entry.topic, access);
+    return topic ? [{ ...entry, topic }] : [];
+  });
+}
 
 /** Match Korean or English queries locally, preferring titles over explanatory prose. */
 export function searchHelp(query: string, locale: Locale, entries = HELP_ENTRIES): HelpSearchEntry[] {

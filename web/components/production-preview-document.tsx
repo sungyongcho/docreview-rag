@@ -16,6 +16,8 @@ export function ProductionPreviewDocument() {
     enterProductionPreview("document");
     const locale = new URLSearchParams(window.location.search).get("locale");
     if (locale === "en" || locale === "ko") browserStorage().setItem("docreview.locale", locale);
+    const theme = new URLSearchParams(window.location.search).get("theme");
+    if (theme === "light" || theme === "dark" || theme === "system") browserStorage().setItem("docreview:theme", theme);
     let current = true;
     void getCapabilities().then((capabilities) => {
       if (!current) return;

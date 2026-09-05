@@ -11,6 +11,8 @@ const memory = new Map<string, string>();
 if (previewDocument) {
   const locale = new URLSearchParams(window.location.search).get("locale");
   if (locale === "en" || locale === "ko") memory.set("docreview.locale", locale);
+  const theme = new URLSearchParams(window.location.search).get("theme");
+  if (theme === "light" || theme === "dark" || theme === "system") memory.set("docreview:theme", theme);
 }
 const memoryStorage: Storage = {
   get length() { return memory.size; },

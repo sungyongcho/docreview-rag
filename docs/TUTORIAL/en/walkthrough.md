@@ -1,7 +1,9 @@
 # From your first filing to a cited answer
 
+**Legacy walkthrough.** This page preserves the earlier nine-step sequence for existing links. Follow the [current twelve-step guide](overview.md#learning-path) for current navigation and setup. Refreshed figures show actual saved or unexecuted states; this walkthrough was not run again for the screenshots.
+
 Prepare NVIDIA filings, inspect retrieved evidence, and verify your first answer against the original report.
-This walkthrough follows the actual screens of your local development environment.
+This preserves the earlier local development sequence; use the focused guides for current control labels and navigation.
 The ASCII text logo identifies this interface as v2.
 
 Data and runtime state prepared with `rag-dev` are also visible in the dashboard connected to that environment.
@@ -53,13 +55,17 @@ mean the corpus or embeddings are ready.
 
 **Completion:** continue when the services and schema are ready. Otherwise use [diagnostics](cli.md#troubleshooting).
 
-![System status with DEV mode, database, schema, and corpus readiness](../assets/01-system-status.jpg)
+<!-- capture:01-system-status -->
 
-*System → System status. Check the connection and schema first. A model listed in policy is separate from the identity of stored vectors.*
+![System status separates actual API/database/schema health, corpus readiness and model availability.](../assets/01-system-status.en.jpg)
 
-![Pipeline connecting filings, chunks, embeddings, BM25, answers, and evaluation](../assets/02-pipeline.jpg)
+*System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.*
 
-*Build → Pipeline. Selecting a node opens its execution panel. Existing completed work can be reused.*
+<!-- capture:02-pipeline -->
+
+![Pipeline combines the dependency graph with the selected step.](../assets/02-pipeline.en.jpg)
+
+*Pipeline combines the dependency graph with the selected step. Embeddings and BM25 are parallel preparation paths; evaluation needs an index and dataset, not a generated answer.*
 
 ## 2. Check existing data
 
@@ -82,9 +88,11 @@ An embedding count alone does not verify the producing model identity.
 **Completion:** identify the remaining work. CLI ingestion into the same DB appears here, even though a
 CLI operation may not appear in Jobs because it did not use the web queue.
 
-![NVDA-FY2024 document search, source information, 437 chunks, and embedding identity](../assets/03-document.jpg)
+<!-- capture:03-document -->
 
-*Search for NVDA-FY2024 and select its row. These 437 captured vectors have a deterministic identity; verify OpenAI readiness separately in step 5.*
+![A real Samsung Electronics filing highlights its supplied company name and FY 2022.](../assets/03-document.en.jpg)
+
+*A real Samsung Electronics filing highlights its supplied company name and FY 2022. The document ID, issuer code, source, and 1,393 chunks remain available below.*
 
 ## 3. Download NVIDIA filings
 
@@ -116,9 +124,11 @@ remain incomplete when other companies in the main manifest have missing sources
 **Completion:** every source named by the manifest you will ingest must exist. CLI acquisition performs the
 same source-preparation step; database storage happens next.
 
-![SEC EDGAR acquisition form with NVDA and 2024 entered](../assets/04-sec-inputs.jpg)
+<!-- capture:04-sec-inputs -->
 
-*Filings → Change…. This captures configured inputs; no download was started for the screenshot.*
+![Valid SEC company and fiscal-year chips with the Download missing filings action.](../assets/04-sec-inputs.en.jpg)
+
+*Valid SEC company and fiscal-year chips with the Download missing filings action. Existing NVDA/AMD and FY2023/FY2024 inputs are shown; no download was started. Used for steps 3 and 4.*
 
 ## 4. Ingest the source into documents and chunks
 
@@ -141,13 +151,17 @@ manifest; existing documents remain in the database.
 **Completion:** proceed to embedding. Ingestion also recalculates BM25, but it does not fill OpenAI vectors.
 The `app.cli ingest --manifest …` command performs this storage step too; do not repeat a completed CLI ingest.
 
-![Per-manifest counts and individual Ingest buttons](../assets/05-manifest-ingest.jpg)
+<!-- capture:05-manifest-ingest -->
 
-*Parse & chunk → Change…. This environment has two default manifests. For the one-filing exercise, create tutorial-manifest.json and use its own row here, not Ingest all manifests.*
+![Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts.](../assets/05-manifest-ingest.en.jpg)
 
-![Status, progress, and result of an existing successful SEC ingestion job](../assets/08-jobs.jpg)
+*Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts. Each row has its own Ingest action; no ingestion was started.*
 
-*An existing 21-filing SEC ingestion job is selected. Its scope differs from the one-filing exercise; read both status and the actual result message.*
+<!-- capture:08-jobs -->
+
+![An existing successful SEC manifest ingestion job is selected.](../assets/08-jobs.en.jpg)
+
+*An existing successful SEC manifest ingestion job is selected. Its actual target, progress and result are shown; this is historical work, not a job started for the guide.*
 
 ## 5. Prepare embeddings and BM25
 
@@ -168,13 +182,17 @@ checks, not proof that an evaluation has been completed.
 **Completion:** proceed to retrieval inspection. The CLI `retrieve --provider openai --embed-missing …`
 also backfills but then performs a query; the web backfill button only prepares embeddings.
 
-![Embedding provider, prepared and pending counts, and the cost notice](../assets/06-embeddings.jpg)
+<!-- capture:06-embeddings -->
 
-*The capture shows deterministic with zero pending chunks. This is not OpenAI readiness. Apply the OpenAI configuration, check the current provider and pending count, then run only if needed.*
+![The actual development index reports deterministic embeddings and zero pending chunks.](../assets/06-embeddings.en.jpg)
 
-![BM25 ready state and rebuild action](../assets/07-bm25.jpg)
+*The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The database-wide cost notice and explicit backfill action remain visible.*
 
-*Inspect readiness in the Lexical index (BM25) node. A ready index does not need another rebuild.*
+<!-- capture:07-bm25 -->
+
+![BM25 is already ready for the current corpus.](../assets/07-bm25.en.jpg)
+
+*BM25 is already ready for the current corpus. The rebuild action is available but was not executed.*
 
 ## 6. Read evidence before generating an answer
 
@@ -198,9 +216,11 @@ answer-model call; do not click it merely to inspect retrieval.
 The CLI retrieval command also returns evidence, but Search trial has no equivalent input to `--doc-id`.
 Its profile and any other documents in the DB can therefore produce different ranks and results.
 
-![NVIDIA FY2024 retrieval question with hybrid, BM25, and k 5](../assets/09-retrieval-inputs.jpg)
+<!-- capture:09-retrieval-inputs -->
 
-*This is the retrieval form before execution; the right-hand area has no preview result yet. Preview retrieval and Preview answer are separate actions.*
+![Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5.](../assets/09-retrieval-inputs.en.jpg)
+
+*Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5. Retrieval and answer preview remain separate explicit actions.*
 
 ## 7. Configure and ask your first question
 
@@ -255,9 +275,11 @@ No live Gemma timing measurement was performed for this guide.
 run has no operational failure. `NOT_IN_DOCS` means insufficient document evidence and is distinct from
 connectivity or provider errors. A CLI search result alone is not a generated answer.
 
-![Existing NVIDIA data-center answer and FY2024 source citation cards](../assets/15-cited-answer.jpg)
+<!-- capture:15-cited-answer -->
 
-*This is an actual saved answer to an earlier English question, not a newly executed tutorial question. Wording and citation scope depend on the query and settings. Check document IDs, fiscal years, and source passages. The execution summary marks only phases actually performed in this saved run in green.*
+![An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown.](../assets/15-cited-answer.en.jpg)
+
+*An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown. It was not rerun for this guide; candidate count and the single actual citation are distinct, and old evidence selections may be read-only.*
 
 ## 8. Change settings and evaluate
 
@@ -277,9 +299,11 @@ Saving a connection does not automatically switch the answer engine.
 citations. A successful connection alone does not establish answer quality. Disconnect persists an off state;
 Restore defaults uses startup settings. See [connection cleanup](cli.md#reset-local-connection-settings).
 
-![Ollama server address, connect, disconnect, and reset controls](../assets/13-local-model.jpg)
+<!-- capture:13-local-model -->
 
-*Settings → Local LLM. Existing connection settings were inspected without changing them. Embedding-only models are marked unavailable for answers.*
+![Default resolves the configured local Ollama endpoint without an address field.](../assets/13-local-model.en.jpg)
+
+*Default resolves the configured local Ollama endpoint without an address field. Actual connection health, three installed models and one answer-capable model are distinguished; addresses remain in Connection details.*
 
 ### Add DART
 
@@ -325,17 +349,23 @@ and save, select a baseline and candidate with matching suite, golden/corpus ide
 illustrative, not an actual evaluation. A snapshot preserves search data plus an evaluation result for reuse.
 Evaluation settings apply to the next new evaluation and do not change existing results.
 
-![Mixed-language SEC suite and read-only details of a selected question](../assets/10-golden-question.jpg)
+<!-- capture:10-golden-question -->
 
-*Select a question row to inspect its question, reference answer, and classification. Editing starts with Create draft; no draft was created or published for this capture.*
+![The mixed-language SEC suite is selected with an actual canonical question open.](../assets/10-golden-question.en.jpg)
 
-![Evaluation setup with a suite and Quick current-index mode](../assets/11-evaluation-inputs.jpg)
+*The mixed-language SEC suite is selected with an actual canonical question open. Canonical JSON is read-only; viewing a source question is separate from creating or editing a draft.*
 
-*Open New evaluation from the runs list to inspect setup before queueing. An existing result is not evidence that the newly selected suite has been evaluated.*
+<!-- capture:11-evaluation-inputs -->
 
-![Baseline and candidate selectors, comparison, and saved snapshots](../assets/12-compare.jpg)
+![New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index.](../assets/11-evaluation-inputs.en.jpg)
 
-*Comparison requires two distinct compatible results. Only one result was available during capture, so no comparison was run and no illustrative metrics were presented as actual results.*
+*New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index. Hybrid/BM25/k=5 is visible; Queue evaluation was not pressed.*
+
+<!-- capture:12-compare -->
+
+![The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated.](../assets/12-compare.en.jpg)
+
+*The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated. Saving a snapshot requires a suitable recorded result.*
 
 ### Find help for a control
 
@@ -357,9 +387,11 @@ separate boundaries of browser conversations, DB volume, source files, and conne
 
 **Completion:** record where the exercise succeeded or failed and share feedback. When a screen or workflow changes, update its screenshot and instructions together without exposing keys or personal data.
 
-![Data and help showing browser conversation cleanup and database preservation](../assets/14-browser-data.jpg)
+<!-- capture:14-browser-data -->
 
-*Clear conversations in Data and help affects browser conversations. It is separate from DB, source, and connection cleanup; no deletion was performed for this capture.*
+![Data & help separates browser conversations and preference resets from server documents and job history.](../assets/14-browser-data.en.jpg)
+
+*Data & help separates browser conversations and preference resets from server documents and job history. No cleanup or reset action was executed.*
 
 ## When you need to reset everything
 
@@ -378,6 +410,8 @@ success, clear DocReview browser data and return to setup. Code, keys, `.env`, d
 manifest/golden/profile sources are preserved. Changed targets or external DBs are refused. On partial failure,
 read the completed stages before retrying. Reset is never required merely to start this tutorial.
 
-![Actual reset warning refusing execution for an inaccessible local settings file](../assets/17-reset-blocked.jpg)
+<!-- capture:17-reset-blocked -->
 
-*The preview refused reset because the operator could not remove local-llm.json. It did not proceed to typed confirmation. Check ownership and permissions first; neither permissions nor data were changed during capture.*
+![This records permission-blocked reset eligibility before the user authorized an access repair.](../assets/17-reset-blocked.en.png)
+
+*This records permission-blocked reset eligibility before the user authorized an access repair. The native crop omits machine-specific remediation commands. No reset was executed.*

@@ -4,6 +4,7 @@ import { useI18n } from "@/lib/i18n";
 
 import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
+import { GuidesNavigation } from "@/components/guides-navigation";
 import { ExecutionPerformance } from "@/components/execution-performance";
 import { LanguageSwitch } from "@/lib/i18n";
 import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
@@ -45,6 +46,7 @@ import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/com
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
 import { ProductionPreviewFrame } from "@/components/production-preview-frame";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { browserStorage, enterProductionPreview, exitProductionPreview, previewState } from "@/lib/production-preview";
 import { useProductionPreview } from "@/lib/use-production-preview";
 import {
@@ -158,6 +160,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const adminLive = adminBuild && permissions?.can_edit_prompt_policy === true;
   const localAllowed = LOCAL_ENGINE_VISIBLE && permissions?.environment === "dev" && permissions.can_configure_local_llm;
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
+  const helpCapabilities = useMemo(() => permissions ? { ...permissions, can_use_operations: Boolean(operationsAvailable), can_configure_local_llm: Boolean(localAllowed), can_change_custom_retrieval: Boolean(adminLive && permissions.can_change_custom_retrieval), can_edit_run_limits: Boolean(adminLive && permissions.can_edit_run_limits) } : null, [permissions, operationsAvailable, localAllowed, adminLive]);
   const initialized = useRef(false);
   const { notify } = useNotifications();
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check, sessionActive);
@@ -758,6 +761,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={t("System · {p0}", { p0: t(healthLabel(runtimeHealth.kind)) })} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>{t("System")}</span><span className="system-health"><i aria-hidden="true" />{t(healthLabel(runtimeHealth.kind))}</span></button>
           <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>{t("Settings")}</span></button>
         </div>
+        <GuidesNavigation />
         {localAllowed && activeSessionProfile.engine === "local" && (
           <div className="local-mode-badge" role="note">
             <TriangleAlert size={14} aria-hidden="true" />
@@ -775,7 +779,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             {(navigationHistory.length > 0 || view !== "review") && <button className="workspace-back" type="button" aria-label={returnLabel} title={returnLabel} onClick={navigateBack}><ArrowLeft size={16} aria-hidden="true" /><span>{returnLabel}</span></button>}
           </div>
           <div><strong>{view === "review" && active?.messages.length ? topbarTitle : t(topbarTitle)}</strong><span>{t("Evidence-first SEC and DART filing review")}</span></div>
-          <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "Inspect the public interface without changing the DEV backend.")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "Inspect the public interface without changing the DEV backend.")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
         <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
@@ -788,7 +792,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   <h1>{t("Review filings with verifiable evidence.")}</h1>
                   <p>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.")}</p>
                   <ol className="first-review-path"><li><strong>01</strong><span>{t("Ask about a filing")}</span></li><li><strong>02</strong><span>{t("Open its original evidence")}</span></li><li><strong>03</strong><span>{t("Inspect execution and compare retrieval")}</span></li></ol>
-                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag-agent/docs/${locale}/`} target="_blank" rel="noreferrer noopener">{t("Read the walkthrough")}</a></div>
+                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag-agent/docs/${locale}/`}>{t("Read the walkthrough")}</a></div>
                   {readiness?.mode === "canned" && <p className="notice">{t("Demonstration data — no live provider calls.")}</p>}
                   {adminLive && readiness?.corpus?.documents === 0 ? (
                     <div className="next-step" data-tour="evidence-fallback">
@@ -869,6 +873,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           onNavigate={navigate}
         /></RetainedPanel>
         <RetainedPanel active={view === "measure"} className="retained-workspace" workspace="measure"><MeasureWorkspace
+          capabilities={helpCapabilities}
+          publicPreview={publicPreview}
           active={sessionActive && view === "measure"}
           onDirtyChange={setUnsavedGolden}
           environment={permissions?.environment}
@@ -901,7 +907,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       </section>
       <SettingsModal open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
+      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
         visible={sessionActive && runtimeHealth.modalVisible}

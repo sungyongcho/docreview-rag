@@ -1,5 +1,8 @@
 # Set up Ollama on macOS and Linux
 
+> [!DEV]
+> Connecting and configuring a local answer server in DocReview requires DEV. Installation and service commands are performed by the owner of that computer.
+
 Use this guide when **Settings → Local LLM** cannot find an answer model, or when you want to connect a separately installed Ollama server. Finish [environment setup](environment.md#step-1) first. A prepared DocReview corpus can be reused; installing Ollama does not rebuild documents or embeddings.
 
 The commands below are for you to run deliberately. Reading this page or opening the guide does not install software, download models, change services, or send a question to a model.
@@ -152,7 +155,19 @@ ollama ps
 
 Open **Settings → Local LLM** and use the server selector. **Default** obtains its address from the current DocReview environment. **Add a server…** reveals a server name, alternate address, and protocol. The name is a label that helps you recognize this endpoint later.
 
+<!-- capture:13-local-model -->
+
+![Default resolves the configured local Ollama endpoint without an address field.](../assets/13-local-model.en.jpg)
+
+*Default resolves the configured local Ollama endpoint without an address field. Actual connection health, three installed models and one answer-capable model are distinguished; addresses remain in Connection details.*
+
 Select **Run connection diagnostics** first. Its title identifies the candidate being checked; the active connection remains unchanged. Check the backend-to-server result and answer-model status, and open **Connection details** to inspect the active/default addresses. Use **Connect** for an existing choice or **Add & connect** for a new server only when you intend to apply it. A failed probe or save keeps the prior working configuration. Connecting an answer server does not change the embedding provider.
+
+<!-- capture:25-add-server -->
+
+![Add a server reveals name, URL and protocol fields.](../assets/25-add-server.en.jpg)
+
+*Add a server reveals name, URL and protocol fields. This unsubmitted draft keeps Add & connect disabled while the existing Default connection remains active.*
 
 **Disconnect** disables local answers. **Use Default** checks the startup server before switching and keeps added servers. If that check or save fails, the current working connection remains active.
 
@@ -184,3 +199,9 @@ Read failures by layer rather than repeating installation:
 | Answer fails after connection succeeds | Run trace and the recorded failure type | Follow [execution troubleshooting](troubleshooting.md#execution); reachability is not an answer-quality test |
 
 For logs and measured execution, continue with [runtime](runtime.md#local-models). The [CLI reference](cli.md#diagnose-local-model-connectivity) owns the full diagnostic-command details.
+
+<!-- capture:24-connection-diagnostics -->
+
+![A real read-only Default connection check passed server selection, connectivity and answer-model availability.](../assets/24-connection-diagnostics.en.jpg)
+
+*A real read-only Default connection check passed server selection, connectivity and answer-model availability. No settings, models or services were changed.*

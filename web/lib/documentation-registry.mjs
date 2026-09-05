@@ -2,6 +2,13 @@ import registry from "./documentation-registry.json" with { type: "json" };
 
 export const DOCUMENTATION_REGISTRY = registry;
 export const DOCUMENTATION_BASE = "/docreview-rag-agent";
+export const DEVELOPMENT_STORY_SOURCE = "../DEVELOPMENT_STORY_OUTLINE.md";
+
+/** Expose the Korean draft separately from the bilingual user-guide inventory. */
+export function developmentStoryDocument(locale = "ko") {
+  const title = locale === "ko" ? "개발 기록" : "Development log";
+  return { id: "development", slug: "development", group: "development", groupTitle: title, order: 0, source: DEVELOPMENT_STORY_SOURCE, file: DEVELOPMENT_STORY_SOURCE, locale, title, label: title, summary: locale === "ko" ? "한국어 개발 기록 초안" : "Development outline · Korean source", href: `${DOCUMENTATION_BASE}/docs/${locale}/development/`, related: ["overview", "architecture"], steps: [] };
+}
 
 /** Keep manually entered fragments usable even when their percent escaping is incomplete. */
 function fragment(hash) {
@@ -94,6 +101,7 @@ export function documentationLink(file, hash, locale = "ko", value = registry) {
 export function localizedDocumentationRoute(pathname, locale, hash = "", value = registry) {
   const match = pathname.match(/^(.*)\/docs(?:\/(ko|en))?(?:\/([a-z][a-z0-9-]*))?\/?$/);
   if (!match) return null;
+  if (match[3] === "development") return `${match[1]}/docs/${locale}/development/${hash ? `#${encodeURIComponent(fragment(hash))}` : ""}`;
   const source = value.documents.find((document) => document.slug === (match[3] ?? ""));
   if (!source) return null;
   let target = documentationDocument(source.id, locale, value);

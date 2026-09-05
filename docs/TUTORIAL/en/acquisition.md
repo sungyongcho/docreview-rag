@@ -1,5 +1,8 @@
 # Acquire SEC and DART filings
 
+> [!DEV]
+> Editing acquisition inputs and downloading filings require DEV. The public pipeline can be inspected, but its acquisition controls cannot start work.
+
 Acquisition downloads original reports and records their identities in a manifest. Parsing and database
 storage happen later. Check [Documents](documents.md#step-2) first: a report already prepared in this
 environment does not need another download.
@@ -26,6 +29,12 @@ Multiple identifiers can be pasted together. Remove an unwanted chip individuall
 Years must have four digits. An ascending range such as `2023-2025` expands to individual years;
 the input accepts at most 50 years and removes duplicates. Invalid text remains visible and disables
 acquisition. Finish or correct it before pressing the action button, including after leaving the field.
+
+<!-- capture:04-sec-inputs -->
+
+![Valid SEC company and fiscal-year chips with the Download missing filings action.](../assets/04-sec-inputs.en.jpg)
+
+*Valid SEC company and fiscal-year chips with the Download missing filings action. Existing NVDA/AMD and FY2023/FY2024 inputs are shown; no download was started. Used for steps 3 and 4.*
 
 ## 4. Download only missing filings {#step-4}
 

@@ -5,7 +5,7 @@
       "capture_id": "01-system-status-ko",
       "document_id": "environment",
       "tutorial_step": 1,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "System / System status",
       "required_state": "Actual API, database and schema status",
       "locale": "ko",
@@ -15,43 +15,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/01-system-status.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/01-system-status.ko.jpg",
+      "caption": "시스템 상태에서 실제 API·DB·스키마 상태, 코퍼스 준비, 모델 사용 가능 여부를 나누어 확인합니다. 개발 코퍼스에는 공시 30건이 있으며 준비 작업을 다시 실행하지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:57:37.391Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "3667d15015f493e911f980c6fab2f195bdd9a6221efaf6ad431f91de798b4b54",
+        "bytes": 312480
+      }
     },
     {
       "capture_id": "01-system-status-en",
       "document_id": "environment",
       "tutorial_step": 1,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "System / System status",
       "required_state": "Actual API, database and schema status",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/01-system-status.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/01-system-status.en.jpg",
+      "caption": "System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:57:23.766Z",
+      "document_locale": "en",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "f7928f7b4a43e64f7d36a93088e339341c7327d3995836f7bef4f5e6d4f6552e",
+        "bytes": 341496
+      }
     },
     {
       "capture_id": "02-pipeline-ko",
       "document_id": "overview",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline",
       "required_state": "Dependency graph and selected stage; no job started",
       "locale": "ko",
@@ -61,43 +93,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/02-pipeline.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/02-pipeline.ko.jpg",
+      "caption": "파이프라인은 의존 관계 그래프와 선택한 단계의 실행 영역을 함께 보여 줍니다. 임베딩과 BM25는 병렬 준비 경로이며, 평가에는 인덱스와 데이터셋이 필요하고 생성된 답변은 필요하지 않습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:57:38.093Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "b7fde01cdca046e3a1d6e40c73874af83e190ee5c515f0634c166a6e283c1f75",
+        "bytes": 318802
+      }
     },
     {
       "capture_id": "02-pipeline-en",
       "document_id": "overview",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline",
       "required_state": "Dependency graph and selected stage; no job started",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/02-pipeline.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/02-pipeline.en.jpg",
+      "caption": "Pipeline combines the dependency graph with the selected step. Embeddings and BM25 are parallel preparation paths; evaluation needs an index and dataset, not a generated answer.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:57:38.794Z",
+      "document_locale": "en",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "0ba6b6a4f03c048ba398a710aa5facfa0209b3311cc756ade17463f04d1a3062",
+        "bytes": 344836
+      }
     },
     {
       "capture_id": "03-document-ko",
       "document_id": "documents",
       "tutorial_step": 2,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Documents",
       "required_state": "Actual selected filing with readiness and source",
       "locale": "ko",
@@ -107,43 +171,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/03-document.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/03-document.ko.jpg",
+      "caption": "삼성전자와 FY 2022를 주 정보로 강조하고 원래 문서 ID·종목 코드·원문·청크 정보를 유지합니다. 실제 콘텐츠가 충분히 넓으면 목록과 상세가 분할됩니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T20:58:16.305Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "5bd5cae9a8883c7e178c47f2b0e1ac6f68c658c19c4c6c517511a963654e2333",
+        "bytes": 267774
+      }
     },
     {
       "capture_id": "03-document-en",
       "document_id": "documents",
       "tutorial_step": 2,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Documents",
       "required_state": "Actual selected filing with readiness and source",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/03-document.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/03-document.en.jpg",
+      "caption": "A real Samsung Electronics filing highlights its supplied company name and FY 2022. The document ID, issuer code, source, and 1,393 chunks remain available below.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T20:58:15.698Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "af2e0d6154afe0a5725eff5fd906106670ea5124397b8431ee59a582f4f2e859",
+        "bytes": 273068
+      }
     },
     {
       "capture_id": "04-sec-inputs-ko",
       "document_id": "acquisition",
       "tutorial_step": 3,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Filings",
       "required_state": "Valid registry, identifier and year inputs; no download",
       "locale": "ko",
@@ -153,43 +249,83 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/04-sec-inputs.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/04-sec-inputs.ko.jpg",
+      "caption": "SEC 회사·회계연도 선택과 누락 원문 다운로드 버튼입니다. 기존 NVDA·AMD, FY2023·FY2024 입력을 보여 주며 다운로드는 시작하지 않았습니다. 3·4단계에서 함께 참고합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "tutorial_steps": [
+        3,
+        4
+      ],
+      "captured_at": "2026-09-05T21:10:33.655Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "2d0a0d8e1eb37e0dc51f485f3e04fa3cf687355629b80b1983551b11d2965a72",
+        "bytes": 355958
+      }
     },
     {
       "capture_id": "04-sec-inputs-en",
       "document_id": "acquisition",
       "tutorial_step": 3,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Filings",
       "required_state": "Valid registry, identifier and year inputs; no download",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/04-sec-inputs.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/04-sec-inputs.en.jpg",
+      "caption": "Valid SEC company and fiscal-year chips with the Download missing filings action. Existing NVDA/AMD and FY2023/FY2024 inputs are shown; no download was started. Used for steps 3 and 4.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "tutorial_steps": [
+        3,
+        4
+      ],
+      "captured_at": "2026-09-05T21:10:32.938Z",
+      "document_locale": "en",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "67bc2c1531015380a0d8a513d46fb8c38f6f91b69fa5eb80e3b49a044b443748",
+        "bytes": 370197
+      }
     },
     {
       "capture_id": "05-manifest-ingest-ko",
       "document_id": "indexing",
       "tutorial_step": 5,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Parse & chunk",
       "required_state": "Existing manifest rows; no ingestion",
       "locale": "ko",
@@ -199,43 +335,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/05-manifest-ingest.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/05-manifest-ingest.ko.jpg",
+      "caption": "파싱·청킹에 실제 DART·SEC 매니페스트와 원문·적재 개수가 표시됩니다. 각 행에 개별 적재 버튼이 있으며 새 적재는 시작하지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:59:17.734Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "d49c1885c903985944872bb983380ab2288625874dc7e3b409e073611564c959",
+        "bytes": 343871
+      }
     },
     {
       "capture_id": "05-manifest-ingest-en",
       "document_id": "indexing",
       "tutorial_step": 5,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Parse & chunk",
       "required_state": "Existing manifest rows; no ingestion",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/05-manifest-ingest.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/05-manifest-ingest.en.jpg",
+      "caption": "Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts. Each row has its own Ingest action; no ingestion was started.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:59:17.049Z",
+      "document_locale": "en",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "754a9df503bef80dee900b0ab761148d67a0b1b89bd4af8d504aa01bdec3a931",
+        "bytes": 354863
+      }
     },
     {
       "capture_id": "06-embeddings-ko",
       "document_id": "indexing",
       "tutorial_step": 6,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Embeddings",
       "required_state": "Actual provider identity and pending counts",
       "locale": "ko",
@@ -245,43 +413,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/06-embeddings.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/06-embeddings.ko.jpg",
+      "caption": "개발 인덱스는 deterministic 임베딩과 미처리 청크 0개를 보고합니다. 이를 OpenAI 임베딩 준비나 의미 검색 품질의 근거로 해석하지 않습니다. DB 전체 적용 범위와 비용 안내, 명시적 누락 임베딩 생성 버튼을 확인합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T21:11:07.475Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "cc4bae04b297f2be200b797dd1633e47883995243377b998ec3b7d9f80bc20ee",
+        "bytes": 330264
+      }
     },
     {
       "capture_id": "06-embeddings-en",
       "document_id": "indexing",
       "tutorial_step": 6,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Embeddings",
       "required_state": "Actual provider identity and pending counts",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/06-embeddings.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/06-embeddings.en.jpg",
+      "caption": "The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The database-wide cost notice and explicit backfill action remain visible.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:59:19.567Z",
+      "document_locale": "en",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "31bc5784dda4ae7af3e0e812c2fc54db8d7529a420e1082e4b5f3d0aa8168aa1",
+        "bytes": 340057
+      }
     },
     {
       "capture_id": "07-bm25-ko",
       "document_id": "indexing",
       "tutorial_step": 7,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Lexical index (BM25)",
       "required_state": "Actual BM25 readiness; no rebuild",
       "locale": "ko",
@@ -291,43 +491,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/07-bm25.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/07-bm25.ko.jpg",
+      "caption": "현재 코퍼스의 BM25는 이미 준비돼 있습니다. 재계산 버튼은 사용할 수 있지만 실행하지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:59:29.231Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "d4d09d33f6d5b1ef640b1c12d5cac28e963a7bcb52fb47e50c996c869cdb51c4",
+        "bytes": 290586
+      }
     },
     {
       "capture_id": "07-bm25-en",
       "document_id": "indexing",
       "tutorial_step": 7,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Lexical index (BM25)",
       "required_state": "Actual BM25 readiness; no rebuild",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/07-bm25.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/07-bm25.en.jpg",
+      "caption": "BM25 is already ready for the current corpus. The rebuild action is available but was not executed.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T20:59:28.577Z",
+      "document_locale": "en",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "ac360f8883291a188b06ec07d7cfc77c032526a7e0b5b0e160c693b188e12ed5",
+        "bytes": 312538
+      }
     },
     {
       "capture_id": "08-jobs-ko",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Jobs",
       "required_state": "Existing job details or honest empty state",
       "locale": "ko",
@@ -337,43 +569,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/08-jobs.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/08-jobs.ko.jpg",
+      "caption": "기존에 성공한 SEC 매니페스트 적재 작업을 선택했습니다. 실제 대상·진행·결과가 표시되며 안내 촬영을 위해 새로 실행한 작업이 아닙니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T20:59:38.172Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "bcf0a4da586e0592a78a0fc6b74c5c36cb0547404df380a536c3597520e55a1b",
+        "bytes": 248749
+      }
     },
     {
       "capture_id": "08-jobs-en",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Jobs",
       "required_state": "Existing job details or honest empty state",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/08-jobs.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/08-jobs.en.jpg",
+      "caption": "An existing successful SEC manifest ingestion job is selected. Its actual target, progress and result are shown; this is historical work, not a job started for the guide.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T20:59:38.775Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "f3f3183d7969cba35e0aba461c72c3c321d9cc830765a61db974f9207692df10",
+        "bytes": 269118
+      }
     },
     {
       "capture_id": "09-retrieval-inputs-ko",
       "document_id": "retrieval",
       "tutorial_step": 8,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Search trial",
       "required_state": "Retrieval form before execution",
       "locale": "ko",
@@ -383,43 +647,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/09-retrieval-inputs.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/09-retrieval-inputs.ko.jpg",
+      "caption": "NVIDIA FY2024 질문과 Hybrid·BM25·k=5를 지정한 검색 시험의 실행 전 화면입니다. 검색과 답변 미리보기는 각각 명시적으로 실행합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:00:12.828Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "c41782e43a90b4ff4d5eb97c380948342dccc6f85335cf53085f5303909c4f70",
+        "bytes": 253483
+      }
     },
     {
       "capture_id": "09-retrieval-inputs-en",
       "document_id": "retrieval",
       "tutorial_step": 8,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Search trial",
       "required_state": "Retrieval form before execution",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/09-retrieval-inputs.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/09-retrieval-inputs.en.jpg",
+      "caption": "Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5. Retrieval and answer preview remain separate explicit actions.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:00:13.429Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "b0dff64e962c4136de416d19c1eaafbca97e9c4489232c5c8ba53fa3a71d0bfa",
+        "bytes": 262344
+      }
     },
     {
       "capture_id": "10-golden-question-ko",
       "document_id": "evaluation",
       "tutorial_step": 11,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Golden dataset",
       "required_state": "Canonical question source read-only",
       "locale": "ko",
@@ -429,43 +725,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/10-golden-question.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/10-golden-question.ko.jpg",
+      "caption": "혼합 언어 SEC 평가 데이터셋에서 실제 원본 질문을 열었습니다. Canonical JSON은 읽기 전용이며 원본 열람과 초안 생성·편집은 별도 작업입니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:18:24.992Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "823c8e80eeb7fbb4d8ee8a497987d632830defa77c78ee3983f0520b5bf47be1",
+        "bytes": 420463
+      }
     },
     {
       "capture_id": "10-golden-question-en",
       "document_id": "evaluation",
       "tutorial_step": 11,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Golden dataset",
       "required_state": "Canonical question source read-only",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/10-golden-question.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/10-golden-question.en.jpg",
+      "caption": "The mixed-language SEC suite is selected with an actual canonical question open. Canonical JSON is read-only; viewing a source question is separate from creating or editing a draft.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:18:24.372Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "f53a7741f4b2772975ae9270dc455635b48e96c5fef0bb9909c87cf263a577ee",
+        "bytes": 434943
+      }
     },
     {
       "capture_id": "11-evaluation-inputs-ko",
       "document_id": "evaluation",
       "tutorial_step": 11,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Run evaluation",
       "required_state": "New evaluation setup; no run queued",
       "locale": "ko",
@@ -475,43 +803,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/11-evaluation-inputs.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/11-evaluation-inputs.ko.jpg",
+      "caption": "실제 혼합 언어 원본 데이터셋의 새 평가 설정입니다. 질문 20개와 준비된 현재 인덱스, Hybrid·BM25·k=5가 표시되며 평가 대기열 추가는 실행하지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:01:56.595Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "62071e673a73e916343d70b3a4af90ba7466f9e0ba5d15a0cf1de754b128878f",
+        "bytes": 168740
+      }
     },
     {
       "capture_id": "11-evaluation-inputs-en",
       "document_id": "evaluation",
       "tutorial_step": 11,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Run evaluation",
       "required_state": "New evaluation setup; no run queued",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/11-evaluation-inputs.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/11-evaluation-inputs.en.jpg",
+      "caption": "New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index. Hybrid/BM25/k=5 is visible; Queue evaluation was not pressed.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:01:41.373Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "67858239a8d7a3fd9fd0d3afe03941932591499c8682f0be5b4119d9c7b2fab0",
+        "bytes": 176706
+      }
     },
     {
       "capture_id": "12-compare-ko",
       "document_id": "snapshots",
       "tutorial_step": 12,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Compare and save",
       "required_state": "Actual available results and compatibility or empty state",
       "locale": "ko",
@@ -521,43 +881,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/12-compare.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/12-compare.ko.jpg",
+      "caption": "현재 비교 화면에는 선택할 수 있는 결과가 없어 비교가 비활성화돼 있습니다. 지표를 임의로 채우지 않으며 스냅샷 저장에는 적합한 기록 결과가 필요합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:01:57.192Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "ee44588a41d55f0fee6fc9131d2fe8d0588f50a4fd9693ab062f70061aaa5764",
+        "bytes": 234398
+      }
     },
     {
       "capture_id": "12-compare-en",
       "document_id": "snapshots",
       "tutorial_step": 12,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Measure / Compare and save",
       "required_state": "Actual available results and compatibility or empty state",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/12-compare.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/12-compare.en.jpg",
+      "caption": "The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated. Saving a snapshot requires a suitable recorded result.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:01:57.779Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "7deab41c600869a6451f023fafa3ab3cd17366899128d58172216857898cb74a",
+        "bytes": 260488
+      }
     },
     {
       "capture_id": "13-local-model-ko",
       "document_id": "ollama",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Local LLM",
       "required_state": "Default selected; no address input required; actual connection and model roles",
       "locale": "ko",
@@ -567,43 +959,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/13-local-model.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/13-local-model.ko.jpg",
+      "caption": "설정 → 로컬 LLM. Default가 주소를 자동 처리하고 실제 설치 모델 3개와 답변용 모델 1개를 구분합니다. 연결 상세에서만 주소를 확인할 수 있습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T21:03:36.560Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "0c99e3a0a0e4d882507019ce29474f7645ef9d4d933b68d6881f75a2039d0b87",
+        "bytes": 237818
+      }
     },
     {
       "capture_id": "13-local-model-en",
       "document_id": "ollama",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Local LLM",
       "required_state": "Default selected; no address input required; actual connection and model roles",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/13-local-model.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/13-local-model.en.jpg",
+      "caption": "Default resolves the configured local Ollama endpoint without an address field. Actual connection health, three installed models and one answer-capable model are distinguished; addresses remain in Connection details.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:02:21.769Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "d1a2e060b9db191721f94c97b8d9012d0b088820dced1c8bf6bf428fa7d56c64",
+        "bytes": 252025
+      }
     },
     {
       "capture_id": "14-browser-data-ko",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Data & help",
       "required_state": "Data lifecycle controls; no deletion",
       "locale": "ko",
@@ -613,43 +1037,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/14-browser-data.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/14-browser-data.ko.jpg",
+      "caption": "데이터와 도움말은 브라우저 대화·설정 초기화와 서버 문서·작업 기록을 구분합니다. 정리나 초기화 작업은 실행하지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:03:51.035Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "31bc600b6658f625849e594404c42858496b65c9bcd4c9ce5b15868d0ba6b1f3",
+        "bytes": 175596
+      }
     },
     {
       "capture_id": "14-browser-data-en",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Data & help",
       "required_state": "Data lifecycle controls; no deletion",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/14-browser-data.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/14-browser-data.en.jpg",
+      "caption": "Data & help separates browser conversations and preference resets from server documents and job history. No cleanup or reset action was executed.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:03:02.426Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "d26d4fbf55e355f68987f1a98ce85d72aec7abfa8876926900d82d9096d61e18",
+        "bytes": 183923
+      }
     },
     {
       "capture_id": "15-cited-answer-ko",
       "document_id": "answers",
       "tutorial_step": 9,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://localhost:8000/docreview-rag-agent/",
       "workspace": "Conversation",
       "required_state": "Existing real cited answer; no new model call",
       "locale": "ko",
@@ -659,43 +1115,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/15-cited-answer.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/15-cited-answer.ko.jpg",
+      "caption": "기존에 저장된 NVIDIA FY2024 답변과 검색 근거입니다. 촬영을 위해 재실행하지 않았습니다. 검색 후보 수와 실제 인용 1건은 다르며 이전 근거 선택은 읽기 전용일 수 있습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:06:04.003Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "ae624ccc6f3af03c2c6d871d4b50de7a49b7eb99aa5d483ab7391469d641bf56",
+        "bytes": 460081
+      }
     },
     {
       "capture_id": "15-cited-answer-en",
       "document_id": "answers",
       "tutorial_step": 9,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://localhost:8000/docreview-rag-agent/",
       "workspace": "Conversation",
       "required_state": "Existing real cited answer; no new model call",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/15-cited-answer.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/15-cited-answer.en.jpg",
+      "caption": "An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown. It was not rerun for this guide; candidate count and the single actual citation are distinct, and old evidence selections may be read-only.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:06:03.327Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "13317cbedbe378ce9b5db3ac3eeda5f09987d5107a2095a9463da986b23310e0",
+        "bytes": 480128
+      }
     },
     {
       "capture_id": "16-run-trace-ko",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://localhost:8000/docreview-rag-agent/",
       "workspace": "Conversation / Run trace",
       "required_state": "Existing record and original diagnostics",
       "locale": "ko",
@@ -705,45 +1193,77 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/16-run-trace.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/16-run-trace.ko.jpg",
+      "caption": "저장된 성공 실행의 원래 ID, 반복 4회, 제공자 요청 2회, 토큰 수와 약 119.6초의 경과 시간이 표시됩니다. 과거에 기록된 값이며 새로 측정한 결과가 아닙니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:06:24.522Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "92da3434dd76c403c1c9ada22734c4b2049a01aeb7c5275b91c9ec68ae321b84",
+        "bytes": 306661
+      }
     },
     {
       "capture_id": "16-run-trace-en",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://localhost:8000/docreview-rag-agent/",
       "workspace": "Conversation / Run trace",
       "required_state": "Existing record and original diagnostics",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/16-run-trace.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/16-run-trace.en.jpg",
+      "caption": "The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed. These are historical recorded values, not a new measurement.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:06:25.125Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "f51523e434bc59f7965846d16e85141c0090da80e95ce9a96808ce0eca163c14",
+        "bytes": 321147
+      }
     },
     {
       "capture_id": "17-reset-blocked-ko",
       "document_id": "troubleshooting",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Reset runtime",
-      "required_state": "Current operator check result, including stale-runtime limitation",
+      "required_state": "Actual permission-blocked reset eligibility before the later user-authorized access repair; no reset executed",
       "locale": "ko",
       "theme": "light",
       "css_viewport": {
@@ -751,43 +1271,101 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
       "asset_path": "assets/17-reset-blocked.ko.png",
-      "caption": null,
+      "caption": "사용자가 접근 권한 조정을 승인하기 전에 기록한 초기화 차단 상태입니다. 권한 부족 진단을 원본 그대로 잘랐으며 기기별 복구 명령은 제외했습니다. 실제 초기화는 실행하지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T21:11:42.550Z",
+      "document_locale": "ko",
+      "clip": {
+        "x": 298,
+        "y": 256,
+        "width": 648,
+        "height": 196,
+        "scale": 2
+      },
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "native_clip": {
+        "x": 300,
+        "y": 240,
+        "width": 648,
+        "height": 253
+      },
+      "image_integrity": {
+        "format": "png",
+        "width": 1296,
+        "height": 506,
+        "sha256": "66abc42c128392429e4c1ecf01c34ac2550a0c5b07aad828cc84d45bf888eb18",
+        "bytes": 44430
+      }
     },
     {
       "capture_id": "17-reset-blocked-en",
       "document_id": "troubleshooting",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Pipeline / Reset runtime",
-      "required_state": "Current operator check result, including stale-runtime limitation",
+      "required_state": "Actual permission-blocked reset eligibility before the later user-authorized access repair; no reset executed",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
       "asset_path": "assets/17-reset-blocked.en.png",
-      "caption": null,
+      "caption": "This records permission-blocked reset eligibility before the user authorized an access repair. The native crop omits machine-specific remediation commands. No reset was executed.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T21:12:11.668Z",
+      "document_locale": "en",
+      "clip": {
+        "x": 298,
+        "y": 256,
+        "width": 648,
+        "height": 196,
+        "scale": 2
+      },
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "native_clip": {
+        "x": 300,
+        "y": 260,
+        "width": 648,
+        "height": 254
+      },
+      "image_integrity": {
+        "format": "png",
+        "width": 1296,
+        "height": 508,
+        "sha256": "33ce79305b0c5cbd64b9c75d1f29d815bc78c70e7704a0fe1fdd8ea79c0fc1c3",
+        "bytes": 45688
+      }
     },
     {
       "capture_id": "18-scope-presets-ko",
       "document_id": "settings",
       "tutorial_step": 10,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Conversation / Scope help",
       "required_state": "Scope explanation and adjacent preset controls",
       "locale": "ko",
@@ -797,43 +1375,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/18-scope-presets.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/18-scope-presets.ko.jpg",
+      "caption": "문서 범위 도움말이 실제 조작 옆에서 Auto·SEC·DART를 설명합니다. 사용자가 선택한 범위와 서버가 확정한 실제 라우팅 결과를 구분합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:06:50.535Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "a9516084615f34eb012f1165b17bcbefa64f640c3a47f17a7f9806687cbc139c",
+        "bytes": 269598
+      }
     },
     {
       "capture_id": "18-scope-presets-en",
       "document_id": "settings",
       "tutorial_step": 10,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Conversation / Scope help",
       "required_state": "Scope explanation and adjacent preset controls",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/18-scope-presets.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/18-scope-presets.en.jpg",
+      "caption": "Corpus-scope help explains Auto, SEC and DART beside the actual controls. Scope selection and the server-confirmed routing result are distinct.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:07:12.281Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "4d08d4dce8175945c6e3012331307babe17d7b930de12e14774d5d2007847155",
+        "bytes": 273020
+      }
     },
     {
       "capture_id": "19-request-inspector-ko",
       "document_id": "settings",
       "tutorial_step": 10,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Conversation / Settings details",
       "required_state": "Unexecuted request inspection, independent scrolling",
       "locale": "ko",
@@ -843,43 +1453,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/19-request-inspector.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/19-request-inspector.ko.jpg",
+      "caption": "요청 보기는 독립된 서랍에서 프리셋·검색·엔진·필터·프롬프트·요청 내용을 보여줍니다. 실행 전 근거는 미확정이며 입력창 크기는 늘어나지 않습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:08:16.101Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "3b6f58b8674c0d1ccf3f4e478710c2636460d8a692c003ce3f5fb7822af06e11",
+        "bytes": 276002
+      }
     },
     {
       "capture_id": "19-request-inspector-en",
       "document_id": "settings",
       "tutorial_step": 10,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Conversation / Settings details",
       "required_state": "Unexecuted request inspection, independent scrolling",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/19-request-inspector.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/19-request-inspector.en.jpg",
+      "caption": "Inspect request opens an independent drawer for effective presets, retrieval, engine, filters, prompt composition and the outgoing payload. Evidence remains unresolved before execution.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:08:05.033Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "4ec18281e1d5ad195f1a42fe69bee2e702af32a1e31a7612a34aebf5a0c4f61d",
+        "bytes": 281212
+      }
     },
     {
       "capture_id": "20-routing-performance-ko",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://localhost:8000/docreview-rag-agent/",
       "workspace": "Conversation / Execution performance",
       "required_state": "Real recorded routing/timings or honest uncollected fields",
       "locale": "ko",
@@ -889,43 +1531,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/20-routing-performance.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/20-routing-performance.ko.jpg",
+      "caption": "기존 실패 요청에는 브라우저 요청 시간 31ms만 수집됐고 서버 라우팅·단계 시간·모델 호출·CPU/GPU 실행 위치는 수집되지 않았습니다. 화면은 측정값을 만들지 않고 미수집 상태를 명시합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:14:44.123Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "d5c3db5bd6ce7dbc2e45aed5c8a3b014e1d621f639fdb4cd6d9b3c1d72d3d399",
+        "bytes": 307252
+      }
     },
     {
       "capture_id": "20-routing-performance-en",
       "document_id": "runtime",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://localhost:8000/docreview-rag-agent/",
       "workspace": "Conversation / Execution performance",
       "required_state": "Real recorded routing/timings or honest uncollected fields",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/20-routing-performance.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/20-routing-performance.en.jpg",
+      "caption": "This existing failed request collected 31ms of browser request time but no server routing, stage timings, model calls or CPU/GPU placement. The interface explicitly shows uncollected data instead of inventing measurements.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:14:44.923Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "c73725eaff756043d22f1564fec547282e9d3a5623e5ad601aec9d0044d5700c",
+        "bytes": 324521
+      }
     },
     {
       "capture_id": "21-context-help-ko",
       "document_id": "overview",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Help",
       "required_state": "Recommended topics, local search and navigation",
       "locale": "ko",
@@ -935,43 +1609,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/21-context-help.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/21-context-help.ko.jpg",
+      "caption": "도움말 홈의 추천과 네 가지 작업 필터에서 주제를 바로 엽니다. 중간 분류 화면이나 화면 전체의 번호 배지가 없습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:07:27.076Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "de12485afe939557e7737053d9dba7ac151214560256d87f9547837f3fa26972",
+        "bytes": 347525
+      }
     },
     {
       "capture_id": "21-context-help-en",
       "document_id": "overview",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Help",
       "required_state": "Recommended topics, local search and navigation",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/21-context-help.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/21-context-help.en.jpg",
+      "caption": "Help opens directly to recommended controls and four inline task filters. Topic rows are reachable from this home screen without intermediate category pages or floating number badges.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:07:26.545Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "c625c14de9e93ed04b90d8e9fcf0c919c53c38a9275da2197bf1b02c7e435622",
+        "bytes": 379440
+      }
     },
     {
       "capture_id": "22-company-filters-ko",
       "document_id": "documents",
       "tutorial_step": 2,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Documents / Filters",
       "required_state": "Actual company/year/facet controls",
       "locale": "ko",
@@ -981,43 +1687,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/22-company-filters.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/22-company-filters.ko.jpg",
+      "caption": "회사·회계연도 필터는 실제 문서 목록의 값을 사용합니다. 삼성전자와 FY2022를 선택했으며 제거 가능한 필터 칩과 추가 필터가 표시됩니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T20:58:54.129Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "7ffdb964e0fab392aaad631d0ca8f52b683b569959b1d6d108e8920a6e81c1e0",
+        "bytes": 271848
+      }
     },
     {
       "capture_id": "22-company-filters-en",
       "document_id": "documents",
       "tutorial_step": 2,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Build / Documents / Filters",
       "required_state": "Actual company/year/facet controls",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/22-company-filters.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/22-company-filters.en.jpg",
+      "caption": "Company and fiscal-year filters use actual catalog values. Samsung Electronics and FY2022 are selected, with removable filter chips and the advanced filters visible.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T20:58:53.528Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "ed8d31ce7078bd00349adf72a96c7144fa5b05bfecdea153f2c538073010e4e5",
+        "bytes": 287797
+      }
     },
     {
       "capture_id": "23-creator-about-ko",
       "document_id": "architecture",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / About",
       "required_state": "Shared creator and product identity",
       "locale": "ko",
@@ -1027,43 +1765,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/23-creator-about.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/23-creator-about.ko.jpg",
+      "caption": "소개 화면에서 공통 DocReview RAG v2 브랜드와 제작자 표시를 사용합니다. 제품과 현재 실행 환경을 명확히 구분합니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:03:54.549Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "9bc5be836402ff48b0d5b75417b26738204f57109b79f976b5d3cddb73934fd3",
+        "bytes": 155300
+      }
     },
     {
       "capture_id": "23-creator-about-en",
       "document_id": "architecture",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / About",
       "required_state": "Shared creator and product identity",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/23-creator-about.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/23-creator-about.en.jpg",
+      "caption": "About uses the shared DocReview RAG v2 branding and creator attribution. Product identity and current environment remain explicit.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only use of existing state; no paid calls"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:03:06.089Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "a19654c1a1bd0625142c4d87ea86d496090ba40678ea47fba44e7861f69deeae",
+        "bytes": 157126
+      }
     },
     {
       "capture_id": "24-connection-diagnostics-ko",
       "document_id": "ollama",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Local LLM",
       "required_state": "Actual read-only Default metadata diagnosis with checked time and separate checks",
       "locale": "ko",
@@ -1073,43 +1843,75 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/24-connection-diagnostics.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/24-connection-diagnostics.ko.jpg",
+      "caption": "Default의 실제 읽기 전용 진단입니다. 서버 선택·접속·답변용 모델 확인이 통과했으며 설정이나 모델 상태를 바꾸지 않았습니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only state; no paid calls or server registration"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "captured_at": "2026-09-05T21:03:50.011Z",
+      "document_locale": "ko",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "487df48f23368ae8a883598d0eb227a8734acb043d4798c045412e2cf2eedbc1",
+        "bytes": 225523
+      }
     },
     {
       "capture_id": "24-connection-diagnostics-en",
       "document_id": "ollama",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Local LLM",
       "required_state": "Actual read-only Default metadata diagnosis with checked time and separate checks",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/24-connection-diagnostics.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/24-connection-diagnostics.en.jpg",
+      "caption": "A real read-only Default connection check passed server selection, connectivity and answer-model availability. No settings, models or services were changed.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only state; no paid calls or server registration"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:03:01.420Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "cc88b20a5eff8617934f409e87542326b9dea1334aa960b24e2c7039fc998dfa",
+        "bytes": 234153
+      }
     },
     {
       "capture_id": "25-add-server-ko",
       "document_id": "ollama",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Local LLM",
       "required_state": "Unsaved named server form, active Default preserved; no server registration",
       "locale": "ko",
@@ -1119,37 +1921,463 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/25-add-server.ko.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/25-add-server.ko.jpg",
+      "caption": "서버 추가에서 이름·주소·프로토콜 입력을 엽니다. 제출하지 않은 초안이므로 추가하고 연결 버튼은 비활성화돼 있고 기존 Default 연결은 유지됩니다.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only state; no paid calls or server registration"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:12:29.733Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "8416d2df8b709f7d4fba1fa68fb788e78c25cd9227aa05a0735667d5007f7e36",
+        "bytes": 236143
+      }
     },
     {
       "capture_id": "25-add-server-en",
       "document_id": "ollama",
       "tutorial_step": null,
-      "application_route": "/docreview-rag-agent/",
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
       "workspace": "Settings / Local LLM",
       "required_state": "Unsaved named server form, active Default preserved; no server registration",
       "locale": "en",
-      "theme": "dark",
+      "theme": "light",
       "css_viewport": {
         "width": 1440,
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": null,
-      "asset_path": "assets/25-add-server.en.png",
-      "caption": null,
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/25-add-server.en.jpg",
+      "caption": "Add a server reveals name, URL and protocol fields. This unsubmitted draft keeps Add & connect disabled while the existing Default connection remains active.",
       "prerequisites": [
         "Completed application and bilingual documentation validation",
         "Read-only state; no paid calls or server registration"
       ],
-      "capture_status": "pending"
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:12:28.329Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "01816e27d01f6d59d7ac679b73d6a7c702a4bca5b68c3dca9c5d0a09df43ae59",
+        "bytes": 241384
+      }
+    },
+    {
+      "capture_id": "26-help-topic-en",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Help / Topic",
+      "required_state": "One concise topic, three steps, Back and one target highlight",
+      "locale": "en",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/26-help-topic.en.jpg",
+      "caption": "A topic opens in one click with a short meaning, three steps, an explicit control link, and optional reference material. Back returns directly to the preserved Help home; only the selected visible control is highlighted.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:07:35.819Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "06772609095eeed3134d0700143634b367bb8d0341e1f86000d00734ea68cf2f",
+        "bytes": 348641
+      }
+    },
+    {
+      "capture_id": "26-help-topic-ko",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Help / Topic",
+      "required_state": "One concise topic, three steps, Back and one target highlight",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/26-help-topic.ko.jpg",
+      "caption": "주제를 한 번 누르면 핵심 의미·세 단계 사용 순서·실제 컨트롤 이동·전체 가이드를 봅니다. 뒤로 한 번으로 홈에 돌아가며 선택한 컨트롤 하나만 강조합니다.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:07:35.170Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "6a849ee15817c21c8c33963d8cace6ae11fd2bf577cfe8416a1084a68f336a39",
+        "bytes": 326901
+      }
+    },
+    {
+      "capture_id": "27-review-settings-en",
+      "document_id": "settings",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Conversation / Review settings",
+      "required_state": "One independent drawer; filters and permitted settings; no duplicate outer menus",
+      "locale": "en",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/27-review-settings.en.jpg",
+      "caption": "One Review settings entry opens a single drawer with Filters, Search, Evidence and Run limits. It keeps the conversation visible behind a protected background without expanding the composer.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:08:04.384Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "fd6a9c5bf90a3e25562a742c0a81026cb4ea70ac57f0719e4177ea806ccbc57b",
+        "bytes": 286932
+      }
+    },
+    {
+      "capture_id": "27-review-settings-ko",
+      "document_id": "settings",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Conversation / Review settings",
+      "required_state": "One independent drawer; filters and permitted settings; no duplicate outer menus",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/27-review-settings.ko.jpg",
+      "caption": "대화 설정 하나로 필터·검색·근거·실행 한도를 엽니다. 배경을 보호하고 독립적으로 스크롤하며, 기존 질문과 설정을 유지합니다.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:08:16.694Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "a68d5c24c94ceded59494e85c643700b82f51a3d6905bc63de15f6e2baf526ac",
+        "bytes": 276725
+      }
+    },
+    {
+      "capture_id": "28-production-preview-en",
+      "document_id": "environment",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Production preview",
+      "required_state": "Isolated read-only public interface; DEV backend explicitly retained",
+      "locale": "en",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/28-production-preview.en.jpg",
+      "caption": "The isolated public-interface preview is explicitly labeled as using a DEV backend. It has no private conversation history and disables question execution and server changes; Exit preview returns to retained DEV work.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:08:35.565Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "92459754148836eef416928f34eb145fa28ed75a7819f6b84cf3987b7fbe74ec",
+        "bytes": 297590
+      }
+    },
+    {
+      "capture_id": "28-production-preview-ko",
+      "document_id": "environment",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Production preview",
+      "required_state": "Isolated read-only public interface; DEV backend explicitly retained",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/28-production-preview.ko.jpg",
+      "caption": "분리된 공개 인터페이스 미리보기는 DEV 백엔드를 사용한다고 명시합니다. 비공개 대화 이력을 가져오지 않고 질문 실행·서버 변경을 차단하며 미리보기 종료는 보존된 DEV 작업으로 돌아갑니다.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:08:31.619Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "2a0076eac01d45fa892ff406f31841ba98e2426eb3045791d26fdc8aa98b62f0",
+        "bytes": 274466
+      }
+    },
+    {
+      "capture_id": "29-documentation-menu-en",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/docs/en/ollama/",
+      "workspace": "Documentation",
+      "required_state": "Registry-driven semantic icons and focused guide navigation",
+      "locale": "en",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/29-documentation-menu.en.jpg",
+      "caption": "The documentation menu uses one registry for 15 focused guides, grouped navigation and distinct semantic icons. The Ollama guide provides separate macOS/Linux setup and read-only connection diagnostics.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:15:44.946Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1425,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "native_clip": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "896890da83aabd5d4e0a0ea427e22f6130a56a8d0ac085b7f2963023a21333fc",
+        "bytes": 431976
+      }
+    },
+    {
+      "capture_id": "29-documentation-menu-ko",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/docs/ko/ollama/",
+      "workspace": "Documentation",
+      "required_state": "Registry-driven semantic icons and focused guide navigation",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/29-documentation-menu.ko.jpg",
+      "caption": "문서 메뉴는 하나의 등록 정보에서 15개 안내, 그룹 탐색, 주제별 아이콘을 구성합니다. Ollama 안내에는 macOS·Linux 설치와 읽기 전용 연결 진단이 있습니다.",
+      "prerequisites": [
+        "Actual committed UI; no model requests or data mutation"
+      ],
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:15:43.237Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "native_clip": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "f68d86280b9fb74e974339d12fe8df78df71944d82281b86c90402df6a623569",
+        "bytes": 417267
+      }
+    },
+    {
+      "capture_id": "30-preset-help-en",
+      "document_id": "settings",
+      "tutorial_step": 10,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Conversation / Preset help",
+      "required_state": "Actual preset explanation next to the control",
+      "locale": "en",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/30-preset-help.en.jpg",
+      "caption": "The preset explanation describes the selected Balanced definition beside the actual control. Effective preset differences can also be compared in Inspect request; opening help does not run a review.",
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "captured",
+      "document_locale": "en",
+      "captured_at": "2026-09-05T21:06:51.958Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "09945c65b1bc275ca9dd77263068858efb7b9ce5b88f8ab4b600fea01d2fc04e",
+        "bytes": 265676
+      }
+    },
+    {
+      "capture_id": "30-preset-help-ko",
+      "document_id": "settings",
+      "tutorial_step": 10,
+      "application_route": "http://127.0.0.1:8000/docreview-rag-agent/",
+      "workspace": "Conversation / Preset help",
+      "required_state": "Actual preset explanation next to the control",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "asset_path": "assets/30-preset-help.ko.jpg",
+      "caption": "실제 조작 옆에서 선택된 Balanced 프리셋의 정의를 설명합니다. 프리셋별 적용값은 요청 보기에서도 비교할 수 있으며 도움말을 열어도 검토가 실행되지는 않습니다.",
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "captured",
+      "document_locale": "ko",
+      "captured_at": "2026-09-05T21:07:11.128Z",
+      "device_pixel_ratio": 2,
+      "visual_viewport": {
+        "width": 1440,
+        "height": 1000,
+        "scale": 1
+      },
+      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "image_integrity": {
+        "format": "jpg",
+        "width": 2880,
+        "height": 2000,
+        "sha256": "099f1ebb1079bdce839f3537d2b87538e10b652b77acbe054dd3386e5f0d511f",
+        "bytes": 260713
+      }
     }
   ]
 }

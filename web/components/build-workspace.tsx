@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 
 import { RetainedPanel } from "@/components/retained-panel";
+import { DevelopmentBadge } from "@/components/development-badge";
 import { BuildPipeline, splitList, type AcquisitionForm } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
 import { JobCenter } from "@/components/job-center";
@@ -278,7 +279,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
       </header>
       <nav className="lab-tabs" aria-label={t("Build sections")}>
         {TABS.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={tab === id} onClick={() => onTabChange(id)}>{t(label)}</button>
+          <button key={id} type="button" aria-pressed={tab === id} title={live && id === "jobs" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => onTabChange(id)}>{t(label)}{live && id === "jobs" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>
         ))}
       </nav>
 

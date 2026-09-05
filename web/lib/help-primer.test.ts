@@ -3,6 +3,7 @@ import { HELP_TOPICS } from "./help-content";
 import { HELP_GROUPS, getHelpPrimer } from "./help-primer";
 import { KO } from "./messages-ko";
 import { documentationDocument } from "./documentation-registry.mjs";
+import { helpEntriesForAccess } from "./help-search";
 
 it("keeps every existing control reachable exactly once through four compact task groups", () => {
   const expected = Object.values(HELP_TOPICS).flat().map((topic) => topic.id).sort();
@@ -11,6 +12,16 @@ it("keeps every existing control reachable exactly once through four compact tas
   expect(new Set(actual).size).toBe(actual.length);
   expect([...actual].sort()).toEqual(expected);
   for (const group of HELP_GROUPS) expect(group.clusters.length).toBeLessThanOrEqual(4);
+});
+
+it("keeps public and read-only preview guides translated and documentation links readable", () => {
+  for (const access of [{}, { publicPreview: true }]) {
+    for (const { topic } of helpEntriesForAccess(access)) {
+      const primer = getHelpPrimer(topic);
+      expect(documentationDocument(primer.documentId!, "en")).toBeDefined();
+      for (const text of [...topic.body, primer.summary, ...primer.steps]) expect(KO[text], text).toBeTruthy();
+    }
+  }
 });
 
 it("translates the navigation labels and concise guides used by dynamic Help views", () => {

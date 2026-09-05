@@ -1,0 +1,38 @@
+"use client";
+
+import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { applyTheme, normalizeTheme, readTheme, saveTheme, THEME_KEY, type Theme } from "@/lib/theme";
+import { previewState, subscribePreview } from "@/lib/production-preview";
+
+const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void }>({ theme: "system", setTheme: () => undefined });
+
+/** App and documentation share one preference; previews use their isolated memory store. */
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, updateTheme] = useState<Theme>("system");
+  const current = useRef<Theme>("system");
+  useLayoutEffect(() => {
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const apply = (value: Theme) => { current.current = value; updateTheme(value); applyTheme(value, media?.matches ?? false); };
+    apply(readTheme());
+    const systemChanged = () => { if (current.current === "system") applyTheme("system", media?.matches ?? false); };
+    const stored = (event: StorageEvent) => { if (event.key === THEME_KEY && previewState().mode === "normal") apply(normalizeTheme(event.newValue)); };
+    let previousMode = previewState().mode;
+    const unsubscribe = subscribePreview(() => {
+      const mode = previewState().mode;
+      if (previousMode !== "normal" && mode === "normal") apply(readTheme());
+      previousMode = mode;
+    });
+    media?.addEventListener("change", systemChanged);
+    window.addEventListener("storage", stored);
+    return () => { unsubscribe(); media?.removeEventListener("change", systemChanged); window.removeEventListener("storage", stored); };
+  }, []);
+  const setTheme = useCallback((value: Theme) => {
+    saveTheme(value);
+    current.current = value;
+    updateTheme(value);
+    applyTheme(value, window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  }, []);
+  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme() { return useContext(ThemeContext); }

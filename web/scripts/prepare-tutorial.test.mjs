@@ -10,9 +10,10 @@ const directories = [];
 afterEach(async () => { for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true }); });
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "docreview-tutorial-test-"));
-  directories.push(root);
-  await mkdir(join(root, "assets"));
+  const directory = await mkdtemp(join(tmpdir(), "docreview-tutorial-test-"));
+  directories.push(directory);
+  const root = join(directory, "TUTORIAL");
+  await mkdir(join(root, "assets"), { recursive: true });
   await writeTutorialFixtures(root);
   for (const locale of ["ko", "en"]) {
     const file = join(root, locale, "overview.md");
@@ -27,7 +28,7 @@ async function fixture() {
 
 it("copies only referenced assets and clears stale generated copies", async () => {
   const { root, output, png } = await fixture();
-  expect(await prepareTutorial(root, output)).toEqual({ documents: 30, images: 1 });
+  expect(await prepareTutorial(root, output)).toEqual({ documents: 31, images: 1 });
   expect(await readFile(join(output, "status.png"))).toEqual(png);
   expect(await readdir(output)).toEqual(["status.png"]);
   const originalDirectory = await stat(output);
@@ -42,7 +43,7 @@ it("prepares a fresh checkout without an untracked public directory", async () =
   const web = join(root, "web");
   await mkdir(web);
   const output = join(web, "public/tutorial-assets");
-  expect(await prepareTutorial(root, output)).toEqual({ documents: 30, images: 1 });
+  expect(await prepareTutorial(root, output)).toEqual({ documents: 31, images: 1 });
   expect(await readFile(join(output, "status.png"))).toEqual(png);
   expect((await stat(output)).uid).toBe((await stat(web)).uid);
 });
@@ -66,4 +67,13 @@ it("fails for missing documents, images, and cross-document headings", async () 
   await expect(prepareTutorial(root, output)).rejects.toThrow();
   await rm(join(root, "ko", "cli.md"));
   await expect(prepareTutorial(root, output)).rejects.toThrow();
+});
+
+it("requires the canonical development outline and rejects malformed drafts", async () => {
+  const { root, output } = await fixture();
+  const storyFile = join(root, "../DEVELOPMENT_STORY_OUTLINE.md");
+  await writeFile(storyFile, "## Draft without a title");
+  await expect(prepareTutorial(root, output)).rejects.toThrow("Development log requires one main heading");
+  await rm(storyFile);
+  await expect(prepareTutorial(root, output)).rejects.toMatchObject({ code: "ENOENT" });
 });

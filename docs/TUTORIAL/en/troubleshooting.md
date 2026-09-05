@@ -4,6 +4,9 @@ Start with the exact screen, operation, and error. Separate the observed symptom
 
 ## The page, API, or database is unavailable {#connection}
 
+> [!DEV]
+> Restoring local services or applying a schema migration is an operator action in the development environment. Public users may inspect the displayed connection error.
+
 **Where to look:** **System → System status**, or terminal logs when the page cannot load.
 
 ```bash
@@ -75,9 +78,18 @@ See [dataset editing](evaluation.md#golden) and [comparison conditions](snapshot
 
 ## Runtime reset: inspect eligibility before deletion {#reset}
 
+> [!DEV]
+> Runtime reset, its eligibility checks, and recovery controls require DEV and the local operator. The public interface cannot delete runtime data.
+
 **Screen path:** **Build → Pipeline**, upper-left red **Reset runtime data** disclosure. Opening it only reveals controls. **Check reset availability** performs read-only checks and shows checking, available/blocked state, and **Last checked**. Eligibility covers relevant runtime-file permissions, active database jobs, and active application requests, as deletion preview does.
 
 When blocked, read **Reset diagnosis**, the blocking code, file and parent details, and manual remediation. A permission diagnosis identifies the actual operator UID/GID and file/directory ownership and modes. A file writable by the application may still be inaccessible to a different host operator. The check does not change ownership, permissions, or ACLs.
+
+<!-- capture:17-reset-blocked -->
+
+![This records permission-blocked reset eligibility before the user authorized an access repair.](../assets/17-reset-blocked.en.png)
+
+*This records permission-blocked reset eligibility before the user authorized an access repair. The native crop omits machine-specific remediation commands. No reset was executed.*
 
 Resolve only the stated cause with the owner's approval, then check again. If running source differs from the checked-in fix, a source reload may be required. Operator restart is a separate action: first verify no work or reset is active, then reload only the intended operator while preserving the development service and database. A blocked reset does not prevent unrelated application work.
 

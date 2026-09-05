@@ -25,6 +25,10 @@ def main() -> int:
         shutil.copytree(source, target, ignore=ignored)
         tutorial = Path(temporary) / "docs" / "TUTORIAL"
         tutorial.mkdir(parents=True)
+        shutil.copyfile(
+            root / "docs" / "DEVELOPMENT_STORY_OUTLINE.md",
+            tutorial.parent / "DEVELOPMENT_STORY_OUTLINE.md",
+        )
         registry = json.loads(
             (source / "lib" / "documentation-registry.json").read_text(encoding="utf-8")
         )

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DOCUMENTS } from "@/lib/documentation-registry.mjs";
 import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline, DocumentationRedirect } from "./documentation-navigation";
@@ -19,11 +19,24 @@ describe("documentation navigation", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const { container } = render(<DocumentationMenu current="indexing" locale="en" documents={DOCUMENTS.filter((document) => document.locale === "en")} />);
     expect(container.querySelector("details")).not.toHaveAttribute("open");
-    const links = container.querySelectorAll(".docs-nav-group a");
+    const links = screen.getByRole("navigation", { name: "Choose a document" }).querySelectorAll("a");
     expect(links).toHaveLength(15);
     expect(container.querySelectorAll(".docs-nav-group h2")).toHaveLength(5);
     expect(container.querySelector('a[aria-current="page"]')).toHaveTextContent("Indexing");
     expect(container.querySelector('a[aria-current="page"]')?.getAttribute("href")).toMatch(/^\/docs\/en\/indexing\/?$/);
+    expect(container.querySelector('a[aria-current="page"] .development-badge')).toHaveAttribute("aria-label", "DEV only");
+    expect(screen.getByRole("link", { name: "Documents" }).querySelector(".development-badge")).toBeNull();
+    const collections = within(screen.getByRole("navigation", { name: "Guides & development" }));
+    expect(collections.getByRole("link", { name: "User guide" })).toHaveAttribute("href", "/docs/en");
+    expect(collections.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docs/en/development");
+    for (const link of collections.getAllByRole("link")) expect(link).not.toHaveAttribute("target");
+  });
+
+  it("marks the Korean development log without hiding the user guide", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    render(<DocumentationMenu current="development" locale="ko" documents={DOCUMENTS.filter((document) => document.locale === "ko")} />);
+    expect(screen.getByRole("link", { name: "개발 기록" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "문서 선택" }).querySelectorAll("a")).toHaveLength(15);
   });
 
   it("keeps the desktop outline open and links only second-level sections", () => {

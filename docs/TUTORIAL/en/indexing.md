@@ -1,5 +1,8 @@
 # Turn sources into searchable evidence
 
+> [!DEV]
+> Ingestion, embedding backfill, and BM25 rebuilds require DEV. Reading an existing readiness indicator does not perform those operations.
+
 Parsing creates documents and citable chunks. Embeddings support semantic matching; BM25 supplies
 lexical statistics. The two index paths can be prepared independently after chunking. A green connection
 indicator is not proof that either index matches the current corpus.
@@ -23,6 +26,12 @@ An Ingest row processes its whole manifest, including existing entries. Do not u
 for a one-report exercise. The operation upserts documents and recomputes BM25; it does not fill missing
 provider embeddings. Work already completed by CLI against this same DB should be reused.
 
+<!-- capture:05-manifest-ingest -->
+
+![Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts.](../assets/05-manifest-ingest.en.jpg)
+
+*Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts. Each row has its own Ingest action; no ingestion was started.*
+
 ## 6. Prepare embeddings {#step-6}
 
 - **Goal:** prepare vectors produced by the intended embedding model.
@@ -42,6 +51,12 @@ Backfill covers missing or mismatched embeddings throughout the database. The ac
 selection does not limit this operation to that report. OpenAI backfill can incur cost. Do not run it just
 to reproduce a screenshot or to make an already-ready stage green again.
 
+<!-- capture:06-embeddings -->
+
+![The actual development index reports deterministic embeddings and zero pending chunks.](../assets/06-embeddings.en.jpg)
+
+*The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The database-wide cost notice and explicit backfill action remain visible.*
+
 ## 7. Prepare BM25 {#step-7}
 
 - **Goal:** make keyword retrieval statistics agree with the current chunks.
@@ -57,3 +72,9 @@ to reproduce a screenshot or to make an already-ready stage green again.
 BM25 rebuilding does not call an answer model or OpenAI. Hybrid retrieval needs both its configured lanes;
 read the readiness description to distinguish hybrid availability from vector-only availability.
 Retrieval evaluation depends on an index and evaluation dataset, not on generating an answer first.
+
+<!-- capture:07-bm25 -->
+
+![BM25 is already ready for the current corpus.](../assets/07-bm25.en.jpg)
+
+*BM25 is already ready for the current corpus. The rebuild action is available but was not executed.*

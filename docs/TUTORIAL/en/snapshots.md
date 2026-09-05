@@ -4,6 +4,9 @@ An evaluation result records measured outcomes and settings. A snapshot preserve
 
 ## 12. Compare results and save a suitable snapshot {#step-12}
 
+> [!DEV]
+> Comparing private evaluation results and saving new snapshots requires DEV. Comparing snapshots already published for visitors remains a separate public feature.
+
 **Goal:** choose a result using its evidence and experiment conditions, then preserve it for later use.
 
 **Prerequisites:** at least one successful **Quick · current index** result whose source corpus still matches the current index. Comparison requires two different results; if only one exists, inspect it and keep the comparison honestly unavailable. Do not queue another paid evaluation merely to fill the screen.
@@ -26,6 +29,12 @@ Read the metadata before **Compare selected results**. Inspect changed cases and
 **Common failure:** the source corpus changed after evaluation, or a matrix result cannot become a queryable current-index snapshot. Read the error; select a matching quick result or deliberately evaluate the desired current corpus. See [evaluation and snapshot recovery](troubleshooting.md#evaluation).
 
 **Next:** [stop and continue later](runtime.md#resume), or return to [Answers](answers.md) and inspect the applied snapshot before another request.
+
+<!-- capture:12-compare -->
+
+![The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated.](../assets/12-compare.en.jpg)
+
+*The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated. Saving a snapshot requires a suitable recorded result.*
 
 ## Read conditions before metric differences {#comparison}
 
@@ -52,6 +61,9 @@ Saving binds an existing result to current document, chunk, vector, and lexical-
 A snapshot is not a full backup of the application, browser conversations, or credentials. Keep the original sources and normal backups according to your own retention needs.
 
 ## Private storage and public visibility {#visibility}
+
+> [!DEV]
+> Publish and Hide change snapshot visibility and require DEV. Reading an already published snapshot or its eligible documents does not change visibility.
 
 The Save result as snapshot action creates a private snapshot. **Publish** and **Hide** are separate operator actions. Publishing allows the ready snapshot and its eligible document catalog to be read by visitors; hiding removes that snapshot from the public list.
 

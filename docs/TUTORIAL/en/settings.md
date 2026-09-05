@@ -4,6 +4,12 @@ Conversation settings determine where to search, how to rank evidence, and how m
 
 The primary composer row follows **Corpus scope → answer engine/local model → retrieval preset → Review settings → Inspect request**. **Review settings** is the single editing entry; the separate **Inspect request** icon and label open a read-only preview. The secondary row shows corpus readiness. The corpus total describes the whole catalog, not the SEC or DART subset selected for your question; public mode describes published data.
 
+<!-- capture:18-scope-presets -->
+
+![Corpus-scope help explains Auto, SEC and DART beside the actual controls.](../assets/18-scope-presets.en.jpg)
+
+*Corpus-scope help explains Auto, SEC and DART beside the actual controls. Scope selection and the server-confirmed routing result are distinct.*
+
 ## 10. Adjust filters, presets, and evidence choices {#step-10}
 
 **Goal:** prepare one deliberate settings change and understand when it takes effect.
@@ -28,7 +34,16 @@ The primary composer row follows **Corpus scope → answer engine/local model �
 
 **Next:** [11. Evaluate retrieval](evaluation.md#step-11). Evaluation can also be started directly after index preparation; it does not depend on generating an answer.
 
+<!-- capture:19-request-inspector -->
+
+![Inspect request opens an independent drawer for effective presets, retrieval, engine, filters, prompt composition and the outgoing payload.](../assets/19-request-inspector.en.jpg)
+
+*Inspect request opens an independent drawer for effective presets, retrieval, engine, filters, prompt composition and the outgoing payload. Evidence remains unresolved before execution.*
+
 ## Presets and effective values {#presets}
+
+> [!DEV]
+> Custom retrieval editing requires DEV. The permitted Balanced, Korean, and Accuracy presets remain available in the public interface.
 
 The following values come from the current preset definitions. All three built-in presets use hybrid retrieval and return `k=5` results.
 
@@ -41,11 +56,23 @@ The following values come from the current preset definitions. All three built-i
 
 Balanced provides the default starting point. Korean changes the search configuration for language-aware retrieval; it does not translate stored filings or force the corpus scope to DART. Accuracy reranks a larger pool and can take more work. Custom opens **Review settings → Search** immediately when permitted, retaining existing custom values. Use the same Search section to revisit them later. Built-in preset selection clears the explicit custom profile, so inspect values before switching away from a configuration you want to keep.
 
+<!-- capture:30-preset-help -->
+
+![The preset explanation describes the selected Balanced definition beside the actual control.](../assets/30-preset-help.en.jpg)
+
+*The preset explanation describes the selected Balanced definition beside the actual control. Effective preset differences can also be compared in Inspect request; opening help does not run a review.*
+
 `k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
 
 ## Scoped filters and unfinished input {#filters}
 
 **Review settings** opens one right-side drawer on desktop and a full-screen dialog on mobile. Its sections are **Filters**, **Search**, **Evidence**, and **Run limits**; public mode exposes only permitted filters. The body scrolls independently and keyboard focus stays inside. Close or Escape returns focus to the opener without enlarging the composer. Selected values apply to this conversation’s next request; an in-flight request keeps its submitted settings.
+
+<!-- capture:27-review-settings -->
+
+![One Review settings entry opens a single drawer with Filters, Search, Evidence and Run limits.](../assets/27-review-settings.en.jpg)
+
+*One Review settings entry opens a single drawer with Filters, Search, Evidence and Run limits. It keeps the conversation visible behind a protected background without expanding the composer.*
 
 Company, language, form, and fiscal-year choices come from the complete catalog available within the selected scope. The application does not construct these lists from the first page of documents. Public choices come from the public catalog.
 
@@ -64,15 +91,24 @@ Click a selected Pin or Exclude again to deselect it. A chunk cannot be pinned a
 
 ## Evidence size and execution limits {#budgets}
 
+> [!DEV]
+> Editing Search, Evidence, and Run limits requires DEV. Public users can still use permitted scope, preset, and filter choices.
+
 Under **Review settings → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
 
 ## Defaults and permissions {#defaults}
+
+> [!DEV]
+> Saving experiment defaults and editing the prompt policy require DEV. Browser language and permitted conversation choices remain separate.
 
 **Measure → Evaluation settings** saves experiment defaults and the retrieval preset for new conversations. Existing conversations and recorded results keep their settings. Global **Settings → Prompt** applies to the current conversation's prompt policy; local-server connection settings are managed separately under **Local LLM**.
 
 Public mode exposes permitted scope, preset, and filter choices but locks development-only editing and local-model configuration. A saved development profile that is incompatible with the current deployment is reported explicitly; it is not silently rewritten into a different experiment.
 
 ## Local server selection {#local-server}
+
+> [!DEV]
+> Adding, connecting, disconnecting, or diagnosing a local model server requires DEV. This guide stays readable in the public manual.
 
 In **Settings → Local LLM**, **Default** uses the address prepared for the current DocReview environment. Selecting a server alone does not change the active connection. **Run connection diagnostics** checks the selected candidate without saving settings, downloading/loading models, or generating answers. Inspect the named diagnostic result and checked time; active settings remain in **Connection status**.
 

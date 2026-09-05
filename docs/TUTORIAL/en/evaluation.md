@@ -1,5 +1,8 @@
 # Evaluate retrieval against known evidence
 
+> [!DEV]
+> The live evaluation workspace, Golden source/draft tools, and evaluation jobs require DEV. Visitors can use the separately published snapshot comparison.
+
 An evaluation asks whether the search system can find the evidence specified by a golden dataset. It records a dataset, retrieval configuration, progress, and results. It does not require a generated answer first, and its retrieval scores do not certify the factual accuracy of an answer model.
 
 ## 11. Run a retrieval evaluation {#step-11}
@@ -26,6 +29,12 @@ Select and read a question in Golden dataset, including its source spans. Open N
 **Common failure:** Sources unavailable or Corpus not ready. Read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
 
 **Next:** [12. Compare results and save a snapshot](snapshots.md#step-12).
+
+<!-- capture:11-evaluation-inputs -->
+
+![New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index.](../assets/11-evaluation-inputs.en.jpg)
+
+*New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index. Hybrid/BM25/k=5 is visible; Queue evaluation was not pressed.*
 
 ## Choose among seven suites {#suites}
 
@@ -54,6 +63,12 @@ When an edit is actually needed, use **Create draft**, select a question, change
 Source spans identify a document, character start/end, and SHA-256. A plausible reference answer cannot replace a valid source identity. Fix validation errors in the named field and validate again. An intentionally absent-evidence case can have no source span.
 
 Unsaved question edits block silent navigation: cancelling the discard prompt retains the question and the original Back destination. Save deliberately before changing suites, revisions, or workspaces. Validation confirms the dataset contract; it does not imply human review.
+
+<!-- capture:10-golden-question -->
+
+![The mixed-language SEC suite is selected with an actual canonical question open.](../assets/10-golden-question.en.jpg)
+
+*The mixed-language SEC suite is selected with an actual canonical question open. Canonical JSON is read-only; viewing a source question is separate from creating or editing a draft.*
 
 ## Modes, results, and interpretation {#metrics}
 

@@ -50,6 +50,8 @@ describe("System workspace", () => {
     renderSystem({ live: true, tab: "usage" });
 
     expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("title", "DEV only");
+    expect(screen.getByRole("button", { name: "System status" }).querySelector(".development-badge")).toBeNull();
     await waitFor(() => expect(screen.getByText("gpt-5.6-terra")).toBeInTheDocument());
     expect(screen.getAllByText("$0.01")).toHaveLength(2);
     expect(fetchMock.mock.calls.every(([value]) => String(value).endsWith("/admin/usage"))).toBe(true);
@@ -72,15 +74,14 @@ describe("System workspace", () => {
     expect(onTabChange).toHaveBeenCalledWith("operations");
   });
 
-  it("links to the documentation in a new window", () => {
+  it("links to the localized user guide in the same tab", () => {
     // next.config.ts sets trailingSlash: true; next/link reads the same flag from this env at render time.
     vi.stubEnv("__NEXT_TRAILING_SLASH", "true");
     renderSystem();
 
-    const documentation = screen.getByText("Documentation").closest("a");
-    expect(documentation).toHaveAttribute("target", "_blank");
-    expect(documentation).toHaveAttribute("rel", "noreferrer");
-    expect(documentation?.getAttribute("href")?.endsWith("/docs/")).toBe(true);
+    const documentation = screen.getByRole("link", { name: "User guide" });
+    expect(documentation).not.toHaveAttribute("target");
+    expect(documentation?.getAttribute("href")?.endsWith("/docs/en/")).toBe(true);
   });
 
   it("formats recorded usage counts and timestamps in the selected language", async () => {
