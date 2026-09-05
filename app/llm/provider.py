@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.llm.schemas import (
     CompletionFailure,
+    LocalModelTiming,
     Prompt,
     ProviderBudget,
     ProviderMetadata,
@@ -23,6 +24,7 @@ from app.llm.schemas import (
     RawProviderResponse,
     SchemaRejected,
 )
+from app.observability.stages import record_model_call
 from app.openai_models import OpenAIModelRole, resolve_openai_model
 
 type Clock = Callable[[], int]
@@ -199,6 +201,7 @@ class LLMProvider(ABC):
 
         current_prompt = prompt
         raw_outputs: list[str] = []
+        local_timings: list[LocalModelTiming] = []
         request_ids: list[str] = []
         total_input_tokens = 0
         total_output_tokens = 0
@@ -215,6 +218,7 @@ class LLMProvider(ABC):
                 refusal=failure,
                 metadata=self._metadata(
                     raw_outputs=raw_outputs,
+                    local_timings=local_timings,
                     request_ids=request_ids,
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
@@ -260,6 +264,8 @@ class LLMProvider(ABC):
                 raise ValueError("clock must be monotonic")
             total_request_time_ms += elapsed_ms
             raw_outputs.append(raw.output_text)
+            if raw.local_timing is not None:
+                local_timings.append(raw.local_timing.model_copy(update={"attempt": attempt}))
             if raw.request_id is not None:
                 request_ids.append(raw.request_id)
             total_input_tokens += raw.input_tokens
@@ -304,6 +310,7 @@ class LLMProvider(ABC):
 
             metadata = self._metadata(
                 raw_outputs=raw_outputs,
+                local_timings=local_timings,
                 request_ids=request_ids,
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
@@ -321,6 +328,7 @@ class LLMProvider(ABC):
         self,
         *,
         raw_outputs: Sequence[str],
+        local_timings: Sequence[LocalModelTiming],
         request_ids: Sequence[str],
         input_tokens: int,
         output_tokens: int,
@@ -331,7 +339,7 @@ class LLMProvider(ABC):
         budget: ProviderBudget,
     ) -> ProviderMetadata:
         """Build trace-ready metadata from accumulated attempts."""
-        return ProviderMetadata(
+        metadata = ProviderMetadata(
             provider=self.provider_name,
             model_name=self.model_name,
             api_url=self.api_url,
@@ -351,7 +359,11 @@ class LLMProvider(ABC):
             request_ids=tuple(request_ids),
             llm_output=raw_outputs[-1],
             raw_outputs=tuple(raw_outputs),
+            local_timings=tuple(local_timings),
         )
+
+        record_model_call(metadata)
+        return metadata
 
 
 class DeterministicLLMProvider(LLMProvider):

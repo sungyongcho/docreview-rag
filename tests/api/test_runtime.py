@@ -133,3 +133,58 @@ def test_production_rejects_local_and_custom_controls_before_retrieval() -> None
         with pytest.raises(ApiProblemError) as error:
             asyncio.run(services.review(ReviewRequest(query="hello", session_profile=profile)))
         assert error.value.status_code == 403
+
+
+def test_resolved_scope_is_observed_before_retrieval_without_model_or_database_calls() -> None:
+    """Emit real alias resolution before entering the database retrieval boundary."""
+    from app.api.schemas import RetrieveRequest
+    from app.observability.stages import record_stages
+    from app.retrieval.scope import ManifestScopeIndex
+
+    events = []
+
+    def stop_before_database():
+        """Stop deliberately after routing to avoid database and inference side effects."""
+        raise LookupError("retrieval boundary reached")
+
+    async def observe(event) -> None:
+        """Collect measured events from the real runtime resolver."""
+        events.append(event)
+
+    services = RuntimeApiServices(
+        session_factory=stop_before_database,
+        scope_index=ManifestScopeIndex.from_entries(
+            (
+                {
+                    "registry": "dart",
+                    "issuer": "005930",
+                    "fiscal_year": 2024,
+                    "form": "사업보고서",
+                    "aliases": ["삼성전자", "Samsung Electronics"],
+                },
+            )
+        ),
+    )
+
+    async def exercise() -> None:
+        """Run normal runtime resolution until its injected database boundary."""
+        with record_stages(observe), pytest.raises(LookupError, match="retrieval boundary"):
+            await services.retrieve(
+                RetrieveRequest(
+                    query="삼성전자 매출",
+                    session_profile=ReviewSessionProfile(fiscal_years=(2024,)),
+                )
+            )
+
+    asyncio.run(exercise())
+    assert [(event.node, event.phase) for event in events] == [
+        ("route", "start"),
+        ("route", "end"),
+        ("retrieve", "start"),
+        ("retrieve", "end"),
+    ]
+    scope = events[1].resolved_scope
+    assert scope["source"] == "alias"
+    assert scope["filters"]["registries"] == ["dart"]
+    assert scope["filters"]["issuers"] == ["005930"]
+    assert scope["filters"]["fiscal_years"] == [2024]

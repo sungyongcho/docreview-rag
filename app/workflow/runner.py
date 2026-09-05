@@ -23,6 +23,7 @@ from app.llm.schemas import (
     RelevanceJudgment,
 )
 from app.observability.budget import pre_node_budget_guard
+from app.observability.stages import stage
 from app.observability.trace import step_trace_from_provider_result
 from app.observability.types import (
     JsonObject,
@@ -386,12 +387,14 @@ async def run_workflow(
         """Run the terminal report node and close the run."""
         if refusal := blocked_by_budget(current, "report"):
             return refusal
-        try:
-            current = report_node(current)
-        except Exception as error:
-            current = _committed_failure(current, "report", error)
-            await notify("report", current)
-            return failed(current)
+        async with stage("report") as measurement:
+            try:
+                current = report_node(current)
+            except Exception as error:
+                measurement.failed = True
+                current = _committed_failure(current, "report", error)
+                await notify("report", current)
+                return failed(current)
         await notify("report", current)
         return build_run_report(
             run_id=current.run_id,
@@ -419,31 +422,35 @@ async def run_workflow(
                 }
             )
             return failed(current)
-        try:
-            if node == "grade":
-                graded = await provider.complete(
-                    build_grade_prompt(current), RelevanceJudgment, allowance
-                )
-                current = grade_node(_traced(current, graded, node), graded)
-            else:
-                decided = await provider.complete(
-                    build_check_prompt(current), AnswerDecision, allowance
-                )
-                current = check_node(_traced(current, decided, node), decided)
-        except Exception as error:
-            current = _committed_failure(current, node, error)
+        async with stage(node) as measurement:
+            try:
+                if node == "grade":
+                    graded = await provider.complete(
+                        build_grade_prompt(current), RelevanceJudgment, allowance
+                    )
+                    current = grade_node(_traced(current, graded, node), graded)
+                else:
+                    decided = await provider.complete(
+                        build_check_prompt(current), AnswerDecision, allowance
+                    )
+                    current = check_node(_traced(current, decided, node), decided)
+            except Exception as error:
+                current = _committed_failure(current, node, error)
+            measurement.failed = current.failure is not None
         await notify(node, current)
         return failed(current) if current.failure is not None else current
 
     if refusal := blocked_by_budget(state, "retrieve"):
         return refusal
-    try:
-        retrieval = await retriever(state.query, evidence_fetch_k(state), state.filters)
-    except Exception as error:
-        state = _committed_failure(state, "retrieve", error)
-        await notify("retrieve", state)
-        return failed(state)
-    state = retrieve_node(state, _result_hits(retrieval))
+    async with stage("retrieve") as measurement:
+        try:
+            retrieval = await retriever(state.query, evidence_fetch_k(state), state.filters)
+        except Exception as error:
+            state = _committed_failure(state, "retrieve", error)
+            await notify("retrieve", state)
+            measurement.failed = True
+            return failed(state)
+        state = retrieve_node(state, _result_hits(retrieval))
     await notify("retrieve", state)
 
     if not state.evidence:

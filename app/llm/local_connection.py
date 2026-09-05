@@ -90,6 +90,15 @@ class LocalConnectionManager:
             self.initial_base_url = ""
         try:
             self._active = self._load() if self.path.exists() else self._initial_connection()
+        except PermissionError:
+            self._active = LocalConnection(
+                None,
+                initial_protocol,
+                "invalid",
+                None,
+                "Local connection settings are not readable by this runtime user. "
+                "Check the settings file and directory ownership.",
+            )
         except OSError, ValueError, TypeError:
             self._active = LocalConnection(
                 None,
@@ -153,6 +162,12 @@ class LocalConnectionManager:
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
             temporary = None
+        except PermissionError as error:
+            raise LocalConnectionError(
+                "local_connection_save_failed",
+                "Could not save local connection settings. The settings directory is not "
+                "writable by this runtime user; check its ownership.",
+            ) from error
         except OSError as error:
             raise LocalConnectionError(
                 "local_connection_save_failed", "Could not save local connection settings."

@@ -228,3 +228,52 @@ def test_stream_send_failure_cancels_the_review_task():
         assert services.cancelled.is_set()
 
     asyncio.run(exercise())
+
+
+def test_stream_emits_actual_stage_transitions_without_changing_node_contract(
+    client_factory, services, successful_run
+):
+    """Expose in-flight stages and completed durations alongside legacy node payloads."""
+    from app.observability.stages import stage, stage_metadata
+
+    async def review(request, on_node=None):
+        """Exercise the stream's actual recorder using the shared observation boundary."""
+        async with stage("grade"):
+            await on_node("grade", state(steps=1))
+        return successful_run.model_copy(update={"request_context": stage_metadata()})
+
+    services.review = review
+    with client_factory(services).stream(
+        "POST",
+        "/review/stream",
+        json={"query": "Revenue?"},
+        headers={"X-DocReview-Telemetry": "stages"},
+    ) as response:
+        events = sse_events(response)
+    assert [kind for kind, _ in events] == ["stage", "node", "stage", "report", "done"]
+    assert events[0][1]["phase"] == "start" and events[0][1]["elapsed_ms"] is None
+    assert events[2][1]["status"] == "completed" and events[2][1]["elapsed_ms"] >= 0
+    execution = events[3][1]["execution"]
+    assert execution["stages"][0]["node"] == "grade"
+    assert execution["total_elapsed_ms"] >= events[2][1]["total_elapsed_ms"]
+
+
+def test_stream_omits_new_events_without_explicit_telemetry_header(
+    client_factory, services, successful_run
+):
+    """Old clients retain their event vocabulary while reports keep measured data."""
+    from app.observability.stages import stage, stage_metadata
+
+    async def review(request, on_node=None):
+        """Run an observed stage without opting the HTTP client into new event types."""
+        async with stage("grade"):
+            await on_node("grade", state(steps=1))
+        return successful_run.model_copy(update={"request_context": stage_metadata()})
+
+    services.review = review
+    with client_factory(services).stream(
+        "POST", "/review/stream", json={"query": "Revenue?"}
+    ) as response:
+        events = sse_events(response)
+    assert [kind for kind, _ in events] == ["node", "report", "done"]
+    assert events[1][1]["execution"]["stages"][0]["node"] == "grade"

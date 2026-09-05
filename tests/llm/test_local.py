@@ -106,3 +106,50 @@ def test_ollama_request_asks_for_a_window_that_fits_the_budget() -> None:
     assert isinstance(options, dict)
     assert options["num_ctx"] == 150, "the window must cover both halves of the budget"
     assert options["num_predict"] == 50
+
+
+def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
+    """Retain nanosecond metrics as milliseconds without inventing absent timings."""
+    count = 0
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Return a malformed first answer and a measured successful repair."""
+        nonlocal count
+        count += 1
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": "invalid" if count == 1 else '{"answer":"hello"}'},
+                "prompt_eval_count": 8,
+                "eval_count": 3,
+                "load_duration": 1_500_000,
+                "eval_duration": 3_000_000,
+                "prompt_eval_duration": -10,
+            },
+        )
+
+    async def exercise() -> None:
+        """Exercise the real repair loop over an offline HTTP transport."""
+        from app.observability.stages import record_stages, stage, stage_metadata
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            provider = LocalLLMProvider(
+                base_url="http://local", model_name="answer", protocol="ollama", client=client
+            )
+            with record_stages():
+                async with stage("grade"):
+                    result = await provider.complete(
+                        Prompt(system="s", user="u"), ChatReply, budget()
+                    )
+                recorded = stage_metadata()
+        assert result.status == "ok" and result.metadata.retries == 1
+        assert [timing.attempt for timing in result.metadata.local_timings] == [1, 2]
+        assert result.metadata.local_timings[0].load_duration_ms == 1.5
+        assert result.metadata.local_timings[1].eval_duration_ms == 3.0
+        assert result.metadata.local_timings[0].prompt_eval_duration_ms is None
+        assert result.metadata.local_timings[0].total_duration_ms is None
+        assert recorded["model_calls"][0]["attempts"] == 2
+        assert recorded["model_calls"][0]["node"] == "grade"
+        assert "prompt_eval_duration_ms" not in recorded["model_calls"][0]["local_timings"][0]
+
+    asyncio.run(exercise())

@@ -10,6 +10,7 @@ from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Run, Trace
+from app.llm.schemas import LocalModelTiming
 from app.observability.types import JsonValue, RunReport, RunStatus, StepTrace, WorkflowNode
 
 _RUN_STATUS = TypeAdapter[RunStatus](RunStatus)
@@ -172,6 +173,16 @@ def report_to_records(
     receives text.
     """
     secrets = _compiled_secrets(secret_values)
+    context = dict(report.request_context or {})
+    timing_metadata = {
+        str(trace.step): [
+            timing.model_dump(mode="json", exclude_none=True) for timing in trace.local_timings
+        ]
+        for trace in report.steps
+        if trace.local_timings
+    }
+    if timing_metadata:
+        context["trace_local_timings"] = timing_metadata
     run = Run(
         run_id=report.run_id,
         status=report.status,
@@ -187,7 +198,9 @@ def report_to_records(
         system_prompt=_redact_sensitive_text(report.system_prompt, secrets=secrets),
         node_path=list(report.node_path),
         report=_sanitize_json(report.report, secrets=secrets),
-        request_context=_sanitize_json(report.request_context, secrets=secrets),
+        request_context=_sanitize_json(
+            context if context else report.request_context, secrets=secrets
+        ),
     )
     traces = tuple(
         Trace(
@@ -216,8 +229,12 @@ def report_to_records(
     return run, traces
 
 
-def record_to_step(trace: Trace) -> StepTrace:
+def record_to_step(
+    trace: Trace, *, request_context: Mapping[str, object] | None = None
+) -> StepTrace:
     """Rebuild one stored trace row as the strict step it was recorded from."""
+    metadata = (request_context or {}).get("trace_local_timings", {})
+    timings = metadata.get(str(trace.step), []) if isinstance(metadata, Mapping) else []
     return StepTrace(
         step=trace.step,
         node=_WORKFLOW_NODE.validate_python(trace.node, strict=True),
@@ -233,6 +250,7 @@ def record_to_step(trace: Trace) -> StepTrace:
         llm_output=trace.llm_output,
         retries=trace.retries,
         error=trace.error,
+        local_timings=tuple(LocalModelTiming.model_validate(value) for value in timings),
     )
 
 
@@ -264,7 +282,7 @@ def records_to_report(run: Run, traces: Sequence[Trace]) -> RunReport:
         # wider dict[str, object] only because SQLAlchemy cannot express JsonValue.
         report=cast("dict[str, JsonValue] | None", run.report),
         request_context=cast("dict[str, JsonValue] | None", run.request_context),
-        steps=tuple(record_to_step(trace) for trace in traces),
+        steps=tuple(record_to_step(trace, request_context=run.request_context) for trace in traces),
     )
 
 

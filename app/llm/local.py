@@ -9,7 +9,7 @@ import httpx
 from pydantic import BaseModel
 
 from app.llm.provider import Clock, LLMProvider, RawProviderResponse, strict_response_format
-from app.llm.schemas import Prompt, ProviderBudget
+from app.llm.schemas import LocalModelTiming, Prompt, ProviderBudget
 
 LocalLlmProtocol = Literal["openai_responses", "ollama"]
 
@@ -149,7 +149,17 @@ class LocalLLMProvider(LLMProvider):
             raise ValueError("Ollama response did not include message content")
         if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
             raise ValueError("Ollama response did not include token usage")
+        timings: dict[str, int | float] = {}
+        for name in ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration"):
+            value = payload.get(name)
+            if type(value) is int and value >= 0:
+                timings[f"{name}_ms"] = value / 1_000_000
+        for name in ("prompt_eval_count", "eval_count"):
+            value = payload.get(name)
+            if type(value) is int and value >= 0:
+                timings[name] = value
         return RawProviderResponse(
+            local_timing=LocalModelTiming.model_validate(timings) if timings else None,
             output_text=output_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

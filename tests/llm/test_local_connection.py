@@ -234,3 +234,27 @@ def test_invalid_initial_url_is_reported_when_no_saved_choice_exists(tmp_path) -
     manager = LocalConnectionManager(initial_base_url="not-a-url", path=tmp_path / "missing.json")
     assert manager.current.source == "invalid"
     assert manager.current.inventory is None
+
+
+def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path) -> None:
+    """Real filesystem denial preserves existing configuration and explains ownership."""
+    path = tmp_path / "local-llm.json"
+    path.write_text('{"version":1,"state":"disabled"}')
+    path.chmod(0)
+    try:
+        unreadable = LocalConnectionManager(path=path)
+        assert unreadable.current.source == "invalid"
+        assert "not readable" in unreadable.current.error
+    finally:
+        path.chmod(0o600)
+    manager = LocalConnectionManager(path=path, transport=httpx.MockTransport(metadata_server))
+    initial = manager.current
+    original = path.read_bytes()
+    tmp_path.chmod(0o500)
+    try:
+        with pytest.raises(LocalConnectionError, match="not writable"):
+            asyncio.run(manager.connect("http://working"))
+        assert manager.current is initial
+        assert path.read_bytes() == original
+    finally:
+        tmp_path.chmod(0o700)

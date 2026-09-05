@@ -10,6 +10,7 @@ from app.api.deps import ApiServices, get_api_services
 from app.api.errors import install_error_handlers
 from app.api.routes import api_router
 from app.api.routes.admin import router as admin_router
+from app.api.runtime_gate import RuntimeResetGate, install_reset_gate
 from app.api.schemas import ErrorResponse
 
 COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -21,6 +22,8 @@ COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 def create_api_app(
     services: ApiServices | None = None,
     admin_services: RuntimeAdminApiServices | None = None,
+    *,
+    enable_reset: bool = False,
 ) -> FastAPI:
     """Create the M5 application without starting external services.
 
@@ -39,7 +42,14 @@ def create_api_app(
     Construction performs no database or provider request. Missing services remain a
     typed 503 dependency failure.
     """
-    app = FastAPI(title="Document Review RAG API", version="0.1.0")
+    gate = RuntimeResetGate() if enable_reset and admin_services is not None else None
+    app = FastAPI(
+        title="Document Review RAG API",
+        version="0.1.0",
+        lifespan=gate.lifespan if gate is not None else None,
+    )
+    if gate is not None:
+        install_reset_gate(app, gate)
     install_error_handlers(app)
     app.include_router(api_router, responses=COMMON_ERROR_RESPONSES)
     if services is not None:

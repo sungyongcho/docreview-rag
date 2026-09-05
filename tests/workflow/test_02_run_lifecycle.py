@@ -527,3 +527,43 @@ def test_a_retriever_breaking_the_hit_contract_raises_instead_of_reporting_an_ou
                 clock=SequenceClock(),
             )
         )
+
+
+def test_workflow_emits_started_and_completed_stages_around_real_node_work() -> None:
+    """Observe actual node boundaries and all model calls on a deterministic full run."""
+    from app.observability.stages import record_stages, stage_metadata
+
+    events = []
+
+    async def observe(event):
+        """Retain stream-equivalent observations for boundary assertions."""
+        events.append(event)
+
+    async def exercise():
+        """Run the production orchestrator with offline retrieval and provider responses."""
+        with record_stages(observe):
+            result = await run_workflow(
+                _request(),
+                retriever=retriever_returning([_hit()]),
+                provider=_provider(
+                    [
+                        _raw('{"grades":[{"chunk_id":1,"relevant":true,"reason":"Evidence."}]}'),
+                        _raw(
+                            '{"label":"SUPPORTED","answer":"Ten percent.",'
+                            '"citation_chunk_ids":[1],"reason":"Evidence."}'
+                        ),
+                    ]
+                ),
+            )
+            return result, stage_metadata()
+
+    result, metadata = asyncio.run(exercise())
+    assert result.status == "ok"
+    assert [(event.node, event.phase) for event in events] == [
+        (node, phase)
+        for node in ("retrieve", "grade", "check", "report")
+        for phase in ("start", "end")
+    ]
+    assert [call["node"] for call in metadata["model_calls"]] == ["grade", "check"]
+    assert all(call["attempts"] == 1 for call in metadata["model_calls"])
+    assert len(metadata["stages"]) == 4

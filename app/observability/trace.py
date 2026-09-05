@@ -63,4 +63,5 @@ def step_trace_from_provider_result[OutputT: BaseModel](
         llm_output=metadata.llm_output,
         retries=metadata.retries,
         error=error,
+        local_timings=metadata.local_timings,
     )

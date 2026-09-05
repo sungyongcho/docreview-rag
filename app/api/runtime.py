@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.api.deps import ApiServices
+from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, bad_request, translate_runtime_errors, unavailable
 from app.api.evidence import (
     CandidateSnapshotCodec,
@@ -53,6 +54,7 @@ from app.config import (
 from app.db.bootstrap import bootstrap_schema
 from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, Trace
 from app.evals.snapshots import SnapshotService
+from app.ingestion.company_names import CompanyNames, read_company_names
 from app.ingestion.seed import (
     ManifestError,
     SeedResult,
@@ -72,6 +74,7 @@ from app.observability.persistence import (
     records_to_report,
     report_to_records,
 )
+from app.observability.stages import capture_stages, observed_stage, stage, stage_metadata
 from app.observability.trace import step_trace_from_provider_result
 from app.observability.types import JsonObject, RunReport, StepTrace, build_run_report
 from app.openai_models import resolve_openai_model
@@ -313,6 +316,17 @@ class RuntimeApiServices(ApiServices):
         self._allow_custom_prompt_policy = allow_custom_prompt_policy
         self._snapshots = snapshot_service or SnapshotService(session_factory=session_factory)
         self._allow_snapshot_query = allow_snapshot_query
+
+    @property
+    def published_documents(self) -> DocumentCatalog:
+        """Expose current identities explicitly included in ready public snapshots."""
+        return DocumentCatalog(
+            self.session_factory, public_only=True, company_names=self.company_names
+        )
+
+    def company_names(self) -> CompanyNames:
+        """Read current optional company labels from the configured corpus metadata."""
+        return read_company_names(self._corpus_root or get_settings().corpus_dir)
 
     @property
     def local_inventory(self) -> LocalModelInventory | None:
@@ -570,30 +584,33 @@ class RuntimeApiServices(ApiServices):
                         resolved_profile=resolve_retrieval_profile(request.session_profile),
                         resolved_scope=None,
                     )
-                profile, scope = self._resolved_request(
-                    request.query,
-                    request.session_profile,
-                    request.filters,
-                    request.k,
-                )
+                async with stage("route") as routing_stage:
+                    profile, scope = self._resolved_request(
+                        request.query,
+                        request.session_profile,
+                        request.filters,
+                        request.k,
+                    )
+                    routing_stage.resolved_scope = scope.model_dump(mode="json")
                 routed_queries: dict[str, str] = {}
                 if self._query_routing_enabled and profile.route_by_language:
                     provider, budget = await self._engine(request)
                     for language in scope.filters.languages or ("en",):
                         try:
-                            routed = await route_query(
-                                request.query,
-                                target_language=cast("Literal['en', 'ko']", language),
-                                llm_provider=provider,
-                                provider_budget=budget,
-                            )
+                            async with stage("route"):
+                                routed = await route_query(
+                                    request.query,
+                                    target_language=cast("Literal['en', 'ko']", language),
+                                    llm_provider=provider,
+                                    provider_budget=budget,
+                                )
                         except QueryTranslationError as error:
                             raise unavailable(
                                 "query_routing_failed",
                                 f"Query routing failed for {language} ({type(error).__name__}).",
                             ) from error
                         routed_queries[language] = routed.translated_query
-                async with self._session_factory() as session:
+                async with stage("retrieve"), self._session_factory() as session:
                     result = await self._retrieve_with_session(
                         session,
                         request.query,
@@ -714,6 +731,7 @@ class RuntimeApiServices(ApiServices):
                     chunk_batch_size=request.chunk_batch_size,
                 )
 
+    @capture_stages
     async def review(
         self,
         request: ReviewRequest,
@@ -750,10 +768,11 @@ class RuntimeApiServices(ApiServices):
                 update={"session_profile": await self._local_profile(request.session_profile)}
             )
             index = self._manifest_scope_index()
-            decision = deterministic_decision(
-                request.query,
-                has_issuer_alias=bool(index.match(request.query)),
-            )
+            async with stage("gate"):
+                decision = deterministic_decision(
+                    request.query,
+                    has_issuer_alias=bool(index.match(request.query)),
+                )
             if decision is not None and decision.intent == "casual_chat":
                 return await self._casual_report(request, decision)
             if decision is None and self._intent_classifier_enabled:
@@ -825,6 +844,7 @@ class RuntimeApiServices(ApiServices):
             )
         return provider, budget
 
+    @observed_stage("gate")
     async def _classify_intent(self, request: ReviewRequest) -> ConversationDecision:
         """Classify only an input the deterministic gate cannot decide."""
         provider, budget = await self._engine(request)
@@ -864,28 +884,30 @@ class RuntimeApiServices(ApiServices):
         if answer is None:
             provider, budget = await self._engine(request)
             history = [turn.model_dump(mode="json") for turn in request.conversation_history[-6:]]
-            result = await provider.complete(
-                Prompt(
-                    system=(
-                        "Reply briefly and conversationally. Do not claim to have searched filing "
-                        "evidence, do not invent citations, and do not output NOT_IN_DOCS."
+            async with stage("chat"):
+                result = await provider.complete(
+                    Prompt(
+                        system=(
+                            "Reply briefly and conversationally. Do not claim to have searched "
+                            "filing "
+                            "evidence, do not invent citations, and do not output NOT_IN_DOCS."
+                        ),
+                        user=json.dumps(
+                            {"history": history, "message": request.query},
+                            ensure_ascii=False,
+                        ),
                     ),
-                    user=json.dumps(
-                        {"history": history, "message": request.query},
-                        ensure_ascii=False,
-                    ),
-                ),
-                ChatReply,
-                budget,
-            )
-            if result.status != "ok" or result.parsed is None:
-                raise unavailable(
-                    "provider_unavailable",
-                    f"Conversation reply failed ({result.status}).",
+                    ChatReply,
+                    budget,
                 )
-            answer = result.parsed.answer
-            traces = (step_trace_from_provider_result(result, step=1, node="chat"),)
-            source = "engine"
+                if result.status != "ok" or result.parsed is None:
+                    raise unavailable(
+                        "provider_unavailable",
+                        f"Conversation reply failed ({result.status}).",
+                    )
+                answer = result.parsed.answer
+                traces = (step_trace_from_provider_result(result, step=1, node="chat"),)
+                source = "engine"
         report = build_run_report(
             run_id=run_id,
             status="ok",
@@ -899,6 +921,7 @@ class RuntimeApiServices(ApiServices):
                 "response_source": source,
             },
             request_context={
+                **stage_metadata(),
                 "intent": decision.model_dump(mode="json"),
                 "engine": request.session_profile.engine,
                 "history_turns": len(request.conversation_history),
@@ -910,6 +933,7 @@ class RuntimeApiServices(ApiServices):
                 await self._run_persister(session, safe_run, safe_traces)
         return records_to_report(safe_run, safe_traces)
 
+    @capture_stages
     async def review_with_retrieval(
         self,
         request: ReviewRequest,
@@ -954,12 +978,14 @@ class RuntimeApiServices(ApiServices):
                 )
             if selected_snapshot is None or selected_snapshot.status != "ready":
                 raise bad_request("snapshot_unavailable", "Selected snapshot is not ready.")
-        profile, scope = self._resolved_request(
-            request.query,
-            request.session_profile,
-            request.filters,
-            request.k,
-        )
+        async with stage("route") as routing_stage:
+            profile, scope = self._resolved_request(
+                request.query,
+                request.session_profile,
+                request.filters,
+                request.k,
+            )
+            routing_stage.resolved_scope = scope.model_dump(mode="json")
         snapshot = None
         if request.evidence_selection is not None:
             try:
@@ -979,12 +1005,13 @@ class RuntimeApiServices(ApiServices):
         if snapshot is None and self._query_routing_enabled:
             for language in scope.filters.languages or ("en",):
                 try:
-                    routed = await route_query(
-                        request.query,
-                        target_language=cast("Literal['en', 'ko']", language),
-                        llm_provider=llm_provider,
-                        provider_budget=provider_budget,
-                    )
+                    async with stage("route"):
+                        routed = await route_query(
+                            request.query,
+                            target_language=cast("Literal['en', 'ko']", language),
+                            llm_provider=llm_provider,
+                            provider_budget=provider_budget,
+                        )
                 except QueryTranslationError as error:
                     raise unavailable(
                         "query_routing_failed",
@@ -1102,6 +1129,16 @@ class RuntimeApiServices(ApiServices):
                 report = report.model_copy(
                     update={
                         "request_context": {
+                            **stage_metadata(),
+                            "effective_settings": {
+                                "engine": engine,
+                                "retrieval": profile.model_dump(mode="json"),
+                                "resolved_scope": scope.model_dump(mode="json"),
+                                "provider_budget": provider_budget.model_dump(mode="json"),
+                                "run_limits": workflow_request.budget.model_dump(mode="json"),
+                                "max_context_chars": workflow_request.max_context_chars,
+                                "model": llm_provider.model_name,
+                            },
                             "engine": engine,
                             "requested_profile": request.session_profile.model_dump(mode="json"),
                             "resolved_profile": profile.model_dump(mode="json"),
@@ -1157,11 +1194,13 @@ class RuntimeApiServices(ApiServices):
         """Load ordered traces only when their parent run exists."""
         async with translate_runtime_errors():
             async with self._session_factory() as session:
-                exists = await session.scalar(select(Run.run_id).where(Run.run_id == run_id))
-                if exists is None:
+                run = await session.get(Run, run_id)
+                if run is None:
                     return None
                 traces = await self._trace_rows(session, run_id)
-                return tuple(record_to_step(trace) for trace in traces)
+                return tuple(
+                    record_to_step(trace, request_context=run.request_context) for trace in traces
+                )
 
     async def list_eval_results(self, limit: int) -> Sequence[EvalResultResource]:
         """Load newest evaluation records through their strict public schema."""

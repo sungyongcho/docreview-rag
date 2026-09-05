@@ -242,7 +242,11 @@ def create_release_app(
         if active_settings.admin_mode == "live" and active_services is not None
         else None
     )
-    application = create_api_app(active_services, admin_services)
+    application = create_api_app(
+        active_services,
+        admin_services,
+        enable_reset=active_settings.environment == "dev" and active_settings.admin_mode == "live",
+    )
     limiter = InProcessRateLimiter(
         per_minute=active_settings.rate_limit_per_minute,
         per_day=active_settings.rate_limit_per_day,
@@ -272,7 +276,7 @@ def create_release_app(
             CORSMiddleware,
             allow_origins=[active_settings.admin_cors_origin],
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["content-type"],
+            allow_headers=["content-type", "x-docreview-telemetry"],
         )
 
     @application.get("/health", response_model=ReleaseHealth, tags=["release"])

@@ -160,3 +160,19 @@ def test_persistence_flushes_without_committing_or_live_services():
     assert len(session.added_many) == 1
     assert isinstance(session.added_many[0], Trace)
     assert session.flushed
+
+
+def test_local_timing_round_trips_through_existing_jsonb_context() -> None:
+    """Preserve new optional timing fields without changing old trace rows or run context."""
+    from app.llm.schemas import LocalModelTiming
+    from app.observability.persistence import record_to_step
+
+    timing = LocalModelTiming(attempt=2, load_duration_ms=1.5, eval_count=3)
+    report = run_report(steps=[step_trace().model_copy(update={"local_timings": (timing,)})])
+    run, traces = report_to_records(report)
+    assert records_to_report(run, traces).steps[0].local_timings == (timing,)
+    assert record_to_step(traces[0], request_context=run.request_context).local_timings == (timing,)
+    assert record_to_step(traces[0]).local_timings == ()
+    assert run.request_context["trace_local_timings"]["1"] == [
+        {"attempt": 2, "load_duration_ms": 1.5, "eval_count": 3}
+    ]

@@ -280,6 +280,7 @@ class RunResponse(StrictApiModel):
     node_path: tuple[WorkflowNode, ...]
     report: WorkflowReport | ConversationReport | None
     failure: RunFailure | None
+    execution: JsonObject | None = None
 
     @model_validator(mode="after")
     def validate_terminal_shape(self) -> Self:
@@ -376,6 +377,32 @@ class RunResponse(StrictApiModel):
             node_path=run.node_path,
             report=report,
             failure=failure,
+            execution=sanitize_json(
+                {
+                    "total_elapsed_ms": (run.request_context or {}).get(
+                        "total_elapsed_ms", run.total_time_seconds * 1000
+                    ),
+                    "stages": (run.request_context or {}).get("stages", []),
+                    "model_calls": (run.request_context or {}).get("model_calls")
+                    or [
+                        {
+                            "step": trace.step,
+                            "node": trace.node,
+                            "model": trace.model_name,
+                            "attempts": trace.retries + 1,
+                            "elapsed_ms": trace.request_time_ms,
+                            "input_tokens": trace.input_tokens,
+                            "output_tokens": trace.output_tokens,
+                            "local_timings": [
+                                timing.model_dump(mode="json", exclude_none=True)
+                                for timing in trace.local_timings
+                            ],
+                        }
+                        for trace in run.steps
+                    ],
+                    "effective_settings": (run.request_context or {}).get("effective_settings"),
+                }
+            ),
         )
 
 

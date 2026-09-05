@@ -17,10 +17,12 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.observability.persistence import redact_sensitive_text
 from app.operator.commands import COMMANDS, OperatorCommand
+from app.operator.wipe import WipeError, WipeService, diagnose_wipe_error
 
 type JobStatus = Literal["running", "succeeded", "failed", "cancelled", "timed_out"]
 
@@ -49,6 +51,13 @@ class StartJobRequest(StrictOperatorModel):
     """Select one command by its immutable registry identifier."""
 
     command_id: str
+
+
+class WipeStartRequest(StrictOperatorModel):
+    """Bind destructive execution to one verified preview and exact confirmation."""
+
+    token: str
+    confirmation: str
 
 
 class JobResource(StrictOperatorModel):
@@ -249,11 +258,13 @@ def create_operator_app(
         raise ValueError("operator origin must be the local Next development server")
     allowed_origins = {f"http://{host}:{parsed_origin.port}" for host in ("127.0.0.1", "localhost")}
     active_manager = manager or OperatorJobManager(root)
+    wipe = WipeService(root, lambda: any(job.status == "running" for job in active_manager.jobs()))
 
     @asynccontextmanager
     async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
         """Stop active child processes when the loopback service exits."""
         yield
+        await wipe.close()
         await active_manager.close()
 
     application = FastAPI(
@@ -276,6 +287,52 @@ def create_operator_app(
         if request.headers.get("authorization") != f"Bearer {token}":
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "operator token rejected")
 
+    @application.get("/wipe/capability")
+    async def wipe_capability(_authorized: None = Depends(authorize)) -> dict:
+        """Verify all preview prerequisites without acquiring a hold or issuing a token."""
+        return await wipe.capability()
+
+    def wipe_failure(error: Exception) -> JSONResponse:
+        """Preserve the legacy detail string and attach actionable reset diagnostics."""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": redact_sensitive_text(str(error)),
+                "diagnosis": diagnose_wipe_error(error),
+            },
+        )
+
+    @application.post("/wipe/recover", response_model=None)
+    async def recover_wipe(_authorized: None = Depends(authorize)) -> dict | JSONResponse:
+        """Release a recorded request hold without resuming an interrupted reset."""
+        try:
+            return await wipe.recover()
+        except (WipeError, ValueError, OSError, KeyError, TypeError, IndexError) as error:
+            return wipe_failure(error)
+
+    @application.post("/wipe/preview", response_model=None)
+    async def wipe_preview(_authorized: None = Depends(authorize)) -> dict | JSONResponse:
+        """Inspect a local-only reset without changing runtime data."""
+        try:
+            return await wipe.preview()
+        except (WipeError, ValueError, OSError, KeyError, TypeError, IndexError) as error:
+            return wipe_failure(error)
+
+    @application.post("/wipe", status_code=202, response_model=None)
+    async def start_wipe(
+        body: WipeStartRequest, _authorized: None = Depends(authorize)
+    ) -> dict | JSONResponse:
+        """Start the exact confirmed reset while keeping its operator UI available."""
+        try:
+            return await wipe.start(body.token, body.confirmation)
+        except (WipeError, ValueError, OSError, KeyError, TypeError, IndexError) as error:
+            return wipe_failure(error)
+
+    @application.get("/wipe")
+    async def wipe_status(_authorized: None = Depends(authorize)) -> dict:
+        """Return reset progress independently of application or database availability."""
+        return wipe.result()
+
     @application.get("/commands", response_model=tuple[CommandResource, ...])
     async def commands(_authorized: None = Depends(authorize)) -> tuple[CommandResource, ...]:
         """List fixed operations without exposing an editable argv."""
@@ -297,12 +354,15 @@ def create_operator_app(
         _authorized: None = Depends(authorize),
     ) -> JobResource:
         """Start one allowlisted command by identifier."""
-        try:
-            return await active_manager.start(body.command_id)
-        except KeyError as error:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-        except RuntimeError as error:
-            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+        async with wipe.lock:
+            if wipe.result()["status"] == "running":
+                raise HTTPException(409, "Reset is running")
+            try:
+                return await active_manager.start(body.command_id)
+            except KeyError as error:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+            except RuntimeError as error:
+                raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
     @application.get("/jobs", response_model=tuple[JobResource, ...])
     async def jobs(_authorized: None = Depends(authorize)) -> tuple[JobResource, ...]:

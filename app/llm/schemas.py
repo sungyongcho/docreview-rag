@@ -254,6 +254,18 @@ class AnswerDecision(StrictSchema):
         return self
 
 
+class LocalModelTiming(StrictSchema):
+    """Optional authoritative Ollama metrics for one received provider attempt."""
+
+    attempt: PositiveInt = 1
+    total_duration_ms: NonNegativeFloat | None = None
+    load_duration_ms: NonNegativeFloat | None = None
+    prompt_eval_duration_ms: NonNegativeFloat | None = None
+    eval_duration_ms: NonNegativeFloat | None = None
+    prompt_eval_count: NonNegativeInt | None = None
+    eval_count: NonNegativeInt | None = None
+
+
 class RawProviderResponse(StrictSchema):
     """Provider-neutral raw response used by adapters and deterministic tests."""
 
@@ -265,6 +277,7 @@ class RawProviderResponse(StrictSchema):
     reasoning_tokens: NonNegativeInt = 0
     request_id: NonBlank | None = None
     refusal: NonBlank | None = None
+    local_timing: LocalModelTiming | None = None
 
     @model_validator(mode="after")
     def validate_usage_details(self) -> Self:
@@ -347,6 +360,7 @@ class ProviderMetadata(StrictSchema):
     request_ids: tuple[NonBlank, ...]
     llm_output: StrictStr
     raw_outputs: tuple[StrictStr, ...]
+    local_timings: tuple[LocalModelTiming, ...] = ()
 
     @model_validator(mode="after")
     def validate_attempt_metadata(self) -> Self:

@@ -12,6 +12,7 @@ from pydantic import Field, JsonValue, StrictFloat, StrictInt, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
 
 from app.llm.schemas import (
+    LocalModelTiming,
     NonBlank,
     NonNegativeDecimal,
     NonNegativeFloat,
@@ -74,6 +75,7 @@ class StepTrace(StrictSchema):
     llm_output: StrictStr
     retries: NonNegativeInt
     error: NonBlank | None = None
+    local_timings: tuple[LocalModelTiming, ...] = ()
 
     @model_validator(mode="after")
     def validate_usage_details(self) -> Self:

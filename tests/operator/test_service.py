@@ -9,10 +9,65 @@ import pytest
 
 from app.operator.commands import OperatorCommand
 from app.operator.service import OperatorJobManager, create_operator_app
+from app.operator.wipe import WipeError, WipeService
 
 TOKEN = "local-test-token"
 ORIGIN = "http://127.0.0.1:8000"
 HEADERS = {"origin": ORIGIN, "authorization": f"Bearer {TOKEN}"}
+
+
+def test_reset_preview_preserves_detail_and_returns_diagnosis(tmp_path, monkeypatch):
+    """Keep existing clients compatible while returning the exact preview blocking evidence."""
+
+    async def preview(_service):
+        """Reject only the preview without creating reset state or modifying files."""
+        raise WipeError(
+            "Runtime file cannot be removed by this operator: data/local-settings/local-llm.json",
+            code="runtime_file_permission",
+            details={"path": "data/local-settings/local-llm.json", "operator_uid": 1000},
+            remediation=["Ask the file owner to grant access, then check again."],
+        )
+
+    monkeypatch.setattr(WipeService, "preview", preview)
+    application = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
+    with TestClient(application) as client:
+        response = client.post("/wipe/preview", headers=HEADERS)
+    assert response.status_code == 409
+    assert isinstance(response.json()["detail"], str)
+    assert "cannot be removed" in response.json()["detail"]
+    assert response.json()["diagnosis"]["code"] == "runtime_file_permission"
+    assert response.json()["diagnosis"]["details"]["operator_uid"] == 1000
+
+
+def test_reset_capability_recovery_and_shutdown_use_authenticated_service(tmp_path, monkeypatch):
+    """Protect reset controls and close the reset worker when the operator lifespan exits."""
+    calls = []
+
+    async def capability(_self):
+        """Return an unavailable local capability without inspecting Docker."""
+        calls.append("capability")
+        return {"available": False, "reason": "Test gate unavailable"}
+
+    async def recover(_self):
+        """Record explicit recovery without touching any application or runtime data."""
+        calls.append("recover")
+        return {"status": "interrupted", "completed": [], "recovery_required": False}
+
+    async def close(_self):
+        """Record reset shutdown without creating a subprocess."""
+        calls.append("close")
+
+    monkeypatch.setattr(WipeService, "capability", capability)
+    monkeypatch.setattr(WipeService, "recover", recover)
+    monkeypatch.setattr(WipeService, "close", close)
+    application = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
+    with TestClient(application) as client:
+        assert client.get("/wipe/capability").status_code == 403
+        assert client.post("/wipe/recover").status_code == 403
+        assert calls == []
+        assert client.get("/wipe/capability", headers=HEADERS).json()["available"] is False
+        assert client.post("/wipe/recover", headers=HEADERS).json()["recovery_required"] is False
+    assert calls == ["capability", "recover", "close"]
 
 
 def test_operator_api_requires_exact_origin_and_token(tmp_path):
