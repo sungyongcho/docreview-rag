@@ -111,7 +111,7 @@ EMBEDDING_PROVIDER=openai
 
 ### dev / prod Compose 이원화
 
-`docker-compose.yml`은 `db`와 `app`만 정의하는 공통 base이고, overlay 두 개가 그 위에
+`docker/docker-compose.yml`은 `db`와 `app`만 정의하는 공통 base이고, overlay 두 개가 그 위에
 얹힙니다. `docker-compose.dev.yml`은 prod에서 고를 수 없는 개발 전용 기능을 더하고,
 `docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서 재현합니다.
 
@@ -120,7 +120,7 @@ EMBEDDING_PROVIDER=openai
 웹 번들 성격이 image 빌드 인자라 `--build`가 필요합니다.
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+docker compose --project-directory . -f docker/docker-compose.yml -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
 ```
 
 운영 VM용 파일은 `deploy/gcp/docker-compose.deploy.yml`이며 배포 스크립트가 그것만
@@ -133,8 +133,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d ap
 내려받습니다.
 
 ```bash
-docker compose --profile local-llm up -d ollama
-docker compose --profile local-llm exec ollama ollama pull gemma4:e4b
+docker compose --project-directory . -f docker/docker-compose.yml --profile local-llm up -d ollama
+docker compose --project-directory . -f docker/docker-compose.yml --profile local-llm exec ollama ollama pull gemma4:e4b
 ```
 
 그다음 `.env`에 endpoint와 모델을 둡니다. compose network 안에서 서비스 이름으로
@@ -146,7 +146,7 @@ LOCAL_LLM_BASE_URL=http://ollama:11434
 LOCAL_LLM_MODEL=gemma4:e4b
 ```
 
-`docker compose up -d app`으로 재기동한 뒤 Settings › Review session에서 Answer
+`docker compose --project-directory . -f docker/docker-compose.yml up -d app`으로 재기동한 뒤 Settings › Review session에서 Answer
 engine을 Local LLM으로 바꾸면 사이드바에 `LOCAL MODEL` 배지가 뜹니다. 상태는 System ›
 System status의 Local model policy panel이 보여 줍니다. 임베딩은 이 경로로 바뀌지
 않습니다. 벡터마다 생성 모델 정체성이 저장되어 있어 바꾸면 전체를 다시 임베딩해야
@@ -183,8 +183,8 @@ uv run python -m app.ingestion.dart_api
 ### 2. PostgreSQL과 인제스트
 
 ```bash
-docker compose up -d db
-docker compose ps db
+docker compose --project-directory . -f docker/docker-compose.yml up -d db
+docker compose --project-directory . -f docker/docker-compose.yml ps db
 ```
 
 SEC corpus를 넣고, 비어 있는 DB에 현재 schema를 만듭니다. 파싱·청킹·DB batch 저장·
@@ -235,7 +235,7 @@ uv run python -m app.cli retrieve \
 ### 3. 전체 서비스 시작
 
 ```bash
-docker compose up --build -d
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d
 ```
 
 브라우저에서 다음 주소를 엽니다.
@@ -248,13 +248,13 @@ http://127.0.0.1:8000/docreview-rag-agent/
 
 ```bash
 curl -s http://127.0.0.1:8000/health
-docker compose logs -f app
+docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 ```
 
 서비스만 중지하고 PostgreSQL은 유지하려면:
 
 ```bash
-docker compose stop app
+docker compose --project-directory . -f docker/docker-compose.yml stop app
 ```
 
 ## Next.js 개발 모드
@@ -272,8 +272,8 @@ docker compose stop app
 scripts/run_local.sh
 ```
 
-기존 volume을 보존해 서비스를 교체하려면 `docker compose down` 후 다시 실행합니다.
-`docker compose down -v`는 PostgreSQL 데이터를 삭제하므로 일반 재시작에 사용하지 않습니다.
+기존 volume을 보존해 서비스를 교체하려면 `docker compose --project-directory . -f docker/docker-compose.yml down` 후 다시 실행합니다.
+`docker compose --project-directory . -f docker/docker-compose.yml down -v`는 PostgreSQL 데이터를 삭제하므로 일반 재시작에 사용하지 않습니다.
 
 Dev Settings에서는 conversation prompt/evidence 전송 정책과 workflow budget을 조정할 수
 있습니다. 고정 evidence guard는 교체할 수 없습니다. 공개 Prod Settings는 현재 rate/token/cost
@@ -283,7 +283,7 @@ Prod의 Snapshots 화면은 저장된 evaluation artifact만 비교하므로 pro
 FastAPI와 PostgreSQL은 Docker로 실행하고 Next dev server만 호스트에서 띄웁니다.
 
 ```bash
-docker compose up --build -d app
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
 
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
   scripts/run_operator_web.sh
@@ -331,7 +331,7 @@ Linux bind mount 쓰기는 host data group으로 맞춥니다. 기본 GID는 100
 유지해야 Build·Measure의 artifact·manifest 작업이 동작합니다.
 
 ```bash
-docker compose up --build -d app
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
 ```
 
 배포본은 현재 `canned/read-only` 정책을 유지합니다. `/admin/*`, Usage, local Operations는
@@ -363,10 +363,10 @@ control을 spotlight하며 단계마다 해당 화면으로 먼저 이동합니�
 | `web-build` | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
 | `db-migrate-plan` | `.venv/bin/python -m app.db.migrate --plan` | Inspect pending data-preserving schema migrations without changing the database. | no |
 | `db-migrate-apply` | `.venv/bin/python -m app.db.migrate --apply` | Apply pending additive migrations while preserving corpus and run rows. | required |
-| `db-start` | `docker compose up -d db` | Start the local pgvector service and retain its existing volume. | required |
-| `db-stop` | `docker compose stop db` | Stop the local database without deleting its volume. | required |
-| `app-start` | `docker compose up --build -d app` | Build the local image and start the app with its database dependency. | required |
-| `app-stop` | `docker compose stop app` | Stop the local app container while leaving PostgreSQL unchanged. | required |
+| `db-start` | `docker compose --project-directory . -f docker/docker-compose.yml up -d db` | Start the local pgvector service and retain its existing volume. | required |
+| `db-stop` | `docker compose --project-directory . -f docker/docker-compose.yml stop db` | Stop the local database without deleting its volume. | required |
+| `app-start` | `docker compose --project-directory . -f docker/docker-compose.yml up --build -d app` | Build the local image and start the app with its database dependency. | required |
+| `app-stop` | `docker compose --project-directory . -f docker/docker-compose.yml stop app` | Stop the local app container while leaving PostgreSQL unchanged. | required |
 <!-- operator-commands:end -->
 
 ## 데이터와 corpus 관리
@@ -584,7 +584,7 @@ uv run pytest -m "not live_postgres"
 실제 PostgreSQL/pgvector 테스트:
 
 ```bash
-docker compose up -d db
+docker compose --project-directory . -f docker/docker-compose.yml up -d db
 uv run pytest -m live_postgres --require-live-postgres
 ```
 
@@ -619,8 +619,8 @@ scripts/verify_clean_checkout.sh
 실행할 수 있습니다.
 
 ```bash
-docker compose up -d db
-docker compose up --build -d
+docker compose --project-directory . -f docker/docker-compose.yml up -d db
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d
 ```
 
 포트 변경, 볼륨 보존·삭제, schema drift 처리 등 자세한 운영 명령은
@@ -665,7 +665,7 @@ scripts/run_operator_web.sh
 
 | 증상 | 확인할 것 |
 |---|---|
-| `database_unavailable` | `docker compose ps db`, `DB_PORT`, `DATABASE_URL` |
+| `database_unavailable` | `docker compose --project-directory . -f docker/docker-compose.yml ps db`, `DB_PORT`, `DATABASE_URL` |
 | `schema drift` | `app.db.migrate --plan` 후 등록 migration 적용. 남으면 아래 rebuild 경고 참고 |
 | `/review` 503 | `REVIEW_MODEL`, `OPENAI_API_KEY`, `/ready`의 model policy 상태 |
 | 공개 review 429 | IP rate limit 또는 UTC daily cost limit |

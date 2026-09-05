@@ -52,9 +52,9 @@ def compose_command(root: Path, mode: str, arguments: list[str]) -> list[str]:
         "-p",
         root.name,
         "-f",
-        str(root / "docker-compose.yml"),
+        str(root / "docker" / "docker-compose.yml"),
         "-f",
-        str(root / f"docker-compose.{mode}.yml"),
+        str(root / "docker" / f"docker-compose.{mode}.yml"),
         *arguments,
     ]
 

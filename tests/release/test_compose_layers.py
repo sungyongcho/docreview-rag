@@ -18,13 +18,15 @@ def compose(name: str, overrides: dict[str, str] | None = None) -> dict[str, Any
     command = [
         "docker",
         "compose",
+        "--project-directory",
+        str(ROOT),
         "--env-file",
         os.devnull,
         "-f",
-        str(ROOT / "docker-compose.yml"),
+        str(ROOT / "docker" / "docker-compose.yml"),
     ]
     if name != "docker-compose.yml":
-        command += ["-f", str(ROOT / name)]
+        command += ["-f", str(ROOT / "docker" / name)]
     environment = {
         key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_CONFIG") if key in os.environ
     }
@@ -90,7 +92,7 @@ def test_the_production_overlay_environment_refuses_the_local_engine(monkeypatch
 @pytest.mark.parametrize("name", ["docker-compose.dev.yml", "docker-compose.prod.yml"])
 def test_overlays_declare_no_required_variables(name: str) -> None:
     """`docker compose config` runs on a clean checkout, where nothing is exported."""
-    assert ":?" not in (ROOT / name).read_text(encoding="utf-8")
+    assert ":?" not in (ROOT / "docker" / name).read_text(encoding="utf-8")
 
 
 def test_the_deployment_artifact_moved_out_of_the_root() -> None:
@@ -99,7 +101,9 @@ def test_the_deployment_artifact_moved_out_of_the_root() -> None:
     script = (ROOT / "deploy" / "gcp" / "deploy_backend.sh").read_text(encoding="utf-8")
 
     assert deploy.exists()
-    assert not (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8").count("caddy")
+    assert (
+        not (ROOT / "docker" / "docker-compose.prod.yml").read_text(encoding="utf-8").count("caddy")
+    )
     assert "deploy/gcp/docker-compose.deploy.yml" in script
     assert "LOCAL_LLM" not in deploy.read_text(encoding="utf-8")
 

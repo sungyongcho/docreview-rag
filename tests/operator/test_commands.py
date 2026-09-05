@@ -36,7 +36,7 @@ def test_markdown_renderer_is_derived_from_the_registry():
     rendered = render_commands_markdown()
     assert rendered.count("\n|") == len(COMMANDS) + 1
     assert "`.venv/bin/python scripts/check_web_build.py`" in rendered
-    assert "`docker compose stop db`" in rendered
+    assert "`docker compose --project-directory . -f docker/docker-compose.yml stop db`" in rendered
 
 
 def test_readme_command_table_matches_the_executable_registry():

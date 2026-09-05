@@ -29,7 +29,7 @@ def test_compose_arguments_target_the_repository_from_another_directory(tmp_path
     """Explicit files and project directory prevent aliases from affecting another stack."""
     command = compose_command(tmp_path, "prod", ["logs", "-f"])
     assert command[command.index("--project-directory") + 1] == str(tmp_path)
-    assert str(tmp_path / "docker-compose.prod.yml") in command
+    assert str(tmp_path / "docker" / "docker-compose.prod.yml") in command
     assert command[-2:] == ["logs", "-f"]
 
 

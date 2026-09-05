@@ -1,18 +1,18 @@
 # Docker Compose 로컬 운영
 
-루트 `docker-compose.yml`은 PostgreSQL/pgvector `db`와 Next 정적 서비스가 포함된
+루트 `docker/docker-compose.yml`은 PostgreSQL/pgvector `db`와 Next 정적 서비스가 포함된
 FastAPI `app`을 제공합니다. DB 통합 테스트만 할 때는 `db`만 시작하고, 브라우저
 서비스까지 확인할 때는 두 서비스를 함께 시작합니다.
 
-여기에 overlay 두 개가 얹힙니다. `docker-compose.dev.yml`은 개발 전용 기능인 로컬
+여기에 overlay 두 개가 얹힙니다. `docker/docker-compose.dev.yml`은 개발 전용 기능인 로컬
 모델 엔진과 `local-llm` profile의 `ollama` 서비스를 더합니다. `.env`의
-`COMPOSE_FILE`이 이 overlay를 기본으로 잡으므로 평소에는 `docker compose up`만으로
-개발 구성이 뜹니다. `docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서
+`COMPOSE_FILE`이 이 overlay를 기본으로 잡으므로 평소에는 `docker compose --project-directory . -f docker/docker-compose.yml up`만으로
+개발 구성이 뜹니다. `docker/docker-compose.prod.yml`은 방문자가 보게 될 화면을 이 기계에서
 재현합니다. `-f`가 `COMPOSE_FILE`을 이기므로 명시적으로 지정하고, 웹 번들 성격이
 빌드 인자라 `--build`가 필요합니다.
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+docker compose --project-directory . -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up --build -d app
 ```
 
 운영 GCP VM용 설정은 `deploy/gcp/docker-compose.deploy.yml`이며 Caddy, 비공개
@@ -22,8 +22,8 @@ PostgreSQL, persistent host directory와 Docker secrets를 추가합니다. 배�
 ## DB만 실행
 
 ```bash
-docker compose up -d db
-docker compose ps db
+docker compose --project-directory . -f docker/docker-compose.yml up -d db
+docker compose --project-directory . -f docker/docker-compose.yml ps db
 ```
 
 빠른 테스트는 DB가 필요 없습니다.
@@ -43,8 +43,8 @@ uv run pytest -m live_postgres --require-live-postgres
 ## 전체 서비스 실행
 
 ```bash
-docker compose up --build -d
-docker compose ps
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d
+docker compose --project-directory . -f docker/docker-compose.yml ps
 ```
 
 서비스 URL:
@@ -58,7 +58,7 @@ API와 container 상태:
 ```bash
 curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/release
-docker compose logs -f app
+docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 ```
 
 로컬 Compose의 `app`은 다음 모드로 실행됩니다.
@@ -76,7 +76,7 @@ docker compose logs -f app
 backend container를 실행한 뒤 Next dev server를 별도로 시작합니다.
 
 ```bash
-docker compose up --build -d app
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
 
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
   scripts/run_operator_web.sh
@@ -125,7 +125,7 @@ Corpus Lab의 실제 실행 API를 호출하지 않습니다.
 5432 포트가 이미 사용 중이면 DB 포트를 바꿉니다.
 
 ```bash
-DB_PORT=55432 docker compose up -d db
+DB_PORT=55432 docker compose --project-directory . -f docker/docker-compose.yml up -d db
 
 DATABASE_URL=postgresql+asyncpg://filing:filing@127.0.0.1:55432/filing \
   uv run pytest -m live_postgres --require-live-postgres
@@ -134,7 +134,7 @@ DATABASE_URL=postgresql+asyncpg://filing:filing@127.0.0.1:55432/filing \
 app 포트 변경:
 
 ```bash
-APP_PORT=8080 docker compose up --build -d app
+APP_PORT=8080 docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
 ```
 
 ## 서비스 수명주기
@@ -142,28 +142,28 @@ APP_PORT=8080 docker compose up --build -d app
 app만 중지하고 DB는 유지:
 
 ```bash
-docker compose stop app
+docker compose --project-directory . -f docker/docker-compose.yml stop app
 ```
 
 DB를 중지·재시작:
 
 ```bash
-docker compose stop db
-docker compose start db
+docker compose --project-directory . -f docker/docker-compose.yml stop db
+docker compose --project-directory . -f docker/docker-compose.yml start db
 ```
 
 container와 network를 제거하고 `pg_data` volume은 보존:
 
 ```bash
-docker compose down
+docker compose --project-directory . -f docker/docker-compose.yml down
 ```
 
 상태와 로그:
 
 ```bash
-docker compose ps
-docker compose logs db
-docker compose logs app
+docker compose --project-directory . -f docker/docker-compose.yml ps
+docker compose --project-directory . -f docker/docker-compose.yml logs db
+docker compose --project-directory . -f docker/docker-compose.yml logs app
 ```
 
 ## Schema drift
@@ -201,7 +201,7 @@ uv run python -m app.ingestion.seed \
 사용하지 않습니다.
 
 ```bash
-docker compose down -v
+docker compose --project-directory . -f docker/docker-compose.yml down -v
 ```
 
 `./data`는 host bind mount이므로 위 명령으로 삭제되지 않습니다.

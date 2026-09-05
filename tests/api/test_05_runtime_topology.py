@@ -103,7 +103,7 @@ def test_runtime_openapi_includes_all_m5_resources():
 
 def test_compose_preserves_postgres_and_has_no_worker_or_redis_service():
     """Keep the database and the app, and stay free of a queue or a worker."""
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    compose = Path("docker/docker-compose.yml").read_text(encoding="utf-8")
 
     assert "pgvector/pgvector:pg16" in compose
     assert "postgresql+asyncpg://filing:filing@db:5432/filing" in compose
@@ -116,7 +116,7 @@ def test_compose_preserves_postgres_and_has_no_worker_or_redis_service():
 
 def test_container_uses_the_locked_runtime_and_nonroot_user():
     """Install from the lock file, drop to a non-root user, and declare a health check."""
-    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    dockerfile = Path("docker/Dockerfile").read_text(encoding="utf-8")
 
     assert "uv sync --locked --no-dev --no-install-project" in dockerfile
     assert "USER appuser" in dockerfile

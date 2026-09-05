@@ -117,7 +117,7 @@ def container_probe(root: Path, url: str, protocol: str) -> dict[str, Any]:
         "-p",
         root.name,
         "-f",
-        str(root / "docker-compose.yml"),
+        str(root / "docker" / "docker-compose.yml"),
         "exec",
         "-T",
         "app",

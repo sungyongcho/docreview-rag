@@ -22,7 +22,7 @@ services:
       - "host.docker.internal:host-gateway"
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile
       args:
         # The local image serves static files and FastAPI from one origin. Public
         # Firebase builds override these with the Cloudflare API URL and canned lab.
