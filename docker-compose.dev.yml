@@ -1,43 +1,12 @@
-# Development overlay: everything a production build is not allowed to offer.
-# Used by default through COMPOSE_FILE in .env, so `docker compose up` means dev.
+# Optional explicit dev selection; the default Compose file already supplies live editing.
 services:
   app:
+    build:
+      args:
+        NEXT_PUBLIC_ADMIN_MODE: live
     environment:
-      # A local answer engine exists only here. The production overlay has no such keys,
-      # and MODE=prod refuses the engine anyway, so the guarantee holds either way.
-      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-}
-      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-}
-      LOCAL_LLM_PROTOCOL: ${LOCAL_LLM_PROTOCOL:-auto}
-      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
-      LOCAL_LLM_TIMEOUT_S: ${LOCAL_LLM_TIMEOUT_S:-}
-      LOCAL_LLM_MAX_INPUT_TOKENS: ${LOCAL_LLM_MAX_INPUT_TOKENS:-}
-      LOCAL_LLM_MAX_OUTPUT_TOKENS: ${LOCAL_LLM_MAX_OUTPUT_TOKENS:-}
-
-  # Opt-in model host, started only by `--profile local-llm`, so the default topology
-  # stays db + app. The app reaches it as http://ollama:11434 on the compose network;
-  # no host port is published and nothing depends on it, which keeps the default
-  # `docker compose up` and `docker compose config` unaffected when it is absent.
-  ollama:
-    profiles: ["local-llm"]
-    # Pinned for reproducibility, but recent enough to pull current models: an older
-    # server refuses their manifests with a 412 and tells the reader to upgrade.
-    image: ollama/ollama:0.30.7
+      MODE: dev
+      DOCREVIEW_ADMIN_MODE: live
+  web:
     environment:
-      OLLAMA_HOST: 0.0.0.0:11434
-      # Reloading several gigabytes per request dominates latency on a CPU-only host.
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-    expose:
-      - "11434"
-    volumes:
-      - ollama_models:/root/.ollama
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-volumes:
-  ollama_models:
+      NEXT_PUBLIC_ADMIN_MODE: live

@@ -30,11 +30,11 @@ def test_compose_app_has_single_container_security_guards() -> None:
     assert "./data:/app/data" in compose
     assert "no-new-privileges:true" in compose
     assert "cap_drop:\n      - ALL" in compose
-    assert "${APP_PORT:-8000}:8000" in compose
+    assert "${APP_PORT:-8000}:3000" in compose
     assert "${DB_PORT:-5432}:5432" in compose
     assert 'NEXT_PUBLIC_API_BASE_URL: ""' in compose
-    assert "NEXT_PUBLIC_ADMIN_MODE: ${NEXT_PUBLIC_ADMIN_MODE:-live}" in compose
-    assert "DOCREVIEW_ADMIN_MODE: ${DOCREVIEW_ADMIN_MODE:-live}" in compose
+    assert "NEXT_PUBLIC_ADMIN_MODE: live" in compose
+    assert "DOCREVIEW_ADMIN_MODE: live" in compose
 
 
 def test_clean_checkout_script_has_fresh_locked_and_smoke_gates() -> None:

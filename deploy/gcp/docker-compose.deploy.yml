@@ -22,6 +22,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://filing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/filing
       EMBEDDING_PROVIDER: deterministic
       DOCREVIEW_MODE: runtime
+      MODE: prod
       DOCREVIEW_ADMIN_MODE: live
       DOCREVIEW_HOST: 127.0.0.1
       DOCREVIEW_ADMIN_CORS_ORIGIN: ${DOCREVIEW_ADMIN_CORS_ORIGIN:-http://127.0.0.1:3000}

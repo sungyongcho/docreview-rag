@@ -1,49 +1,66 @@
 """Compose layering: a shared base, a development overlay, and a production overlay."""
 
+import json
+import os
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import pytest
-import yaml
 
 from app.release.config import ReleaseSettings
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def compose(name: str) -> dict[str, Any]:
-    """Parse one compose file, so assertions do not depend on its formatting."""
-    return yaml.safe_load((ROOT / name).read_text(encoding="utf-8"))
-
-
-def test_the_base_carries_no_local_model_wiring() -> None:
-    """Local model keys live in the development overlay, so production cannot forward them."""
-    environment = compose("docker-compose.yml")["services"]["app"]["environment"]
-
-    assert not [key for key in environment if key.startswith("LOCAL_LLM")]
-    assert "ollama" not in compose("docker-compose.yml")["services"]
-
-
-def test_the_development_overlay_hosts_the_opt_in_model_service() -> None:
-    """The model host is profiled, unpublished, and depended on by nothing."""
-    dev = compose("docker-compose.dev.yml")
-    ollama = dev["services"]["ollama"]
-
-    assert ollama["profiles"] == ["local-llm"]
-    assert ollama["image"] != "ollama/ollama:latest", (
-        "pin the tag so a clean checkout is reproducible"
+def compose(name: str, overrides: dict[str, str] | None = None) -> dict[str, Any]:
+    """Render the actual Compose merge without loading developer credentials or starting Docker."""
+    command = [
+        "docker",
+        "compose",
+        "--env-file",
+        os.devnull,
+        "-f",
+        str(ROOT / "docker-compose.yml"),
+    ]
+    if name != "docker-compose.yml":
+        command += ["-f", str(ROOT / name)]
+    environment = {
+        key: os.environ[key] for key in ("PATH", "HOME", "DOCKER_CONFIG") if key in os.environ
+    }
+    environment.update(overrides or {})
+    result = subprocess.run(
+        [*command, "config", "--format", "json"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    # No published port keeps this out of the launcher's host-port contract entirely.
-    assert "ports" not in ollama
-    assert ollama["volumes"] == ["ollama_models:/root/.ollama"]
-    assert "ollama_models" in dev["volumes"]
-    # A non-profiled service depending on a profiled one breaks `docker compose config`.
-    assert "depends_on" not in dev["services"]["app"]
+    return json.loads(result.stdout)
 
-    forwarded = dev["services"]["app"]["environment"]
-    assert forwarded["LOCAL_LLM_BASE_URL"] == "${LOCAL_LLM_BASE_URL:-}"
-    for key in ("LOCAL_LLM_TIMEOUT_S", "LOCAL_LLM_MAX_INPUT_TOKENS", "LOCAL_LLM_MAX_OUTPUT_TOKENS"):
-        assert key in forwarded
+
+def test_the_default_stack_needs_no_compose_file_environment_switch() -> None:
+    """Plain Compose includes source-mounted development and an optional external model endpoint."""
+    base = compose("docker-compose.yml")
+    assert set(base["services"]) == {"app", "db", "web"}
+    assert "ollama_models" not in base["volumes"]
+    app = base["services"]["app"]
+    assert app["environment"]["LOCAL_LLM_BASE_URL"] == "http://host.docker.internal:11434"
+    assert "LOCAL_LLM_MODEL" not in app["environment"]
+    assert app["extra_hosts"] == ["host.docker.internal=host-gateway"]
+    assert "COMPOSE_FILE=" not in (ROOT / ".env.example").read_text()
+
+
+def test_explicit_development_inherits_the_default_mounts_and_services() -> None:
+    """The optional dev selection preserves the default stack and explicitly selects dev roles."""
+    base = compose("docker-compose.yml")
+    dev = compose("docker-compose.dev.yml")
+    assert dev["services"]["web"] == base["services"]["web"]
+    for key in ("volumes", "command", "extra_hosts"):
+        assert dev["services"]["app"][key] == base["services"]["app"][key]
+    assert dev["services"]["app"]["environment"]["MODE"] == "dev"
+    assert dev["services"]["app"]["environment"]["DOCREVIEW_ADMIN_MODE"] == "live"
 
 
 def test_the_production_overlay_reproduces_the_visitor_build() -> None:
@@ -65,7 +82,6 @@ def test_the_production_overlay_environment_refuses_the_local_engine(monkeypatch
     settings = ReleaseSettings(
         _env_file=None,
         LOCAL_LLM_BASE_URL="http://ollama:11434",
-        LOCAL_LLM_MODEL="gemma4:e4b",
     )
 
     assert settings.local_llm_enabled is False
@@ -86,3 +102,70 @@ def test_the_deployment_artifact_moved_out_of_the_root() -> None:
     assert not (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8").count("caddy")
     assert "deploy/gcp/docker-compose.deploy.yml" in script
     assert "LOCAL_LLM" not in deploy.read_text(encoding="utf-8")
+
+
+def test_development_mounts_source_and_keeps_browser_dependencies_separate() -> None:
+    """Code reloads in development without exposing backend secrets to the web service."""
+    dev = compose("docker-compose.dev.yml")
+    web = dev["services"]["web"]
+    assert web["image"] == "node:24-alpine"
+    assert any(v["type"] == "bind" and v["target"] == "/web" for v in web["volumes"])
+    assert any(v["type"] == "volume" and v["target"] == "/web/node_modules" for v in web["volumes"])
+    assert any(v["type"] == "volume" and v["target"] == "/web/.next" for v in web["volumes"])
+    assert "env_file" not in web
+    assert "depends_on" not in web
+    assert set(web["environment"]) <= {
+        "NEXT_PUBLIC_ADMIN_MODE",
+        "NEXT_PUBLIC_API_BASE_URL",
+        "NEXT_PUBLIC_DB_ENDPOINT",
+        "NEXT_PUBLIC_OPERATOR_BASE_URL",
+        "NEXT_PUBLIC_OPERATOR_TOKEN",
+        "DOCREVIEW_API_UPSTREAM",
+        "DOCREVIEW_LOCAL_HOST",
+    }
+    assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
+    assert web["environment"]["DOCREVIEW_API_UPSTREAM"] == "http://app:8000"
+    assert not dev["services"]["app"].get("ports")
+    assert web["ports"][0]["published"] == "8000"
+    assert any(
+        v["target"] == "/app/app" and v["read_only"] for v in dev["services"]["app"]["volumes"]
+    )
+    assert "--reload" in dev["services"]["app"]["command"]
+    prod = compose("docker-compose.prod.yml")
+    assert prod["services"]["web"]["volumes"] == web["volumes"]
+    assert prod["services"]["app"]["command"] == dev["services"]["app"]["command"]
+    assert {v["target"] for v in prod["services"]["app"]["volumes"]} == {"/app/data", "/app/app"}
+    assert set(prod["volumes"]) == {"pg_data", "web_node_modules", "web_next"}
+    assert prod["services"]["web"]["environment"]["NEXT_PUBLIC_ADMIN_MODE"] == "canned"
+    assert prod["services"]["web"]["environment"]["NEXT_PUBLIC_OPERATOR_TOKEN"] == ""
+    assert not prod["services"]["app"].get("extra_hosts")
+
+
+@pytest.mark.parametrize(
+    "name, mode, admin, web_admin",
+    [
+        ("docker-compose.yml", "dev", "live", "live"),
+        ("docker-compose.dev.yml", "dev", "live", "live"),
+        ("docker-compose.prod.yml", "prod", "readonly", "canned"),
+    ],
+)
+def test_mode_and_frontend_routing_ignore_stale_shell_flags(name, mode, admin, web_admin) -> None:
+    """Explicit Compose contracts override old dotenv or exported mode controls."""
+    config = compose(
+        name,
+        {
+            "MODE": "prod" if mode == "dev" else "dev",
+            "DOCREVIEW_ADMIN_MODE": "live",
+            "NEXT_PUBLIC_ADMIN_MODE": "readonly",
+            "NEXT_PUBLIC_API_BASE_URL": "http://wrong.example",
+            "APP_PORT": "19000",
+        },
+    )
+    app = config["services"]["app"]
+    web = config["services"]["web"]
+    assert app["environment"]["MODE"] == mode
+    assert app["environment"]["DOCREVIEW_ADMIN_MODE"] == admin
+    assert web["environment"]["NEXT_PUBLIC_ADMIN_MODE"] == web_admin
+    assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
+    assert web["ports"][0]["published"] == "19000"
+    assert not app.get("ports")

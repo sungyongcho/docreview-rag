@@ -1,7 +1,8 @@
-"""Validate and export the host-facing local runtime environment contract."""
+"""Validate the host-facing values for an explicitly selected local mode."""
 
 from __future__ import annotations
 
+import argparse
 import ipaddress
 from pathlib import Path
 import sys
@@ -9,18 +10,16 @@ import sys
 from dotenv import dotenv_values
 
 DEFAULTS = {
-    "MODE": "dev",
     "DOCREVIEW_LOCAL_HOST": "127.0.0.1",
     "DB_PORT": "5432",
     "APP_PORT": "8000",
-    "DOCREVIEW_OPERATOR_WEB_PORT": "3000",
     "DOCREVIEW_OPERATOR_PORT": "18001",
     "DOCREVIEW_TUNNEL_PORT": "18000",
     "DOCREVIEW_ORIGIN_PORT": "8000",
     "DOCREVIEW_HTTP_PORT": "80",
     "DOCREVIEW_HTTPS_PORT": "443",
 }
-DEV_PORTS = ("DB_PORT", "APP_PORT", "DOCREVIEW_OPERATOR_WEB_PORT", "DOCREVIEW_OPERATOR_PORT")
+DEV_PORTS = ("DB_PORT", "APP_PORT", "DOCREVIEW_OPERATOR_PORT")
 PROD_PORTS = ("DB_PORT", "APP_PORT")
 
 
@@ -28,13 +27,12 @@ class LocalEnvironmentError(ValueError):
     """One invalid local launcher mode, host, or port contract."""
 
 
-def load_local_environment(path: Path = Path(".env")) -> dict[str, str]:
-    """Load defaults plus one dotenv file and validate active host bindings."""
-    configured = {key: value for key, value in dotenv_values(path).items() if value is not None}
-    values = DEFAULTS | configured
-    mode = values["MODE"]
+def load_local_environment(path: Path = Path(".env"), *, mode: str = "dev") -> dict[str, str]:
+    """Load only public bindings while keeping mode selection outside dotenv."""
     if mode not in {"dev", "prod"}:
-        raise LocalEnvironmentError("MODE must be dev or prod")
+        raise LocalEnvironmentError("mode must be dev or prod")
+    configured = {key: value for key, value in dotenv_values(path).items() if value is not None}
+    values = {key: configured.get(key, default) for key, default in DEFAULTS.items()}
     host = values["DOCREVIEW_LOCAL_HOST"]
     try:
         ipaddress.ip_address(host)
@@ -63,7 +61,7 @@ def load_local_environment(path: Path = Path(".env")) -> dict[str, str]:
                 f"host port collision: {key} and {claimed[value]} both use {value}"
             )
         claimed[value] = key
-    return {key: values[key] for key in DEFAULTS}
+    return values | {"MODE": mode}
 
 
 def write_null_environment(values: dict[str, str]) -> None:
@@ -73,9 +71,12 @@ def write_null_environment(values: dict[str, str]) -> None:
 
 
 def main() -> None:
-    """Validate ``.env`` and emit only the public launcher contract."""
+    """Emit only the validated public launcher contract for the selected mode."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=("dev", "prod"), default="dev")
+    args = parser.parse_args()
     try:
-        values = load_local_environment()
+        values = load_local_environment(mode=args.mode)
     except LocalEnvironmentError as error:
         raise SystemExit(str(error)) from error
     write_null_environment(values)

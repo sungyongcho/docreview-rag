@@ -1,3 +1,4 @@
+# Default local stack: source mounts and automatic web/API reload.
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -16,6 +17,9 @@ services:
       retries: 10
 
   app:
+    command: ["uv", "run", "--no-sync", "uvicorn", "app.release.space:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app", "--log-level", "warning"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: .
       dockerfile: Dockerfile
@@ -23,7 +27,7 @@ services:
         # The local image serves static files and FastAPI from one origin. Public
         # Firebase builds override these with the Cloudflare API URL and canned lab.
         NEXT_PUBLIC_API_BASE_URL: ""
-        NEXT_PUBLIC_ADMIN_MODE: ${NEXT_PUBLIC_ADMIN_MODE:-live}
+        NEXT_PUBLIC_ADMIN_MODE: live
     environment:
       CORPUS_DIR: /app/data/corpus
       DATABASE_URL: postgresql+asyncpg://filing:filing@db:5432/filing
@@ -32,25 +36,31 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # One key slot per environment: MODE=dev reads OPENAI_API_KEY_LOCAL, MODE=prod
       # reads OPENAI_API_KEY_PROD, and an explicit OPENAI_API_KEY always wins.
-      MODE: ${MODE:-dev}
+      MODE: dev
       OPENAI_API_KEY_LOCAL: ${OPENAI_API_KEY_LOCAL:-}
       OPENAI_API_KEY_PROD: ${OPENAI_API_KEY_PROD:-}
       DART_API_KEY: ${DART_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-}
       DOCREVIEW_MODE: runtime
-      DOCREVIEW_ADMIN_MODE: ${DOCREVIEW_ADMIN_MODE:-live}
+      DOCREVIEW_ADMIN_MODE: live
       DOCREVIEW_HOST: 127.0.0.1
-      DOCREVIEW_ADMIN_CORS_ORIGIN: ${DOCREVIEW_ADMIN_CORS_ORIGIN:-http://127.0.0.1:3000}
+      DOCREVIEW_ADMIN_CORS_ORIGIN: http://${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}
       DOCREVIEW_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434}
+      LOCAL_LLM_PROTOCOL: ${LOCAL_LLM_PROTOCOL:-auto}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      LOCAL_LLM_TIMEOUT_S: ${LOCAL_LLM_TIMEOUT_S:-}
+      LOCAL_LLM_MAX_INPUT_TOKENS: ${LOCAL_LLM_MAX_INPUT_TOKENS:-}
+      LOCAL_LLM_MAX_OUTPUT_TOKENS: ${LOCAL_LLM_MAX_OUTPUT_TOKENS:-}
     depends_on:
       db:
         condition: service_healthy
-    ports: ["${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}:8000"]
     init: true
     group_add:
       - "${HOST_GID:-1000}"
     volumes:
       - ./data:/app/data
+      - ./app:/app/app:ro
     tmpfs:
       - /tmp
     security_opt:
@@ -60,5 +70,29 @@ services:
     # The image's own HEALTHCHECK applies; duplicating it here would give the same
     # probe two diverging definitions.
 
+  # The UI stays available while the API is stopped, including Local Operations.
+  web:
+    image: node:24-alpine
+    working_dir: /web
+    init: true
+    ports:
+      - "${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}:3000"
+    volumes:
+      - ./web:/web
+      - web_node_modules:/web/node_modules
+      - web_next:/web/.next
+    environment:
+      NEXT_PUBLIC_ADMIN_MODE: live
+      NEXT_PUBLIC_API_BASE_URL: /docreview-rag-agent/api
+      DOCREVIEW_API_UPSTREAM: http://app:8000
+      DOCREVIEW_LOCAL_HOST: ${DOCREVIEW_LOCAL_HOST:-127.0.0.1}
+      NEXT_PUBLIC_DB_ENDPOINT: ${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${DB_PORT:-5432}
+      NEXT_PUBLIC_OPERATOR_BASE_URL: ${NEXT_PUBLIC_OPERATOR_BASE_URL:-}
+      NEXT_PUBLIC_OPERATOR_TOKEN: ${NEXT_PUBLIC_OPERATOR_TOKEN:-}
+    command: ["sh", "-c", "npm ci && npm run dev -- --hostname 0.0.0.0 --port 3000"]
+
+
 volumes:
   pg_data:
+  web_node_modules:
+  web_next:

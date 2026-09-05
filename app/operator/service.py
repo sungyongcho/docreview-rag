@@ -241,8 +241,13 @@ def create_operator_app(
         or parsed_origin.hostname not in {"127.0.0.1", "localhost"}
         or parsed_origin.port is None
         or parsed_origin.path not in {"", "/"}
+        or parsed_origin.username is not None
+        or parsed_origin.password is not None
+        or parsed_origin.query
+        or parsed_origin.fragment
     ):
         raise ValueError("operator origin must be the local Next development server")
+    allowed_origins = {f"http://{host}:{parsed_origin.port}" for host in ("127.0.0.1", "localhost")}
     active_manager = manager or OperatorJobManager(root)
 
     @asynccontextmanager
@@ -258,15 +263,15 @@ def create_operator_app(
     )
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[allowed_origin],
+        allow_origins=sorted(allowed_origins),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["authorization", "content-type"],
     )
 
     async def authorize(request: Request) -> None:
-        """Require both the launch token and exact local browser origin."""
-        if request.headers.get("origin") != allowed_origin:
+        """Require the launch token and a loopback origin on the configured web port."""
+        if request.headers.get("origin") not in allowed_origins:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "operator origin rejected")
         if request.headers.get("authorization") != f"Bearer {token}":
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "operator token rejected")

@@ -1,15 +1,24 @@
-# Production overlay: what a visitor sees, reproduced on this machine.
-# Run it explicitly, because -f overrides the COMPOSE_FILE default in .env:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
-# --build is required because NEXT_PUBLIC_ADMIN_MODE is baked into the image.
-# Add DOCREVIEW_MODE=canned to see the fully offline Hugging Face shape instead.
+# Local visitor preview: production permissions with the same live source editing.
+# Actual deployment uses deploy/gcp/docker-compose.deploy.yml and a static web build.
 services:
   app:
+    extra_hosts: !reset []
     build:
       args:
         NEXT_PUBLIC_API_BASE_URL: ""
         NEXT_PUBLIC_ADMIN_MODE: canned
     environment:
-      # Selects the production OpenAI key slot and, with it, refuses the local engine.
       MODE: prod
       DOCREVIEW_ADMIN_MODE: readonly
+      LOCAL_LLM_BASE_URL: !reset null
+      LOCAL_LLM_PROTOCOL: !reset null
+      LOCAL_LLM_API_KEY: !reset null
+      LOCAL_LLM_TIMEOUT_S: !reset null
+      LOCAL_LLM_MAX_INPUT_TOKENS: !reset null
+      LOCAL_LLM_MAX_OUTPUT_TOKENS: !reset null
+  web:
+    environment:
+      NEXT_PUBLIC_ADMIN_MODE: canned
+      NEXT_PUBLIC_OPERATOR_BASE_URL: ""
+      NEXT_PUBLIC_OPERATOR_TOKEN: ""
+      NEXT_PUBLIC_DB_ENDPOINT: ""

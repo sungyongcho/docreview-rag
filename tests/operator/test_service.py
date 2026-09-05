@@ -5,12 +5,13 @@ from pathlib import Path
 import sys
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.operator.commands import OperatorCommand
 from app.operator.service import OperatorJobManager, create_operator_app
 
 TOKEN = "local-test-token"
-ORIGIN = "http://127.0.0.1:3000"
+ORIGIN = "http://127.0.0.1:8000"
 HEADERS = {"origin": ORIGIN, "authorization": f"Bearer {TOKEN}"}
 
 
@@ -21,6 +22,45 @@ def test_operator_api_requires_exact_origin_and_token(tmp_path):
         assert client.get("/commands").status_code == 403
         assert client.get("/commands", headers={"origin": ORIGIN}).status_code == 401
         assert client.get("/commands", headers=HEADERS).status_code == 200
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_operator_accepts_both_loopback_names_on_the_selected_port(tmp_path, host):
+    """Serve either browser name without relaxing the token or configured port."""
+    origin = f"http://{host}:18080"
+    app = create_operator_app(token=TOKEN, allowed_origin="http://localhost:18080", root=tmp_path)
+    with TestClient(app) as client:
+        response = client.options(
+            "/commands",
+            headers={
+                "origin": origin,
+                "access-control-request-method": "GET",
+                "access-control-request-headers": "authorization",
+            },
+        )
+        assert response.headers["access-control-allow-origin"] == origin
+        assert client.get("/commands", headers={"origin": origin}).status_code == 401
+        assert (
+            client.get(
+                "/commands", headers={"origin": origin, "authorization": f"Bearer {TOKEN}"}
+            ).status_code
+            == 200
+        )
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["http://localhost:3000", "https://localhost:8000", "http://example.com:8000"],
+)
+def test_operator_rejects_other_ports_protocols_and_hosts(tmp_path, origin):
+    """Keep the paired loopback origins limited to the exact development port."""
+    app = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
+    with TestClient(app) as client:
+        response = client.get(
+            "/commands", headers={"origin": origin, "authorization": f"Bearer {TOKEN}"}
+        )
+        assert response.status_code == 403
+        assert "access-control-allow-origin" not in response.headers
 
 
 def test_job_runs_exact_argv_redacts_output_and_rejects_concurrency(tmp_path):

@@ -11,7 +11,7 @@ from app.operator.service import create_operator_app
 def main() -> None:
     """Load ephemeral launch credentials and start the loopback API."""
     token = os.environ.get("DOCREVIEW_OPERATOR_TOKEN", "")
-    origin = os.environ.get("DOCREVIEW_OPERATOR_ORIGIN", "http://127.0.0.1:3000")
+    origin = os.environ.get("DOCREVIEW_OPERATOR_ORIGIN", "http://127.0.0.1:8000")
     port = int(os.environ.get("DOCREVIEW_OPERATOR_PORT", "18001"))
     application = create_operator_app(
         token=token,
