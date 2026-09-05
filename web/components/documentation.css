@@ -25,6 +25,19 @@
 .docs-development-notice > div > :last-child { margin-bottom: 0; }
 .docs-site .docs-menu .development-badge { margin: 3px 0 0 3px; padding: 1px 4px; font-size: 9px; }
 .docs-site .docs-menu .development-badge svg { margin-top: 0; }
+@media (min-width: 701px) {
+  .docs-sidebar, .docs-toc { scrollbar-width: thin; scrollbar-gutter: stable; scrollbar-color: transparent transparent; }
+  .docs-sidebar:hover, .docs-sidebar:focus-within, .docs-toc:hover, .docs-toc:focus-within { scrollbar-color: var(--muted) transparent; }
+  .docs-sidebar::-webkit-scrollbar, .docs-toc::-webkit-scrollbar { width: 6px; height: 6px; }
+  .docs-sidebar::-webkit-scrollbar-track, .docs-toc::-webkit-scrollbar-track { background: transparent; }
+  .docs-sidebar::-webkit-scrollbar-thumb, .docs-toc::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }
+  .docs-sidebar:hover::-webkit-scrollbar-thumb, .docs-sidebar:focus-within::-webkit-scrollbar-thumb,
+  .docs-toc:hover::-webkit-scrollbar-thumb, .docs-toc:focus-within::-webkit-scrollbar-thumb { background: var(--muted); }
+  .docs-sidebar::-webkit-scrollbar-button, .docs-toc::-webkit-scrollbar-button { display: none; }
+}
+@media (forced-colors: active) {
+  .docs-sidebar, .docs-toc { scrollbar-color: auto; }
+}
 @media (max-width: 700px) {
   .docs-mode-guide { flex-direction: column; gap: 8px; }
   .docs-site .docs-menu nav a { min-height: 44px; align-items: center; }

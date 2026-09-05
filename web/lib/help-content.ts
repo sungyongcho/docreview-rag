@@ -308,7 +308,7 @@ const REVIEW: HelpTopic[] = [
       "Auto resolves the registry from the question: explicit issuer filters win, then issuer aliases found in the text (NVIDIA, 삼성전자), then the script of the question.",
       "SEC or DART pins the registry; a question that names an issuer outside the pinned corpus is rejected with a scope conflict instead of silently searching the wrong filings.",
     ],
-    tune: "Pin the scope when aliases are ambiguous or when a Korean question should search English 10-Ks. The Korean preset requires a Korean-compatible scope.",
+    tune: "Pin the scope when aliases are ambiguous or when a Korean question should search English 10-Ks. The Korean preset keeps the selected corpus and explicit language filters.",
     seeAlso: ["review.filters", "review.preset"],
   },
   {

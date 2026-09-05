@@ -219,7 +219,11 @@ async def retrieve(
 
     async def lexical_component(language: str) -> list[ChunkHit]:
         """Retrieve one corpus-language lane with its matching tokenizer."""
-        if route_by_language and language not in query_languages:
+        if (
+            route_by_language
+            and language not in query_languages
+            and language not in (query_variants or {})
+        ):
             lexical_by_language[language] = ()
             return []
         plan = lexical_plan(language)

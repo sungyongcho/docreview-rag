@@ -126,10 +126,6 @@ class ReviewSessionProfile(StrictProfileModel):
         """Keep Custom configuration present exactly when its preset is selected."""
         if (self.retrieval_preset == "custom") != (self.custom_retrieval is not None):
             raise ValueError("custom_retrieval is required exactly for the custom preset")
-        if self.retrieval_preset == "korean" and (
-            self.corpus_scope == "sec" or (self.languages and "ko" not in self.languages)
-        ):
-            raise ValueError("the Korean preset requires a Korean-compatible corpus scope")
         return self
 
     def explicit_filters(self) -> RetrievalFilters:

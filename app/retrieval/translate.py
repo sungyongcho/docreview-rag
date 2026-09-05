@@ -30,7 +30,7 @@ TRANSLATE_SYSTEM_PROMPTS: dict[str, str] = {
 
 
 class QueryTranslationError(RuntimeError):
-    """One translation request refused, failed validation, or stayed non-English."""
+    """One translation request refused, failed validation, or missed its target language."""
 
 
 class QueryTranslation(StrictSchema):
@@ -119,11 +119,15 @@ async def route_query(
     """Rewrite one raw query into a corpus lane through the strict provider boundary."""
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must not be blank")
-    system = TRANSLATE_SYSTEM_PROMPTS[target_language]
+    language = {"en": "English", "ko": "Korean"}[target_language]
     prompt = Prompt(
         system=(
-            f"{system} The input may already contain {target_language} or mixed scripts. "
-            "Preserve every issuer name, ticker, number, fiscal year, and product name."
+            f"Rewrite this retrieval query into {language}. Return only an object with "
+            "translated_query and target_language. "
+            f'Set target_language to "{target_language}". '
+            f"The input may already contain {language} or mixed scripts. "
+            "Preserve every issuer name, ticker, number, fiscal year, and product name. "
+            "Do not answer the question or add information."
         ),
         user=query,
     )

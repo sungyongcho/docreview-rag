@@ -84,6 +84,7 @@ from app.retrieval.embeddings import (
     EmbeddingProvider,
     get_embedding_provider,
 )
+from app.retrieval.language import detect_query_language
 from app.retrieval.scope import (
     DocumentMetadata,
     ManifestScopeIndex,
@@ -458,8 +459,6 @@ class RuntimeApiServices(ApiServices):
             explicit_filters = explicit_filters.model_copy(
                 update={"snapshot_id": session_profile.snapshot_id}
             )
-        if session_profile.retrieval_preset == "korean" and not explicit_filters.languages:
-            explicit_filters = explicit_filters.model_copy(update={"languages": ("ko",)})
         try:
             scope = resolve_query_scope(
                 query,
@@ -594,8 +593,11 @@ class RuntimeApiServices(ApiServices):
                     routing_stage.resolved_scope = scope.model_dump(mode="json")
                 routed_queries: dict[str, str] = {}
                 if self._query_routing_enabled and profile.route_by_language:
-                    provider, budget = await self._engine(request)
+                    source_language = detect_query_language(request.query)
                     for language in scope.filters.languages or ("en",):
+                        if language == source_language:
+                            continue
+                        provider, budget = await self._engine(request)
                         try:
                             async with stage("route"):
                                 routed = await route_query(
@@ -1002,8 +1004,11 @@ class RuntimeApiServices(ApiServices):
                     message=error.message,
                 ) from error
         routed_queries: dict[str, str] = {}
-        if snapshot is None and self._query_routing_enabled:
+        if snapshot is None and self._query_routing_enabled and profile.route_by_language:
+            source_language = detect_query_language(request.query)
             for language in scope.filters.languages or ("en",):
+                if language == source_language:
+                    continue
                 try:
                     async with stage("route"):
                         routed = await route_query(

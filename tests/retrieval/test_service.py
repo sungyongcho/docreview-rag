@@ -605,3 +605,33 @@ def test_routing_skips_lexical_when_query_and_corpus_languages_differ(monkeypatc
 
     assert lexical_calls == []
     assert result.component_rankings.lexical == ()
+
+
+def test_translated_variant_keeps_the_target_lexical_lane(monkeypatch):
+    """Use a supplied English translation even when the raw query contains only Hangul."""
+    lexical_calls = []
+
+    async def vector(session, query_vector, *, k, filters, identity=None):
+        """Return an independent vector candidate for the hybrid composition."""
+        return [hit(1, 0.9)]
+
+    async def lexical(session, query, k, filters, *, text_search_config):
+        """Record the translated query and the corpus tokenizer that receive it."""
+        lexical_calls.append((query, filters.languages, text_search_config))
+        return [hit(2, 5.0)]
+
+    monkeypatch.setattr(service, "vector_search", vector)
+    monkeypatch.setattr(service, "lexical_search", lexical)
+    result = asyncio.run(
+        service.retrieve(
+            cast(AsyncSession, object()),
+            "매출 증가 요인",
+            provider=DeterministicEmbeddingProvider(),
+            filters=RetrievalFilters(languages=("en",)),
+            query_variants={"en": "revenue growth drivers"},
+            route_by_language=True,
+        )
+    )
+
+    assert lexical_calls == [("revenue growth drivers", ("en",), "english")]
+    assert result.component_rankings.lexical_by_language == {"en": (2,)}

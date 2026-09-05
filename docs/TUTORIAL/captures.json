@@ -1453,7 +1453,7 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "source_commit_or_revision": "9b601e7+h01-h06:1b392bd744d772ef",
       "asset_path": "assets/19-request-inspector.ko.jpg",
       "caption": "요청 보기는 독립된 서랍에서 프리셋·검색·엔진·필터·프롬프트·요청 내용을 보여줍니다. 실행 전 근거는 미확정이며 입력창 크기는 늘어나지 않습니다.",
       "prerequisites": [
@@ -1462,20 +1462,26 @@
       ],
       "capture_status": "captured",
       "document_locale": "ko",
-      "captured_at": "2026-09-05T21:08:16.101Z",
+      "captured_at": "2026-09-05T22:39:40.548Z",
       "device_pixel_ratio": 2,
       "visual_viewport": {
         "width": 1440,
         "height": 1000,
         "scale": 1
       },
-      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "capture_method": "Native CDP Page.captureScreenshot with viewport clip; original bytes preserved",
+      "native_clip": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
       "image_integrity": {
-        "format": "jpg",
+        "format": "JPEG",
         "width": 2880,
         "height": 2000,
-        "sha256": "3b6f58b8674c0d1ccf3f4e478710c2636460d8a692c003ce3f5fb7822af06e11",
-        "bytes": 276002
+        "sha256": "b9f0eda7ab49b82f8dfda0b53bd6c97ea941b4197077936a3b2950724f661b00",
+        "bytes": 276396
       }
     },
     {
@@ -1492,7 +1498,7 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "source_commit_or_revision": "9b601e7+h01-h06:1b392bd744d772ef",
       "asset_path": "assets/19-request-inspector.en.jpg",
       "caption": "Inspect request opens an independent drawer for effective presets, retrieval, engine, filters, prompt composition and the outgoing payload. Evidence remains unresolved before execution.",
       "prerequisites": [
@@ -1501,20 +1507,26 @@
       ],
       "capture_status": "captured",
       "document_locale": "en",
-      "captured_at": "2026-09-05T21:08:05.033Z",
+      "captured_at": "2026-09-05T22:39:41.349Z",
       "device_pixel_ratio": 2,
       "visual_viewport": {
         "width": 1440,
         "height": 1000,
         "scale": 1
       },
-      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "capture_method": "Native CDP Page.captureScreenshot with viewport clip; original bytes preserved",
+      "native_clip": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
       "image_integrity": {
-        "format": "jpg",
+        "format": "JPEG",
         "width": 2880,
         "height": 2000,
-        "sha256": "4ec18281e1d5ad195f1a42fe69bee2e702af32a1e31a7612a34aebf5a0c4f61d",
-        "bytes": 281212
+        "sha256": "38290db1a825f7f3e16a5b71f883d7b90bc8d6d15925c8e4673afc5561df5d36",
+        "bytes": 286420
       }
     },
     {
@@ -2227,7 +2239,7 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "source_commit_or_revision": "9b601e7+h01-h06:1b392bd744d772ef",
       "asset_path": "assets/29-documentation-menu.en.jpg",
       "caption": "The documentation menu uses one registry for 15 focused guides, grouped navigation and distinct semantic icons. The Ollama guide provides separate macOS/Linux setup and read-only connection diagnostics.",
       "prerequisites": [
@@ -2235,14 +2247,14 @@
       ],
       "capture_status": "captured",
       "document_locale": "en",
-      "captured_at": "2026-09-05T21:15:44.946Z",
+      "captured_at": "2026-09-05T22:39:05.692Z",
       "device_pixel_ratio": 2,
       "visual_viewport": {
         "width": 1425,
         "height": 1000,
         "scale": 1
       },
-      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "capture_method": "Native CDP Page.captureScreenshot with viewport clip; original bytes preserved",
       "native_clip": {
         "x": 0,
         "y": 0,
@@ -2250,11 +2262,11 @@
         "height": 1000
       },
       "image_integrity": {
-        "format": "jpg",
+        "format": "JPEG",
         "width": 2880,
         "height": 2000,
-        "sha256": "896890da83aabd5d4e0a0ea427e22f6130a56a8d0ac085b7f2963023a21333fc",
-        "bytes": 431976
+        "sha256": "67a0d0adc19fc0eb1ebfe6aa9f9be001faae2446b17b20bf42747e478b85163a",
+        "bytes": 424913
       }
     },
     {
@@ -2271,7 +2283,7 @@
         "height": 1000
       },
       "sidebar_state": "open",
-      "source_commit_or_revision": "3c83469+hotfix:7661cebd3d89fbef",
+      "source_commit_or_revision": "9b601e7+h01-h06:1b392bd744d772ef",
       "asset_path": "assets/29-documentation-menu.ko.jpg",
       "caption": "문서 메뉴는 하나의 등록 정보에서 15개 안내, 그룹 탐색, 주제별 아이콘을 구성합니다. Ollama 안내에는 macOS·Linux 설치와 읽기 전용 연결 진단이 있습니다.",
       "prerequisites": [
@@ -2279,14 +2291,14 @@
       ],
       "capture_status": "captured",
       "document_locale": "ko",
-      "captured_at": "2026-09-05T21:15:43.237Z",
+      "captured_at": "2026-09-05T22:39:36.897Z",
       "device_pixel_ratio": 2,
       "visual_viewport": {
-        "width": 1440,
+        "width": 1425,
         "height": 1000,
         "scale": 1
       },
-      "capture_method": "Native CDP Page.captureScreenshot with captureBeyondViewport; original bytes preserved",
+      "capture_method": "Native CDP Page.captureScreenshot with viewport clip; original bytes preserved",
       "native_clip": {
         "x": 0,
         "y": 0,
@@ -2294,11 +2306,11 @@
         "height": 1000
       },
       "image_integrity": {
-        "format": "jpg",
+        "format": "JPEG",
         "width": 2880,
         "height": 2000,
-        "sha256": "f68d86280b9fb74e974339d12fe8df78df71944d82281b86c90402df6a623569",
-        "bytes": 417267
+        "sha256": "8ba1318b3d4a2337175375c6973134137a972b28faf9200db353ab4758c43161",
+        "bytes": 421790
       }
     },
     {

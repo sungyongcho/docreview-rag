@@ -22,7 +22,7 @@ export function presetDescription(profile: ReviewSessionProfile, preset: Retriev
   const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset });
   const changes = presetChanges(profile, preset);
   return {
-    purpose: preset === "custom" ? "Uses your explicit retrieval settings." : preset === "accuracy" ? "Ranks a wider candidate pool by relevance." : preset === "korean" ? "Retrieves Korean evidence with language-aware routing." : "Uses the default retrieval balance.",
+    purpose: preset === "custom" ? "Uses your explicit retrieval settings." : preset === "accuracy" ? "Ranks a wider candidate pool by relevance." : preset === "korean" ? "Uses language-aware retrieval across the selected filing corpus." : "Uses the default retrieval balance.",
     settings: changes.length ? changes.map(([key, value]) => `${key}: ${String(value)}`).join(" · ") : `strategy: ${effective.strategy} · k: ${effective.k} · candidate_k: ${effective.candidate_k}`,
   };
 }

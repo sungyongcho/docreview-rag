@@ -76,6 +76,6 @@ describe("Request inspector", () => {
       for (const [key, value] of changes) expect(presetDescription(DEFAULT_SESSION_PROFILE, preset).settings).toContain(`${key}: ${String(value)}`);
     }
     expect(presetDescription(DEFAULT_SESSION_PROFILE, "balanced").settings).toContain(`candidate_k: ${baseline.candidate_k}`);
-    expect(presetDescription(DEFAULT_SESSION_PROFILE, "korean").purpose).toBe("Retrieves Korean evidence with language-aware routing.");
+    expect(presetDescription(DEFAULT_SESSION_PROFILE, "korean").purpose).toBe("Uses language-aware retrieval across the selected filing corpus.");
   });
 });

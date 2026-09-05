@@ -8,19 +8,22 @@ from typing import cast
 
 from fastapi.testclient import TestClient
 from openai import OpenAIError
+import pytest
 
 from app import cli
 from app.api.errors import ApiProblemError
+from app.api.review_profile import ReviewSessionProfile
 import app.api.runtime as runtime_module
 from app.api.runtime import RuntimeApiServices, SessionFactory, build_runtime_services
 from app.api.schemas import IngestRequest, ReviewRequest
 from app.config import Settings, get_settings
 from app.ingestion.seed import SeedResult
 from app.llm.provider import DeterministicLLMProvider, OpenAILLMProvider
-from app.llm.schemas import ProviderBudget, TokenPricing
+from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.main import create_app
 from app.observability.types import build_run_report
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from app.retrieval.scope import ManifestScopeIndex
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.types import NodeError
 
@@ -184,6 +187,118 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
 
     assert response.status_code == 200
     assert response.json()["results"][0]["chunk_id"] == hit.chunk_id
+
+
+@pytest.mark.parametrize("scope,languages", [("auto", []), ("sec", []), ("sec", ["en"])])
+def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
+    hit, scope, languages
+):
+    """Keep an English NVIDIA query on SEC evidence without requiring a translation model."""
+    observed = []
+
+    async def retrieval_service(session, query, *, provider, k, filters, **plan):
+        """Record the actual runtime filter and return one controlled candidate."""
+        observed.append(filters)
+        return RetrievalResult(
+            hits=(hit,),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=(hit.chunk_id,)),
+        )
+
+    services = RuntimeApiServices(
+        session_factory=cast(SessionFactory, FakeSession),
+        retrieval_service=retrieval_service,
+        query_routing_enabled=True,
+        scope_index=ManifestScopeIndex.from_entries(
+            [{"ticker": "NVDA", "report_date": "2024-01-28", "aliases": ["NVDA", "NVIDIA"]}]
+        ),
+    )
+    with TestClient(create_app(services)) as client:
+        response = client.post(
+            "/retrieve",
+            json={
+                "query": "What drove NVIDIA data center revenue growth?",
+                "session_profile": {
+                    "retrieval_preset": "korean",
+                    "corpus_scope": scope,
+                    "languages": languages,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert observed[0].registries == ("sec",)
+    assert observed[0].issuers == ("NVDA",)
+    assert observed[0].languages == ("en",)
+
+
+@pytest.mark.parametrize(
+    "preset,query,expected_variants",
+    [
+        ("korean", "What drove NVIDIA data center revenue growth?", {}),
+        ("balanced", "NVIDIA 매출 증가 요인은 무엇인가요?", {}),
+        (
+            "korean",
+            "NVIDIA 매출 증가 요인은 무엇인가요?",
+            {"en": "What drove NVIDIA revenue growth?"},
+        ),
+    ],
+)
+def test_review_translation_respects_the_preset_and_actual_corpus_language(
+    successful_run, preset, query, expected_variants
+):
+    """Translate only an enabled cross-language request before the workflow boundary."""
+    responses = (
+        (
+            RawProviderResponse(
+                output_text=json.dumps(
+                    {
+                        "translated_query": "What drove NVIDIA revenue growth?",
+                        "target_language": "en",
+                    }
+                ),
+                input_tokens=10,
+                output_tokens=10,
+            ),
+        )
+        if expected_variants
+        else ()
+    )
+    provider = DeterministicLLMProvider(responses)
+    observed = []
+
+    async def workflow_service(request, *, retriever, provider, on_node=None):
+        """Inspect runtime routing without generating an answer or accessing the database."""
+        observed.append(request)
+        return successful_run.model_copy(update={"run_id": request.run_id})
+
+    async def run_persister(session, run, traces):
+        """Keep this routing regression independent of persistence I/O."""
+        return run
+
+    services = RuntimeApiServices(
+        session_factory=cast(SessionFactory, FakeSession),
+        llm_provider=provider,
+        provider_budget=provider_budget(),
+        workflow_service=workflow_service,
+        run_persister=run_persister,
+        query_routing_enabled=True,
+        scope_index=ManifestScopeIndex.from_entries(
+            [{"ticker": "NVDA", "report_date": "2024-01-28", "aliases": ["NVDA", "NVIDIA"]}]
+        ),
+    )
+    asyncio.run(
+        services.review(
+            ReviewRequest(
+                query=query, session_profile=ReviewSessionProfile(retrieval_preset=preset)
+            )
+        )
+    )
+
+    assert observed[0].query == query
+    assert observed[0].filters.languages == ("en",)
+    assert observed[0].routing_queries == expected_variants
+    assert len(provider.prompts) == len(expected_variants)
 
 
 def test_cli_and_http_use_the_same_public_evidence_shape(

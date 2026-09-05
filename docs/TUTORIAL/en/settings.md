@@ -54,7 +54,7 @@ The following values come from the current preset definitions. All three built-i
 | Accuracy | 50 | BM25 | Cross encoder | Off |
 | Custom | Your saved values | Your saved values | Your saved values | Your saved values |
 
-Balanced provides the default starting point. Korean changes the search configuration for language-aware retrieval; it does not translate stored filings or force the corpus scope to DART. Accuracy reranks a larger pool and can take more work. Custom opens **Review settings → Search** immediately when permitted, retaining existing custom values. Use the same Search section to revisit them later. Built-in preset selection clears the explicit custom profile, so inspect values before switching away from a configuration you want to keep.
+Balanced provides the default starting point. Korean changes the search configuration for language-aware retrieval; it does not translate stored filings or force the corpus scope to DART. It also leaves document-language filters explicit. With language routing enabled, only queries that differ from the resolved corpus language need translation; an English NVIDIA question stays on the English SEC lane. Accuracy reranks a larger pool and can take more work. Custom opens **Review settings → Search** immediately when permitted, retaining existing custom values. Use the same Search section to revisit them later. Built-in preset selection clears the explicit custom profile, so inspect values before switching away from a configuration you want to keep.
 
 <!-- capture:30-preset-help -->
 

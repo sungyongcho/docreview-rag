@@ -1,5 +1,7 @@
 # DocReview RAG v2 verification
 
+> Follow-up, 2026-09-06: H01 and H06 are fixed and both local previews have been updated. See [the hotfix record](2026-09-06-h01-h06-hotfix.md) for current image IDs and verification. Results below describe the preceding snapshot.
+
 ## Final execution — 2026-09-05
 
 The final capture and release gates are complete. Earlier checkpoint counts below are historical and are not added to these results.
