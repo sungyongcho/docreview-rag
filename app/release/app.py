@@ -13,19 +13,22 @@ from typing import Any, Literal
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-import httpx
 from pydantic import BaseModel, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.runtime import RuntimeApiServices
+from app.llm.local_connection import LocalConnectionManager
+from app.llm.local_inventory import LocalModelInventory
+from app.llm.local_runtime import build_local_runtime
 from app.llm.provider import LLMProvider, OpenAILLMProvider
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
 from app.release.secrets import install_secret_redaction
+from app.settings_sources import Environment
 
 ProviderFactory = Callable[..., LLMProvider]
 ReadinessProbe = Callable[[], Awaitable[dict[str, Any]]]
@@ -33,50 +36,28 @@ DEFAULT_STATIC_DIR = Path(__file__).resolve().parents[2] / "web" / "out"
 PUBLIC_BASE_PATH = "/docreview-rag-agent"
 
 
-async def _local_engine_readiness(settings: ReleaseSettings) -> dict[str, object]:
-    """Probe local model inventory without generating text or exposing its endpoint."""
+async def _local_engine_readiness(
+    settings: ReleaseSettings,
+    inventory: LocalModelInventory | None = None,
+    connection: LocalConnectionManager | None = None,
+) -> dict[str, object]:
+    """Share bounded discovery with runtime execution without exposing the endpoint."""
+    if settings.environment == "prod":
+        return {"enabled": False, "reason": "disabled_in_prod"}
+    if connection is not None:
+        return await connection.public_state()
     if not settings.local_llm_enabled:
-        # A published build must not even reach out, so name the reason instead of probing.
-        if settings.environment == "prod" and settings.local_llm_base_url is not None:
-            return {"enabled": False, "reason": "disabled_in_prod"}
         return {"enabled": False, "reason": "not_configured"}
-    base = settings.local_llm_base_url.rstrip("/")
-    headers = (
-        {"authorization": f"Bearer {settings.local_llm_api_key.get_secret_value()}"}
-        if settings.local_llm_api_key is not None
-        else {}
-    )
-    protocols = (
-        (settings.local_llm_protocol,)
-        if settings.local_llm_protocol != "auto"
-        else ("ollama", "openai_responses")
-    )
-    async with httpx.AsyncClient(timeout=2.0) as client:
-        for protocol in protocols:
-            try:
-                if protocol == "ollama":
-                    response = await client.get(f"{base}/api/tags", headers=headers)
-                    response.raise_for_status()
-                    models = [item.get("name") for item in response.json().get("models", [])]
-                else:
-                    root = base[:-3] if base.endswith("/v1") else base
-                    response = await client.get(f"{root}/v1/models", headers=headers)
-                    response.raise_for_status()
-                    models = [item.get("id") for item in response.json().get("data", [])]
-            except httpx.HTTPError, ValueError, TypeError:
-                continue
-            if settings.local_llm_model in models:
-                return {
-                    "enabled": True,
-                    "model": settings.local_llm_model,
-                    "protocol": protocol,
-                }
-    return {
-        "enabled": False,
-        "model": settings.local_llm_model,
-        "protocol": settings.local_llm_protocol,
-        "reason": "model_unreachable_or_missing",
-    }
+    if inventory is None:
+        assert settings.local_llm_base_url is not None
+        inventory = LocalModelInventory(
+            base_url=settings.local_llm_base_url,
+            protocol=settings.local_llm_protocol,
+            api_key=settings.local_llm_api_key.get_secret_value()
+            if settings.local_llm_api_key
+            else None,
+        )
+    return (await inventory.snapshot()).public_state()
 
 
 class ReleaseHealth(BaseModel):
@@ -94,6 +75,7 @@ class ReleaseInfo(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     mode: Literal["canned", "runtime"]
+    environment: Environment
     admin_mode: AdminMode
     frontend: Literal["next-static"] = "next-static"
     openai_enabled: bool
@@ -112,6 +94,8 @@ class ReleaseCapabilities(BaseModel):
     """Non-secret controls available to this frontend mode."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+    environment: Environment
+    can_configure_local_llm: bool
     can_edit_prompt_policy: bool
     can_edit_run_limits: bool
     can_edit_golden: bool
@@ -161,12 +145,13 @@ class CorpusReadiness(BaseModel):
 
 
 class ReleaseReadiness(BaseModel):
-    """Typed readiness for configured capabilities without provider probing."""
+    """Typed readiness with read-only discovery of local model availability."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     status: Literal["ready", "degraded"]
     mode: Literal["canned", "runtime"]
+    environment: Environment
     admin_mode: AdminMode
     policy_revision: str
     models: dict[str, object]
@@ -193,32 +178,28 @@ def build_runtime_services(
         providers["openai"] = provider
         budgets["openai"] = settings.provider_budget()
         secrets.append(api_key)
-    if settings.local_llm_enabled:
-        from app.llm.local_engine import build_local_provider, local_provider_budget
-
-        providers["local"] = build_local_provider(
-            base_url=settings.local_llm_base_url,
-            model_name=settings.local_llm_model,
-            protocol=settings.local_llm_protocol,
-            api_key=(
-                settings.local_llm_api_key.get_secret_value()
-                if settings.local_llm_api_key is not None
-                else None
-            ),
-            timeout_s=settings.local_llm_timeout_s,
-        )
-        # The local budget is its own definition, not the OpenAI one with prices zeroed:
-        # the token limits belong to the local model, which is usually much smaller.
-        budgets["local"] = local_provider_budget(
-            max_input_tokens=settings.local_llm_max_input_tokens,
-            max_output_tokens=settings.local_llm_max_output_tokens,
-        )
+    local_connection, local_budget = build_local_runtime(
+        environment=settings.environment,
+        base_url=settings.local_llm_base_url,
+        protocol=settings.local_llm_protocol,
+        source=settings.local_llm_source,
+        api_key=settings.local_llm_api_key.get_secret_value()
+        if settings.local_llm_api_key
+        else None,
+        max_input_tokens=settings.local_llm_max_input_tokens,
+        max_output_tokens=settings.local_llm_max_output_tokens,
+    )
+    if local_budget is not None:
+        budgets["local"] = local_budget
         if settings.local_llm_api_key is not None:
             secrets.append(settings.local_llm_api_key.get_secret_value())
     install_secret_redaction(tuple(secrets))
     return RuntimeApiServices(
         llm_providers=providers,
         provider_budgets=budgets,
+        local_connection=local_connection,
+        allow_local_engine=settings.environment != "prod",
+        local_timeout_s=settings.local_llm_timeout_s,
         secret_values=tuple(secrets),
         intent_classifier_enabled=True,
         query_routing_enabled=True,
@@ -231,6 +212,7 @@ def _release_info(settings: ReleaseSettings) -> ReleaseInfo:
     """Project settings onto limits the release surface publishes."""
     return ReleaseInfo(
         mode=settings.mode,
+        environment=settings.environment,
         admin_mode=settings.admin_mode,
         openai_enabled=settings.openai_enabled,
         rate_limit_per_minute=settings.rate_limit_per_minute,
@@ -278,9 +260,10 @@ def create_release_app(
         trust_proxy_headers=active_settings.trust_proxy_headers,
         allow_ingest=active_settings.allow_ingest,
         enforce_rate_limit=enforce_public_limits,
-        cost_limiter=(
-            cost_limiter if active_settings.mode == "runtime" and enforce_public_limits else None
-        ),
+        public_read_only=active_settings.admin_mode != "live",
+        allow_local_engine=active_settings.environment != "prod",
+        local_connection_origin=active_settings.admin_cors_origin,
+        cost_limiter=cost_limiter if active_settings.mode == "runtime" else None,
         salt=limiter_salt,
     )
     application.add_middleware(SecurityHeadersMiddleware)
@@ -303,10 +286,15 @@ def create_release_app(
         return _release_info(active_settings)
 
     @application.get("/capabilities", response_model=ReleaseCapabilities, tags=["release"])
-    async def capabilities() -> ReleaseCapabilities:
+    async def capabilities(request: Request) -> ReleaseCapabilities:
         """Publish authoritative UI capabilities without exposing credentials."""
-        live = active_settings.admin_mode == "live"
+        live = (
+            active_settings.admin_mode == "live"
+            and request.headers.get("x-docreview-public") != "true"
+        )
         return ReleaseCapabilities(
+            environment=active_settings.environment,
+            can_configure_local_llm=live and active_settings.environment != "prod",
             can_edit_prompt_policy=live,
             can_edit_run_limits=live,
             can_edit_golden=live,
@@ -314,7 +302,7 @@ def create_release_app(
             can_run_evaluation=live,
             can_change_custom_retrieval=live,
             can_query_snapshot=live,
-            can_use_operations=live,
+            can_use_operations=live and active_settings.environment != "prod",
         )
 
     @application.get("/limits", response_model=ReleaseLimits, tags=["release"])
@@ -352,12 +340,13 @@ def create_release_app(
         responses={503: {"model": ReleaseReadiness}},
         tags=["release"],
     )
-    async def readiness() -> ReleaseReadiness | JSONResponse:
+    async def readiness(request: Request) -> ReleaseReadiness | JSONResponse:
         """Report configured runtime readiness without contacting OpenAI."""
         if active_settings.mode == "canned":
             return ReleaseReadiness(
                 status="ready",
                 mode="canned",
+                environment=active_settings.environment,
                 admin_mode=active_settings.admin_mode,
                 policy_revision=POLICY_REVISION,
                 models=openai_policy_snapshot()["roles"],
@@ -407,14 +396,32 @@ def create_release_app(
                 schema_message=type(error).__name__,
             )
 
-        local_readiness = await _local_engine_readiness(active_settings)
+        if active_settings.environment == "prod":
+            local_readiness = {"enabled": False, "reason": "disabled_in_prod"}
+        elif request.headers.get("x-docreview-public") == "true":
+            local_readiness = {"enabled": False, "reason": "public_surface"}
+        elif (
+            active_services is not None
+            and active_services.local_connection is None
+            and active_services.local_inventory is None
+        ):
+            local_readiness = {"enabled": False, "reason": "not_configured"}
+        else:
+            local_readiness = await _local_engine_readiness(
+                active_settings,
+                active_services.local_inventory if active_services else None,
+                active_services.local_connection if active_services else None,
+            )
         payload = ReleaseReadiness(
             status="ready" if corpus_ready else "degraded",
             mode="runtime",
+            environment=active_settings.environment,
             admin_mode=active_settings.admin_mode,
             policy_revision=POLICY_REVISION,
             models=openai_policy_snapshot()["roles"],
-            review_enabled=(active_settings.openai_enabled or active_settings.local_llm_enabled),
+            review_enabled=(
+                active_settings.openai_enabled or local_readiness.get("enabled") is True
+            ),
             active_review_model=(
                 active_settings.openai_model if active_settings.openai_enabled else None
             ),

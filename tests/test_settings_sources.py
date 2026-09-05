@@ -81,16 +81,10 @@ def test_explicit_key_wins_and_blank_explicit_falls_back_to_the_slot(monkeypatch
 
 
 def test_runtime_settings_disable_the_local_engine_under_prod(monkeypatch, tmp_path):
-    """The same MODE that picks the key slot also decides whether a local model may run.
-
-    Notes
-    -----
-    Both settings classes carry this guard, so a process launched from either surface
-    fails closed. The endpoint values survive so the reason can be reported.
-    """
-    for name in ("LOCAL_LLM_BASE_URL", "LOCAL_LLM_MODEL", "MODE"):
+    """Use MODE to disable local inference while preserving the configured endpoint."""
+    for name in ("LOCAL_LLM_BASE_URL", "MODE"):
         monkeypatch.delenv(name, raising=False)
-    pair = "LOCAL_LLM_BASE_URL=http://ollama:11434\nLOCAL_LLM_MODEL=gemma4:e4b\n"
+    pair = "LOCAL_LLM_BASE_URL=http://ollama:11434\n"
     dev = tmp_path / "dev.env"
     dev.write_text(f"MODE=dev\n{pair}", encoding="utf-8")
     prod = tmp_path / "prod.env"
@@ -100,3 +94,52 @@ def test_runtime_settings_disable_the_local_engine_under_prod(monkeypatch, tmp_p
     disabled = Settings(_env_file=prod)
     assert disabled.local_llm_enabled is False
     assert disabled.local_llm_base_url == "http://ollama:11434"
+
+
+def test_process_mode_and_connection_override_dotenv_without_changing_key_order(
+    tmp_path, monkeypatch
+):
+    """Command controls and endpoints win over stale dotenv while OpenAI stays dotenv-first."""
+    from app.config import Settings
+    from app.release.config import ReleaseSettings
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "MODE=dev\nDOCREVIEW_MODE=canned\nDOCREVIEW_ADMIN_MODE=live\n"
+        "LOCAL_LLM_BASE_URL=http://dotenv:11434\nLOCAL_LLM_PROTOCOL=ollama\n"
+        "OPENAI_API_KEY=dotenv-secret\n"
+    )
+    monkeypatch.setenv("MODE", "prod")
+    monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
+    monkeypatch.setenv("DOCREVIEW_ADMIN_MODE", "readonly")
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "https://process:11435")
+    monkeypatch.setenv("LOCAL_LLM_PROTOCOL", "openai_responses")
+    monkeypatch.setenv("OPENAI_API_KEY", "process-secret")
+    for settings_type in (Settings, ReleaseSettings):
+        settings = settings_type(_env_file=env_file)
+        assert settings.environment == "prod"
+        assert settings.local_llm_base_url == "https://process:11435"
+        assert settings.local_llm_protocol == "openai_responses"
+        assert settings.local_llm_source == "environment"
+        assert settings.openai_api_key.get_secret_value() == "dotenv-secret"
+    release = ReleaseSettings(_env_file=env_file)
+    assert release.mode == "runtime"
+    assert release.admin_mode == "readonly"
+
+
+def test_local_endpoint_default_and_dotenv_provenance(tmp_path, monkeypatch):
+    """Host execution has the standard Ollama default and records a supplied dotenv URL."""
+    from app.config import Settings
+    from app.release.config import ReleaseSettings
+
+    for key in ("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"):
+        monkeypatch.delenv(key, raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("LOCAL_LLM_BASE_URL=http://dotenv:11434\n")
+    for settings_type in (Settings, ReleaseSettings):
+        default = settings_type(_env_file=None)
+        assert default.local_llm_base_url == "http://127.0.0.1:11434"
+        assert default.local_llm_source == "default"
+        dotenv = settings_type(_env_file=env_file)
+        assert dotenv.local_llm_base_url == "http://dotenv:11434"
+        assert dotenv.local_llm_source == "dotenv"

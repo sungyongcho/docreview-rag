@@ -23,6 +23,8 @@ from app.api.admin_schemas import (
     GoldenRevisionResource,
     GoldenSuiteId,
     GoldenSuiteResource,
+    LocalConnectionRequest,
+    LocalConnectionResponse,
     OperatorJobResource,
     OperatorJobsResponse,
     RetrievalPreviewRequest,
@@ -378,3 +380,34 @@ async def review_preview(
     """Run one evidence-checked review through an explicit retrieval profile."""
     async with translate_runtime_errors():
         return await services.review_preview(request)
+
+
+@router.get("/local-llm/connection", response_model=LocalConnectionResponse)
+async def local_connection_state(services: AdminServices) -> dict[str, Any]:
+    """Return private connection settings without changing the selected endpoint."""
+    async with translate_runtime_errors():
+        return await services.local_connection_state()
+
+
+@router.post("/local-llm/connection", response_model=LocalConnectionResponse)
+async def connect_local_llm(
+    request: LocalConnectionRequest,
+    services: AdminServices,
+) -> dict[str, Any]:
+    """Verify and save a replacement endpoint, leaving the old one active on failure."""
+    async with translate_runtime_errors():
+        return await services.update_local_connection("connect", request.base_url, request.protocol)
+
+
+@router.post("/local-llm/disconnect", response_model=LocalConnectionResponse)
+async def disconnect_local_llm(services: AdminServices) -> dict[str, Any]:
+    """Save explicit disconnection so environment defaults cannot reactivate it."""
+    async with translate_runtime_errors():
+        return await services.update_local_connection("disconnect")
+
+
+@router.post("/local-llm/reset", response_model=LocalConnectionResponse)
+async def reset_local_llm(services: AdminServices) -> dict[str, Any]:
+    """Restore the endpoint selected by environment, dotenv, or startup defaults."""
+    async with translate_runtime_errors():
+        return await services.update_local_connection("reset")

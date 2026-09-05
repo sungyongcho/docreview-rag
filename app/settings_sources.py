@@ -1,8 +1,8 @@
 """Shared settings source order and OpenAI key-slot resolution for dotenv-first execution."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 type Environment = Literal["dev", "prod"]
@@ -13,6 +13,7 @@ type KeySlot = Literal["explicit", "dev", "prod"]
 # rather than beside the provider because importing `app.llm` from settings would drag
 # the OpenAI SDK into every process that only wanted to read configuration.
 DEFAULT_LOCAL_TIMEOUT_S = 120.0
+DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:11434"
 
 
 def _present(value: SecretStr | None) -> SecretStr | None:
@@ -45,7 +46,7 @@ def resolve_openai_key(
 
 
 class DotenvFirstSettings(BaseSettings):
-    """Prefer explicit init values, then `.env`, then the process environment."""
+    """Preserve dotenv-first settings except for command controls and local endpoints."""
 
     @classmethod
     def settings_customise_sources(
@@ -56,6 +57,44 @@ class DotenvFirstSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Make a present dotenv value win over a same-named exported variable."""
-        del cls, settings_cls
-        return init_settings, dotenv_settings, env_settings, file_secret_settings
+        """Let explicit process controls win without changing credential precedence."""
+        del cls
+        process_first = {
+            "environment",
+            "mode",
+            "admin_mode",
+            "allow_ingest",
+            "trust_proxy_headers",
+            "local_llm_base_url",
+            "local_llm_protocol",
+        }
+
+        def merged_settings() -> dict[str, Any]:
+            """Combine sources once, preserving aliases and reporting endpoint provenance."""
+            environment = env_settings()
+            dotenv = dotenv_settings()
+            values = {**environment, **dotenv}
+            for name in process_first:
+                field = settings_cls.model_fields.get(name)
+                if field is None:
+                    continue
+                alias = field.validation_alias
+                aliases = alias.choices if isinstance(alias, AliasChoices) else [alias or name]
+                keys = [key for key in [name, *aliases] if isinstance(key, str)]
+                selected = next((key for key in keys if key in environment), None)
+                if selected is not None:
+                    for key in keys:
+                        values.pop(key, None)
+                    values[selected] = environment[selected]
+                if name == "local_llm_base_url":
+                    source = (
+                        "environment"
+                        if selected is not None
+                        else "dotenv"
+                        if any(key in dotenv for key in keys)
+                        else "default"
+                    )
+                    values["local_llm_source"] = source
+            return values
+
+        return init_settings, merged_settings, file_secret_settings

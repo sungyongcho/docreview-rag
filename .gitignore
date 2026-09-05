@@ -39,6 +39,7 @@ logs/
 *.log
 tmp/
 data/eval_runs/
+data/local-settings/
 
 # Raw corpus filings are reproducible from each registry's manifest and downloader.
 # The manifests sit directly in data/corpus/ and match none of these patterns, so no

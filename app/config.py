@@ -18,6 +18,7 @@ from pydantic_settings import SettingsConfigDict
 
 from app.openai_models import resolve_openai_model
 from app.settings_sources import (
+    DEFAULT_LOCAL_BASE_URL,
     DEFAULT_LOCAL_TIMEOUT_S,
     DotenvFirstSettings,
     Environment,
@@ -84,12 +85,11 @@ class Settings(DotenvFirstSettings):
     review_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     review_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     local_llm_base_url: str | None = Field(
-        default=None,
+        default=DEFAULT_LOCAL_BASE_URL,
         validation_alias=AliasChoices("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"),
     )
-    local_llm_model: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("LOCAL_LLM_MODEL", "DOCREVIEW_LOCAL_LLM_MODEL"),
+    local_llm_source: Literal["environment", "dotenv", "default"] = Field(
+        default="default", validation_alias="local_llm_source", exclude=True
     )
     local_llm_protocol: Literal["auto", "openai_responses", "ollama"] = Field(
         default="auto",
@@ -120,7 +120,7 @@ class Settings(DotenvFirstSettings):
         validation_alias=AliasChoices("LOCAL_LLM_TIMEOUT_S", "DOCREVIEW_LOCAL_LLM_TIMEOUT_S"),
     )
 
-    @field_validator("local_llm_base_url", "local_llm_model", mode="before")
+    @field_validator("local_llm_base_url", mode="before")
     @classmethod
     def blank_local_values_are_unset(cls, value: object) -> object:
         """Treat blank Compose substitutions as absent local configuration."""
@@ -176,11 +176,7 @@ class Settings(DotenvFirstSettings):
         survived in the environment, and this property is the only gate the provider
         map and the readiness probe both consult.
         """
-        return (
-            self.environment != "prod"
-            and self.local_llm_base_url is not None
-            and self.local_llm_model is not None
-        )
+        return self.environment != "prod" and self.local_llm_base_url is not None
 
     @model_validator(mode="after")
     def require_openai_api_key(self) -> Self:
@@ -212,17 +208,6 @@ class Settings(DotenvFirstSettings):
             or self.review_output_price_per_million_usd is not None
         ):
             raise ValueError("manual review pricing was removed; model policy owns prices")
-        return self
-
-    @model_validator(mode="after")
-    def require_local_llm_pair(self) -> Self:
-        """Require local endpoint and model together without exposing either to clients."""
-        if (self.local_llm_base_url is None) != (self.local_llm_model is None):
-            raise ValueError("LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL must be configured together")
-        if self.local_llm_base_url is not None and not self.local_llm_base_url.strip():
-            raise ValueError("LOCAL_LLM_BASE_URL must not be blank")
-        if self.local_llm_model is not None and not self.local_llm_model.strip():
-            raise ValueError("LOCAL_LLM_MODEL must not be blank")
         return self
 
 

@@ -1,7 +1,10 @@
 """Production database composition for synchronous M5 HTTP resources."""
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -56,6 +59,11 @@ from app.ingestion.seed import (
     load_seed_batch,
     persist_seed_batch_with_stats,
 )
+from app.llm.local import LocalLLMProvider
+from app.llm.local_connection import LocalConnectionManager
+from app.llm.local_engine import build_local_provider
+from app.llm.local_inventory import LocalModelInventory
+from app.llm.local_runtime import build_local_runtime
 from app.llm.provider import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
 from app.observability.persistence import (
@@ -83,6 +91,7 @@ from app.retrieval.scope import (
 from app.retrieval.service import RetrievalResult, retrieve
 from app.retrieval.translate import QueryTranslationError, route_query
 from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
 from app.workflow.gate import (
     ChatReply,
     ConversationDecision,
@@ -208,6 +217,15 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
     )
 
 
+@dataclass
+class _LocalRequest:
+    """Hold one endpoint and provider for a complete request across asynchronous stages."""
+
+    inventory: LocalModelInventory | None
+    provider: LocalLLMProvider | None = None
+    model: str | None = None
+
+
 class RuntimeApiServices(ApiServices):
     """Compose API resources over one session per synchronous request.
 
@@ -227,6 +245,10 @@ class RuntimeApiServices(ApiServices):
         provider_budget: ProviderBudget | None = None,
         llm_providers: dict[str, LLMProvider] | None = None,
         provider_budgets: dict[str, ProviderBudget] | None = None,
+        local_inventory: LocalModelInventory | None = None,
+        local_connection: LocalConnectionManager | None = None,
+        allow_local_engine: bool = True,
+        local_timeout_s: float = DEFAULT_LOCAL_TIMEOUT_S,
         retrieval_service: RetrievalService = retrieve,
         workflow_service: WorkflowService = run_workflow,
         run_persister: RunPersister = persist_run_records,
@@ -259,6 +281,17 @@ class RuntimeApiServices(ApiServices):
         self._provider_budget = provider_budget
         self._llm_providers = dict(llm_providers or {})
         self._provider_budgets = dict(provider_budgets or {})
+        self._local_inventory = local_inventory
+        self.local_connection = local_connection
+        self._allow_local_engine = allow_local_engine
+        self._local_request: ContextVar[_LocalRequest | None] = ContextVar(
+            "local_request", default=None
+        )
+        self._local_timeout_s = local_timeout_s
+        if (
+            local_inventory is not None or local_connection is not None and local_connection.enabled
+        ) and "local" not in self._provider_budgets:
+            raise ValueError("local discovery requires an explicit local provider budget")
         if llm_provider is not None and provider_budget is not None:
             self._llm_providers.setdefault("openai", llm_provider)
             self._provider_budgets.setdefault("openai", provider_budget)
@@ -280,6 +313,65 @@ class RuntimeApiServices(ApiServices):
         self._allow_custom_prompt_policy = allow_custom_prompt_policy
         self._snapshots = snapshot_service or SnapshotService(session_factory=session_factory)
         self._allow_snapshot_query = allow_snapshot_query
+
+    @property
+    def local_inventory(self) -> LocalModelInventory | None:
+        """Expose current discovery for readiness while request work captures its own copy."""
+        if not self._allow_local_engine:
+            return None
+        if self.local_connection is not None:
+            return self.local_connection.current.inventory
+        return self._local_inventory
+
+    @asynccontextmanager
+    async def _request_connection(self, profile: ReviewSessionProfile) -> AsyncIterator[None]:
+        """Pin the endpoint before the first await and close request-owned HTTP resources."""
+        self._validate_session_profile(profile)
+        context = _LocalRequest(self.local_inventory)
+        token = self._local_request.set(context)
+        try:
+            yield
+        finally:
+            self._local_request.reset(token)
+            if context.provider is not None:
+                await context.provider.aclose()
+
+    def _validate_legacy_controls(self, request: ReviewRequest | RetrieveRequest) -> None:
+        """Keep older top-level request fields from bypassing read-only policy controls."""
+        if (
+            not self._allow_custom_prompt_policy
+            and isinstance(request, ReviewRequest)
+            and (request.budget != type(request.budget)() or request.max_context_chars != 12_000)
+        ):
+            raise ApiProblemError(
+                status_code=403,
+                code="capability_disabled",
+                message="Custom evidence and run limits are available only in Dev.",
+            )
+
+    def _validate_session_profile(self, profile: ReviewSessionProfile) -> None:
+        """Reject developer controls before either retrieval or any model classification."""
+        if profile.engine == "local" and not self._allow_local_engine:
+            raise ApiProblemError(
+                status_code=403,
+                code="disabled_in_prod",
+                message="Local LLM is disabled in production.",
+            )
+        if not self._allow_custom_prompt_policy and (
+            profile.prompt_policy != type(profile.prompt_policy)()
+            or profile.retrieval_preset == "custom"
+        ):
+            raise ApiProblemError(
+                status_code=403,
+                code="capability_disabled",
+                message="Custom prompt, retrieval, and run policies are available only in Dev.",
+            )
+        if profile.snapshot_id is not None and not self._allow_snapshot_query:
+            raise ApiProblemError(
+                status_code=403,
+                code="capability_disabled",
+                message="Snapshot queries are available only in Dev.",
+            )
 
     @property
     def session_factory(self) -> SessionFactory:
@@ -446,91 +538,90 @@ class RuntimeApiServices(ApiServices):
             Typed 400 for semantically invalid input, typed 503 when the embedding
             provider or database is unavailable.
         """
-        async with translate_runtime_errors():
-            index = self._manifest_scope_index()
-            gate = deterministic_decision(
-                request.query,
-                has_issuer_alias=bool(index.match(request.query)),
-            )
-            if gate is None and self._intent_classifier_enabled:
-                gate = await self._classify_intent(
-                    ReviewRequest(
-                        query=request.query,
-                        session_profile=request.session_profile,
-                        k=request.k,
-                        filters=request.filters,
-                    )
+        self._validate_legacy_controls(request)
+        async with self._request_connection(request.session_profile):
+            async with translate_runtime_errors():
+                request = request.model_copy(
+                    update={"session_profile": await self._local_profile(request.session_profile)}
                 )
-            if gate is not None and gate.intent == "casual_chat":
+                index = self._manifest_scope_index()
+                gate = deterministic_decision(
+                    request.query,
+                    has_issuer_alias=bool(index.match(request.query)),
+                )
+                if gate is None and self._intent_classifier_enabled:
+                    gate = await self._classify_intent(
+                        ReviewRequest(
+                            query=request.query,
+                            session_profile=request.session_profile,
+                            k=request.k,
+                            filters=request.filters,
+                        )
+                    )
+                if gate is not None and gate.intent == "casual_chat":
+                    return RetrieveResponse(
+                        query=request.query,
+                        results=(),
+                        candidates=(),
+                        candidate_token=None,
+                        candidate_expires_at=0,
+                        score_stage="rrf",
+                        component_rankings={},
+                        resolved_profile=resolve_retrieval_profile(request.session_profile),
+                        resolved_scope=None,
+                    )
+                profile, scope = self._resolved_request(
+                    request.query,
+                    request.session_profile,
+                    request.filters,
+                    request.k,
+                )
+                routed_queries: dict[str, str] = {}
+                if self._query_routing_enabled and profile.route_by_language:
+                    provider, budget = await self._engine(request)
+                    for language in scope.filters.languages or ("en",):
+                        try:
+                            routed = await route_query(
+                                request.query,
+                                target_language=cast("Literal['en', 'ko']", language),
+                                llm_provider=provider,
+                                provider_budget=budget,
+                            )
+                        except QueryTranslationError as error:
+                            raise unavailable(
+                                "query_routing_failed",
+                                f"Query routing failed for {language} ({type(error).__name__}).",
+                            ) from error
+                        routed_queries[language] = routed.translated_query
+                async with self._session_factory() as session:
+                    result = await self._retrieve_with_session(
+                        session,
+                        request.query,
+                        profile.k,
+                        scope.filters,
+                        profile,
+                        routed_queries or None,
+                    )
+                token, snapshot = self._snapshot_codec.issue(
+                    query=request.query,
+                    profile=profile,
+                    filters=scope.filters,
+                    candidates=result.candidate_pool,
+                )
                 return RetrieveResponse(
                     query=request.query,
-                    results=(),
-                    candidates=(),
-                    candidate_token=None,
-                    candidate_expires_at=0,
-                    score_stage="rrf",
-                    component_rankings={},
-                    resolved_profile=resolve_retrieval_profile(request.session_profile),
-                    resolved_scope=None,
+                    results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
+                    candidates=tuple(
+                        self._candidate_resource(hit, rank=rank, result=result)
+                        for rank, hit in enumerate(result.candidate_pool, start=1)
+                    ),
+                    candidate_token=token,
+                    candidate_expires_at=snapshot.expires_at,
+                    score_stage=result.score_stage,
+                    component_rankings=result.component_rankings.model_dump(mode="json"),
+                    resolved_profile=profile,
+                    resolved_scope=scope,
                 )
-            profile, scope = self._resolved_request(
-                request.query,
-                request.session_profile,
-                request.filters,
-                request.k,
-            )
-            routed_queries: dict[str, str] = {}
-            if self._query_routing_enabled and profile.route_by_language:
-                provider = self._llm_providers.get(request.session_profile.engine)
-                budget = self._provider_budgets.get(request.session_profile.engine)
-                if provider is None or budget is None:
-                    raise unavailable(
-                        "provider_unavailable",
-                        f"Review engine {request.session_profile.engine!r} is not configured.",
-                    )
-                for language in scope.filters.languages or ("en",):
-                    try:
-                        routed = await route_query(
-                            request.query,
-                            target_language=cast("Literal['en', 'ko']", language),
-                            llm_provider=provider,
-                            provider_budget=budget,
-                        )
-                    except QueryTranslationError as error:
-                        raise unavailable(
-                            "query_routing_failed",
-                            f"Query routing failed for {language} ({type(error).__name__}).",
-                        ) from error
-                    routed_queries[language] = routed.translated_query
-            async with self._session_factory() as session:
-                result = await self._retrieve_with_session(
-                    session,
-                    request.query,
-                    profile.k,
-                    scope.filters,
-                    profile,
-                    routed_queries or None,
-                )
-            token, snapshot = self._snapshot_codec.issue(
-                query=request.query,
-                profile=profile,
-                filters=scope.filters,
-                candidates=result.candidate_pool,
-            )
-            return RetrieveResponse(
-                query=request.query,
-                results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
-                candidates=tuple(
-                    self._candidate_resource(hit, rank=rank, result=result)
-                    for rank, hit in enumerate(result.candidate_pool, start=1)
-                ),
-                candidate_token=token,
-                candidate_expires_at=snapshot.expires_at,
-                score_stage=result.score_stage,
-                component_rankings=result.component_rankings.model_dump(mode="json"),
-                resolved_profile=profile,
-                resolved_scope=scope,
-            )
 
     async def list_documents(self) -> Sequence[DocumentResource]:
         """Return filing resources with deterministic chunk counts.
@@ -653,24 +744,80 @@ class RuntimeApiServices(ApiServices):
         and the resulting records are both persisted and returned, so redaction cost is
         paid a single time per run.
         """
-        index = self._manifest_scope_index()
-        decision = deterministic_decision(
-            request.query,
-            has_issuer_alias=bool(index.match(request.query)),
-        )
-        if decision is not None and decision.intent == "casual_chat":
-            return await self._casual_report(request, decision)
-        if decision is None and self._intent_classifier_enabled:
-            decision = await self._classify_intent(request)
-            if decision.intent == "casual_chat":
+        self._validate_legacy_controls(request)
+        async with self._request_connection(request.session_profile):
+            request = request.model_copy(
+                update={"session_profile": await self._local_profile(request.session_profile)}
+            )
+            index = self._manifest_scope_index()
+            decision = deterministic_decision(
+                request.query,
+                has_issuer_alias=bool(index.match(request.query)),
+            )
+            if decision is not None and decision.intent == "casual_chat":
                 return await self._casual_report(request, decision)
-        return await self._review(request, on_node=on_node, retrieval_override=None)
+            if decision is None and self._intent_classifier_enabled:
+                decision = await self._classify_intent(request)
+                if decision.intent == "casual_chat":
+                    return await self._casual_report(request, decision)
+            return await self._review(request, on_node=on_node, retrieval_override=None)
 
-    def _engine(self, request: ReviewRequest) -> tuple[LLMProvider, ProviderBudget]:
-        """Return the selected provider and budget without cross-engine fallback."""
-        engine = request.session_profile.engine
-        provider = self._llm_providers.get(engine)
+    async def _local_profile(self, profile: ReviewSessionProfile) -> ReviewSessionProfile:
+        """Pin one discovered model without replacing an explicit unavailable selection."""
+        if profile.engine != "local":
+            return profile
+        self._validate_session_profile(profile)
+        context = self._local_request.get()
+        if context is not None and context.model is not None:
+            return profile.model_copy(update={"local_model": context.model})
+        inventory = context.inventory if context is not None else self.local_inventory
+        if inventory is None:
+            raise unavailable("local_model_unavailable", "The local model server is disconnected.")
+        snapshot = await inventory.snapshot()
+        available = snapshot.available_models
+        if snapshot.reason is not None or not available:
+            raise unavailable(
+                "local_model_unavailable", "No answer model is available on the local server."
+            )
+        selected = profile.local_model
+        if selected is None:
+            if len(available) != 1:
+                raise bad_request(
+                    "local_model_required", "Choose a local answer model before sending a question."
+                )
+            selected = available[0]
+        if selected not in available:
+            raise unavailable(
+                "local_model_unavailable", "The selected local model is no longer available."
+            )
+        if context is not None:
+            context.model = selected
+        return profile.model_copy(update={"local_model": selected})
+
+    async def _engine(
+        self, request: ReviewRequest | RetrieveRequest
+    ) -> tuple[LLMProvider, ProviderBudget]:
+        """Resolve a request-specific provider without changing any other conversation."""
+        profile = await self._local_profile(request.session_profile)
+        engine = profile.engine
         budget = self._provider_budgets.get(engine)
+        context = self._local_request.get()
+        inventory = context.inventory if context is not None else self.local_inventory
+        if engine == "local" and inventory is not None and budget is not None:
+            if context is not None and context.provider is not None:
+                return context.provider, budget
+            assert profile.local_model is not None
+            provider = build_local_provider(
+                base_url=inventory.base_url,
+                model_name=profile.local_model,
+                protocol=inventory.protocol,
+                api_key=inventory.api_key,
+                timeout_s=self._local_timeout_s,
+            )
+            if context is not None:
+                context.provider = provider
+            return provider, budget
+        provider = self._llm_providers.get(engine)
         if provider is None or budget is None:
             raise unavailable(
                 "provider_unavailable",
@@ -680,7 +827,7 @@ class RuntimeApiServices(ApiServices):
 
     async def _classify_intent(self, request: ReviewRequest) -> ConversationDecision:
         """Classify only an input the deterministic gate cannot decide."""
-        provider, budget = self._engine(request)
+        provider, budget = await self._engine(request)
         result = await provider.complete(
             Prompt(
                 system=(
@@ -715,7 +862,7 @@ class RuntimeApiServices(ApiServices):
         source = "canned"
         answer = decision.canned_answer
         if answer is None:
-            provider, budget = self._engine(request)
+            provider, budget = await self._engine(request)
             history = [turn.model_dump(mode="json") for turn in request.conversation_history[-6:]]
             result = await provider.complete(
                 Prompt(
@@ -770,7 +917,9 @@ class RuntimeApiServices(ApiServices):
         on_node: NodeObserver | None = None,
     ) -> RunReport:
         """Run one review with an explicit request-scoped retrieval implementation."""
-        return await self._review(request, on_node=on_node, retrieval_override=retrieval)
+        self._validate_legacy_controls(request)
+        async with self._request_connection(request.session_profile):
+            return await self._review(request, on_node=on_node, retrieval_override=retrieval)
 
     async def _review(
         self,
@@ -793,14 +942,11 @@ class RuntimeApiServices(ApiServices):
                 code="capability_disabled",
                 message="Snapshot queries are available only in Dev.",
             )
+        request = request.model_copy(
+            update={"session_profile": await self._local_profile(request.session_profile)}
+        )
+        llm_provider, provider_budget = await self._engine(request)
         engine = request.session_profile.engine
-        llm_provider = self._llm_providers.get(engine)
-        provider_budget = self._provider_budgets.get(engine)
-        if llm_provider is None or provider_budget is None:
-            raise unavailable(
-                "provider_unavailable",
-                f"Review engine {engine!r} is not configured.",
-            )
         if request.session_profile.snapshot_id is not None:
             async with self._session_factory() as validation_session:
                 selected_snapshot = await validation_session.get(
@@ -1099,26 +1245,19 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         )
         providers["openai"] = llm_provider
         budgets["openai"] = provider_budget
-    if configured.local_llm_enabled:
-        from app.llm.local_engine import build_local_provider, local_provider_budget
-
-        assert configured.local_llm_base_url is not None
-        assert configured.local_llm_model is not None
-        providers["local"] = build_local_provider(
-            base_url=configured.local_llm_base_url,
-            model_name=configured.local_llm_model,
-            protocol=configured.local_llm_protocol,
-            api_key=(
-                configured.local_llm_api_key.get_secret_value()
-                if configured.local_llm_api_key is not None
-                else None
-            ),
-            timeout_s=configured.local_llm_timeout_s,
-        )
-        budgets["local"] = local_provider_budget(
-            max_input_tokens=configured.local_llm_max_input_tokens,
-            max_output_tokens=configured.local_llm_max_output_tokens,
-        )
+    local_connection, local_budget = build_local_runtime(
+        environment=configured.environment,
+        base_url=configured.local_llm_base_url,
+        protocol=configured.local_llm_protocol,
+        source=configured.local_llm_source,
+        api_key=configured.local_llm_api_key.get_secret_value()
+        if configured.local_llm_api_key
+        else None,
+        max_input_tokens=configured.local_llm_max_input_tokens,
+        max_output_tokens=configured.local_llm_max_output_tokens,
+    )
+    if local_budget is not None:
+        budgets["local"] = local_budget
     secret_values = tuple(
         secret.get_secret_value()
         for secret in (
@@ -1134,6 +1273,9 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         provider_budget=provider_budget,
         llm_providers=providers,
         provider_budgets=budgets,
+        local_connection=local_connection,
+        allow_local_engine=configured.environment != "prod",
+        local_timeout_s=configured.local_llm_timeout_s,
         secret_values=secret_values,
         route_by_language=configured.query_language_routing,
         lexical_ranker=configured.lexical_ranker,

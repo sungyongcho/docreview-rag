@@ -184,7 +184,7 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
 
 
 def test_live_operator_disables_only_public_request_limits() -> None:
-    """Wire loopback live mode without public rate or daily-cost enforcement."""
+    """Keep private bypass while retaining a cost limiter for proxy-marked public requests."""
     settings = ReleaseSettings(
         mode="runtime",
         admin_mode="live",
@@ -199,7 +199,8 @@ def test_live_operator_disables_only_public_request_limits() -> None:
     )
 
     assert guard.kwargs["enforce_rate_limit"] is False
-    assert guard.kwargs["cost_limiter"] is None
+    assert guard.kwargs["cost_limiter"] is not None
+    assert guard.kwargs["public_read_only"] is False
     assert guard.kwargs["allow_ingest"] is False
 
 

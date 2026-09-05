@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -14,11 +14,13 @@ from pydantic import (
     StrictBool,
     StrictFloat,
     StrictInt,
+    field_validator,
     model_validator,
 )
 
 from app.api.schemas import EvidenceHit, RunResponse
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, BM25Idf, LexicalRanker
+from app.llm.local_connection import ConnectionSource, LocalProtocol, validate_base_url
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.types import RetrievalFilters
 
@@ -519,3 +521,29 @@ class EvaluationResultDetailResponse(StrictAdminModel):
     cases: tuple[EvaluationCaseSummary, ...]
     raw_artifact_path: str
     created_at: datetime
+
+
+class LocalConnectionRequest(BaseModel):
+    """A candidate endpoint entered in the developer connection settings."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    base_url: str = Field(min_length=1, max_length=2048)
+    protocol: LocalProtocol = "auto"
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        """Reject credentials and non-HTTP addresses before any server request."""
+        return validate_base_url(value)
+
+
+class LocalConnectionResponse(BaseModel):
+    """Private settings state and safe model metadata for the developer UI."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    base_url: str | None
+    initial_base_url: str
+    protocol: LocalProtocol
+    source: ConnectionSource
+    error: str | None
+    local: dict[str, Any]

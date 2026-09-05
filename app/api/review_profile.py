@@ -103,6 +103,7 @@ class ReviewSessionProfile(StrictProfileModel):
     """Conversation settings persisted by the browser and revalidated by the server."""
 
     engine: ReviewEngine = "openai"
+    local_model: Annotated[str, Field(min_length=1, max_length=256)] | None = None
     corpus_scope: CorpusScope = "auto"
     issuers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)] = ()
     languages: Annotated[

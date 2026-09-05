@@ -18,6 +18,7 @@ from pydantic_settings import SettingsConfigDict
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.openai_models import resolve_openai_model
 from app.settings_sources import (
+    DEFAULT_LOCAL_BASE_URL,
     DEFAULT_LOCAL_TIMEOUT_S,
     DotenvFirstSettings,
     Environment,
@@ -84,12 +85,11 @@ class ReleaseSettings(DotenvFirstSettings):
     openai_input_per_million_usd: Decimal | None = Field(default=None, ge=0)
     openai_output_per_million_usd: Decimal | None = Field(default=None, ge=0)
     local_llm_base_url: str | None = Field(
-        default=None,
+        default=DEFAULT_LOCAL_BASE_URL,
         validation_alias=AliasChoices("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"),
     )
-    local_llm_model: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("LOCAL_LLM_MODEL", "DOCREVIEW_LOCAL_LLM_MODEL"),
+    local_llm_source: Literal["environment", "dotenv", "default"] = Field(
+        default="default", validation_alias="local_llm_source", exclude=True
     )
     local_llm_protocol: Literal["auto", "openai_responses", "ollama"] = Field(
         default="auto",
@@ -140,7 +140,6 @@ class ReleaseSettings(DotenvFirstSettings):
         "openai_api_key_dev",
         "openai_api_key_prod",
         "local_llm_base_url",
-        "local_llm_model",
         "local_llm_api_key",
         mode="before",
     )
@@ -195,8 +194,6 @@ class ReleaseSettings(DotenvFirstSettings):
             raise ValueError("administrator CORS origin must be loopback HTTP")
         if self.openai_max_cost_usd > self.public_daily_cost_usd:
             raise ValueError("request cost cap must not exceed the public daily cost cap")
-        if (self.local_llm_base_url is None) != (self.local_llm_model is None):
-            raise ValueError("LOCAL_LLM_BASE_URL and LOCAL_LLM_MODEL must be configured together")
         return self
 
     @property
@@ -206,7 +203,7 @@ class ReleaseSettings(DotenvFirstSettings):
 
     @property
     def local_llm_enabled(self) -> bool:
-        """Report whether a complete local model pair may serve reviews.
+        """Report whether the configured local server may be queried in this runtime.
 
         Notes
         -----
@@ -217,7 +214,6 @@ class ReleaseSettings(DotenvFirstSettings):
             self.mode == "runtime"
             and self.environment != "prod"
             and self.local_llm_base_url is not None
-            and self.local_llm_model is not None
         )
 
     def provider_budget(self) -> ProviderBudget:

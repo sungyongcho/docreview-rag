@@ -141,19 +141,12 @@ def test_admin_cors_origin_is_loopback_only() -> None:
 
 
 def test_prod_disables_the_local_engine_even_with_a_complete_endpoint_pair(monkeypatch) -> None:
-    """A published build must not answer from an unvetted local model.
-
-    Notes
-    -----
-    The guard lives on `local_llm_enabled` rather than on a compose file, so it holds
-    however the process was launched. It disables rather than raises, because a developer
-    previewing production keeps the local keys in their dotenv.
-    """
+    """Disable local models in production without rejecting retained developer settings."""
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL"):
         monkeypatch.delenv(name, raising=False)
     # `mode` resolves through its DOCREVIEW_ alias, so it has to arrive as an env var.
     monkeypatch.setenv("DOCREVIEW_MODE", "runtime")
-    local = {"LOCAL_LLM_BASE_URL": "http://ollama:11434", "LOCAL_LLM_MODEL": "gemma4:e4b"}
+    local = {"LOCAL_LLM_BASE_URL": "http://ollama:11434"}
 
     monkeypatch.setenv("MODE", "dev")
     assert ReleaseSettings(_env_file=None, **local).local_llm_enabled is True

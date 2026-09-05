@@ -6,7 +6,7 @@ import asyncio
 import base64
 from dataclasses import asdict
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Float, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,7 @@ from app.api.admin_schemas import (
     UsageModelResource,
     UsageResponse,
 )
+from app.api.errors import ApiProblemError, unavailable
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import (
     EvidenceHit,
@@ -62,6 +63,7 @@ from app.evals.admin import EvaluationAdminService
 from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
+from app.llm.local_connection import LocalConnectionError, LocalConnectionManager, LocalProtocol
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.service import ComponentRankings, RetrievalResult, retrieve
@@ -99,6 +101,38 @@ class RuntimeAdminApiServices:
         )
         self._golden = golden or GoldenAdminService()
         self._snapshots = snapshots or SnapshotService()
+
+    def _local_connection(self) -> LocalConnectionManager:
+        """Require an enabled developer connection manager, including on SSH admin routes."""
+        connection = self._runtime.local_connection
+        if connection is None or not connection.enabled:
+            raise ApiProblemError(
+                status_code=403,
+                code="disabled_in_prod",
+                message="Local LLM settings are available only in Dev.",
+            )
+        return connection
+
+    async def local_connection_state(self) -> dict[str, Any]:
+        """Read the active endpoint and model information for developer settings."""
+        return await self._local_connection().state()
+
+    async def update_local_connection(
+        self,
+        action: Literal["connect", "disconnect", "reset"],
+        base_url: str = "",
+        protocol: LocalProtocol = "auto",
+    ) -> dict[str, Any]:
+        """Apply one explicit configuration action and translate safe persistence failures."""
+        connection = self._local_connection()
+        try:
+            if action == "connect":
+                return await connection.connect(base_url, protocol)
+            if action == "disconnect":
+                return await connection.disconnect()
+            return await connection.reset()
+        except LocalConnectionError as error:
+            raise unavailable(error.code, str(error)) from error
 
     async def corpus_snapshot(self) -> dict[str, Any]:
         """Return one JSON-ready live corpus and index snapshot."""

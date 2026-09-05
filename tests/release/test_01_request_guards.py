@@ -219,3 +219,45 @@ def test_server_secret_is_redacted_before_log_formatting() -> None:
     assert REDACTION in exception_record.getMessage()
     assert trace_secret not in exception_record.getMessage()
     assert exception_record.exc_info is None
+
+
+def test_public_proxy_marker_retains_rate_limits_on_a_private_admin_runtime() -> None:
+    """A public request remains metered even when the same process serves private SSH admin."""
+    with TestClient(_guarded_app(enforce_rate_limit=False)) as client:
+        headers = {"x-docreview-public": "true"}
+        assert client.post("/work", headers=headers).status_code == 200
+        assert client.post("/work", headers=headers).status_code == 429
+        assert client.post("/work").status_code == 200
+
+
+def test_public_proxy_marker_retains_cost_limits_without_charging_private_requests() -> None:
+    """Only proxy-marked public reviews reserve cost when a private runtime serves both paths."""
+    from decimal import Decimal
+
+    app = FastAPI()
+    app.add_middleware(
+        ReleaseGuardMiddleware,
+        limiter=InProcessRateLimiter(per_minute=10, per_day=20, max_clients=8),
+        trust_proxy_headers=False,
+        allow_ingest=False,
+        enforce_rate_limit=False,
+        cost_limiter=DailyCostLimiter(
+            daily_limit_usd=Decimal("0.04"),
+            reservation_usd=Decimal("0.04"),
+        ),
+    )
+
+    @app.post("/review")
+    async def review() -> dict[str, str]:
+        """Return without provider calls so only the cost guard determines admission."""
+        return {"status": "ok"}
+
+    with TestClient(app) as client:
+        for _ in range(2):
+            assert client.post("/review", json={}).status_code == 200
+        headers = {"x-docreview-public": "true"}
+        assert client.post("/review", json={}, headers=headers).status_code == 200
+        blocked = client.post("/review", json={}, headers=headers)
+        assert blocked.status_code == 429
+        assert blocked.json()["error"]["code"] == "daily_cost_limit"
+        assert client.post("/review", json={}).status_code == 200
