@@ -117,6 +117,19 @@ it("cancels a diagnostic on unmount and prevents duplicate operations while chec
   view.unmount(); expect(diagnosticSignal?.aborted).toBe(true);
 });
 
+it("localizes diagnostic status values and uses neutral details wording in Korean", async () => {
+  localStorage.setItem(LOCALE_KEY, "ko");
+  vi.stubGlobal("fetch", vi.fn(async (_input, init) => response(init?.method === "POST" ? DIAGNOSTICS : INITIAL)));
+  render(<I18nProvider><LocalConnectionSettings /></I18nProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "연결 진단 실행" }));
+  const panel = await screen.findByRole("region", { name: "연결 진단" });
+  expect(panel).toHaveTextContent("통과");
+  expect(panel).toHaveTextContent("실패");
+  expect(panel).toHaveTextContent("확인되지 않음");
+  expect(within(panel).getByText("진단 상세")).toBeInTheDocument();
+  expect(within(panel).queryByText("Passed")).not.toBeInTheDocument();
+});
+
 it("disconnects and restores Default without dropping registered choices", async () => {
   const fetchMock = vi.fn(async (input, init) => response(String(input).endsWith("/disconnect")
     ? { ...INITIAL, base_url: null, source: "disabled", local: { enabled: false, reason: "disconnected" } } : INITIAL));

@@ -1,4 +1,6 @@
 export const KO: Record<string, string> = {
+  "Passed": "통과",
+  "Diagnostic details": "진단 상세",
   "Connect": "연결",
   "Next steps": "다음 단계",
   "New server": "새 서버",

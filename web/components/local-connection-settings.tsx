@@ -181,7 +181,7 @@ export function LocalConnectionSettings({ readiness, onChanged }: {
       <ol>{diagnostics.checks.map((check) => <li key={check.id} className={`connection-check is-${check.status}`}><span className="connection-status-dot" aria-hidden="true" /><div><strong>{t(CHECK_LABELS[check.id])}</strong><p>{t(CHECK_REASONS[check.code] ?? "Check the diagnostic details for the server response.")}</p></div><span>{t(CHECK_STATUS[check.status])}</span></li>)}</ol>
       <p className="helper">{t(diagnostics.available ? "The server has a verified answer model. Select it above the conversation input." : "Follow the setup guide for the failed step, then run diagnostics again. Your active connection has not changed.")}</p>
       {recovery.length > 0 && <div className="connection-recovery"><h4>{t("Next steps")}</h4><ul>{recovery.map((id) => <li key={id}>{t(RECOVERY[id] ?? "Open the setup guide for this diagnostic step.")}</li>)}</ul><a href={guideHref} target="_blank" rel="noopener noreferrer">{t("Ollama setup and recovery guide")}<ExternalLink size={14} aria-hidden="true" /></a></div>}
-      <details><summary>{t("Technical details")}</summary><ul>{diagnostics.checks.map((check) => <li key={check.id}><code>{check.id}: {check.code}</code></li>)}</ul></details>
+      <details><summary>{t("Diagnostic details")}</summary><ul>{diagnostics.checks.map((check) => <li key={check.id}><code>{check.id}: {check.code}</code></li>)}</ul></details>
     </section>}
     {connection && <>
       <section className="connection-summary" aria-labelledby="connection-summary-title">
