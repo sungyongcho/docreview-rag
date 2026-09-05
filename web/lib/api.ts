@@ -18,6 +18,8 @@ import type {
   Readiness,
   Capabilities,
   LocalLLMConnection,
+  LocalLLMDiagnostics,
+  LocalLLMDiagnosticTarget,
   ReleaseLimits,
   RetrievalProfile,
   ReviewSessionProfile,
@@ -227,6 +229,24 @@ export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMCon
 export function saveLocalLLMConnection(base_url: string, protocol: LocalLLMConnection["protocol"]): Promise<LocalLLMConnection> {
   return request<LocalLLMConnection>("/admin/local-llm/connection", {
     method: "POST", body: JSON.stringify({ base_url, protocol }),
+  });
+}
+
+export function addLocalLLMServer(name: string, base_url: string, protocol: LocalLLMConnection["protocol"]): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/servers", {
+    method: "POST", body: JSON.stringify({ name, base_url, protocol }),
+  });
+}
+
+export function selectLocalLLMServer(server_id: string): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/select", {
+    method: "POST", body: JSON.stringify({ server_id }),
+  });
+}
+
+export function diagnoseLocalLLM(target: LocalLLMDiagnosticTarget = {}, signal?: AbortSignal): Promise<LocalLLMDiagnostics> {
+  return request<LocalLLMDiagnostics>("/admin/local-llm/diagnostics", {
+    method: "POST", body: JSON.stringify(target), signal,
   });
 }
 

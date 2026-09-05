@@ -205,7 +205,9 @@ rag-help() {
         ''
     _docreview_line '1;36' '[DIAGNOSE] Application and model connection'
     printf '%s\n' \
-        '  rag-ollama-check              Run connection diagnostics' \
+        '  rag-ollama-check              Diagnose the active/default server; no URL needed' \
+        '  rag-ollama-check --setup      Show Ollama installation and model setup steps' \
+        '  rag-ollama-check --details    Explain host/container and listener checks' \
         '  rag-ollama-check --web-url http://localhost:9000' \
         '                               Target a different DocReview address' \
         '  rag-ollama-check --help       Show diagnostic options' \

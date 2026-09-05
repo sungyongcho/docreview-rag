@@ -115,9 +115,12 @@ class RuntimeAdminApiServices:
 
     async def update_local_connection(
         self,
-        action: Literal["connect", "disconnect", "reset"],
+        action: Literal["connect", "disconnect", "reset", "add", "select"],
         base_url: str = "",
         protocol: LocalProtocol = "auto",
+        *,
+        name: str = "",
+        server_id: str = "",
     ) -> dict[str, Any]:
         """Apply one explicit configuration action and translate safe persistence failures."""
         connection = self._local_connection()
@@ -126,9 +129,25 @@ class RuntimeAdminApiServices:
                 return await connection.connect(base_url, protocol)
             if action == "disconnect":
                 return await connection.disconnect()
+            if action == "add":
+                return await connection.add_server(name, base_url, protocol)
+            if action == "select":
+                return await connection.select_server(server_id)
             return await connection.reset()
         except LocalConnectionError as error:
             raise unavailable(error.code, str(error)) from error
+
+    async def diagnose_local_connection(
+        self,
+        *,
+        server_id: str | None = None,
+        base_url: str | None = None,
+        protocol: LocalProtocol = "auto",
+    ) -> dict[str, Any]:
+        """Probe metadata for one explicit target without changing server selection or settings."""
+        return await self._local_connection().diagnose(
+            server_id=server_id, base_url=base_url, protocol=protocol
+        )
 
     async def corpus_snapshot(self) -> dict[str, Any]:
         """Return one JSON-ready live corpus and index snapshot."""

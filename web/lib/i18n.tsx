@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { KO } from "./messages-ko";
+import { localizedDocumentationRoute } from "./documentation-registry.mjs";
 
 export type Locale = "ko" | "en";
 export const LOCALE_KEY = "docreview.locale";
@@ -9,14 +10,13 @@ type Values = Record<string, string | number>;
 
 /** An explicit document language wins over a preference saved in another tab. */
 export function preferredLocale(pathname: string, saved: string | null): Locale {
-  const route = pathname.match(/\/docs\/(ko|en)(?:\/cli)?\/?$/)?.[1];
+  const route = pathname.match(/\/docs\/(ko|en)(?:\/[^/]+)?\/?$/)?.[1];
   return route === "en" || (!route && saved === "en") ? "en" : "ko";
 }
 
 /** Keep the current document and deployment prefix when switching languages. */
-export function localizedDocumentationPath(pathname: string, locale: Locale): string | null {
-  const route = pathname.match(/^(.*)\/docs(?:\/(?:ko|en))?(\/cli)?\/?$/);
-  return route ? `${route[1]}/docs/${locale}/${route[2] ? "cli/" : ""}` : null;
+export function localizedDocumentationPath(pathname: string, locale: Locale, hash = ""): string | null {
+  return localizedDocumentationRoute(pathname, locale, hash);
 }
 
 /** Language remains usable when the browser blocks optional preference storage. */
@@ -87,13 +87,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((value: Locale) => {
     update(value);
     persistLocale(value);
-    const destination = localizedDocumentationPath(window.location.pathname, value);
-    if (destination && destination !== window.location.pathname) window.location.assign(destination);
+    const destination = localizedDocumentationPath(window.location.pathname, value, window.location.hash);
+    if (destination && destination !== window.location.pathname + window.location.hash) window.location.assign(destination);
   }, []);
   useEffect(() => {
     const initial = preferredLocale(window.location.pathname, savedLocale());
     update(initial);
-    if (/\/docs\/(ko|en)(?:\/cli)?\/?$/.test(window.location.pathname)) persistLocale(initial);
+    if (/\/docs\/(ko|en)(?:\/[^/]+)?\/?$/.test(window.location.pathname)) persistLocale(initial);
     function changed(event: StorageEvent) {
       if (event.key === LOCALE_KEY) update(preferredLocale(window.location.pathname, event.newValue));
     }

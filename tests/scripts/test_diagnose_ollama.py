@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from scripts.diagnose_ollama import container_probe, diagnose, failure_kind, probe_url
+from scripts.diagnose_ollama import container_probe, diagnose, failure_kind, main, probe_url
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +23,9 @@ def clean_model_environment(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
-def app_client(*, config=None, local=None, mode="dev", paths=None) -> httpx.Client:
+def app_client(
+    *, config=None, local=None, mode="dev", paths=None, diagnostics=None
+) -> httpx.Client:
     """Serve canonical application routes and reject unexpected external traffic."""
     if local is None:
         local = {
@@ -48,8 +50,12 @@ def app_client(*, config=None, local=None, mode="dev", paths=None) -> httpx.Clie
         """Require trailing slashes used by the single Next entry point."""
         if paths is not None:
             paths.append(request.url.path)
-        assert request.method == "GET"
         assert request.url.host == "localhost"
+        if request.url.path == "/docreview-rag-agent/api/admin/local-llm/diagnostics/":
+            assert request.method == "POST"
+            assert json.loads(request.content) == {}
+            return httpx.Response(404 if diagnostics is None else 200, json=diagnostics)
+        assert request.method == "GET"
         return httpx.Response(200, json=responses[request.url.path])
 
     return httpx.Client(transport=httpx.MockTransport(respond))
@@ -272,3 +278,169 @@ def test_malformed_config_response_is_reported_without_traceback(tmp_path, capsy
     with app_client(config=[]) as client:
         assert diagnose(tmp_path, "http://localhost:8000", client=client) == 1
     assert "unexpected response" in capsys.readouterr().out
+
+
+def diagnostic_report(*, available=True, reason="reachable"):
+    """Provide the public metadata-only diagnostic response consumed by the CLI."""
+    return {
+        "server_name": "Default server",
+        "available": available,
+        "model_count": 1 if available else None,
+        "answer_model_count": 1 if available else None,
+        "models": [{"name": "installed-model", "selectable": True, "loaded": False}]
+        if available
+        else [],
+        "checks": [
+            {"id": "configuration", "status": "passed", "code": "configured", "remediation": []},
+            {
+                "id": "connection",
+                "status": "passed" if available else "failed",
+                "code": reason,
+                "remediation": [] if available else ["check_ollama_service", "check_listener"],
+            },
+            {
+                "id": "models",
+                "status": "passed" if available else "unknown",
+                "code": "answer_models_available" if available else "unconfirmed",
+                "remediation": [] if available else ["check_ollama_models"],
+            },
+        ],
+    }
+
+
+def test_shared_diagnostics_avoids_duplicate_probes_and_reports_actual_models(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """A current backend supplies all metadata without Docker or host-side re-probing."""
+    forbidden = Mock(side_effect=AssertionError("shared metadata must suffice"))
+    monkeypatch.setattr("scripts.diagnose_ollama.container_probe", forbidden)
+    monkeypatch.setattr("scripts.diagnose_ollama.probe_url", forbidden)
+    paths = []
+    with app_client(diagnostics=diagnostic_report(), paths=paths) as client:
+        assert diagnose(tmp_path, "http://localhost:8000", client=client) == 0
+    assert paths == [
+        "/docreview-rag-agent/api/release/",
+        "/docreview-rag-agent/api/health/",
+        "/docreview-rag-agent/api/admin/local-llm/diagnostics/",
+    ]
+    output = capsys.readouterr().out
+    assert 'Server: "Default server"' in output
+    assert '"installed-model": answer-capable; not loaded (normal standby)' in output
+    assert "Installed: 1; answer-capable: 1" in output
+    assert "Advanced:" not in output
+    forbidden.assert_not_called()
+
+
+def test_shared_failure_has_actionable_setup_and_opt_in_namespace_details(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """A refused backend connection explains manual remedies without running them."""
+    forbidden = Mock(side_effect=AssertionError("diagnosis must not execute setup commands"))
+    monkeypatch.setattr("scripts.diagnose_ollama.subprocess.run", forbidden)
+    with app_client(diagnostics=diagnostic_report(available=False, reason="refused")) as client:
+        assert diagnose(tmp_path, "http://localhost:8000", client=client, details=True) == 1
+    output = capsys.readouterr().out
+    assert "connection refused" in output
+    assert "systemctl status ollama --no-pager" in output
+    assert "rag-ollama-check --setup" in output
+    assert "Advanced:" in output
+    assert "localhost is the app container" in output
+    assert "ollama list" in output
+    assert "no installed-model count was verified" in output
+    assert "Installed: 0" not in output
+    forbidden.assert_not_called()
+
+
+@pytest.mark.parametrize("code", ["disconnected", "invalid"])
+def test_shared_blocked_selection_explains_reconnect_without_probing(
+    tmp_path, monkeypatch, capsys, code
+) -> None:
+    """A disconnected server has no transport or model measurement to print as a result."""
+    forbidden = Mock(side_effect=AssertionError("blocked selection must not probe"))
+    monkeypatch.setattr("scripts.diagnose_ollama.container_probe", forbidden)
+    report = diagnostic_report(available=False)
+    report["checks"] = [
+        {
+            "id": "configuration",
+            "status": "blocked",
+            "code": code,
+            "remediation": ["select_server"],
+        }
+    ]
+    with app_client(diagnostics=report) as client:
+        assert diagnose(tmp_path, "http://localhost:8000", client=client) == 1
+    output = capsys.readouterr().out
+    assert "Model inventory was not collected" in output
+    assert "select Default server" in output
+    assert "unexpected response" not in output
+    assert "Installed: 0" not in output
+    forbidden.assert_not_called()
+
+
+@pytest.mark.parametrize("installed", [0, 1])
+def test_shared_missing_answer_models_retains_measured_counts(tmp_path, capsys, installed) -> None:
+    """An empty or embedding-only server was measured even though answers remain blocked."""
+    report = diagnostic_report(available=False)
+    report["model_count"] = installed
+    report["answer_model_count"] = 0
+    report["models"] = [{"name": "embedding", "selectable": False}] if installed else []
+    report["checks"][1] = {
+        "id": "connection",
+        "status": "passed",
+        "code": "reachable",
+        "remediation": [],
+    }
+    report["checks"][2] = {
+        "id": "models",
+        "status": "blocked",
+        "code": "no_answer_models",
+        "remediation": ["check_ollama_models"],
+    }
+    with app_client(diagnostics=report) as client:
+        assert diagnose(tmp_path, "http://localhost:8000", client=client) == 1
+    output = capsys.readouterr().out
+    assert f"Installed: {installed}; answer-capable: 0" in output
+    assert "inventory is unconfirmed" not in output
+    assert "ollama list" in output
+    assert "unexpected response" not in output
+
+
+def test_shared_malformed_report_stops_without_legacy_probe(tmp_path, monkeypatch, capsys) -> None:
+    """An invalid new response is a failure, not permission to guess another server."""
+    forbidden = Mock(side_effect=AssertionError("no legacy fallback for malformed metadata"))
+    monkeypatch.setattr("scripts.diagnose_ollama.container_probe", forbidden)
+    with app_client(diagnostics={"available": True, "checks": []}) as client:
+        assert diagnose(tmp_path, "http://localhost:8000", client=client) == 1
+    assert "unexpected response" in capsys.readouterr().out
+    forbidden.assert_not_called()
+
+
+def test_setup_help_is_offline_and_only_prints_manual_commands(monkeypatch, capsys) -> None:
+    """Setup guidance requires neither a configured service nor live provider access."""
+    forbidden = Mock(side_effect=AssertionError("setup help is offline"))
+    monkeypatch.setattr("sys.argv", ["diagnose_ollama", "--setup"])
+    monkeypatch.setattr("scripts.diagnose_ollama.httpx.Client", forbidden)
+    monkeypatch.setattr("scripts.diagnose_ollama.subprocess.run", forbidden)
+    monkeypatch.setattr("scripts.diagnose_ollama.dotenv_values", forbidden)
+    assert main() == 0
+    output = capsys.readouterr().out
+    assert "Default server" in output
+    assert "Add a server" in output
+    assert "ollama --version" in output
+    assert "ollama list" in output
+    assert "ollama pull 'MODEL_NAME'" in output
+    assert "Nothing was installed" in output
+    forbidden.assert_not_called()
+
+
+def test_default_command_derives_web_address_without_requiring_user_url(monkeypatch) -> None:
+    """The ordinary alias finds DocReview from configured APP_PORT and default local host."""
+    monkeypatch.setattr("sys.argv", ["diagnose_ollama"])
+    monkeypatch.setenv("APP_PORT", "8123")
+    monkeypatch.delenv("DOCREVIEW_LOCAL_HOST", raising=False)
+    monkeypatch.setattr("scripts.diagnose_ollama.dotenv_values", Mock(return_value={}))
+    run = Mock(return_value=0)
+    monkeypatch.setattr("scripts.diagnose_ollama.diagnose", run)
+    assert main() == 0
+    assert run.call_args.args[1] == "http://127.0.0.1:8123"
+    assert run.call_args.kwargs == {"details": False}

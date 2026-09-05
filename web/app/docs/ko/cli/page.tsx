@@ -1,3 +1,4 @@
 import { DocumentationPage } from "@/components/documentation-page";
-export const metadata = { title: "로컬 실행 명령 안내 | DocReview RAG" };
+import { documentationDocument } from "@/lib/documentation-registry.mjs";
+export const metadata = { title: `${documentationDocument("cli", "ko")!.title} | DocReview RAG` };
 export default function Page() { return <DocumentationPage documentId="cli" locale="ko" />; }

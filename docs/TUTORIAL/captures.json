@@ -1,0 +1,1155 @@
+{
+  "schema_version": 1,
+  "captures": [
+    {
+      "capture_id": "01-system-status-ko",
+      "document_id": "environment",
+      "tutorial_step": 1,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "System / System status",
+      "required_state": "Actual API, database and schema status",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/01-system-status.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "01-system-status-en",
+      "document_id": "environment",
+      "tutorial_step": 1,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "System / System status",
+      "required_state": "Actual API, database and schema status",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/01-system-status.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "02-pipeline-ko",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline",
+      "required_state": "Dependency graph and selected stage; no job started",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/02-pipeline.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "02-pipeline-en",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline",
+      "required_state": "Dependency graph and selected stage; no job started",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/02-pipeline.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "03-document-ko",
+      "document_id": "documents",
+      "tutorial_step": 2,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Documents",
+      "required_state": "Actual selected filing with readiness and source",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/03-document.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "03-document-en",
+      "document_id": "documents",
+      "tutorial_step": 2,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Documents",
+      "required_state": "Actual selected filing with readiness and source",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/03-document.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "04-sec-inputs-ko",
+      "document_id": "acquisition",
+      "tutorial_step": 3,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Filings",
+      "required_state": "Valid registry, identifier and year inputs; no download",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/04-sec-inputs.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "04-sec-inputs-en",
+      "document_id": "acquisition",
+      "tutorial_step": 3,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Filings",
+      "required_state": "Valid registry, identifier and year inputs; no download",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/04-sec-inputs.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "05-manifest-ingest-ko",
+      "document_id": "indexing",
+      "tutorial_step": 5,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Parse & chunk",
+      "required_state": "Existing manifest rows; no ingestion",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/05-manifest-ingest.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "05-manifest-ingest-en",
+      "document_id": "indexing",
+      "tutorial_step": 5,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Parse & chunk",
+      "required_state": "Existing manifest rows; no ingestion",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/05-manifest-ingest.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "06-embeddings-ko",
+      "document_id": "indexing",
+      "tutorial_step": 6,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Embeddings",
+      "required_state": "Actual provider identity and pending counts",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/06-embeddings.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "06-embeddings-en",
+      "document_id": "indexing",
+      "tutorial_step": 6,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Embeddings",
+      "required_state": "Actual provider identity and pending counts",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/06-embeddings.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "07-bm25-ko",
+      "document_id": "indexing",
+      "tutorial_step": 7,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Lexical index (BM25)",
+      "required_state": "Actual BM25 readiness; no rebuild",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/07-bm25.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "07-bm25-en",
+      "document_id": "indexing",
+      "tutorial_step": 7,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Lexical index (BM25)",
+      "required_state": "Actual BM25 readiness; no rebuild",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/07-bm25.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "08-jobs-ko",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Jobs",
+      "required_state": "Existing job details or honest empty state",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/08-jobs.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "08-jobs-en",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Jobs",
+      "required_state": "Existing job details or honest empty state",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/08-jobs.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "09-retrieval-inputs-ko",
+      "document_id": "retrieval",
+      "tutorial_step": 8,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Search trial",
+      "required_state": "Retrieval form before execution",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/09-retrieval-inputs.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "09-retrieval-inputs-en",
+      "document_id": "retrieval",
+      "tutorial_step": 8,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Search trial",
+      "required_state": "Retrieval form before execution",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/09-retrieval-inputs.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "10-golden-question-ko",
+      "document_id": "evaluation",
+      "tutorial_step": 11,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Golden dataset",
+      "required_state": "Canonical question source read-only",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/10-golden-question.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "10-golden-question-en",
+      "document_id": "evaluation",
+      "tutorial_step": 11,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Golden dataset",
+      "required_state": "Canonical question source read-only",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/10-golden-question.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "11-evaluation-inputs-ko",
+      "document_id": "evaluation",
+      "tutorial_step": 11,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Run evaluation",
+      "required_state": "New evaluation setup; no run queued",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/11-evaluation-inputs.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "11-evaluation-inputs-en",
+      "document_id": "evaluation",
+      "tutorial_step": 11,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Run evaluation",
+      "required_state": "New evaluation setup; no run queued",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/11-evaluation-inputs.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "12-compare-ko",
+      "document_id": "snapshots",
+      "tutorial_step": 12,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Compare and save",
+      "required_state": "Actual available results and compatibility or empty state",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/12-compare.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "12-compare-en",
+      "document_id": "snapshots",
+      "tutorial_step": 12,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Measure / Compare and save",
+      "required_state": "Actual available results and compatibility or empty state",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/12-compare.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "13-local-model-ko",
+      "document_id": "ollama",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Local LLM",
+      "required_state": "Default selected; no address input required; actual connection and model roles",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/13-local-model.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "13-local-model-en",
+      "document_id": "ollama",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Local LLM",
+      "required_state": "Default selected; no address input required; actual connection and model roles",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/13-local-model.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "14-browser-data-ko",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Data & help",
+      "required_state": "Data lifecycle controls; no deletion",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/14-browser-data.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "14-browser-data-en",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Data & help",
+      "required_state": "Data lifecycle controls; no deletion",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/14-browser-data.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "15-cited-answer-ko",
+      "document_id": "answers",
+      "tutorial_step": 9,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation",
+      "required_state": "Existing real cited answer; no new model call",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/15-cited-answer.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "15-cited-answer-en",
+      "document_id": "answers",
+      "tutorial_step": 9,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation",
+      "required_state": "Existing real cited answer; no new model call",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/15-cited-answer.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "16-run-trace-ko",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Run trace",
+      "required_state": "Existing record and original diagnostics",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/16-run-trace.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "16-run-trace-en",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Run trace",
+      "required_state": "Existing record and original diagnostics",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/16-run-trace.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "17-reset-blocked-ko",
+      "document_id": "troubleshooting",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Reset runtime",
+      "required_state": "Current operator check result, including stale-runtime limitation",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/17-reset-blocked.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "17-reset-blocked-en",
+      "document_id": "troubleshooting",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Pipeline / Reset runtime",
+      "required_state": "Current operator check result, including stale-runtime limitation",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/17-reset-blocked.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "18-scope-presets-ko",
+      "document_id": "settings",
+      "tutorial_step": 10,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Scope help",
+      "required_state": "Scope explanation and adjacent preset controls",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/18-scope-presets.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "18-scope-presets-en",
+      "document_id": "settings",
+      "tutorial_step": 10,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Scope help",
+      "required_state": "Scope explanation and adjacent preset controls",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/18-scope-presets.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "19-request-inspector-ko",
+      "document_id": "settings",
+      "tutorial_step": 10,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Settings details",
+      "required_state": "Unexecuted request inspection, independent scrolling",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/19-request-inspector.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "19-request-inspector-en",
+      "document_id": "settings",
+      "tutorial_step": 10,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Settings details",
+      "required_state": "Unexecuted request inspection, independent scrolling",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/19-request-inspector.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "20-routing-performance-ko",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Execution performance",
+      "required_state": "Real recorded routing/timings or honest uncollected fields",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/20-routing-performance.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "20-routing-performance-en",
+      "document_id": "runtime",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Conversation / Execution performance",
+      "required_state": "Real recorded routing/timings or honest uncollected fields",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/20-routing-performance.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "21-context-help-ko",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Help",
+      "required_state": "Recommended topics, local search and navigation",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/21-context-help.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "21-context-help-en",
+      "document_id": "overview",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Help",
+      "required_state": "Recommended topics, local search and navigation",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/21-context-help.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "22-company-filters-ko",
+      "document_id": "documents",
+      "tutorial_step": 2,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Documents / Filters",
+      "required_state": "Actual company/year/facet controls",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/22-company-filters.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "22-company-filters-en",
+      "document_id": "documents",
+      "tutorial_step": 2,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Build / Documents / Filters",
+      "required_state": "Actual company/year/facet controls",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/22-company-filters.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "23-creator-about-ko",
+      "document_id": "architecture",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / About",
+      "required_state": "Shared creator and product identity",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/23-creator-about.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "23-creator-about-en",
+      "document_id": "architecture",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / About",
+      "required_state": "Shared creator and product identity",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/23-creator-about.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only use of existing state; no paid calls"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "24-connection-diagnostics-ko",
+      "document_id": "ollama",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Local LLM",
+      "required_state": "Actual read-only Default metadata diagnosis with checked time and separate checks",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/24-connection-diagnostics.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only state; no paid calls or server registration"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "24-connection-diagnostics-en",
+      "document_id": "ollama",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Local LLM",
+      "required_state": "Actual read-only Default metadata diagnosis with checked time and separate checks",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/24-connection-diagnostics.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only state; no paid calls or server registration"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "25-add-server-ko",
+      "document_id": "ollama",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Local LLM",
+      "required_state": "Unsaved named server form, active Default preserved; no server registration",
+      "locale": "ko",
+      "theme": "light",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/25-add-server.ko.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only state; no paid calls or server registration"
+      ],
+      "capture_status": "pending"
+    },
+    {
+      "capture_id": "25-add-server-en",
+      "document_id": "ollama",
+      "tutorial_step": null,
+      "application_route": "/docreview-rag-agent/",
+      "workspace": "Settings / Local LLM",
+      "required_state": "Unsaved named server form, active Default preserved; no server registration",
+      "locale": "en",
+      "theme": "dark",
+      "css_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sidebar_state": "open",
+      "source_commit_or_revision": null,
+      "asset_path": "assets/25-add-server.en.png",
+      "caption": null,
+      "prerequisites": [
+        "Completed application and bilingual documentation validation",
+        "Read-only state; no paid calls or server registration"
+      ],
+      "capture_status": "pending"
+    }
+  ]
+}

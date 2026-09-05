@@ -7,8 +7,8 @@
 ## 1. 현재 상태와 읽는 법
 
 - 저장소: `/home/wwaya/Documents/docreview-rag-agent`; 작업 브랜치: `assemble`.
-- 작업 시작 HEAD: `110c78b`. 이것은 최신 HEAD 보장이 아니라 시작점 기록이다.
-- 기존 대규모 미커밋 UI·번역·문서·초기화 작업에 이번 수정이 누적되어 있다. 처음부터 다시 구현하지 않는다.
+- 최초 작업 시작 HEAD: `110c78b`; 이번 실행의 인계 기준은 `1dd72a7`, 앱 수정 완료는 `be3d837`이다.
+- 코퍼스·런타임·UI 인계 커밋은 완료 상태다. 이번 실행은 공유 Small 브랜딩, 숨김 팝업 수정, 문서 재구성과 실제 화면·이미지 검증에 집중한다.
 - 작성 시점에 컴포넌트·백엔드 기능 테스트는 여러 차례 통과했지만, 최종 통합 화면 행렬과 최종 이미지 재빌드·촬영은 남아 있다.
 - 아래 `구현됨`은 소스와 관련 기능 검증이 있다는 뜻이며, 전체 수용 기준 통과나 최종 화면 승인과 같지 않다.
 - `진행 중`은 동시 작업 결과를 최신 diff로 확인해야 한다. `대기`는 완료 증거가 아직 없다.
@@ -19,7 +19,7 @@
 |---|---|---|
 | 코퍼스·공개 문서·회사명·평가 데이터셋 | 커밋 완료; 격리 스냅샷 69 tests passed | `70d20ff` |
 | 실행 관측·라우팅·초기화 안전 점검 | 커밋 완료; 격리 스냅샷 138 passed, destructive live test 1 deselected | `9d0acfa` |
-| UI·번역·탐색·성능·도움말 통합 | 대부분 구현; 마지막 수정 진행 중 | 커밋: `PENDING_ROOT_UPDATE` |
+| UI·번역·탐색·성능·도움말 통합 | 인계 완료, 공유 브랜딩과 숨김 화면 회귀 수정 완료 | `1dd72a7`, `be3d837`; staged snapshot Web 324 / shell 22 / static build 통과 |
 | 최종 시각 행렬·튜토리얼 이미지 | 대기 | 결과: `PENDING_ROOT_UPDATE` |
 | 최신 소스 일반/HF Docker 재빌드 | 이전 빌드 통과; API base 수정 후 재검증 대기 | 이미지 ID: `PENDING_ROOT_UPDATE` |
 | host operator 새 코드 반영 | 자동 승인 검토 거절 후 사용자 승인 대기 | 승인 및 재시작: `PENDING_USER_APPROVAL` |
@@ -60,20 +60,12 @@ git diff --stat
 
 ## 4. 요구사항 추적표
 
-### R01 — 원본 ASCII 브랜드 · P1 · 구현됨, 최종 화면 대기
+### R01 — 공유 Small ASCII 브랜드 · P1 · 구현·커밋 완료, 최종 화면 대기
 
-- 파일: `web/components/product-brand.tsx`, `web/app/styles.css`, `web/app/v2.css`, `web/app/icon.svg`.
-- 사용자 제공 ASCII의 문자·백슬래시·공백·줄바꿈을 그대로 유지하고 `v2`를 표시한다. 새 이미지 생성은 필요 없다.
-- `PRODUCT_ASCII`를 원본으로 사용한다. CSS로 글자 비율을 왜곡하거나 자동 줄바꿈하지 않는다.
-- 기업용 도구에 맞는 차분한 표현을 유지하고, 작은 화면에서도 브랜드가 컨트롤을 밀어내지 않게 한다.
-- 수용: 390px부터 3440px까지 글자 깨짐·잘림 없음; 스크린리더 이름 `DocReview RAG v2`; 브랜드 클릭 동작 유지.
-
-```text
-   ___           ___           _              ___  ___  _____
-  / _ \___  ____/ _ \___ _  __(_)__ _    __  / _ \/ _ |/ ___/
- / // / _ \/ __/ , _/ -_) |/ / / -_) |/|/ / / , _/ __ / (_ /
-/____/\___/\__/_/|_|\__/|___/_/\__/|__,__/ /_/|_/_/ |_\___/
-```
+- 원본: `web/branding/wordmark.txt`, `monogram.txt`; Web 표현은 `ascii.ts`와 byte parity test로 일치시킨다.
+- 셸은 표준 도구로 정적 자산을 읽는다. 전체 Small 워드마크 78열, DR 모노그램 13열이며 작은 영역은 모노그램과 읽을 수 있는 제품명·v2를 사용한다.
+- `rag_alias.sh` 직접 실행·source·rag-help·Bash/Zsh·NO_COLOR·dumb·narrow·보호된 uninstall을 격리 환경에서 검증했다.
+- `be3d837`에서 이전 사선 글자와 작게 축소하던 CSS를 제거했다. 최종 화면 행렬은 별도 QA 문서에 기록한다.
 
 ### R02 — 초기화 진입 버튼 · P1 · 구현됨, 최종 화면 대기
 
@@ -199,16 +191,16 @@ git diff --stat
 - 모달 키보드 이벤트가 배경 단축키·입력과 충돌하지 않게 한다. 현재 섹션 선택은 실제 열린 화면과 일치해야 한다.
 - 수용: 한영 교차 검색, 제목 우선 순위, 없음 상태, Go to 후 기능 표시, ESC/focus, 자동 실행 없음.
 
-### R15 — Evidence Pin/Exclude 설명 · P1 · 대기/통합 담당 진행
+### R15 — Evidence Pin/Exclude 설명 · P1 · 구현·회귀 검증 완료
 
 - 파일: `service-shell.tsx`, `markdown-message.tsx`, `web/lib/types.ts`, `messages-ko.ts`, 실제 `app/api/evidence.py`와 요청 소비 경로.
-- 사용자는 Pin/Exclude의 의미가 불명확하므로 계획에 포함하라고 명시했다. 완료로 간주하지 않는다.
+- 적용 시점·재검토·저장 결과 제한은 인계 구현에 있다. `be3d837`에서 고정이 인용을 보장하지 않는다는 설명과 회귀 검증을 추가했다.
 - 먼저 실제 backend의 `pinnedChunkIds`/`excludedChunkIds` 적용 경로를 확인한다. 이름만 보고 강제 인용·검색 제외 범위를 추정하지 않는다.
 - 두 동작의 의미, 이번 결과/다음 요청 중 적용 시점, toggle 상태·선택 수, 재실행 CTA를 한영으로 설명한다.
 - 현재 답변이 즉시 다시 계산된다고 오해하게 만들지 않는다. pin/exclude 충돌 처리는 실제 계약과 맞춘다.
 - 수용: 실제 payload 일치, toggle/해제·카운트, 적용 시점 설명, 유효 재실행 CTA, 유료 호출 없는 회귀 테스트.
 
-### R16 — 실측 ASCII 실행 성능 · P1 · 대기/통합 담당 진행
+### R16 — 실측 ASCII 실행 성능 · P1 · 인계 구현 확인, 최종 화면 대기
 
 - 파일: `execution-performance.tsx`, `review-progress.tsx`, `web/lib/messages-ko.ts`, `app/observability/stages.py`, `trace.py`, `persistence.py`, `app/llm/local.py`.
 - 최신 사용자는 측정값 기반 ASCII bar/call flow와 정확한 표를 명시적으로 요구했다. 단순 표만으로 완료하지 않는다.
@@ -277,7 +269,7 @@ git diff --stat
 - 양성 공개 membership은 폐기용 DB fixture 테스트로 검증했다. 촬영을 위해 원본에 게시 결과를 만들지 않는다.
 - 수용: public list/facet/detail의 일관된 membership, 없는 문서 404, admin 403, readonly UI에서 허용 행동만 표시.
 
-### R23 — 최종 한영 문서·17개 공유 이미지 · P2 · 최종 동기화·재촬영 대기
+### R23 — 15개 한영 문서·12단계 실습과 실제 이미지 · P2 · 문서 구현·소스 검증 완료, 실제 화면 검증 대기
 
 - 정식 원본: `docs/TUTORIAL/ko/walkthrough.md`, `ko/cli.md`, `en/walkthrough.md`, `en/cli.md`.
 - 허브 `docs/TUTORIAL.md` 및 기존 walkthrough/cli 호환 파일의 관계는 현재 renderer를 확인하고 보존한다.
@@ -329,6 +321,21 @@ git diff --stat
 - 촬영을 위해 원문·답변·결과를 조작하지 않는다. 빈 상태·차단 상태는 그대로 정직하게 촬영한다.
 - Pin/Exclude 설명(R15)은 사용자가 요청한 최종 polish 목록 끝에 명시적으로 남기고 실제 구현·촬영 시 완료 표시한다.
 - 수용: 각 발견에 screenshot 근거와 수정 후 확인이 연결됨; 영향 없는 장면의 불필요한 반복 촬영 없음; 최종 tutorial과 QA capture 일치.
+
+## 우선 적용한 Ollama 핫픽스
+
+- 사용자가 주소를 몰라도 Default로 기존 환경 기본 서버를 선택한다. 다른 서버는 Add a server로 등록한다.
+- 연결 실패·저장 실패 시 기존 연결을 유지한다. Web·CLI는 같은 읽기 전용 진단 결과를 사용한다.
+- macOS/Linux Ollama 준비 문서를 추가하고 Local LLM 화면에서 새 탭으로 연다.
+- 앱·CLI 수정 뒤 관련 한영 문서를 반영했다. 최종 캡처에는 Default, 서버 추가, 연결 진단 장면을 포함한다.
+
+## 현재 실행의 추가 문서 계약
+
+- `web/lib/documentation-registry.json`이 15개 문서·한영 제목·그룹·순서·관련 문서·12개 단계·이전 링크 매핑의 원본이다.
+- `docs/TUTORIAL/{ko,en}`의 주제별 문서는 `{#step-N}` 식별자를 공유한다. 개요의 단계 목록은 registry에서 생성한다.
+- 코드 완료 → 문서·링크·라이브 편집 검증 → `docs/TUTORIAL/captures.json`의 실제 촬영 → 관찰한 화면만 수정·재촬영 → 최종 일반/HF 이미지 검증 순서를 따른다.
+- 이번 실행의 검증·청소·화면 결함 기록은 같은 날짜의 `v2-verification.md`, `v2-cleanup-ledger.md`, `v2-ui-polish-qa.md`에 남긴다.
+- 첫 앱 커밋은 첨부 승인만으로는 자동 검토가 거절했다. 사용자가 현재 대화에서 이번 작업의 예외를 직접 승인한 뒤 `be3d837`이 생성됐다. 운영자 18001 재시작은 이 승인에 포함되지 않는다.
 
 ## 5. 실행 순서와 의존 관계
 

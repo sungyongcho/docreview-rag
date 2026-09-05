@@ -557,3 +557,77 @@ class LocalConnectionResponse(BaseModel):
     source: ConnectionSource
     error: str | None
     local: dict[str, Any]
+    servers: tuple[LocalServerResource, ...]
+    selected_server_id: str | None
+
+
+class LocalServerResource(BaseModel):
+    """A named private endpoint, including the runtime-resolved Default entry."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    name: str
+    base_url: str
+    protocol: LocalProtocol
+    is_default: bool
+
+
+class LocalServerRequest(LocalConnectionRequest):
+    """Register and connect a named server without editing environment configuration."""
+
+    name: str = Field(min_length=1, max_length=80)
+
+
+class LocalServerSelectionRequest(BaseModel):
+    """Select one registered server or the built-in Default identifier."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    server_id: str = Field(min_length=1, max_length=80)
+
+
+class LocalDiagnosticsRequest(BaseModel):
+    """Choose the active connection, a registered server, or one unsaved draft to inspect."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    server_id: str | None = Field(default=None, min_length=1, max_length=80)
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    protocol: LocalProtocol = "auto"
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_endpoint(cls, value: str | None) -> str | None:
+        """Reject secret-bearing addresses before a diagnostic metadata probe."""
+        return validate_base_url(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_target(self) -> Self:
+        """Require one unambiguous target so a draft cannot override a selected identifier."""
+        if self.server_id is not None and self.base_url is not None:
+            raise ValueError("Choose a registered server or a draft URL, not both.")
+        return self
+
+
+class LocalDiagnosticCheck(BaseModel):
+    """One nonsecret status and its predefined remediation identifiers."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: Literal["configuration", "connection", "models"]
+    status: Literal["passed", "failed", "blocked", "unknown"]
+    code: str
+    remediation: tuple[str, ...]
+
+
+class LocalDiagnosticsResponse(BaseModel):
+    """Metadata-only diagnostic evidence without raw errors, paths, or credentials."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    checked_at: str
+    server_id: str | None
+    server_name: str
+    protocol: LocalProtocol
+    reachable: bool | None
+    available: bool
+    model_count: int | None
+    answer_model_count: int | None
+    models: tuple[dict[str, Any], ...]
+    checks: tuple[LocalDiagnosticCheck, ...]

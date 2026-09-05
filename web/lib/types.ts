@@ -544,6 +544,31 @@ export interface LocalLLMConnection {
   source: "saved" | "environment" | "dotenv" | "default" | "disabled" | "invalid";
   error: string | null;
   local: ReviewEngineState;
+  servers?: LocalLLMServer[];
+  selected_server_id?: string | null;
+}
+
+export interface LocalLLMServer {
+  id: string;
+  name: string;
+  base_url: string;
+  protocol: LocalLLMConnection["protocol"];
+  is_default: boolean;
+}
+
+export type LocalLLMDiagnosticTarget = { server_id: string } | { base_url: string; protocol: LocalLLMConnection["protocol"] } | Record<string, never>;
+
+export interface LocalLLMDiagnostics {
+  checked_at: string;
+  server_id: string | null;
+  server_name: string;
+  protocol: string;
+  reachable: boolean | null;
+  available: boolean;
+  model_count: number | null;
+  answer_model_count: number | null;
+  models: LocalModelInfo[];
+  checks: Array<{ id: "configuration" | "connection" | "models"; status: "passed" | "failed" | "blocked" | "unknown"; code: string; remediation: string[] }>;
 }
 
 export interface ReleaseLimits {

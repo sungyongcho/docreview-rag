@@ -154,6 +154,8 @@ describe("Korean and English UI", () => {
   it("keeps document identity and deployment prefix during language changes", () => {
     expect(localizedDocumentationPath("/docreview-rag-agent/docs/en/cli/", "ko")).toBe("/docreview-rag-agent/docs/ko/cli/");
     expect(localizedDocumentationPath("/docs", "en")).toBe("/docs/en/");
+    expect(localizedDocumentationPath("/docs/en/settings/", "ko", "#step-10")).toBe("/docs/ko/settings/#step-10");
+    expect(preferredLocale("/docs/en/settings/", "ko")).toBe("en");
     expect(localizedDocumentationPath("/documents/", "en")).toBeNull();
     expect(preferredLocale("/docs/ko/", "en")).toBe("ko");
     expect(preferredLocale("/docs/", "en")).toBe("en");

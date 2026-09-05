@@ -1,8 +1,16 @@
 import { readFile, readdir, mkdir, writeFile, rename, copyFile, realpath, stat, chown, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve, dirname, sep } from "node:path";
-import { pathToFileURL } from "node:url";
-import { DOCUMENTS, renderTutorial } from "../lib/tutorial-markdown.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { renderTutorial } from "../lib/tutorial-markdown.mjs";
+import { documentationDocuments, validateDocumentationRegistry } from "../lib/documentation-registry.mjs";
+
+export const DOCUMENTATION_REGISTRY_FILE = fileURLToPath(new URL("../lib/documentation-registry.json", import.meta.url));
+
+/** Read current registry bytes so mounted edits do not depend on Node's import cache. */
+export async function readDocumentationRegistry(file = DOCUMENTATION_REGISTRY_FILE) {
+  return validateDocumentationRegistry(JSON.parse(await readFile(file, "utf8")));
+}
 
 /** Match new generated directories to their bind-mounted parent's owner. */
 async function generatedDirectory(directory, owner) {
@@ -35,18 +43,29 @@ export async function writeTutorialRevision(file, revision, error = null) {
   await rename(temporary, file);
 }
 
-export async function prepareTutorial(root = resolve(process.cwd(), "../docs/TUTORIAL"), output = resolve(process.cwd(), "public/tutorial-assets"), revisionFile = null) {
+export async function prepareTutorial(root = resolve(process.cwd(), "../docs/TUTORIAL"), output = resolve(process.cwd(), "public/tutorial-assets"), revisionFile = null, { registryFile = DOCUMENTATION_REGISTRY_FILE } = {}) {
+  const registry = await readDocumentationRegistry(registryFile);
+  const inventory = documentationDocuments(registry);
   const documents = new Map();
   const digest = createHash("sha256");
-  for (const item of DOCUMENTS) {
+  digest.update(JSON.stringify(registry));
+  for (const item of inventory) {
     const source = await readFile(resolve(root, item.file), "utf8");
     digest.update(item.file + "\0" + source + "\0");
-    documents.set(item.file, renderTutorial(source, { locale: item.locale }));
+    const document = renderTutorial(source, { locale: item.locale, registry });
+    if (document.headings.filter((heading) => heading.depth === 1).length !== 1) throw new Error(`Tutorial requires one main heading: ${item.file}`);
+    const declared = new Set(item.steps.map((step) => step.anchor));
+    for (const heading of document.headings) if (/^step-\d+$/.test(heading.id) && !declared.has(heading.id)) throw new Error(`Undeclared tutorial step: ${item.file}#${heading.id}`);
+    for (const anchor of [...declared, ...Object.values(item.legacyAnchors?.[item.locale] ?? {}), ...(item.localizedSections ?? []).map((section) => section[item.locale])].filter(Boolean)) {
+      if (!document.headings.some((heading) => heading.id === anchor)) throw new Error(`Missing tutorial heading: ${item.file}#${anchor}`);
+    }
+    documents.set(item.file, document);
   }
   const copies = new Map();
   for (const [file, document] of documents) {
     for (const link of document.links) {
-      if (link.hash && !documents.get(link.file ?? file).headings.some((h) => h.id === link.hash)) throw new Error(`Missing tutorial heading: ${link.file ?? file}#${link.hash}`);
+      const target = documents.get(link.file ?? file);
+      if (!target || (link.hash && !target.headings.some((h) => h.id === link.hash))) throw new Error(`Missing tutorial heading: ${link.file ?? file}#${link.hash}`);
     }
     for (const path of document.images) {
       const assetsRoot = await realpath(resolve(root, "assets"));

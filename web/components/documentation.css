@@ -1,0 +1,24 @@
+.docs-site { --bg: light-dark(#fff, #0a0a0a); --surface: light-dark(#fff, #111); --surface-2: light-dark(#f7f7f7, #181818); --text: light-dark(#171717, #ededed); --muted: light-dark(#626262, #aaa); --border: light-dark(#dedede, #303030); color: var(--text); }
+.docs-nav-group h2 { margin: 18px 12px 6px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.docs-nav-group:first-child h2 { margin-top: 0; }
+.docs-nav-group a { min-height: 40px; }
+.docs-nav-group svg { flex: none; margin-top: 2px; }
+.docs-site .docs-menu nav a { padding: 9px 11px; font-size: 12px; }
+.docs-site .docs-menu small { font-size: 11px; line-height: 1.65; }
+.docs-site .docs-menu-note { margin-top: 20px; }
+.docs-pagination { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
+.docs-pagination .docs-next { margin: 0; padding: 18px; gap: 12px; border-radius: 8px; }
+.docs-pagination .docs-next:only-child { grid-column: 2; }
+.docs-pagination .docs-previous:only-child { grid-column: 1; }
+.docs-pagination svg { flex: none; }
+.docs-related { margin-top: 36px; border-top: 1px solid var(--border); padding-top: 24px; }
+.docs-related h2 { margin: 0 0 12px; font-size: 18px; }
+.docs-related ul { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0; margin: 0; list-style: none; }
+.docs-related a { color: var(--text); text-underline-offset: 3px; }
+.docs-site .docs-content { max-width: 760px; }
+@media (max-width: 700px) {
+  .docs-site .docs-menu nav a { min-height: 44px; align-items: center; }
+  .docs-related a { display: inline-flex; min-height: 44px; align-items: center; }
+  .docs-pagination { gap: 10px; }
+  .docs-pagination .docs-next { padding: 14px 10px; font-size: 13px; }
+}

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, BookOpen, Terminal } from "lucide-react";
 import type { TutorialHeading, TutorialDocument } from "@/lib/tutorial-markdown.mjs";
+import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
 
 function useResponsiveDisclosure(query: string) {
   const ref = useRef<HTMLDetailsElement>(null);
@@ -20,25 +21,45 @@ function useResponsiveDisclosure(query: string) {
 }
 
 /** Legacy links resolve after hydration because the saved preference is browser-owned. */
-export function DocumentationRedirect({ documentId }: { documentId: "walkthrough" | "cli" }) {
+export function DocumentationRedirect({ documentId }: { documentId: string }) {
   const router = useRouter();
-  const suffix = documentId === "cli" ? "cli/" : "";
   useEffect(() => {
     const locale = preferredLocale(window.location.pathname, savedLocale());
-    router.replace(`/docs/${locale}/${suffix}${window.location.hash}`);
-  }, [router, suffix]);
-  return <main className="docs-shell"><h1>DocReview RAG</h1><p>사용 안내 · Documentation</p><nav aria-label="Language / 언어"><Link href={`/docs/ko/${suffix}`} lang="ko">한국어</Link>{" · "}<Link href={`/docs/en/${suffix}`} lang="en">English</Link></nav></main>;
+    const document = documentationDocument(documentId, locale)!;
+    const destination = localizedDocumentationRoute(window.location.pathname, locale, window.location.hash) ?? document.href + window.location.hash;
+    router.replace(destination.replace(DOCUMENTATION_BASE, ""));
+  }, [router, documentId]);
+  return <main className="docs-shell"><h1>DocReview RAG</h1><p>사용 안내 · Documentation</p><nav aria-label="Language / 언어"><Link href={documentationDocument(documentId, "ko")!.href.replace(DOCUMENTATION_BASE, "")} lang="ko">한국어</Link>{" · "}<Link href={documentationDocument(documentId, "en")!.href.replace(DOCUMENTATION_BASE, "")} lang="en">English</Link></nav></main>;
+}
+
+/** Retain old root-document bookmarks after their sections move to focused pages. */
+export function DocumentationLegacyAnchor({ locale }: { locale: Locale }) {
+  const router = useRouter();
+  useEffect(() => {
+    function redirect() {
+      const target = legacyDocumentationTarget(locale, window.location.hash);
+      if (target) router.replace(target.document.href.replace(DOCUMENTATION_BASE, "") + (target.hash ? `#${encodeURIComponent(target.hash)}` : ""));
+    }
+    redirect();
+    window.addEventListener("hashchange", redirect);
+    return () => window.removeEventListener("hashchange", redirect);
+  }, [locale, router]);
+  return null;
 }
 
 export function DocumentationMenu({ current, documents, locale }: { current: string; documents: TutorialDocument[]; locale: Locale }) {
   const disclosure = useResponsiveDisclosure("(min-width: 701px)");
+  const groups = [...new Set(documents.map((document) => document.group))];
   return <details ref={disclosure} className="docs-menu" open>
     <summary>{locale === "ko" ? "문서 둘러보기" : "Documentation"}</summary>
     <nav aria-label={locale === "ko" ? "문서 선택" : "Choose a document"}>
-      {documents.map((document) => <Link key={document.id} href={document.href.replace("/docreview-rag-agent", "")} aria-current={current === document.id ? "page" : undefined}>
-        {document.id === "walkthrough" ? <BookOpen size={18} /> : <Terminal size={18} />}
-        <span>{document.label}<small>{document.id === "walkthrough" ? (locale === "ko" ? "직접 해 보며 시작하기" : "Learn by doing") : (locale === "ko" ? "실행 · 상태 · 진단" : "Run · Inspect · Diagnose")}</small></span>
-      </Link>)}
+      {groups.map((group) => <section className="docs-nav-group" key={group} aria-labelledby={`docs-group-${group}`}>
+        <h2 id={`docs-group-${group}`}>{documents.find((document) => document.group === group)!.groupTitle}</h2>
+        {documents.filter((document) => document.group === group).map((document) => <Link key={document.id} href={document.href.replace(DOCUMENTATION_BASE, "")} aria-current={current === document.id ? "page" : undefined}>
+          {document.id === "cli" ? <Terminal size={16} /> : <BookOpen size={16} />}
+          <span>{document.title}{current === document.id && <small>{document.summary}</small>}</span>
+        </Link>)}
+      </section>)}
     </nav>
     <p className="docs-menu-note">{locale === "ko" ? "같은 환경, 같은 데이터. 작업 결과를 화면에서 이어서 확인하세요." : "One environment, shared data. Follow your results from commands to the dashboard."}</p>
     <Link className="docs-service-link" href="/">DocReview RAG <ArrowUpRight size={14} /></Link>

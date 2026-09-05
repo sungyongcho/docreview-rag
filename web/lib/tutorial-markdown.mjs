@@ -1,20 +1,18 @@
 import { createElement } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-export const DOCUMENTS = [
-  { id: "walkthrough", locale: "ko", file: "ko/walkthrough.md", title: "첫 공시부터 인용 답변까지", label: "실습 가이드", href: "/docreview-rag-agent/docs/ko/" },
-  { id: "cli", locale: "ko", file: "ko/cli.md", title: "로컬 실행 명령 안내", label: "CLI 명령 안내", href: "/docreview-rag-agent/docs/ko/cli/" },
-  { id: "walkthrough", locale: "en", file: "en/walkthrough.md", title: "From your first filing to a cited answer", label: "Guided walkthrough", href: "/docreview-rag-agent/docs/en/" },
-  { id: "cli", locale: "en", file: "en/cli.md", title: "Local command reference", label: "CLI reference", href: "/docreview-rag-agent/docs/en/cli/" },
-];
+import { DOCUMENTATION_REGISTRY, documentationDocuments, documentationLink } from "./documentation-registry.mjs";
+export { DOCUMENTS } from "./documentation-registry.mjs";
 
 function nodeText(node) {
   return node.value ?? (node.children ?? []).map(nodeText).join("");
 }
 
-export function renderTutorial(source, { locale = "ko", renderCode, assetVersion } = {}) {
-  const documents = DOCUMENTS.filter((item) => item.locale === locale);
+export function renderTutorial(source, { locale = "ko", renderCode, assetVersion, registry = DOCUMENTATION_REGISTRY } = {}) {
+  const steps = documentationDocuments(registry)
+    .filter((document) => document.locale === locale)
+    .flatMap((document) => document.steps.map((step) => ({ ...step, source: document.source })))
+    .sort((a, b) => a.number - b.number);
   const codes = [];
   const headings = [], images = [], links = [];
   const used = new Set();
@@ -22,6 +20,10 @@ export function renderTutorial(source, { locale = "ko", renderCode, assetVersion
     return (tree) => {
       const definitions = new Map(tree.children.filter((n) => n.type === "definition").map((n) => [n.identifier.toLowerCase(), n]));
       function visit(node) {
+        if (node.children) node.children = node.children.map((child) => child.type === "html" && child.value.trim() === "<!-- tutorial-steps -->" ? {
+          type: "list", ordered: true, start: 1, spread: false,
+          children: steps.map((step) => ({ type: "listItem", spread: false, children: [{ type: "paragraph", children: [{ type: "link", url: `${step.source}#${step.anchor}`, children: [{ type: "text", value: step.title }] }] }] })),
+        } : child);
         if (node.type === "imageReference" || node.type === "linkReference") {
           const definition = definitions.get(node.identifier.toLowerCase());
           if (!definition) throw new Error(`Missing Markdown reference: ${node.identifier}`);
@@ -30,8 +32,15 @@ export function renderTutorial(source, { locale = "ko", renderCode, assetVersion
           node.title = definition.title;
         }
         if (node.type === "heading") {
+          const explicit = nodeText(node).match(/\s+\{#([a-z][a-z0-9-]*)\}\s*$/);
+          if (explicit) {
+            const last = node.children.at(-1);
+            if (last?.type !== "text") throw new Error("Explicit heading ID must follow plain text");
+            last.value = last.value.replace(/\s+\{#[a-z][a-z0-9-]*\}\s*$/, "");
+          }
           const text = nodeText(node);
-          const base = text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-") || "section";
+          const base = explicit?.[1] ?? (text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-") || "section");
+          if (explicit && used.has(base)) throw new Error(`Duplicate explicit tutorial heading: ${base}`);
           let id = base;
           for (let suffix = 2; used.has(id); suffix += 1) id = `${base}-${suffix}`;
           used.add(id);
@@ -56,11 +65,12 @@ export function renderTutorial(source, { locale = "ko", renderCode, assetVersion
           const url = node.url;
           if (!/^(https?:|mailto:)/i.test(url)) {
             const [file, ...fragments] = url.replace(/^\.\//, "").split("#");
-            const target = file ? documents.find((item) => item.file.split("/").pop() === file) : null;
-            if (file && !target) throw new Error(`Unknown tutorial link: ${url}`);
             const hash = fragments.length ? decodeURIComponent(fragments.join("#")) : "";
-            links.push({ file: target?.file ?? null, hash });
-            node.url = `${target?.href ?? ""}${hash ? `#${encodeURIComponent(hash)}` : ""}`;
+            const target = file ? documentationLink(file, hash, locale, registry) : null;
+            if (file && !target) throw new Error(`Unknown tutorial link: ${url}`);
+            const anchor = target?.hash ?? hash;
+            links.push({ file: target?.document.file ?? null, hash: anchor });
+            node.url = `${target?.document.href ?? ""}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
           }
         }
         for (const child of node.children ?? []) visit(child);

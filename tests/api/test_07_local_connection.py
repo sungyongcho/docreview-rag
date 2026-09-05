@@ -57,6 +57,8 @@ def test_connection_routes_save_disconnect_reset_and_preserve_failed_candidate(t
             "source",
             "error",
             "local",
+            "servers",
+            "selected_server_id",
         }
         saved = client.post("/admin/local-llm/connection", json={"base_url": "http://working"})
         assert saved.status_code == 200
@@ -147,7 +149,9 @@ def test_legacy_review_limits_cannot_bypass_public_controls(tmp_path, field, val
     assert response.json()["error"]["code"] == "capability_disabled"
 
 
-@pytest.mark.parametrize("action", ["connection", "disconnect", "reset"])
+@pytest.mark.parametrize(
+    "action", ["connection", "disconnect", "reset", "servers", "select", "diagnostics"]
+)
 @pytest.mark.parametrize("origin", ["https://unrelated.example", "null", "http://localhost:9001"])
 def test_browser_origin_blocks_every_local_connection_mutation(tmp_path, action, origin) -> None:
     """Simple cross-origin requests are rejected before changing active or saved settings."""
@@ -219,3 +223,88 @@ def test_forwarded_host_alone_cannot_authorize_a_browser_origin(tmp_path) -> Non
         )
     assert response.status_code == 403
     assert manager.current is previous
+
+
+def test_named_server_and_diagnostic_routes_preserve_existing_clients_and_selection(
+    tmp_path,
+) -> None:
+    """Named routes preserve legacy saves and the safe metadata contract."""
+    app, manager = connection_app(tmp_path)
+    with TestClient(app) as client:
+        added = client.post(
+            "/admin/local-llm/servers", json={"name": "Desk", "base_url": "http://desk"}
+        )
+        assert added.status_code == 200
+        state = added.json()
+        assert state["servers"][0]["name"] == "Default"
+        assert state["servers"][1]["id"] == state["selected_server_id"]
+        previous = manager.current
+        original = manager.path.read_bytes()
+        diagnostic = client.post("/admin/local-llm/diagnostics", json={"server_id": "default"})
+        assert diagnostic.status_code == 200
+        assert diagnostic.json()["server_name"] == "Default"
+        assert diagnostic.json()["reachable"]
+        assert not diagnostic.json()["available"]
+        assert diagnostic.json()["checks"][-1]["code"] == "no_answer_models"
+        assert diagnostic.json()["model_count"] == 0
+        assert diagnostic.json()["answer_model_count"] == 0
+        unreachable = client.post(
+            "/admin/local-llm/diagnostics", json={"base_url": "http://offline"}
+        )
+        assert unreachable.status_code == 200
+        assert unreachable.json()["model_count"] is None
+        assert unreachable.json()["answer_model_count"] is None
+        assert manager.current is previous
+        assert manager.path.read_bytes() == original
+        assert (
+            client.post("/admin/local-llm/select", json={"server_id": "default"}).status_code == 200
+        )
+        assert manager.current.source == "default"
+        saved = client.post("/admin/local-llm/connection", json={"base_url": "http://legacy"})
+        assert saved.status_code == 200 and len(saved.json()["servers"]) == 3
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"server_id": "default", "base_url": "http://other"},
+        {"base_url": "http://user:secret@private"},
+    ],
+)
+def test_diagnostics_reject_ambiguous_and_credential_bearing_targets(tmp_path, body) -> None:
+    """Invalid diagnostic drafts never mutate the working server or persist configuration."""
+    app, manager = connection_app(tmp_path)
+    original = manager.current
+    with TestClient(app) as client:
+        response = client.post("/admin/local-llm/diagnostics", json=body)
+    assert response.status_code == 422
+    assert "secret" not in response.text
+    assert manager.current is original
+    assert not manager.path.exists()
+
+
+@pytest.mark.parametrize(
+    "endpoint,payload",
+    [
+        ("servers", {"name": "Desk", "base_url": "http://desk"}),
+        ("select", {"server_id": "default"}),
+        ("diagnostics", {}),
+    ],
+)
+def test_new_server_routes_remain_private_and_disabled_in_production(
+    tmp_path, endpoint, payload
+) -> None:
+    """Neither public headers nor a production runtime can use the new local-server surface."""
+    dev, dev_manager = connection_app(tmp_path)
+    with TestClient(dev) as client:
+        assert (
+            client.post(
+                f"/admin/local-llm/{endpoint}", json=payload, headers={"x-docreview-public": "true"}
+            ).status_code
+            == 403
+        )
+    prod, prod_manager = connection_app(tmp_path, "prod")
+    with TestClient(prod) as client:
+        assert client.post(f"/admin/local-llm/{endpoint}", json=payload).status_code == 403
+    assert not dev_manager.path.exists()
+    assert prod_manager.current.inventory is None

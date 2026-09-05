@@ -1,7 +1,9 @@
 # Local command reference
 
 `rag_alias.sh` registers commands for starting, stopping, and inspecting this checkout in Bash or Zsh.
-For a screen-led exercise, read [From your first filing to a cited answer](walkthrough.md).
+For the twelve-step screen-led exercise, start with the [DocReview RAG v2 overview](overview.md).
+Use [environment setup](environment.md#step-1), [acquisition](acquisition.md#step-3), and
+[indexing](indexing.md#step-5) alongside the commands below.
 
 CLI and dashboard operations share results when they use the same local database, source directory, and
 embedding configuration. Check completed CLI work in the dashboard instead of running it twice. A different
@@ -18,6 +20,10 @@ rag-help
 
 `source` registers functions and aliases in the current shell. Executing `./rag_alias.sh` only displays setup
 instructions; it cannot modify its parent shell. Registration does not install dependencies.
+
+The shell and Web share the same checked-in Small ASCII wordmark. An 80-column terminal displays the
+full name; narrower terminals use the DR monogram or a plain product line. `NO_COLOR`, dumb terminals,
+and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
 
 Load the file again in each new terminal, or add one source line with this checkout's real absolute path to
 `.bashrc` or `.zshrc`. Do not add duplicates.
@@ -205,28 +211,27 @@ acquisition and ingestion can be absent from Jobs because they do not use the we
 
 ## Diagnose local-model connectivity
 
-Ollama is separately installed and run; it is not included in this project's Compose stack.
+Ollama is installed separately from this project's Compose stack. The [macOS/Linux Ollama guide](ollama.md) owns installation, startup, listening-address changes, and model preparation. In **Settings → Local LLM**, keep the current connection or select **Default**; use **Add a server…** only for an alternate endpoint. **Run connection diagnostics** inspects the selected server without saving or running an answer.
 
 ```bash
-ollama list
-ollama ps
 rag-ollama-check
+rag-ollama-check --details
+rag-ollama-check --setup
 rag-ollama-check --help
-# When DocReview uses a different web port:
+# Only when DocReview uses a different web address:
 rag-ollama-check --web-url http://localhost:18080
 ```
 
-`list` shows installed models; `ps` shows models currently loaded into memory. `rag-diagnose` is the same
-connectivity diagnostic. `--web-url` points to **DocReview**, not Ollama. Diagnostics do not install, load,
-or infer with a model.
+| Option | Meaning |
+| --- | --- |
+| No option | Inspect the active/default server through the configured DocReview address; no URL is required |
+| `--details` | Include advanced host/container and listening-address evidence |
+| `--setup` | Print manual setup guidance without contacting or changing services |
+| `--web-url` | Override the **DocReview frontend** address, not the Ollama address |
 
-| Backend location | Ollama on the same computer |
-|---|---|
-| Docker app | `http://host.docker.internal:11434` |
-| Host app | `http://127.0.0.1:11434` |
+`rag-diagnose` runs the same diagnostic. These commands do not install, download/load models, start services, save settings, or generate answers. Read configuration, backend connectivity, and answer-model checks separately. An unavailable inventory is unconfirmed; an installed but unloaded model is normal standby.
 
-Ollama's listening address and firewall must permit the backend connection. Do not append `/v1` to an
-Ollama URL in Auto detect mode. Continue with [answer-engine configuration](walkthrough.md#8-change-settings-and-evaluate).
+For an older API without the shared diagnostic route, the command explicitly reports a legacy read-only fallback. `ollama list` and `ollama ps` independently show installed and currently loaded models. Continue with [server selection](settings.md#local-server), [connection recovery](ollama.md#diagnostics), or [answer configuration](answers.md#engines).
 
 ## Prepare one NVIDIA filing
 
@@ -314,6 +319,8 @@ uv run python -m app.ingestion.dart_api --help
 
 ## Shutdown and selective cleanup
 
+### Stop and resume while preserving data
+
 Normal shutdown preserves DB data, source files, saved configuration, and browser conversations:
 
 ```bash
@@ -324,6 +331,9 @@ rag-dev up -d
 ```
 
 Check Documents and saved conversations after restarting. Reuse ready data instead of repeating paid backfill.
+
+### Choose the deletion scope
+
 Deletion is optional; choose the intended boundary.
 
 | Scope | Removed | Preserved |
@@ -394,11 +404,12 @@ DB-document deletion button/API in this walkthrough.
 ## Reset local connection settings
 
 In Settings → Local LLM, **Disconnect** persists an explicit off state and prevents default reconnection.
-**Restore defaults** uses process environment → `.env` → default startup settings instead of the
-saved connection. Neither removes OpenAI keys or conversations.
+**Use Default** checks the startup endpoint selected by process environment → `.env` → defaults
+before switching to it. A failed check or save preserves the working connection; added servers remain
+in the selector. Neither action removes OpenAI keys or conversations.
 
 Only remove the connection file itself when necessary. Back up the default target
-`data/local-settings/local-llm.json` or record the address/protocol first. Removing it also removes an explicit
+`data/local-settings/local-llm.json` or record its server catalog and address/protocol first. Removing it also removes the saved server list and an explicit
 Disconnect state, so defaults may connect again next startup. Use Disconnect if you only want to turn it off.
 
 ```bash

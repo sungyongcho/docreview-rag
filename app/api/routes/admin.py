@@ -25,6 +25,10 @@ from app.api.admin_schemas import (
     GoldenSuiteResource,
     LocalConnectionRequest,
     LocalConnectionResponse,
+    LocalDiagnosticsRequest,
+    LocalDiagnosticsResponse,
+    LocalServerRequest,
+    LocalServerSelectionRequest,
     OperatorJobResource,
     OperatorJobsResponse,
     RetrievalPreviewRequest,
@@ -404,6 +408,37 @@ async def disconnect_local_llm(services: AdminServices) -> dict[str, Any]:
     """Save explicit disconnection so environment defaults cannot reactivate it."""
     async with translate_runtime_errors():
         return await services.update_local_connection("disconnect")
+
+
+@router.post("/local-llm/servers", response_model=LocalConnectionResponse)
+async def register_local_server(
+    request: LocalServerRequest, services: AdminServices
+) -> dict[str, Any]:
+    """Register and select a verified named server while preserving prior choices on failure."""
+    async with translate_runtime_errors():
+        return await services.update_local_connection(
+            "add", request.base_url, request.protocol, name=request.name
+        )
+
+
+@router.post("/local-llm/select", response_model=LocalConnectionResponse)
+async def select_local_server(
+    request: LocalServerSelectionRequest, services: AdminServices
+) -> dict[str, Any]:
+    """Verify and select a saved endpoint or Default without accepting a new URL."""
+    async with translate_runtime_errors():
+        return await services.update_local_connection("select", server_id=request.server_id)
+
+
+@router.post("/local-llm/diagnostics", response_model=LocalDiagnosticsResponse)
+async def diagnose_local_server(
+    request: LocalDiagnosticsRequest, services: AdminServices
+) -> dict[str, Any]:
+    """Inspect bounded metadata without modifying the active connection or loading a model."""
+    async with translate_runtime_errors():
+        return await services.diagnose_local_connection(
+            server_id=request.server_id, base_url=request.base_url, protocol=request.protocol
+        )
 
 
 @router.post("/local-llm/reset", response_model=LocalConnectionResponse)

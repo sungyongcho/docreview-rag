@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -24,9 +25,13 @@ def main() -> int:
         shutil.copytree(source, target, ignore=ignored)
         tutorial = Path(temporary) / "docs" / "TUTORIAL"
         tutorial.mkdir(parents=True)
-        for locale in ("ko", "en"):
+        registry = json.loads(
+            (source / "lib" / "documentation-registry.json").read_text(encoding="utf-8")
+        )
+        for locale in registry["locales"]:
             (tutorial / locale).mkdir()
-            for name in ("walkthrough.md", "cli.md"):
+            for document in registry["documents"]:
+                name = document["source"]
                 shutil.copyfile(
                     root / "docs" / "TUTORIAL" / locale / name, tutorial / locale / name
                 )

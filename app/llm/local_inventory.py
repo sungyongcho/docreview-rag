@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from app.llm.local_diagnostics import failure_kind
 from app.llm.local_engine import resolve_local_protocol
 
 CACHE_TTL_S = 10.0
@@ -36,6 +37,7 @@ class LocalInventorySnapshot:
     models: tuple[LocalModelInfo, ...]
     checked_at: str
     reason: str | None = None
+    failure_code: str | None = None
 
     @property
     def available_models(self) -> tuple[str, ...]:
@@ -45,8 +47,10 @@ class LocalInventorySnapshot:
     def public_state(self) -> dict[str, Any]:
         """Serialize discovery with a default only when exactly one model is usable."""
         available = self.available_models
+        metadata = asdict(self)
+        metadata.pop("failure_code")
         return {
-            **asdict(self),
+            **metadata,
             "enabled": bool(available) and self.reason is None,
             "model": available[0] if len(available) == 1 else None,
         }
@@ -103,14 +107,17 @@ class LocalModelInventory:
                 async with asyncio.timeout(PROBE_TIMEOUT_S):
                     models = await self._fetch()
                 reason = None if any(model.selectable for model in models) else "no_answer_models"
-            except httpx.HTTPError, httpx.InvalidURL, ValueError, TimeoutError:
+                failure_code = None
+            except (httpx.HTTPError, httpx.InvalidURL, ValueError, TimeoutError) as error:
                 models = ()
                 reason = "unreachable"
+                failure_code = failure_kind(error)
             self._cached = LocalInventorySnapshot(
                 protocol=self.protocol,
                 models=models,
                 checked_at=datetime.now(UTC).isoformat(),
                 reason=reason,
+                failure_code=failure_code,
             )
             self._expires_at = monotonic() + CACHE_TTL_S
             return self._cached

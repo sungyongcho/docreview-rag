@@ -258,3 +258,166 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
         assert path.read_bytes() == original
     finally:
         tmp_path.chmod(0o700)
+
+
+@pytest.mark.parametrize("initial", ["http://127.0.0.1:11434", "http://host.docker.internal:11434"])
+def test_default_resolves_runtime_and_legacy_matching_choice_without_writes(
+    tmp_path, initial
+) -> None:
+    """Native and Docker defaults need no user address entry or eager file migration."""
+    path = tmp_path / "connection.json"
+    path.write_text(
+        json.dumps({"version": 1, "state": "connected", "base_url": initial, "protocol": "auto"})
+    )
+    original = path.read_bytes()
+    manager = LocalConnectionManager(
+        initial_base_url=initial,
+        initial_source="environment",
+        path=path,
+        transport=httpx.MockTransport(metadata_server),
+    )
+    state = asyncio.run(manager.state())
+    assert state["selected_server_id"] == "default"
+    assert state["servers"] == [
+        {
+            "id": "default",
+            "name": "Default",
+            "base_url": initial,
+            "protocol": "auto",
+            "is_default": True,
+        }
+    ]
+    assert manager.current.base_url == initial
+    assert path.read_bytes() == original
+
+
+def test_named_servers_survive_switch_disconnect_reset_and_restart(tmp_path) -> None:
+    """Persist a named registry while Default and explicit off preserve all saved choices."""
+    path = tmp_path / "connection.json"
+    transport = httpx.MockTransport(metadata_server)
+    manager = LocalConnectionManager(
+        initial_base_url="http://initial", path=path, transport=transport
+    )
+
+    async def exercise() -> None:
+        """Exercise the same server identities across every selection lifecycle transition."""
+        first = await manager.add_server("Desk", "http://desk")
+        desk_id = first["selected_server_id"]
+        original = manager.current
+        second = await manager.add_server("Lab", "http://lab", "ollama")
+        assert len(second["servers"]) == 3
+        assert original.base_url == "http://desk"
+        await manager.select_server(desk_id)
+        disabled = await manager.disconnect()
+        assert disabled["selected_server_id"] == desk_id
+        assert disabled["source"] == "disabled"
+        restarted = LocalConnectionManager(
+            initial_base_url="http://initial", path=path, transport=transport
+        )
+        assert (await restarted.state())["servers"] == second["servers"]
+        assert (await restarted.state())["selected_server_id"] == desk_id
+        reset = await restarted.reset()
+        assert reset["selected_server_id"] == "default"
+        assert reset["base_url"] == "http://initial"
+        assert reset["servers"] == second["servers"]
+        assert json.loads(path.read_text())["version"] == 2
+        await restarted.select_server(desk_id)
+        assert restarted.current.base_url == "http://desk"
+
+    asyncio.run(exercise())
+
+
+def test_named_server_failures_preserve_registry_active_revision_and_file(
+    tmp_path, monkeypatch
+) -> None:
+    """Failed registration, selection, and atomic save cannot replace working configuration."""
+    offline = set()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Change candidate reachability without permitting inference requests."""
+        if request.url.host in offline:
+            raise httpx.ConnectError("Connection refused: private address", request=request)
+        return metadata_server(request)
+
+    manager = LocalConnectionManager(
+        path=tmp_path / "connection.json", transport=httpx.MockTransport(respond)
+    )
+
+    async def exercise() -> None:
+        """Hold both the selected identity and exact persisted bytes around failed actions."""
+        working = await manager.add_server("Working", "http://working")
+        spare = await manager.add_server("Spare", "http://spare")
+        await manager.select_server(working["selected_server_id"])
+        old = manager.current
+        original = manager.path.read_bytes()
+        offline.add("spare")
+        with pytest.raises(LocalConnectionError):
+            await manager.select_server(spare["selected_server_id"])
+        with pytest.raises(LocalConnectionError):
+            await manager.add_server("Unreachable", "http://offline")
+        with pytest.raises(ValueError, match="already registered"):
+            await manager.add_server("working", "http://different")
+
+        def fail_replace(*args) -> None:
+            """Deny only the temporary candidate file's atomic replacement."""
+            raise PermissionError("private settings path")
+
+        monkeypatch.setattr(connections.os, "replace", fail_replace)
+        with pytest.raises(LocalConnectionError):
+            await manager.add_server("Cannot save", "http://new")
+        assert manager.current is old
+        assert manager.path.read_bytes() == original
+        assert (await manager.state())["servers"] == spare["servers"]
+
+    asyncio.run(exercise())
+
+
+def test_diagnostics_are_fresh_metadata_only_and_never_save_or_select(tmp_path) -> None:
+    """Draft diagnosis leaves immutable requests, server registry, and saved bytes untouched."""
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Record metadata reads and return a classified refusal for the diagnostic candidate."""
+        requests.append((request.method, request.url.path))
+        if request.url.host == "refused":
+            raise httpx.ConnectError("Connection refused: secret-internal-address", request=request)
+        return metadata_server(request)
+
+    manager = LocalConnectionManager(
+        path=tmp_path / "connection.json", transport=httpx.MockTransport(respond)
+    )
+
+    async def exercise() -> None:
+        """Check current, unsaved, unreachable, and disconnected targets independently."""
+        initial = await manager.diagnose(server_id="default")
+        assert initial["server_name"] == "Default"
+        assert initial["available"] and initial["answer_model_count"] == 1
+        assert not manager.path.exists()
+        await manager.add_server("Working", "http://working")
+        previous = manager.current
+        original = manager.path.read_bytes()
+        draft = await manager.diagnose(base_url="http://empty")
+        assert draft["server_id"] is None and draft["server_name"] == "Draft server"
+        assert draft["reachable"] and not draft["available"]
+        assert draft["model_count"] == 0 and draft["answer_model_count"] == 0
+        assert draft["checks"][-1]["code"] == "no_answer_models"
+        failed = await manager.diagnose(base_url="http://refused")
+        assert failed["checks"][1]["code"] == "refused"
+        assert "check_listener" in failed["checks"][1]["remediation"]
+        assert failed["checks"][-1]["status"] == "unknown"
+        assert failed["model_count"] is None and failed["answer_model_count"] is None
+        assert "secret-internal-address" not in json.dumps(failed)
+        assert manager.current is previous
+        assert manager.path.read_bytes() == original
+        await manager.disconnect()
+        before = len(requests)
+        disconnected = await manager.diagnose()
+        assert disconnected["checks"][0]["code"] == "disconnected"
+        assert disconnected["model_count"] is None
+        assert disconnected["answer_model_count"] is None
+        assert len(requests) == before
+        assert (await manager.diagnose(server_id="default"))["available"]
+        assert manager.current.source == "disabled"
+
+    asyncio.run(exercise())
+    assert all(path in {"/api/tags", "/api/ps", "/api/show", "/v1/models"} for _, path in requests)

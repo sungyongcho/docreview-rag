@@ -4,6 +4,24 @@ import { TutorialMarkdown } from "./tutorial-markdown";
 import { renderTutorial } from "@/lib/tutorial-markdown.mjs";
 
 describe("Tutorial Markdown", () => {
+  it("expands the beginner path from the registry at the authored marker", () => {
+    const parsed = renderTutorial("# Overview\n\n## Learning path {#learning-path}\n\n<!-- tutorial-steps -->", { locale: "en" });
+    expect(parsed.links).toHaveLength(12);
+    expect(parsed.links[0]).toEqual({ file: "en/environment.md", hash: "step-1" });
+    expect(parsed.links[11]).toEqual({ file: "en/snapshots.md", hash: "step-12" });
+    const { container } = render(<TutorialMarkdown content={parsed.content} />);
+    expect(container.querySelectorAll("ol li")).toHaveLength(12);
+    const example = renderTutorial("# Example\n\n```markdown\n<!-- tutorial-steps -->\n```", { locale: "en" });
+    expect(example.codes[0].code).toBe("<!-- tutorial-steps -->");
+    expect(example.links).toEqual([]);
+  });
+  it("uses explicit bilingual heading targets and maps legacy walkthrough links", () => {
+    const parsed = renderTutorial("# Guide\n\n## 5. Parse {#step-5}\n\n[Legacy](walkthrough.md#4-ingest-the-source-into-documents-and-chunks)", { locale: "en" });
+    expect(parsed.headings[1]).toEqual({ id: "step-5", text: "5. Parse", depth: 2 });
+    render(<TutorialMarkdown content={parsed.content} />);
+    expect(screen.getByRole("link", { name: "Legacy" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/indexing/#step-5");
+    expect(() => renderTutorial("# Guide\n\n## One {#same}\n\n## Two {#same}")).toThrow("Duplicate explicit tutorial heading");
+  });
   it("creates unique Korean heading links without treating fenced code as a heading", () => {
     const source = "# 안내\n\n## 첫 단계\n\n## 첫 단계\n\n```sh\n## not a heading\n```";
     expect(renderTutorial(source).headings.map((h) => h.id)).toEqual(["안내", "첫-단계", "첫-단계-2"]);
