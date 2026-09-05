@@ -41,7 +41,15 @@ def test_suite_catalog_preserves_unapproved_provenance(tmp_path: Path) -> None:
 
     suites = asyncio.run(service.suites())
 
-    assert {suite.suite_id for suite in suites} == {"sec-en", "sec-ko", "dart-en", "dart-ko"}
+    assert {suite.suite_id for suite in suites} == {
+        "sec-en",
+        "sec-ko",
+        "dart-en",
+        "dart-ko",
+        "sec-en_v2_astra",
+        "sec-ko_v2_astra",
+        "sec-mixed_v2_astra",
+    }
     assert all(suite.approval_status == "pending-author-approval" for suite in suites)
     assert all(suite.human_verified is False for suite in suites)
     assert all(suite.source_ready is False for suite in suites)

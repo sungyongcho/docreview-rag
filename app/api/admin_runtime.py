@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from dataclasses import asdict
 from decimal import Decimal
 from typing import Any, Literal
 
-from sqlalchemy import Float, cast, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from app.api.admin_schemas import (
-    AdminDocumentResource,
     CorpusOperationRequest,
     DocumentEmbeddingStatus,
     DocumentFacetsResponse,
-    DocumentFacetValue,
     DocumentInventoryResponse,
     DocumentSort,
     EvaluationComparisonResponse,
@@ -41,6 +37,7 @@ from app.api.admin_schemas import (
     UsageModelResource,
     UsageResponse,
 )
+from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, unavailable
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import (
@@ -52,11 +49,7 @@ from app.api.schemas import (
 )
 from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
 from app.db.models import (
-    Chunk,
-    Document,
-    EvaluationSnapshot,
     Run,
-    SnapshotDocument,
     Trace,
 )
 from app.evals.admin import EvaluationAdminService
@@ -84,6 +77,9 @@ class RuntimeAdminApiServices:
         job_store: JobStore | None = None,
     ) -> None:
         self._runtime = runtime
+        self._documents = DocumentCatalog(
+            runtime.session_factory, public_only=False, company_names=runtime.company_names
+        )
         self._job_store = job_store or JobStore(session_factory=runtime.session_factory)
         execution_lock = asyncio.Lock()
         execution_coordinator = JobExecutionCoordinator()
@@ -136,12 +132,23 @@ class RuntimeAdminApiServices:
 
     async def corpus_snapshot(self) -> dict[str, Any]:
         """Return one JSON-ready live corpus and index snapshot."""
-        return asdict(await self._corpus.snapshot())
+        snapshot = asdict(await self._corpus.snapshot())
+        names = self._runtime.company_names()
+        for document in snapshot["documents"]:
+            document["issuer_name"] = names.get((document["registry"], document["issuer"]))
+        return snapshot
 
     async def document_detail(self, doc_id: str) -> dict[str, Any] | None:
         """Return one bounded document preview when present."""
         detail = await self._corpus.document_detail(doc_id)
-        return asdict(detail) if detail is not None else None
+        if detail is None:
+            return None
+        payload = asdict(detail)
+        document = payload["document"]
+        document["issuer_name"] = self._runtime.company_names().get(
+            (document["registry"], document["issuer"])
+        )
+        return payload
 
     async def documents(
         self,
@@ -161,221 +168,25 @@ class RuntimeAdminApiServices:
         limit: int,
     ) -> DocumentInventoryResponse:
         """Return one filtered, sortable, opaque-cursor document page."""
-        filters = []
-        if query:
-            pattern = f"%{query.strip()}%"
-            filters.append(Document.doc_id.ilike(pattern) | Document.issuer.ilike(pattern))
-        for column, value in (
-            (Document.registry, registry),
-            (Document.issuer, issuer),
-            (Document.language, language),
-            (Document.form, form),
-            (Document.parse_status, parse_status),
-        ):
-            if value:
-                filters.append(column == value)
-        if fiscal_year is not None:
-            filters.append(Document.fiscal_year == fiscal_year)
-        if snapshot_id is not None:
-            filters.append(
-                select(SnapshotDocument.doc_id)
-                .where(
-                    SnapshotDocument.snapshot_id == snapshot_id,
-                    SnapshotDocument.doc_id == Document.doc_id,
-                    SnapshotDocument.source_sha256 == Document.source_sha256,
-                )
-                .exists()
-            )
-        offset = 0
-        if cursor:
-            try:
-                offset = int(base64.urlsafe_b64decode(cursor.encode()).decode())
-            except (ValueError, UnicodeDecodeError) as error:
-                raise ValueError("document cursor is invalid") from error
-        chunk_count = func.count(Chunk.id).label("chunk_count")
-        embedded = func.count(Chunk.id).filter(Chunk.embedding.is_not(None)).label("embedded")
-        text_chunks = func.count(Chunk.id).filter(Chunk.kind == "text").label("text_chunks")
-        table_chunks = func.count(Chunk.id).filter(Chunk.kind == "table").label("table_chunks")
-        snapshot_count = (
-            select(func.count())
-            .select_from(SnapshotDocument)
-            .where(
-                SnapshotDocument.doc_id == Document.doc_id,
-                SnapshotDocument.source_sha256 == Document.source_sha256,
-            )
-            .correlate(Document)
-            .scalar_subquery()
-            .label("snapshot_count")
+        return await self._documents.documents(
+            query=query,
+            registry=registry,
+            issuer=issuer,
+            fiscal_year=fiscal_year,
+            language=language,
+            form=form,
+            parse_status=parse_status,
+            embedding_status=embedding_status,
+            snapshot_id=snapshot_id,
+            sort=sort,
+            descending=descending,
+            cursor=cursor,
+            limit=limit,
         )
-        coverage = (cast(embedded, Float) / func.nullif(cast(chunk_count, Float), 0.0)).label(
-            "embedding_coverage"
-        )
-        having = []
-        if embedding_status == "complete":
-            having.extend((chunk_count > 0, embedded == chunk_count))
-        elif embedding_status == "partial":
-            having.extend((embedded > 0, embedded < chunk_count))
-        elif embedding_status == "missing":
-            having.append(embedded == 0)
-        sort_columns = {
-            "doc_id": Document.doc_id,
-            "issuer": Document.issuer,
-            "fiscal_year": Document.fiscal_year,
-            "filing_date": Document.filing_date,
-            "chunk_count": chunk_count,
-            "embedding_coverage": coverage,
-        }
-        order = sort_columns[sort].desc() if descending else sort_columns[sort].asc()
-        statement = (
-            select(
-                Document,
-                chunk_count,
-                embedded,
-                text_chunks,
-                table_chunks,
-                snapshot_count,
-            )
-            .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
-            .where(*filters)
-            .group_by(Document.doc_id)
-            .having(*having)
-            .order_by(order, Document.doc_id)
-            .offset(offset)
-            .limit(limit)
-        )
-        filtered_documents = (
-            select(Document.doc_id)
-            .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
-            .where(*filters)
-            .group_by(Document.doc_id)
-            .having(*having)
-            .subquery()
-        )
-        count_statement = select(func.count()).select_from(filtered_documents)
-        async with self._runtime.session_factory() as session:
-            total = int(await session.scalar(count_statement) or 0)
-            rows = (await session.execute(statement)).all()
-        documents = tuple(
-            AdminDocumentResource(
-                doc_id=document.doc_id,
-                registry=document.registry,
-                language=document.language,
-                issuer=document.issuer,
-                issuer_id=document.issuer_id,
-                fiscal_year=document.fiscal_year,
-                form=document.form,
-                filing_date=document.filing_date,
-                report_period=document.report_period,
-                filing_id=document.filing_id,
-                source_url=document.source_url,
-                parse_status=document.parse_status,
-                source_length=document.source_length,
-                source_sha256=document.source_sha256,
-                chunk_count=int(chunks),
-                embedded_chunks=int(embedded_count),
-                text_chunks=int(text_count),
-                table_chunks=int(table_count),
-                embedding_status=(
-                    "complete"
-                    if int(chunks) > 0 and int(embedded_count) == int(chunks)
-                    else "partial"
-                    if int(embedded_count) > 0
-                    else "missing"
-                ),
-                snapshot_count=int(membership_count),
-            )
-            for (
-                document,
-                chunks,
-                embedded_count,
-                text_count,
-                table_count,
-                membership_count,
-            ) in rows
-        )
-        next_offset = offset + len(documents)
-        next_cursor = (
-            base64.urlsafe_b64encode(str(next_offset).encode()).decode()
-            if next_offset < total
-            else None
-        )
-        return DocumentInventoryResponse(documents=documents, total=total, next_cursor=next_cursor)
 
-    async def document_facets(self) -> DocumentFacetsResponse:
+    async def document_facets(self, registry: str = "") -> DocumentFacetsResponse:
         """Return deterministic live filter values and counts."""
-
-        async def values(
-            column: InstrumentedAttribute[str | int],
-        ) -> tuple[DocumentFacetValue, ...]:
-            """Aggregate one safe ORM column into sorted facet values."""
-            async with self._runtime.session_factory() as session:
-                rows = (
-                    await session.execute(
-                        select(column, func.count()).group_by(column).order_by(column)
-                    )
-                ).all()
-            return tuple(
-                DocumentFacetValue(value=str(value), count=int(count)) for value, count in rows
-            )
-
-        chunk_count = func.count(Chunk.id).label("chunk_count")
-        embedded = func.count(Chunk.id).filter(Chunk.embedding.is_not(None)).label("embedded")
-        async with self._runtime.session_factory() as session:
-            coverage_rows = (
-                await session.execute(
-                    select(Document.doc_id, chunk_count, embedded)
-                    .outerjoin(Chunk, Chunk.doc_id == Document.doc_id)
-                    .group_by(Document.doc_id)
-                )
-            ).all()
-            snapshot_rows = (
-                await session.execute(
-                    select(
-                        EvaluationSnapshot.id,
-                        EvaluationSnapshot.label,
-                        EvaluationSnapshot.status,
-                        func.count(SnapshotDocument.doc_id),
-                    )
-                    .outerjoin(
-                        SnapshotDocument,
-                        SnapshotDocument.snapshot_id == EvaluationSnapshot.id,
-                    )
-                    .group_by(EvaluationSnapshot.id)
-                    .order_by(EvaluationSnapshot.created_at.desc(), EvaluationSnapshot.id.desc())
-                )
-            ).all()
-        status_counts = {"complete": 0, "partial": 0, "missing": 0}
-        for _doc_id, chunks, embedded_count in coverage_rows:
-            status = (
-                "complete"
-                if int(chunks) > 0 and int(embedded_count) == int(chunks)
-                else "partial"
-                if int(embedded_count) > 0
-                else "missing"
-            )
-            status_counts[status] += 1
-        return DocumentFacetsResponse(
-            registries=await values(Document.registry),
-            issuers=await values(Document.issuer),
-            years=await values(Document.fiscal_year),
-            languages=await values(Document.language),
-            forms=await values(Document.form),
-            parse_statuses=await values(Document.parse_status),
-            embedding_statuses=tuple(
-                DocumentFacetValue(value=status, count=count)
-                for status, count in status_counts.items()
-                if count > 0
-            ),
-            snapshots=tuple(
-                DocumentFacetValue(
-                    value=str(snapshot_id),
-                    count=int(count),
-                    label=f"{label} · {status}",
-                )
-                for snapshot_id, label, status, count in snapshot_rows
-                if int(count) > 0
-            ),
-        )
+        return await self._documents.document_facets(registry=registry)
 
     async def enqueue_corpus(self, request: CorpusOperationRequest) -> dict[str, Any]:
         """Queue one validated safe corpus operation."""

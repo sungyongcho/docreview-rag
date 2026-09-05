@@ -470,15 +470,22 @@ async def fetch_filing_rows(
             rows.extend(submission_rows(older))
         except ValueError as error:
             raise EdgarApiError(page_url, str(error)) from None
+    company_name = payload.get("name")
+    if isinstance(company_name, str) and company_name.strip():
+        for row in rows:
+            row["companyName"] = company_name.strip()
     return rows
 
 
 def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> dict[str, Any]:
     """Build one manifest entry in the shape the committed corpus already uses."""
     accession = row["accessionNumber"]
+    company_name = row.get("companyName", "").strip()
     return {
         "ticker": ticker,
-        "aliases": [ticker],
+        "aliases": [ticker, company_name]
+        if company_name and company_name.casefold() != ticker.casefold()
+        else [ticker],
         "cik": cik,
         "accession": accession,
         "filing_date": row["filingDate"],

@@ -7,6 +7,7 @@ from typing import Annotated, Protocol
 
 from fastapi import Depends
 
+from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError
 from app.api.schemas import (
     DocumentResource,
@@ -25,6 +26,11 @@ from app.workflow.runner import NodeObserver
 
 class ApiServices(Protocol):
     """All domain operations required by the seven HTTP resources."""
+
+    @property
+    def published_documents(self) -> DocumentCatalog:
+        """Return the read-only catalog restricted to published document identities."""
+        ...
 
     async def retrieve(self, request: RetrieveRequest) -> RetrieveResponse:
         """Return ranked evidence without performing HTTP work."""

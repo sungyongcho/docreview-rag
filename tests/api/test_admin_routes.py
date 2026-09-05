@@ -101,8 +101,9 @@ class FakeAdminServices:
             next_cursor=None,
         )
 
-    async def document_facets(self):
+    async def document_facets(self, registry=""):
         """Return all document facet families including index state."""
+        self.facet_registry = registry
         one = (DocumentFacetValue(value="sec", count=1),)
         return DocumentFacetsResponse(
             registries=one,
@@ -255,6 +256,7 @@ def test_document_routes_expose_facets_coverage_and_structured_detail() -> None:
             "&sort=embedding_coverage&descending=true"
         )
         facets = client.get("/admin/documents/facets")
+        scoped_facets = client.get("/admin/documents/facets?registry=sec")
         detail = client.get("/admin/documents/ACME-FY2024")
 
     assert page.status_code == 200
@@ -276,6 +278,7 @@ def test_document_routes_expose_facets_coverage_and_structured_detail() -> None:
         "limit": 50,
     }
     assert facets.json()["snapshots"][0]["label"] == "Baseline · ready"
+    assert scoped_facets.status_code == 200 and fake.facet_registry == "sec"
     assert detail.status_code == 200
     assert detail.json()["document"]["filing_id"] == "0000000123-25-000001"
     assert detail.json()["item_counts"] == [{"item": "7", "count": 2}]

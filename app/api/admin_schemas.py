@@ -26,7 +26,15 @@ from app.retrieval.types import RetrievalFilters
 
 type RetrievalStrategy = Literal["vector", "lexical", "hybrid"]
 type RerankerName = Literal["cross_encoder"]
-type GoldenSuiteId = Literal["sec-en", "sec-ko", "dart-en", "dart-ko"]
+type GoldenSuiteId = Literal[
+    "sec-en",
+    "sec-ko",
+    "dart-en",
+    "dart-ko",
+    "sec-en_v2_astra",
+    "sec-ko_v2_astra",
+    "sec-mixed_v2_astra",
+]
 type EvaluationMode = Literal["quick", "matrix"]
 type EvaluationJobStatus = Literal[
     "queued", "running", "succeeded", "failed", "interrupted", "cancelled"
@@ -101,7 +109,7 @@ class GoldenSuiteResource(StrictAdminModel):
     suite_id: GoldenSuiteId
     label: str
     registry: Literal["sec", "dart"]
-    question_language: Literal["en", "ko"]
+    question_language: Literal["en", "ko", "mixed"]
     corpus_language: Literal["en", "ko"]
     case_count: PositiveInt
     scored_positive_cases: PositiveInt
@@ -232,6 +240,7 @@ class AdminDocumentResource(StrictAdminModel):
     registry: str
     language: str
     issuer: str
+    issuer_name: str | None = None
     issuer_id: str
     fiscal_year: StrictInt
     form: str
@@ -286,6 +295,7 @@ class DocumentMetadataResource(StrictAdminModel):
     registry: str
     language: str
     issuer: str
+    issuer_name: str | None = None
     issuer_id: str
     fiscal_year: StrictInt
     form: str

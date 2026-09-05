@@ -1,0 +1,556 @@
+[
+  {
+    "id": "amd-01-ko-v2-astra",
+    "question": "AMD의 FY2020 공시를 기준으로, Amazon Web Services의 G4ad 인스턴스에는 어떤 AMD 제품이 사용되며, 이 인스턴스는 어떤 워크로드를 위해 설계되었습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [
+      "v2-astra",
+      "pair-01",
+      "issuer-amd",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2020",
+        "source_sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
+        "start_char": 251043,
+        "end_char": 251333
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "AMD EPYC 프로세서와 Radeon Pro V520 GPU가 G4ad에 사용됐으며, 가상 워크스테이션·게임 스트리밍·그래픽 렌더링용으로 설계됐습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-02; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "amd-02-ko-v2-astra",
+    "question": "AMD의 FY2021 공시를 기준으로, AMD는 TSMC와 관련하여 어떤 구체적인 7nm 공급 위험을 밝혔습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [
+      "v2-astra",
+      "pair-02",
+      "issuer-amd",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2021",
+        "source_sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "start_char": 358705,
+        "end_char": 358908
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "TSMC의 7nm 이하 공정 웨이퍼 공급이 부족하면 AMD 사업에 중대한 악영향이 있을 수 있다고 설명했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-03; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "amd-03-ko-v2-astra",
+    "question": "AMD의 FY2022 공시를 기준으로, AMD는 Xilinx 인수와 관련하여 총 이전대가와 영업권을 각각 얼마로 인식했습니까?",
+    "category": "exact_number",
+    "facet": "factual",
+    "tags": [
+      "v2-astra",
+      "pair-03",
+      "issuer-amd",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 1521761,
+        "end_char": 1522518
+      },
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 1522875,
+        "end_char": 1524006
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "총 이전대가는 487억 9,300만 달러, 영업권은 227억 8,400만 달러였습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-04; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "amd-04-ko-v2-astra",
+    "question": "2023 회계연도 AMD의 연구개발비는 얼마였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [
+      "v2-astra",
+      "pair-04",
+      "issuer-amd",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2023",
+        "source_sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+        "start_char": 756006,
+        "end_char": 756419
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "58억 7,200만 달러였습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-07; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "amd-05-ko-v2-astra",
+    "question": "2022 회계연도에 AMD의 Data Center 부문 순매출은 Client 부문 순매출과 비교해 어떠했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [
+      "v2-astra",
+      "pair-05",
+      "issuer-amd",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 659886,
+        "end_char": 660328
+      },
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 661285,
+        "end_char": 661525
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Data Center는 60억 4,300만 달러, Client는 62억 100만 달러로 Client가 1억 5,800만 달러 더 컸습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-05; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "intc-06-ko-v2-astra",
+    "question": "인텔은 2019년에 배당과 자사주 매입을 통해 얼마의 현금을 주주에게 환원했으며, 향후 어떤 자사주 매입 계획을 발표했습니까?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [
+      "v2-astra",
+      "pair-06",
+      "issuer-intc",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2019",
+        "source_sha256": "9a7c79b6f02ac47f313dcf23020ae16d8fe7d82f8feeb0c51fc63e1d31f48474",
+        "start_char": 680567,
+        "end_char": 680782
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "배당 56억 달러와 자사주 매입 136억 달러를 집행했고, 향후 15~18개월에 200억 달러의 추가 매입을 예상한다고 밝혔습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-08; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "intc-07-ko-v2-astra",
+    "question": "Intel의 FY2023 공시를 기준으로, 인텔이 언급한 사이드채널 취약점 변종의 이름은 무엇이며, 인텔은 왜 해당 위험이 계속되는 것으로 설명했습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [
+      "v2-astra",
+      "pair-07",
+      "issuer-intc",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2023",
+        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
+        "start_char": 1136671,
+        "end_char": 1136951
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Spectre와 Meltdown을 언급했으며, 추가 유형과 변종이 발견돼 왔고 앞으로도 계속 발견될 것으로 예상했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-13; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "intc-08-ko-v2-astra",
+    "question": "2023 회계연도 인텔의 연구개발비는 얼마였으며, 순매출에서 차지하는 비중은 몇 퍼센트였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [
+      "v2-astra",
+      "pair-08",
+      "issuer-intc",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2023",
+        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
+        "start_char": 779047,
+        "end_char": 779979
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "160억 4,600만 달러이며 순매출의 29.6%였습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-14; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "intc-09-ko-v2-astra",
+    "question": "인텔의 IOTG와 Mobileye 매출은 2020년 대비 2021 회계연도에 각각 얼마나 증가했으며, Mobileye의 증가를 이끈 요인은 무엇입니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [
+      "v2-astra",
+      "pair-09",
+      "issuer-intc",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2021",
+        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
+        "start_char": 841700,
+        "end_char": 841926
+      },
+      {
+        "doc_id": "INTC-FY2021",
+        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
+        "start_char": 842076,
+        "end_char": 842266
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "IOTG는 9억 9,100만 달러, Mobileye는 4억 1,900만 달러 증가했습니다. Mobileye 증가는 차량 생산 개선, 코로나19 회복, ADAS 채택 증가에 기인했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-11; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "intc-10-ko-v2-astra",
+    "question": "2021 회계연도에 인텔이 운영한 상업용 양자컴퓨팅 구독 서비스의 명칭은 무엇입니까?",
+    "category": "absent",
+    "facet": "factual",
+    "tags": [
+      "v2-astra",
+      "pair-10",
+      "issuer-intc",
+      "question-ko"
+    ],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-10; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "mu-11-ko-v2-astra",
+    "question": "마이크론은 2020 회계연도에 어떤 재고자산 평가 및 원가흐름 정책을 적용했습니까?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [
+      "v2-astra",
+      "pair-11",
+      "issuer-mu",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "MU-FY2020",
+        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
+        "start_char": 1667389,
+        "end_char": 1667465
+      },
+      {
+        "doc_id": "MU-FY2020",
+        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
+        "start_char": 1668198,
+        "end_char": 1668302
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "평균원가와 순실현가능가치 중 낮은 금액으로 평가하고 평균원가법으로 재고를 차감했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-15; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "mu-12-ko-v2-astra",
+    "question": "Micron의 FY2021 공시를 기준으로, 마이크론의 GDDR6 및 GDDR6X 제품은 어디에 사용되었으며, 마이크론은 GDDR6X의 차별점으로 무엇을 제시했습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [
+      "v2-astra",
+      "pair-12",
+      "issuer-mu",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "MU-FY2021",
+        "source_sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
+        "start_char": 430572,
+        "end_char": 431033
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "게임 콘솔·PC 그래픽카드·GPU 기반 데이터센터 솔루션에 사용됐습니다. GDDR6X는 높은 속도와 대역폭을 위한 새로운 신호 전송 기술을 사용했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-16; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "mu-13-ko-v2-astra",
+    "question": "마이크론의 2022 회계연도 DRAM 및 NAND 매출은 각각 얼마였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [
+      "v2-astra",
+      "pair-13",
+      "issuer-mu",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "MU-FY2022",
+        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
+        "start_char": 2174465,
+        "end_char": 2175478
+      },
+      {
+        "doc_id": "MU-FY2022",
+        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
+        "start_char": 2178112,
+        "end_char": 2178920
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DRAM은 223억 8,600만 달러, NAND는 78억 1,100만 달러였습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-17; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "mu-14-ko-v2-astra",
+    "question": "마이크론의 매출과 매출총이익은 2022 회계연도에서 2023 회계연도까지 어떻게 변화했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [
+      "v2-astra",
+      "pair-14",
+      "issuer-mu",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 641759,
+        "end_char": 643237
+      },
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 647826,
+        "end_char": 649590
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "매출은 307억 5,800만 달러에서 155억 4,000만 달러로 감소했습니다. 매출총이익은 138억 9,800만 달러(45%)에서 14억 1,600만 달러 손실(-9%)로 바뀌었습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-19; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "mu-15-ko-v2-astra",
+    "question": "마이크론이 2024 회계연도에 보고한 랜섬웨어 지급액은 얼마입니까?",
+    "category": "absent",
+    "facet": "risk",
+    "tags": [
+      "v2-astra",
+      "pair-15",
+      "issuer-mu",
+      "question-ko"
+    ],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-20; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "nvda-16-ko-v2-astra",
+    "question": "NVIDIA의 FY2021 공시를 기준으로, Mellanox 인터커넥트가 포함된 엔비디아 플랫폼은 무엇이며, 엔비디아는 인수 이후 어떤 새로운 프로세서 종류를 발표했습니까?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [
+      "v2-astra",
+      "pair-16",
+      "issuer-nvda",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2021",
+        "source_sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "start_char": 261163,
+        "end_char": 261677
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DGX·HGX·EGX에 Mellanox 인터커넥트가 포함됐고, DOCA가 지원하는 DPU를 발표했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-23; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "nvda-17-ko-v2-astra",
+    "question": "2023 회계연도에 중국을 대상으로 한 미국의 신규 수출 허가 요건은 엔비디아의 어떤 제품에 영향을 미쳤습니까?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [
+      "v2-astra",
+      "pair-17",
+      "issuer-nvda",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2023",
+        "source_sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+        "start_char": 446717,
+        "end_char": 447097
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "A100·H100 집적회로, 이를 포함한 DGX 등의 시스템·보드, A100X와 특정 성능 기준을 충족하는 향후 회로·시스템이 대상이었습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-26; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "nvda-18-ko-v2-astra",
+    "question": "2022 회계연도 엔비디아의 연구개발비는 얼마였으며, 2021 회계연도 대비 얼마나 증가했습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [
+      "v2-astra",
+      "pair-18",
+      "issuer-nvda",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 581971,
+        "end_char": 583747
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "52억 6,800만 달러로, 전년 39억 2,400만 달러보다 13억 4,400만 달러 증가했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-25; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "nvda-19-ko-v2-astra",
+    "question": "2024 회계연도 엔비디아의 매출과 순이익은 각각 얼마였습니까?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [
+      "v2-astra",
+      "pair-19",
+      "issuer-nvda",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2024",
+        "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "start_char": 745773,
+        "end_char": 746412
+      },
+      {
+        "doc_id": "NVDA-FY2024",
+        "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "start_char": 775222,
+        "end_char": 775871
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "매출은 609억 2,200만 달러, 순이익은 297억 6,000만 달러였습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-28; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "nvda-20-ko-v2-astra",
+    "question": "엔비디아의 매출과 매출총이익률은 2019 회계연도에서 2020 회계연도까지 어떻게 변화했습니까?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [
+      "v2-astra",
+      "pair-20",
+      "issuer-nvda",
+      "question-ko"
+    ],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2020",
+        "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "start_char": 558289,
+        "end_char": 560408
+      },
+      {
+        "doc_id": "NVDA-FY2020",
+        "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "start_char": 560663,
+        "end_char": 562314
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "매출은 117억 1,600만 달러에서 109억 1,800만 달러로 7% 감소했고, 매출총이익률은 61.2%에서 62.0%로 80bp 증가했습니다.",
+    "note": "V2 Astra evidence-aligned ko variant of m3c-22; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  }
+]

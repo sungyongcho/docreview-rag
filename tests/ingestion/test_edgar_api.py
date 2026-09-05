@@ -424,6 +424,23 @@ def test_submission_columns_join_by_position():
     assert rows[0]["primaryDocument"] == "nvda-20240128.htm"
 
 
+def test_discovered_filings_preserve_company_names_without_an_extra_request():
+    """Use the submissions issuer name as a display alias for newly acquired filings."""
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return a filing and its SEC-provided company name in one response."""
+        requests.append(request)
+        payload = submissions_payload([TEN_K])
+        payload["name"] = "NVIDIA Corporation"
+        return httpx.Response(200, json=payload)
+
+    rows = run(fetch_filing_rows(client_returning(handler), 1045810, user_agent=USER_AGENT))
+    entries = annual_reports(rows, ticker="NVDA", cik=1045810, years=[2024])
+    assert entries[0]["aliases"] == ["NVDA", "NVIDIA Corporation"]
+    assert len(requests) == 1
+
+
 def test_ragged_columns_never_pair_one_filing_with_another():
     """A short column truncates the join rather than mixing two filings' fields."""
     columns = submissions_payload([TEN_K, TEN_Q])["filings"]["recent"]

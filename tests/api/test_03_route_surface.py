@@ -73,6 +73,9 @@ def test_openapi_exposes_resource_oriented_surface(client_factory, services):
 
     assert paths == {
         "/documents",
+        "/public/documents",
+        "/public/documents/facets",
+        "/public/documents/{doc_id}",
         "/eval",
         "/ingest",
         "/retrieve",

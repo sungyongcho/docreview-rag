@@ -85,13 +85,40 @@ class GoldenSuiteDefinition:
     suite_id: GoldenSuiteId
     label: str
     registry: Literal["sec", "dart"]
-    question_language: Literal["en", "ko"]
+    question_language: Literal["en", "ko", "mixed"]
     corpus_language: Literal["en", "ko"]
     golden_name: str
     manifest_name: str
 
 
 SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
+    "sec-en_v2_astra": GoldenSuiteDefinition(
+        "sec-en_v2_astra",
+        "SEC 10-K · English _v2_astra",
+        "sec",
+        "en",
+        "en",
+        "sec_en_v2_astra.json",
+        "manifest.json",
+    ),
+    "sec-ko_v2_astra": GoldenSuiteDefinition(
+        "sec-ko_v2_astra",
+        "SEC 10-K · Korean _v2_astra",
+        "sec",
+        "ko",
+        "en",
+        "sec_ko_v2_astra.json",
+        "manifest.json",
+    ),
+    "sec-mixed_v2_astra": GoldenSuiteDefinition(
+        "sec-mixed_v2_astra",
+        "SEC 10-K · Mixed EN/KO _v2_astra",
+        "sec",
+        "mixed",
+        "en",
+        "sec_mixed_v2_astra.json",
+        "manifest.json",
+    ),
     "sec-en": GoldenSuiteDefinition(
         "sec-en", "SEC 10-K · English", "sec", "en", "en", "retrieval.json", "manifest.json"
     ),

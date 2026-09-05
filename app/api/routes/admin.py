@@ -93,10 +93,10 @@ async def document_inventory(
 
 
 @router.get("/documents/facets", response_model=DocumentFacetsResponse)
-async def document_facets(services: AdminServices) -> DocumentFacetsResponse:
+async def document_facets(services: AdminServices, registry: str = "") -> DocumentFacetsResponse:
     """Return live registry, issuer, year, language, form, and status facets."""
     async with translate_runtime_errors():
-        return await services.document_facets()
+        return await services.document_facets(registry=registry)
 
 
 @router.get(
