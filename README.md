@@ -121,14 +121,22 @@ EMBEDDING_PROVIDER=openai
 중복 추가할 필요가 없습니다.
 
 ```bash
-source ./alias.sh
+source ./rag_alias.sh
 rag-help
 rag-dev up -d
 ```
 
-`source ./alias.sh`는 `DOCREVIEW COMMANDS` ASCII 배너와 `[OK]` 등록 완료 메시지,
+`source ./rag_alias.sh`는 Small Slant `DocReview RAG` 배너와 `[OK]` 등록 완료 메시지,
 대상 저장소 경로, 사용 가능한 명령 목록을 표시합니다. 등록은 현재 셸에 적용됩니다.
-`bash alias.sh`나 `zsh alias.sh`로 별도 실행하면 등록하지 않고 `source` 사용법을 안내합니다.
+`./rag_alias.sh`로 실행하면 현재 터미널의 부모 셸에 맞는 등록 명령을 안내합니다.
+현재 셸의 시작 파일에 이 체크아웃의 자동 등록 줄이 있으면 재설정 대신 `rag-help`를 안내합니다.
+안내된 명령을 실행하면 함수와 별칭의 등록 여부를 확인한 뒤 완료 메시지를 표시합니다.
+셸 시작 파일에서 자동 로드할 때는 `source /실제/경로/rag_alias.sh >/dev/null`로 안내문 출력을 생략합니다.
+`rag-alias-delete` 또는 `./rag_alias.sh --uninstall`은 확인 후 이 파일의 정확한 자동 등록 줄만
+백업하고 제거합니다(Python 3 필요). 다른 파일을 불러오는 줄이나 프로젝트 파일은 제거하지 않습니다.
+`rag-alias-delete`는 현재 셸에서 이 스크립트가 등록한 뒤 변경되지 않은 함수와 별칭만 해제합니다.
+별도 실행한 `--uninstall`은 부모 셸을 변경할 수 없으므로 기존 셸의 해제 명령을 안내합니다.
+인자 없이 실행해도 삭제 방법을 표시하며, 대화형 터미널에서는 삭제 확인 프롬프트를 제공합니다.
 `rag-help`에서 시작·종료·로그·진단 명령과 옵션 예시를 확인할 수 있습니다.
 
 ```bash
