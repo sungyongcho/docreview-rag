@@ -1,5 +1,7 @@
 "use client";
 
+import { browserStorage } from "@/lib/production-preview";
+
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
 const MIN_LIST_WIDTH = 320;
@@ -33,7 +35,7 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
     setPreferredWidth(null);
     if (!storageKey) return;
     try {
-      const saved = window.localStorage.getItem(storageKey);
+      const saved = browserStorage().getItem(storageKey);
       const width = saved === null ? NaN : Number(saved);
       if (Number.isFinite(width) && width > 0) setPreferredWidth(Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, width)));
     } catch (error) {
@@ -85,7 +87,7 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
     const bounded = Math.max(MIN_LIST_WIDTH, Math.min(max, Math.round(width)));
     setPreferredWidth(bounded);
     if (!storageKey) return;
-    try { window.localStorage.setItem(storageKey, String(bounded)); }
+    try { browserStorage().setItem(storageKey, String(bounded)); }
     catch (error) {
       if (!(error instanceof DOMException)) throw error;
     }
@@ -95,7 +97,7 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
   function resetWidth() {
     setPreferredWidth(null);
     if (!storageKey) return;
-    try { window.localStorage.removeItem(storageKey); }
+    try { browserStorage().removeItem(storageKey); }
     catch (error) {
       if (!(error instanceof DOMException)) throw error;
     }

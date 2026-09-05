@@ -1,3 +1,5 @@
+import { presentationFetch } from "./production-preview";
+
 // Read at call time: Next inlines NEXT_PUBLIC_* either way, and tests can stub the env per case.
 function operatorBaseUrl() {
   return process.env.NEXT_PUBLIC_OPERATOR_BASE_URL ?? "";
@@ -46,14 +48,14 @@ export class OperatorRequestError extends Error {
 
 async function operatorRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!operatorAvailable()) throw new Error("Local Operations is not enabled for this build.");
-  const response = await fetch(`${operatorBaseUrl()}${path}`, {
+  const response = await presentationFetch(`${operatorBaseUrl()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${operatorToken()}`,
       ...init?.headers,
     },
-  });
+  }, true);
   if (!response.ok) {
     const payload = await response.json().catch(() => ({})) as { detail?: string; diagnosis?: WipeDiagnosis };
     throw new OperatorRequestError(payload.detail ?? `Operations request failed (${response.status}).`, payload.diagnosis);

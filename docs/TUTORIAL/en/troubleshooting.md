@@ -49,7 +49,7 @@ An empty public catalog can be correct even with a populated development DB. [Sn
 
 | Failure | Evidence | Correction to consider | Verification |
 |---|---|---|---|
-| `budget_exceeded` | `resource`, `limit`, `observed`, `blocked_node` | Adjust the specific cumulative limit under RAG settings → Run limits when appropriate. | A deliberate new run stays within the intended limit. |
+| `budget_exceeded` | `resource`, `limit`, `observed`, `blocked_node` | Adjust the specific cumulative limit under Review settings → Run limits when appropriate. | A deliberate new run stays within the intended limit. |
 | `provider_failure` | `status`, `attempts`, `details`, `node` | Fix the reported authentication, endpoint, provider limit, timeout, or output-format problem. | The affected provider call succeeds; no unrelated setting was changed. |
 | `node_error` | `error_type`, `message`, `node` | Inspect the named non-model stage and correct its concrete cause. | That stage completes on a new attempt. |
 | Missing timing | Uncollected fields or an older saved record. | Keep the missing-data state. Use measurements from a suitable real run when available. | Claims about timing match collected evidence. |

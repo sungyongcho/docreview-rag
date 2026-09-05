@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE, type DocumentFacets, type ReviewSessionProfile } from "@/lib/types";
 import { I18nProvider } from "@/lib/i18n";
 import { ConversationSettings } from "./conversation-settings";
+import { RetainedPanel } from "./retained-panel";
 
 const api = vi.hoisted(() => ({ getDocumentFacets: vi.fn(), getPublishedDocumentFacets: vi.fn() }));
 vi.mock("@/lib/api", () => api);
@@ -25,7 +26,7 @@ it("edits only the current conversation policy and reads the next conversation's
   expect(onChange).toHaveBeenCalledWith({ prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 240 } } });
   rerender(<ConversationSettings {...props} tab="limits" profile={{ ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 90 } } }} />);
   expect(screen.getByLabelText("Maximum wall clock seconds")).toHaveValue(90);
-  fireEvent.keyDown(screen.getByRole("region", { name: "Conversation settings" }), { key: "Escape" });
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Conversation settings" }), { key: "Escape" });
   expect(props.onClose).toHaveBeenCalledOnce();
 });
 
@@ -38,7 +39,7 @@ it("uses the conversation candidate and fusion limits for custom retrieval", () 
 
 it("translates every conversation settings tab in the Korean interface", () => {
   render(<I18nProvider><ConversationSettings tab="limits" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} /></I18nProvider>);
-  for (const name of ["필터", "검색 설정", "근거", "실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
+  for (const name of ["필터", "검색", "근거", "실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
 });
 
 it("keeps allowed filters but hides developer controls in public mode", async () => {
@@ -168,4 +169,55 @@ it("explains draft discard and releases the sending guard after the editor close
   unmount();
   expect(onValidityChange).toHaveBeenLastCalledWith(true);
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it("traps drawer focus, protects the background, and restores the opener on close", () => {
+  const onClose = vi.fn();
+  const opener = document.createElement("button");
+  document.body.append(opener);
+  opener.focus();
+  const { unmount } = render(<ConversationSettings tab="limits" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={onClose} />);
+  const dialog = screen.getByRole("dialog", { name: "Conversation settings" });
+  const close = screen.getByRole("button", { name: "Close conversation settings" });
+  const last = screen.getByLabelText("Maximum wall clock seconds");
+  expect(dialog).toHaveAttribute("aria-modal", "true");
+  expect(close).toHaveFocus();
+  expect(opener).toHaveAttribute("inert");
+  expect(document.body.style.overflow).toBe("hidden");
+  fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+  expect(last).toHaveFocus();
+  fireEvent.keyDown(last, { key: "Tab" });
+  expect(close).toHaveFocus();
+  opener.focus();
+  expect(close).toHaveFocus();
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(onClose).toHaveBeenCalledOnce();
+  unmount();
+  expect(opener).not.toHaveAttribute("inert");
+  expect(document.body.style.overflow).toBe("");
+  expect(opener).toHaveFocus();
+  opener.remove();
+});
+
+it("hides a retained drawer without losing drafts, refetching facets, or handling hidden keys", async () => {
+  const onClose = vi.fn();
+  const onValidityChange = vi.fn();
+  const content = <ConversationSettings tab="filters" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={onClose} onValidityChange={onValidityChange} />;
+  const { rerender } = render(<><button>Other workspace</button><RetainedPanel active>{content}</RetainedPanel></>);
+  await screen.findByRole("button", { name: "English (en)" });
+  const company = screen.getByLabelText("Companies");
+  fireEvent.change(company, { target: { value: "unfinished" } });
+  expect(onValidityChange).toHaveBeenLastCalledWith(false);
+  rerender(<><button>Other workspace</button><RetainedPanel active={false}>{content}</RetainedPanel></>);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const other = screen.getByRole("button", { name: "Other workspace" });
+  other.focus();
+  fireEvent.keyDown(other, { key: "Escape" });
+  expect(other).toHaveFocus();
+  expect(onClose).not.toHaveBeenCalled();
+  rerender(<><button>Other workspace</button><RetainedPanel active>{content}</RetainedPanel></>);
+  expect(screen.getByLabelText("Companies")).toBe(company);
+  expect(company).toHaveValue("unfinished");
+  expect(api.getDocumentFacets).toHaveBeenCalledTimes(1);
+  expect(onValidityChange).toHaveBeenLastCalledWith(false);
 });

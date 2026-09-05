@@ -15,6 +15,7 @@ import {
   FlaskConical,
   Hammer,
   MessageSquare,
+  Monitor,
   PanelLeftClose,
   PanelLeftOpen,
   Pin as PinIcon,
@@ -42,7 +43,10 @@ import { ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, initialRevi
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
-import { useNotifications } from "@/components/notifications";
+import { NotificationProvider, useNotifications } from "@/components/notifications";
+import { ProductionPreviewFrame } from "@/components/production-preview-frame";
+import { browserStorage, enterProductionPreview, exitProductionPreview, previewState } from "@/lib/production-preview";
+import { useProductionPreview } from "@/lib/use-production-preview";
 import {
   ApiError,
   getCapabilities,
@@ -80,7 +84,39 @@ interface NavigationEntry {
   focus: HTMLElement | null;
 }
 
-export function ServiceShell() {
+/** Preserve the complete DEV tree while a separate public document is being inspected. */
+export function ServiceShell({ publicPreview = false }: { publicPreview?: boolean } = {}) {
+  const preview = useProductionPreview();
+  const frame = useRef<HTMLIFrameElement>(null);
+  const dev = useRef<HTMLDivElement>(null);
+  const restore = useRef<{ focus: HTMLElement | null; scroll: Array<{ element: HTMLElement; top: number; left: number }> } | null>(null);
+  function openPreview() {
+    const captured = { focus: document.activeElement instanceof HTMLElement ? document.activeElement : null, scroll: Array.from(dev.current?.querySelectorAll<HTMLElement>("*") ?? []).filter((element) => element.scrollTop || element.scrollLeft).map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft })) };
+    if (enterProductionPreview()) restore.current = captured;
+  }
+  function closePreview() {
+    exitProductionPreview();
+    requestAnimationFrame(() => {
+      for (const item of restore.current?.scroll ?? []) { item.element.scrollTop = item.top; item.element.scrollLeft = item.left; }
+      restore.current?.focus?.focus({ preventScroll: true });
+      restore.current = null;
+    });
+  }
+  useEffect(() => {
+    const changed = (event: MessageEvent) => {
+      if (event.origin === window.location.origin && event.source === frame.current?.contentWindow && event.data?.type === "docreview-preview-unavailable") closePreview();
+    };
+    window.addEventListener("message", changed);
+    return () => { window.removeEventListener("message", changed); if (previewState().mode === "host") exitProductionPreview(); };
+  }, []);
+  if (publicPreview || preview.mode === "document") return <NotificationProvider><ServiceSession publicPreview /></NotificationProvider>;
+  return <>
+    <div ref={dev}><RetainedPanel active={preview.mode !== "host"}><NotificationProvider><ServiceSession sessionActive={preview.mode !== "host"} onPreview={openPreview} previewBlocked={preview.pendingMutations > 0} /></NotificationProvider></RetainedPanel></div>
+    {preview.mode === "host" && <ProductionPreviewFrame frameRef={frame} onExit={closePreview} />}
+  </>;
+}
+
+function ServiceSession({ publicPreview = false, sessionActive = true, onPreview, previewBlocked = false }: { publicPreview?: boolean; sessionActive?: boolean; onPreview?: () => void; previewBlocked?: boolean }) {
   const { t, locale } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -114,8 +150,8 @@ export function ServiceShell() {
   const reviewAbort = useRef<AbortController | null>(null);
   /** First-run routing fires once per page load and is cancelled by any explicit navigation before it. */
   const firstRunRouted = useRef(false);
-  const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live";
-  const runtimeHealth = useRuntimeHealth();
+  const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live" && !publicPreview;
+  const runtimeHealth = useRuntimeHealth({ active: sessionActive, publicPreview });
   const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
   const environment = permissions?.environment ?? runtimeHealth.readiness?.environment;
   const modeLabel = `${environment?.toUpperCase() ?? "CHECKING"} MODE`;
@@ -124,10 +160,10 @@ export function ServiceShell() {
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
   const initialized = useRef(false);
   const { notify } = useNotifications();
-  const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check);
+  const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check, sessionActive);
 
   useEffect(() => {
-    const shouldOpenTour = window.localStorage.getItem(ONBOARDING_KEY) !== "done";
+    const shouldOpenTour = !publicPreview && browserStorage().getItem(ONBOARDING_KEY) !== "done";
     setTourOpen(shouldOpenTour);
     // The tour owns the screen on a first visit; a persisted open Help state waits until it is dismissed.
     setHelpOpen(!shouldOpenTour && loadHelpOpen());
@@ -136,6 +172,7 @@ export function ServiceShell() {
 
   useEffect(() => () => reviewAbort.current?.abort(), []);
   useEffect(() => {
+    if (!sessionActive) return;
     let cancelled = false;
     void getCapabilities().then((value) => {
       if (cancelled) return;
@@ -161,7 +198,11 @@ export function ServiceShell() {
       });
     }).catch(() => { if (!cancelled) setCapabilities(null); });
     return () => { cancelled = true; };
-  }, [adminBuild, runtimeHealth.checkedAt]);
+  }, [adminBuild, runtimeHealth.checkedAt, sessionActive]);
+
+  useEffect(() => {
+    if (publicPreview && capabilities && capabilities.environment !== "dev") window.parent.postMessage({ type: "docreview-preview-unavailable" }, window.location.origin);
+  }, [publicPreview, capabilities]);
 
   const active = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
@@ -173,7 +214,7 @@ export function ServiceShell() {
   const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
-  const sendBlocked = !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -264,12 +305,12 @@ export function ServiceShell() {
   }
 
   function navigateHelpTopic(id: string) {
-    if (!adminLive && (id === "review.evidence-policy" || id === "review.run-limits" || id === "review.rag" || id.startsWith("review.retrieval"))) {
+    if (!adminLive && (id === "review.evidence-policy" || id === "review.run-limits" || id.startsWith("review.retrieval"))) {
       notify(t(PROD_LOCKED_MESSAGE), "warning", "help-locked");
       return;
     }
     const owner = helpTopicScreen(id);
-    const settingsTab: ConversationSettingsTab | null = id === "review.filters" ? "filters" : id === "review.evidence-policy" ? "evidence" : id === "review.run-limits" ? "limits" : id === "review.rag" || id.startsWith("review.retrieval") ? "retrieval" : null;
+    const settingsTab: ConversationSettingsTab | null = id === "review.filters" || id === "review.rag" ? "filters" : id === "review.evidence-policy" ? "evidence" : id === "review.run-limits" ? "limits" : id.startsWith("review.retrieval") ? "retrieval" : null;
     let target: NavigationTarget | null = null;
     if (id === "review.snapshot") target = { view: "measure", tab: "snapshots" };
     else if (settingsTab || owner === "review") target = { view: "review" };
@@ -383,6 +424,7 @@ export function ServiceShell() {
   }
 
   async function submit() {
+    if (publicPreview || !sessionActive) return;
     const question = query.trim();
     if (!question || busy || !active || sendBlocked) return;
     setQuery("");
@@ -608,7 +650,7 @@ export function ServiceShell() {
   }
 
   function closeTour() {
-    window.localStorage.setItem(ONBOARDING_KEY, "done");
+    browserStorage().setItem(ONBOARDING_KEY, "done");
     setTourOpen(false);
   }
 
@@ -624,8 +666,9 @@ export function ServiceShell() {
   }
 
   /** `?` toggles Help anywhere except inside a text control, and never behind the tour or a modal. */
-  const modalOpen = settingsOpen || runtimeHealth.modalVisible;
+  const modalOpen = settingsOpen || runtimeHealth.modalVisible || (view === "review" && conversationTab !== null);
   useEffect(() => {
+    if (!sessionActive) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "?" || tourOpen || modalOpen) return;
       const target = event.target;
@@ -636,11 +679,11 @@ export function ServiceShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [helpOpen, tourOpen, modalOpen]);
+  }, [helpOpen, tourOpen, modalOpen, sessionActive]);
   const currentTab = view === "build" ? buildTab : view === "measure" ? measureTab : view === "system" ? systemTab : "";
   const location = `${view}/${buildTab}/${measureTab}/${systemTab}`;
   /** The workspace reserves room for the panel only while it is actually on screen. */
-  const helpVisible = helpOpen && !tourOpen;
+  const helpVisible = sessionActive && helpOpen && !tourOpen;
 
   const readiness = runtimeHealth.readiness;
   /** First-run routing: an empty live corpus with nothing asked yet opens on Build, unless the user already went somewhere. */
@@ -732,7 +775,7 @@ export function ServiceShell() {
             {(navigationHistory.length > 0 || view !== "review") && <button className="workspace-back" type="button" aria-label={returnLabel} title={returnLabel} onClick={navigateBack}><ArrowLeft size={16} aria-hidden="true" /><span>{returnLabel}</span></button>}
           </div>
           <div><strong>{view === "review" && active?.messages.length ? topbarTitle : t(topbarTitle)}</strong><span>{t("Evidence-first SEC and DART filing review")}</span></div>
-          <div className="topbar-status"><LanguageSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "Inspect the public interface without changing the DEV backend.")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
         <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
@@ -776,16 +819,17 @@ export function ServiceShell() {
             </div>
           </div>
           <div className="composer-wrap" data-tour="composer">
-            {conversationTab && <ConversationSettings key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => { setConversationTab(null); (ragTrigger.current ?? document.querySelector<HTMLButtonElement>('button[data-help="review.filters"]'))?.focus(); }} />}
+            {conversationTab && <ConversationSettings key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
             <ComposerToolbar
               query={query}
               engineControls={localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
-              advancedControls={adminLive && <button ref={ragTrigger} className="chip" type="button" data-help="review.rag" aria-expanded={conversationTab !== null} onClick={() => conversationTab ? setConversationTab(null) : openConversationSettings("retrieval")}>{t("RAG settings")}</button>}
+              settingsOpen={conversationTab !== null}
+              settingsTriggerRef={ragTrigger}
               profile={activeSessionProfile}
               onChange={updateSessionProfile}
               canUseCustom={adminBuild && permissions?.can_change_custom_retrieval === true}
               onLocked={() => notify(PROD_LOCKED_MESSAGE, "warning", "prod-locked")}
-              onOpenFilters={() => conversationTab === "filters" ? setConversationTab(null) : openConversationSettings("filters")}
+              onOpenSettings={() => openConversationSettings("filters")}
               onOpenCustom={() => openConversationSettings("retrieval")}
               readiness={readiness}
               live={adminLive}
@@ -799,7 +843,7 @@ export function ServiceShell() {
             </label>
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
-            {banner
+            {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
               : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
           </div>
@@ -825,7 +869,7 @@ export function ServiceShell() {
           onNavigate={navigate}
         /></RetainedPanel>
         <RetainedPanel active={view === "measure"} className="retained-workspace" workspace="measure"><MeasureWorkspace
-          active={view === "measure"}
+          active={sessionActive && view === "measure"}
           onDirtyChange={setUnsavedGolden}
           environment={permissions?.environment}
           live={adminBuild && permissions?.can_run_evaluation === true}
@@ -855,12 +899,12 @@ export function ServiceShell() {
           onTabChange={(tab) => navigate({ view: "system", tab })}
         /></RetainedPanel>
       </section>
-      <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
-      {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
+      <SettingsModal open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
+      {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
-        visible={runtimeHealth.modalVisible}
+        visible={sessionActive && runtimeHealth.modalVisible}
         checking={runtimeHealth.checking}
         onRetry={() => void runtimeHealth.check()}
         onReload={() => window.location.reload()}

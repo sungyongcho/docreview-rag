@@ -55,3 +55,16 @@ documentation validation and are listed in `TUTORIAL/captures.json`.
 - Host operator on 18001 still needs separately authorized reload; commit approval does not authorize it.
 - Python `pyright`/`basedpyright`: unavailable. No Python type-check pass is claimed.
 - Destructive reset, paid provider execution, external deployment/push, and credential/permission changes: not run.
+
+## Frozen-scope final application checks
+
+- Full Web suite:374 passed across52 files; TypeScript passed. Navigation-icon addition subsequently passed16 focused tests and TypeScript.
+- Public release app tests:17 passed; Ruff and format passed for the two changed Python files.
+- Actual /ready HTTP200: private DEV reports30 documents/22,367 chunks; public-header response returns null for documents/chunks/embedded/pending/writable. Database/schema/readiness remain available.
+- Actual single Review settings dialog:720px at1440 viewport; composer stayed62px high; Escape closed the only dialog, removed background inert attributes, and restored its trigger focus.
+- Actual language buttons render EN before Korean.
+- Actual Production preview: iframe had no prior private question, Send disabled, read-only notice visible. Captured requests were GET capabilities/health/public documents; no /admin or /ready calls. Exit restored the temporary draft and original scroll exactly, then the original draft was restored.
+- Web and operator reload were directly authorized and completed, preserving8000/18001, existing operator token/origin, source mounts, and the database. The new Ollama document was live-edited and restored byte-for-byte; both changes appeared automatically without page reload.
+- Documentation: copy returned exact command text, language switching retained ollama#connect,390px tables scrolled within337px containers, mobile navigation expanded, and the real existing image opened full size in a separate tab.
+
+Final capture matrix and actual production image checks are recorded below when completed. No dev corpus-growth feature was added after the user's scope freeze.

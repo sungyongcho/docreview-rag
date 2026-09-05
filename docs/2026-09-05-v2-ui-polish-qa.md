@@ -13,8 +13,12 @@ is verified. `TUTORIAL/captures.json` records pending slots separately; no place
 
 ## Capture and polish record
 
-Pending actual capture. For each observed visual defect, record the exact scene/viewport, source location,
-smallest fix, verification, and affected recapture. Unaffected scenes will not be recaptured.
+| ID | Actual scene and defect | Fix | Retake |
+|---|---|---|---|
+| V01 |1440×1000 Korean connection diagnosis showed Passed and success used an error-details label. Before: `TUTORIAL/assets/qa/24-diagnostics-before.ko.png`.|a4d3d1b adds dynamic translation, neutral Diagnostic details, and a regression test.|24-connection-diagnostics.ko.png confirms 통과/진단 상세. Final framing is checked with the capture set.|
+| V02 |Default setup link used browser blue against the restrained interface palette. Before: `TUTORIAL/assets/qa/13-default-before.ko.png`.|a4d3d1b keeps underlined links in the interface foreground color.|13-local-model.ko.png retaken.|
+
+Later user-requested hotfixes consolidated Help to two screens, removed persistent markers, unified settings, compacted request inspection, highlighted company/year, ordered EN first, and diversified documentation icons. These are bounded requested changes; no further aesthetic exploration follows the scope freeze.
 
 ## Matrix accounting
 

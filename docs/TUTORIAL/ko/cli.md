@@ -506,13 +506,13 @@ migration plan은 schema 문제일 때 읽는 진단입니다. 다른 연결 문
 | BM25 미준비 | DB 적재 뒤 통계 누락·무효화 | Rebuild BM25 후 succeeded와 ready 확인 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |
-| `budget_exceeded` | resource·limit·observed·blocked_node | RAG settings → Run limits에서 해당 한도만 조정; 재시도는 추가 비용 가능 |
+| `budget_exceeded` | resource·limit·observed·blocked_node | 대화 설정 → 실행 한도에서 해당 한도만 조정; 재시도는 추가 비용 가능 |
 | `node_error` | error_type·message·node | 해당 검색·파싱 등 단계의 원인을 해결한 뒤 재시도 |
 | job이 `interrupted` | 앱 재시작으로 작업 중단 | 자동 재개되지 않음; 상태 확인 후 작업의 새 작업으로 재시도로 다시 실행 |
 
 Run limits의 기본 wall clock은 **120초**이며 토큰 수가 아니라 run 전체 경과 시간입니다.
 `input_tokens`, `output_tokens`, `iterations`도 개별 호출이 아니라 run 누적 한도입니다.
-근거 길이는 **고급 검색 설정 → 근거**의 별도 설정입니다. 로컬 LLM은 연결 조회가 성공해도
+근거 길이는 **대화 설정 → 근거**의 별도 설정입니다. 로컬 LLM은 연결 조회가 성공해도
 실제 답변이 오래 걸릴 수 있으므로 시간 부족을 토큰 부족으로 오해하지 않습니다.
 
 job의 `queued`·`running`은 진행 중, `succeeded`·`failed`·`cancelled`는 종료 상태입니다.

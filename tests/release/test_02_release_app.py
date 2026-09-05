@@ -1,6 +1,7 @@
 """Canned-default release application and runtime composition tests."""
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.api.runtime import RuntimeApiServices
 from app.llm.provider import DeterministicLLMProvider
@@ -103,6 +104,59 @@ def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monke
     assert degraded.status_code == 503
     assert degraded.json()["status"] == "degraded"
     assert degraded.json()["corpus"]["schema_status"] == "drifted"
+
+
+@pytest.mark.parametrize(
+    "environment,admin_mode,headers,public",
+    [
+        ("prod", "readonly", {}, True),
+        ("dev", "readonly", {}, True),
+        ("dev", "live", {"x-docreview-public": "true"}, True),
+        ("dev", "live", {}, False),
+    ],
+)
+@pytest.mark.parametrize("ready", [True, False])
+def test_public_readiness_withholds_private_counts_without_faking_catalog_totals(
+    environment, admin_mode, headers, public, ready
+) -> None:
+    """Public views retain health evidence while only private live views receive corpus totals."""
+    status = {
+        "database_connected": True,
+        "schema_status": "compatible" if ready else "drifted",
+        "schema_message": "Schema fixture",
+        "documents": 30,
+        "chunks": 900,
+        "embedded_chunks": 900 if ready else 800,
+        "pending_embeddings": 0 if ready else 100,
+        "bm25_ready": ready,
+        "writable": True,
+    }
+
+    async def probe():
+        """Supply private corpus status without accessing a database or provider."""
+        return {"status": status, "documents": [{"issuer_name": "PRIVATE_COMPANY_FIXTURE"}]}
+
+    settings = ReleaseSettings(
+        _env_file=None,
+        DOCREVIEW_ENVIRONMENT=environment,
+        admin_mode=admin_mode,
+        mode="runtime",
+        host="127.0.0.1",
+    )
+    with TestClient(
+        create_release_app(settings, services=RuntimeApiServices(), readiness_probe=probe)
+    ) as client:
+        response = client.get("/ready", headers=headers)
+    assert response.status_code == (200 if ready else 503)
+    payload = response.json()
+    assert payload["status"] == ("ready" if ready else "degraded")
+    corpus = payload["corpus"]
+    for field in ("documents", "chunks", "embedded_chunks", "pending_embeddings", "writable"):
+        assert corpus[field] == (None if public else status[field])
+    for field in ("database_connected", "schema_status", "schema_message", "bm25_ready"):
+        assert corpus[field] == status[field]
+    assert corpus["availability"] == ("ready" if ready else "degraded")
+    assert "PRIVATE_COMPANY_FIXTURE" not in response.text
 
 
 def test_release_app_blocks_ingest_and_rate_limits_post_requests() -> None:

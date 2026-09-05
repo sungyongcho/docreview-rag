@@ -243,19 +243,6 @@ table td { line-height: 1.55; }
 .wipe-disclosure-body > p:first-child { margin-top: 0; }
 .pipeline-toolbar .runtime-disclosure { margin-left: auto; flex: none; }
 @media (max-width:560px) { .pipeline-toolbar { flex-wrap: wrap; gap: 8px; }.pipeline-toolbar .wipe-danger-zone > details > summary { min-height: 44px; } }
-.help-search-tools { display: grid; gap: 8px; margin: 16px 0; }
-.help-search { display: flex; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; color: var(--muted); }
-.help-search input { width: 100%; min-width: 0; border: 0; background: transparent; padding-inline: 0; font-size: 12px; }
-.help-search-tools > select { width: 100%; font-size: 12px; }
-.help-recommended { padding: 14px 0 20px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
-.help-recommended h3 { margin: 0; font-size: 12px; font-weight: 600; }
-.help-recommended > p { margin: 5px 0 12px; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.help-recommended > div { display: flex; flex-wrap: wrap; gap: 6px; }
-.help-recommended button { display: flex; gap: 7px; align-items: center; min-height: 36px; border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; background: var(--surface-2); color: var(--text); font-size: 11px; cursor: pointer; }
-.help-panel .help-topic-section { font-size: 10px; color: var(--muted); }
-.help-jump .button { margin-top: 8px; padding-left: 0; font-size: 11px; }
-.help-panel .help-item summary { min-height: 40px; align-content: center; }
-.help-panel .help-ref { min-height: 32px; align-content: center; }
 .wipe-availability { margin-top: 12px; font-size: 12px; line-height: 1.6; }
 .wipe-diagnosis { margin-top: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: 12px; }
 .wipe-diagnosis h3 { font-size: 14px; margin: 0 0 10px; }

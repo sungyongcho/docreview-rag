@@ -75,7 +75,11 @@ describe("DocumentInventory", () => {
     expect(screen.queryByText("Company · AAPL", { exact: true })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "apple-2025" }));
-    expect(await screen.findByText("AAPL · Apple Inc. · FY 2025 · 10-K")).toBeInTheDocument();
+    const heading = await screen.findByRole("heading", { name: "Apple Inc." });
+    const identity = heading.closest("header")!;
+    expect(within(identity).getByLabelText("Fiscal year: 2025")).toHaveTextContent("FY 2025");
+    expect(within(identity).getByText("apple-2025")).toBeInTheDocument();
+    expect(within(identity).getByText("AAPL · 10-K")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "AAPL" } });
     expect(screen.getByRole("button", { name: "Remove filter: Company" })).toHaveTextContent("Company: AAPL · Apple Inc.");
     await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
@@ -94,7 +98,7 @@ describe("DocumentInventory", () => {
     expect(await screen.findByRole("option", { name: "ZZZZ (1)" })).toHaveValue("ZZZZ");
     expect(within(await screen.findByRole("row", { name: /unknown-2025/ })).getByText("ZZZZ", { exact: true })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "unknown-2025" }));
-    expect(await screen.findByText("ZZZZ · FY 2025 · 10-K")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "ZZZZ" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "ZZZZ" } });
     expect(screen.getByRole("button", { name: "Remove filter: Company" })).toHaveTextContent("Company: ZZZZ");
   });
@@ -110,9 +114,9 @@ describe("DocumentInventory", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove filter: Registry" }));
     expect(screen.getByRole("combobox", { name: "Filter registry" })).toHaveValue("all");
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
-    expect(await screen.findByRole("heading", { name: "doc-a" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Issuer doc-a" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("row", { name: /doc-b/ }));
-    expect(await screen.findByRole("heading", { name: "doc-b" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Issuer doc-b" })).toBeInTheDocument();
   });
 
   it("ignores a late list response after a new search", async () => {
@@ -134,10 +138,10 @@ describe("DocumentInventory", () => {
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
     expect(screen.getByText("Loading document details…")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "doc-b" }));
-    expect(await screen.findByRole("heading", { name: "doc-b" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Issuer doc-b" })).toBeInTheDocument();
     await act(async () => { if (outcome === "success") first.resolve(detail("doc-a")); else first.reject(new Error("obsolete failure")); });
     expect(screen.queryByText("obsolete failure")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "doc-b" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Issuer doc-b" })).toBeInTheDocument();
   });
 
   it("does not append an old next page into a new query", async () => {
@@ -155,10 +159,10 @@ describe("DocumentInventory", () => {
     api.getDocumentDetail.mockResolvedValueOnce(detail("doc-a")).mockRejectedValueOnce(new Error("detail unavailable"));
     render(<DocumentInventory live fallbackDocuments={[]} />);
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
-    expect(await screen.findByRole("heading", { name: "doc-a" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Issuer doc-a" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "doc-b" }));
     expect(await screen.findByText(/detail unavailable/)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "doc-a" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Issuer doc-a" })).not.toBeInTheDocument();
     api.getAdminDocuments.mockResolvedValueOnce(page([]));
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), { target: { value: "missing" } });
     expect(await screen.findByRole("heading", { name: "Document outside current filters" })).toBeInTheDocument();
@@ -176,13 +180,13 @@ describe("DocumentInventory", () => {
     const scroller = document.querySelector('[aria-busy="false"]') as HTMLElement;
     scroller.scrollTop = 150;
     fireEvent.click(rowButton);
-    expect(await screen.findByRole("heading", { name: "doc-a" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Issuer doc-a" })).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Search documents" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to documents" }));
     expect(screen.getByRole("textbox", { name: "Search documents" })).toHaveValue("doc");
     expect(scroller.scrollTop).toBe(150);
     expect(screen.getByRole("row", { name: /doc-a/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("heading", { name: "doc-a" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Issuer doc-a" })).not.toBeInTheDocument();
   });
 
   it("reports malformed facets without crashing and retries the filter request", async () => {
@@ -199,7 +203,7 @@ describe("DocumentInventory", () => {
   it("uses only public reads for visitors and hides operator actions", async () => {
     render(<DocumentInventory live={false} fallbackDocuments={[]} onOpenPipeline={vi.fn()} onOpenJobs={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
-    expect(await screen.findByRole("heading", { name: "doc-a" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Issuer doc-a" })).toBeInTheDocument();
     expect(api.getAdminDocuments).not.toHaveBeenCalled();
     expect(api.getDocumentDetail).not.toHaveBeenCalled();
     expect(api.getDocumentFacets).not.toHaveBeenCalled();

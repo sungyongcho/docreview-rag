@@ -38,7 +38,7 @@ function renderToolbar(overrides: Partial<ComposerToolbarProps> = {}) {
     onChange: vi.fn(),
     canUseCustom: true,
     onLocked: vi.fn(),
-    onOpenFilters: vi.fn(),
+    onOpenSettings: vi.fn(),
     readiness: READINESS,
     live: true,
     onOpenBuild: vi.fn(),
@@ -48,7 +48,7 @@ function renderToolbar(overrides: Partial<ComposerToolbarProps> = {}) {
   return props;
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
 describe("corpus readiness summary", () => {
   it("labels the global corpus and omits unpublished totals in public mode", () => {
@@ -115,6 +115,43 @@ describe("composerBanner", () => {
 });
 
 describe("ComposerToolbar", () => {
+  it("keeps one review editor and separate request inspection after the primary selectors", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const { LocalEngineSettings } = await import("./local-engine-settings");
+    const profile = { ...DEFAULT_SESSION_PROFILE, engine: "local" as const, local_model: "installed-model" };
+    const props = renderToolbar({
+      profile,
+      query: "Keep this draft question",
+      engineControls: <LocalEngineSettings profile={profile} readiness={READINESS} onChange={vi.fn()} />,
+    });
+    const preview = screen.getByRole("button", { name: "Settings details / request preview" });
+    const primary = preview.closest(".composer-toolbar-primary")!;
+    const ordered = [
+      screen.getByRole("group", { name: "Corpus scope" }),
+      screen.getByRole("combobox", { name: "Answer engine" }),
+      screen.getByRole("combobox", { name: "Local model" }),
+      screen.getByRole("combobox", { name: "Retrieval preset" }),
+      screen.getByRole("button", { name: "Review settings" }),
+      preview,
+    ];
+    for (const [index, control] of ordered.entries()) {
+      expect(primary).toContainElement(control);
+      if (index > 0) expect(ordered[index - 1].compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.queryByRole("button", { name: "Filters" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "RAG settings" })).not.toBeInTheDocument();
+    const readiness = screen.getByRole("button", { name: "View corpus readiness" });
+    expect(readiness.closest(".composer-toolbar-secondary")).not.toBeNull();
+    expect(primary).not.toContainElement(readiness);
+    fireEvent.click(preview);
+    expect(screen.getByRole("dialog")).toHaveTextContent("Keep this draft question");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(preview).toHaveFocus();
+    expect(props.onChange).not.toHaveBeenCalled();
+  });
+
   it("writes corpus_scope from the scope segmented control", () => {
     const props = renderToolbar();
     const group = screen.getByRole("group", { name: "Corpus scope" });
@@ -130,10 +167,12 @@ describe("ComposerToolbar", () => {
   });
 
   it("seeds custom retrieval from the default profile when Custom is allowed", () => {
-    const props = renderToolbar();
+    const onOpenCustom = vi.fn();
+    const props = renderToolbar({ onOpenCustom });
     fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "custom" } });
     expect(props.onLocked).not.toHaveBeenCalled();
     expect(props.onChange).toHaveBeenCalledWith({ retrieval_preset: "custom", custom_retrieval: DEFAULT_PROFILE });
+    expect(onOpenCustom).toHaveBeenCalledOnce();
   });
 
   it("hides Custom on public builds unless the session already uses it, and locks it when chosen", () => {
@@ -149,13 +188,13 @@ describe("ComposerToolbar", () => {
     expect(props.onChange).toHaveBeenCalledWith({ retrieval_preset: "balanced", custom_retrieval: null });
   });
 
-  it("counts active filters on the Filters chip and opens the session filters", () => {
+  it("counts active filters on the single review-settings entry", () => {
     const props = renderToolbar({ profile: { ...DEFAULT_SESSION_PROFILE, issuers: ["NVDA"], fiscal_years: [2024], languages: ["en"] } });
-    fireEvent.click(screen.getByRole("button", { name: "Filters · 3" }));
-    expect(props.onOpenFilters).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Review settings · 3" }));
+    expect(props.onOpenSettings).toHaveBeenCalledTimes(1);
     cleanup();
     renderToolbar();
-    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review settings" })).toBeInTheDocument();
   });
 
   it("shows the snapshot chip only when set and clears it with the × button", () => {
@@ -215,8 +254,10 @@ it("opens the current Custom editor immediately and preserves the custom values"
   fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "custom" } });
   expect(props.onChange).toHaveBeenCalledWith({ retrieval_preset: "custom", custom_retrieval: custom });
   expect(onOpenCustom).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Edit custom retrieval" }));
-  expect(onOpenCustom).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("button", { name: "Edit custom retrieval" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
+  expect(props.onOpenSettings).toHaveBeenCalledOnce();
+  expect(onOpenCustom).toHaveBeenCalledTimes(1);
 });
 
 it("keeps selected source filters distinct from the global corpus count and unconfirmed status", () => {

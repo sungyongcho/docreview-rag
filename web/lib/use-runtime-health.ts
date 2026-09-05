@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getHealth, getReadiness } from "./api";
+import { getHealth, getProductionPreviewReadiness, getReadiness } from "./api";
 import type { Readiness, ReviewEngineState } from "./types";
 
 export type RuntimeHealthKind = "checking" | "healthy" | "api_down" | "db_degraded";
@@ -29,18 +29,21 @@ function unavailableReadiness(readiness: Readiness | null): Readiness | null {
   return { ...readiness, review_engines: { ...readiness.review_engines, local: { ...readiness.review_engines.local, enabled: false, reason: "api_unavailable" } } };
 }
 
-export function useRuntimeHealth() {
+export function useRuntimeHealth({ active = true, publicPreview = false }: { active?: boolean; publicPreview?: boolean } = {}) {
   const [state, setState] = useState<RuntimeHealthState>({
     kind: "checking",
     readiness: null,
     checkedAt: null,
   });
-  const [checking, setChecking] = useState(true);
+  const [checking, setChecking] = useState(active);
   const [dismissedIssue, setDismissedIssue] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
+  const activity = useRef(active);
+  activity.current = active;
 
   const check = useCallback(async (force = false) => {
+    if (!activity.current || !mounted.current) return;
     if (controller.current && !force) return;
     setChecking(true);
     controller.current?.abort();
@@ -50,9 +53,12 @@ export function useRuntimeHealth() {
     try {
       const health = await getHealth(request.signal);
       if (health.status !== "ok") throw new Error("API health response was not ok.");
-      const readiness = await getReadiness(request.signal);
+      if (!mounted.current || !activity.current || controller.current !== request) return;
+      if (request.signal.aborted) throw new Error("API health check timed out.");
+      const readiness = await (publicPreview ? getProductionPreviewReadiness : getReadiness)(request.signal);
       const healthy = readiness.status === "ready" || readiness.corpus.availability === "not_applicable";
-      if (!mounted.current || controller.current !== request) return;
+      if (!mounted.current || !activity.current || controller.current !== request) return;
+      if (request.signal.aborted) throw new Error("Runtime readiness check timed out.");
       setState({
         kind: healthy ? "healthy" : "db_degraded",
         readiness,
@@ -60,7 +66,7 @@ export function useRuntimeHealth() {
       });
       if (healthy) setDismissedIssue(null);
     } catch {
-      if (!mounted.current || controller.current !== request) return;
+      if (!mounted.current || !activity.current || controller.current !== request) return;
       setState((current) => ({
         kind: "api_down",
         readiness: unavailableReadiness(current.readiness),
@@ -73,18 +79,23 @@ export function useRuntimeHealth() {
         if (mounted.current) setChecking(false);
       }
     }
-  }, []);
+  }, [publicPreview]);
 
   /** Invalidate an older poll before exposing a successful connection change. */
   const refreshLocal = useCallback((local: ReviewEngineState) => {
+    if (!activity.current || publicPreview) return;
     setState((current) => ({ ...current, readiness: current.readiness ? {
       ...current.readiness, review_engines: { ...current.readiness.review_engines, local },
     } : null }));
     void check(true);
-  }, [check]);
+  }, [check, publicPreview]);
 
   useEffect(() => {
     mounted.current = true;
+    if (!active) {
+      setChecking(false);
+      return;
+    }
     void check();
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void check();
@@ -111,11 +122,11 @@ export function useRuntimeHealth() {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [check]);
+  }, [check, active]);
 
   const currentIssue = useMemo(() => issueKey(state), [state]);
-  const modalVisible = state.kind === "api_down"
-    || (state.kind === "db_degraded" && dismissedIssue !== currentIssue);
+  const modalVisible = active && (state.kind === "api_down"
+    || (state.kind === "db_degraded" && dismissedIssue !== currentIssue));
 
   return {
     ...state,

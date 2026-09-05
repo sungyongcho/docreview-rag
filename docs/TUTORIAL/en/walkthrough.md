@@ -213,12 +213,12 @@ corpus/filters to SEC and NVIDIA FY2024. The current OpenAI answer model is `gpt
 What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the filing.
 ```
 
-Before sending, open **Settings details / request preview**. It opens a right-side drawer on desktop and
+Before sending, use **Review settings** for Filters, Search, Evidence, and Run limits. Close that editor, then open the separate **Inspect request** icon and label in the primary row. It opens a right-side drawer on desktop and
 a full-screen dialog on mobile. Compare Balanced, Korean, Accuracy, and Custom presets there. The displayed differences come from the effective retrieval settings. Inspect the
 filters, prompt composition, and request payload; retrieved evidence is only selected after execution begins.
 This is a preview of the next request. The completed result records server-applied settings when available.
 The ? controls beside corpus scope and presets work with hover, keyboard focus, or touch. Selecting
-Custom opens the retrieval editor. Conversation filters offer actual companies, languages, report types,
+Custom opens **Review settings → Search**. Conversation filters offer actual companies, languages, report types,
 and fiscal years within the selected SEC/DART scope; an empty selection leaves that field unrestricted.
 With Auto, wait for **Server-confirmed scope** in execution progress to see the actual registry, company
 codes, and years chosen by the server. Until that event arrives, the scope remains unconfirmed.
@@ -270,7 +270,7 @@ first. Retrieval embeddings remain OpenAI, so this is not a fully offline or fre
 
 In Settings → Local LLM, enter a backend-reachable Server URL and click **Connect & save**. A Docker app
 connecting to Ollama on the same PC normally uses `http://host.docker.internal:11434`, without `/v1`.
-Then select Local LLM and a discovered answer-capable model in the conversation settings above the input.
+Then select Local LLM and a discovered answer-capable model using the primary composer row’s engine and model controls.
 Saving a connection does not automatically switch the answer engine.
 
 **Screen check and completion:** inspect connection, model, and engine, then repeat the question and verify
@@ -339,9 +339,7 @@ Evaluation settings apply to the next new evaluation and do not change existing 
 
 ### Find help for a control
 
-Open Help and use **Search all help** to search local topics by keyword, then narrow the **Help section**
-when needed. **Recommended** follows the controls currently visible on your screen. A result for another
-workspace offers **Go to** that screen. Searching help does not call an answer model.
+Open **Help**. The home view keeps four task-group filters and topic rows together; select a topic once for its short summary and three steps. **Back** returns to that home view. **Recommended** follows visible controls, and **Search help** searches Korean and English locally. Only the selected visible control receives an outline. **Reference** contains the longer explanation; **Read the full guide** opens its document in a new tab. See [using Help](overview.md#help) for navigation and scope. No answer model is called.
 
 ## 9. Stop and continue later
 

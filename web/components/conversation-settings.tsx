@@ -2,13 +2,16 @@
 import { useI18n } from "@/lib/i18n";
 
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { ProfileFields } from "@/components/profile-fields";
 import type { DocumentFacets, ReviewSessionProfile } from "@/lib/types";
 import { getDocumentFacets, getPublishedDocumentFacets } from "@/lib/api";
 import { TokenSelect } from "@/components/token-select";
 import { resolvedRetrievalProfile } from "@/lib/types";
+import { useRetainedPanelActive } from "@/components/retained-panel";
+import "./conversation-settings.css";
 
 export type ConversationSettingsTab = "filters" | "retrieval" | "evidence" | "limits";
 interface Props {
@@ -21,22 +24,70 @@ interface Props {
   onValidityChange?: (valid: boolean) => void;
 }
 
-/** Keep conversation-level RAG controls next to the input and out of global Settings. */
+/** Keep one conversation editor independent of composer height and global Settings. */
 export function ConversationSettings(props: Props) {
   const { t } = useI18n();
+  const active = useRetainedPanelActive();
+  const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => { panel.current?.focus(); }, [props.tab]);
-  const tabs: Array<[ConversationSettingsTab,string]> = [["filters","Filters"], ...(props.editable ? [["retrieval","Retrieval"], ["evidence","Evidence"], ["limits","Run limits"]] as Array<[ConversationSettingsTab,string]> : [])];
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const close = useRef(props.onClose);
+  close.current = props.onClose;
+  useEffect(() => {
+    if (!active || !panel.current) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overlay = panel.current.parentElement;
+    const background = [...document.body.children].filter((child) => child !== overlay);
+    const inertBefore = background.map((child) => child.hasAttribute("inert"));
+    background.forEach((child) => child.setAttribute("inert", ""));
+    const overflowBefore = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButton.current?.focus();
+    function controls() {
+      return [...(panel.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]') ?? [])].filter((element) => {
+        if (element.closest("[hidden], [inert]")) return false;
+        const collapsed = element.closest("details:not([open])");
+        return !collapsed || element === collapsed.querySelector("summary");
+      });
+    }
+    function key(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close.current(); return; }
+      if (event.key !== "Tab") return;
+      const items = controls();
+      const first = items[0];
+      const last = items.at(-1);
+      const outside = !panel.current?.contains(document.activeElement);
+      if (event.shiftKey && (document.activeElement === first || outside)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || outside)) { event.preventDefault(); first?.focus(); }
+    }
+    function containFocus(event: FocusEvent) {
+      if (!panel.current?.contains(event.target as Node)) closeButton.current?.focus();
+    }
+    document.addEventListener("keydown", key);
+    document.addEventListener("focusin", containFocus);
+    return () => {
+      document.removeEventListener("keydown", key);
+      document.removeEventListener("focusin", containFocus);
+      background.forEach((child, index) => { if (!inertBefore[index]) child.removeAttribute("inert"); });
+      document.body.style.overflow = overflowBefore;
+      const target = previous?.isConnected ? previous : document.querySelector<HTMLElement>('button[data-help="review.rag"]');
+      if (!target?.closest("[hidden], [inert]")) target?.focus({ preventScroll: true });
+    };
+  }, [active]);
+  const tabs: Array<[ConversationSettingsTab,string]> = [["filters","Filters"], ...(props.editable ? [["retrieval","Search"], ["evidence","Evidence"], ["limits","Run limits"]] as Array<[ConversationSettingsTab,string]> : [])];
   const tab = tabs.some(([id]) => id === props.tab) ? props.tab : "filters";
   const budget = props.profile.prompt_policy.workflow_budget;
   function patch(update: Partial<ReviewSessionProfile>) { props.onChange(update); }
   function patchPolicy(update: Partial<ReviewSessionProfile["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
   function patchBudget(update: Partial<typeof budget>) { patchPolicy({ workflow_budget: { ...budget, ...update } }); }
-  return <div className="conversation-settings" role="region" aria-label={t("Conversation settings")} tabIndex={-1} ref={panel} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); props.onClose(); } }}>
-    <div className="conversation-settings-heading"><nav aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button className="chip" key={id} type="button" aria-pressed={tab === id} onClick={() => props.onTabChange(id)}>{t(label)}</button>)}</nav><button className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={props.onClose}><X size={18} /></button></div>
+  return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+    <div className="conversation-settings-dialog" role="dialog" aria-modal={active ? true : undefined} aria-labelledby={titleId} tabIndex={-1} ref={panel}>
+    <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={props.onClose}><X size={20} /></button></header>
+    <nav className="conversation-settings-sections" aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button key={id} type="button" aria-pressed={tab === id} onClick={() => props.onTabChange(id)}>{t(label)}</button>)}</nav>
+    <div className="conversation-settings-body">
     {tab === "filters" && <ConversationFilters profile={props.profile} editable={props.editable} onChange={props.onChange} onValidityChange={props.onValidityChange} />}
     {tab === "retrieval" && props.editable && <div data-help="review.retrieval">
-      <p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p>
       {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}
     </div>}
     {tab === "evidence" && props.editable && <div className="profile-grid" data-help="review.evidence-policy"><label>{t("Conversation history turns")}<input type="number" min={0} max={6} value={props.profile.prompt_policy.history_turns} onChange={(event) => patchPolicy({ history_turns: Number(event.target.value) })} /></label><label>{t("Maximum evidence characters")}<input type="number" min={1000} max={100000} value={props.profile.prompt_policy.max_context_chars} onChange={(event) => patchPolicy({ max_context_chars: Number(event.target.value) })} /></label><label>{t("Evidence overfetch")}<input type="number" min={1} max={10} value={props.profile.prompt_policy.evidence_overfetch} onChange={(event) => patchPolicy({ evidence_overfetch: Number(event.target.value) })} /></label><label>{t("Maximum hits per document")}<input type="number" min={1} max={100} value={props.profile.prompt_policy.max_hits_per_document} onChange={(event) => patchPolicy({ max_hits_per_document: Number(event.target.value) })} /></label></div>}
@@ -47,7 +98,8 @@ export function ConversationSettings(props: Props) {
       <label>{t("Maximum wall clock seconds")}<input type="number" min={1} max={600} value={budget.max_wall_clock_s} onChange={(event) => patchBudget({ max_wall_clock_s: Number(event.target.value) })} /></label>
       <p className="helper">{t("These limits cover the entire run across all model calls. Zero blocks a resource for failure-path experiments; the wall clock must be at least one second.")}</p>
     </div>}
-  </div>;
+    </div>
+  </div></div>, document.body);
 }
 
 /** Load choices from the complete visible corpus whenever its registry or permissions change. */
@@ -98,7 +150,7 @@ function ConversationFilters({ profile, editable, onChange, onValidityChange }: 
   const invalidYears = unavailable(profile.fiscal_years.map(String), yearOptions);
   const invalidForms = unavailable(profile.forms, formOptions);
   const hasUnavailable = invalidCompanies.length + invalidLanguages.length + invalidYears.length + invalidForms.length > 0;
-  return <div>
+  return <div data-help="review.filters">
     <p className="conversation-filter-scope">{t("Choices from {scope}. Empty selections search all documents in this scope.", { scope: registry ? registry.toUpperCase() : t("SEC + DART") })}</p>
     {!inputsValid && <p className="token-error" role="status">{t("Resolve the highlighted filters before sending. Switching tabs or closing this panel discards unfinished entries; selected filters stay unchanged.")}</p>}
     {!facets && !error && <div className="conversation-facet-status" role="status"><p className="helper">{t("Loading available filters…")}</p></div>}

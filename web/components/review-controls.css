@@ -4,6 +4,12 @@
 .composer-control-description { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .composer-control-description code { display: block; margin-top: 3px; font-size: 10px; overflow-wrap: anywhere; }
 .request-inspector-trigger { margin-left: auto; }
+.request-inspector-icon { flex: none; transition: transform .14s ease; }
+.request-inspector-trigger:is(:hover, :focus-visible) .request-inspector-icon { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .request-inspector-icon { transition: none; }
+  .request-inspector-trigger:is(:hover, :focus-visible) .request-inspector-icon { transform: none; }
+}
 .request-inspector-overlay { position: fixed; inset: 0; z-index: 160; display: flex; justify-content: flex-end; background: rgb(0 0 0 / 32%); }
 .request-inspector-panel { width: min(680px, 65vw); height: 100dvh; display: flex; flex-direction: column; background: var(--surface); color: var(--text); box-shadow: -10px 0 35px rgb(0 0 0 / 14%); }
 .request-inspector-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
@@ -31,44 +37,48 @@
 .composer-help-tooltip p:last-child { margin-bottom: 0; }
 .composer-help-tooltip code { overflow-wrap: anywhere; font-size: 11px; }
 
-/* Labels and actions share one fixed baseline; the summary stays in its own row. */
-.composer-toolbar.composer-toolbar-aligned { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-left: 0; }
-.composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 8px; overflow: visible; padding: 0; width: 100%; }
+/* Available composer width controls the grid; actions share its field baseline. */
+.composer-toolbar.composer-toolbar-aligned { container: composer-controls / inline-size; display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-left: 0; }
+.composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px 8px; overflow: visible; padding: 0; width: 100%; }
 .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
 .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
 .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; max-width: 100%; font-size: 11px; }
-.composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control { flex: 0 1 auto; }
-.composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control { flex: 0 1 145px; }
-.composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { flex: 0 1 150px; }
 .composer-toolbar-aligned .composer-toolbar-primary .composer-control-label,
 .composer-toolbar-aligned .composer-toolbar-primary .composer-engine-label { display: flex; align-items: center; height: 20px; line-height: 20px; margin: 0; color: var(--text); font-size: 11px; font-weight: 600; }
-.composer-toolbar-aligned .composer-toolbar-primary select { width: 100%; max-width: 100%; min-width: 0; height: 40px; min-height: 40px; padding: 7px 10px; font-size: 12px; }
+.composer-toolbar-aligned .composer-toolbar-primary select { height: 40px; min-height: 40px; padding: 7px 10px; font-size: 12px; }
+.composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary select { width: 100%; max-width: 100%; min-width: 0; }
 .composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 40px; min-height: 40px; max-width: 100%; }
-.composer-toolbar-aligned .composer-toolbar-primary .segmented button { min-height: 0; height: 100%; flex: 1; }
-.composer-toolbar-aligned .composer-toolbar-primary .composer-control-description { white-space: nowrap; font-size: 10px; line-height: 16px; }
-.composer-toolbar-aligned .composer-toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 25px; min-width: 0; }
-.composer-toolbar-aligned .composer-toolbar-actions > .chip { min-height: 40px; height: 40px; }
+.composer-toolbar-aligned .composer-toolbar-primary .segmented button { min-height: 0; height: 100%; min-width: 0; padding-inline: 6px; flex: 1; }
+.composer-toolbar-aligned .composer-toolbar-primary .composer-control-description { font-size: 10px; line-height: 16px; overflow-wrap: anywhere; }
+.composer-toolbar-aligned .composer-toolbar-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.composer-toolbar-aligned .composer-toolbar-actions > .chip { min-height: 40px; height: 40px; align-self: stretch; }
+.composer-toolbar-aligned .composer-toolbar-actions > .request-inspector-trigger { flex: 0 0 auto; justify-content: center; gap: 7px; margin-left: auto; min-width: 0; max-width: 100%; white-space: nowrap; font-size: 11px; line-height: 1.2; padding: 5px 10px; }
 .composer-toolbar-aligned .composer-toolbar-secondary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding-top: 8px; border-top: 1px solid var(--border); }
-.composer-toolbar-aligned .composer-corpus-readiness { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
-.composer-toolbar-aligned .composer-readiness-facts { display: flex; flex-direction: column; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.composer-toolbar-aligned .composer-corpus-readiness { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; min-width: 0; width: 100%; }
+.composer-toolbar-aligned .composer-readiness-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .composer-toolbar-aligned .composer-readiness-facts > small { font-size: 10px; }
 .composer-toolbar-aligned .composer-readiness-facts > small.confirmed { color: var(--good); }
-.composer-toolbar-aligned button.corpus-readiness-action { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; min-height: 32px; padding: 5px 0; border: 0; }
-.composer-toolbar-aligned .request-inspector-trigger { margin-left: auto; font-size: 11px; min-height: 32px; padding: 5px 10px; }
+.composer-toolbar-aligned button.corpus-readiness-action { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; min-height: 40px; padding: 5px 0; border: 0; }
+@container composer-controls (min-width: 860px) {
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: flex; flex-wrap: nowrap; }
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
+  .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { flex: 1 1 0; }
+  .composer-toolbar-aligned .composer-toolbar-actions { flex: 0 0 auto; max-width: 45%; padding-top: 25px; }
+}
 @media (max-width: 760px) {
-  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { gap: 10px; }
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
   .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { grid-template-rows: 20px 44px auto; width: 100%; }
   .composer-toolbar-aligned .composer-toolbar-primary select,
   .composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 44px; min-height: 44px; width: 100%; }
   .composer-toolbar-aligned .composer-toolbar-primary .segmented button { padding-inline: 6px; min-width: 0; }
-  .composer-toolbar-aligned .composer-toolbar-actions { padding-top: 25px; }
   .composer-toolbar-aligned .composer-toolbar-actions > .chip { height: 44px; min-height: 44px; }
   .composer-toolbar-aligned button.corpus-readiness-action,
   .composer-toolbar-aligned .request-inspector-trigger { min-height: 44px; }
 }
-@media (max-width: 360px) {
+@container composer-controls (max-width: 340px) {
   .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { grid-template-columns: minmax(0, 1fr); }
   .composer-toolbar-aligned .composer-toolbar-actions { padding-top: 0; }
 }

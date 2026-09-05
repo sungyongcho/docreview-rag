@@ -5,6 +5,7 @@ import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDef
 import type { DocumentFacets, Readiness } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
@@ -651,8 +652,9 @@ describe("service shell", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ask" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Help 1: Corpus scope" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose a topic" })).toBeInTheDocument();
+    expect(document.querySelector(".help-marker, .help-target-highlight")).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Recommended" })).getByRole("button", { name: "Corpus scope" })).toBeInTheDocument();
     expect(window.localStorage.getItem(HELP_KEY)).toBe("open");
 
     fireEvent.keyDown(window, { key: "?" });
@@ -664,10 +666,11 @@ describe("service shell", () => {
 
     // Help follows the workspace, including document-specific controls.
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
-    expect(screen.getByRole("heading", { name: "Build · Pipeline" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Help 2: Next step" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose a topic" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Recommended" })).getByRole("button", { name: "Next step" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
-    expect(screen.getByRole("heading", { name: "Build · Documents" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose a topic" })).toBeInTheDocument();
+    expect(document.querySelector(".help-marker")).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
   });
@@ -908,7 +911,7 @@ it("preserves streamed messages and the submitted settings while background disc
     await waitFor(() => expect(submitted).toBeDefined());
     expect(screen.getByText("Waiting for the server")).toBeVisible();
     expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(5);
-    fireEvent.click(screen.getByRole("button", { name: "RAG settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
     local = { enabled: true, protocol: "ollama", models: [{ name: "answer", selectable: true, size_bytes: null, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], loaded: false }] };
@@ -928,6 +931,56 @@ it("preserves streamed messages and the submitted settings while background disc
   } finally {
     cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules();
   }
+});
+
+describe("unified conversation drawer", () => {
+beforeEach(() => {
+  cleanup();
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+it("opens the unified public filter editor from an offscreen Help destination", async () => {
+  const fetchMock = stubPublicApi();
+  render(<ServiceShell />);
+  await screen.findByRole("button", { name: "System · healthy" });
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle help" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Search help" }), { target: { value: "review.rag" } });
+  const topic = document.querySelector<HTMLButtonElement>('.help-topic-row[data-help-item="review.rag"]');
+  expect(topic).not.toBeNull();
+  fireEvent.click(topic!);
+  fireEvent.click(document.querySelector<HTMLButtonElement>(".help-go-button")!);
+  const dialog = await screen.findByRole("dialog", { name: "Conversation settings" });
+  expect(within(dialog).getByRole("button", { name: "Filters" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole("button", { name: "Run limits" })).not.toBeInTheDocument();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/admin/"))).toBe(false);
+});
+
+it("preserves the question and blocks Send until an invalid drawer draft is discarded", async () => {
+  stubPublicApi();
+  render(<ServiceShell />);
+  await screen.findByRole("button", { name: "System · healthy" });
+  const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(question, { target: { value: "Keep my question" } });
+  const send = screen.getByRole("button", { name: "Send question" });
+  const stored = loadConversations();
+  expect(send).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
+  const company = screen.getByLabelText("Companies");
+  fireEvent.keyDown(window, { key: "?" });
+  expect(screen.queryByRole("complementary", { name: "Help" })).not.toBeInTheDocument();
+  await waitFor(() => expect(company).toBeEnabled());
+  fireEvent.change(company, { target: { value: "unfinished company" } });
+  expect(send).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Close conversation settings" }));
+  expect(screen.queryByRole("dialog", { name: "Conversation settings" })).not.toBeInTheDocument();
+  expect(send).toBeEnabled();
+  expect(question).toHaveValue("Keep my question");
+  expect(loadConversations()).toEqual(stored);
+});
 });
 
 it("keeps confirmed routing with its submitted profile while next-request controls and preview change", async () => {
@@ -976,4 +1029,64 @@ it("keeps confirmed routing with its submitted profile while next-request contro
     expect(conversation.profile).toMatchObject({ corpus_scope: "sec", retrieval_preset: "accuracy" });
     expect(input).toHaveValue("Next draft stays here");
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+});
+
+describe("isolated production presentation preview", () => {
+  beforeEach(() => {
+    exitProductionPreview();
+    window.localStorage.clear();
+    window.localStorage.setItem(ONBOARDING_KEY, "done");
+  });
+  afterEach(() => { cleanup(); exitProductionPreview(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it("retains the DEV draft, profile, history, and scroll behind the preview frame", async () => {
+    stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    seedAnsweredConversation();
+    render(<ServiceShell />);
+    await screen.findByText("Corpus total · 29 filings");
+    const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(question, { target: { value: "Keep this DEV draft" } });
+    fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
+    const original = JSON.stringify(window.localStorage);
+    const messages = document.querySelector<HTMLElement>(".messages")!;
+    messages.scrollTop = 240;
+    const trigger = screen.getByRole("button", { name: "Production preview" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(screen.getByTitle("Production preview interface")).toHaveAttribute("src", "/docreview-rag-agent/production-preview/?locale=en");
+    expect(question).not.toBeVisible();
+    expect(screen.getByText("Data center revenue grew on Hopper demand.")).not.toBeVisible();
+    expect(screen.queryByRole("button", { name: "System · healthy" })).toBeNull();
+    expect(screen.getByText(/The backend is still DEV/)).toBeVisible();
+    expect(JSON.stringify(window.localStorage)).toBe(original);
+    fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(question).toBeVisible();
+    expect(question).toHaveValue("Keep this DEV draft");
+    expect(messages.scrollTop).toBe(240);
+    expect(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" })).toHaveAttribute("aria-pressed", "true");
+    expect(JSON.stringify(window.localStorage)).toBe(original);
+  });
+
+  it("mounts a fresh public session without reading DEV history or calling private readiness", async () => {
+    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    seedAnsweredConversation();
+    const original = JSON.stringify(window.localStorage);
+    enterProductionPreview("document");
+    render(<ServiceShell publicPreview />);
+    await screen.findByText("Published corpus");
+    expect(screen.queryByText("Data center revenue grew on Hopper demand.")).toBeNull();
+    expect(screen.queryByText("NVIDIA data center")).toBeNull();
+    expect(screen.queryByText(/Corpus total · 29/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Production preview" })).toBeNull();
+    expect(screen.queryByLabelText("Answer engine")).toBeNull();
+    const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(question, { target: { value: "Preview draft only" } });
+    expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+    fireEvent.keyDown(question, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/public/documents/facets"))).toBe(true));
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).endsWith("/ready") && !String(url).includes("/review/stream"))).toBe(true);
+    expect(JSON.stringify(window.localStorage)).toBe(original);
+  });
 });

@@ -26,7 +26,7 @@ clearing filters; proceed to acquisition instead of selecting an unrelated recor
 
 **What visibly changes:** details show the original filing identity, source link when
 available, chunk counts, embedding identities, snapshot membership, and related work.
-The list starts at full width before selection; it does not preselect the first filing.
+The list starts at full width before selection; it does not preselect the first filing. The detail header makes the company name and **FY** badge prominent, with the stable document ID, issuer code, and form underneath. If a company name is unavailable, the identifier remains visible; the interface does not invent a name.
 
 | Inspect | What it tells you | Next missing work |
 |---|---|---|

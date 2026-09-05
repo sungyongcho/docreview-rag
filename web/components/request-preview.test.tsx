@@ -30,6 +30,9 @@ describe("Request inspector", () => {
   it("uses an accessible portal dialog with focus trapping and Escape focus return", () => {
     const { container } = render(<div className="lab-shell"><textarea aria-label="Question" defaultValue="Keep my question" /><RequestPreview profile={DEFAULT_SESSION_PROFILE} query="Keep my question" /></div>);
     const trigger = screen.getByRole("button", { name: "Settings details / request preview" });
+    expect(trigger).toHaveTextContent("Inspect request");
+    expect(trigger).toHaveAttribute("title", "Settings details / request preview");
+    expect(trigger.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Settings details / request preview" });

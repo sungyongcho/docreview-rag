@@ -55,3 +55,13 @@ Verification before snapshot:
 - Documentation preparation: 30 documents and one existing real image; all internal targets, registry entries, and bilingual step anchors passed.
 - Actual Web and CLI Default diagnosis: reachable, 3 installed models, 1 answer-capable; no inference or configuration write.
 - Existing protected file hashes remain unchanged. No broad cleanup, staging, reset, permission change, or provider call.
+
+## Consolidated interaction and production preview unit
+
+Completed user-requested changes: two-screen Help with four inline task filters and a single passive target highlight; one Review settings drawer; compact SVG request inspection; EN-first language controls; prominent company/FY identity; semantic documentation icons; an isolated read-only public preview that retains DEV work; and public readiness redaction.
+
+Cleanup: removed obsolete Help badge/triangle/accordion and inline-editor styles; removed duplicate Filters/RAG entry points and the redundant Custom link; reused registry metadata and existing icon library. Preview uses the existing ServiceShell renderer in an isolated document, shared API/storage boundaries, and active polling controls. No dependency, corpus, acquisition-range, or database changes.
+
+Verification: full Web suite374 passed, TypeScript passed; public release tests17 passed plus scoped Ruff/format. Semantic navigation icons passed existing16 focused tests and TypeScript. Dynamic primer translations and complete topic reachability are checked. Actual browser verified one drawer with unchanged composer height62px, Escape/focus return/background restoration, EN→Korean ordering, public preview private-history absence/read-only Send/public-only HTTP reads, and exact draft/scroll restoration. Live public /ready returns nullable inventory counts while private DEV retains actual counts.
+
+Scope freeze: the user explicitly cancelled further parsing/company/year/database expansion. No acquisition API/range redesign or new general polish was implemented.

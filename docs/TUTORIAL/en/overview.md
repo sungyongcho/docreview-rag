@@ -55,10 +55,11 @@ controls and [Runtime](runtime.md) for interpreting measured execution.
 
 ## Use Help and the documentation {#help}
 
-Open **Help** for explanations of the visible controls. Recommended topics appear
-first; browse the current section or all sections, or search in Korean or English.
-Help searches locally, so it does not send a model request. Navigation links take you
-to the owning screen or enabling control without executing an operation.
+**Help** has a home view and a topic detail view. Home starts with **Recommended** topics for visible controls. Four group filters—**Questions and evidence**, **Prepare documents**, **Search and evaluate**, and **Settings and diagnosis**—filter topic rows in place. Subgroup headings organize those rows; click a topic once to open its detail.
+
+Each detail begins with a short summary and three **What to do** steps. Expand **Reference** for the full explanation, or use **Read the full guide** to open the related document in a new tab. **Back** returns directly to home and restores its search, group, scope, and scroll position. Selecting a topic outlines its control when visible; the home view does not place numbered markers across the app.
+
+**Search help** accepts Korean or English regardless of the displayed language. **Current screen / All sections** changes the search scope; title matches rank above body matches. Search runs locally without a model call. **Go to this control** focuses the visible control, while an offscreen topic offers navigation to its owning screen or editor section. Opening help or following that navigation does not execute the described operation or change its settings. Close an active dialog before using Help.
 
 The documentation menu groups the guides; previous and next links follow the learning
 path. The language switch keeps the current document. Code-card copy buttons copy

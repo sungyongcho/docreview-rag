@@ -1,3 +1,4 @@
+import { presentationFetch } from "./production-preview";
 import type {
   EvaluationComparison,
   EvaluationJob,
@@ -40,7 +41,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await presentationFetch(`${API_BASE}${path}`, {
     ...init,
     headers: { "content-type": "application/json", ...init?.headers },
   });
@@ -112,7 +113,7 @@ export async function streamReview(
   signal?: AbortSignal,
   onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_BASE}/review/stream`, {
+  const response = await presentationFetch(`${API_BASE}/review/stream`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
     body: JSON.stringify({
@@ -202,7 +203,7 @@ export interface HealthResponse {
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE}/health`, { signal });
+  const response = await presentationFetch(`${API_BASE}/health`, { signal });
   if (!response.ok) {
     throw new ApiError(response.status, "health_failed", "DocReview API health check failed.");
   }
@@ -210,7 +211,7 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
 }
 
 export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
-  const response = await fetch(`${API_BASE}/ready`, { signal });
+  const response = await presentationFetch(`${API_BASE}/ready`, { signal });
   const payload = await response.json() as Readiness;
   if (response.status !== 200 && response.status !== 503) {
     throw new ApiError(response.status, "readiness_failed", "Runtime readiness could not be loaded.");
@@ -220,6 +221,22 @@ export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
 
 export function getCapabilities(): Promise<Capabilities> {
   return request<Capabilities>("/capabilities");
+}
+
+/** A preview knows only published catalog facts; uncollected runtime fields stay unknown. */
+export async function getProductionPreviewReadiness(signal?: AbortSignal): Promise<Readiness> {
+  const page = await request<AdminDocumentPage>("/public/documents?limit=1", { signal });
+  if (!Number.isInteger(page.total) || page.total < 0) throw new Error("Invalid public catalog count.");
+  return {
+    status: "ready", mode: "runtime", admin_mode: "readonly", policy_revision: "—",
+    models: {}, review_enabled: false, active_review_model: null,
+    review_engines: { openai: { enabled: false, reason: "preview_read_only" }, local: { enabled: false, reason: "public_surface" } },
+    corpus: {
+      availability: "not_applicable", database_connected: null, schema_status: null,
+      schema_message: null, documents: page.total, chunks: null, embedded_chunks: null,
+      pending_embeddings: null, bm25_ready: null, writable: false,
+    },
+  };
 }
 
 export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMConnection> {
@@ -389,8 +406,8 @@ export function getPublishedDocumentDetail(docId: string): Promise<DocumentDetai
   return request<DocumentDetail>(`/public/documents/${encodeURIComponent(docId)}`);
 }
 
-export function getOperatorJobs(): Promise<OperatorJobBoard> {
-  return request<OperatorJobBoard>("/admin/jobs");
+export function getOperatorJobs(signal?: AbortSignal): Promise<OperatorJobBoard> {
+  return request<OperatorJobBoard>("/admin/jobs", { signal });
 }
 
 export function retryOperatorJob(jobId: string): Promise<OperatorJob> {

@@ -1,0 +1,24 @@
+.conversation-settings-overlay { position: fixed; inset: 0; z-index: 160; display: flex; justify-content: flex-end; background: rgb(0 0 0 / 32%); }
+.conversation-settings-overlay[hidden] { display: none; }
+.conversation-settings-dialog { width: min(720px, 70vw); height: 100dvh; display: flex; flex-direction: column; background: var(--surface); color: var(--text); box-shadow: -10px 0 35px rgb(0 0 0 / 14%); }
+.conversation-settings-header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; border-bottom: 1px solid var(--border); }
+.conversation-settings-header h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+.conversation-settings-header .helper { margin: 0; max-width: 56ch; line-height: 1.6; }
+.conversation-settings-header .icon-button { flex: none; width: 40px; height: 40px; }
+.conversation-settings-sections { flex: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 20px; border-bottom: 1px solid var(--border); }
+.conversation-settings-sections button { min-height: 40px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+.conversation-settings-sections button[aria-pressed="true"] { color: var(--text); border-color: var(--border); background: var(--surface-2); font-weight: 600; }
+.conversation-settings-sections button:hover { color: var(--text); background: var(--surface-2); }
+.conversation-settings-body { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 24px; }
+.conversation-settings-body .helper { grid-column: 1 / -1; }
+.conversation-settings-dialog :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--focus, var(--text)); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .conversation-settings-dialog { width: 100%; }
+  .conversation-settings-header { padding: 18px 16px 14px; }
+  .conversation-settings-header .icon-button { width: 44px; height: 44px; }
+  .conversation-settings-sections { padding: 8px 12px; }
+  .conversation-settings-sections button { min-height: 44px; padding-inline: 10px; }
+  .conversation-settings-body { padding: 16px; }
+  .conversation-settings-body .profile-grid { grid-template-columns: minmax(0, 1fr); }
+  .conversation-settings-body :is(input, select, .token-field, .chip, .button) { min-height: 44px; }
+}

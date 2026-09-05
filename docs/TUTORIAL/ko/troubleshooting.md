@@ -49,7 +49,7 @@ MODE=dev uv run python -m app.db.migrate --plan
 
 | 실패 | 근거 | 검토할 수정 | 확인 |
 |---|---|---|---|
-| `budget_exceeded` | `resource`, `limit`, `observed`, `blocked_node` | 필요에 맞게 고급 검색 설정 → 실행 한도의 해당 누적 한도만 조정합니다. | 의도한 새 실행이 정한 한도 내에서 동작합니다. |
+| `budget_exceeded` | `resource`, `limit`, `observed`, `blocked_node` | 필요에 맞게 대화 설정 → 실행 한도의 해당 누적 한도만 조정합니다. | 의도한 새 실행이 정한 한도 내에서 동작합니다. |
 | `provider_failure` | `status`, `attempts`, `details`, `node` | 보고된 인증·주소·제공자 한도·시간 초과·출력 형식 문제를 고칩니다. | 관련 없는 설정 변경 없이 해당 제공자 호출이 성공합니다. |
 | `node_error` | `error_type`, `message`, `node` | 지정된 비모델 단계에서 구체적인 원인을 확인합니다. | 새 시도에서 그 단계가 완료됩니다. |
 | 측정 정보 없음 | 미수집 필드나 오래된 저장 기록입니다. | 누락 상태를 유지하고 적합한 실제 실행의 측정값이 있을 때 사용합니다. | 시간 관련 설명이 수집된 근거와 맞습니다. |

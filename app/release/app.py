@@ -128,7 +128,7 @@ class ReleaseLimits(BaseModel):
 
 
 class CorpusReadiness(BaseModel):
-    """Non-secret corpus readiness, including explicit unknown states."""
+    """Runtime readiness with nullable counts withheld from public surfaces."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -398,6 +398,21 @@ def create_release_app(
             corpus = CorpusReadiness(
                 availability="unavailable",
                 schema_message=type(error).__name__,
+            )
+
+        public_surface = (
+            active_settings.admin_mode != "live"
+            or request.headers.get("x-docreview-public") == "true"
+        )
+        if public_surface:
+            corpus = corpus.model_copy(
+                update={
+                    "documents": None,
+                    "chunks": None,
+                    "embedded_chunks": None,
+                    "pending_embeddings": None,
+                    "writable": None,
+                }
             )
 
         if active_settings.environment == "prod":

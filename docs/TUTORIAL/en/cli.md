@@ -451,12 +451,12 @@ System status, Jobs, and the answer's Run trace. If the web itself is unavailabl
 | BM25 not ready | missing/invalidated statistics | Rebuild BM25 and verify job success plus readiness |
 | NOT_IN_DOCS | scope, company/year filters, evidence | Inspect Documents and candidates; ask something actually supported by the corpus |
 | provider_failure | status, attempts, details, node | Fix key/access/connectivity/limits; schema recreation does not fix this |
-| budget_exceeded | resource, limit, observed, blocked_node | Adjust the specific run limit; retries can cost more |
+| budget_exceeded | resource, limit, observed, blocked_node | Adjust the specific limit under Review settings → Run limits; retries can cost more |
 | node_error | error_type, message, node | Fix the named non-model stage before retrying |
 | interrupted job | app restart | It is not automatically resumed; inspect state and explicitly retry |
 
 The default wall-clock limit is **120 seconds for the whole run**, not a token budget. Input tokens,
-output tokens, and iterations also accumulate across calls and retries. Evidence size is a separate setting.
+output tokens, and iterations also accumulate across calls and retries. Evidence size is a separate setting under **Review settings → Evidence**.
 A local server can answer readiness checks while still being too slow for an actual model request.
 
 Queued/running jobs are active; succeeded/failed/cancelled jobs are finished. Interrupted means the app

@@ -4,9 +4,11 @@ import { preferredLocale, savedLocale, type Locale } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BookOpen, Terminal } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
 import type { TutorialHeading, TutorialDocument } from "@/lib/tutorial-markdown.mjs";
 import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
+
+const DOCUMENT_ICONS: Record<string, LucideIcon> = { Activity, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal };
 
 function useResponsiveDisclosure(query: string) {
   const ref = useRef<HTMLDetailsElement>(null);
@@ -55,10 +57,12 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
     <nav aria-label={locale === "ko" ? "문서 선택" : "Choose a document"}>
       {groups.map((group) => <section className="docs-nav-group" key={group} aria-labelledby={`docs-group-${group}`}>
         <h2 id={`docs-group-${group}`}>{documents.find((document) => document.group === group)!.groupTitle}</h2>
-        {documents.filter((document) => document.group === group).map((document) => <Link key={document.id} href={document.href.replace(DOCUMENTATION_BASE, "")} aria-current={current === document.id ? "page" : undefined}>
-          {document.id === "cli" ? <Terminal size={16} /> : <BookOpen size={16} />}
+        {documents.filter((document) => document.group === group).map((document) => {
+          const Icon = DOCUMENT_ICONS[document.icon ?? ""] ?? BookOpen;
+          return <Link key={document.id} href={document.href.replace(DOCUMENTATION_BASE, "")} aria-current={current === document.id ? "page" : undefined}>
+          <Icon size={16} aria-hidden="true" />
           <span>{document.title}{current === document.id && <small>{document.summary}</small>}</span>
-        </Link>)}
+        </Link>; })}
       </section>)}
     </nav>
     <p className="docs-menu-note">{locale === "ko" ? "같은 환경, 같은 데이터. 작업 결과를 화면에서 이어서 확인하세요." : "One environment, shared data. Follow your results from commands to the dashboard."}</p>

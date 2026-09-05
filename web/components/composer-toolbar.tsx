@@ -2,9 +2,9 @@
 import { useI18n } from "@/lib/i18n";
 
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, SlidersHorizontal } from "lucide-react";
 import { Segmented } from "@/components/segmented";
 import { RequestPreview, presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -14,14 +14,15 @@ import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
 export interface ComposerToolbarProps {
   engineControls?: ReactNode;
   query?: string;
-  advancedControls?: ReactNode;
+  settingsOpen?: boolean;
+  settingsTriggerRef?: Ref<HTMLButtonElement>;
   profile: ReviewSessionProfile;
   onChange: (update: Partial<ReviewSessionProfile>) => void;
   /** `capabilities.can_change_custom_retrieval`; a public build choosing Custom calls `onLocked` instead. */
   canUseCustom: boolean;
   onLocked: () => void;
-  /** Opens Filters above the conversation input. */
-  onOpenFilters: () => void;
+  /** Opens the unified conversation editor at its Filters section. */
+  onOpenSettings: () => void;
   /** Opens the current Custom retrieval editor without submitting a request. */
   onOpenCustom?: () => void;
   readiness: Readiness | null;
@@ -156,7 +157,7 @@ export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: Compo
   );
 }
 
-export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, onLocked, onOpenFilters, onOpenCustom, readiness, live, onOpenBuild, engineControls, advancedControls }: ComposerToolbarProps) {
+export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef }: ComposerToolbarProps) {
   const { t, locale } = useI18n();
   const filters = filterCount(profile);
   const preset = presetDescription(profile, profile.retrieval_preset);
@@ -184,21 +185,21 @@ export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, o
           <option value="korean">{t("Korean")}</option>
           <option value="accuracy">{t("Accuracy")}</option>
           {(canUseCustom || profile.retrieval_preset === "custom") && <option value="custom">{t("Custom")}</option>}
-        </select><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p>{profile.retrieval_preset === "custom" && canUseCustom && onOpenCustom && <button className="inline-link" type="button" onClick={onOpenCustom}>{t("Edit custom retrieval")}</button>}</div>
-        <div className="composer-toolbar-actions"><button className="chip" type="button" data-help="review.filters" onClick={onOpenFilters}>{filters > 0 ? t("Filters · {p0}", { p0: filters }) : t("Filters")}</button>
-        {advancedControls}
+        </select><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p></div>
+        <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip" type="button" data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={16} aria-hidden="true" />{filters > 0 ? t("Review settings · {p0}", { p0: filters }) : t("Review settings")}</button>
         {profile.snapshot_id !== null && (
           <span className="chip snapshot" data-help="review.snapshot">{t("Snapshot #")}{profile.snapshot_id}
             <button type="button" aria-label={t("Clear snapshot")} onClick={() => onChange({ snapshot_id: null, applied_from_evaluation: null })}>×</button>
           </span>
-        )}</div>
+        )}
+        <RequestPreview profile={profile} query={query} />
+        </div>
       </div>
       <div className="composer-toolbar-secondary">
         <div className="composer-corpus-readiness">
           <div className="composer-readiness-facts"><span>{typeof corpusCount === "number" ? t("Corpus total · {count} filings", { count: corpusCount.toLocaleString(locale) }) : t(corpusLabel)}</span><small className={readinessStatus === "Hybrid search ready" ? "confirmed" : ""}>{t(readinessStatus)}</small></div>
           <button className="button ghost corpus-readiness-action" type="button" data-help="review.readiness" onClick={onOpenBuild}>{t("View corpus readiness")}<ChevronRight size={14} aria-hidden="true" /></button>
         </div>
-        <RequestPreview profile={profile} query={query} />
       </div>
     </div>
   );

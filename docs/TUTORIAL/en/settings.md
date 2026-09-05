@@ -2,7 +2,7 @@
 
 Conversation settings determine where to search, how to rank evidence, and how much work a review may do. They belong to the active conversation. Changing a control does not rewrite an existing answer or change the settings already submitted with a running request.
 
-The composer follows **Corpus scope → answer engine/local model → retrieval preset → Filters / RAG settings**. Its secondary row opens corpus readiness and the request inspector. The corpus total describes the whole catalog, not the SEC or DART subset selected for your question; public mode describes published data.
+The primary composer row follows **Corpus scope → answer engine/local model → retrieval preset → Review settings → Inspect request**. **Review settings** is the single editing entry; the separate **Inspect request** icon and label open a read-only preview. The secondary row shows corpus readiness. The corpus total describes the whole catalog, not the SEC or DART subset selected for your question; public mode describes published data.
 
 ## 10. Adjust filters, presets, and evidence choices {#step-10}
 
@@ -10,7 +10,7 @@ The composer follows **Corpus scope → answer engine/local model → retrieval 
 
 **Prerequisites:** an existing conversation and the documents needed for its question. A saved answer is useful for inspecting evidence choices; a new answer is not required merely to change settings.
 
-**Screen path:** open the conversation → **Filters**, then the **Retrieval preset** control above the question.
+**Screen path:** open the conversation → **Retrieval preset** above the question. For filters, open **Review settings → Filters**, then close the editor to return to the primary controls.
 
 | Input | Meaning for this exercise |
 |---|---|
@@ -18,7 +18,7 @@ The composer follows **Corpus scope → answer engine/local model → retrieval 
 | Companies / Fiscal years | Select actual available entries, such as NVDA and 2024 when those filings exist. Empty selections leave that field unrestricted. |
 | Retrieval preset | Select Accuracy to inspect a wider candidate pool and reranking. This is a setting to evaluate, not a promise of a better answer. |
 
-**Primary action:** choose **Accuracy**. Open **Settings details / request preview** and check the effective retrieval settings and filters before another execution.
+**Primary action:** choose **Accuracy**. Close Review settings if it is open, then use **Inspect request** to check effective retrieval settings and filters before another execution.
 
 **Visible result:** the selected preset changes; its explanation includes `candidate_k: 50` and `reranker: cross_encoder`. The question and earlier answer stay unchanged. The inspector describes the next request; evidence remains unresolved until execution.
 
@@ -39,15 +39,17 @@ The following values come from the current preset definitions. All three built-i
 | Accuracy | 50 | BM25 | Cross encoder | Off |
 | Custom | Your saved values | Your saved values | Your saved values | Your saved values |
 
-Balanced provides the default starting point. Korean changes the search configuration for language-aware retrieval; it does not translate stored filings or force the corpus scope to DART. Accuracy reranks a larger pool and can take more work. Custom opens the editor immediately when permitted, retaining existing custom values. Built-in preset selection clears the explicit custom profile, so inspect values before switching away from a configuration you want to keep.
+Balanced provides the default starting point. Korean changes the search configuration for language-aware retrieval; it does not translate stored filings or force the corpus scope to DART. Accuracy reranks a larger pool and can take more work. Custom opens **Review settings → Search** immediately when permitted, retaining existing custom values. Use the same Search section to revisit them later. Built-in preset selection clears the explicit custom profile, so inspect values before switching away from a configuration you want to keep.
 
 `k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
 
 ## Scoped filters and unfinished input {#filters}
 
+**Review settings** opens one right-side drawer on desktop and a full-screen dialog on mobile. Its sections are **Filters**, **Search**, **Evidence**, and **Run limits**; public mode exposes only permitted filters. The body scrolls independently and keyboard focus stays inside. Close or Escape returns focus to the opener without enlarging the composer. Selected values apply to this conversation’s next request; an in-flight request keeps its submitted settings.
+
 Company, language, form, and fiscal-year choices come from the complete catalog available within the selected scope. The application does not construct these lists from the first page of documents. Public choices come from the public catalog.
 
-Choose values as removable chips. Incompatible saved selections stay visible until you remove them. Invalid typed drafts block Send while the filter editor is open. Switching editor tabs or closing the editor discards unfinished text, as its notice explains; committed selections remain. Navigating to another workspace and using Back preserves the open editor and its local state.
+Choose values as removable chips. Incompatible saved selections stay visible until you remove them. Invalid typed drafts block Send while the filter editor is open. Switching editor tabs or closing the editor discards unfinished text, as its notice explains; committed selections remain. Workspace navigation and Back preserve committed settings and the question; close the editor before using background controls.
 
 The scope and preset **?** controls support hover, focus, touch, and Escape. **View corpus readiness** opens Build; use **Back to conversation** to return to your draft. The request inspector has its own scrolling, Escape/close controls, and focus return.
 
@@ -62,7 +64,7 @@ Click a selected Pin or Exclude again to deselect it. A chunk cannot be pinned a
 
 ## Evidence size and execution limits {#budgets}
 
-Under **RAG settings → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
+Under **Review settings → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
 
 ## Defaults and permissions {#defaults}
 

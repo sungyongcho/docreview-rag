@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { KO } from "./messages-ko";
 import { localizedDocumentationRoute } from "./documentation-registry.mjs";
+import { browserStorage } from "./production-preview";
 
 export type Locale = "ko" | "en";
 export const LOCALE_KEY = "docreview.locale";
@@ -21,12 +22,12 @@ export function localizedDocumentationPath(pathname: string, locale: Locale, has
 
 /** Language remains usable when the browser blocks optional preference storage. */
 export function savedLocale(): string | null {
-  try { return window.localStorage.getItem(LOCALE_KEY); }
+  try { return browserStorage().getItem(LOCALE_KEY); }
   catch { return null; }
 }
 
 function persistLocale(locale: Locale) {
-  try { window.localStorage.setItem(LOCALE_KEY, locale); }
+  try { browserStorage().setItem(LOCALE_KEY, locale); }
   catch { /* Keep the current interface usable without persistent browser storage. */ }
 }
 
@@ -108,5 +109,5 @@ export function useI18n() { return useContext(I18nContext); }
 export function LanguageSwitch({ locale: documentLocale }: { locale?: Locale } = {}) {
   const { locale, setLocale } = useI18n();
   const active = documentLocale ?? locale;
-  return <div className="language-switch" role="group" aria-label="Language / 언어"><button type="button" lang="ko" aria-pressed={active === "ko"} onClick={() => setLocale("ko")}>한국어</button><button type="button" lang="en" aria-pressed={active === "en"} onClick={() => setLocale("en")}>EN</button></div>;
+  return <div className="language-switch" role="group" aria-label="Language / 언어"><button type="button" lang="en" aria-pressed={active === "en"} onClick={() => setLocale("en")}>EN</button><button type="button" lang="ko" aria-pressed={active === "ko"} onClick={() => setLocale("ko")}>한국어</button></div>;
 }

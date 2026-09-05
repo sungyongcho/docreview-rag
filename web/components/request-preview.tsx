@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { PanelRightOpen, X } from "lucide-react";
 import "./review-controls.css";
 import { useI18n } from "@/lib/i18n";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -74,7 +74,7 @@ export function RequestPreview({ profile, query }: { profile: ReviewSessionProfi
   }, [visible]);
   const filters = { corpus_scope: profile.corpus_scope, issuers: profile.issuers, fiscal_years: profile.fiscal_years, forms: profile.forms, sections: profile.sections, languages: profile.languages, snapshot_id: profile.snapshot_id };
   return <>
-    <button ref={trigger} className="chip request-inspector-trigger" type="button" aria-haspopup="dialog" aria-expanded={visible} aria-controls={visible ? panelId : undefined} onClick={() => setOpen(true)}>{t("Settings details / request preview")}</button>
+    <button ref={trigger} className="chip request-inspector-trigger" type="button" aria-label={t("Settings details / request preview")} title={t("Settings details / request preview")} aria-haspopup="dialog" aria-expanded={visible} aria-controls={visible ? panelId : undefined} onClick={() => setOpen(true)}><PanelRightOpen className="request-inspector-icon" size={16} aria-hidden="true" /><span>{t("Inspect request")}</span></button>
     {visible && createPortal(<div className="request-inspector-overlay" onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div ref={panel} id={panelId} className="request-inspector-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="request-inspector-header"><h2 id={titleId}>{t("Settings details / request preview")}</h2><button ref={closeButton} type="button" className="button ghost" aria-label={t("Close request preview")} onClick={() => setOpen(false)}><X size={20} /></button></header>

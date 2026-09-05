@@ -1,3 +1,4 @@
+import { browserStorage } from "./production-preview";
 import type { Conversation, ExperimentDefaults, ReviewSessionProfile } from "./types";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
 
@@ -15,8 +16,8 @@ const MAX_MESSAGES = 100;
 export function loadConversations(): Conversation[] {
   if (typeof window === "undefined") return [];
   try {
-    const current = window.localStorage.getItem(STORAGE_KEY);
-    const value: unknown = JSON.parse(current ?? window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "[]");
+    const current = browserStorage().getItem(STORAGE_KEY);
+    const value: unknown = JSON.parse(current ?? browserStorage().getItem(LEGACY_STORAGE_KEY) ?? "[]");
     if (!Array.isArray(value)) return [];
     return value.filter(isConversation).map(migrateConversation).slice(0, MAX_CONVERSATIONS);
   } catch {
@@ -30,7 +31,7 @@ export function saveConversations(conversations: Conversation[]): Conversation[]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, MAX_CONVERSATIONS);
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(bounded));
+    browserStorage().setItem(STORAGE_KEY, JSON.stringify(bounded));
   }
   return bounded;
 }
@@ -50,7 +51,7 @@ export function newConversation(profile: ReviewSessionProfile = loadDefaultProfi
 export function loadDefaultProfile(): ReviewSessionProfile {
   if (typeof window === "undefined") return DEFAULT_SESSION_PROFILE;
   try {
-    const value = JSON.parse(window.localStorage.getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionProfile> | null;
+    const value = JSON.parse(browserStorage().getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionProfile> | null;
     return value ? mergeProfile(value) : DEFAULT_SESSION_PROFILE;
   } catch {
     return DEFAULT_SESSION_PROFILE;
@@ -58,7 +59,7 @@ export function loadDefaultProfile(): ReviewSessionProfile {
 }
 
 export function saveDefaultProfile(profile: ReviewSessionProfile): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(DEFAULT_PROFILE_KEY, JSON.stringify(profile));
+  if (typeof window !== "undefined") browserStorage().setItem(DEFAULT_PROFILE_KEY, JSON.stringify(profile));
 }
 
 /** Save only the prompt text; other defaults and existing conversations stay intact. */
@@ -68,13 +69,13 @@ export function saveDefaultPrompt(additional_instructions: string): void {
 }
 
 export function resetDefaultProfile(): void {
-  if (typeof window !== "undefined") window.localStorage.removeItem(DEFAULT_PROFILE_KEY);
+  if (typeof window !== "undefined") browserStorage().removeItem(DEFAULT_PROFILE_KEY);
 }
 
 export function loadExperimentDefaults(): ExperimentDefaults {
   if (typeof window === "undefined") return DEFAULT_EXPERIMENT_DEFAULTS;
   try {
-    const value = JSON.parse(window.localStorage.getItem(EXPERIMENT_DEFAULTS_KEY) ?? "null") as Partial<ExperimentDefaults> | null;
+    const value = JSON.parse(browserStorage().getItem(EXPERIMENT_DEFAULTS_KEY) ?? "null") as Partial<ExperimentDefaults> | null;
     if (!value) return DEFAULT_EXPERIMENT_DEFAULTS;
     const suiteId = ["sec-en", "sec-ko", "dart-en", "dart-ko", "sec-en_v2_astra", "sec-ko_v2_astra", "sec-mixed_v2_astra"].includes(String(value.suite_id))
       ? value.suite_id as ExperimentDefaults["suite_id"]
@@ -101,42 +102,42 @@ export function loadExperimentDefaults(): ExperimentDefaults {
 }
 
 export function saveExperimentDefaults(value: ExperimentDefaults): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(EXPERIMENT_DEFAULTS_KEY, JSON.stringify(value));
+  if (typeof window !== "undefined") browserStorage().setItem(EXPERIMENT_DEFAULTS_KEY, JSON.stringify(value));
 }
 
 export function resetExperimentDefaults(): void {
-  if (typeof window !== "undefined") window.localStorage.removeItem(EXPERIMENT_DEFAULTS_KEY);
+  if (typeof window !== "undefined") browserStorage().removeItem(EXPERIMENT_DEFAULTS_KEY);
 }
 
 export function desktopJobNotificationsEnabled(): boolean {
   return typeof window !== "undefined"
-    && window.localStorage.getItem(DESKTOP_JOB_NOTIFICATIONS_KEY) === "enabled";
+    && browserStorage().getItem(DESKTOP_JOB_NOTIFICATIONS_KEY) === "enabled";
 }
 
 export function setDesktopJobNotifications(enabled: boolean): void {
   if (typeof window === "undefined") return;
-  if (enabled) window.localStorage.setItem(DESKTOP_JOB_NOTIFICATIONS_KEY, "enabled");
-  else window.localStorage.removeItem(DESKTOP_JOB_NOTIFICATIONS_KEY);
+  if (enabled) browserStorage().setItem(DESKTOP_JOB_NOTIFICATIONS_KEY, "enabled");
+  else browserStorage().removeItem(DESKTOP_JOB_NOTIFICATIONS_KEY);
 }
 
 export function loadHelpOpen(): boolean {
-  return typeof window !== "undefined" && window.localStorage.getItem(HELP_KEY) === "open";
+  return typeof window !== "undefined" && browserStorage().getItem(HELP_KEY) === "open";
 }
 
 export function saveHelpOpen(open: boolean): void {
   if (typeof window === "undefined") return;
-  if (open) window.localStorage.setItem(HELP_KEY, "open");
-  else window.localStorage.removeItem(HELP_KEY);
+  if (open) browserStorage().setItem(HELP_KEY, "open");
+  else browserStorage().removeItem(HELP_KEY);
 }
 
 export function browserStorageUsage(): number {
   // Count only application-owned keys; browser and third-party data stay outside this view.
   if (typeof window === "undefined") return 0;
   let bytes = 0;
-  for (let index = 0; index < window.localStorage.length; index += 1) {
-    const key = window.localStorage.key(index);
+  for (let index = 0; index < browserStorage().length; index += 1) {
+    const key = browserStorage().key(index);
     if (!key?.startsWith("docreview:")) continue;
-    bytes += new TextEncoder().encode(key + (window.localStorage.getItem(key) ?? "")).byteLength;
+    bytes += new TextEncoder().encode(key + (browserStorage().getItem(key) ?? "")).byteLength;
   }
   return bytes;
 }
