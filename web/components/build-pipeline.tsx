@@ -1,13 +1,18 @@
 "use client";
+import { translate, useI18n, type Locale } from "@/lib/i18n";
 
-import { Check, RefreshCw } from "lucide-react";
-import { Fragment } from "react";
+
+import { PipelineReference } from "@/components/pipeline-reference";
+import { WipeRuntime } from "@/components/wipe-runtime";
+import { Activity, ArrowDown, ArrowRight, Check, RefreshCw } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 
 import { elapsedLabel, JobProgress } from "@/components/job-center";
-import { Segmented } from "@/components/segmented";
+import { AcquisitionFields } from "@/components/acquisition-fields";
+import { companyLabel } from "@/lib/company-labels";
 import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeline";
 import { stageStatusLabel } from "@/lib/pipeline";
-import type { ManifestSummary } from "@/lib/types";
+import type { AdminDocument, ManifestSummary } from "@/lib/types";
 
 export interface AcquisitionForm {
   registry: "sec" | "dart";
@@ -17,6 +22,9 @@ export interface AcquisitionForm {
 
 export interface BuildPipelineProps {
   pipeline: Pipeline;
+  focusStage?: string | null;
+  embeddingProvider?: string | null;
+  documents?: AdminDocument[];
   live: boolean;
   busy: boolean;
   canOperateCorpus: boolean;
@@ -52,6 +60,15 @@ export interface BuildPipelineProps {
 }
 
 const REGISTRY_LABELS: Record<AcquisitionForm["registry"], string> = { sec: "SEC EDGAR", dart: "DART" };
+const STEP_DEPENDENCIES: Record<Stage["id"], string> = {
+  filings: "Start with SEC or DART filings",
+  index: "Source files → chunks",
+  embeddings: "Chunks → embeddings · parallel with BM25",
+  lexical: "Chunks → BM25 · parallel with embeddings",
+  ask: "Search indexes + answer engine → cited answer",
+  answer_model: "Configure independently before generating answers",
+  evaluate: "Search index + golden dataset → evaluation",
+};
 
 /** Actions that queue an operator job; they are locked in read-only mode and while a request is in flight. */
 const OPERATOR_ACTIONS: ReadonlySet<StageActionKind> = new Set(["acquire", "ingest_all", "embed", "bm25", "evaluate"]);
@@ -68,7 +85,18 @@ function isApiDown(pipeline: Pipeline): boolean {
 }
 
 export function BuildPipeline(props: BuildPipelineProps) {
+  const { t, locale } = useI18n();
   const { pipeline } = props;
+  const [acquisitionValid, setAcquisitionValid] = useState(true);
+  const [selectedChoice, setSelectedId] = useState<Stage["id"] | null>(null);
+  const selectedId = selectedChoice ?? pipeline.stages.find((stage) => stage.status === "running")?.id ?? pipeline.next?.id ?? "filings";
+  const selected = pipeline.stages.find((stage) => stage.id === selectedId) ?? pipeline.stages[0];
+
+
+  useEffect(() => {
+    const stage = pipeline.stages.find((item) => item.id === props.focusStage || String(item.order) === props.focusStage);
+    if (stage) setSelectedId(stage.id);
+  }, [props.focusStage, pipeline.stages]);
 
   function handler(kind: StageActionKind): () => void {
     switch (kind) {
@@ -84,12 +112,15 @@ export function BuildPipeline(props: BuildPipelineProps) {
   }
 
   function disabled(kind: StageActionKind): boolean {
+    if (kind === "acquire" && !acquisitionValid) return true;
     if (!OPERATOR_ACTIONS.has(kind)) return false;
     return pipeline.readOnly || props.busy || (props.live && !props.canOperateCorpus);
   }
 
   return (
     <div className="build-pipeline panel-stack">
+      <div className="pipeline-toolbar">
+      <WipeRuntime enabled={props.live && !pipeline.readOnly} />
       <RuntimeStrip
         pipeline={pipeline}
         live={props.live}
@@ -101,9 +132,32 @@ export function BuildPipeline(props: BuildPipelineProps) {
         onRunOperation={props.operationsAvailable && props.onRunOperation ? props.onRunOperation : null}
         onRefresh={props.onRefresh}
       />
-      <NextStep pipeline={pipeline} handler={handler} disabled={disabled} onAsk={props.onAsk} onEvaluate={props.onEvaluate} onCompareSnapshots={props.onCompareSnapshots} onRefresh={props.onRefresh} onCancelJob={props.onCancelJob} />
+      </div>
+      <div className="pipeline-workspace">
+      <section className="pipeline-map" aria-label={t("Data workflow")}>
+        <header className="pipeline-map-heading"><h2>{t("Data workflow")}</h2><span>{t("Select a step")}</span></header>
+        <div className="pipeline-graph" data-tour="stage-list">
+          {pipeline.stages.map((stage) => <button key={stage.id} data-help={`build.stage.${stage.id}`} className={`pipeline-node ${stage.id} ${stage.status}`} type="button" aria-label={t("Select {p0}", { p0: t(stage.title) })} aria-pressed={selectedId === stage.id} aria-controls="pipeline-execution" onClick={() => setSelectedId(stage.id)}>
+            <span className="pipeline-node-number">{stage.order}</span><strong>{t(stage.title)}</strong><small className="pipeline-node-status"><i className="status-beacon" aria-hidden="true" />{t(stage.statusDetail || stageStatusLabel(stage.status))}</small>
+            <span className="pipeline-dependency">{t(STEP_DEPENDENCIES[stage.id])}</span>
+          </button>)}
+          <span className="pipeline-flow-link source-link" aria-hidden="true"><ArrowDown size={16} /></span>
+          <span className="pipeline-flow-link index-link">{t("Parallel search indexes")}<ArrowDown size={16} aria-hidden="true" /></span>
+          <span className="pipeline-flow-link answer-link">{t("Search indexes + answer engine → cited answer")}</span>
+          <span className="pipeline-flow-link evaluation-link">{t("Search index + golden dataset → evaluation")}</span>
+        </div>
+        <div className="pipeline-guidance" data-tour="next-step" data-help="build.next-step">
+          <span>{t(pipeline.corpusReady ? "Corpus ready" : "Recommended next step")}</span>
+          {pipeline.next ? <button type="button" onClick={() => setSelectedId(pipeline.next!.id)}>{t(pipeline.next.title)}<ArrowRight size={15} /></button> : <button type="button" onClick={props.onAsk}>{t("Ask a question")}<ArrowRight size={15} /></button>}
+          <p>{t(pipeline.next?.hint || "Ask a question, inspect the evaluation results, or run another evaluation.")}</p>
+        </div>
+      </section>
+      <section id="pipeline-execution" className="pipeline-execution" aria-label={t("Selected step execution")}>
+        <header><span>{t("Selected step")}</span><h2>{selected.order}. {t(selected.title)}</h2><button type="button" className="button ghost" onClick={props.onOpenJobs}>{t("Open Jobs")}</button></header>
+        <p className="helper">{selected.blockedBy ? t("Required first: {p0}", { p0: t(selected.blockedBy) }) : t("Review the inputs before starting. Selecting a step does not execute it.")}</p>
+        {selected.id === "embeddings" && <p className="notice">{t("OpenAI embedding may incur cost for all pending chunks in the database. Check the provider and counts before running.")}</p>}
       <ol className="stage-list" role="list" data-tour="stage-list">
-        {pipeline.stages.map((stage) => (
+        {[selected].map((stage) => (
           <StageCard
             key={stage.id}
             stage={stage}
@@ -113,15 +167,22 @@ export function BuildPipeline(props: BuildPipelineProps) {
             disabled={disabled}
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
+            documents={props.documents ?? []}
+            onAcquisitionValidityChange={setAcquisitionValid}
             manifests={props.manifests}
             registryCounts={props.registryCounts ?? {}}
             onIngest={props.onIngest}
             onOpenDocuments={props.onOpenDocuments}
             onOpenJobs={props.onOpenJobs}
             onOpenStatus={props.onOpenStatus}
+            onCancelJob={props.onCancelJob}
           />
         ))}
       </ol>
+        <details className="execution-console"><summary>{t("Actual server job record")}</summary>{selected.job ? <pre>{JSON.stringify({ job_id: selected.job.job_id, status: selected.job.status, stage: selected.job.stage, current: selected.job.current, total: selected.job.total, message: selected.job.message }, null, 2)}</pre> : <p className="helper">{t("No job has been started for this step.")}</p>}</details>
+        <PipelineReference stage={selected.id} acquisition={props.acquisition} manifests={props.manifests} provider={props.embeddingProvider} />
+      </section>
+      </div>
     </div>
   );
 }
@@ -148,16 +209,18 @@ interface RuntimeProblem {
 }
 
 function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
+  const { t, locale } = useI18n();
   if (pipeline.readOnly) {
-    return <div className="runtime-strip" data-help="build.runtime"><div className="runtime-items"><span>Read-only portfolio · stored snapshots + live retrieval</span></div></div>;
+    return <span className="runtime-readonly" data-help="build.runtime">{t("Read-only portfolio · stored snapshots + live retrieval")}</span>;
   }
   const apiDown = isApiDown(pipeline);
-  const items: string[] = [apiDown ? "API unavailable" : "API ok"];
+  const known = databaseConnected !== null || schemaStatus !== null;
+  const items: string[] = [apiDown ? "API unavailable" : known ? "API ok" : "Checking runtime…"];
   if (databaseConnected === true) items.push("Database connected");
   if (schemaStatus === "compatible") items.push("Schema compatible");
   if (writable === true) items.push("Writable");
   if (answerModel) items.push(`Answer model: ${answerModel}`);
-  if (!apiDown && databaseConnected === null && schemaStatus === null && writable === null) items.push("Checking runtime…");
+  if (!apiDown && known && databaseConnected === null && schemaStatus === null && writable === null) items.push("Checking runtime…");
 
   const problems: RuntimeProblem[] = [];
   if (databaseConnected === false) {
@@ -170,97 +233,38 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
   }
 
   return (
-    <div className="runtime-strip" data-help="build.runtime">
-      <div className="runtime-items">{items.map((item, index) => <Fragment key={item}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{item}</span></Fragment>)}</div>
+    <details className="runtime-disclosure" data-help="build.runtime">
+      <summary><Activity size={15} /><span>{t(apiDown ? "API unavailable" : problems.length ? "Runtime needs attention" : known ? "Runtime connected" : "Checking runtime…")}</span></summary>
+      <div className="runtime-strip">
+      <div className="runtime-items">{items.map((item, index) => <Fragment key={t(item)}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}</div>
       <div className="runtime-actions">
-        {live && onRunOperation && !problems.length && <button className="button ghost" type="button" onClick={() => onRunOperation("app-start")}>Rebuild app</button>}
-        {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} /> Refresh</button>}
+        {live && onRunOperation && !problems.length && <button className="button ghost" type="button" onClick={() => onRunOperation("app-start")}>{t("Rebuild app")}</button>}
+        {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button>}
       </div>
       {problems.map((problem) => (
         <div className="notice error" role="alert" key={problem.fix}>
-          <p>{problem.reason}</p>
+          <p>{t(problem.reason)}</p>
           {onRunOperation
-            ? <div className="action-row">{problem.commands.map((command) => <button className="button" type="button" key={command.id} onClick={() => onRunOperation(command.id)}>{command.label}</button>)}</div>
+            ? <div className="action-row">{problem.commands.map((command) => <button className="button" type="button" key={command.id} onClick={() => onRunOperation(command.id)}>{t(command.label)}</button>)}</div>
             : <code>{problem.fix}</code>}
         </div>
       ))}
-    </div>
-  );
-}
-
-interface NextStepProps {
-  pipeline: Pipeline;
-  handler: (kind: StageActionKind) => () => void;
-  disabled: (kind: StageActionKind) => boolean;
-  onAsk: () => void;
-  onEvaluate: () => void;
-  onCompareSnapshots: () => void;
-  onRefresh: () => void;
-  onCancelJob: (jobId: string) => void;
-}
-
-function NextStep({ pipeline, handler, disabled, onAsk, onEvaluate, onCompareSnapshots, onRefresh, onCancelJob }: NextStepProps) {
-  const running = pipeline.stages.find((stage) => stage.status === "running") ?? null;
-  const unknown = pipeline.stages.find((stage) => stage.status === "unknown") ?? null;
-  const blocked = pipeline.stages.find((stage) => stage.status === "blocked") ?? null;
-  const doneWithHint = pipeline.stages.find((stage) => stage.status === "done" && stage.hint) ?? null;
-
-  let title: string;
-  let text: string;
-  let actions: React.ReactNode = null;
-
-  if (running) {
-    title = `Running · ${running.order} ${running.title}${running.statusDetail ? ` · ${running.statusDetail}` : ""}`;
-    text = running.hint || "The job is in progress.";
-    const job = running.job;
-    actions = job && <button className="button" type="button" disabled={!job.can_cancel} onClick={() => onCancelJob(job.job_id)}>Cancel</button>;
-  } else if (pipeline.next) {
-    const stage = pipeline.next;
-    const evaluationPending = stage.id === "evaluate" && stage.status === "action" && pipeline.corpusReady;
-    title = evaluationPending ? "Corpus ready · evaluation pending" : `Next step · ${stage.order} ${stage.title}`;
-    text = evaluationPending ? `You can ask questions now. Retrieval quality has no recorded evaluation results yet. ${stage.hint}` : stage.hint;
-    actions = <>{evaluationPending && <button className="button" type="button" onClick={onAsk}>Ask a question</button>}{stage.action && <ActionButton stage={stage} primary handler={handler} disabled={disabled} />}</>;
-  } else if (pipeline.readOnly) {
-    title = "Explore";
-    text = "This build is read-only. Ask a question against the published corpus or compare snapshots.";
-    actions = <><button className="button primary" type="button" onClick={onAsk}>Ask a question</button><button className="button" type="button" onClick={onCompareSnapshots}>Compare snapshots</button></>;
-  } else if (unknown) {
-    const apiDown = isApiDown(pipeline);
-    title = apiDown ? "API unavailable" : "Checking…";
-    text = apiDown ? "The DocReview API did not answer. Start it, then refresh." : "Waiting for readiness and the administrator snapshot.";
-    actions = <button className="button" type="button" onClick={onRefresh}><RefreshCw size={14} /> Refresh</button>;
-  } else if (blocked) {
-    title = `Blocked · ${blocked.order} ${blocked.title}${blocked.statusDetail ? ` · ${blocked.statusDetail}` : ""}`;
-    text = blocked.hint;
-    actions = blocked.action && <ActionButton stage={blocked} primary handler={handler} disabled={disabled} />;
-  } else if (doneWithHint) {
-    title = "Corpus ready · evaluation recorded";
-    text = doneWithHint.hint;
-    actions = doneWithHint.action && <ActionButton stage={doneWithHint} primary handler={handler} disabled={disabled} />;
-  } else {
-    title = "Corpus ready · evaluation recorded";
-    text = "Ask a question, inspect the evaluation results, or run another evaluation.";
-    actions = <><button className="button primary" type="button" onClick={onAsk}>Ask a question</button><button className="button" type="button" disabled={disabled("evaluate")} onClick={onEvaluate}>Run quick evaluation</button></>;
-  }
-
-  return (
-    <section className="next-step" data-tour="next-step" data-help="build.next-step">
-      <h2>{title}</h2>
-      {text && <p>{text}</p>}
-      {actions && <div className="action-row">{actions}</div>}
-    </section>
+      </div>
+    </details>
   );
 }
 
 function ActionButton({ stage, primary, handler, disabled }: { stage: Stage; primary: boolean; handler: (kind: StageActionKind) => () => void; disabled: (kind: StageActionKind) => boolean }) {
+  const { t, locale } = useI18n();
   if (!stage.action) return null;
   const { kind, label } = stage.action;
-  return <button className={primary ? "button primary" : "button"} type="button" disabled={disabled(kind)} onClick={handler(kind)}>{label}</button>;
+  return <button className={primary ? "button primary" : "button"} type="button" disabled={disabled(kind)} onClick={handler(kind)}>{t(label)}</button>;
 }
 
 function StatusPill({ status, detail }: { status: StageStatus; detail: string }) {
+  const { t, locale } = useI18n();
   const label = stageStatusLabel(status);
-  return <span className={`stage-status ${status}`}>{label}{detail && detail !== label && <em>{detail}</em>}</span>;
+  return <span className={`stage-status ${status}`}><i className="status-beacon" aria-hidden="true" />{t(label)}{detail && detail !== label && <em>{t(detail)}</em>}</span>;
 }
 
 interface StageCardProps {
@@ -270,6 +274,8 @@ interface StageCardProps {
   handler: (kind: StageActionKind) => () => void;
   disabled: (kind: StageActionKind) => boolean;
   acquisition: AcquisitionForm;
+  documents: AdminDocument[];
+  onAcquisitionValidityChange: (valid: boolean) => void;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
   registryCounts: Record<string, number>;
@@ -277,20 +283,23 @@ interface StageCardProps {
   onOpenDocuments: () => void;
   onOpenJobs: () => void;
   onOpenStatus: () => void;
+  onCancelJob: (jobId: string) => void;
 }
 
-function manifestSummary(manifest: ManifestSummary, registryCounts: Record<string, number>): string {
-  if (!manifest.valid) return "invalid manifest";
-  const parts = [`${(manifest.documents ?? 0).toLocaleString("en-US")} entries`, `${(manifest.sources_present ?? 0).toLocaleString("en-US")} on disk`];
-  if (manifest.registry && Object.hasOwn(registryCounts, manifest.registry)) parts.push(`${registryCounts[manifest.registry].toLocaleString("en-US")} ingested`);
+function manifestSummary(manifest: ManifestSummary, registryCounts: Record<string, number>, locale: Locale): string {
+  if (!manifest.valid) return translate(locale, "invalid manifest");
+  const parts = [translate(locale, "{count} entries", { count: (manifest.documents ?? 0).toLocaleString(locale) }), translate(locale, "{count} on disk", { count: (manifest.sources_present ?? 0).toLocaleString(locale) })];
+  if (manifest.registry && Object.hasOwn(registryCounts, manifest.registry)) parts.push(translate(locale, "{count} ingested", { count: registryCounts[manifest.registry].toLocaleString(locale) }));
   return parts.join(" · ");
 }
 
-function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, manifests, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus }: StageCardProps) {
+function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, onAcquisitionValidityChange, manifests, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+  const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
   const readOnlyNote = readOnly && OPERATOR_STAGES.has(stage.id);
   const identifiers = splitList(acquisition.identifiers);
+  const companyNames = (code: string) => companyLabel(code, documents.find((document) => document.registry === acquisition.registry && document.issuer === code)?.issuer_name);
   const years = splitList(acquisition.years).map((year) => `FY${year}`);
 
   return (
@@ -299,67 +308,57 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
         <div className={`stage-index ${stage.status}`} aria-hidden="true">{stage.status === "done" ? <Check size={15} /> : stage.order}</div>
         <div className="stage-body">
           <div className="stage-head">
-            <h3>{stage.order}. {stage.title}</h3>
             <StatusPill status={stage.status} detail={stage.statusDetail} />
           </div>
-          <p className="stage-description">{stage.description}</p>
+          <p className="stage-description">{t(stage.description)}</p>
           {stage.numbers.length > 0 && (
             <p className="stage-numbers">
-              {stage.numbers.map((item, index) => <Fragment key={`${index}:${item}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{item}</span></Fragment>)}
+              {stage.numbers.map((item, index) => <Fragment key={`${index}:${t(item)}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}
             </p>
           )}
           {stage.id === "filings" && (
-            <p className="stage-summary">{[REGISTRY_LABELS[acquisition.registry], identifiers.join(", ") || "no tickers", years.join(", ") || "no fiscal years"].join(" · ")}</p>
+            <p className="stage-summary">{[REGISTRY_LABELS[acquisition.registry], identifiers.map(companyNames).join(", ") || t("no tickers"), years.join(", ") || t("no fiscal years")].join(" · ")}</p>
           )}
           {job && (
             <div className="stage-job">
               <JobProgress job={job} />
-              <p className="helper">{job.message} · {elapsedLabel(job)}</p>
+              <p className="helper">{job.message} · {elapsedLabel(job, locale)}</p>
             </div>
           )}
-          <div className="stage-actions">
-            {stage.action && <ActionButton stage={stage} primary={isNext} handler={handler} disabled={disabled} />}
-            {stage.id === "index" && <button className="button ghost" type="button" onClick={onOpenDocuments}>Open Documents</button>}
-            {stage.id === "answer_model" && stage.status !== "readonly" && <button className="button ghost" type="button" onClick={onOpenStatus}>Open System status</button>}
-            {job && <button className="button ghost" type="button" onClick={onOpenJobs}>View all jobs</button>}
-          </div>
-          {showHint && <p className="stage-hint">{stage.hint}</p>}
-          {readOnlyNote && <p className="stage-note">{READ_ONLY_NOTE}</p>}
-          <p className="stage-why"><strong>Why it matters:</strong> {stage.why}</p>
+          {showHint && <p className="stage-hint">{t(stage.hint)}</p>}
+          {readOnlyNote && <p className="stage-note">{t(READ_ONLY_NOTE)}</p>}
+          <p className="stage-why"><strong>{t("Why it matters:")}</strong> {t(stage.why)}</p>
           {stage.id === "filings" && (
-            <details className="stage-advanced">
-              <summary>Change…</summary>
+            <details className="stage-advanced" open>
+              <summary>{t("Change…")}</summary>
               <div>
-                <Segmented
-                  label="Registry"
-                  options={[{ value: "sec", label: "SEC EDGAR" }, { value: "dart", label: "DART" }]}
-                  value={acquisition.registry}
-                  disabled={readOnly}
-                  onChange={(registry) => onAcquisitionChange({ ...acquisition, registry })}
-                />
-                <div className="profile-grid">
-                  <label>Tickers / stock codes<input value={acquisition.identifiers} disabled={readOnly} onChange={(event) => onAcquisitionChange({ ...acquisition, identifiers: event.target.value })} /></label>
-                  <label>Fiscal years<input value={acquisition.years} disabled={readOnly} onChange={(event) => onAcquisitionChange({ ...acquisition, years: event.target.value })} /></label>
-                </div>
-                <p className="helper">{acquisition.registry === "sec" ? "EDGAR downloads need SEC_USER_AGENT in .env." : "DART downloads need DART_API_KEY in .env."}</p>
+                <AcquisitionFields acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly} documents={documents} onValidityChange={onAcquisitionValidityChange} />
+                <p className="helper">{acquisition.registry === "sec" ? t("EDGAR downloads need SEC_USER_AGENT in .env.") : t("DART downloads need DART_API_KEY in .env.")}</p>
               </div>
             </details>
           )}
           {stage.id === "index" && (
-            <details className="stage-advanced">
-              <summary>Change…</summary>
+            <details className="stage-advanced" open>
+              <summary>{t("Change…")}</summary>
               <div>
                 {manifests.map((manifest) => (
                   <div className="manifest-row" key={manifest.name}>
-                    <span>{manifest.name} · {(manifest.registry ?? "other").toUpperCase()} · {manifestSummary(manifest, registryCounts)}</span>
-                    <button className="button" type="button" aria-label={`Ingest ${manifest.name}`} disabled={!manifest.valid || disabled("ingest_all")} onClick={() => onIngest(manifest.name)}>Ingest</button>
+                    <span>{manifest.name} · {(manifest.registry ?? "other").toUpperCase()} · {manifestSummary(manifest, registryCounts, locale)}</span>
+                    <button className="button" type="button" aria-label={t("Ingest {p0}", { p0: manifest.name })} disabled={!manifest.valid || disabled("ingest_all")} onClick={() => onIngest(manifest.name)}>{t("Ingest")}</button>
                   </div>
                 ))}
-                {!manifests.length && <p className="helper">No manifests found in data/corpus.</p>}
-                <p className="helper">Ingest upserts documents from each manifest in order and recomputes BM25. Run Backfill embeddings afterwards (step 3).</p>
+                {!manifests.length && <p className="helper">{t("No manifests found in data/corpus.")}</p>}
+                <p className="helper">{t("Ingest upserts documents from each manifest in order and recomputes BM25. Run Backfill embeddings afterwards (step 3).")}</p>
               </div>
             </details>
           )}
+          <div className="stage-actions">
+            {job && job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
+            {stage.action && <ActionButton stage={stage} primary={isNext} handler={handler} disabled={disabled} />}
+            {stage.id === "index" && <button className="button ghost" type="button" onClick={onOpenDocuments}>{t("Open Documents")}</button>}
+            {stage.id === "answer_model" && stage.status !== "readonly" && <button className="button ghost" type="button" onClick={onOpenStatus}>{t("Open System status")}</button>}
+            {job && <button className="button ghost" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button>}
+          </div>
         </div>
       </article>
     </li>

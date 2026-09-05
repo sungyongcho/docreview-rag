@@ -183,30 +183,40 @@ describe("help topic coverage", () => {
     stubFetch((url) => {
       if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
       if (url.endsWith("/admin/evaluations/runs")) return { jobs: [CANNED_JOB] };
-      if (url.endsWith("/admin/snapshots")) return [];
+      if (url.endsWith("/admin/evaluations/results/16")) return { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at };
+      if (url.includes("/snapshots/compare")) return { baseline_id: 1, candidate_id: 2, directly_comparable: true, warning: null, metrics: [], common_case_count: 0, cases: [] };
+      if (url.endsWith("/admin/snapshots")) return [1, 2].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: false, corpus_fingerprint: "a".repeat(64), profile: {}, golden_revision_id: null, eval_result: { result_id: id, suite: "sec-en", config: {}, metrics: {}, created_at: CANNED_JOB.created_at }, document_count: 29, created_at: CANNED_JOB.created_at }));
       if (url.endsWith("/canonical")) return { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [] };
       if (url.includes("/admin/golden/")) return [];
       return {};
     });
     render(<MeasureHost initialTab="runs" />);
 
-    await screen.findByRole("heading", { name: "New run" });
+    fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
+    await screen.findByRole("heading", { name: "Result details · #16" });
+    expectPresent(["measure.snapshots.freeze"]);
+    fireEvent.click(screen.getByRole("button", { name: "New evaluation" }));
     expect(coverage("measure.runs").missing).toEqual([]);
-    // Opening the disclosure reveals the profile fields, which stay optional topics because the disclosure starts closed.
+    // Core controls remain visible; tuning controls live in the optional disclosure.
     fireEvent.change(screen.getByLabelText("Run mode"), { target: { value: "matrix" } });
     expectPresent(["measure.runs.chunk_targets", "measure.runs.k", "measure.runs.rrf_k"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Snapshots" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close evaluation setup" }));
+    fireEvent.click(screen.getByRole("button", { name: "4. Compare and save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Saved snapshots" }));
     await screen.findByRole("heading", { name: "Evaluation snapshots" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Baseline" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Candidate" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Compare stored results" }));
+    await screen.findByRole("heading", { name: "Snapshot comparison" });
     expect(coverage("measure.snapshots").missing).toEqual([]);
-    expectPresent(["measure.snapshots.freeze"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Golden Tests" }));
+    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
     await screen.findByText("retrieval.json");
     expect(coverage("measure.golden").missing).toEqual([]);
     expectPresent(["measure.golden.revision"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    fireEvent.click(screen.getByRole("button", { name: "4. Compare and save" }));
     expect(coverage("measure.compare").missing).toEqual([]);
   });
 

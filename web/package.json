@@ -3,10 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "build": "next build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "predev": "node scripts/prepare-tutorial.mjs",
+    "pretest": "node scripts/prepare-tutorial.mjs",
+    "pretypecheck": "node scripts/prepare-tutorial.mjs",
+    "prebuild": "node scripts/prepare-tutorial.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -14,7 +18,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "shiki": "^4.4.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

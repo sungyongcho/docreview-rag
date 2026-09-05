@@ -1,3 +1,5 @@
+"use client";
+import { useI18n } from "@/lib/i18n";
 import type { ComponentPropsWithoutRef } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,7 +11,8 @@ function SafeLink({ href, children, ...props }: ComponentPropsWithoutRef<"a">) {
 }
 
 function OmittedImage({ alt }: { alt?: string }) {
-  return <span className="markdown-image-omitted">[Image omitted{alt ? `: ${alt}` : ""}]</span>;
+  const { t, locale } = useI18n();
+  return <span className="markdown-image-omitted">{t("[Image omitted")}{alt ? t(": {p0}", { p0: alt }) : ""}]</span>;
 }
 
 function ResponsiveTable({ children, ...props }: ComponentPropsWithoutRef<"table">) {

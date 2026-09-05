@@ -25,6 +25,7 @@ import { RuntimeSettings, DesktopJobNotifications } from "./runtime-settings";
     expect(screen.getByText("600")).toBeInTheDocument();
     expect(screen.getAllByText("42s").length).toBeGreaterThan(0);
     expect(screen.getByText(/reset 1h 0m/)).toBeInTheDocument();
+    expect(screen.getByText(/12:00:00 AM UTC$/)).toBeInTheDocument();
   });
 
   it("enables desktop completion notifications only after browser permission", async () => {

@@ -2,12 +2,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile } from "@/lib/storage";
-import type { Readiness } from "@/lib/types";
+import type { DocumentFacets, Readiness } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
+import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
 const OPERATOR_URL = "http://operator.test";
+const EMPTY_DOCUMENT_FACETS: DocumentFacets = {
+  registries: [], issuers: [], years: [], languages: [], forms: [], parse_statuses: [], embedding_statuses: [], snapshots: [],
+};
 
 const READY_RUNTIME: Readiness = {
   environment: "prod",
@@ -55,7 +59,8 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
     else if (url.endsWith("/admin/jobs")) payload = { jobs: [], active_count: 0, queued_count: 0 };
     else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
     else if (url.endsWith("/admin/corpus")) payload = { status: { ...corpus, provider: "deterministic" }, manifests: [], documents: [] };
-    else if (url.endsWith("/admin/documents/facets")) payload = {};
+    else if (url.endsWith("/documents/facets")) payload = EMPTY_DOCUMENT_FACETS;
+    else if (url.includes("/documents?")) payload = { documents: [], total: 0, next_cursor: null };
     else if (url.startsWith(OPERATOR_URL)) payload = [];
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   });
@@ -110,6 +115,8 @@ function stubPublicApi() {
       daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", scope: "single_process",
     };
     else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
+    else if (url.endsWith("/public/documents/facets")) payload = EMPTY_DOCUMENT_FACETS;
+    else if (url.includes("/public/documents?")) payload = { documents: [], total: 0, next_cursor: null };
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -141,7 +148,7 @@ it("keeps restored development settings intact in prod, blocks both review paths
     expect(modeBadge).toHaveAttribute("title", "Server environment: PROD MODE");
     expect(modeBadge.nextElementSibling).toHaveClass("sidebar-nav");
     expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "PROD MODE");
-    expect(screen.getByRole("button", { name: /Use selected evidence/, hidden: true })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Review again with selected evidence/, hidden: true })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
@@ -216,6 +223,26 @@ describe("service shell", () => {
     vi.resetModules();
   });
 
+  it("closes navigation with its own button, backdrop, or Escape and restores toggle focus", async () => {
+    stubPublicApi();
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    const toggle = screen.getByRole("button", { name: "Toggle sidebar" });
+    const navigation = document.getElementById("service-navigation")!;
+    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(navigation).toHaveAttribute("inert");
+    expect(toggle).toHaveFocus();
+    fireEvent.click(toggle);
+    fireEvent.keyDown(navigation, { key: "Escape" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveFocus();
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation overlay" }));
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveFocus();
+  });
+
   it("navigates between Build, Measure and System from the sidebar", async () => {
     const fetchMock = stubPublicApi();
     render(<ServiceShell />);
@@ -228,7 +255,7 @@ describe("service shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Playground" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
     expect(screen.getByRole("heading", { name: "Runtime readiness" })).toBeInTheDocument();
@@ -242,6 +269,135 @@ describe("service shell", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+  });
+
+  it("returns from corpus readiness with the original conversation, draft, profile, and scroll", async () => {
+    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    seedAnsweredConversation();
+    render(<ServiceShell />);
+    await screen.findByText("Corpus total · 29 filings");
+    const readiness = screen.getByRole("button", { name: "View corpus readiness" });
+    const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(question, { target: { value: "Keep this unfinished question" } });
+    fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
+    const original = loadConversations();
+    const messages = document.querySelector<HTMLElement>(".messages")!;
+    messages.scrollTop = 280;
+    expect(fetchMock.mock.calls.some(([url]) => /\/admin\/(corpus|evaluations\/runs)$/.test(String(url)))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+    readiness.focus();
+    fireEvent.click(readiness);
+    expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeVisible();
+    const back = screen.getByRole("button", { name: "Back to conversation" });
+    expect(back).toHaveAttribute("type", "button");
+    expect(back).toHaveAttribute("title", "Back to conversation");
+    back.focus();
+    expect(back).toHaveFocus();
+    messages.scrollTop = 0;
+    fireEvent.click(back);
+    expect(question).toBeVisible();
+    expect(question).toHaveValue("Keep this unfinished question");
+    expect(messages.scrollTop).toBe(280);
+    expect(readiness).toHaveFocus();
+    expect(loadConversations()).toEqual(original);
+    expect(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /^Back to/ })).not.toBeInTheDocument();
+  });
+
+  it("preserves document filters, selection, and scroll through the related pipeline and another workspace", async () => {
+    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    const ordinaryFetch = fetchMock.getMockImplementation()!;
+    const filing = { doc_id: "NVDA-2025", registry: "sec", language: "en", issuer: "NVDA", issuer_id: "NVDA", fiscal_year: 2025, form: "10-K", filing_date: "2026-01-01", report_period: "2025-12-31", filing_id: "NVDA-2025", source_url: "https://example.com/filing", parse_status: "parsed", source_length: 1000, source_sha256: "abc", chunk_count: 4, embedded_chunks: 4, text_chunks: 3, table_chunks: 1, embedding_status: "complete", snapshot_count: 0 };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const payload = url.includes("/documents?") ? { documents: [filing], total: 1, next_cursor: null }
+        : url.endsWith("/documents/NVDA-2025") ? { document: filing, chunks: [], text_chunks: 3, table_chunks: 1, embedded_chunks: 4, item_counts: [], embedding_identities: [], snapshot_memberships: [] } : null;
+      return payload ? new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } }) : ordinaryFetch(input, init);
+    });
+    render(<ServiceShell />);
+    await screen.findByText("Corpus total · 29 filings");
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Build sections" })).getByRole("button", { name: "Documents" }));
+    fireEvent.click(await screen.findByRole("button", { name: "NVDA-2025" }));
+    await screen.findByRole("heading", { name: "Related work & next step" });
+    const search = screen.getByRole("textbox", { name: "Search documents" });
+    fireEvent.change(search, { target: { value: "NVDA" } });
+    const build = document.querySelector<HTMLElement>(".build-workspace")!;
+    build.scrollTop = 360;
+    fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+    expect(screen.getByRole("button", { name: "Pipeline" })).toHaveAttribute("aria-pressed", "true");
+    build.scrollTop = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Back to Build" }));
+    expect(search).toBeVisible();
+    expect(search).toHaveValue("NVDA");
+    expect(screen.getByRole("heading", { name: "Related work & next step" })).toBeVisible();
+    expect(build.scrollTop).toBe(360);
+    fireEvent.click(screen.getByRole("button", { name: "Measure" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Build" }));
+    expect(search).toHaveValue("NVDA");
+    expect(screen.getByRole("button", { name: "Documents" })).toHaveAttribute("aria-pressed", "true");
+    expect(build.scrollTop).toBe(360);
+  });
+
+  it("keeps the Back destination and edited question when discarding a golden draft is cancelled", async () => {
+    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    const ordinaryFetch = fetchMock.getMockImplementation()!;
+    const question = { id: "draft-01", question: "Original question", category: "simple_lookup", facet: "factual", answers: [], reference_answer: "Original answer" };
+    const revision = { revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const payload = url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/canonical") ? { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [question] } : url.endsWith("/revisions") ? [revision] : null;
+      return payload ? new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } }) : ordinaryFetch(input, init);
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<ServiceShell />);
+    await screen.findByText("Corpus total · 29 filings");
+    fireEvent.click(screen.getByRole("button", { name: "Measure" }));
+    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
+    await screen.findByRole("option", { name: "v1 · draft" });
+    fireEvent.change(screen.getByLabelText("Golden revision"), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "draft-01" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Question" }), { target: { value: "Unsaved question" } });
+    fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Unsaved question");
+    expect(screen.getByRole("button", { name: "Back to Measure" })).toBeVisible();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
+    expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Back to conversation" })).toBeVisible();
+    confirm.mockRestore();
+  });
+
+  it("restores the selected evaluation and API editor when returning between workspaces", async () => {
+    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    const ordinaryFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const payload = url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES
+        : url.endsWith("/admin/evaluations/runs") ? { jobs: [CANNED_JOB] }
+        : url.endsWith("/admin/evaluations/results/16") ? { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at } : null;
+      return payload ? new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } }) : ordinaryFetch(input, init);
+    });
+    render(<ServiceShell />);
+    await screen.findByText("Corpus total · 29 filings");
+    fireEvent.click(screen.getByRole("button", { name: "Measure" }));
+    fireEvent.click(screen.getByRole("button", { name: "3. Run evaluation" }));
+    fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
+    await screen.findByRole("heading", { name: "Result details · #16" });
+    fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
+    fireEvent.click(screen.getByRole("button", { name: "API inspector" }));
+    const request = screen.getByRole("textbox");
+    fireEvent.change(request, { target: { value: '{"suite_id":"sec-ko"}' } });
+    fireEvent.click(screen.getByRole("button", { name: "System status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
+    expect(request).toBeVisible();
+    expect(request).toHaveValue('{"suite_id":"sec-ko"}');
+    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
+    expect(screen.getByRole("button", { name: "3. Run evaluation" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).toBeChecked();
+    expect(screen.getByRole("heading", { name: "Result details · #16" })).toBeVisible();
   });
 
   it("renders the review shell and opens documentation in a new window", async () => {
@@ -312,7 +468,7 @@ describe("service shell", () => {
     fireEvent.click(within(scope).getByRole("button", { name: "SEC" }));
     expect(within(scope).getByRole("button", { name: "SEC" })).toHaveAttribute("aria-pressed", "true");
     expect(within(scope).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("Read-only corpus")).toBeInTheDocument();
+    expect(screen.getByText("Published corpus")).toBeInTheDocument();
   });
 
   it("shows invalidated provider authentication instead of an evidence fallback", () => {
@@ -420,7 +576,7 @@ describe("service shell", () => {
     stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     render(<ServiceShell />);
 
-    expect(await screen.findByRole("button", { name: "29 filings · hybrid ready" })).toBeInTheDocument();
+    expect(await screen.findByText("Corpus total · 29 filings")).toBeInTheDocument();
     await flushEffects();
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
@@ -431,7 +587,7 @@ describe("service shell", () => {
     seedAnsweredConversation();
     render(<ServiceShell />);
 
-    expect(await screen.findByRole("button", { name: "Corpus empty" })).toBeInTheDocument();
+    expect(await screen.findByText("Corpus empty")).toBeInTheDocument();
     await flushEffects();
     expect(screen.getByText("Data center revenue grew on Hopper demand.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
@@ -475,12 +631,12 @@ describe("service shell", () => {
     fireEvent.keyDown(window, { key: "?" });
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
 
-    // Help follows the workspace: Build › Pipeline has its own topics, Build › Documents none yet.
+    // Help follows the workspace, including document-specific controls.
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
     expect(screen.getByRole("heading", { name: "Build · Pipeline" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Help 2: Next step" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
-    expect(screen.getByText("No help topics for this screen yet.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Build · Documents" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
   });
@@ -719,7 +875,8 @@ it("preserves streamed messages and the submitted settings while background disc
     fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "Keep this question" } });
     fireEvent.click(screen.getByRole("button", { name: "Send question" }));
     await waitFor(() => expect(submitted).toBeDefined());
-    expect(document.querySelector(".waiting-glyph")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText("Waiting for the server")).toBeVisible();
+    expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(5);
     fireEvent.click(screen.getByRole("button", { name: "RAG settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
@@ -732,8 +889,60 @@ it("preserves streamed messages and the submitted settings while background disc
     expect(loadConversations()[0].profile?.prompt_policy.history_turns).toBe(4);
     expect(submitted?.session_profile.prompt_policy.history_turns).toBe(6);
     expect(loadConversations()[0].profile?.engine).toBe("openai");
-    expect(document.querySelector(".waiting-glyph")).not.toBeInTheDocument();
+    expect(screen.queryByText("Waiting for the server")).not.toBeInTheDocument();
+    expect(loadConversations()[0].messages[1].execution).toMatchObject({
+      node: "waiting", observed: [], outcome: "failed", retries: 0,
+    });
+    expect(screen.getByText("Execution summary")).toBeInTheDocument();
   } finally {
     cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules();
   }
+});
+
+it("keeps confirmed routing with its submitted profile while next-request controls and preview change", async () => {
+  cleanup();
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubPublicApi();
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let submitted: { session_profile: typeof DEFAULT_SESSION_PROFILE } | undefined;
+  const encoder = new TextEncoder();
+  const scope = { source: "alias", filters: { registries: ["dart"], issuers: ["005930"], fiscal_years: [2024] } };
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/review/stream")) {
+      submitted = JSON.parse(String(init?.body));
+      return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }), { headers: { "content-type": "text/event-stream" } }));
+    }
+    return ordinaryFetch(input, init);
+  });
+  try {
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(input, { target: { value: "삼성전자 매출" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+    await waitFor(() => expect(submitted).toBeDefined());
+    expect(screen.getByText("Waiting for server-confirmed routing")).toBeVisible();
+    await act(async () => { stream.enqueue(encoder.encode(`event: stage\ndata: ${JSON.stringify({ node: "route", phase: "end", status: "completed", elapsed_ms: 5, resolved_scope: scope })}\n\n`)); });
+    expect(screen.getByText(/Source: DART · Company: 005930 · Fiscal year: 2024/)).toBeVisible();
+    fireEvent.change(input, { target: { value: "Next draft stays here" } });
+    fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
+    fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "accuracy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Settings details / request preview" }));
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(input).toHaveValue("Next draft stays here");
+    expect(submitted?.session_profile.corpus_scope).toBe("auto");
+    expect(submitted?.session_profile.retrieval_preset).toBe("balanced");
+    await act(async () => {
+      stream.enqueue(encoder.encode(`event: report\ndata: ${JSON.stringify({ run: { status: "error", failure: { code: "node_error", message: "Regression fixture" }, execution: { effective_settings: { resolved_scope: scope } } } })}\n\nevent: done\ndata: {}\n\n`));
+      stream.close();
+    });
+    await waitFor(() => expect(loadConversations()[0].messages).toHaveLength(2));
+    const conversation = loadConversations()[0];
+    expect(conversation.messages[0].text).toBe("삼성전자 매출");
+    expect(conversation.messages[1].execution).toMatchObject({ selectedScope: "auto", resolvedScope: scope });
+    expect(conversation.profile).toMatchObject({ corpus_scope: "sec", retrieval_preset: "accuracy" });
+    expect(input).toHaveValue("Next draft stays here");
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
 });

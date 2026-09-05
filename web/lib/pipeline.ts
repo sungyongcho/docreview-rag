@@ -115,7 +115,7 @@ const OPENAI_KEY_HINT = "No answer model. In dev, set OPENAI_API_KEY_LOCAL in .e
 const EVIDENCE_ONLY_HINT = "Ask keeps working in evidence-only mode.";
 /** A public build never names the local engine, because that build cannot run one. */
 export const ANSWER_MODEL_HINT = LOCAL_ENGINE_VISIBLE
-  ? `${OPENAI_KEY_HINT} For a local model connect a server in Settings › Local LLM, then select a discovered model below the conversation input. ${EVIDENCE_ONLY_HINT}`
+  ? `${OPENAI_KEY_HINT} For a local model connect a server in Settings › Local LLM, then select a discovered model above the conversation input. ${EVIDENCE_ONLY_HINT}`
   : `${OPENAI_KEY_HINT} ${EVIDENCE_ONLY_HINT}`;
 
 export function stageStatusLabel(status: StageStatus): string {

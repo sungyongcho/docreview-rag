@@ -20,7 +20,7 @@ describe("ServiceHealthModal", () => {
   it("blocks API-down state and offers retry plus reload", () => {
     render(<ServiceHealthModal kind="api_down" visible checking={false} {...handlers} />);
 
-    expect(screen.getByRole("dialog")).toHaveTextContent("DocReview API is unavailable");
+    expect(screen.getByRole("dialog")).toHaveTextContent("DocReview RAG API is unavailable");
     expect(screen.queryByRole("button", { name: "Close database warning" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
     fireEvent.click(screen.getByRole("button", { name: /Reload page/ }));

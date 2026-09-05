@@ -33,6 +33,10 @@ describe("Playground", () => {
     render(<Playground live profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={vi.fn()} />);
 
     expect(screen.getByRole("textbox", { name: "Playground question" })).toHaveValue("What drove NVIDIA data center revenue growth?");
+    expect(screen.queryByRole("heading", { name: "Retrieval preview" })).not.toBeInTheDocument();
+    expect(screen.getByText("Advanced search settings").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByLabelText("Strategy")).toBeVisible();
+    expect(screen.getByLabelText("candidate_k")).not.toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Preview retrieval" }));
 
     expect(await screen.findByText("Score stage · rrf")).toBeInTheDocument();

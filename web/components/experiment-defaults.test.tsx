@@ -34,3 +34,16 @@ import { ExperimentDefaultsForm } from "./experiment-defaults";
       retrieval_preset: "accuracy",
     });
   });
+it("uses the same seven server-listed suites as evaluation setup and stores Astra defaults", async () => {
+  const suiteIds = ["sec-en", "sec-ko", "dart-en", "dart-ko", "sec-en_v2_astra", "sec-ko_v2_astra", "sec-mixed_v2_astra"];
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    const payload = String(input).endsWith("/admin/evaluations/suites") ? suiteIds.map((suite_id) => ({ suite_id, label: suite_id })) : [];
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  }));
+  render(<ExperimentDefaultsForm profile={DEFAULT_PROFILE} />);
+  expect(await screen.findByRole("option", { name: "sec-mixed_v2_astra" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Default golden suite").querySelectorAll("option")).toHaveLength(7);
+  fireEvent.change(screen.getByLabelText("Default golden suite"), { target: { value: "sec-mixed_v2_astra" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save experiment defaults" }));
+  expect(loadExperimentDefaults().suite_id).toBe("sec-mixed_v2_astra");
+});

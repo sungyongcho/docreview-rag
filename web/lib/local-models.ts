@@ -28,9 +28,9 @@ export function localModelIssue(profile: ReviewSessionProfile, readiness: Readin
   if (!local) return "Checking the local model server…";
   if (!local.enabled) return "Local LLM is unavailable. Check the server connection in Settings › Local LLM.";
   const selected = selectedLocalModel(profile, local);
-  if (!selected) return "Choose a local answer model in the controls below the conversation input.";
+  if (!selected) return "Choose a local answer model in the controls above the conversation input.";
   if (!local.models?.some((model) => model.name === selected && model.selectable)) {
-    return "The selected local model is unavailable. Choose an available model in the controls below the conversation input.";
+    return "The selected local model is unavailable. Choose an available model in the controls above the conversation input.";
   }
   return null;
 }

@@ -79,6 +79,7 @@ services:
       - "${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}:3000"
     volumes:
       - ./web:/web
+      - ./docs/TUTORIAL:/docs/TUTORIAL:ro
       - web_node_modules:/web/node_modules
       - web_next:/web/.next
     environment:

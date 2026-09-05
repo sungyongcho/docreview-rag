@@ -1,4 +1,6 @@
 "use client";
+import { useI18n } from "@/lib/i18n";
+
 
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 
@@ -47,6 +49,7 @@ export function Onboarding({
   /** The shell's committed workspace and tab; a change re-measures the step's target once the shell has navigated. */
   location?: string;
 }) {
+  const { t, locale } = useI18n();
   const steps = useMemo(
     () => STEPS.filter((item) => item.optional !== "operations" || includeOperations),
     [includeOperations],
@@ -132,20 +135,20 @@ export function Onboarding({
         <Pointer className="tour-pointer" style={pointerStyle} aria-hidden="true" />
       </> : <div className="tour-shade tour-shade-full" />}
       <section className="tour-dialog" style={cardPosition(rect)} role="dialog" aria-labelledby="tour-title">
-        <button className="icon-button tour-x" type="button" onClick={onClose} aria-label="Close tutorial"><X size={17} /></button>
-        <p className="eyebrow">Step {step + 1} of {steps.length}</p>
-        <h2 id="tour-title">{active.title}</h2>
-        <p>{active.description}</p>
-        {step === steps.length - 1 && <p className="tour-help-hint">Need details on any screen? Press ? for Help.</p>}
-        <p className="tour-target-hint">Click the highlighted control or use Next.</p>
-        <div className="tour-progress" aria-label={`Tutorial step ${step + 1} of ${steps.length}`} style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
+        <button className="icon-button tour-x" type="button" onClick={onClose} aria-label={t("Close tutorial")}><X size={17} /></button>
+        <p className="eyebrow">{t("Step")}{" "}{step + 1}{" "}{t("of")}{" "}{steps.length}</p>
+        <h2 id="tour-title">{t(active.title)}</h2>
+        <p>{t(active.description)}</p>
+        {step === steps.length - 1 && <p className="tour-help-hint">{t("Need details on any screen? Press ? for Help.")}</p>}
+        <p className="tour-target-hint">{t("Click the highlighted control or use Next.")}</p>
+        <div className="tour-progress" aria-label={t("Tutorial step {p0} of {p1}", { p0: step + 1, p1: steps.length })} style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
           {steps.map((item, index) => <span key={item.title} className={index <= step ? "done" : ""} />)}
         </div>
         <div className="tour-actions">
-          <button className="button ghost" type="button" onClick={onClose}>Skip</button>
+          <button className="button ghost" type="button" onClick={onClose}>{t("Skip")}</button>
           <div>
-            <button className="button ghost" type="button" disabled={step === 0} onClick={() => setStep((value) => value - 1)}><ArrowLeft size={15} /> Back</button>
-            <button className="button primary" type="button" onClick={advance}>{step === steps.length - 1 ? "Finish" : "Next"} <ArrowRight size={15} /></button>
+            <button className="button ghost" type="button" disabled={step === 0} onClick={() => setStep((value) => value - 1)}><ArrowLeft size={15} />{t("Back")}</button>
+            <button className="button primary" type="button" onClick={advance}>{step === steps.length - 1 ? t("Finish") : t("Next")} <ArrowRight size={15} /></button>
           </div>
         </div>
       </section>

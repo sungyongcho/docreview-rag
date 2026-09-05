@@ -1,0 +1,74 @@
+.composer-toolbar .composer-scope-control, .composer-toolbar .composer-preset-control { display: grid; gap: 5px; align-content: start; max-width: 240px; }
+.composer-toolbar .chip-group { align-items: start; }
+.composer-toolbar .composer-control-label { margin: 0; color: var(--text); font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.composer-control-description { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.composer-control-description code { display: block; margin-top: 3px; font-size: 10px; overflow-wrap: anywhere; }
+.request-inspector-trigger { margin-left: auto; }
+.request-inspector-overlay { position: fixed; inset: 0; z-index: 160; display: flex; justify-content: flex-end; background: rgb(0 0 0 / 32%); }
+.request-inspector-panel { width: min(680px, 65vw); height: 100dvh; display: flex; flex-direction: column; background: var(--surface); color: var(--text); box-shadow: -10px 0 35px rgb(0 0 0 / 14%); }
+.request-inspector-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.request-inspector-header h2 { margin: 0; font-size: 16px; }
+.request-inspector-header button { flex-shrink: 0; }
+.request-inspector-body { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 24px; font-size: 12px; }
+.request-inspector-body h3 { font-size: 13px; margin: 0 0 12px; }
+.request-inspector-body details > summary { min-height: 40px; align-content: center; cursor: pointer; }
+.request-inspector-body pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 12px; border-radius: 7px; font-size: 11px; }
+.review-routing { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
+.review-routing strong { color: var(--text); }
+.review-routing p { margin: 2px 0; }
+@media (max-width: 760px) {
+  .request-inspector-panel { width: 100%; }
+  .request-inspector-header { padding: 16px; }
+  .request-inspector-body { padding: 16px; }
+  .composer-toolbar .composer-scope-control, .composer-toolbar .composer-preset-control { max-width: 100%; }
+  .request-inspector-trigger { margin-left: 0; }
+}
+
+.composer-control-label label { margin: 0; }
+.composer-toolbar button.composer-control-help { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; min-height: 20px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 11px; cursor: help; }
+.composer-help-tooltip { position: fixed; z-index: 180; width: min(340px, calc(100vw - 24px)); max-height: min(55vh, 360px); overflow: auto; padding: 12px 14px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 8px 24px rgb(0 0 0 / 16%); font-size: 12px; line-height: 1.6; }
+.composer-help-tooltip p { margin: 0 0 7px; }
+.composer-help-tooltip p:last-child { margin-bottom: 0; }
+.composer-help-tooltip code { overflow-wrap: anywhere; font-size: 11px; }
+
+/* Labels and actions share one fixed baseline; the summary stays in its own row. */
+.composer-toolbar.composer-toolbar-aligned { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-left: 0; }
+.composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 8px; overflow: visible; padding: 0; width: 100%; }
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
+.composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; max-width: 100%; font-size: 11px; }
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control { flex: 0 1 auto; }
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control { flex: 0 1 145px; }
+.composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { flex: 0 1 150px; }
+.composer-toolbar-aligned .composer-toolbar-primary .composer-control-label,
+.composer-toolbar-aligned .composer-toolbar-primary .composer-engine-label { display: flex; align-items: center; height: 20px; line-height: 20px; margin: 0; color: var(--text); font-size: 11px; font-weight: 600; }
+.composer-toolbar-aligned .composer-toolbar-primary select { width: 100%; max-width: 100%; min-width: 0; height: 40px; min-height: 40px; padding: 7px 10px; font-size: 12px; }
+.composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 40px; min-height: 40px; max-width: 100%; }
+.composer-toolbar-aligned .composer-toolbar-primary .segmented button { min-height: 0; height: 100%; flex: 1; }
+.composer-toolbar-aligned .composer-toolbar-primary .composer-control-description { white-space: nowrap; font-size: 10px; line-height: 16px; }
+.composer-toolbar-aligned .composer-toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 25px; min-width: 0; }
+.composer-toolbar-aligned .composer-toolbar-actions > .chip { min-height: 40px; height: 40px; }
+.composer-toolbar-aligned .composer-toolbar-secondary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+.composer-toolbar-aligned .composer-corpus-readiness { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.composer-toolbar-aligned .composer-readiness-facts { display: flex; flex-direction: column; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.composer-toolbar-aligned .composer-readiness-facts > small { font-size: 10px; }
+.composer-toolbar-aligned .composer-readiness-facts > small.confirmed { color: var(--good); }
+.composer-toolbar-aligned button.corpus-readiness-action { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; min-height: 32px; padding: 5px 0; border: 0; }
+.composer-toolbar-aligned .request-inspector-trigger { margin-left: auto; font-size: 11px; min-height: 32px; padding: 5px 10px; }
+@media (max-width: 760px) {
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
+  .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { grid-template-rows: 20px 44px auto; width: 100%; }
+  .composer-toolbar-aligned .composer-toolbar-primary select,
+  .composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 44px; min-height: 44px; width: 100%; }
+  .composer-toolbar-aligned .composer-toolbar-primary .segmented button { padding-inline: 6px; min-width: 0; }
+  .composer-toolbar-aligned .composer-toolbar-actions { padding-top: 25px; }
+  .composer-toolbar-aligned .composer-toolbar-actions > .chip { height: 44px; min-height: 44px; }
+  .composer-toolbar-aligned button.corpus-readiness-action,
+  .composer-toolbar-aligned .request-inspector-trigger { min-height: 44px; }
+}
+@media (max-width: 360px) {
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { grid-template-columns: minmax(0, 1fr); }
+  .composer-toolbar-aligned .composer-toolbar-actions { padding-top: 0; }
+}

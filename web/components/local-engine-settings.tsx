@@ -1,4 +1,6 @@
 "use client";
+import { useI18n } from "@/lib/i18n";
+
 
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
@@ -10,6 +12,7 @@ export function LocalEngineSettings({ profile, readiness, onChange }: {
   readiness: Readiness | null;
   onChange: (update: Partial<ReviewSessionProfile>) => void;
 }) {
+  const { t, locale } = useI18n();
   if (!LOCAL_ENGINE_VISIBLE) return null;
   const local = readiness?.review_engines?.local;
   const available = local?.enabled === true;
@@ -19,17 +22,17 @@ export function LocalEngineSettings({ profile, readiness, onChange }: {
   const issue = localModelIssue(profile, readiness);
   const label = !local ? "Local LLM (Checking…)" : !available ? "Local LLM (Unavailable)" : profile.engine === "local" ? "Local LLM (Selected)" : "Local LLM";
   return <>
-    <label>Answer engine<select value={profile.engine} onChange={(event) => onChange({ engine: event.target.value as ReviewSessionProfile["engine"], local_model: selected })}>
-      <option value="openai">OpenAI API</option>
-      <option value="local" disabled={!available}>{label}</option>
+    <label className="composer-engine-field"><span className="composer-engine-label">{t("Answer engine")}</span><select value={profile.engine} onChange={(event) => onChange({ engine: event.target.value as ReviewSessionProfile["engine"], local_model: selected })}>
+      <option value="openai">{t("OpenAI API")}</option>
+      <option value="local" disabled={!available}>{t(label)}</option>
     </select></label>
     {profile.engine === "local" && <>
-      <label>Local model<select value={selected ?? ""} disabled={!available} onChange={(event) => onChange({ local_model: event.target.value || null })}>
-        <option value="" disabled>Choose a model</option>
-        {missing && <option value={selected} disabled>{selected} (Unavailable)</option>}
+      <label className="composer-engine-field"><span className="composer-engine-label">{t("Local model")}</span><select value={selected ?? ""} disabled={!available} onChange={(event) => onChange({ local_model: event.target.value || null })}>
+        <option value="" disabled>{t("Choose a model")}</option>
+        {missing && <option value={selected} disabled>{selected}{" "}{t("(Unavailable)")}</option>}
         {models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}
       </select></label>
-      <p className="helper" role="status">{issue ?? `Selected: ${selected}`}</p>
+      <p className="helper" role="status">{issue ? t(issue) : t("Selected: {p0}", { p0: selected ?? "" })}</p>
     </>}
   </>;
 }

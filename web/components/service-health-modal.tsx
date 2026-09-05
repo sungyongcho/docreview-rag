@@ -1,3 +1,5 @@
+"use client";
+import { useI18n } from "@/lib/i18n";
 import { DatabaseZap, RefreshCw, RotateCw, ServerCrash, X } from "lucide-react";
 
 import type { RuntimeHealthKind } from "@/lib/use-runtime-health";
@@ -25,22 +27,23 @@ export function ServiceHealthModal({
   onOpenBuild,
   degradedMessage,
 }: ServiceHealthModalProps) {
+  const { t, locale } = useI18n();
   if (!visible || (kind !== "api_down" && kind !== "db_degraded")) return null;
   const apiDown = kind === "api_down";
   return (
     <div className="health-modal-scrim" role="presentation">
       <section className="health-modal" role="dialog" aria-modal="true" aria-labelledby="health-modal-title">
-        {!apiDown && <button className="icon-button health-modal-x" type="button" aria-label="Close database warning" onClick={onDismiss}><X size={17} /></button>}
+        {!apiDown && <button className="icon-button health-modal-x" type="button" aria-label={t("Close database warning")} onClick={onDismiss}><X size={17} /></button>}
         <div className="health-modal-icon" aria-hidden="true">{apiDown ? <ServerCrash /> : <DatabaseZap />}</div>
-        <p className="eyebrow">Runtime health</p>
-        <h2 id="health-modal-title">{apiDown ? "DocReview API is unavailable" : "Database is not ready"}</h2>
-        <p>{apiDown ? "The API is not running normally. Check the service, then try again." : degradedMessage ?? "The API is running, but the database or corpus is not ready for review operations."}</p>
+        <p className="eyebrow">{t("Runtime health")}</p>
+        <h2 id="health-modal-title">{apiDown ? t("DocReview API is unavailable") : t("Database is not ready")}</h2>
+        <p>{apiDown ? t("The API is not running normally. Check the service, then try again.") : degradedMessage ?? "The API is running, but the database or corpus is not ready for review operations."}</p>
         <div className="health-modal-actions">
-          {!apiDown && <button className="button" type="button" onClick={onOpenStatus}>Open System status</button>}
-          {!apiDown && <button className="button" type="button" onClick={onDismiss}>Continue</button>}
-          {!apiDown && <button className="button primary" type="button" onClick={onOpenBuild}>Open Build</button>}
-          {apiDown && <button className="button" type="button" onClick={onReload}><RotateCw size={15} /> Reload page</button>}
-          {apiDown && <button className="button primary" type="button" disabled={checking} onClick={onRetry}><RefreshCw size={15} /> {checking ? "Checking…" : "Try again"}</button>}
+          {!apiDown && <button className="button" type="button" onClick={onOpenStatus}>{t("Open System status")}</button>}
+          {!apiDown && <button className="button" type="button" onClick={onDismiss}>{t("Continue")}</button>}
+          {!apiDown && <button className="button primary" type="button" onClick={onOpenBuild}>{t("Open Build")}</button>}
+          {apiDown && <button className="button" type="button" onClick={onReload}><RotateCw size={15} />{t("Reload page")}</button>}
+          {apiDown && <button className="button primary" type="button" disabled={checking} onClick={onRetry}><RefreshCw size={15} /> {checking ? t("Checking…") : t("Try again")}</button>}
         </div>
       </section>
     </div>

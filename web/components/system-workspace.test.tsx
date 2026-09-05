@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SystemWorkspace, type SystemWorkspaceProps } from "./system-workspace";
+import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
 
 function renderSystem(overrides: Partial<SystemWorkspaceProps> = {}) {
   return render(
@@ -23,6 +24,7 @@ describe("System workspace", () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    localStorage.clear();
   });
 
   it("shows locally persisted usage only in live operator mode", async () => {
@@ -79,5 +81,20 @@ describe("System workspace", () => {
     expect(documentation).toHaveAttribute("target", "_blank");
     expect(documentation).toHaveAttribute("rel", "noreferrer");
     expect(documentation?.getAttribute("href")?.endsWith("/docs/")).toBe(true);
+  });
+
+  it("formats recorded usage counts and timestamps in the selected language", async () => {
+    localStorage.setItem(LOCALE_KEY, "ko");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      runs: 1200, requests: 2400, input_tokens: 12345, cached_input_tokens: 0,
+      cache_write_input_tokens: 0, output_tokens: 0, reasoning_tokens: 0,
+      estimated_cost_usd: "0.0100", latest_run_at: "2026-09-05T12:00:00Z", models: [],
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    render(<I18nProvider><SystemWorkspace live readiness={null} checking={false} onRefresh={vi.fn()} operationsAvailable={false} tab="usage" onTabChange={vi.fn()} /></I18nProvider>);
+    expect(await screen.findByText("12,345")).toBeInTheDocument();
+    expect(screen.getByText("1,200")).toBeInTheDocument();
+    expect(screen.getByText("2,400")).toBeInTheDocument();
+    expect(screen.getByText(/2026\. 9\. 5\./)).toBeInTheDocument();
+    expect(screen.getByText("$0.0100")).toBeInTheDocument();
   });
 });

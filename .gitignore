@@ -54,3 +54,7 @@ old/
 
 # Dashboard cache written by .dashboard/dashboard-refresh.sh.
 .dashboard-cache/
+
+# Generated from the tutorial Markdown image references.
+web/public/tutorial-assets/
+web/.tutorial/

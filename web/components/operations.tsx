@@ -1,4 +1,6 @@
 "use client";
+import { useI18n } from "@/lib/i18n";
+
 
 import { CircleStop, Play, RefreshCw, TerminalSquare } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -15,6 +17,7 @@ import { useNotifications } from "@/components/notifications";
 
 /** `embedded` drops the page heading so a host workspace keeps the only h1; `helpId` is the Help mode hook. */
 export function Operations({ embedded = false, helpId }: { embedded?: boolean; helpId?: string } = {}) {
+  const { t, locale } = useI18n();
   const [commands, setCommands] = useState<OperatorCommand[]>([]);
   const [jobs, setJobs] = useState<OperatorJob[]>([]);
   const { notify } = useNotifications();
@@ -27,7 +30,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
       setCommands(nextCommands);
       setJobs(nextJobs);
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Operations refresh failed.", "error", "operations-refresh");
+      notify(reason instanceof Error ? reason.message : t("Operations refresh failed."), "error", "operations-refresh");
     } finally {
       setLoading(false);
     }
@@ -45,9 +48,9 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
     try {
       const job = await startOperatorJob(command.command_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
-      notify(`${command.label} started.`, "success", "operations-run");
+      notify(t("{p0} started.", { p0: t(command.label) }), "success", "operations-run");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Command could not start.", "error", "operations-run");
+      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run");
     }
   }
 
@@ -56,9 +59,9 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
     try {
       const job = await cancelOperatorJob(active.job_id);
       setJobs((current) => current.map((item) => item.job_id === job.job_id ? job : item));
-      notify("Command cancelled.", "success", "operations-cancel");
+      notify(t("Command cancelled."), "success", "operations-cancel");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Command could not be cancelled.", "error", "operations-cancel");
+      notify(reason instanceof Error ? reason.message : t("Command could not be cancelled."), "error", "operations-cancel");
     }
   }
 
@@ -66,24 +69,24 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
   return (
     <section className={`operations-page${embedded ? " embedded" : ""}`} data-help={helpId}>
       {embedded
-        ? <div className="surface-heading"><div><h2>Operations</h2><p className="helper">Local checkout only. Run fixed verification and service commands without exposing a shell.</p></div><button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button></div>
+        ? <div className="surface-heading"><div><h2>{t("Operations")}</h2><p className="helper">{t("Local checkout only. Run fixed verification and service commands without exposing a shell.")}</p></div><button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{t("Refresh")}</button></div>
         : <header className="page-heading">
-            <div><p className="eyebrow">Local checkout only</p><h1>Operations</h1><p>Run fixed verification and service commands without exposing a shell.</p></div>
-            <button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
+            <div><p className="eyebrow">{t("Local checkout only")}</p><h1>{t("Operations")}</h1><p>{t("Run fixed verification and service commands without exposing a shell.")}</p></div>
+            <button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{t("Refresh")}</button>
           </header>}
       <div className="command-grid">
         {commands.map((command) => (
           <article className="command-card" key={command.command_id}>
-            <div className="command-heading"><TerminalSquare size={16} /><span className={`command-kind ${command.category}`}>{command.category}</span></div>
-            <h2>{command.label}</h2><p>{command.description}</p>
-            {command.confirmation && <small>Confirmation required</small>}
-            <button className="button primary" type="button" disabled={Boolean(active)} onClick={() => void run(command)}><Play size={14} /> Run</button>
+            <div className="command-heading"><TerminalSquare size={16} /><span className={`command-kind ${command.category}`}>{t(command.category)}</span></div>
+            <h2>{t(command.label)}</h2><p>{t(command.description)}</p>
+            {command.confirmation && <small>{t("Confirmation required")}</small>}
+            <button className="button primary" type="button" disabled={Boolean(active)} onClick={() => void run(command)}><Play size={14} />{t("Run")}</button>
           </article>
         ))}
       </div>
       <section className="surface operation-output">
-        <div className="operation-output-heading"><h2>Latest run</h2>{active && <button className="button" type="button" onClick={() => void cancel()}><CircleStop size={14} /> Cancel</button>}</div>
-        {latest ? <><p className="helper">{latest.label} · {latest.status}{latest.exit_code !== null ? ` · exit ${latest.exit_code}` : ""}</p><pre>{latest.output || "Waiting for output…"}</pre></> : <p className="helper">No local command has run in this session.</p>}
+        <div className="operation-output-heading"><h2>{t("Latest run")}</h2>{active && <button className="button" type="button" onClick={() => void cancel()}><CircleStop size={14} />{t("Cancel")}</button>}</div>
+        {latest ? <><p className="helper">{t(latest.label)} · {t(latest.status)}{latest.exit_code !== null ? t(" · exit {p0}", { p0: latest.exit_code }) : ""}</p><pre>{latest.output || t("Waiting for output…")}</pre></> : <p className="helper">{t("No local command has run in this session.")}</p>}
       </section>
     </section>
   );

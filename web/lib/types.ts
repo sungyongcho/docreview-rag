@@ -1,6 +1,6 @@
 export type Strategy = "vector" | "lexical" | "hybrid";
 export type LexicalRanker = "ts_rank_cd" | "bm25";
-export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko";
+export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
 export interface RetrievalProfile {
   strategy: Strategy;
@@ -74,6 +74,31 @@ export interface EvidenceHit {
   score: number;
 }
 
+export type ReviewEventNode = "waiting" | "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report" | "candidates";
+/** Actual scope resolved by the server; absent on older conversation records. */
+export interface ReviewResolvedScope {
+  source?: string;
+  filters: { registries: string[]; issuers: string[]; fiscal_years: number[] };
+}
+export interface ReviewExecution {
+  node: ReviewEventNode;
+  evidence: number;
+  relevant: number;
+  steps: number;
+  observed?: ReviewEventNode[];
+  outcome?: "running" | "completed" | "failed" | "cancelled";
+  revalidating?: boolean;
+  retries?: number;
+  elapsedMs?: number;
+  startedAt?: number;
+  lastEventAt?: number;
+  activeNode?: ReviewEventNode | null;
+  completedNodes?: ReviewEventNode[];
+  selectedScope?: CorpusScope;
+  resolvedScope?: ReviewResolvedScope;
+  stageTimings?: Array<{ node: ReviewEventNode; elapsed_ms: number; status: string }>;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -83,6 +108,9 @@ export interface ChatMessage {
   /** Citations the report actually made; the evidence list above is the wider candidate pool. */
   citations?: number;
   trace?: string;
+  /** Only events observed for this request; absent for older conversations. */
+  execution?: ReviewExecution;
+  performance?: Record<string, unknown>;
   /** Run and failure facts for the diagnostic table, in display order. */
   diagnostics?: Array<{ label: string; value: string }>;
   /** Settings destination that would change the outcome, when one exists. */
@@ -183,7 +211,7 @@ export interface GoldenSuite {
   suite_id: SuiteId;
   label: string;
   registry: "sec" | "dart";
-  question_language: "en" | "ko";
+  question_language: "en" | "ko" | "mixed";
   corpus_language: "en" | "ko";
   case_count: number;
   scored_positive_cases: number;
@@ -327,6 +355,7 @@ export interface AdminDocument {
   registry: string;
   language: string;
   issuer: string;
+  issuer_name?: string | null;
   issuer_id: string;
   fiscal_year: number;
   form: string;

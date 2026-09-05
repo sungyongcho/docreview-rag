@@ -1,7 +1,10 @@
 "use client";
+import { useI18n } from "@/lib/i18n";
+
 
 import { useEffect, useMemo, useState } from "react";
 
+import { RetainedPanel } from "@/components/retained-panel";
 import { BuildPipeline, splitList, type AcquisitionForm } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
 import { JobCenter } from "@/components/job-center";
@@ -58,6 +61,7 @@ export interface BuildWorkspaceProps {
   onRunOperation?: (commandId: string) => void;
   tab: BuildTab;
   onTabChange: (tab: BuildTab) => void;
+  focusStep?: number | null;
   onNavigate: (target: BuildNavigationTarget) => void;
 }
 
@@ -111,7 +115,10 @@ function ingestOrder(manifests: ManifestSummary[]): ManifestSummary[] {
     .toSorted((left, right) => left.name === "manifest.json" ? -1 : right.name === "manifest.json" ? 1 : left.name.localeCompare(right.name));
 }
 
-export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
+  const { t, locale } = useI18n();
+  const [focusStage, setFocusStage] = useState<string | null>(null);
+  useEffect(() => { if (focusStep != null) setFocusStage(String(focusStep)); }, [focusStep]);
   const { notify } = useNotifications();
   const environment = deploymentLabel(readiness?.environment);
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
@@ -143,7 +150,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
       const snapshotRows = await getAdminSnapshots();
       setSnapshotCount(Array.isArray(snapshotRows) ? snapshotRows.length : 0);
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Refresh failed.", "error", "build-refresh");
+      notify(reason instanceof Error ? reason.message : t("Refresh failed."), "error", "build-refresh");
     }
   }
 
@@ -165,9 +172,9 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     try {
       await queueCorpusOperation(body);
       onRefreshJobs();
-      notify("Corpus operation queued.", "success", "corpus-operation");
+      notify(t("Corpus operation queued."), "success", "corpus-operation");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Corpus operation failed.", "error", "corpus-operation");
+      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
     } finally {
       setBusy(false);
     }
@@ -177,14 +184,14 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   async function ingestAllManifests() {
     if (!live) return;
     const ordered = ingestOrder(manifests);
-    if (!ordered.length) { notify("No valid manifest to ingest.", "warning", "corpus-operation"); return; }
+    if (!ordered.length) { notify(t("No valid manifest to ingest."), "warning", "corpus-operation"); return; }
     setBusy(true);
     try {
       for (const item of ordered) await queueCorpusOperation({ kind: "ingest_manifest", manifest: item.name });
       onRefreshJobs();
-      notify(`Ingest queued for ${ordered.length} manifest${ordered.length === 1 ? "" : "s"}.`, "success", "corpus-operation");
+      notify(t("Manifests queued for ingest: {count}.", { count: ordered.length.toLocaleString(locale) }), "success", "corpus-operation");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Corpus operation failed.", "error", "corpus-operation");
+      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
     } finally {
       setBusy(false);
     }
@@ -199,7 +206,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   }
 
   async function runQuickEvaluation() {
-    if (!live) { notify("Production experiment controls are locked. Compare published snapshots instead.", "warning", "prod-eval"); return; }
+    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval"); return; }
     if (!ready) return;
     setBusy(true);
     try {
@@ -219,10 +226,10 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
       });
       setJobs((current) => [job, ...current]);
       onRefreshJobs();
-      notify("Evaluation queued.", "success", "evaluation-queued");
+      notify(t("Evaluation queued."), "success", "evaluation-queued");
       onTabChange("jobs");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Evaluation failed.", "error", "evaluation");
+      notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation");
     } finally {
       setBusy(false);
     }
@@ -261,23 +268,25 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     <section className="lab-shell build-workspace">
       <header className="page-heading">
         <div>
-          <p className="eyebrow">Build</p>
-          <h1>From filings to verified answers.</h1>
-          <p>Complete corpus setup to ask questions. Evaluation measures retrieval quality separately.</p>
+          <h1>{t("From filings to verified answers.")}</h1>
+          <p>{t("Complete corpus setup to ask questions. Evaluation measures retrieval quality separately.")}</p>
         </div>
         <div className="page-badges">
           <span className="mode-badge">{environment}</span>
-          <span className={`mode-badge ${live ? "live" : ""}`}>{live ? "Local operator" : "Read-only portfolio"}</span>
+          <span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span>
         </div>
       </header>
-      <nav className="lab-tabs" aria-label="Build sections">
+      <nav className="lab-tabs" aria-label={t("Build sections")}>
         {TABS.map(([id, label]) => (
-          <button key={id} type="button" aria-pressed={tab === id} onClick={() => onTabChange(id)}>{label}</button>
+          <button key={id} type="button" aria-pressed={tab === id} onClick={() => onTabChange(id)}>{t(label)}</button>
         ))}
       </nav>
 
-      {tab === "pipeline" && <BuildPipeline
+      <RetainedPanel active={tab === "pipeline"}><BuildPipeline
         pipeline={pipeline}
+        documents={corpusDocuments}
+        embeddingProvider={runtimeCounts?.provider ?? null}
+        focusStage={focusStage}
         live={live}
         busy={busy}
         canOperateCorpus={canOperateCorpus}
@@ -306,12 +315,13 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         onOpenJobs={() => onTabChange("jobs")}
         onOpenStatus={() => onNavigate({ view: "system", tab: "status" })}
         onRefresh={() => void refresh()}
-      />}
+      /></RetainedPanel>
 
-      {tab === "documents" && <DocumentInventory live={live} fallbackDocuments={corpusDocuments} />}
+      <RetainedPanel active={tab === "documents"}><DocumentInventory live={live} fallbackDocuments={corpusDocuments} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
-      {tab === "jobs" && (live
+      <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter
+            onOpenPipeline={(stage) => { setFocusStage(stage); onTabChange("pipeline"); }}
             board={jobBoard}
             loading={jobsLoading}
             onRetry={onRetryJob}
@@ -319,7 +329,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
             onRefresh={onRefreshJobs}
             onOpenResult={(resultId) => onNavigate({ view: "measure", tab: "runs", resultId })}
           />
-        : <div className="empty-state"><h2>Jobs</h2><p>Jobs run on the local operator build.</p></div>)}
+        : <div className="empty-state"><h2>{t("Jobs")}</h2><p>{t("Jobs run on the local operator build.")}</p></div>)}</RetainedPanel>
     </section>
   );
 }

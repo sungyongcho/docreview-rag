@@ -76,7 +76,7 @@ export function loadExperimentDefaults(): ExperimentDefaults {
   try {
     const value = JSON.parse(window.localStorage.getItem(EXPERIMENT_DEFAULTS_KEY) ?? "null") as Partial<ExperimentDefaults> | null;
     if (!value) return DEFAULT_EXPERIMENT_DEFAULTS;
-    const suiteId = ["sec-en", "sec-ko", "dart-en", "dart-ko"].includes(String(value.suite_id))
+    const suiteId = ["sec-en", "sec-ko", "dart-en", "dart-ko", "sec-en_v2_astra", "sec-ko_v2_astra", "sec-mixed_v2_astra"].includes(String(value.suite_id))
       ? value.suite_id as ExperimentDefaults["suite_id"]
       : DEFAULT_EXPERIMENT_DEFAULTS.suite_id;
     const mode = value.mode === "matrix" || value.mode === "quick"

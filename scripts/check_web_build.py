@@ -16,10 +16,23 @@ def main() -> int:
     dependencies = source / "node_modules"
     if not dependencies.is_dir():
         raise RuntimeError("web/node_modules is missing; run npm install in web first")
-    ignored = shutil.ignore_patterns("node_modules", ".next", ".next-*", "out", "*.tsbuildinfo")
+    ignored = shutil.ignore_patterns(
+        "node_modules", ".next", ".next-*", "out", "*.tsbuildinfo", "tutorial-assets"
+    )
     with tempfile.TemporaryDirectory(prefix="docreview-web-build-") as temporary:
         target = Path(temporary) / "web"
         shutil.copytree(source, target, ignore=ignored)
+        tutorial = Path(temporary) / "docs" / "TUTORIAL"
+        tutorial.mkdir(parents=True)
+        for locale in ("ko", "en"):
+            (tutorial / locale).mkdir()
+            for name in ("walkthrough.md", "cli.md"):
+                shutil.copyfile(
+                    root / "docs" / "TUTORIAL" / locale / name, tutorial / locale / name
+                )
+        assets = root / "docs" / "TUTORIAL" / "assets"
+        if assets.is_dir():
+            shutil.copytree(assets, tutorial / "assets")
         target_dependencies = target / "node_modules"
         try:
             shutil.copytree(

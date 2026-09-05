@@ -83,6 +83,12 @@ export interface ReviewProgress {
   evidence_count: number;
   relevant_count: number;
   step_count: number;
+  phase?: "start" | "end";
+  status?: "running" | "completed" | "failed";
+  started_at?: string;
+  elapsed_ms?: number | null;
+  total_elapsed_ms?: number;
+  resolved_scope?: Record<string, unknown> | null;
 }
 
 function parseSseFrame(frame: string): { event: string; data: string } | null {
@@ -106,7 +112,7 @@ export async function streamReview(
 ): Promise<Record<string, unknown>> {
   const response = await fetch(`${API_BASE}/review/stream`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
     body: JSON.stringify({
       query,
       session_profile: sessionProfile,
@@ -146,7 +152,7 @@ export async function streamReview(
     const frame = parseSseFrame(frameText);
     if (!frame) return;
     const payload = JSON.parse(frame.data) as Record<string, unknown>;
-    if (frame.event === "node") {
+    if (frame.event === "node" || frame.event === "stage") {
       onProgress(payload as unknown as ReviewProgress);
       return;
     }
@@ -347,8 +353,20 @@ export function getAdminDocuments(params: URLSearchParams): Promise<AdminDocumen
   return request<AdminDocumentPage>(`/admin/documents?${params.toString()}`);
 }
 
-export function getDocumentFacets(): Promise<DocumentFacets> {
-  return request<DocumentFacets>("/admin/documents/facets");
+export function getDocumentFacets(registry = "", signal?: AbortSignal): Promise<DocumentFacets> {
+  return request<DocumentFacets>(`/admin/documents/facets${registry ? `?registry=${encodeURIComponent(registry)}` : ""}`, { signal });
+}
+
+export function getPublishedDocuments(params: URLSearchParams): Promise<AdminDocumentPage> {
+  return request<AdminDocumentPage>(`/public/documents?${params.toString()}`);
+}
+
+export function getPublishedDocumentFacets(registry = "", signal?: AbortSignal): Promise<DocumentFacets> {
+  return request<DocumentFacets>(`/public/documents/facets${registry ? `?registry=${encodeURIComponent(registry)}` : ""}`, { signal });
+}
+
+export function getPublishedDocumentDetail(docId: string): Promise<DocumentDetail> {
+  return request<DocumentDetail>(`/public/documents/${encodeURIComponent(docId)}`);
 }
 
 export function getOperatorJobs(): Promise<OperatorJobBoard> {

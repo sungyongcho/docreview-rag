@@ -108,24 +108,31 @@ describe("BuildPipeline", () => {
       corpus: { database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 21, chunks: 100, embedded_chunks: 100, pending_embeddings: 0, bm25_ready: true, writable: true, provider: "deterministic" },
       evaluationResults: 0,
     }));
-    expect(screen.getByRole("heading", { name: "Corpus ready · evaluation pending" })).toBeInTheDocument();
-    expect(screen.getByText("Not run")).toBeInTheDocument();
+    expect(screen.getByText("Corpus ready")).toBeInTheDocument();
+    expect(document.querySelector(".pipeline-node.evaluate")).toHaveTextContent("Not run");
     expect(screen.queryByText("All steps done")).not.toBeInTheDocument();
-    const summary = document.querySelector('.next-step')!;
-    const ask = [...summary.querySelectorAll('button')].find((button) => button.textContent === "Ask a question")!;
+    fireEvent.click(screen.getByRole("button", { name: "Select Ask" }));
+    const ask = screen.getByRole("button", { name: "Ask a question" });
     expect(ask).toBeEnabled();
     fireEvent.click(ask);
     expect(handlers.onAsk).toHaveBeenCalledOnce();
   });
 
   it("keeps every setup number and its purpose visible after completion", () => {
-    renderPipeline(liveInput({
+    const handlers = renderPipeline(liveInput({
       corpus: { database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 21, chunks: 100, embedded_chunks: 100, pending_embeddings: 0, bm25_ready: true, writable: true, provider: "deterministic" },
       evaluationResults: 1,
     }));
     const titles = ["Filings", "Parse & chunk", "Embeddings", "Lexical index (BM25)", "Ask", "Answer model", "Evaluate"];
-    titles.forEach((title, index) => expect(screen.getByRole("heading", { name: `${index + 1}. ${title}` })).toBeVisible());
-    expect(screen.getAllByText("Why it matters:")).toHaveLength(7);
+    titles.forEach((title, index) => {
+      const node = screen.getByRole("button", { name: `Select ${title}` });
+      expect(node).toBeVisible();
+      fireEvent.click(node);
+      expect(screen.getByRole("heading", { name: `${index + 1}. ${title}` })).toBeVisible();
+      expect(screen.getByText("Why it matters:")).toBeVisible();
+      expect(document.querySelectorAll("ol.stage-list article.stage-card")).toHaveLength(1);
+    });
+    for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
   });
 
   afterEach(cleanup);
@@ -133,26 +140,32 @@ describe("BuildPipeline", () => {
   it("points at the next stage and wires its primary action", () => {
     const handlers = renderPipeline(liveInput());
 
-    expect(screen.getByText("Next step · 2 Parse & chunk")).toBeInTheDocument();
+    expect(screen.getByText("Recommended next step")).toBeInTheDocument();
+    expect(document.querySelector(".pipeline-guidance button")).toHaveTextContent("Parse & chunk");
+    fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
     expect(screen.getByText("SEC EDGAR · NVDA, AMD · FY2023, FY2024")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     const buttons = screen.getAllByRole("button", { name: "Ingest all manifests" });
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(1);
     fireEvent.click(buttons[0]);
     expect(handlers.onIngestAll).toHaveBeenCalledTimes(1);
     expect(document.querySelector("#stage-2.stage-card.next")).not.toBeNull();
-    expect(document.querySelectorAll("ol.stage-list article.stage-card")).toHaveLength(7);
+    expect(document.querySelectorAll("ol.stage-list article.stage-card")).toHaveLength(1);
   });
 
   it("locks operator stages in read-only mode and offers exploration instead", () => {
     const handlers = renderPipeline(liveInput({ live: false, readiness: null, corpus: null, manifests: [], snapshots: 2 }));
 
-    expect(screen.getByText("Explore")).toBeInTheDocument();
+    expect(document.querySelector(".pipeline-guidance")).toBeInTheDocument();
     expect(screen.getByText("Read-only portfolio · stored snapshots + live retrieval")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Select Embeddings" }));
     expect(screen.getByRole("button", { name: "Backfill embeddings" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
     expect(screen.getByRole("button", { name: "Rebuild BM25" })).toBeDisabled();
-    expect(screen.getAllByText("Runs on the local operator build.")).toHaveLength(5);
-    fireEvent.click(screen.getByRole("button", { name: "Compare snapshots" }));
+    expect(screen.getByText("Runs on the local operator build.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));
     expect(handlers.onCompareSnapshots).toHaveBeenCalledTimes(1);
   });
 
@@ -166,7 +179,7 @@ describe("BuildPipeline", () => {
       jobs: [RUNNING_JOB],
     }));
 
-    expect(screen.getByText("Running · 3 Embeddings · 50%")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "3. Embeddings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(screen.getAllByText("50 / 100 · 50%")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "View all jobs" }));

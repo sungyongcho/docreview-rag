@@ -66,3 +66,16 @@ it("saves only prompt defaults and leaves existing conversation settings untouch
   expect(screen.getByRole("button", { name: /Clear conversations/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Show tutorial/ })).toBeInTheDocument();
 });
+
+it("opens documentation separately without changing the current conversation", () => {
+  const onChange = vi.fn();
+  const onClear = vi.fn();
+  render(<SettingsModal open profile={DEFAULT_SESSION_PROFILE} capabilities={DEV} onChange={onChange} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={onClear} />);
+  fireEvent.click(screen.getByRole("button", { name: "Data & help" }));
+  const link = screen.getByRole("link", { name: "Documentation (New tab)" });
+  expect(link).toHaveAttribute("href", "/docreview-rag-agent/docs/");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noreferrer noopener");
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onClear).not.toHaveBeenCalled();
+});

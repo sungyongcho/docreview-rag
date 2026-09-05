@@ -4,7 +4,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web ./
-ENV NEXT_PUBLIC_API_BASE_URL=/docreview-rag-agent/api \
+COPY docs/TUTORIAL /docs/TUTORIAL
+ENV NEXT_PUBLIC_API_BASE_URL="" \
 	NEXT_PUBLIC_ADMIN_MODE=canned
 RUN npm run build
 

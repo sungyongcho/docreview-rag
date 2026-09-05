@@ -9,6 +9,7 @@ import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 export type HelpScreen =
   | "build"
   | "build.jobs"
+  | "build.documents"
   | "review"
   | "measure.playground"
   | "measure.golden"
@@ -31,6 +32,7 @@ export interface HelpTopic {
 export const HELP_SCREEN_TITLES: Record<HelpScreen, string> = {
   build: "Build · Pipeline",
   "build.jobs": "Build · Jobs",
+  "build.documents": "Build · Documents",
   review: "Ask",
   "measure.playground": "Measure · Playground",
   "measure.golden": "Measure · Golden Tests",
@@ -173,7 +175,7 @@ const BUILD: HelpTopic[] = [
     id: "build.runtime",
     title: "Runtime strip",
     body: [
-      "One line of runtime facts from /ready: whether the API answered, the database is connected, the schema matches this build, data/ is writable, and which answer model key is active.",
+      "Expand the compact runtime summary to inspect API, database, schema, data directory access, and answer model readiness.",
       "A problem turns into a notice with its fix: the command line to run, or Operations buttons (Start database, Plan and Apply migrations, Rebuild app) when a local operator is attached.",
       "Refresh re-reads readiness and the administrator corpus snapshot; the public build shows a read-only label instead.",
     ],
@@ -184,7 +186,7 @@ const BUILD: HelpTopic[] = [
     title: "Next step",
     body: [
       "This callout always names the first stage that needs you: the first stage in action or failed state, a running job with its progress, or a blocked stage with the reason.",
-      "Its button is the same action as on the stage card, so you can drive the whole pipeline from here.",
+      "Selecting the recommended step opens its execution panel. Review its inputs, then use the action button to start the work.",
     ],
     seeAlso: ["build.stage.filings", "build.stage.evaluate"],
   },
@@ -326,6 +328,7 @@ const REVIEW: HelpTopic[] = [
     title: "Send",
     body: [
       "Disabled while a review runs, while the API is down or still being checked, when the corpus is empty, or when Vector retrieval is selected but embeddings are pending.",
+      "The request preview shows effective preset differences, filters, prompt composition, and the next request payload. Retrieved evidence is only available after execution starts.",
       "Provider calls are rate- and cost-limited; when the daily budget is spent, evidence still loads and the banner says when answers resume.",
     ],
     seeAlso: ["review.readiness", "build.stage.answer_model"],
@@ -337,6 +340,7 @@ const REVIEW: HelpTopic[] = [
       "What the run actually did: its identifier, how many provider requests it made, tokens in and out, elapsed seconds, and the node path it took.",
       "When a run stops early this is also where the reason lives. A budget failure names the exhausted resource with its limit and the observed value; a provider failure names the status, the attempts and the exception; a node failure names the step and its message.",
       "The run identifier is the handle for correlating a failure with the server-side step traces at /runs/{id}/traces.",
+      "Execution performance shows recorded stage and model durations, attempts, and local provider timing when available. Missing values remain Not collected; elapsed time is not an estimated completion time.",
     ],
     tune: "The wall clock, iteration and token ceilings are under RAG settings › Run limits above the input. Evidence size is in Evidence. Trace buttons open the relevant panel or System status for connection failures.",
     seeAlso: ["review.send", "system.status"],
@@ -374,7 +378,7 @@ const PLAYGROUND: HelpTopic[] = [
     id: "measure.playground.preview_retrieval",
     title: "Preview retrieval",
     body: [
-      "Calls /admin/retrieval/preview with the question and profile and shows the score stage, each lane's ranking and the fused results. No provider request is made.",
+      "Calls /admin/retrieval/preview with the question and profile and shows the score stage, each lane's ranking and the fused results. Query embedding can call the configured provider.",
     ],
     seeAlso: ["measure.playground.rankings", "measure.playground.results"],
   },
@@ -423,7 +427,7 @@ const GOLDEN: HelpTopic[] = [
     id: "measure.golden.suite",
     title: "Golden suite",
     body: [
-      "Four suites pair a registry with a question language: sec-en, sec-ko, dart-en and dart-ko. Each case holds a question, an expected label and answer spans located by document id, character offsets and source SHA-256.",
+      "Suites pair a registry with a question language, including the SEC EN, KO and mixed _v2_astra suites. Each case holds a question, an expected label and answer spans located by document id, character offsets and source SHA-256.",
       "Absent cases (expected NOT_IN_DOCS) have no spans and are not scored; only positive cases feed the metrics.",
     ],
     seeAlso: ["measure.runs.suite"],
@@ -509,7 +513,7 @@ const RUNS: HelpTopic[] = [
     title: "Results",
     body: [
       "One row per job with its suite, mode, status and message. A succeeded quick run that found a compatible baseline offers Compare; a matrix run lists one result per arm.",
-      "Click a row to load its metrics and cases into Result details.",
+      "Start from the evaluation runs list. New evaluation opens setup; queueing adds a job. Select its row to inspect progress and settings, then metrics and cases after success.",
     ],
     seeAlso: ["measure.runs.result_detail", "measure.compare.overview"],
   },
@@ -557,9 +561,9 @@ const COMPARE: HelpTopic[] = [
 const SNAPSHOTS: HelpTopic[] = [
   {
     id: "measure.snapshots.freeze",
-    title: "Freeze selected eval result",
+    title: "Save result as snapshot",
     body: [
-      "Copies the current documents, chunks, embeddings and BM25 statistics into snapshot tables and ties them to the result selected in Runs, so the numbers stay reproducible after the live corpus changes.",
+      "In Result details, enter a snapshot label and choose Save result as snapshot. It freezes current documents, chunks, embeddings and BM25 with the selected result for later reuse.",
       "A golden revision is attached only when it is published. Snapshots start private; Publish exposes them to the public build.",
     ],
     seeAlso: ["measure.runs.results", "measure.snapshots.list"],
@@ -625,7 +629,7 @@ const SYSTEM: HelpTopic[] = [
       "Embeddings are never local. Each vector stores the model that produced it, so switching would strand the whole corpus until it was re-embedded.",
       "The panel refreshes automatically every 30 seconds while visible, showing connection state, installed models and their capabilities. Unavailable selections cannot receive questions.",
     ],
-    tune: "Connect, disconnect or reset the server URL and protocol in Settings › Local LLM. Saved connections apply immediately. One answer model is selected automatically; with several models, choose one below the conversation input. Models refresh without an app restart.",
+    tune: "Connect, disconnect or reset the server URL and protocol in Settings › Local LLM. Saved connections apply immediately. One answer model is selected automatically; with several models, choose one in the conversation settings above the input. Models refresh without an app restart.",
     seeAlso: ["system.status", "build.stage.answer_model"],
     optional: true,
   },
@@ -663,6 +667,11 @@ const SYSTEM: HelpTopic[] = [
 export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
   build: BUILD,
   "build.jobs": BUILD_JOBS,
+  "build.documents": [
+    { id: "build.documents.filters", title: "Document filters", body: ["Search by company code or name. Choose a fiscal year and expand Filters for source, language, report type and readiness. Remove an applied chip to broaden the list."] },
+    { id: "build.documents.list", title: "Document inventory", body: ["Select a document to open its source information and search readiness. Drag the divider on a wide screen to adjust the list width; use Back to documents on a narrow screen."] },
+    { id: "build.documents.detail", title: "Document details", body: ["Inspect original source information, chunk coverage and the next preparation step. Public visitors can only inspect filings in published snapshots."], optional: true },
+  ],
   review: REVIEW,
   "measure.playground": PLAYGROUND,
   "measure.golden": GOLDEN,
@@ -679,7 +688,7 @@ const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "r
 export function helpScreen(view: "review" | "build" | "measure" | "system", tab: string): HelpScreen | null {
   if (view === "review") return "review";
   if (view === "system") return "system";
-  if (view === "build") return tab === "pipeline" ? "build" : tab === "jobs" ? "build.jobs" : null;
+  if (view === "build") return tab === "pipeline" ? "build" : tab === "jobs" ? "build.jobs" : tab === "documents" ? "build.documents" : null;
   return MEASURE_SCREENS.has(tab) ? `measure.${tab}` as HelpScreen : null;
 }
 

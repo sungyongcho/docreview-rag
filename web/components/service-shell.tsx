@@ -1,22 +1,34 @@
 "use client";
+import { useI18n } from "@/lib/i18n";
 
+
+import { ProductBrand } from "@/components/product-brand";
+import { CreatorSignature } from "@/components/creator-signature";
+import { ExecutionPerformance } from "@/components/execution-performance";
+import { LanguageSwitch } from "@/lib/i18n";
 import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
 import {
   Activity,
+  ArrowLeft,
   CircleHelp,
   FlaskConical,
   Hammer,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Pin as PinIcon,
+  CircleMinus,
   Send,
   SquarePen,
   Trash2,
   Settings,
   TriangleAlert,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { RetainedPanel } from "@/components/retained-panel";
+import "./workspace-navigation.css";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
 import { ConversationSettings, type ConversationSettingsTab } from "@/components/conversation-settings";
@@ -26,7 +38,7 @@ import { HelpOverlay } from "@/components/help-overlay";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
-import { ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, type ReviewProgressState } from "@/components/review-progress";
+import { ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer, type ReviewProgressState } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
@@ -42,6 +54,7 @@ import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { profileCompatibilityIssue } from "@/lib/profile-compatibility";
 import { failureMessage, failureReport } from "@/lib/pipeline";
 import { helpScreen } from "@/lib/help-content";
+import { helpTopicScreen } from "@/lib/help-search";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
 import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionProfile } from "@/lib/types";
@@ -53,15 +66,28 @@ type View = "review" | "build" | "measure" | "system";
 
 /** One deep-link target for every navigation call site: sidebar, topbar, modals, and workspaces. */
 export type NavigationTarget =
-  | { view: "review" }
+  | { view: "review"; conversationId?: string }
   | { view: "build"; tab?: BuildTab; stage?: number }
-  | { view: "measure"; tab?: MeasureTab; resultId?: number }
+  | { view: "measure"; tab?: MeasureTab; resultId?: number | null }
   | { view: "system"; tab?: SystemTab };
 
+interface NavigationEntry {
+  target: NavigationTarget;
+  conversationId: string;
+  query: string;
+  conversationTab: ConversationSettingsTab | null;
+  scroll: Array<{ element: HTMLElement; top: number; left: number }>;
+  focus: HTMLElement | null;
+}
+
 export function ServiceShell() {
+  const { t, locale } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<View>("review");
+  const [navigationHistory, setNavigationHistory] = useState<NavigationEntry[]>([]);
+  const pendingReturn = useRef<NavigationEntry | null>(null);
+  const [unsavedGolden, setUnsavedGolden] = useState(false);
   const [buildTab, setBuildTab] = useState<BuildTab>("pipeline");
   const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
   const [systemTab, setSystemTab] = useState<SystemTab>("status");
@@ -69,11 +95,14 @@ export function ServiceShell() {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
   const [profile, setProfile] = useState<ReviewSessionProfile>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [conversationTab, setConversationTab] = useState<ConversationSettingsTab | null>(null);
+  const [conversationInputsValid, setConversationInputsValid] = useState(true);
   const ragTrigger = useRef<HTMLButtonElement>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
@@ -144,7 +173,7 @@ export function ServiceShell() {
   const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
-  const sendBlocked = banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -165,23 +194,118 @@ export function ServiceShell() {
     setConversations(saveConversations(next));
   }
 
-  function navigate(target: NavigationTarget) {
+  /** Save the visible origin only; offscreen panels retain their own controls and selections. */
+  function currentNavigation(): NavigationEntry {
+    const target: NavigationTarget = view === "build" ? { view, tab: buildTab }
+      : view === "measure" ? { view, tab: measureTab, resultId: measureResultId }
+      : view === "system" ? { view, tab: systemTab } : { view, conversationId: active?.id };
+    const panel = document.querySelector<HTMLElement>(`[data-workspace="${view}"]`);
+    const scroll = Array.from(panel?.querySelectorAll<HTMLElement>("*") ?? [])
+      .filter((element) => !element.closest("[hidden]") && (element.scrollTop !== 0 || element.scrollLeft !== 0 || element.matches(".messages, .lab-shell")))
+      .map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
+    return { target, conversationId: active?.id ?? activeId, query, conversationTab, scroll, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+  }
+
+  function navigate(target: NavigationTarget, confirmed = false, returning = false) {
+    const changed = target.view !== view
+      || (target.view === "build" && target.tab !== undefined && target.tab !== buildTab)
+      || (target.view === "measure" && ((target.tab !== undefined && target.tab !== measureTab) || (target.resultId !== undefined && target.resultId !== measureResultId)))
+      || (target.view === "system" && target.tab !== undefined && target.tab !== systemTab)
+      || (target.view === "review" && target.conversationId !== undefined && target.conversationId !== activeId);
+    if (!confirmed && changed && view === "measure" && unsavedGolden && !window.confirm(t("Discard unsaved question changes?"))) return false;
+    if (changed && !returning) {
+      const origin = currentNavigation();
+      setNavigationHistory((history) => [...history.slice(-29), origin]);
+    }
     firstRunRouted.current = true;
     if (target.view === "build" && target.tab) setBuildTab(target.tab);
     if (target.view === "build" && target.stage !== undefined) setPendingStage(target.stage);
     if (target.view === "measure") {
       if (target.tab) setMeasureTab(target.tab);
-      setMeasureResultId(target.resultId ?? null);
+      if (target.resultId !== undefined) setMeasureResultId(target.resultId);
     }
     if (target.view === "system" && target.tab) setSystemTab(target.tab);
+    if (target.view === "review" && target.conversationId) {
+      setActiveId(target.conversationId);
+      const selected = conversations.find((conversation) => conversation.id === target.conversationId);
+      if (selected) setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+    }
     setView(target.view);
+    return true;
   }
 
+  function navigateBack() {
+    const entry = navigationHistory.at(-1);
+    if (!navigate(entry?.target ?? { view: "review" }, false, true)) return;
+    if (!entry) return;
+    pendingReturn.current = entry;
+    setNavigationHistory((history) => history.slice(0, -1));
+    const restoredConversation = conversations.find((conversation) => conversation.id === entry.conversationId);
+    if (restoredConversation) {
+      setActiveId(restoredConversation.id);
+      setProfile(restoredConversation.profile ?? DEFAULT_SESSION_PROFILE);
+      if (restoredConversation.id !== activeId) setQuery(entry.query);
+    }
+    setConversationTab(entry.conversationTab);
+  }
+
+  useLayoutEffect(() => {
+    const entry = pendingReturn.current;
+    if (!entry) return;
+    pendingReturn.current = null;
+    if (entry.focus?.isConnected && !entry.focus.closest("[hidden], [inert]")) entry.focus.focus({ preventScroll: true });
+    for (const { element, top, left } of entry.scroll) if (element.isConnected) { element.scrollTop = top; element.scrollLeft = left; }
+  }, [view, buildTab, measureTab, systemTab, activeId, navigationHistory]);
+
   function openConversationSettings(tab: ConversationSettingsTab) {
+    if (!navigate({ view: "review" })) return;
     setSettingsOpen(false);
-    navigate({ view: "review" });
     setConversationTab(tab);
   }
+
+  function navigateHelpTopic(id: string) {
+    if (!adminLive && (id === "review.evidence-policy" || id === "review.run-limits" || id === "review.rag" || id.startsWith("review.retrieval"))) {
+      notify(t(PROD_LOCKED_MESSAGE), "warning", "help-locked");
+      return;
+    }
+    const owner = helpTopicScreen(id);
+    const settingsTab: ConversationSettingsTab | null = id === "review.filters" ? "filters" : id === "review.evidence-policy" ? "evidence" : id === "review.run-limits" ? "limits" : id === "review.rag" || id.startsWith("review.retrieval") ? "retrieval" : null;
+    let target: NavigationTarget | null = null;
+    if (id === "review.snapshot") target = { view: "measure", tab: "snapshots" };
+    else if (settingsTab || owner === "review") target = { view: "review" };
+    else if (owner === "build.documents") target = { view: "build", tab: "documents" };
+    else if (owner === "build.jobs") target = { view: "build", tab: "jobs" };
+    else if (owner === "build") {
+      const stages = ["filings", "index", "embeddings", "lexical", "ask", "answer_model", "evaluate"];
+      const index = stages.indexOf(id.replace("build.stage.", ""));
+      target = { view: "build", tab: "pipeline", ...(index >= 0 ? { stage: index + 1 } : {}) };
+    } else if (owner === "system") target = { view: "system", tab: id === "system.operations" && operationsAvailable ? "operations" : id === "system.api" && adminLive ? "api" : id === "system.usage" && adminLive ? "usage" : "status" };
+    else if (owner?.startsWith("measure.")) target = { view: "measure", tab: id === "measure.snapshots.freeze" ? "runs" : owner.slice(8) as MeasureTab };
+    if (!target || !navigate(target)) return;
+    if (settingsTab) { setSettingsOpen(false); setConversationTab(settingsTab); }
+    setPendingHelpTarget(id === "review.snapshot" ? "measure.snapshots.list" : id === "measure.runs.chunk_targets" ? "measure.runs.mode" : id.startsWith("review.retrieval.") && activeSessionProfile.retrieval_preset !== "custom" ? "review.retrieval" : id);
+  }
+
+  useEffect(() => {
+    if (!pendingHelpTarget) return;
+    let finished = false;
+    const observer = new MutationObserver(revealTarget);
+    /** Lazy panels and evaluation dialogs can mount after the workspace navigation commits. */
+    function revealTarget() {
+      if (finished) return;
+      const target = Array.from(document.querySelectorAll<HTMLElement>(`[data-help="${pendingHelpTarget}"]`)).find((element) => !element.closest("[hidden]"));
+      if (!target) return;
+      finished = true;
+      observer.disconnect();
+      for (let disclosure = target.closest("details"); disclosure; disclosure = disclosure.parentElement?.closest("details") ?? null) disclosure.open = true;
+      target.scrollIntoView?.({ block: "center", inline: "nearest" });
+      setPendingHelpTarget(null);
+    }
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
+    const frame = requestAnimationFrame(revealTarget);
+    const timeout = window.setTimeout(() => { finished = true; observer.disconnect(); setPendingHelpTarget(null); }, 2000);
+    return () => { finished = true; cancelAnimationFrame(frame); window.clearTimeout(timeout); observer.disconnect(); };
+  }, [pendingHelpTarget, view, buildTab, measureTab, systemTab, conversationTab]);
 
   // Saved error actions keep their old category identifiers but open the current owner.
   function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
@@ -198,11 +322,12 @@ export function ServiceShell() {
   }
 
   function createReview() {
+    if (view === "measure" && unsavedGolden && !window.confirm(t("Discard unsaved question changes?"))) return;
     const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
     persist([conversation, ...conversations]);
     setActiveId(conversation.id);
     setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
-    navigate({ view: "review" });
+    navigate({ view: "review", conversationId: conversation.id }, true);
   }
 
   function removeReview(id: string) {
@@ -262,7 +387,10 @@ export function ServiceShell() {
     if (!question || busy || !active || sendBlocked) return;
     setQuery("");
     setBusy(true);
-    setProgress(null);
+    const requestStarted = Date.now();
+    let execution = initialReviewProgress(false, 0, (active.profile ?? profile).corpus_scope);
+    let retainFailure = false;
+    setProgress(execution);
     reviewAbort.current?.abort();
     const controller = new AbortController();
     reviewAbort.current = controller;
@@ -285,21 +413,26 @@ export function ServiceShell() {
         selectedProfile,
         null,
         history,
-        (event) => setProgress(reviewProgressFromEvent(event)),
+        (event) => { execution = reviewProgressFromEvent(event, execution); setProgress(execution); },
         controller.signal,
         (payload) => {
           evidence = payload.candidates.length ? payload.candidates : payload.results;
           preparedEvidence = evidence;
           candidateToken = payload.candidate_token ?? undefined;
-          setProgress({ node: "candidates", evidence: payload.candidates.length, relevant: 0, steps: 0 });
+          execution = candidateProgress(execution, evidence.length, payload.resolved_scope);
+          setProgress(execution);
         },
       );
       const answer = terminalAnswer(response);
+      const terminal = (response.run ?? response) as Record<string, unknown>;
+      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution);
       setResetAt(null);
       const assistant: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
         text: answer,
+        execution,
+        performance: terminal.execution as Record<string, unknown> | undefined,
         evidence,
         evidenceLabel: terminalEvidenceLabel(response),
         citations: terminalCitationCount(response),
@@ -313,7 +446,10 @@ export function ServiceShell() {
       };
       appendMessage(conversationId, assistant);
     } catch (reason) {
+      execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       if (isInfrastructureFailure(reason)) {
+        retainFailure = true;
+        setProgress(execution);
         setQuery(question);
         await runtimeHealth.check();
         return;
@@ -325,6 +461,7 @@ export function ServiceShell() {
         try {
           const retrieved = await retrieveEvidence(question, selectedProfile);
           evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
+          execution = { ...execution, resolvedScope: resolvedScopeFromServer(retrieved.resolved_scope) ?? execution.resolvedScope };
         } catch {
           // Preserve the original provider error when retrieval is also unavailable.
         }
@@ -342,12 +479,13 @@ export function ServiceShell() {
         id: crypto.randomUUID(),
         role: "assistant",
         text: message,
+        execution,
         evidence,
         evidenceLabel: "Retrieved candidates — answer not generated",
       });
     } finally {
       setBusy(false);
-      setProgress(null);
+      if (!retainFailure) setProgress(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
     }
   }
@@ -397,7 +535,7 @@ export function ServiceShell() {
     };
     updateSessionProfile(next);
     navigate({ view: "review" });
-    notify(`Snapshot ${snapshot.label} applied to this review.`, "success", "snapshot-review");
+    notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review");
   }
 
   function markEvidence(messageId: string, chunkId: number, mode: "pin" | "exclude") {
@@ -423,7 +561,11 @@ export function ServiceShell() {
     setBusy(true);
     const conversationId = active.id;
     const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
-    setProgress({ node: "retrieve", evidence: selected, relevant: 0, steps: 0, revalidating: true });
+    const requestStarted = Date.now();
+    let execution = initialReviewProgress(true, selected, (active.profile ?? profile).corpus_scope);
+    setProgress(execution);
+    const controller = new AbortController();
+    reviewAbort.current = controller;
     try {
       const response = await streamReview(
         message.question,
@@ -434,12 +576,17 @@ export function ServiceShell() {
           excluded: message.excludedChunkIds ?? [],
         },
         active.messages.slice(-(active.profile ?? profile).prompt_policy.history_turns).map((item) => ({ role: item.role, text: item.text })),
-        (event) => setProgress({ ...reviewProgressFromEvent(event), revalidating: true }),
+        (event) => { execution = reviewProgressFromEvent(event, execution); setProgress(execution); },
+        controller.signal,
       );
       setResetAt(null);
+      const terminal = (response.run ?? response) as Record<string, unknown>;
+      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution);
       appendMessage(conversationId, {
         id: crypto.randomUUID(),
         role: "assistant",
+        execution,
+        performance: terminal.execution as Record<string, unknown> | undefined,
         text: terminalAnswer(response),
         evidence: message.evidence?.filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)),
         evidenceLabel: terminalEvidenceLabel(response),
@@ -449,11 +596,14 @@ export function ServiceShell() {
         failureFix: terminalFailureFix(response),
       });
     } catch (reason) {
+      execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
+      appendMessage(conversationId, { id: crypto.randomUUID(), role: "assistant", text: reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
       noteDailyBudget(reason);
-      notify(reason instanceof Error ? reason.message : "Selected evidence review failed.", "error", "evidence-review");
+      notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review");
     } finally {
       setBusy(false);
       setProgress(null);
+      if (reviewAbort.current === controller) reviewAbort.current = null;
     }
   }
 
@@ -479,6 +629,7 @@ export function ServiceShell() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "?" || tourOpen || modalOpen) return;
       const target = event.target;
+      if (target instanceof Element && target.closest('[role="dialog"][aria-modal="true"]')) return;
       if (target instanceof HTMLElement && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable || target.hasAttribute("contenteditable"))) return;
       event.preventDefault();
       setHelp(!helpOpen);
@@ -523,77 +674,89 @@ export function ServiceShell() {
       if (!command) throw new Error(`Operations does not offer ${commandId}.`);
       if (command.confirmation && !window.confirm(command.confirmation)) return;
       await startOperatorJob(command.command_id);
-      notify(`${command.label} started. Follow it under System › Operations.`, "success", "operations-run");
+      notify(t("{p0} started. Follow it under System › Operations.", { p0: command.label }), "success", "operations-run");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : "Command could not start.", "error", "operations-run");
+      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run");
     }
   }
   const topbarTitle = view === "review"
     ? active?.title ?? "New review"
     : view === "build" ? "Build" : view === "measure" ? "Measure" : "System";
+  const returnView = navigationHistory.at(-1)?.target.view ?? "review";
+  const returnLabel = t(returnView === "review" ? "Back to conversation" : returnView === "build" ? "Back to Build" : returnView === "measure" ? "Back to Measure" : "Back to System");
+  function closeSidebar() {
+    setSidebarOpen(false);
+    sidebarToggle.current?.focus();
+  }
 
   return (
     <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}`}>
-      <aside className="sidebar">
-        <div className="brand"><span>D</span><strong>DocReview</strong></div>
-        <button className="new-review" data-tour="new-review" type="button" onClick={createReview}><SquarePen size={17} /><span>New review</span></button>
-        <p className="sidebar-label">Recent reviews</p>
+      {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
+      <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
+        <div className="brand"><ProductBrand /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
+        <button className="new-review" data-tour="new-review" type="button" onClick={createReview}><SquarePen size={17} /><span>{t("New review")}</span></button>
+        <p className="sidebar-label">{t("Recent reviews")}</p>
         <div className="conversation-list" data-tour="recent-reviews">
           {conversations.map((conversation) => (
             <div className="conversation-row" key={conversation.id}>
-              <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => { setActiveId(conversation.id); setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE); navigate({ view: "review" }); }}>
+              <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => navigate({ view: "review", conversationId: conversation.id })}>
                 <MessageSquare size={15} /><span>{conversation.title}</span>
               </button>
-              <button className="delete-review" type="button" aria-label={`Delete ${conversation.title}`} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>
+              <button className="delete-review" type="button" aria-label={t("Delete {p0}", { p0: conversation.title })} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>
             </div>
           ))}
         </div>
-        <div className={`runtime-mode-badge ${environment ?? "checking"}`} role="note" aria-label={modeLabel} title={`Server environment: ${modeLabel}`}>
-          <strong>{environment?.toUpperCase() ?? "CHECKING"}</strong><span>MODE</span>
+        <div className={`runtime-mode-badge ${environment ?? "checking"}`} role="note" aria-label={modeLabel} title={t("Server environment: {p0}", { p0: modeLabel })}>
+          <strong>{environment?.toUpperCase() ?? "CHECKING"}</strong><span>{t("MODE")}</span>
         </div>
         <div className="sidebar-nav">
-          <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>Build</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">, needs attention</span></>}</button>
-          <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>Measure</span></button>
-          <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={`System · ${healthLabel(runtimeHealth.kind)}`} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>System</span><span className="system-health"><i aria-hidden="true" />{healthLabel(runtimeHealth.kind)}</span></button>
-          <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>Settings</span></button>
+          <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
+          <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>{t("Measure")}</span></button>
+          <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={t("System · {p0}", { p0: t(healthLabel(runtimeHealth.kind)) })} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>{t("System")}</span><span className="system-health"><i aria-hidden="true" />{t(healthLabel(runtimeHealth.kind))}</span></button>
+          <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>{t("Settings")}</span></button>
         </div>
         {localAllowed && activeSessionProfile.engine === "local" && (
           <div className="local-mode-badge" role="note">
             <TriangleAlert size={14} aria-hidden="true" />
-            <span className="local-mode-label">LOCAL MODEL{localModel ? ` · ${localModel}` : ""}{localIssue ? " · Unavailable" : ""}</span>
-            <span className="local-mode-note">
-              Answers use the selected model server. Choose an engine and model below the conversation input.
-              API health and model availability are checked separately.
-            </span>
+            <span className="local-mode-label">{t("LOCAL MODEL")}{localModel ? t(" · {p0}", { p0: localModel }) : ""}{localIssue ? t(" · Unavailable") : ""}</span>
+            <span className="local-mode-note">{t("Answers use the selected model server. Choose an engine and model above the conversation input. API health and model availability are checked separately.")}{" "}</span>
           </div>
         )}
+        <CreatorSignature />
       </aside>
 
       <section className="workspace">
         <header className="topbar">
-          <button className="icon-button" type="button" aria-label="Toggle sidebar" title={modeLabel} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
-          <div><strong>{topbarTitle}</strong><span>Evidence-first SEC and DART filing review</span></div>
-          <div className="topbar-status">{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count} running · {operatorJobs.board.queued_count} queued</button>}<button type="button" className="icon-button help-toggle" aria-label="Toggle help" aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-navigation">
+            <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
+            {(navigationHistory.length > 0 || view !== "review") && <button className="workspace-back" type="button" aria-label={returnLabel} title={returnLabel} onClick={navigateBack}><ArrowLeft size={16} aria-hidden="true" /><span>{returnLabel}</span></button>}
+          </div>
+          <div><strong>{view === "review" && active?.messages.length ? topbarTitle : t(topbarTitle)}</strong><span>{t("Evidence-first SEC and DART filing review")}</span></div>
+          <div className="topbar-status"><LanguageSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
-        {view === "review" && <section className="review-workspace">
+        <section className="review-workspace" data-workspace="review" hidden={view !== "review"}>
           <div className="messages">
             <div className="messages-inner">
               {!active?.messages.length && (
                 <div className="welcome">
-                  <p className="eyebrow">Grounded by design</p>
-                  <h1>Review filings with verifiable evidence.</h1>
-                  <p>Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.</p>
+                  <ProductBrand hero />
+                  <p className="eyebrow">{t("Grounded by design")}</p>
+                  <h1>{t("Review filings with verifiable evidence.")}</h1>
+                  <p>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.")}</p>
+                  <ol className="first-review-path"><li><strong>01</strong><span>{t("Ask about a filing")}</span></li><li><strong>02</strong><span>{t("Open its original evidence")}</span></li><li><strong>03</strong><span>{t("Inspect execution and compare retrieval")}</span></li></ol>
+                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag-agent/docs/${locale}/`} target="_blank" rel="noreferrer noopener">{t("Read the walkthrough")}</a></div>
+                  {readiness?.mode === "canned" && <p className="notice">{t("Demonstration data — no live provider calls.")}</p>}
                   {adminLive && readiness?.corpus?.documents === 0 ? (
                     <div className="next-step" data-tour="evidence-fallback">
-                      <h2>Corpus is empty</h2>
-                      <p>Download and ingest filings first.</p>
-                      <div className="action-row"><button className="button primary" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>Open Build</button></div>
+                      <h2>{t("Corpus is empty")}</h2>
+                      <p>{t("Download and ingest filings first.")}</p>
+                      <div className="action-row"><button className="button primary" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Open Build")}</button></div>
                     </div>
                   ) : (
                     <div className="suggestions" data-tour="evidence-fallback">
-                      <button type="button" onClick={() => setQuery("What drove NVIDIA data center revenue growth?")}>NVIDIA growth drivers</button>
-                      <button type="button" onClick={() => setQuery("삼성전자 메모리 사업의 주요 위험은 무엇인가요?")}>삼성전자 메모리 위험</button>
+                      <button type="button" onClick={() => setQuery("What drove NVIDIA data center revenue growth?")}>{t("NVIDIA growth drivers")}</button>
+                      <button type="button" onClick={() => setQuery("삼성전자 메모리 사업의 주요 위험은 무엇인가요?")}>{t("Samsung memory risks")}</button>
                     </div>
                   )}
                 </div>
@@ -609,38 +772,41 @@ export function ServiceShell() {
                   onOpenFix={openSettings}
                 />
               ))}
-              {busy && <div className="thinking">{progress ? <ReviewProgressSteps state={progress} /> : <><WaitingGlyph /> Retrieving and checking evidence…</>}</div>}
+
             </div>
           </div>
           <div className="composer-wrap" data-tour="composer">
-            {conversationTab && <ConversationSettings tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => { setConversationTab(null); (ragTrigger.current ?? document.querySelector<HTMLButtonElement>('button[data-help="review.filters"]'))?.focus(); }} />}
+            {conversationTab && <ConversationSettings key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => { setConversationTab(null); (ragTrigger.current ?? document.querySelector<HTMLButtonElement>('button[data-help="review.filters"]'))?.focus(); }} />}
             <ComposerToolbar
+              query={query}
+              engineControls={localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
+              advancedControls={adminLive && <button ref={ragTrigger} className="chip" type="button" data-help="review.rag" aria-expanded={conversationTab !== null} onClick={() => conversationTab ? setConversationTab(null) : openConversationSettings("retrieval")}>{t("RAG settings")}</button>}
               profile={activeSessionProfile}
               onChange={updateSessionProfile}
               canUseCustom={adminBuild && permissions?.can_change_custom_retrieval === true}
               onLocked={() => notify(PROD_LOCKED_MESSAGE, "warning", "prod-locked")}
               onOpenFilters={() => conversationTab === "filters" ? setConversationTab(null) : openConversationSettings("filters")}
+              onOpenCustom={() => openConversationSettings("retrieval")}
               readiness={readiness}
               live={adminLive}
               onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
             />
+
+            {progress && <div className="composer-progress"><ReviewProgressSteps state={progress} /><button className="button ghost" type="button" onClick={() => busy ? reviewAbort.current?.abort() : setProgress(null)}>{t(busy ? "Stop request" : "Dismiss progress")}</button></div>}
             <label className="composer">
-              <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Ask a question about the filing corpus" rows={1} />
-              <button data-tour="send" data-help="review.send" type="button" aria-label="Send question" disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
+              <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
+              <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
-            <div className="composer-controls">
-              {localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
-              {adminLive && <button ref={ragTrigger} className="chip" type="button" data-help="review.rag" aria-expanded={conversationTab !== null} onClick={() => conversationTab ? setConversationTab(null) : openConversationSettings("retrieval")}>RAG settings</button>}
-            </div>
-            {compatibilityIssue && <p className="notice error" role="alert">{compatibilityIssue}</p>}
-            {localIssue && <p className="helper" role="status">{localIssue} <button className="inline-link" type="button" onClick={() => openSettings("local")}>Open Local LLM settings</button></p>}
+            {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
+            {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
-              : <p>Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.</p>}
+              : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
           </div>
-        </section>}
+        </section>
 
-        {view === "build" && <BuildWorkspace
+        <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
+          focusStep={pendingStage}
           live={adminBuild && permissions?.can_build_snapshot === true}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
@@ -655,10 +821,12 @@ export function ServiceShell() {
           operationsAvailable={operationsAvailable}
           onRunOperation={(commandId) => void runOperation(commandId)}
           tab={buildTab}
-          onTabChange={setBuildTab}
+          onTabChange={(tab) => navigate({ view: "build", tab })}
           onNavigate={navigate}
-        />}
-        {view === "measure" && <MeasureWorkspace
+        /></RetainedPanel>
+        <RetainedPanel active={view === "measure"} className="retained-workspace" workspace="measure"><MeasureWorkspace
+          active={view === "measure"}
+          onDirtyChange={setUnsavedGolden}
           environment={permissions?.environment}
           live={adminBuild && permissions?.can_run_evaluation === true}
           ready={runtimeHealth.kind === "healthy"}
@@ -669,10 +837,12 @@ export function ServiceShell() {
           jobBoard={operatorJobs.board}
           onRefreshJobs={() => void operatorJobs.refresh()}
           tab={measureTab}
-          onTabChange={setMeasureTab}
+          onTabChange={(tab) => navigate({ view: "measure", tab }, true)}
           focusResultId={measureResultId}
-        />}
-        {view === "system" && <SystemWorkspace
+          onResultSelectionChange={setMeasureResultId}
+          helpTarget={pendingHelpTarget}
+        /></RetainedPanel>
+        <RetainedPanel active={view === "system"} className="retained-workspace" workspace="system"><SystemWorkspace
           live={adminLive}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
@@ -682,12 +852,12 @@ export function ServiceShell() {
           onRefresh={() => void runtimeHealth.check()}
           operationsAvailable={operationsAvailable}
           tab={systemTab}
-          onTabChange={setSystemTab}
-        />}
+          onTabChange={(tab) => navigate({ view: "system", tab })}
+        /></RetainedPanel>
       </section>
-      <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify("Local conversations cleared.", "success"); }} />
+      <SettingsModal open={settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} onClose={() => setHelp(false)} location={location} />
+      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
         visible={runtimeHealth.modalVisible}
@@ -728,21 +898,29 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
 }
 
 function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
+  const { t, locale } = useI18n();
   const pill = message.role === "assistant" ? verdictPill(message) : null;
   const pinned = message.pinnedChunkIds ?? [];
   const excluded = message.excludedChunkIds ?? [];
   const notInDocs = message.evidenceLabel === "Related evidence — not direct support";
   return (
     <article className={`message ${message.role}`}>
-      <div className="message-role">{message.role === "user" ? "You" : "DocReview"}</div>
+      <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
       <div className="message-body">
-        {pill && <span className={`verdict ${pill.className}`}>{pill.text}</span>}
+        {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.role === "assistant" ? <MarkdownMessage>{message.text}</MarkdownMessage> : <p>{message.text}</p>}
+        {message.execution && <><details className="review-execution-summary"><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} /></details><ExecutionPerformance data={message.performance} state={message.execution} /></>}
         {message.evidence?.length ? (
           <>
-            {notInDocs && <p className="notice">Related evidence is shown below, but it is not direct support.</p>}
+            {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}
             <details className="evidence" data-help={latestEvidence ? "review.evidence" : undefined}>
-              <summary data-tour="evidence-toggle">{message.evidenceLabel ?? "Retrieved candidates"} · {message.evidence.length}</summary>
+              <summary data-tour="evidence-toggle">{t(message.evidenceLabel === "Cited evidence" ? "Retrieved evidence candidates" : message.evidenceLabel ?? "Retrieved candidates")} · {message.evidence.length}</summary>
+              <div className="evidence-selection-guide" id={`evidence-selection-${message.id}`}>
+                <dl><div><dt><PinIcon size={13} aria-hidden="true" />{t("Pin")}</dt><dd>{t("Include this evidence first when reviewing the answer again.")}</dd></div><div><dt><CircleMinus size={13} aria-hidden="true" />{t("Exclude")}</dt><dd>{t("Leave this evidence out of the next review.")}</dd></div></dl>
+                <p>{t("Selections apply when you review again. The current answer stays unchanged, and a new answer is added.")}</p>
+                {!message.candidateToken && <p>{t("This saved result cannot change evidence. Run the question again to retrieve a fresh selection.")}</p>}
+              </div>
+              {message.candidateToken && pinned.length + excluded.length > 0 && <div className="evidence-selection-controls"><span>{t("{pinned} pinned · {excluded} excluded", { pinned: pinned.length, excluded: excluded.length })}</span><button className="button primary" type="button" disabled={busy} onClick={onUseSelected}>{t("Review again with selected evidence")}</button></div>}
               {message.evidence.map((hit) => {
                 const isPinned = pinned.includes(hit.chunk_id);
                 const isExcluded = excluded.includes(hit.chunk_id);
@@ -752,42 +930,37 @@ function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, o
                       <strong>{hit.citation}</strong>
                       <span aria-hidden="true">·</span>
                       <span className="doc-chip">{hit.doc_id}</span>
-                      {hit.kind === "table" && <><span aria-hidden="true">·</span><span className="kind-badge">table</span></>}
+                      {hit.kind === "table" && <><span aria-hidden="true">·</span><span className="kind-badge">{t("table")}</span></>}
                       <span aria-hidden="true">·</span>
-                      <span>chars {hit.start_char}–{hit.end_char}</span>
+                      <span>{t("chars")}{" "}{hit.start_char}–{hit.end_char}</span>
                     </div>
                     <p>{hit.body}</p>
-                    <div className="evidence-actions">
-                      <button type="button" aria-pressed={isPinned} onClick={() => onMark(hit.chunk_id, "pin")}>Pin</button>
-                      <button type="button" aria-pressed={isExcluded} onClick={() => onMark(hit.chunk_id, "exclude")}>Exclude</button>
+                    <div className="evidence-actions" aria-describedby={`evidence-selection-${message.id}`}>
+                      <button type="button" disabled={!message.candidateToken} aria-pressed={isPinned} data-action="pin" title={t("Include this evidence first when reviewing the answer again.")} onClick={() => onMark(hit.chunk_id, "pin")}><PinIcon size={13} aria-hidden="true" />{t("Pin")}</button>
+                      <button type="button" disabled={!message.candidateToken} aria-pressed={isExcluded} data-action="exclude" title={t("Leave this evidence out of the next review.")} onClick={() => onMark(hit.chunk_id, "exclude")}><CircleMinus size={13} aria-hidden="true" />{t("Exclude")}</button>
                     </div>
                   </div>
                 );
               })}
-              {message.candidateToken && pinned.length + excluded.length > 0 && (
-                <button className="button primary use-evidence" type="button" disabled={busy} onClick={onUseSelected}>
-                  Use selected evidence · {pinned.length} pinned · {excluded.length} excluded
-                </button>
-              )}
             </details>
           </>
         ) : null}
         {message.diagnostics?.length ? (
           <details className="trace-details" data-help="review.run-trace">
-            <summary>Run trace{message.failureFix ? " · why it stopped" : ""}</summary>
+            <summary>{t("Run trace")}{message.failureFix ? t(" · why it stopped") : ""}</summary>
             <dl className="status-list run-diagnostics">
               {message.diagnostics.map((row) => (
-                <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>
+                <div key={row.label}><dt>{t(row.label)}</dt><dd>{row.label === "Status" ? t(row.value) : row.value}</dd></div>
               ))}
             </dl>
             {message.failureFix && onOpenFix && (
               <button className="button" type="button" onClick={() => onOpenFix(message.failureFix!.category)}>
-                {message.failureFix.label}
+                {t(message.failureFix.label)}
               </button>
             )}
           </details>
         ) : message.trace ? (
-          <details className="trace-details" data-help="review.run-trace"><summary>Run trace</summary><pre className="trace">{message.trace}</pre></details>
+          <details className="trace-details" data-help="review.run-trace"><summary>{t("Run trace")}</summary><pre className="trace">{message.trace}</pre></details>
         ) : null}
       </div>
     </article>

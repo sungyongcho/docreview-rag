@@ -30,6 +30,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   vi.resetModules();
+  localStorage.clear();
 });
 
 describe("SystemStatus", () => {
@@ -84,5 +85,31 @@ describe("SystemStatus", () => {
 
     expect(screen.queryByRole("heading", { name: "Local model policy" })).not.toBeInTheDocument();
     expect(screen.getByText("PROD")).toBeInTheDocument();
+  });
+
+  it("localizes runtime states and model roles while retaining model identifiers and schema detail", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+    vi.resetModules();
+    const { SystemStatus: OperatorStatus } = await import("./system-status");
+    const { I18nProvider, LOCALE_KEY } = await import("@/lib/i18n");
+    localStorage.setItem(LOCALE_KEY, "ko");
+    const readiness = {
+      ...READINESS,
+      models: Object.fromEntries(["agent", "decomposition", "translation"].map((role) => [role, READINESS.models.review])),
+      corpus: { ...READINESS.corpus, schema_message: "compatible: original schema detail" },
+      review_engines: { local: { enabled: false, reason: "unreachable" } },
+    };
+    render(<I18nProvider><OperatorStatus localAllowed localModel="user-model:original" readiness={readiness} loading={false} error="original API failure" onRefresh={vi.fn()} /></I18nProvider>);
+    expect(document.querySelector(".status-metrics")).toHaveTextContent("준비 완료");
+    expect(document.querySelector(".status-metrics")).toHaveTextContent("연결됨");
+    expect(document.querySelector(".status-metrics")).toHaveTextContent("호환됨");
+    for (const role of ["에이전트", "질문 분해", "질문 번역"]) expect(screen.getByText(role)).toBeInTheDocument();
+    expect(screen.getAllByText("22,367")).toHaveLength(2);
+    expect(screen.getByText(/compatible: original schema detail/)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("original API failure");
+    expect(screen.getAllByText("gpt-5.6-terra")).toHaveLength(3);
+    expect(screen.getAllByText(/user-model:original/)).toHaveLength(4);
+    expect(screen.getByRole("status")).not.toHaveTextContent("Unavailable. Check");
+    expect(screen.getByRole("status")).toHaveTextContent("모델 서버에 연결할 수 없습니다.");
   });
 });

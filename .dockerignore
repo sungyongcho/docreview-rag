@@ -7,7 +7,18 @@
 .dashboard-cache
 .claude
 tests
-docs
+docs/*
+!docs/TUTORIAL/
+docs/TUTORIAL/*
+!docs/TUTORIAL/ko/
+docs/TUTORIAL/ko/*
+!docs/TUTORIAL/ko/walkthrough.md
+!docs/TUTORIAL/ko/cli.md
+!docs/TUTORIAL/en/
+docs/TUTORIAL/en/*
+!docs/TUTORIAL/en/walkthrough.md
+!docs/TUTORIAL/en/cli.md
+!docs/TUTORIAL/assets/
 data/eval_runs
 data/local-settings
 **/__pycache__
@@ -18,3 +29,5 @@ web/node_modules
 web/.next
 web/out
 deploy/firebase/public
+
+web/public/tutorial-assets

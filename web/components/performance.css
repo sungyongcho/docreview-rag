@@ -1,0 +1,34 @@
+.execution-performance .performance-content { min-width: 0; padding-top: 4px; }
+.execution-performance .performance-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; margin: 16px 0; }
+.execution-performance .performance-facts > div { min-width: 0; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.execution-performance .performance-facts dt { color: var(--muted); font-size: 11px; }
+.execution-performance .performance-facts dd { margin: 5px 0 0; font-size: 14px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.execution-performance .performance-section { min-width: 0; margin-top: 22px; }
+.execution-performance .performance-section h3 { margin-bottom: 10px; }
+.execution-performance pre.performance-ascii { max-width: 100%; max-height: 290px; margin: 10px 0 14px; padding: 14px 16px; overflow: auto; white-space: pre; overflow-wrap: normal; border: 0; border-left: 2px solid var(--border); border-radius: 0 6px 6px 0; background: var(--surface-2); color: var(--text); font: 11px/1.85 ui-monospace, "DejaVu Sans Mono", monospace; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.execution-performance .performance-table-wrap { max-width: 100%; overflow: auto; }
+.execution-performance .performance-table { width: 100%; min-width: 390px; border-collapse: collapse; font-size: 12px; }
+.execution-performance .performance-table caption { text-align: left; padding: 0 0 12px; line-height: 1.6; }
+.execution-performance .performance-table caption strong { display: block; font-size: 11px; font-weight: 550; }
+.execution-performance .performance-table caption span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.execution-performance .performance-table :is(th, td) { padding: 9px 10px; vertical-align: top; }
+.execution-performance .performance-table th { font-size: 11px; font-weight: 500; }
+.execution-performance .performance-table :is(th:last-child, td:last-child), .execution-performance .performance-calls :is(th:nth-child(n+3), td:nth-child(n+3)) { text-align: right; }
+.execution-performance .performance-number { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.execution-performance .performance-order { color: var(--muted); font: 11px/1.6 ui-monospace, monospace; }
+.execution-performance .performance-identifier { display: block; margin-top: 2px; color: var(--muted); font: 10px/1.6 ui-monospace, monospace; }
+.execution-performance .performance-model { display: block; margin-top: 4px; max-width: 240px; overflow-wrap: anywhere; font: 10px/1.6 ui-monospace, monospace; }
+.execution-performance .performance-status { white-space: nowrap; }
+.execution-performance .performance-status.is-complete { color: var(--good); }
+.execution-performance .performance-status.is-failed { color: var(--bad); }
+.execution-performance .performance-provider { border-top: 1px solid var(--border); }
+.execution-performance :is(.performance-provider, .performance-settings) > summary { min-height: 40px; align-content: center; cursor: pointer; color: var(--muted); line-height: 1.6; }
+.execution-performance .performance-provider > summary .performance-order { margin-left: 4px; margin-right: 6px; }
+.execution-performance .performance-timing-record { padding: 0 10px 4px; }
+.execution-performance .performance-timing-record .performance-facts { margin-top: 0; }
+.execution-performance .performance-settings { margin-top: 16px; border-top: 1px solid var(--border); }
+@media (max-width: 560px) {
+  .execution-performance .performance-facts { gap: 0 12px; }
+  .execution-performance .performance-facts dd { font-size: 13px; }
+  .execution-performance pre.performance-ascii { padding: 12px; font-size: 10px; }
+}

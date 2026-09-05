@@ -1,4 +1,6 @@
 "use client";
+import { useI18n } from "@/lib/i18n";
+
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,11 +27,12 @@ export function useNotifications(): Notifications {
 }
 
 function NotificationCard({ item, onDismiss }: { item: Notice; onDismiss: (id: string) => void }) {
+  const { t, locale } = useI18n();
   const remaining = useRef(item.duration);
   const started = useRef(Date.now());
   const timer = useRef<number | null>(null);
   function resume() { started.current = Date.now(); timer.current = window.setTimeout(() => onDismiss(item.id), remaining.current); }
   function pause() { if (timer.current !== null) window.clearTimeout(timer.current); remaining.current = Math.max(0, remaining.current - (Date.now() - started.current)); }
   useEffect(() => { resume(); return pause; }, [item.id]);
-  return <div className={`notification ${item.tone}`} role={item.tone === "error" || item.tone === "warning" ? "alert" : "status"} onMouseEnter={pause} onMouseLeave={resume} onFocus={pause} onBlur={resume}><span>{item.message}</span><button type="button" aria-label="Dismiss notification" onClick={() => onDismiss(item.id)}>×</button></div>;
+  return <div className={`notification ${item.tone}`} role={item.tone === "error" || item.tone === "warning" ? "alert" : "status"} onMouseEnter={pause} onMouseLeave={resume} onFocus={pause} onBlur={resume}><span>{item.message}</span><button type="button" aria-label={t("Dismiss notification")} onClick={() => onDismiss(item.id)}>×</button></div>;
 }

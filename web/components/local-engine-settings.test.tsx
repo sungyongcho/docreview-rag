@@ -61,3 +61,20 @@ it("preserves a long model identifier in the selector and selected status", asyn
   expect(screen.getByLabelText("Local model")).toHaveValue(name);
   expect(screen.getByRole("status")).toHaveTextContent(name);
 });
+
+it("translates the selected-model prefix while preserving the chosen identifier", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+  vi.resetModules();
+  const { LocalEngineSettings } = await import("./local-engine-settings");
+  const { I18nProvider, LOCALE_KEY } = await import("@/lib/i18n");
+  localStorage.setItem(LOCALE_KEY, "ko");
+  const name = "original-model:custom-tag";
+  const readiness: Readiness = {
+    status: "ready", mode: "runtime", admin_mode: "live", policy_revision: "test", models: {}, review_enabled: true, active_review_model: null,
+    review_engines: { local: { enabled: true, protocol: "ollama", models: [model(name)] } },
+    corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true },
+  };
+  render(<I18nProvider><LocalEngineSettings profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: name }} readiness={readiness} onChange={vi.fn()} /></I18nProvider>);
+  expect(screen.getByRole("status")).toHaveTextContent(`선택한 모델: ${name}`);
+  expect(screen.getByRole("option", { name })).toHaveValue(name);
+});

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Readiness, ReviewSessionProfile } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
-import { ComposerBanner, ComposerToolbar, composerBanner, readinessChipLabel, type ComposerToolbarProps } from "./composer-toolbar";
+import { ComposerBanner, ComposerToolbar, composerBanner, readinessChipLabel, readinessStatusLabel, type ComposerToolbarProps } from "./composer-toolbar";
 
 const READINESS: Readiness = {
   status: "ready",
@@ -50,14 +50,26 @@ function renderToolbar(overrides: Partial<ComposerToolbarProps> = {}) {
 
 afterEach(cleanup);
 
-describe("readinessChipLabel", () => {
-  it("covers read-only, checking, empty, pending, and ready corpora", () => {
-    expect(readinessChipLabel(READINESS, false)).toBe("Read-only corpus");
-    expect(readinessChipLabel(null, true)).toBe("Checking corpus…");
-    expect(readinessChipLabel(readiness({ documents: 0 }), true)).toBe("Corpus empty");
-    expect(readinessChipLabel(readiness({ pending_embeddings: 120 }), true)).toBe("Embeddings pending · lexical only");
-    expect(readinessChipLabel(READINESS, true)).toBe("29 filings · hybrid ready");
-    expect(readinessChipLabel(readiness({ bm25_ready: false }), true)).toBe("29 filings · vector only");
+describe("corpus readiness summary", () => {
+  it("labels the global corpus and omits unpublished totals in public mode", () => {
+    expect(readinessChipLabel(READINESS, false)).toBe("Published corpus");
+    expect(readinessChipLabel(null, true)).toBe("Corpus total");
+    expect(readinessChipLabel(readiness({ documents: 0 }), true)).toBe("Corpus total · 0 filings");
+    expect(readinessChipLabel(READINESS, true)).toBe("Corpus total · 29 filings");
+    expect(readinessChipLabel(readiness({ database_connected: false }), true)).toBe("Corpus total");
+  });
+
+  it("reports only confirmed index readiness and never treats unknown values as success", () => {
+    expect(readinessStatusLabel(null)).toBe("Checking corpus…");
+    expect(readinessStatusLabel(readiness({ documents: 0 }))).toBe("Corpus empty");
+    expect(readinessStatusLabel(readiness({ pending_embeddings: 120 }))).toBe("Embeddings pending");
+    expect(readinessStatusLabel(READINESS)).toBe("Hybrid search ready");
+    expect(readinessStatusLabel(readiness({ bm25_ready: false }))).toBe("Vector search ready · BM25 unavailable");
+    for (const unknown of [{ bm25_ready: null }, { database_connected: null }, { pending_embeddings: null }, { documents: null }, { schema_status: null }] as const) {
+      expect(readinessStatusLabel(readiness(unknown))).toBe("Readiness not confirmed");
+    }
+    expect(readinessStatusLabel(readiness({ database_connected: false }))).toBe("Corpus unavailable");
+    expect(readinessStatusLabel(readiness({ availability: "not_applicable", database_connected: null, bm25_ready: null }))).toBe("Readiness not reported");
   });
 });
 
@@ -159,7 +171,58 @@ describe("ComposerToolbar", () => {
 
   it("routes the readiness chip to Build", () => {
     const props = renderToolbar({ live: false });
-    fireEvent.click(screen.getByRole("button", { name: "Read-only corpus" }));
+    expect(screen.getByText("Published corpus")).toBeVisible();
+    expect(screen.queryByText(/Corpus total ·/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "View corpus readiness" }));
     expect(props.onOpenBuild).toHaveBeenCalledTimes(1);
   });
+
+  it("explains selected scope and preset beside the controls before opening details", () => {
+    renderToolbar({ profile: { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "accuracy" } });
+    expect(screen.getByText("Corpus scope")).toBeVisible();
+    expect(screen.getByText("Retrieval preset")).toBeVisible();
+    expect(screen.getByText("Automatic source routing")).toBeVisible();
+    expect(screen.getByText("hybrid · k 5 · Candidates 50")).toBeVisible();
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "About retrieval presets" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Ranks a wider candidate pool by relevance.");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("candidate_k: 50");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("reranker: cross_encoder");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+it("opens corpus help from hover, focus, and touch click and dismisses with Escape", () => {
+  renderToolbar();
+  const help = screen.getByRole("button", { name: "About corpus scope" });
+  fireEvent.mouseEnter(help);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Auto chooses SEC or DART from the question and filters.");
+  fireEvent.mouseLeave(help);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(help);
+  expect(screen.getByRole("tooltip")).toBeVisible();
+  fireEvent.keyDown(help, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(help);
+  expect(screen.getByRole("tooltip")).toBeVisible();
+  fireEvent.click(help);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+it("opens the current Custom editor immediately and preserves the custom values", () => {
+  const onOpenCustom = vi.fn();
+  const custom = { ...DEFAULT_PROFILE, k: 9, candidate_k: 37 };
+  const props = renderToolbar({ onOpenCustom, profile: { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: custom } });
+  fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "custom" } });
+  expect(props.onChange).toHaveBeenCalledWith({ retrieval_preset: "custom", custom_retrieval: custom });
+  expect(onOpenCustom).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Edit custom retrieval" }));
+  expect(onOpenCustom).toHaveBeenCalledTimes(2);
+});
+
+it("keeps selected source filters distinct from the global corpus count and unconfirmed status", () => {
+  renderToolbar({ profile: { ...DEFAULT_SESSION_PROFILE, corpus_scope: "dart" }, readiness: readiness({ bm25_ready: null }) });
+  expect(screen.getByText("Corpus total · 29 filings")).toBeVisible();
+  expect(screen.getByText("Readiness not confirmed")).not.toHaveClass("confirmed");
+  expect(screen.queryByText("Hybrid search ready")).toBeNull();
+  expect(screen.getByRole("button", { name: "View corpus readiness" })).toBeVisible();
 });

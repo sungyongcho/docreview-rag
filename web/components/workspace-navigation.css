@@ -1,0 +1,10 @@
+.topbar > .topbar-navigation { flex-direction: row; align-items: center; gap: 6px; }
+.topbar-navigation .workspace-back { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); white-space: nowrap; }
+.topbar-navigation .workspace-back:hover { background: var(--surface-hover, var(--surface)); border-color: var(--muted); }
+.topbar-navigation .workspace-back span { color: inherit; font-size: 12px; }
+.retained-workspace { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.retained-workspace > .lab-shell { flex: 1; min-height: 0; }
+@media (max-width: 760px) {
+  .topbar-navigation .workspace-back { padding-inline: 8px; }
+  .topbar-navigation .workspace-back span { display: none; }
+}
