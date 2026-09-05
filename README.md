@@ -116,14 +116,20 @@ EMBEDDING_PROVIDER=openai
 `docker compose --project-directory . -f docker/docker-compose.yml up -d`와 `docker compose --project-directory . -f docker/docker-compose.yml down`이며 `.env`의 `MODE`나 `COMPOSE_FILE`로
 모드를 선택하지 않습니다. 다음 프로젝트 명령은 Local Operations까지 함께 관리합니다.
 
-저장소에서 한 번 별칭을 불러옵니다. 매 터미널에서 사용하려면 자신의 `.zshrc`에
+저장소에서 Bash 또는 Zsh의 현재 터미널에 별칭을 불러옵니다. 매 터미널에서 사용하려면 자신의 `.bashrc` 또는 `.zshrc`에
 이 파일의 **실제 절대 경로**를 사용하는 `source` 한 줄을 추가합니다. 이미 등록했다면
 중복 추가할 필요가 없습니다.
 
 ```bash
 source ./alias.sh
+rag-help
 rag-dev up -d
 ```
+
+`source ./alias.sh`는 `DOCREVIEW COMMANDS` ASCII 배너와 `[OK]` 등록 완료 메시지,
+대상 저장소 경로, 사용 가능한 명령 목록을 표시합니다. 등록은 현재 셸에 적용됩니다.
+`bash alias.sh`나 `zsh alias.sh`로 별도 실행하면 등록하지 않고 `source` 사용법을 안내합니다.
+`rag-help`에서 시작·종료·로그·진단 명령과 옵션 예시를 확인할 수 있습니다.
 
 ```bash
 rag-dev down
@@ -315,11 +321,17 @@ Settings와 System의 Local model policy는 설치 모델·용량·파라미터�
 선택 모델이 삭제되거나 연결이 끊기면 선택을 유지하면서 실행을 막고 복구를 자동 반영합니다.
 
 ```bash
-rag-diagnose
+rag-ollama-check
+rag-ollama-check --help
+rag-ollama-check --web-url http://localhost:18080
 # 별칭 없이 실행하거나 웹 포트를 별도로 지정할 때
 bash scripts/diagnose_ollama.sh
 bash scripts/diagnose_ollama.sh --web-url http://localhost:18080
 ```
+
+`rag-diagnose`도 같은 진단을 실행하며 동일한 옵션을 받습니다. `--web-url`에는 Ollama 서버가
+아닌 **DocReview 웹 주소**를 넣습니다. 진단은 연결과 모델 메타데이터를 확인하며 Ollama를
+설치하거나 시작하지 않습니다.
 
 진단은 현재 앱의 모드와 활성 설정을 먼저 읽고, 웹·API → 백엔드의 모델 서버 접근 → 모델
 목록·지원 기능·로드 상태 → 웹 반영 순서로 확인합니다. `.env`의 예전 주소로 대신 검사하지
