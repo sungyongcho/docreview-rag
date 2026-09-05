@@ -1,4 +1,7 @@
 export const KO: Record<string, string> = {
+  "Built by": "제작",
+  "Designed & built by": "설계·제작",
+  "Pinning does not guarantee that the answer cites this evidence.": "근거를 고정해도 답변에서 반드시 인용되는 것은 아닙니다.",
   "Measured stage durations": "수집된 단계 소요 시간",
   "Bar length is relative to the longest measured stage. Events remain in collection order.": "막대 길이는 수집된 단계 중 가장 긴 소요 시간에 비례합니다. 이벤트는 수집 순서대로 표시합니다.",
   "Measured model calls": "수집된 모델 호출",

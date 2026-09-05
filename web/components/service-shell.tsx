@@ -735,7 +735,7 @@ export function ServiceShell() {
           <div className="topbar-status"><LanguageSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
-        <section className="review-workspace" data-workspace="review" hidden={view !== "review"}>
+        <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
           <div className="messages">
             <div className="messages-inner">
               {!active?.messages.length && (
@@ -803,7 +803,7 @@ export function ServiceShell() {
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
               : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
           </div>
-        </section>
+        </RetainedPanel>
 
         <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
           focusStep={pendingStage}
@@ -917,6 +917,7 @@ function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, o
               <summary data-tour="evidence-toggle">{t(message.evidenceLabel === "Cited evidence" ? "Retrieved evidence candidates" : message.evidenceLabel ?? "Retrieved candidates")} · {message.evidence.length}</summary>
               <div className="evidence-selection-guide" id={`evidence-selection-${message.id}`}>
                 <dl><div><dt><PinIcon size={13} aria-hidden="true" />{t("Pin")}</dt><dd>{t("Include this evidence first when reviewing the answer again.")}</dd></div><div><dt><CircleMinus size={13} aria-hidden="true" />{t("Exclude")}</dt><dd>{t("Leave this evidence out of the next review.")}</dd></div></dl>
+                <p>{t("Pinning does not guarantee that the answer cites this evidence.")}</p>
                 <p>{t("Selections apply when you review again. The current answer stays unchanged, and a new answer is added.")}</p>
                 {!message.candidateToken && <p>{t("This saved result cannot change evidence. Run the question again to retrieve a fresh selection.")}</p>}
               </div>

@@ -27,14 +27,28 @@ _docreview_line() {
     fi
 }
 
-# Render the embedded Small Slant wordmark without runtime dependencies.
+# Read the shared Small assets with standard shell tools at a readable width.
 _docreview_banner() {
+    local _banner_columns="${COLUMNS:-80}" _banner_asset=''
+    case "${_banner_columns}" in
+        ''|*[!0-9]*) _banner_columns=80 ;;
+    esac
+    if [ "${_banner_columns}" -ge 78 ]; then
+        _banner_asset="${_DOCREVIEW_ROOT}/web/branding/wordmark.txt"
+    elif [ "${_banner_columns}" -ge 18 ]; then
+        _banner_asset="${_DOCREVIEW_ROOT}/web/branding/monogram.txt"
+    fi
     printf '\n'
-    _docreview_line '1;36' '   ___           ___           _              ___  ___  _____
-  / _ \___  ____/ _ \___ _  __(_)__ _    __  / _ \/ _ |/ ___/
- / // / _ \/ __/ , _/ -_) |/ / / -_) |/|/ / / , _/ __ / (_ /
-/____/\___/\__/_/|_|\__/|___/_/\__/|__,__/ /_/|_/_/ |_\___/'
-    _docreview_line '2' '  SEC / DART  ·  Evidence first. Answers with sources.'
+    if [ -n "${_banner_asset}" ] && [ -r "${_banner_asset}" ]; then
+        cat -- "${_banner_asset}"
+        printf '\n'
+    fi
+    _docreview_line '1' 'DocReview RAG v2'
+    if [ "${_banner_columns}" -ge 51 ]; then
+        _docreview_line '2' 'SEC / DART · Evidence first. Answers with sources.'
+    elif [ "${_banner_columns}" -ge 18 ]; then
+        _docreview_line '2' 'SEC / DART'
+    fi
     printf '\n'
 }
 

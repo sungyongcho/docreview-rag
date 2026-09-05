@@ -1,13 +1,13 @@
-export function ProductMark({ className = "" }: { className?: string }) {
-  return <svg className={className} viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M10 5h17l8 8-5 22H5L10 5Z" stroke="currentColor" strokeWidth="2.6" strokeLinejoin="round"/><path d="m26 6-2 9h10M12 21h13M10 27h12" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"/></svg>;
-}
+import { PRODUCT_ASCII, PRODUCT_MONOGRAM } from "@/branding/ascii";
+import "./product-brand.css";
 
-export const PRODUCT_ASCII = String.raw`   ___           ___           _              ___  ___  _____
-  / _ \___  ____/ _ \___ _  __(_)__ _    __  / _ \/ _ |/ ___/
- / // / _ \/ __/ , _/ -_) |/ / / -_) |/|/ / / , _/ __ / (_ /
-/____/\___/\__/_/|_|\__/|___/_/\__/|__,__/ /_/|_/_/ |_\___/`;
-
-/** Preserve the original terminal lettering as selectable, resolution-independent text. */
+/** Keep the Small wordmark legible by switching to its compact monogram. */
 export function ProductBrand({ hero = false }: { hero?: boolean }) {
-  return <span className={`product-brand${hero ? " product-brand-hero" : ""}`} role="img" aria-label="DocReview RAG v2"><span className="product-ascii" aria-hidden="true">{PRODUCT_ASCII}</span><span className="product-edition" aria-hidden="true">DOCREVIEW RAG <b>v2</b></span></span>;
+  return <span className={`product-brand${hero ? " product-brand-hero" : ""}`} role="img" aria-label="DocReview RAG v2">
+    <span className="product-brand-lockup" aria-hidden="true">
+      {hero && <span className="product-ascii product-ascii-full">{PRODUCT_ASCII}</span>}
+      <span className="product-ascii product-ascii-compact">{PRODUCT_MONOGRAM}</span>
+      <span className="product-edition">DocReview RAG <b>v2</b></span>
+    </span>
+  </span>;
 }

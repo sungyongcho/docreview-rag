@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clearDocReviewBrowserData, WipeRuntime } from "./wipe-runtime";
+import { RetainedPanel } from "./retained-panel";
 import { getWipeCapability, getWipeStatus, OperatorRequestError, previewWipe, recoverWipe, startWipe, type WipeCapability, type WipePreview, type WipeResult } from "@/lib/operator-api";
 
 vi.mock("@/lib/operator-api", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/operator-api")>(), operatorAvailable: () => true, getWipeCapability: vi.fn(), previewWipe: vi.fn(), recoverWipe: vi.fn(), startWipe: vi.fn(), getWipeStatus: vi.fn() }));
@@ -25,6 +26,26 @@ it("does not expose the destructive action in public or prod UI", () => {
   expect(getWipeCapability).not.toHaveBeenCalled();
   expect(getWipeStatus).not.toHaveBeenCalled();
   expect(previewWipe).not.toHaveBeenCalled();
+});
+
+it("keeps a delayed reset recovery dialog dormant while an ancestor workspace is hidden", async () => {
+  let resolveStatus!: (status: WipeResult) => void;
+  vi.mocked(getWipeStatus).mockReturnValue(new Promise((resolve) => { resolveStatus = resolve; }));
+  const content = (active: boolean) => <><button>Other workspace</button><RetainedPanel active={active}><RetainedPanel active><WipeRuntime enabled /></RetainedPanel></RetainedPanel></>;
+  const { rerender } = render(content(true));
+  rerender(content(false));
+  await act(async () => resolveStatus({ status: "interrupted", completed: [], recovery: ["Inspect retained audit."] }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const other = screen.getByRole("button", { name: "Other workspace" });
+  other.focus();
+  fireEvent.keyDown(other, { key: "Tab" });
+  expect(other).toHaveFocus();
+  fireEvent.keyDown(other, { key: "Escape" });
+  rerender(content(true));
+  expect(screen.getByRole("dialog", { name: "Delete all runtime data?" })).toBeVisible();
+  expect(screen.getByText("Inspect retained audit.")).toBeVisible();
+  expect(previewWipe).not.toHaveBeenCalled();
+  expect(startWipe).not.toHaveBeenCalled();
 });
 
 it("keeps reset disabled until capability and status are verified without creating a preview", async () => {

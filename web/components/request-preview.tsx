@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import "./review-controls.css";
 import { useI18n } from "@/lib/i18n";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionProfile, type RetrievalPreset } from "@/lib/types";
 
 const PRESETS: Array<[RetrievalPreset, string]> = [["balanced", "Balanced"], ["korean", "Korean"], ["accuracy", "Accuracy"], ["custom", "Custom"]];
@@ -30,13 +31,15 @@ export function RequestPreview({ profile, query }: { profile: ReviewSessionProfi
   const { t } = useI18n();
   const effective = resolvedRetrievalProfile(profile);
   const [open, setOpen] = useState(false);
+  const active = useRetainedPanelActive();
+  const visible = open && active;
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const panelId = useId();
   useEffect(() => {
-    if (!open || !panel.current) return;
+    if (!visible || !panel.current) return;
     const overlay = panel.current.parentElement;
     const background = Array.from(document.body.children).filter((child) => child !== overlay);
     const inertBefore = background.map((child) => child.hasAttribute("inert"));
@@ -66,13 +69,13 @@ export function RequestPreview({ profile, query }: { profile: ReviewSessionProfi
       document.removeEventListener("focusin", keepFocus);
       background.forEach((child, index) => { if (!inertBefore[index]) child.removeAttribute("inert"); });
       document.body.style.overflow = previousOverflow;
-      trigger.current?.focus();
+      if (!trigger.current?.closest("[hidden], [inert]")) trigger.current?.focus();
     };
-  }, [open]);
+  }, [visible]);
   const filters = { corpus_scope: profile.corpus_scope, issuers: profile.issuers, fiscal_years: profile.fiscal_years, forms: profile.forms, sections: profile.sections, languages: profile.languages, snapshot_id: profile.snapshot_id };
   return <>
-    <button ref={trigger} className="chip request-inspector-trigger" type="button" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(true)}>{t("Settings details / request preview")}</button>
-    {open && createPortal(<div className="request-inspector-overlay" onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+    <button ref={trigger} className="chip request-inspector-trigger" type="button" aria-haspopup="dialog" aria-expanded={visible} aria-controls={visible ? panelId : undefined} onClick={() => setOpen(true)}>{t("Settings details / request preview")}</button>
+    {visible && createPortal(<div className="request-inspector-overlay" onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div ref={panel} id={panelId} className="request-inspector-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="request-inspector-header"><h2 id={titleId}>{t("Settings details / request preview")}</h2><button ref={closeButton} type="button" className="button ghost" aria-label={t("Close request preview")} onClick={() => setOpen(false)}><X size={20} /></button></header>
     <div className="request-inspector-body">

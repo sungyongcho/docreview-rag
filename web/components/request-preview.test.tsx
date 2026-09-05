@@ -2,10 +2,31 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { RequestPreview, presetChanges, presetDescription } from "./request-preview";
+import { RetainedPanel } from "./retained-panel";
 
 afterEach(cleanup);
 
 describe("Request inspector", () => {
+  it("suspends a retained inspector and its focus guards until its workspace is visible", () => {
+    const content = (active: boolean) => <><button>Other workspace</button><RetainedPanel active={active}><RequestPreview profile={DEFAULT_SESSION_PROFILE} query="Retained draft" /></RetainedPanel></>;
+    const { container, rerender } = render(content(true));
+    fireEvent.click(screen.getByRole("button", { name: "Settings details / request preview" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(container).toHaveAttribute("inert");
+    rerender(content(false));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container).not.toHaveAttribute("inert");
+    expect(document.body.style.overflow).not.toBe("hidden");
+    const other = screen.getByRole("button", { name: "Other workspace" });
+    other.focus();
+    fireEvent.keyDown(other, { key: "Tab" });
+    expect(other).toHaveFocus();
+    fireEvent.keyDown(other, { key: "Escape" });
+    rerender(content(true));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Close request preview" })).toHaveFocus();
+  });
+
   it("uses an accessible portal dialog with focus trapping and Escape focus return", () => {
     const { container } = render(<div className="lab-shell"><textarea aria-label="Question" defaultValue="Keep my question" /><RequestPreview profile={DEFAULT_SESSION_PROFILE} query="Keep my question" /></div>);
     const trigger = screen.getByRole("button", { name: "Settings details / request preview" });

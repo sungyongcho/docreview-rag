@@ -304,6 +304,37 @@ describe("service shell", () => {
     expect(screen.queryByRole("button", { name: /^Back to/ })).not.toBeInTheDocument();
   });
 
+  it("suspends pinned scope help while another workspace is visible", async () => {
+    stubPublicApi();
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    fireEvent.click(screen.getByRole("button", { name: "About corpus scope" }));
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    const back = screen.getByRole("button", { name: "Back to conversation" });
+    back.focus();
+    fireEvent.keyDown(back, { key: "Escape" });
+    expect(back).toHaveFocus();
+    fireEvent.click(back);
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    fireEvent.keyDown(screen.getByRole("button", { name: "About corpus scope" }), { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("explains pinning and saved-result limitations without changing the existing answer", async () => {
+    stubPublicApi();
+    seedAnsweredConversation();
+    render(<ServiceShell />);
+    fireEvent.click(await screen.findByText("Retrieved evidence candidates · 1"));
+    expect(screen.getByText("Pinning does not guarantee that the answer cites this evidence.")).toBeVisible();
+    expect(screen.getByText("Selections apply when you review again. The current answer stays unchanged, and a new answer is added.")).toBeVisible();
+    expect(screen.getByText("This saved result cannot change evidence. Run the question again to retrieve a fresh selection.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Pin" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Exclude" })).toBeDisabled();
+    expect(screen.getByText("Data center revenue grew on Hopper demand.")).toBeVisible();
+  });
+
   it("preserves document filters, selection, and scroll through the related pipeline and another workspace", async () => {
     const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     const ordinaryFetch = fetchMock.getMockImplementation()!;

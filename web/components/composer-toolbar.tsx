@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
 import { Segmented } from "@/components/segmented";
 import { RequestPreview, presetDescription } from "@/components/request-preview";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionProfile } from "@/lib/types";
 import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
 
@@ -37,6 +38,8 @@ const SCOPE_OPTIONS: Array<{ value: CorpusScope; label: string }> = [
 /** Compact help works for pointer hover, keyboard focus, and touch toggles. */
 function ControlHelp({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const active = useRetainedPanelActive();
+  const visible = open && active;
   const [position, setPosition] = useState({ left: 12, top: 12 });
   const trigger = useRef<HTMLButtonElement>(null);
   const tooltip = useRef<HTMLDivElement>(null);
@@ -44,7 +47,7 @@ function ControlHelp({ label, children }: { label: string; children: ReactNode }
   const hovered = useRef(false);
   const id = useId();
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const align = () => {
       const rect = trigger.current?.getBoundingClientRect();
       if (rect) {
@@ -61,12 +64,12 @@ function ControlHelp({ label, children }: { label: string; children: ReactNode }
     document.addEventListener("keydown", key);
     document.addEventListener("pointerdown", outside);
     return () => { window.removeEventListener("resize", align); document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", outside); };
-  }, [open]);
+  }, [visible]);
   return <>
-    <button ref={trigger} className="composer-control-help" type="button" aria-label={label} aria-expanded={open} aria-describedby={open ? id : undefined}
+    <button ref={trigger} className="composer-control-help" type="button" aria-label={label} aria-expanded={visible} aria-describedby={visible ? id : undefined}
       onMouseEnter={() => { hovered.current = true; setOpen(true); }} onMouseLeave={(event) => { hovered.current = false; if (event.relatedTarget instanceof Node && tooltip.current?.contains(event.relatedTarget)) return; if (!pinned.current && document.activeElement !== trigger.current) setOpen(false); }}
       onFocus={() => setOpen(true)} onBlur={() => { if (!pinned.current && !hovered.current) setOpen(false); }} onClick={() => { pinned.current = !pinned.current; setOpen(pinned.current); }}>?</button>
-    {open && createPortal(<div ref={tooltip} id={id} role="tooltip" className="composer-help-tooltip" style={position} onMouseEnter={() => { hovered.current = true; }} onMouseLeave={() => { hovered.current = false; if (!pinned.current && document.activeElement !== trigger.current) setOpen(false); }}>{children}</div>, document.body)}
+    {visible && createPortal(<div ref={tooltip} id={id} role="tooltip" className="composer-help-tooltip" style={position} onMouseEnter={() => { hovered.current = true; }} onMouseLeave={() => { hovered.current = false; if (!pinned.current && document.activeElement !== trigger.current) setOpen(false); }}>{children}</div>, document.body)}
   </>;
 }
 

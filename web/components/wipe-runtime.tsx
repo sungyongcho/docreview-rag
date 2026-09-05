@@ -3,6 +3,7 @@ import { LOCALE_KEY, useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, ChevronDown, X } from "lucide-react";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import { getWipeCapability, getWipeStatus, operatorAvailable, OperatorRequestError, previewWipe, recoverWipe, startWipe, type WipeCapability, type WipeDiagnosis, type WipePreview, type WipeResult } from "@/lib/operator-api";
 
 export function clearDocReviewBrowserData(storage: Storage) {
@@ -28,6 +29,8 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
   const dialog = useRef<HTMLElement>(null);
   const disclosure = useRef<HTMLDetailsElement>(null);
   const [open, setOpen] = useState(false);
+  const active = useRetainedPanelActive();
+  const visible = open && active && enabled;
   const [preview, setPreview] = useState<WipePreview | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [result, setResult] = useState<WipeResult | null>(null);
@@ -92,16 +95,16 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
     return () => window.clearTimeout(timer);
   }, [preview, t]);
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.focus();
     return () => {
       const target = previous?.isConnected && !previous.matches(":disabled") ? previous : disclosure.current?.querySelector<HTMLElement>("summary");
-      target?.focus();
+      if (!target?.closest("[hidden], [inert]")) target?.focus();
     };
-  }, [open]);
+  }, [visible]);
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     function key(event: KeyboardEvent) {
       if (event.key === "Escape" && !busy && result?.status !== "running") close();
       if (event.key !== "Tab" || !dialog.current) return;
@@ -113,7 +116,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
     }
     window.addEventListener("keydown", key);
     return () => { window.removeEventListener("keydown", key); };
-  }, [open, busy, result?.status]);
+  }, [visible, busy, result?.status]);
   function close() {
     setOpen(false); setPreview(null); setConfirmation("");
   }
@@ -197,7 +200,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
         </>}
       </div>
     </details>
-    {open && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="wipe-title" aria-describedby="wipe-warning" className="wipe-dialog">
+    {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="wipe-title" aria-describedby="wipe-warning" className="wipe-dialog">
       <header><h2 id="wipe-title">{t("Delete all runtime data?")}</h2><button type="button" className="icon-button" aria-label={t("Close reset dialog")} disabled={busy || result?.status === "running"} onClick={close}><X size={18} /></button></header>
       <p id="wipe-warning" className="notice error"><strong>{t("No backup. This cannot be undone.")}</strong> {t("Database records, downloaded filings, generated evaluation artifacts, saved connections and DocReview browser data will be cleared.")}</p>
       {busy && <p role="status">{t("Checking the local runtime…")}</p>}
