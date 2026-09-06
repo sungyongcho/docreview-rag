@@ -1,4 +1,6 @@
 export const KO: Record<string, string> = {
+  "A job is in progress. Waiting for the API; retrying status checks.": "작업이 진행 중입니다. API 응답을 기다리며 상태를 다시 확인하고 있습니다.",
+  "Connection check delayed. Retrying before declaring an outage.": "연결 확인이 지연되고 있습니다. 장애로 판단하기 전에 다시 확인하고 있습니다.",
   "For first-time setup or users who understand the consequences. This may be dangerous: existing database contents will be deleted.": "처음 프로젝트를 사용하거나, 작업의 영향을 이해하는 사용자용입니다. 위험할 수 있습니다. 기존 DB 데이터가 삭제됩니다.",
   "Review the table counts and type the exact RECREATE confirmation only if you accept data loss. Files stay; run rag-up and re-check this step afterward.": "테이블별 행 수를 확인하고 데이터 손실에 동의할 때만 정확한 RECREATE 확인 문구를 입력하세요. 파일은 보존됩니다. 이후 rag-up을 실행하고 이 단계를 다시 확인하세요.",
   "Please review the error": "에러를 확인해주세요",

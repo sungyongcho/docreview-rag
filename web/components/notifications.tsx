@@ -6,18 +6,25 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 type Tone = "info" | "success" | "warning" | "error";
 interface Notice { id: string; key: string; tone: Tone; message: string; duration: number; }
-interface Notifications { notify: (message: string, tone?: Tone, key?: string) => void; }
+interface Notifications { notify: (message: string, tone?: Tone, key?: string, duration?: number) => void; dismissNotice: (key: string) => void; }
 
-const Context = createContext<Notifications>({ notify: () => undefined });
+const Context = createContext<Notifications>({ notify: () => undefined, dismissNotice: () => undefined });
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<Notice[]>([]);
-  const notify = useCallback((message: string, tone: Tone = "info", key = message) => {
+  const notify = useCallback((message: string, tone: Tone = "info", key = message, requestedDuration?: number) => {
     const id = crypto.randomUUID();
-    const duration = tone === "info" || tone === "success" ? 5000 : 8000;
-    setItems((current) => [...current.filter((item) => item.key !== key), { id, key, tone, message, duration }].slice(-3));
+    const duration = requestedDuration ?? (tone === "info" || tone === "success" ? 5000 : 8000);
+    setItems((current) => {
+      const next = [...current.filter((item) => item.key !== key), { id, key, tone, message, duration }];
+      const persistent = next.filter(item => item.duration === 0).slice(-3);
+      const slots = 3 - persistent.length;
+      const transient = slots ? next.filter(item => item.duration !== 0).slice(-slots) : [];
+      return [...persistent, ...transient];
+    });
   }, []);
-  const value = useMemo(() => ({ notify }), [notify]);
+  const dismissNotice = useCallback((key: string) => setItems(current => current.filter(item => item.key !== key)), []);
+  const value = useMemo(() => ({ notify, dismissNotice }), [notify, dismissNotice]);
   const dismiss = useCallback((id: string) => setItems((current) => current.filter((entry) => entry.id !== id)), []);
   return <Context.Provider value={value}>{children}<div className="notification-stack" aria-live="polite">{items.map((item) => <NotificationCard key={item.id} item={item} onDismiss={dismiss} />)}</div></Context.Provider>;
 }
@@ -31,7 +38,7 @@ function NotificationCard({ item, onDismiss }: { item: Notice; onDismiss: (id: s
   const remaining = useRef(item.duration);
   const started = useRef(Date.now());
   const timer = useRef<number | null>(null);
-  function resume() { started.current = Date.now(); timer.current = window.setTimeout(() => onDismiss(item.id), remaining.current); }
+  function resume() { if (item.duration === 0) return; started.current = Date.now(); timer.current = window.setTimeout(() => onDismiss(item.id), remaining.current); }
   function pause() { if (timer.current !== null) window.clearTimeout(timer.current); remaining.current = Math.max(0, remaining.current - (Date.now() - started.current)); }
   useEffect(() => { resume(); return pause; }, [item.id]);
   return <div className={`notification ${item.tone}`} role={item.tone === "error" || item.tone === "warning" ? "alert" : "status"} onMouseEnter={pause} onMouseLeave={resume} onFocus={pause} onBlur={resume}><span>{item.message}</span><button type="button" aria-label={t("Dismiss notification")} onClick={() => onDismiss(item.id)}>×</button></div>;
