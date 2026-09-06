@@ -557,12 +557,12 @@ uv run python -m scripts.schema_status recreate
 
 This deletes ORM-owned tables and all their rows in the verified local DEV database,
 then recreates the schema from the current models. Review the exact target and table
-counts and type `RECREATE <checkout-name>` only if you accept irreversible data loss.
+counts and raw-file paths/counts. Default recreation also clears downloaded raw sources and manifest source entries. Type `RECREATE <checkout-name> AND SOURCES` only if you accept the entire preview.
 Enter, wrong text, EOF and noninteractive input do not authorize it; previews expire
 after five minutes. The app is stopped only after confirmation. Other DB clients must
 be closed; shared Docker volumes and nonlocal targets are refused.
 
-Code, `.env`, downloaded filings, evaluation exports, the DB volume, unrelated tables
+Code, `.env`, evaluation exports, the DB volume, unrelated tables
 and host Ollama stay. No backup is made. Unknown foreign-key dependencies cause the
 transaction to roll back rather than using cascading deletion. On failure, the API may
 remain stopped; inspect schema state before another attempt. On verified success,
@@ -576,3 +576,14 @@ status/navigation/dismiss buttons retain their behavior.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=en; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->
+
+## Clean start scopes
+
+| Command | Cleared | Preserved / next step |
+| --- | --- | --- |
+| `uv run python -m scripts.schema_status recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
+| Same command with `--sample` | Same clean start | Server-persisted NVDA/AMD FY2023–2024 draft; press Download yourself |
+| Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `RECREATE <checkout-name>` |
+| `rag-fresh-start` | Broader environment reset, including evaluation results, local model settings and database volume | Follow its independent exact preview and confirmation |
+
+The two options cannot be combined. CLI acquisition still requires explicit identifiers and years. Source cleanup quarantines the exact previewed files under `data/.schema-recreate-journal` until the DB transaction commits. A DB failure attempts to restore all source bytes; inspect the schema before retrying because a lost connection can leave the DB outcome unconfirmed. Interrupted or incomplete cleanup retains `journal.json` with paths and phase and blocks another reset. Inspect that journal and preserve its backups; do not delete it or repeat recreation to hide the failure. If DB commit succeeded but file cleanup failed, the command returns failure and says so explicitly. The API remains stopped until you inspect state and run `rag-up`.

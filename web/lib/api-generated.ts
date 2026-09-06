@@ -1009,6 +1009,16 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AcquisitionDraftResource
+         * @description Server-provided initial company and fiscal-year selection.
+         */
+        AcquisitionDraftResource: {
+            /** Identifiers */
+            identifiers: string[];
+            /** Years */
+            years: number[];
+        };
+        /**
          * AdminDocumentResource
          * @description One filing row with current chunk and embedding coverage.
          */
@@ -1292,7 +1302,7 @@ export interface components {
             queued: components["schemas"]["CorpusJobResource"][];
         };
         /** @enum {string} */
-        CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "backfill_embeddings" | "rebuild_bm25";
+        CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "backfill_embeddings" | "rebuild_bm25";
         /**
          * CorpusOperationRequest
          * @description One safe corpus operation accepted by the local operator API.
@@ -1321,6 +1331,7 @@ export interface components {
          * @description Atomic typed preparation state with explicit source selections.
          */
         CorpusSnapshotResource: {
+            acquisition_draft?: components["schemas"]["AcquisitionDraftResource"] | null;
             /** Documents */
             documents: components["schemas"]["CorpusDocumentResource"][];
             /** Manifests */
@@ -1330,6 +1341,11 @@ export interface components {
              * @enum {string}
              */
             mode: "live" | "canned";
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["SourceInventoryResource"][];
             status: components["schemas"]["CorpusStatusResource"];
         };
         /**
@@ -3220,6 +3236,29 @@ export interface components {
         SnapshotVisibilityRequest: {
             /** Public */
             public: boolean;
+        };
+        /**
+         * SourceInventoryResource
+         * @description Downloaded source identity independent of database rows.
+         */
+        SourceInventoryResource: {
+            /** Document Id */
+            document_id: string;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Issuer */
+            issuer: string;
+            /** Manifest */
+            manifest: string;
+            /** Name */
+            name: string;
+            /** On Disk */
+            on_disk: boolean;
+            /**
+             * Registry
+             * @enum {string}
+             */
+            registry: "sec" | "dart";
         };
         /**
          * StepTrace

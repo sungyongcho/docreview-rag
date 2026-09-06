@@ -76,3 +76,36 @@ def filing_source(path, *, document=None, encoding="utf-8"):
     return FilingSource(
         document, artifact, path.parent, CorpusIdentity(corpus_id="test", name="Test corpus")
     )
+
+
+def write_selection_catalog(root):
+    """Publish four synthetic SEC source files using real catalog identities."""
+    import hashlib
+    from pathlib import Path
+
+    from app.ingestion.manifest import Manifest
+
+    original = Manifest.read(Path(__file__).resolve().parents[2] / "data/corpus/manifest.json")
+    documents = tuple(
+        d
+        for d in original.documents
+        if d.issuer in {"NVDA", "AMD"} and d.fiscal_year in {2023, 2024}
+    )
+    ids = {d.document_id for d in documents}
+    artifacts = []
+    root.mkdir(parents=True, exist_ok=True)
+    for artifact in original.artifacts:
+        if artifact.document_id not in ids or artifact.role != "primary":
+            continue
+        raw = f"synthetic fixture {artifact.document_id}".encode()
+        path = root / artifact.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        artifacts.append(
+            artifact.model_copy(
+                update={"sha256": hashlib.sha256(raw).hexdigest(), "byte_length": len(raw)}
+            )
+        )
+    manifest = Manifest(corpus=original.corpus, documents=documents, artifacts=tuple(artifacts))
+    manifest.write(root / "manifest.json")
+    return manifest

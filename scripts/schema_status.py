@@ -59,7 +59,21 @@ def main() -> int:
         choices=("filings", "index", "embeddings", "lexical", "ask", "answer_model", "evaluate"),
         default="index",
     )
+    parser.add_argument(
+        "--keep-sources",
+        action="store_true",
+        help="Recreate DB only, preserving downloaded source files.",
+    )
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="Clean DB and sources, then preset NVDA/AMD FY2023–2024 without downloading.",
+    )
     args = parser.parse_args()
+    if (args.keep_sources or args.sample) and args.action != "recreate":
+        parser.error("--keep-sources and --sample require recreate")
+    if args.keep_sources and args.sample:
+        parser.error("--keep-sources and --sample are mutually exclusive")
     root = Path(__file__).resolve().parents[1]
     if args.parent and args.action != "recover":
         parser.error("--parent is only available with recover")
@@ -67,12 +81,15 @@ def main() -> int:
         from scripts.schema_recreate import run
 
         try:
-            return run(root)
+            return run(root, keep_sources=args.keep_sources, sample=args.sample)
         except ValueError, OSError, SQLAlchemyError, subprocess.CalledProcessError:
             print(
                 "Recreation could not be confirmed. The API may remain stopped. "
                 "Check DB access/dependencies and run schema_status check before retrying. "
-                "DB changes are transactional; no automatic retry occurs.",
+                "Inspect any retained source journal before retrying. "
+                "DB changes are transactional, "
+                "but connection loss can leave the commit outcome unconfirmed. "
+                "No automatic retry occurs.",
                 file=sys.stderr,
             )
             return 1

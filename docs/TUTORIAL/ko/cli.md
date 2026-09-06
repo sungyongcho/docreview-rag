@@ -543,12 +543,23 @@ uv run python -m scripts.schema_status recover --return-stage index
 uv run python -m scripts.schema_status recreate
 ```
 
-확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 대상과 테이블별 행 수를 확인하고, 복구할 수 없는 데이터 손실에 동의할 때만 `RECREATE <체크아웃 이름>`을 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
+확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 기본 명령은 다운로드된 원문과 manifest 원문 항목도 지웁니다. 대상, 테이블별 행 수, 원문 경로와 수를 확인하고 전체 삭제에 동의할 때만 `RECREATE <체크아웃 이름> AND SOURCES`를 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
 
-코드·`.env`·다운로드한 원문·평가 내보내기 파일·DB 볼륨·무관한 테이블·호스트 Ollama는 보존합니다. 백업은 만들지 않습니다. 알 수 없는 외래키 의존성이 있으면 연쇄 삭제 대신 트랜잭션을 롤백합니다. 실패 후 API는 중지된 상태일 수 있으므로 재시도 전에 스키마를 확인하세요. 성공 후 `rag-up`으로 시작하고 Build를 다시 확인한 뒤 파싱·임베딩·BM25를 명시적으로 다시 준비합니다. 유료 임베딩은 재생성 명령이 실행하지 않습니다.
+코드·`.env`·평가 내보내기 파일·DB 볼륨·무관한 테이블·호스트 Ollama는 보존합니다. 백업은 만들지 않습니다. 알 수 없는 외래키 의존성이 있으면 연쇄 삭제 대신 트랜잭션을 롤백합니다. 실패 후 API는 중지된 상태일 수 있으므로 재시도 전에 스키마를 확인하세요. 성공 후 `rag-up`으로 시작하고 Build를 다시 확인한 뒤 파싱·임베딩·BM25를 명시적으로 다시 준비합니다. 유료 임베딩은 재생성 명령이 실행하지 않습니다.
 
 DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접힌 터미널 형태 박스에 표시됩니다. 펼쳐서 원문을 확인할 수 있고 기존 상태·이동·닫기 버튼 동작은 유지합니다.
 
 
 ### SCREENSHOT NEEDED
 <!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=ko; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->
+
+## 새 시작 명령의 범위
+
+| 명령 | 지우는 범위 | 보존 항목 / 다음 단계 |
+| --- | --- | --- |
+| `uv run python -m scripts.schema_status recreate` | ORM 테이블/데이터와 다운로드된 SEC/DART 원문, manifest 원문 항목 | 코드, `.env`, 평가 내보내기, 무관한 테이블, DB 볼륨 보존. 빈 원문 초안으로 시작 |
+| 위 명령 + `--sample` | 동일한 초기화 | 서버에 NVDA/AMD FY2023–2024 초안 저장. 다운로드는 직접 실행 |
+| 위 명령 + `--keep-sources` | ORM 테이블/데이터만 | 원문 파일 보존. 확인 문구는 `RECREATE <checkout-name>` |
+| `rag-fresh-start` | 평가 결과·로컬 모델 설정·DB 볼륨까지 포함한 더 넓은 환경 초기화 | 별도 미리보기와 정확한 확인 절차 적용 |
+
+기본 및 `--sample`은 테이블 행 수와 원문 파일 경로/수를 함께 확인한 뒤 `RECREATE <checkout-name> AND SOURCES`를 입력합니다. 두 옵션은 동시에 사용할 수 없습니다. CLI 수집은 식별자와 연도를 명시합니다. 원문은 DB 커밋 전까지 `data/.schema-recreate-journal`에 격리되며 DB 실패 시 원문 복구를 시도합니다. 연결이 끊겼다면 DB 결과가 불확실할 수 있으므로 먼저 스키마를 확인하세요. 중단이나 정리 실패로 남은 `journal.json`은 경로·단계를 기록하고 다음 초기화를 차단합니다. 저널과 백업을 보존하고 원인을 확인하세요. DB 커밋 뒤 파일 정리가 실패한 경우에도 명령은 실패를 반환하고 부분 완료 상태를 알립니다. 확인을 마친 뒤 `rag-up`으로 API를 다시 시작하세요.

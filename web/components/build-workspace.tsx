@@ -24,6 +24,7 @@ import {
 import { CANNED_CORPUS, CANNED_JOB } from "@/lib/canned";
 import { deploymentLabel } from "@/lib/deployment";
 import { derivePipeline } from "@/lib/pipeline";
+import { selectedSourceState } from "@/lib/source-selection";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type {
   CorpusDocument,
@@ -74,7 +75,7 @@ const TABS: Array<[BuildTab, string]> = [
   ["jobs", "Jobs"],
 ];
 
-const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "NVDA AMD", years: "2023 2024" };
+const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "", years: "" };
 
 const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: null, schema_message: null, documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: null, writable: null, provider: null };
 
@@ -86,7 +87,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   const environment = deploymentLabel(readiness?.environment);
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
   // Fixtures seed only the public build; a live build waits for the administrator API.
-  const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS }));
+  const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS, sources: [] }));
   /** True once `/admin/corpus` replaced the portfolio fixture. */
   const [adminLoaded, setAdminLoaded] = useState(false);
   const [registryCounts, setRegistryCounts] = useState<Record<string, number>>({});
@@ -97,6 +98,28 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   const [busy, setBusy] = useState(false);
   const [historyWarning, setHistoryWarning] = useState("");
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
+
+  const draftInitialized = useRef(false);
+  const draftDirty = useRef(false);
+  const previousSources = useRef("");
+  const [draftSyncAvailable, setDraftSyncAvailable] = useState(false);
+  const serverDraft = useMemo<AcquisitionForm>(() => {
+    const present = (corpus?.sources ?? []).filter((row) => row.on_disk);
+    const draft = corpus?.acquisition_draft;
+    return { identifiers: (draft?.identifiers ?? [...new Set(present.map((row) => row.issuer))]).join(" "), years: (draft?.years ?? [...new Set(present.map((row) => row.fiscal_year))]).join(" ") };
+  }, [corpus]);
+  useEffect(() => {
+    if (!corpus) return;
+    const signature = JSON.stringify([corpus.sources ?? [], serverDraft]);
+    if (!draftInitialized.current || !draftDirty.current) {
+      setAcquisition(serverDraft);
+      setDraftSyncAvailable(false);
+      draftInitialized.current = true;
+    } else if (previousSources.current !== signature) {
+      setDraftSyncAvailable(true);
+    }
+    previousSources.current = signature;
+  }, [corpus, serverDraft]);
 
   useEffect(() => {
     setExperimentDefaults(loadExperimentDefaults());
@@ -161,11 +184,13 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   /** Queue the exact selected manifest and selection pairs through the shared job API. */
   async function ingestAllManifests() {
     if (!live) return;
-    const ordered = manifests.flatMap((manifest) => manifest.valid ? manifest.selections.filter((selection) => selectedSources.includes(`${manifest.name}:${selection.selection_id}`)).map((selection) => ({ manifest: manifest.name, selection_id: selection.selection_id })) : []);
+    const selection = selectedSourceState(corpus?.sources ?? [], acquisition);
+    if (!selection.complete) { notify(t("Download missing sources in Filings first."), "warning", "corpus-operation"); return; }
+    const ordered = [{ identifiers: splitList(acquisition.identifiers), years: splitList(acquisition.years).map(Number) }];
     if (!ordered.length) { notify(t("Select processing sources first."), "warning", "corpus-operation"); return; }
     setBusy(true);
     try {
-      for (const item of ordered) await queueCorpusOperation({ kind: "ingest_manifest", ...item, identifiers: [], years: [] });
+      for (const item of ordered) await queueCorpusOperation({ kind: "ingest_selected", ...item });
       onRefreshJobs();
       notify(t("Selections queued for ingest: {count}.", { count: ordered.length.toLocaleString(locale) }), "success", "corpus-operation");
     } catch (reason) {
@@ -173,6 +198,22 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Preserve explicit Advanced selection batching independently of the Filings draft. */
+  async function ingestAdvanced() {
+    if (!live) return;
+    setBusy(true);
+    try {
+      for (const manifest of manifests.filter((row) => row.valid)) {
+        for (const selection of manifest.selections.filter((row) => selectedSources.includes(`${manifest.name}:${row.selection_id}`))) {
+          await queueCorpusOperation({ kind: "ingest_manifest", manifest: manifest.name, selection_id: selection.selection_id, identifiers: [], years: [] });
+          onRefreshJobs();
+        }
+      }
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
+    } finally { setBusy(false); }
   }
 
   async function downloadFilings() {
@@ -237,11 +278,12 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     readiness,
     corpus: live && adminLoaded ? status : null,
     manifests,
+    sourceSelection: selectedSourceState(corpus?.sources ?? [], acquisition),
     registryCounts,
     jobs: Array.isArray(jobBoard.jobs) ? jobBoard.jobs : [],
     evaluationResults,
     snapshots: snapshotCount,
-  }), [live, healthKind, readiness, adminLoaded, status, manifests, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount]);
+  }), [live, healthKind, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount]);
   /** Runtime flags for the strip: the administrator snapshot once loaded, otherwise `/ready`. */
   const runtimeCounts: CorpusCounts | null = live && adminLoaded ? status : readiness?.corpus ?? null;
   const answerModelLabel = readiness === null
@@ -282,7 +324,9 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         canOperateCorpus={canOperateCorpus}
         acquisition={acquisition}
         companies={referenceCompanies}
-        onAcquisitionChange={setAcquisition}
+        onAcquisitionChange={(next) => { draftDirty.current = true; setAcquisition(next); }}
+        onSyncAcquisition={draftSyncAvailable ? () => { draftDirty.current = false; setAcquisition(serverDraft); setDraftSyncAvailable(false); } : undefined}
+        sources={corpus?.sources ?? []}
         manifests={manifests}
         selectedSources={selectedSources}
         selectedDocumentCount={selectedDocumentCount}
@@ -298,6 +342,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         writable={runtimeCounts?.writable ?? null}
         onDownload={downloadFilings}
         onIngestAll={() => void ingestAllManifests()}
+        onIngestAdvanced={() => void ingestAdvanced()}
         onIngest={(name, selectionId) => void queueCorpus({ kind: "ingest_manifest", manifest: name, selection_id: selectionId, identifiers: [], years: [] })}
         onBackfill={() => void queueCorpus({ kind: "backfill_embeddings", identifiers: [], years: [] })}
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}

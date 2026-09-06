@@ -437,11 +437,13 @@ rag-corpus inspect
 
 `schema_drift`는 저장된 스키마와 현재 모델이 맞지 않는다는 뜻입니다. 실행 중인 코드와
 DB 연결을 확인하고 기존 데이터를 보존한 상태에서 운영자가 원인을 조사해야 합니다.
-기본 복구는 기존 데이터를 보존합니다. 로컬 DB 내용만 버리기로 명시적으로 결정했다면
-`uv run python -m scripts.schema_status recreate`에서 대상과 행 수를 확인하고 승인하세요.
-코드·`.env`·원문 파일은 보존하며, 완료 후 `rag-up`으로 시작하고 데이터를 다시 준비합니다.
-`rag-fresh-start`는 별도 선택하는
-파괴적 개발 명령이며 일반 설치에 필요하지 않습니다.
+기본 복구는 기존 데이터를 보존합니다. `uv run python -m scripts.schema_status recreate`는
+ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대상·행 수·원문 경로를 확인한 뒤
+`RECREATE <체크아웃 이름> AND SOURCES`로 승인합니다. `--keep-sources`는 원문을 보존하며,
+`--sample`은 동일한 초기화 뒤 NVDA/AMD FY2023–2024 초안만 저장하고 다운로드하지 않습니다.
+코드·`.env`·평가 내보내기·무관한 테이블·DB 볼륨은 보존합니다. 완료 후 `rag-up`으로 시작하세요.
+`rag-fresh-start`는 평가 결과·로컬 모델 설정·DB 볼륨까지 지우는 별도 환경 초기화이며
+일반 설치에 필요하지 않습니다.
 
 검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를
 따릅니다. Quick Start는 답변 질문을 제출하기 전에 끝납니다.

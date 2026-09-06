@@ -29,10 +29,9 @@ indicator is not proof that either index matches the current corpus.
 
 - **Goal:** store the explicitly selected reports as searchable, traceable chunks.
 - **Prerequisites:** compatible DB/schema and every required source file from [acquisition](acquisition.md#step-4).
-- **Screen:** Build → Pipeline → Parse & chunk → Change….
-- **Inputs:** select the processing selection whose source and document counts match the intended scope.
-  Use the selection ID returned by acquisition; see the [CLI example](cli.md#prepare-one-nvidia-filing).
-- **Primary action:** **Ingest** on that selection's row.
+- **Screen:** Build → Pipeline → Parse & chunk → Selected documents.
+- **Inputs:** review the companies, fiscal years and downloaded documents carried over from Filings. Missing pairs are named; use **Change selection in Filings** to correct them. There is no second picker.
+- **Primary action:** **Parse & chunk selected sources** once for the entire current selection.
 - **Visible result:** a job records progress and document/chunk counts; Documents shows the ingested report.
 - **Completion:** the job succeeds, the expected document identity is present, and its chunk count is positive.
 - **Recovery:** inspect missing-file or schema errors in Jobs. Correct that prerequisite before retrying;
@@ -95,3 +94,10 @@ Retrieval evaluation depends on an index and evaluation dataset, not on generati
 ![BM25 is already ready for the current corpus.](../assets/07-bm25.en.jpg)
 
 *BM25 is already ready for the current corpus. The rebuild action is available but was not executed.*
+
+## Continuing the Filings selection
+
+The primary action records one immutable manifest/selection reference for exactly the selected downloaded documents. Jobs and retries retain that reference even if you later change the draft. Missing files or unrequested company/year pairs are never silently dropped. **Advanced** retains existing manifest rows and per-selection **Ingest** controls; use it for a separately named selection. The historical screenshot above represents the Advanced controls, not the default selection flow.
+
+### SCREENSHOT NEEDED
+<!-- Feature: step 2 selected NVDA/AMD FY2023–2024 documents, one primary parse action, missing-source return link and collapsed Advanced; locale=en; light mode; preserve existing assets. -->

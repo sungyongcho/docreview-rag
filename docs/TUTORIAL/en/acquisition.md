@@ -2,11 +2,11 @@
 
 ## Reference acquisition scope
 
-The initial company selection is **NVDA, AMD** with fiscal years **2023, 2024**. Company choices come from the current manifest and remain available before ingestion; the reference manifest includes: SEC offers NVDA, AMD, INTC and MU; DART offers Samsung Electronics (005930), SK hynix (000660) and NAVER (035420). Choose companies from one combined list. SEC and DART use distinct colored text badges; there is no registry tab. A mixed selection queues one source-specific acquisition job per registry and retains their explicit selections in the common manifest.
+The initial draft reflects primary sources actually on disk. With no sources it is empty; `schema_status recreate --sample` explicitly presets **NVDA, AMD**, FY**2023, 2024**, without downloading. Company choices come from the current manifest and remain available before ingestion; the reference manifest includes: SEC offers NVDA, AMD, INTC and MU; DART offers Samsung Electronics (005930), SK hynix (000660) and NAVER (035420). Choose companies from one combined list. SEC and DART use distinct colored text badges; there is no registry tab. A mixed selection queues one source-specific acquisition job per registry and retains their explicit selections in the common manifest.
 
 The suggested five-year test range is **2020–2024**. Suggestions do not add years automatically, and a year being selectable does not guarantee that the provider has published the requested filing. The displayed filing count counts available primary documents, not archive files or overlapping processing selections.
 
-Source acquisition can proceed while corpus schema drift blocks indexing, provided source storage and tracked-job storage are available. Read the separate schema diagnosis rather than changing HOST_GID for a schema problem. After acquisition completes, choose the returned manifest/selection pair for ingestion.
+Source acquisition can proceed while corpus schema drift blocks indexing, provided source storage and tracked-job storage are available. Read the separate schema diagnosis rather than changing HOST_GID for a schema problem. After acquisition completes, Parse & chunk automatically continues from these companies and fiscal years.
 
 Company and year suggestions open directly below the active input, above nearby hints and quick-add controls. Select SEC and DART companies together in that same list; source badges identify each selection.
 
@@ -86,3 +86,14 @@ instructions does not start acquisition or a model call.
 
 Downloaded sources are separate from database documents, chunks, embeddings, and published snapshots.
 See [the implementation map](architecture.md) for those boundaries.
+
+## Downloaded state and the current selection
+
+**Downloaded sources** lists registry → company → fiscal year and on-disk counts, separately from **Change…**. The draft shows selected sources already on disk, missing company/year pairs, and downloaded sources excluded by the draft. Editing the draft never removes downloaded files. A step is done only when the current nonempty selection is fully present; an empty draft or missing source remains actionable.
+
+After Download finishes, the inventory refreshes. An untouched draft automatically reconciles with the new disk inventory. If you have edited it, your choice stays and **Sync draft with downloaded sources** explicitly replaces it with the downloaded company/year scope when inventory changes. Return from Parse & chunk with **Change selection in Filings**. A clean start uses `uv run python -m scripts.schema_status recreate`; `--sample` presets the sample, while `--keep-sources` preserves sources. Compare its scope with the broader `rag-fresh-start` in the [CLI guide](cli.md).
+
+### SCREENSHOT NEEDED
+<!-- Feature: downloaded sources grouped by registry/company/year, separate draft and missing/excluded delta; locale=en; light mode; capture empty and completed current selection. Preserve existing assets. -->
+
+Existing screenshots show the previous draft summary, not proof of the new downloaded-state list.

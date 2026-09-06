@@ -149,14 +149,14 @@ describe("BuildPipeline", () => {
 
 
   it("points at the next stage and wires its primary action", () => {
-    const handlers = renderPipeline(liveInput());
+    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true }))) });
 
     expect(screen.getByText("Recommended next step")).toBeInTheDocument();
     expect(document.querySelector(".pipeline-guidance button")).toHaveTextContent("Parse & chunk");
     fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
-    expect(screen.getByText("SEC EDGAR · NVDA, AMD · FY2023, FY2024")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Downloaded sources" })).toHaveTextContent("NVDA → FY2024");
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    const buttons = screen.getAllByRole("button", { name: "Ingest selected sources" });
+    const buttons = screen.getAllByRole("button", { name: "Parse & chunk selected sources" });
     expect(buttons).toHaveLength(1);
     fireEvent.click(buttons[0]);
     expect(handlers.onIngestAll).toHaveBeenCalledTimes(1);
@@ -259,4 +259,18 @@ it("links schema-blocked downstream selection back to step 2", () => {
   expect(document.querySelector("#pipeline-execution > .helper")?.textContent).toContain("Parse & chunk");
   fireEvent.click(screen.getByRole("button", { name: "Go to prerequisite step" }));
   expect(document.querySelector("#pipeline-execution h2")?.textContent).toContain("2. Parse & chunk");
+});
+
+
+it("names missing company years, blocks the default ingest, and keeps Advanced actions", () => {
+  const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true }] });
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2023");
+  expect(screen.queryByRole("textbox", { name: "Tickers / stock codes" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+  fireEvent.click(screen.getByText("Advanced"));
+  fireEvent.click(screen.getByRole("button", { name: "Ingest manifest.json / sec-evaluation" }));
+  expect(handlers.onIngest).toHaveBeenCalledWith("manifest.json", "sec-evaluation");
+  fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
+  expect(screen.getByRole("textbox", { name: "Tickers / stock codes" })).toBeInTheDocument();
 });

@@ -50,6 +50,7 @@ export interface PipelineInput {
   /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness or the fixture. */
   corpus: CorpusCounts | null;
   manifests: ManifestSummary[];
+  sourceSelection?: { complete: boolean; present: unknown[]; missing: string[] };
   /** Ingested documents per registry, from `/admin/documents/facets`. */
   registryCounts: Record<string, number>;
   jobs: OperatorJob[];
@@ -195,7 +196,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const schemaHint = "Resolve database setup before continuing.";
 
   const drafts: Record<StageId, Draft> = {
-    filings: filingsDraft(manifests, documents, counts.writable, source, readOnly),
+    filings: filingsDraft(manifests, documents, counts.writable, source, readOnly, input.sourceSelection),
     index: { status: "unknown" },
     embeddings: { status: "unknown" },
     lexical: { status: "unknown" },
@@ -235,7 +236,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     else if (indexDone) drafts.index = { status: "done", numbers, hint };
     else if (filingsUnknown) drafts.index = { ...checking };
     else if (!filingsDone) drafts.index = { status: "blocked", statusDetail: `after ${stepRef(1, "Filings")}`, numbers: ["Nothing ingested yet."], hint: "Download filings first (step 1).", blockedBy: "filings" };
-    else drafts.index = { status: "action", numbers: ["Nothing ingested yet."], hint: "Pick the manifests that list your filings and run Ingest selected sources." };
+    else drafts.index = { status: "action", numbers: ["Nothing ingested yet."], hint: "Review the selected filings, then run Parse & chunk selected sources." };
     drafts.index.action = { label: "Ingest selected sources", kind: "ingest_all" };
   }
 
@@ -367,7 +368,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   return { stages, next, corpusReady, readOnly, source };
 }
 
-function filingsDraft(manifests: ManifestSummary[], documents: number, writable: boolean | null, source: Pipeline["source"], readOnly: boolean): Draft {
+function filingsDraft(manifests: ManifestSummary[], documents: number, writable: boolean | null, source: Pipeline["source"], readOnly: boolean, selection?: PipelineInput["sourceSelection"]): Draft {
   const action: StageAction = { label: "Download missing filings", kind: "acquire" };
   if (readOnly || source === "readiness" || source === "pending") {
     const label = readOnly ? "filings in the published corpus" : "filings ingested";
@@ -379,6 +380,9 @@ function filingsDraft(manifests: ManifestSummary[], documents: number, writable:
   const perRegistry = manifests.map((item) => `${registryLabel(item.registries.join(" / "))} ${n(count(item.sources_present))}/${n(count(item.documents))}`);
   if (writable === false) {
     return { status: "blocked", statusDetail: "data/ not writable", numbers: [`${n(present)} / ${n(total)} filings on disk`, ...perRegistry], hint: "Set HOST_GID=<id -g> in .env and restart the app so the container can write data/.", action };
+  }
+  if (selection) {
+    return { status: selection.complete ? "done" : "action", numbers: [`${n(selection.present.length)} / ${n(selection.present.length + selection.missing.length)} filings on disk`], hint: selection.complete ? "" : "Choose companies and fiscal years, then download the selected sources.", action };
   }
   if (total === 0) {
     return { status: "action", numbers: ["No filings yet."], hint: "Choose companies, keep the default fiscal years, then run Download missing filings.", action };
