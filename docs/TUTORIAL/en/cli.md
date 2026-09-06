@@ -17,19 +17,18 @@ embedding configuration. Check completed CLI work in the dashboard instead of ru
 Run from the repository root:
 
 ```bash
+./rag_alias.sh
 source ./rag_alias.sh
 rag-help
 ```
 
-`source` registers functions and aliases in the current shell. Executing `./rag_alias.sh` only displays setup
-instructions; it cannot modify its parent shell. Registration does not install dependencies.
+Executing `./rag_alias.sh` checks this checkout's startup registration and helper targets. If missing, choose Y to install or N to leave it unchanged. A valid existing installation is verified without another prompt. Paste the printed `source` command and run `rag-help` to activate commands without restarting your shell. Helper registration does not install application dependencies.
 
 The shell and Web share the same checked-in Small ASCII wordmark. An 80-column terminal displays the
 full name; narrower terminals use the DR monogram or a plain product line. `NO_COLOR`, dumb terminals,
 and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
 
-Load the file again in each new terminal, or add one source line with this checkout's real absolute path to
-`.bashrc` or `.zshrc`. Do not add duplicates.
+The installer adds one source line to `.bashrc` or `${ZDOTDIR:-$HOME}/.zshrc`, preserving existing content and backing it up. New terminals load it automatically. For manual registration only, the equivalent line is:
 
 ```bash
 # Replace this placeholder with your checkout's actual absolute path.
@@ -412,7 +411,7 @@ and remaining scope before retrying paid embedding.
 ```bash
 rag-alias-delete
 # If the registered command is unavailable:
-./rag_alias.sh --uninstall
+./rag_alias.sh --delete
 ```
 
 Confirm the shown startup file/checkout. The matching registration line is backed up and removed; other

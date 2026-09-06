@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Execute for setup instructions; source from Bash or Zsh to register commands.
+# Execute to install or verify startup registration; source to load commands now.
 _DOCREVIEW_EXECUTED=0
 if [ -n "${ZSH_VERSION:-}" ]; then
     case "${ZSH_EVAL_CONTEXT:-}" in
@@ -63,10 +63,15 @@ import tempfile
 from pathlib import Path
 
 mode, target, filename = sys.argv[1:]
-p = Path(filename)
-if not p.exists():
+p = Path(filename).expanduser().resolve()
+exists = p.exists()
+if not exists and mode != 'install':
     sys.exit(1 if mode == 'check' else 0)
-original = p.read_bytes()
+try:
+    original = p.read_bytes() if exists else b''
+except OSError as error:
+    print('[ERROR] Cannot read startup file: ' + str(error), file=sys.stderr)
+    sys.exit(2)
 lines = original.splitlines(keepends=True)
 kept = []
 for line in lines:
@@ -82,19 +87,41 @@ for line in lines:
                and tokens[2:] in ([], ['>', '/dev/null']))
     if not matches:
         kept.append(line)
-if len(kept) == len(lines):
-    sys.exit(1 if mode == 'check' else 0)
+registered = len(kept) != len(lines)
 if mode == 'check':
-    print(str(p))
-    sys.exit(0)
-fd, backup = tempfile.mkstemp(prefix=p.name + '.docreview-backup-', dir=p.parent)
-os.close(fd)
-shutil.copy2(p, backup)
-if p.read_bytes() != original:
-    raise SystemExit('Startup file changed; uninstall aborted.')
-p.write_bytes(b''.join(kept))
-print('Removed this checkout\'s source line from: ' + str(p))
-print('Backup: ' + backup)
+    sys.exit(0 if registered else 1)
+if mode == 'install':
+    if registered:
+        sys.exit(0)
+    updated = original + (b'\n' if original and not original.endswith(b'\n') else b'')
+    updated += ('source ' + shlex.quote(target) + ' >/dev/null\n').encode()
+else:
+    if not registered:
+        print('No registration for this checkout in: ' + str(p))
+        sys.exit(0)
+    updated = b''.join(kept)
+p.parent.mkdir(parents=True, exist_ok=True)
+if exists:
+    fd, backup = tempfile.mkstemp(prefix=p.name + '.docreview-backup-', dir=p.parent)
+    os.close(fd)
+    shutil.copy2(p, backup)
+    print('Backup: ' + backup)
+fd, temporary = tempfile.mkstemp(prefix=p.name + '.docreview-', dir=p.parent)
+try:
+    with os.fdopen(fd, 'wb') as output:
+        output.write(updated)
+        output.flush()
+        os.fsync(output.fileno())
+    if exists:
+        shutil.copymode(p, temporary)
+    if p.exists() != exists or (exists and p.read_bytes() != original):
+        raise SystemExit('Startup file changed; registration update aborted.')
+    os.replace(temporary, p)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+print(('Installed registration in: ' if mode == 'install' else
+       'Removed this checkout\'s source line from: ') + str(p))
 PYCODE
 }
 
@@ -136,6 +163,10 @@ if [ "${_DOCREVIEW_EXECUTED}" = 1 ]; then
     _DOCREVIEW_PARENT_SHELL="$(ps -p "$PPID" -o comm=)"
     _DOCREVIEW_PARENT_SHELL="${_DOCREVIEW_PARENT_SHELL##*/}"
     _DOCREVIEW_PARENT_SHELL="${_DOCREVIEW_PARENT_SHELL#-}"
+    case "${_DOCREVIEW_PARENT_SHELL}" in
+        bash|zsh) ;;
+        *) _DOCREVIEW_PARENT_SHELL="${SHELL##*/}" ;;
+    esac
 else
     if [ -n "${ZSH_VERSION:-}" ]; then
         _DOCREVIEW_PARENT_SHELL=zsh
@@ -148,35 +179,71 @@ case "${_DOCREVIEW_PARENT_SHELL}" in
     bash) _DOCREVIEW_RC="$HOME/.bashrc" ;;
     *) _DOCREVIEW_RC=/dev/null ;;
 esac
+# Validate command registration and wrapper targets without running application operations.
+_docreview_verify() {
+    local target
+    for target in scripts/run_local.sh scripts/diagnose_ollama.sh scripts/quickstart.sh scripts/runtime_commands.py; do
+        if [ ! -r "${_DOCREVIEW_ROOT}/$target" ]; then
+            printf '[ERROR] Missing helper target: %s\n' "${_DOCREVIEW_ROOT}/$target" >&2
+            return 1
+        fi
+    done
+    case "${_DOCREVIEW_PARENT_SHELL}" in
+        bash) bash --noprofile --norc -c 'source "$1" >/dev/null' docreview "${_DOCREVIEW_ROOT}/rag_alias.sh" ;;
+        zsh) zsh -f -c 'source "$1" >/dev/null' docreview "${_DOCREVIEW_ROOT}/rag_alias.sh" ;;
+        *) return 1 ;;
+    esac
+}
+
+# A child script cannot change its parent shell; print the exact activation command.
+_docreview_activation() {
+    printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
+    printf '%s\n' 'Paste these commands into this terminal; no shell restart is needed:'
+    printf '  source %q\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
+    printf '  rag-help\n'
+    printf '\nRemove this checkout registration: rag-alias-delete, or:\n'
+    printf '  %q --delete\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
+}
+
 if [ "${_DOCREVIEW_EXECUTED}" = 1 ]; then
     _docreview_banner
     case "${1:-}" in
-        --uninstall)
-            _docreview_uninstall
-            exit $?
-            ;;
+        --delete|--uninstall) _docreview_uninstall; exit $? ;;
         '') ;;
-        *) printf '%s\n' 'Usage: ./rag_alias.sh [--uninstall]' >&2; exit 2 ;;
+        *) printf '%s\n' 'Usage: ./rag_alias.sh [--delete|--uninstall]' >&2; exit 2 ;;
     esac
-    if _docreview_startup check >/dev/null; then
-        _docreview_line '1;32' '[INSTALLED] Startup registration already exists; no setup needed.'
+    if [ "${_DOCREVIEW_RC}" = /dev/null ]; then
+        printf '%s\n' '[ERROR] Start Bash or Zsh, then run ./rag_alias.sh again.' >&2
+        exit 2
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        printf '%s\n' '[ERROR] Python 3 is required to check and install startup registration.' >&2
+        exit 1
+    fi
+    if _docreview_startup check; then
+        _docreview_verify || exit 1
+        _docreview_line '1;32' '[INSTALLED] Startup registration and helper commands verified.'
         _docreview_line '1;36' 'Run rag-help for help!'
-        _docreview_line '2' 'If this terminal predates registration, open a new terminal first.'
+        _docreview_activation
+        exit 0
     else
-        _docreview_line '1;33' "[SETUP] Shell: ${_DOCREVIEW_PARENT_SHELL}"
-        printf '%s\n' 'Run this in your terminal to register and verify DocReview commands:'
-        case "${_DOCREVIEW_PARENT_SHELL}" in
-            bash|zsh) ;;
-            *) printf '%s\n' '  bash' '# Then run in Bash:' ;;
-        esac
-        printf '  source %q\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
-        _docreview_line '1;32' 'After running source, run rag-help for help!'
+        _DOCREVIEW_REGISTRATION_STATUS=$?
+        [ "${_DOCREVIEW_REGISTRATION_STATUS}" = 1 ] || exit "${_DOCREVIEW_REGISTRATION_STATUS}"
     fi
-    printf '\nUninstall: rag-alias-delete (loaded shell), or:\n'
-    printf '  %q --uninstall\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
-    if [ -t 0 ] && [ "${_DOCREVIEW_RC}" != /dev/null ]; then
-        _docreview_uninstall
-    fi
+    _docreview_line '1;33' "[SETUP] Install DocReview helper for ${_DOCREVIEW_PARENT_SHELL}"
+    printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
+    printf '%s\n' 'Registers rag-help and the helper commands; run rag-quickstart separately for application setup.'
+    printf 'Install this checkout registration? [y/N] '
+    IFS= read -r _DOCREVIEW_ANSWER || _DOCREVIEW_ANSWER=n
+    case "${_DOCREVIEW_ANSWER}" in
+        y|Y|yes|YES) ;;
+        *) printf '%s\n' 'Cancelled; nothing changed. Run ./rag_alias.sh when ready to install.'; exit 0 ;;
+    esac
+    _docreview_verify || exit 1
+    _docreview_startup install || exit 1
+    _docreview_startup check || exit 1
+    _docreview_line '1;32' '[OK] Startup registration installed and helper commands verified.'
+    _docreview_activation
     exit 0
 fi
 unset _DOCREVIEW_EXECUTED _DOCREVIEW_ALIAS_FILE

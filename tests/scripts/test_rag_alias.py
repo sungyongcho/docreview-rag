@@ -27,7 +27,7 @@ def run_shell(shell, command, *, env=None, input=""):
     args = [shell, "--noprofile", "--norc"] if Path(shell).name == "bash" else [shell, "-f"]
     return subprocess.run(
         [*args, "-c", command, "docreview-test", str(SCRIPT)],
-        env={**os.environ, "TERM": "xterm-256color", **(env or {})},
+        env={**os.environ, "TERM": "xterm-256color", "SHELL": shell, **(env or {})},
         input=input,
         capture_output=True,
         text=True,
@@ -35,14 +35,23 @@ def run_shell(shell, command, *, env=None, input=""):
     )
 
 
-def test_shell_syntax_and_direct_setup(shell):
-    """Execution explains sourcing and prints the canonical full wordmark."""
+@pytest.mark.parametrize("answer", ["", "n\n"])
+def test_shell_syntax_and_direct_setup(shell, tmp_path, answer):
+    """Execution offers installation without modifying a declined isolated home."""
     subprocess.run([shell, "-n", str(SCRIPT)], check=True, capture_output=True)
-    result = run_shell(shell, '"$SHELL_TEST" "$1"', env={"SHELL_TEST": shell, "COLUMNS": "80"})
+    result = run_shell(
+        shell,
+        '"$SHELL_TEST" "$1"',
+        env={"SHELL_TEST": shell, "COLUMNS": "80", "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
+        input=answer,
+    )
     assert WORDMARK in result.stdout
     assert "DocReview RAG v2" in result.stdout
     assert "rag-help" in result.stdout
-    assert "source" in result.stdout or "[INSTALLED]" in result.stdout
+    assert "Install this checkout registration? [y/N]" in result.stdout
+    assert "Cancelled" in result.stdout
+    assert not (tmp_path / ".bashrc").exists()
+    assert not (tmp_path / ".zshrc").exists()
     assert "\x1b" not in result.stdout
     assert result.stderr == ""
 
@@ -165,3 +174,107 @@ def test_fresh_start_help_and_registration(shell):
     assert "WARNING: rag-fresh-start permanently deletes" in result.stdout
     assert "Download SEC/DART data again" in result.stdout
     assert "View reset status" in result.stdout
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_direct_install_verify_and_delete(shell, tmp_path, existing):
+    """Install once, preserve startup content, verify again and explicitly remove."""
+    environment = {"HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)}
+    rc = tmp_path / (".zshrc" if Path(shell).name == "zsh" else ".bashrc")
+    original = "# User settings without a final newline" if existing else ""
+    if existing:
+        rc.write_text(original)
+    result = run_shell(shell, '"$1"', env=environment, input="y\n")
+    assert "[OK]" in result.stdout
+    assert "no shell restart" in result.stdout
+    assert "--delete" in result.stdout
+    assert "Remove this registration?" not in result.stdout
+    installed = rc.read_text()
+    assert installed.startswith(original)
+    assert installed.count(str(SCRIPT)) == 1
+    result = run_shell(shell, '"$1"', env=environment, input="y\n")
+    assert "[INSTALLED]" in result.stdout
+    assert "Install this checkout registration?" not in result.stdout
+    assert "Remove this registration?" not in result.stdout
+    assert rc.read_text() == installed
+    result = run_shell(
+        shell,
+        'source "$TEST_RC"; typeset -f rag-help >/dev/null; rag-help',
+        env={**environment, "TEST_RC": str(rc)},
+    )
+    assert "[STACK]" in result.stdout
+    result = run_shell(shell, '"$1" --delete', env=environment, input="y\n")
+    assert "Removed this checkout" in result.stdout
+    assert str(SCRIPT) not in rc.read_text()
+    assert rc.read_text().rstrip("\n") == original
+
+
+def test_failed_validation_does_not_install(shell, tmp_path):
+    """A checkout missing wrapper targets must not be reported or registered as installed."""
+    checkout = tmp_path / "incomplete checkout"
+    checkout.mkdir()
+    script = checkout / "rag_alias.sh"
+    shutil.copy2(SCRIPT, script)
+    environment = {**os.environ, "SHELL": shell, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)}
+    result = subprocess.run(
+        [str(script)], input="y\n", text=True, capture_output=True, env=environment, check=False
+    )
+    assert result.returncode == 1
+    assert "Missing helper target" in result.stderr
+    assert "[OK]" not in result.stdout
+    assert not (tmp_path / ".bashrc").exists()
+    assert not (tmp_path / ".zshrc").exists()
+
+
+def test_installed_interactive_execution_never_removes_registration(shell, tmp_path):
+    """Even a queued Y on a terminal cannot trigger removal during normal execution."""
+    rc = tmp_path / (".zshrc" if Path(shell).name == "zsh" else ".bashrc")
+    original = f'source "{SCRIPT}" >/dev/null\n'
+    rc.write_text(original)
+    master, slave = pty.openpty()
+    try:
+        os.write(master, b"y\n")
+        result = subprocess.run(
+            [str(SCRIPT)],
+            stdin=slave,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "SHELL": shell, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
+            check=True,
+        )
+    finally:
+        os.close(slave)
+        os.close(master)
+    assert "[INSTALLED]" in result.stdout
+    assert "Remove this registration?" not in result.stdout
+    assert rc.read_text() == original
+
+
+def test_install_preserves_symlink_and_quotes_checkout_path(shell, tmp_path):
+    """Quoted checkout paths survive startup loading without replacing rc symlinks."""
+    checkout = tmp_path / "checkout's helper"
+    checkout.mkdir()
+    script = checkout / "rag_alias.sh"
+    shutil.copy2(SCRIPT, script)
+    for name in ["run_local.sh", "diagnose_ollama.sh", "quickstart.sh", "runtime_commands.py"]:
+        target = checkout / "scripts" / name
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("# Isolated wrapper target.\n")
+    target_rc = tmp_path / "managed-startup"
+    target_rc.write_text("# User configuration\n")
+    rc = tmp_path / (".zshrc" if Path(shell).name == "zsh" else ".bashrc")
+    rc.symlink_to(target_rc)
+    environment = {
+        "HOME": str(tmp_path),
+        "ZDOTDIR": str(tmp_path),
+        "HELPER": str(script),
+        "RC": str(rc),
+    }
+    result = run_shell(shell, '"$HELPER"', env=environment, input="y\n")
+    assert "[OK]" in result.stdout
+    assert rc.is_symlink()
+    assert target_rc.read_text().startswith("# User configuration\n")
+    result = run_shell(shell, 'source "$RC"; rag-help; "$HELPER"', env=environment)
+    assert "[STACK]" in result.stdout
+    assert "[INSTALLED]" in result.stdout
