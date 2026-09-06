@@ -173,6 +173,7 @@ class RuntimeAdminApiServices:
 
     async def document_detail(self, doc_id: str) -> dict[str, Any] | None:
         """Return one bounded document preview when present."""
+        await self._documents.ensure_ready()
         detail = await self._corpus.document_detail(doc_id)
         if detail is None:
             return None

@@ -81,42 +81,17 @@ def test_startup_prepares_only_project_database_before_app(configured, monkeypat
     assert calls[2] == "http://127.0.0.1:38010"
 
 
-def test_existing_schema_is_inspected_without_bootstrap(monkeypatch):
-    """Never run bootstrap or migrations against an already populated compatible schema."""
+def test_schema_preparation_uses_shared_startup_contract(monkeypatch):
+    """Quickstart delegates to the same non-destructive implementation as the container."""
+    from unittest.mock import Mock
 
-    class Connection:
-        """Return an existing complete table inventory."""
-
-        async def __aenter__(self):
-            """Enter the read-only connection scope."""
-            return self
-
-        async def __aexit__(self, *args):
-            """Leave without swallowing inspection failures."""
-            return False
-
-        async def run_sync(self, action):
-            """Simulate the complete existing model table inventory."""
-            return list(setup.Base.metadata.tables)
-
-    class Engine:
-        """Expose only the connection and cleanup needed for existing-schema inspection."""
-
-        def connect(self):
-            """Return the table inventory connection."""
-            return Connection()
-
-        async def dispose(self):
-            """Release the fake engine."""
-
-    monkeypatch.setattr(setup, "create_async_engine", lambda *a, **k: Engine())
-    compatibility = AsyncMock()
-    bootstrap = AsyncMock()
-    monkeypatch.setattr(setup, "ensure_schema_compatibility", compatibility)
-    monkeypatch.setattr(setup, "bootstrap_schema", bootstrap)
+    engine = Mock(dispose=AsyncMock())
+    shared = AsyncMock(return_value=False)
+    monkeypatch.setattr(setup, "create_async_engine", lambda *a, **k: engine)
+    monkeypatch.setattr(setup, "prepare_empty_schema", shared)
     assert asyncio.run(setup.prepare_schema("unused")) is False
-    compatibility.assert_awaited_once()
-    bootstrap.assert_not_awaited()
+    shared.assert_awaited_once_with(engine)
+    engine.dispose.assert_awaited_once()
 
 
 @pytest.mark.parametrize("array", [True, False])

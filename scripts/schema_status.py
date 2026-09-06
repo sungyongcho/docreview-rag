@@ -48,7 +48,7 @@ async def schema_status(url: str, *, prepare: bool = False) -> dict[str, object]
 def main() -> int:
     """Use the selected checkout's local published DB port, never an external DSN."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("check", "prepare", "recover"))
+    parser.add_argument("action", choices=("check", "prepare", "recover", "recreate"))
     parser.add_argument(
         "--parent",
         type=Path,
@@ -61,6 +61,27 @@ def main() -> int:
     )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    if args.parent and args.action != "recover":
+        parser.error("--parent is only available with recover")
+    if args.action == "recreate":
+        from scripts.schema_recreate import run
+
+        try:
+            return run(root)
+        except ValueError, OSError, SQLAlchemyError, subprocess.CalledProcessError:
+            print(
+                "Recreation could not be confirmed. The API may remain stopped. "
+                "Check DB access/dependencies and run schema_status check before retrying. "
+                "DB changes are transactional; no automatic retry occurs.",
+                file=sys.stderr,
+            )
+            return 1
+        except EOFError, KeyboardInterrupt:
+            print(
+                "Stopped. Run schema_status check to inspect state; no automatic retry.",
+                file=sys.stderr,
+            )
+            return 130
     if args.action == "recover":
         from scripts.schema_recovery import create_recovery, start_recovery
 

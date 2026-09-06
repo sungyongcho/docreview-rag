@@ -4,6 +4,7 @@ export interface TerminalStep {
   reason: string;
   command: string;
   expected: string;
+  danger?: boolean;
 }
 
 export interface Diagnosis {
@@ -54,7 +55,7 @@ export function diagnosePreparation(stageId: StageId, pipeline: Pipeline, runtim
     // Acquisition writes source files; schema compatibility gates indexing, not files.
     if (stageId !== "filings") {
       if (runtime.schemaStatus === "drifted") {
-        return result("blocked", "Database schema is incompatible", "A rebuild or restart cannot repair an incompatible database layout. Preserve the database and follow the setup recovery guide before indexing.", stage.blockedBy ?? "setup", [CHECK_SCHEMA, { reason: "Create a separate recovery checkout; preserve the original database and files.", command: "uv run python -m scripts.schema_status recover --return-stage " + stageId, expected: "Open the printed recovery URL and re-check this step. The original schema remains unchanged." }]);
+        return result("blocked", "Database schema is incompatible", "A rebuild or restart cannot repair an incompatible database layout. Preserve the database and follow the setup recovery guide before indexing.", stage.blockedBy ?? "setup", [CHECK_SCHEMA, { reason: "Create a separate recovery checkout; preserve the original database and files.", command: "uv run python -m scripts.schema_status recover --return-stage " + stageId, expected: "Open the printed recovery URL and re-check this step. The original schema remains unchanged." }, { danger: true, reason: "For first-time setup or users who understand the consequences. This may be dangerous: existing database contents will be deleted.", command: "uv run python -m scripts.schema_status recreate", expected: "Review the table counts and type the exact RECREATE confirmation only if you accept data loss. Files stay; run rag-up and re-check this step afterward." }]);
       }
       if (runtime.schemaStatus === "empty") {
         return result("blocked", "Database schema is empty", "Prepare the empty database schema, then re-check this step.", "setup", [{
