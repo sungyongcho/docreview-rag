@@ -132,6 +132,7 @@ async def review_stream(
                         RetrieveRequest(
                             query=request.query,
                             session_profile=request.session_profile,
+                            conversation_history=request.conversation_history,
                         )
                     )
                     if isinstance(prepared, RetrieveResponse):

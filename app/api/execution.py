@@ -58,6 +58,7 @@ class ExecutionData(StrictSchema):
     """Versioned execution envelope; absent historical fields remain explicitly null."""
 
     contract_version: int = 1
+    path_decision: dict[str, JsonValue] | None = None
     total_elapsed_ms: float
     stages: list[StageEvent] = Field(default_factory=list)
     model_calls: list[ExecutionModelCall] = Field(default_factory=list)
