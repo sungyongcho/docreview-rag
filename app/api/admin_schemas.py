@@ -43,6 +43,7 @@ type CorpusOperationKind = Literal[
     "acquire_edgar",
     "acquire_dart",
     "ingest_manifest",
+    "ingest_selected",
     "backfill_embeddings",
     "rebuild_bm25",
 ]
@@ -312,6 +313,25 @@ class CorpusDocumentResource(StrictAdminModel):
     chunk_count: NonnegativeInt
 
 
+class SourceInventoryResource(StrictAdminModel):
+    """Downloaded source identity independent of database rows."""
+
+    manifest: str
+    document_id: str
+    registry: Literal["sec", "dart"]
+    issuer: str
+    name: str
+    fiscal_year: int
+    on_disk: StrictBool
+
+
+class AcquisitionDraftResource(StrictAdminModel):
+    """Server-provided initial company and fiscal-year selection."""
+
+    identifiers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)]
+    years: Annotated[tuple[int, ...], BeforeValidator(_tuple_from_json_array)]
+
+
 class CorpusSnapshotResource(StrictAdminModel):
     """Atomic typed preparation state with explicit source selections."""
 
@@ -319,6 +339,8 @@ class CorpusSnapshotResource(StrictAdminModel):
     status: CorpusStatusResource
     manifests: tuple[ManifestResource, ...]
     documents: tuple[CorpusDocumentResource, ...]
+    sources: tuple[SourceInventoryResource, ...] = ()
+    acquisition_draft: AcquisitionDraftResource | None = None
 
 
 class CorpusJobResource(StrictAdminModel):

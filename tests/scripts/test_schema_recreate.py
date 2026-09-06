@@ -121,7 +121,7 @@ def test_stale_preview_never_stops_or_deletes(tmp_path, monkeypatch, boundary):
     stop = Mock()
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
-    monkeypatch.setattr("builtins.input", lambda prompt: f"RECREATE {tmp_path.name}")
+    monkeypatch.setattr("builtins.input", lambda prompt: f"RECREATE {tmp_path.name} AND SOURCES")
     from types import SimpleNamespace
 
     monkeypatch.setattr(

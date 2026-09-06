@@ -1,6 +1,32 @@
 {
   "components": {
     "schemas": {
+      "AcquisitionDraftResource": {
+        "additionalProperties": false,
+        "description": "Server-provided initial company and fiscal-year selection.",
+        "properties": {
+          "identifiers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Identifiers",
+            "type": "array"
+          },
+          "years": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "identifiers",
+          "years"
+        ],
+        "title": "AcquisitionDraftResource",
+        "type": "object"
+      },
       "AdminDocumentResource": {
         "additionalProperties": false,
         "description": "One filing row with current chunk and embedding coverage.",
@@ -698,6 +724,7 @@
           "acquire_edgar",
           "acquire_dart",
           "ingest_manifest",
+          "ingest_selected",
           "backfill_embeddings",
           "rebuild_bm25"
         ],
@@ -772,6 +799,16 @@
         "additionalProperties": false,
         "description": "Atomic typed preparation state with explicit source selections.",
         "properties": {
+          "acquisition_draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcquisitionDraftResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "documents": {
             "items": {
               "$ref": "#/components/schemas/CorpusDocumentResource"
@@ -793,6 +830,14 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SourceInventoryResource"
+            },
+            "title": "Sources",
+            "type": "array"
           },
           "status": {
             "$ref": "#/components/schemas/CorpusStatusResource"
@@ -5347,6 +5392,55 @@
           "public"
         ],
         "title": "SnapshotVisibilityRequest",
+        "type": "object"
+      },
+      "SourceInventoryResource": {
+        "additionalProperties": false,
+        "description": "Downloaded source identity independent of database rows.",
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "fiscal_year": {
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "manifest": {
+            "title": "Manifest",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "on_disk": {
+            "title": "On Disk",
+            "type": "boolean"
+          },
+          "registry": {
+            "enum": [
+              "sec",
+              "dart"
+            ],
+            "title": "Registry",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest",
+          "document_id",
+          "registry",
+          "issuer",
+          "name",
+          "fiscal_year",
+          "on_disk"
+        ],
+        "title": "SourceInventoryResource",
         "type": "object"
       },
       "StepTrace": {

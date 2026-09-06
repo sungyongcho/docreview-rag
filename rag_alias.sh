@@ -308,7 +308,9 @@ rag-help() {
         '  Extreme: acknowledge browser deletion at the printed URL; no automatic restart' \
         '  Ordinary: preserves .env/code/Ollama; reports deletion separately from startup' \
         '  Rejected/uncertain reset: inspect View reset status before any resubmission' \
-        '  uv run python -m scripts.schema_status recreate   DANGER: confirmed DB-only reset' \
+        '  uv run python -m scripts.schema_status recreate   DANGER: reset ORM data + sources; keep exports/config/volume' \
+        '    --keep-sources            Reset ORM data only; preserve downloaded sources' \
+        '    --sample                  Reset data + sources; preset NVDA/AMD FY2023–2024, no download' \
         '  rag-help                     Show this help' \
         ''
     _docreview_line '1;31' 'WARNING: rag-fresh-start permanently deletes the project database,'

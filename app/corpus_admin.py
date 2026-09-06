@@ -33,6 +33,12 @@ from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
 from app.ingestion.seed import load_seed_batch, persist_seed_batch_with_stats
+from app.ingestion.source_selection import (
+    SourceInventory,
+    acquisition_draft,
+    record_selection,
+    source_inventory,
+)
 from app.observability.persistence import redact_sensitive_text
 from app.operator.jobs import (
     JobExecutionCoordinator,
@@ -53,6 +59,7 @@ type AdminJobKind = Literal[
     "acquire_edgar",
     "acquire_dart",
     "ingest_manifest",
+    "ingest_selected",
     "backfill_embeddings",
     "rebuild_bm25",
 ]
@@ -232,6 +239,8 @@ class CorpusSnapshot:
     status: CorpusStatus
     manifests: tuple[ManifestSummary, ...]
     documents: tuple[AdminDocument, ...]
+    sources: tuple[SourceInventory, ...] = ()
+    acquisition_draft: dict[str, list] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -668,6 +677,8 @@ class RuntimeCorpusAdminService:
         """Validate root catalogs and expose exact processing selections."""
         summaries = []
         for path in sorted(self._corpus_root.glob("*.json")):
+            if path.name.startswith("selected-"):
+                continue
             if path.name != "manifest.json" and not path.name.endswith("-manifest.json"):
                 continue
             try:
@@ -818,6 +829,7 @@ class RuntimeCorpusAdminService:
                 parse_status=parse_status,
             )
         )
+        sources = source_inventory(self._corpus_root)
         return CorpusSnapshot(
             mode="live",
             status=CorpusStatus(
@@ -833,6 +845,8 @@ class RuntimeCorpusAdminService:
                 provider=self._settings.embedding_provider,
             ),
             manifests=self._manifest_summaries(),
+            sources=sources,
+            acquisition_draft=acquisition_draft(self._corpus_root, sources),
             documents=filtered,
         )
 
@@ -949,6 +963,13 @@ class RuntimeCorpusAdminService:
 
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one operation and start the persistent single worker lazily."""
+        if command.kind == "ingest_selected":
+            manifest, selection_id = record_selection(
+                self._corpus_root, command.identifiers, command.years
+            )
+            command = replace(
+                command, kind="ingest_manifest", manifest=manifest, selection_id=selection_id
+            )
         await self.recover_jobs()
         if self._queue.full():
             raise RuntimeError(f"administrator queue is full ({MAX_QUEUED_JOBS})")
@@ -1116,6 +1137,13 @@ class RuntimeCorpusAdminService:
         candidate = (self._corpus_root / name).resolve()
         if candidate.parent != self._corpus_root:
             raise ValueError("manifest must be selected from the corpus root")
+        if name.startswith("selected-") and name.endswith("-manifest.json") and candidate.is_file():
+            catalog = Manifest.read(candidate)
+            if (
+                len(catalog.selections) == 1
+                and name == f"{catalog.selections[0].selection_id}-manifest.json"
+            ):
+                return candidate
         allowed = {item.name for item in self._manifest_summaries() if item.valid}
         if name not in allowed:
             raise ValueError("manifest is not a valid selectable corpus manifest")

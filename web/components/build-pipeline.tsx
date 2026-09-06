@@ -11,7 +11,8 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { elapsedLabel, JobProgress } from "@/components/job-center";
 import { AcquisitionFields } from "@/components/acquisition-fields";
-import { acquisitionGroups, acquisitionRegistry, type AcquisitionCompany } from "@/lib/acquisition-catalog";
+import { acquisitionRegistry, type AcquisitionCompany } from "@/lib/acquisition-catalog";
+import { selectedSourceState, type SourceInventory } from "@/lib/source-selection";
 import { companyLabel } from "@/lib/company-labels";
 import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeline";
 import { diagnosePreparation } from "@/lib/preparation-diagnostics";
@@ -35,7 +36,11 @@ export interface BuildPipelineProps {
   canOperateCorpus: boolean;
   acquisition: AcquisitionForm;
   onAcquisitionChange: (next: AcquisitionForm) => void;
+  onSyncAcquisition?: () => void;
   manifests: ManifestSummary[];
+  sources?: SourceInventory[];
+  onChangeFilings?: () => void;
+  onIngestAdvanced?: () => void;
   selectedSources?: string[];
   selectedDocumentCount?: number;
   onToggleSource?: (key: string) => void;
@@ -67,7 +72,6 @@ export interface BuildPipelineProps {
   onRefresh: () => unknown | Promise<unknown>;
 }
 
-const REGISTRY_LABELS: Record<"sec" | "dart", string> = { sec: "SEC EDGAR", dart: "DART" };
 const STEP_DEPENDENCIES: Record<Stage["id"], string> = {
   filings: "Start with SEC or DART filings",
   index: "Source files → chunks",
@@ -199,10 +203,14 @@ export function BuildPipeline(props: BuildPipelineProps) {
             disabled={disabled}
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
+            onSyncAcquisition={props.onSyncAcquisition}
             documents={props.documents ?? []}
             companies={props.companies ?? []}
             onAcquisitionValidityChange={setAcquisitionValid}
             manifests={props.manifests}
+            sources={props.sources}
+            onChangeFilings={() => setSelectedId("filings")}
+            onIngestAdvanced={props.onIngestAdvanced}
             selectedSources={props.selectedSources}
             selectedDocumentCount={props.selectedDocumentCount}
             onToggleSource={props.onToggleSource}
@@ -322,7 +330,11 @@ interface StageCardProps {
   companies: AcquisitionCompany[];
   onAcquisitionValidityChange: (valid: boolean) => void;
   onAcquisitionChange: (next: AcquisitionForm) => void;
+  onSyncAcquisition?: () => void;
   manifests: ManifestSummary[];
+  sources?: SourceInventory[];
+  onChangeFilings?: () => void;
+  onIngestAdvanced?: () => void;
   selectedSources?: string[];
   selectedDocumentCount?: number;
   onToggleSource?: (key: string) => void;
@@ -341,7 +353,7 @@ function manifestSummary(manifest: ManifestSummary, registryCounts: Record<strin
   return parts.join(" · ");
 }
 
-function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ onSyncAcquisition, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -349,6 +361,8 @@ function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acqui
   const identifiers = splitList(acquisition.identifiers);
   const companyNames = (code: string) => companyLabel(code, documents.find((document) => document.issuer === code)?.issuer_name ?? companies.find((company) => company.issuer === code)?.name);
   const years = splitList(acquisition.years).map((year) => `FY${year}`);
+  const sourceState = selectedSourceState(sources, acquisition);
+  const groups = [...new Map(sources.map((row) => [`${row.registry}:${row.issuer}:${row.fiscal_year}`, { registry: row.registry, issuer: row.issuer, name: row.name, year: row.fiscal_year }])).values()];
 
   return (
     <li>
@@ -366,7 +380,11 @@ function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acqui
             </p>
           )}
           {stage.id === "filings" && (
-            <p className="stage-summary">{[acquisitionGroups(identifiers, companies).map((group) => REGISTRY_LABELS[group.registry]).join(" / "), identifiers.map(companyNames).join(", ") || t("no tickers"), years.join(", ") || t("no fiscal years")].join(" · ")}</p>
+            <section aria-label={t("Downloaded sources")}>
+              <h3>{t("Downloaded sources")}</h3>
+              {!groups.length && <p>{t("No downloaded sources.")}</p>}
+              <ul>{groups.map((group) => { const rows = sources.filter((row) => row.registry === group.registry && row.issuer === group.issuer && row.fiscal_year === group.year); return <li key={`${group.registry}:${group.issuer}:${group.year}`}>{group.registry.toUpperCase()} → {companyLabel(group.issuer, group.name)} → FY{group.year} · {t("{present} / {total} on disk", { present: rows.filter((row) => row.on_disk).length, total: rows.length })}</li>; })}</ul>
+            </section>
           )}
           {job && (
             <div className="stage-job">
@@ -382,14 +400,25 @@ function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acqui
             <details className="stage-advanced" open>
               <summary>{t("Change…")}</summary>
               <div>
+                {onSyncAcquisition && <button className="button" type="button" onClick={onSyncAcquisition}>{t("Sync draft with downloaded sources")}</button>}
+                <p>{t("On disk in selection: {count}", { count: sourceState.present.length })} · {t("On disk but not selected: {count}", { count: sourceState.excluded.length })}</p>
+                {sourceState.missing.length > 0 && <p>{t("To download: {sources}", { sources: sourceState.missing.join(", ") })}</p>}
                 <AcquisitionFields acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly} documents={documents} companies={companies} onValidityChange={onAcquisitionValidityChange} />
                 <p className="helper">{identifiers.some((code) => acquisitionRegistry(code, companies) === "sec") && t("EDGAR downloads need SEC_USER_AGENT in .env.")} {identifiers.some((code) => acquisitionRegistry(code, companies) === "dart") && t("DART downloads need DART_API_KEY in .env.")}</p>
               </div>
             </details>
           )}
+          {stage.id === "index" && <section aria-label={t("Selected documents")}>
+            <h3>{t("Selected documents")}</h3>
+            <p role="status">{t("Selected documents: {count}", { count: sourceState.present.length })}</p>
+            <p>{identifiers.map(companyNames).join(", ") || t("no tickers")} · {years.join(", ") || t("no fiscal years")}</p>
+            <ul>{sourceState.selected.map((row) => <li key={`${row.registry}:${row.document_id}`}>{row.registry.toUpperCase()} · {row.issuer} · FY{row.fiscal_year} · {row.document_id} · {t(row.on_disk ? "On disk" : "Missing source")}</li>)}</ul>
+            {sourceState.missing.length > 0 && <p role="alert">{t("To download: {sources}", { sources: sourceState.missing.join(", ") })}</p>}
+            <button className="button ghost" type="button" onClick={onChangeFilings}>{t("Change selection in Filings")}</button>
+          </section>}
           {stage.id === "index" && (
-            <details className="stage-advanced" open>
-              <summary>{t("Change…")}</summary>
+            <details className="stage-advanced">
+              <summary>{t("Advanced")}</summary>
               <div>
                 <p role="status">{t("Selected documents: {count}", { count: selectedDocumentCount })}</p>
                 {manifests.map((manifest) => (
@@ -401,6 +430,7 @@ function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acqui
                     })}
                   </div>
                 ))}
+                {onIngestAdvanced && <button className="button" type="button" disabled={disabled("ingest_all") || !selectedSources.length} onClick={onIngestAdvanced}>{t("Ingest advanced selections")}</button>}
                 {!manifests.length && <p className="helper">{t("No manifests found in data/corpus.")}</p>}
                 <p className="helper">{t("Ingest upserts documents from each manifest in order and recomputes BM25. Run Backfill embeddings afterwards (step 3).")}</p>
               </div>
@@ -408,7 +438,7 @@ function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acqui
           )}
           <div className="stage-actions">
             {job && job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
-            {stage.action && <ActionButton stage={stage} primary={isNext} handler={handler} disabled={disabled} />}
+            {stage.action && <ActionButton stage={stage.id === "index" ? { ...stage, action: { kind: "ingest_all", label: "Parse & chunk selected sources" } } : stage} primary={isNext} handler={handler} disabled={(kind) => disabled(kind) || (kind === "ingest_all" && !sourceState.complete)} />}
             {stage.id === "index" && <button className="button ghost" type="button" onClick={onOpenDocuments}>{t("Open Documents")}</button>}
             {stage.id === "answer_model" && stage.status !== "readonly" && <button className="button ghost" type="button" onClick={onOpenStatus}>{t("Open System status")}</button>}
             {job && <button className="button ghost" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button>}
