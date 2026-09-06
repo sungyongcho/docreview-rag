@@ -18,7 +18,7 @@
 - **완료 기준:** 문서·연도가 맞고 인용 구절이 주장을 뒷받침하며 실행 오류가 없습니다.
   근거 확인 표시는 원문 검토를 대신하지 않습니다.
 - **실패와 복구:** `NOT_IN_DOCS`와 모델 호출 실패·노드 오류·실행 한도 초과를 구분하세요.
-  실행 트레이스를 열고 [실행 진단](runtime.md)과 [문제 해결](troubleshooting.md)을 확인합니다.
+  **실행 상세 → 트레이스**를 열고 [실행 진단](runtime.md)과 [문제 해결](troubleshooting.md)을 확인합니다.
 - **다음:** [설정과 근거 선택 조정](settings.md#step-10).
 
 ```text
@@ -119,3 +119,20 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 
 ### SCREENSHOT NEEDED
 <!-- Feature: path decision; state: completed context-aware review, chat-only reply, and scope conflict with Auto action; locale: ko; evidence: first step, selected/resolved scope, routing queries, skipped phases and actual model calls in light mode. -->
+
+### 단계 펼침과 실행 상세
+
+실행 요약은 답변 안에 유지됩니다. **경로 결정**을 포함한 단계를 누르면 기록된 범위,
+순위별 후보, 채택·제외 근거, 검증 또는 결과를 펼쳐 볼 수 있습니다. 한 번에 한 단계가
+열리고 다시 누르면 접힙니다. 과거 기록에 없는 항목은 **이 실행에서 기록되지 않음**으로 표시합니다.
+
+**실행 상세**는 오른쪽 패널의 **성능**, **서버 설정**, **트레이스** 탭을 엽니다.
+`Q. <질문>` 제목과 짧은 메시지 ID로 어느 답변의 기록인지 확인합니다. 같은 답변을 다시
+열면 마지막 탭을 복원합니다. 가장자리 버튼은 패널을 접거나 펼치며, Escape·닫기 버튼·
+대화 또는 입력창 클릭으로 닫아도 작성 중인 질문은 유지됩니다. 도움말과 실행 상세는
+동시에 열리지 않습니다. OpenAI는 요청 시간·토큰 등 실제 제공한 값만 보여 주고 빈 서버
+시간 펼침을 만들지 않습니다. Ollama 시간과 CPU/GPU 배치도 기록된 경우에만 표시됩니다.
+
+### SCREENSHOT NEEDED
+
+<!-- Feature: stage disclosures and right-side run details; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->

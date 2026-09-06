@@ -211,3 +211,35 @@ describe("recorded path decisions", () => {
     expect(phaseStatus(state, 1)).toBe("not-run");
   });
 });
+
+
+describe("stage disclosures", () => {
+  it("keeps all six panels collapsed and exposes focusable native disclosure buttons", () => {
+    render(<ReviewProgressSteps state={initialReviewProgress()} />);
+    const labels = ["Path decision", ...REVIEW_STEPS.map((step) => step.label)];
+    expect(screen.queryByRole("region")).toBeNull();
+    for (const label of labels) {
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toHaveAttribute("type", "button");
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      button.focus();
+      expect(button).toHaveFocus();
+      fireEvent.click(button);
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      const panel = screen.getByRole("region", { name: label });
+      expect(button).toHaveAttribute("aria-controls", panel.id);
+      expect(panel).toBeVisible();
+      fireEvent.click(button);
+      expect(screen.queryByRole("region")).toBeNull();
+    }
+  });
+  it("switches disclosures without changing the recorded skipped status", () => {
+    const state = finishReviewProgress(initialReviewProgress(), "completed", 100, { stages: ["gate", "retrieve", "grade", "report"].map((node) => ({ node, status: "completed" })), stage_results: [{ node: "grade", reasons: [{ code: "relevance_below_threshold", candidate_count: 2, relevant_count: 0 }] }] }, { label: "NOT_IN_DOCS" });
+    render(<ReviewProgressSteps state={state} />);
+    fireEvent.click(screen.getByRole("button", { name: "Verify answer and citations" }));
+    expect(screen.getAllByText("Skipped: relevance threshold not met")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Retrieve evidence" }));
+    expect(screen.getByRole("button", { name: "Verify answer and citations" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("region", { name: "Retrieve evidence" })).toBeVisible();
+  });
+});
