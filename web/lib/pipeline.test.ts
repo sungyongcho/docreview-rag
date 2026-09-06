@@ -228,7 +228,7 @@ describe("derivePipeline", () => {
     const index = stage(pipeline, "index");
     expect(index.status).toBe("action");
     expect(index.numbers).toEqual(["Nothing ingested yet."]);
-    expect(index.hint).toContain("Ingest selected sources");
+    expect(index.hint).toContain("Parse & chunk selected sources");
     expect(index.action).toEqual({ label: "Ingest selected sources", kind: "ingest_all" });
 
     for (const id of ["embeddings", "lexical"] as const) {

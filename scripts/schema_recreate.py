@@ -19,6 +19,7 @@ from app.db.bootstrap import bootstrap_connection, ensure_complete_schema
 from app.db.models import Base
 from scripts.local_env import load_local_environment
 from scripts.local_stack import compose_command, compose_environment
+from scripts.source_reset import JOURNAL_NAME, SourceReset, source_preview
 
 
 def local_target(root: Path) -> tuple[dict, dict[str, str]]:
@@ -158,11 +159,16 @@ async def recreate(url: str, expected: dict[str, int] | None = None) -> dict[str
         await engine.dispose()
 
 
-def run(root: Path) -> int:
+def run(root: Path, *, keep_sources: bool = False, sample: bool = False) -> int:
     """Require exact interactive approval before stopping the API or changing any table."""
     if not sys.stdin.isatty():
         raise ValueError("Recreate requires an interactive terminal; no changes made.")
+    if keep_sources and sample:
+        raise ValueError("--sample cannot be combined with --keep-sources")
     root = root.resolve()
+    if (root / "data" / JOURNAL_NAME).exists():
+        raise ValueError("Unfinished source reset journal exists; inspect it before another reset.")
+    sources = None if keep_sources else source_preview(root)
     target, environment = local_target(root)
     url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{target['port']}/filing"
     before = asyncio.run(recreate(url))
@@ -174,16 +180,25 @@ def run(root: Path) -> int:
         f"Checkout: {root}\nDatabase: 127.0.0.1:{target['port']}/filing\nVolume: {target['volume']}"
     )
     print(json.dumps(before, indent=2))
+    if sources is not None:
+        print("Downloaded source files to delete (path: SHA256):")
+        print(json.dumps(sources, indent=2))
+        print(
+            "Acquisition draft: " + ("NVDA AMD / FY2023 FY2024; no download" if sample else "empty")
+        )
     print(
-        "Preserved: code, .env, downloaded sources, evaluation exports, unrelated tables, "
+        (
+            "Preserved downloaded sources (--keep-sources). "
+            if keep_sources
+            else "Downloaded raw sources and manifest source entries will be removed. "
+        )
+        + "Preserved: code, .env, evaluation exports, unrelated tables, "
         "the database volume and host Ollama. Dependent unknown objects cause rollback."
     )
     print("The local API will stop after confirmation and is not restarted automatically.")
     expires = time.monotonic() + 300
-    if (
-        input(f"Type RECREATE {root.name} to confirm irreversible DB deletion (default No): ")
-        != f"RECREATE {root.name}"
-    ):
+    phrase = f"RECREATE {root.name}" if keep_sources else f"RECREATE {root.name} AND SOURCES"
+    if input(f"Type {phrase} to confirm this entire irreversible preview (default No): ") != phrase:
         print("Cancelled; nothing changed.")
         return 0
     if time.monotonic() >= expires:
@@ -193,9 +208,37 @@ def run(root: Path) -> int:
         raise ValueError("Docker target changed; nothing deleted. Review a new preview.")
     for app in target["apps"]:
         subprocess.run(target["docker"] + ["stop", app], env=environment, check=True)
-    asyncio.run(recreate(url, before))
+    reset = SourceReset(root, sources, sample=sample) if sources is not None else None
+    database_started = False
+    try:
+        if reset is not None:
+            reset.stage()
+        database_started = True
+        asyncio.run(recreate(url, before))
+    except (Exception, KeyboardInterrupt) as error:
+        if reset is not None and reset.journal.exists():
+            reset.restore(
+                database_outcome_uncertain=database_started and not isinstance(error, ValueError)
+            )
+        raise
+    if reset is not None:
+        try:
+            reset.finish()
+        except OSError:
+            print(
+                "INCOMPLETE: DB committed, but source backup cleanup failed. "
+                "Inspect data/.schema-recreate-journal/journal.json; do not repeat recreation.",
+                file=sys.stderr,
+            )
+            return 1
     print(
-        "Verified: ORM schema recreated and application tables empty. Files and volume preserved. "
+        "Verified: ORM schema recreated and application tables empty. "
+        + (
+            "Downloaded sources preserved. "
+            if keep_sources
+            else "Downloaded sources and manifest source entries cleared. "
+        )
+        + "Code, .env, exports, unrelated tables and volume preserved. "
         "Run rag-up, then re-check Build and repeat data preparation. No paid work was started."
     )
     return 0

@@ -95,7 +95,7 @@ describe("Build workspace", () => {
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    expect(screen.getByRole("button", { name: "Ingest selected sources" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
   });
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
@@ -234,6 +234,7 @@ describe("Build workspace", () => {
           documents: 29, chunks: 21927, embedded_chunks: 21927, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
+        sources: ["AMD", "NVDA"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true }))),
         manifests: [{
           name: "manifest.json", corpus_id: "test", registries: ["sec", "dart"], documents: 30, valid: true, sources_present: 30,
           selections: [
@@ -257,27 +258,24 @@ describe("Build workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     expect(await screen.findByText("29 documents")).toBeInTheDocument();
     expect(screen.getByText("21,927 chunks")).toBeInTheDocument();
-    expect(screen.getByText("Corpus ready")).toBeInTheDocument();
+    expect(await screen.findByText("Corpus ready")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
-    expect(screen.getByText("30 / 30 filings on disk")).toBeInTheDocument();
+    expect(screen.getByText("4 / 4 filings on disk")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    const ingestButtons = screen.getAllByRole("button", { name: "Ingest selected sources" });
+    const ingestButtons = screen.getAllByRole("button", { name: "Parse & chunk selected sources" });
     for (const button of ingestButtons) expect(button).toBeEnabled();
-    fireEvent.click(screen.getByRole("checkbox", { name: /sec-evaluation/ }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /dart-evaluation/ }));
-    expect(screen.getByText("Selected documents: 30")).toBeInTheDocument();
+    expect(screen.getByText("Selected documents: 4")).toBeInTheDocument();
     fireEvent.click(ingestButtons[0]);
 
     await waitFor(() => {
       const queued = fetchMock.mock.calls.filter(([value, init]) => String(value).endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST");
-      expect(queued).toHaveLength(2);
+      expect(queued).toHaveLength(1);
     });
     const bodies = fetchMock.mock.calls
       .filter(([value, init]) => String(value).endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST")
       .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
     expect(bodies).toEqual([
-      { kind: "ingest_manifest", manifest: "manifest.json", selection_id: "sec-evaluation", identifiers: [], years: [] },
-      { kind: "ingest_manifest", manifest: "manifest.json", selection_id: "dart-evaluation", identifiers: [], years: [] },
+      { kind: "ingest_selected", identifiers: ["AMD", "NVDA"], years: [2023, 2024] },
     ]);
   });
 
@@ -348,6 +346,7 @@ describe("Build workspace", () => {
           documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
+        sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true }))),
         manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
         documents: [],
       };
@@ -360,9 +359,9 @@ describe("Build workspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<Harness live readiness={READY_RUNTIME} />);
 
-    // The next-step callout and the Evaluate card offer the same action.
-    const buttons = await screen.findAllByRole("button", { name: "Run quick evaluation" });
-    fireEvent.click(buttons[0]);
+    await screen.findByText("Corpus ready");
+    fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
 
     await waitFor(() => {
       const posted = fetchMock.mock.calls.find(([value, init]) => String(value).endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST");
@@ -404,7 +403,7 @@ describe("preparation refresh after corpus jobs", () => {
     const manifest = CANNED_CORPUS.manifests[0];
     const selection = manifest.selections[0];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
+      if (String(input).endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
       if (String(input).endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
       return jsonResponse([]);
     }));
@@ -422,13 +421,13 @@ it("queues the committed acquisition after editing focused token fields", async 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} onRefreshJobs={onRefreshJobs} />);
-  await screen.findByText("0 / 22 filings on disk");
+  await screen.findByText("0 / 4 filings on disk");
   fireEvent.click(screen.getByRole("button", { name: /^Remove AMD/ }));
   fireEvent.click(screen.getByRole("button", { name: "Remove 2023" }));
   const years = screen.getByRole("textbox", { name: "Fiscal years" });
@@ -449,15 +448,15 @@ it("queues the committed acquisition after editing focused token fields", async 
 it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} />);
-  expect(await screen.findByRole("button", { name: "Download missing filings" })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Download missing filings" })).toBeEnabled());
   expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("This step is ready to run");
-  expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema_status check");
+  expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema_status recover --return-stage filings");
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
   expect(screen.queryByText("data/ not writable")).not.toBeInTheDocument();
 });
@@ -472,12 +471,12 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
       if (failDart && body.kind === "acquire_dart") return new Response(JSON.stringify({ error: { message: "DART submission unavailable" } }), { status: 503, headers: { "Content-Type": "application/json" } });
       return jsonResponse({ job_id: String(submitted.length), status: "queued" });
     }
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   }));
   render(<NotificationProvider><Harness live ready={false} /></NotificationProvider>);
-  await screen.findByText("0 / 22 filings on disk");
+  await screen.findByText("0 / 4 filings on disk");
   fireEvent.paste(screen.getByRole("textbox", { name: "Tickers / stock codes" }), { clipboardData: { getData: () => "005930,000660" } });
   fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
   await waitFor(() => expect(submitted).toHaveLength(2));
@@ -486,4 +485,41 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
     { kind: "acquire_dart", identifiers: ["005930", "000660"], years: [2023, 2024] },
   ]);
   if (failDart) expect(await screen.findByText(/Acquisition stopped after 1 queued jobs/)).toBeInTheDocument();
+});
+
+
+it("initializes empty, accepts a server sample, and reconciles disk changes without overwriting an edited draft", async () => {
+  const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true })));
+  let sources: typeof sourceRows = [];
+  let preset: { identifiers: string[]; years: number[] } | null = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Harness live />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  await screen.findByText("No downloaded sources.");
+  expect(screen.queryByRole("button", { name: /^Remove NVDA/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+  preset = { identifiers: ["NVDA", "AMD"], years: [2023, 2024] };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByRole("button", { name: /^Remove NVDA/ });
+  expect(screen.getByText("0 / 4 filings on disk")).toBeInTheDocument();
+  sources = sourceRows;
+  preset = null;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText("4 / 4 filings on disk");
+  fireEvent.click(screen.getByRole("button", { name: /^Remove AMD/ }));
+  expect(screen.getByText(/On disk but not selected: 2/)).toBeInTheDocument();
+  sources = sourceRows.filter((row) => row.document_id !== "NVDA-FY2023");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByRole("button", { name: "Sync draft with downloaded sources" });
+  expect(screen.queryByRole("button", { name: /^Remove AMD/ })).not.toBeInTheDocument();
+  expect(screen.getByText("To download: NVDA FY2023")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Sync draft with downloaded sources" }));
+  expect(screen.getByRole("button", { name: /^Remove AMD/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Sync draft with downloaded sources" })).not.toBeInTheDocument();
 });
