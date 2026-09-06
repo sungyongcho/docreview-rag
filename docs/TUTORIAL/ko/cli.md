@@ -475,3 +475,34 @@ rag-alias-delete
 해제하지만 별도로 실행한 `--uninstall`은 부모 셸을 바꿀 수 없으므로 안내된 후속 명령을 따릅니다.
 백업 경로를 보관하고 새 터미널에서 자동 로드되지 않는지 확인합니다. 다시 등록하려면
 [명령 등록과 도움말](#명령-등록과-도움말)을 따릅니다.
+
+
+## 일반 초기화와 extreme 초기화
+
+`rag-fresh-start`는 실행 중인 DEV 스택과 정확한 대화형 확인을 요구합니다. 웹과 같은 미리보기·상태 API를 사용하며, 409 거절 시 알려진 안전한 오류 코드와 복구 방법만 표시합니다. 권한 오류는 Reset diagnosis에서 확인하고 소유자에게 접근 권한을 요청하세요. 실행 중인 작업은 Jobs에서 완료를 기다리거나 취소하세요. 알 수 없는 코드·타임아웃·잘못된 응답은 실행 실패의 증거가 아닙니다. 재요청 전에 **View reset status**를 확인하세요. CLI는 삭제를 자동 재시도하지 않습니다.
+
+일반 초기화는 검증된 DB·파일 삭제와 이후 빌드·시작 결과를 나눠 표시합니다. 코드·Git·`.env`·키·추적된 원본·무관한 파일·호스트 Ollama는 보존합니다. 브라우저 데이터는 초기화 UI에서 별도로 지우기 전까지 남습니다. 시작 후 `rag-corpus readiness`로 확인하세요. Docker 시작 성공은 데이터 준비 완료가 아닙니다. 이후 수집·처리·인덱스 구축을 다시 진행합니다. 부분 삭제나 빌드·시작 실패는 전체 복구 성공으로 표시하지 않습니다.
+
+```bash
+rag-fresh-start --help
+rag-fresh-start --extreme
+```
+
+extreme은 정확한 삭제 목록을 먼저 표시합니다. `.env`·대화·사용자 코퍼스 백업 여부에 동의한 뒤, 복원 불가능한 삭제에 동의하려면 `EXTREME <체크아웃 이름>`을 입력해야 합니다. 두 단계 모두 기본값은 거절이며 Enter·No·EOF·비대화형 입력은 삭제를 승인하지 않습니다. 대상 변경이나 미리보기 만료도 실행을 막습니다. 백업은 생성되지 않으며 앱이 삭제한 데이터를 복구할 수 없습니다.
+
+새 clone 상태의 **런타임 콘텐츠** 범위는 다음과 같습니다.
+
+- `data/corpus`의 사용자 PDF·JSON을 포함해 `data/eval_runs`, `data/local-settings`, `build`, `dist`, `web/.next`, `web/out`, `web/.tutorial`, `web/public/tutorial-assets`, `.pytest_cache`, `.ruff_cache` 아래의 추적되지 않은 파일과 루트의 추적되지 않은 `.env*` 파일을 삭제합니다. 빈 디렉터리는 남을 수 있습니다.
+- 해당 체크아웃 소유로 확인된 `db`·`app`·`web` 컨테이너와 로컬 Compose `pg_data`·`web_next`·`web_node_modules` 볼륨만 삭제합니다. 외부·공유 볼륨, 예상 밖 컨테이너, 심볼릭 링크가 있으면 중단합니다.
+- Git 추적 파일과 수정 내용·히스토리, 호스트 `.venv`·`node_modules`, 그 밖의 개인 파일, 다른 Docker 프로젝트, 호스트 Ollama·외부 자격증명·초기화 감사 기록은 보존합니다. 전체 `git clean`이나 호스트 초기화가 아닙니다.
+
+터미널에서 두 번 확인한 뒤 다른 DocReview 탭을 닫고, 대화가 저장된 브라우저로 출력된 `/reset-local/#<operation-id>` URL을 여세요. 페이지가 해당 주소의 DocReview local/session storage를 삭제·검증하고 같은 작업 ID로 인증된 확인 응답을 보내야 로컬 삭제가 진행됩니다. CLI는 그 확인을 받은 브라우저·주소에 한해 삭제 완료를 표시합니다. 다른 프로필·기기·포트와 localhost/127.0.0.1 주소는 별개입니다. 메모리에 대화가 남은 이전 탭을 다시 열지 마세요. 확인이 만료되면 로컬 삭제는 시작하지 않지만 브라우저 삭제는 이미 발생했을 수 있으므로 상태를 먼저 확인하세요.
+
+extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-quickstart`로 새 `.env`를 준비하고 로컬에서 설정한 다음 Quick Start를 따라 데이터를 다시 준비하세요. 부분 실패는 완료된 단계를 확인하세요. 자동 재시작이나 삭제 재시도는 하지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: extreme CLI browser acknowledgement. State: matching waiting operation on reset-local, then acknowledged deletion. Capture en and ko in light mode using disposable data only; no credentials. -->
+브라우저 확인 페이지의 새 스크린샷 증거는 아직 없습니다.
+
+
+`rag-fresh-start --status`는 extreme 삭제로 `.env`가 없어지거나 웹 컨테이너가 중지돼도 기존 로컬 operator 연결로 마지막 초기화 상태를 읽습니다. 삭제를 재요청하지 않습니다. 코드를 업데이트한 뒤에는 `rag-dev down`, `rag-dev up -d` 순서로 로컬 operator를 재시작한 후 새 옵션을 사용하세요. 이 명령들은 데이터 볼륨을 보존합니다.
