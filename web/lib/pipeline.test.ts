@@ -241,12 +241,12 @@ describe("derivePipeline", () => {
 
     const ask = stage(pipeline, "ask");
     expect(ask.status).toBe("blocked");
-    expect(ask.statusDetail).toBe("corpus is empty");
+    expect(ask.statusDetail).toBe("after step 2 · Parse & chunk");
     expect(ask.blockedBy).toBe("index");
 
     const evaluate = stage(pipeline, "evaluate");
     expect(evaluate.status).toBe("blocked");
-    expect(evaluate.statusDetail).toBe("after steps 2–4");
+    expect(evaluate.statusDetail).toBe("after step 2 · Parse & chunk");
     expect(evaluate.numbers).toEqual(["Not measured yet."]);
   });
 
@@ -643,10 +643,10 @@ describe("derivePipeline", () => {
     for (const id of ["index", "embeddings", "lexical"] as const) {
       const item = stage(pipeline, id);
       expect(item.status, id).toBe("blocked");
-      expect(item.statusDetail, id).toBe("database");
-      expect(item.hint, id).toBe("db down");
+      expect(item.statusDetail, id).toBe(id === "index" ? "Database setup required" : "after step 2 · Parse & chunk");
+      expect(item.hint, id).toBe("Resolve database setup before continuing.");
     }
-    expect(pipeline.next).toBeNull();
+    expect(pipeline.next?.id).toBe("index");
     expect(pipeline.corpusReady).toBe(false);
   });
 
@@ -657,7 +657,7 @@ describe("derivePipeline", () => {
       registryCounts: {},
     }));
     expect(stage(pipeline, "index").status).toBe("blocked");
-    expect(stage(pipeline, "index").hint).toBe("Run migrations.");
+    expect(stage(pipeline, "index").hint).toBe("Resolve database setup before continuing.");
   });
 
   // Case 15: the container cannot write data/, so downloads cannot land anywhere.
@@ -673,7 +673,7 @@ describe("derivePipeline", () => {
 
     expect(stage(pipeline, "index").status).toBe("done");
     expect(pipeline.corpusReady).toBe(false);
-    expect(pipeline.next).toBeNull();
+    expect(pipeline.next?.id).toBe("filings");
   });
 
   it("does not treat a succeeded job without evaluation results as measured", () => {
@@ -741,4 +741,15 @@ describe("derivePipeline", () => {
       expect(item.numbers, item.id).toEqual([]);
     }
   });
+});
+
+it("schema drift blocks stale completed counts without blocking the answer model", () => {
+  const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ schema_status: "drifted", schema_message: "secret technical schema detail" }) }));
+  for (const id of ["index", "embeddings", "lexical", "ask", "evaluate"] as const) {
+    expect(stage(pipeline, id).status).toBe("blocked");
+    expect(stage(pipeline, id).hint).not.toContain("secret technical");
+    if (id !== "index") expect(stage(pipeline, id).blockedBy).toBe("index");
+  }
+  expect(stage(pipeline, "answer_model").status).toBe("done");
+  expect(pipeline.next?.id).toBe("index");
 });

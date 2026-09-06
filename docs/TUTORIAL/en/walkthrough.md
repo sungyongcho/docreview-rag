@@ -48,7 +48,10 @@ it does not execute anything. Both embedding and BM25 readiness feed hybrid retr
 incomplete, check which retrieval lanes are available. Evaluation also requires a golden dataset. Graph
 readiness is separate from the execution progress of an individual question. Server job events and terminal
 CLI references are explicitly separate. Completed steps have a gently blinking green indicator; failed
-steps use red. Reduced-motion preferences disable the animation. Color does not replace the status text.
+steps use red. Blocked steps use a distinct red square indicator and name their prerequisite;
+the recommendation selects the earliest blocked or actionable preparation step. The optional answer
+model keeps its independent readiness. Schema messages appear only in collapsible technical details
+inside the preparation notice. Reduced-motion preferences disable the animation. Color does not replace the status text.
 
 **Screen check:** DEV mode and healthy API/DB connectivity, without schema errors. Connectivity does not
 mean the corpus or embeddings are ready.
