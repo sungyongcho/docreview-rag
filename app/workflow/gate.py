@@ -38,12 +38,19 @@ FOLLOWUP_CUES = re.compile(
     r"(?:는|은)(?:요)?[?？]?$|\b(?:19|20)\d{2}\b",
     re.IGNORECASE,
 )
-CASUAL_CUES = re.compile(r"\b(?:weather|thanks|thank you|joke)\b|날씨|고마워|감사합니다|농담", re.IGNORECASE)
+CASUAL_CUES = re.compile(
+    r"\b(?:weather|thanks|thank you|joke)\b|날씨|고마워|감사합니다|농담", re.IGNORECASE
+)
 
 
 def is_filing_followup(query: str) -> bool:
     """Recognize a bounded elliptical continuation, excluding clear casual topics."""
-    return len(query) <= 160 and len(query.split()) <= 18 and bool(FOLLOWUP_CUES.search(query.strip())) and not CASUAL_CUES.search(query)
+    return (
+        len(query) <= 160
+        and len(query.split()) <= 18
+        and bool(FOLLOWUP_CUES.search(query.strip()))
+        and not CASUAL_CUES.search(query)
+    )
 
 
 def normalize_intent_text(value: str) -> str:
@@ -109,8 +116,10 @@ def deterministic_decision(
         )
     if prior_filing_query and is_filing_followup(query):
         return ConversationDecision(
-            intent="document_review", source="deterministic", matched_rule="filing_followup",
-            rationale="A short follow-up continues a filing question in the permitted conversation history.",
+            intent="document_review",
+            source="deterministic",
+            matched_rule="filing_followup",
+            rationale="A short follow-up continues a filing question in the permitted history.",
         )
     if has_issuer_alias and FILING_CUES.search(query):
         return ConversationDecision(

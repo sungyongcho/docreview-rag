@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, progressCountsLabel, reviewProgressFromEvent } from "./review-progress";
 import type { ReviewProgress } from "@/lib/api";
 
@@ -14,7 +14,7 @@ describe("Five real-event review phases", () => {
   it("shows five waiting phases immediately without inventing completed work", () => {
     const state = initialReviewProgress();
     render(<ReviewProgressSteps state={state} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.getAllByRole("listitem")).toHaveLength(6);
     expect(screen.getByText("Waiting for the server")).toBeVisible();
     expect(REVIEW_STEPS.map((_, i) => phaseStatus(state, i))).toEqual(["waiting", "pending", "pending", "pending", "pending"]);
   });
@@ -25,7 +25,7 @@ describe("Five real-event review phases", () => {
     state = reviewProgressFromEvent({ ...event("grade"), phase: "start", status: "running" }, state);
     render(<ReviewProgressSteps state={state} />);
     expect(REVIEW_STEPS.map((_, i) => phaseStatus(state, i))).toEqual(["done", "done", "current", "pending", "pending"]);
-    expect(screen.getAllByRole("listitem")[2]).toHaveAttribute("aria-current", "step");
+    expect(screen.getAllByRole("listitem")[3]).toHaveAttribute("aria-current", "step");
     expect(currentStepIndex("route")).toBe(0);
     expect(currentStepIndex("report")).toBe(4);
   });
@@ -76,7 +76,8 @@ describe("Five real-event review phases", () => {
   it("does not fabricate RAG phases for a conversation reply", () => {
     const state = finishReviewProgress(reviewProgressFromEvent(event("chat"), initialReviewProgress()), "completed", 200);
     render(<ReviewProgressSteps state={state} />);
-    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getAllByRole("listitem")).toHaveLength(6);
+    expect(screen.getAllByText("Skipped: conversation reply without retrieval")).toHaveLength(3);
     expect(screen.getByText("Execution complete")).toBeVisible();
   });
 
@@ -183,4 +184,30 @@ it("keeps warning text readable in both actual themes and visible in the compact
     expect((Math.max(foreground, backdrop) + 0.05) / (Math.min(foreground, backdrop) + 0.05)).toBeGreaterThanOrEqual(4.5);
   }
   expect(compact).toContain(".review-progress-steps small.review-phase-reason { display: block;");
+});
+
+
+describe("recorded path decisions", () => {
+  const chatDecision = { intent: "casual_chat" as const, source: "classifier" as const, matched_rule: "classifier_chat", rationale: "Greeting", history_turns: 2, selected_scope: "auto" as const, resolved_scope: null, routing_queries: {}, retrieval_query: "Hi", scope_outcome: "not_applicable" as const, stopping_reason: null, suggested_scope: null };
+  it("shows the first decision and counts recorded classifier and chat calls", () => {
+    const state = finishReviewProgress(initialReviewProgress(), "completed", 200, { path_decision: chatDecision, model_calls: [{ node: "gate" }, { node: "chat" }], stages: ["gate", "chat", "report"].map((node) => ({ node, phase: "end", status: "completed" })) });
+    render(<ReviewProgressSteps state={state} />);
+    expect(screen.getByText("0. Path decision")).toBeVisible();
+    expect(screen.getByText("classifier_chat")).toBeVisible();
+    expect(screen.getByText(/0 candidates · 0 relevant · 2 model steps/)).toBeVisible();
+    expect(screen.getAllByText("Skipped: conversation reply without retrieval")).toHaveLength(3);
+    expect(state.pathDecision?.history_turns).toBe(2);
+  });
+  it("preserves scope stops and their corrective action from stream events", () => {
+    const decision = { ...chatDecision, intent: "document_review" as const, selected_scope: "dart" as const, scope_outcome: "conflict" as const, stopping_reason: "NVDA is outside DART", suggested_scope: "auto" as const };
+    const state = finishReviewProgress(reviewProgressFromEvent({ ...event("gate"), status: "failed", path_decision: decision }, initialReviewProgress()), "failed", 200);
+    const restore = vi.fn();
+    render(<ReviewProgressSteps state={state} onSwitchScope={restore} />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to Auto and restore question" }));
+    expect(restore).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Scope conflict/)).toBeVisible();
+    expect(screen.getByText(/NVDA is outside DART/)).toBeVisible();
+    expect(screen.getByText("Switch the document scope to Auto above the composer and send the question again.")).toBeVisible();
+    expect(phaseStatus(state, 1)).toBe("not-run");
+  });
 });

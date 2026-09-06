@@ -87,7 +87,7 @@ class ApiError(StrictApiModel):
     code: Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9_]*$")]
     message: NonBlank
     details: tuple[ValidationIssue, ...] = ()
-    path_decision: JsonObject | None = None
+    path_decision: JsonObject | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ErrorResponse(StrictApiModel):
@@ -416,6 +416,7 @@ class RunResponse(StrictApiModel):
             **{
                 key: context.get(key)
                 for key in (
+                    "path_decision",
                     "effective_settings",
                     "provider_identity",
                     "resolved_scope",

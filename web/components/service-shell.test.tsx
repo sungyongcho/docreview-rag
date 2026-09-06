@@ -933,7 +933,7 @@ it("preserves streamed messages and the submitted settings while background disc
     fireEvent.click(screen.getByRole("button", { name: "Send question" }));
     await waitFor(() => expect(submitted).toBeDefined());
     expect(screen.getByText("Waiting for the server")).toBeVisible();
-    expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(5);
+    expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(6);
     fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
@@ -1225,6 +1225,40 @@ describe("in-message review lifecycle", () => {
     expect(screen.queryByText("Original conversation answer.")).toBeNull();
   });
 
+
+  it.each([0, 2])("reuses only pre-question context for selected evidence with a %i-turn bound", async (historyTurns) => {
+    seedAnsweredConversation();
+    const saved = loadConversations();
+    const question = "And 2024?";
+    const prior = [{ id: "prior-user", role: "user" as const, text: "Explain NVIDIA data center revenue in its filings." }, { id: "prior-answer", role: "assistant" as const, text: "The filings describe its data center revenue." }];
+    saved[0].profile = { ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, history_turns: historyTurns } };
+    saved[0].messages = [
+      { id: "old-user", role: "user", text: "Older question" },
+      { id: "old-answer", role: "assistant", text: "Older answer" },
+      ...prior,
+      { id: "follow-up", role: "user", text: question },
+      { ...saved[0].messages[1], question, candidateToken: "follow-up-token", pinnedChunkIds: [1], excludedChunkIds: [] },
+      { id: "later-user", role: "user", text: question },
+      { id: "later-answer", role: "assistant", text: "A later exchange must not change the snapshot context." },
+    ];
+    saveConversations(saved);
+    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
+    const ordinaryFetch = fetchMock.getMockImplementation()!;
+    let submitted: { conversation_history: Array<{ role: string; text: string }> } | undefined;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/review/stream")) {
+        submitted = JSON.parse(String(init?.body));
+        return Promise.resolve(new Response('event: report\ndata: {"run":{"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed contextual answer.","citations":[]}}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
+      }
+      return ordinaryFetch(input, init);
+    });
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    fireEvent.click(await screen.findByText(/Retrieved evidence candidates/));
+    fireEvent.click(screen.getByRole("button", { name: "Review again with selected evidence" }));
+    await screen.findByText("Re-reviewed contextual answer.");
+    expect(submitted?.conversation_history).toEqual(historyTurns === 0 ? [] : prior.map(({ role, text }) => ({ role, text })));
+  });
 
   it("re-reviews selected evidence in one new message and keeps an explicitly collapsed summary collapsed", async () => {
     const request = await startReview("Review the selected filing", true);

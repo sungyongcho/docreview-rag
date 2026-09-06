@@ -1079,6 +1079,10 @@ export interface components {
             details: components["schemas"]["ValidationIssue"][];
             /** Message */
             message: string;
+            /** Path Decision */
+            path_decision?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /**
          * Budget
@@ -2129,6 +2133,10 @@ export interface components {
             } | null;
             /** Model Calls */
             model_calls?: components["schemas"]["ExecutionModelCall"][];
+            /** Path Decision */
+            path_decision?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Provider Identity */
             provider_identity?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -3116,6 +3124,11 @@ export interface components {
          * @description One bounded evidence retrieval request.
          */
         RetrieveRequest: {
+            /**
+             * Conversation History
+             * @default []
+             */
+            conversation_history: components["schemas"]["ConversationTurn"][];
             /** Query */
             query: string;
             session_profile?: components["schemas"]["ReviewSessionProfile"];
@@ -3135,6 +3148,10 @@ export interface components {
             component_rankings: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+            /** Path Decision */
+            path_decision?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /** Query */
             query: string;
             resolved_profile: components["schemas"]["ResolvedRetrievalProfile"];
@@ -3450,6 +3467,10 @@ export interface components {
              * @enum {string}
              */
             node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            /** Path Decision */
+            path_decision?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
             /**
              * Phase
              * @enum {string}

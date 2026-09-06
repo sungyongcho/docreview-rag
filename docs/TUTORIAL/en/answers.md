@@ -104,3 +104,24 @@ A run has both conversation Run limits and a server provider allowance. The smal
 For example, an output of `600 / 600` followed by a JSON validation error means the provider could not repair that output within its remaining allowance. Raising the conversation's input budget does not address that output ceiling. Check the applied provider limits and the original validation details before retrying.
 
 The execution record also retains the effective limits and their source, routing queries, candidate ranks, stage results, provider identity and available timing. Chat-only runs explicitly have no retrieval settings. Historical fields that were never recorded remain absent; a later run cannot reconstruct their measurements.
+
+### Path decision and conversation follow-ups
+
+Every execution starts with **0. Path decision**, including conversation replies. The
+record shows review/chat, the deterministic rule or classifier, the matched rule, and
+how many recent turns were considered. Follow-ups such as “What about Samsung?” or
+“And 2024?” can continue a filing review. The configured history limit also applies to
+routing; setting it to zero sends no previous messages.
+
+Selected scope and server-resolved scope remain separate: Auto can resolve to SEC/NVDA
+or DART/005930, while pinned scope constrains the registry. The scope outcome badge
+shows resolved, conflict, empty, or no retrieval. Routing queries disclose each registry's
+search text. A scope conflict or empty scope stops the request with its reason; when
+suggested, use **Switch to Auto and restore question**, then resend from the composer.
+
+Conversation replies show **No retrieval** and skipped retrieval/selection/verification
+steps. Model-step totals use recorded model calls, including classification and chat,
+while candidates and relevant evidence remain zero.
+
+### SCREENSHOT NEEDED
+<!-- Feature: path decision; state: completed context-aware review, chat-only reply, and scope conflict with Auto action; locale: en; evidence: first step, selected/resolved scope, routing queries, skipped phases and actual model calls in light mode. -->
