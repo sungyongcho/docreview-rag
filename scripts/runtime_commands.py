@@ -149,7 +149,7 @@ def corpus(args: argparse.Namespace, root: Path) -> int:
         )
         return 0
     if args.kind in {"status", "inspect"}:
-        path = "/corpus/jobs/" if args.kind == "status" else "/corpus/"
+        path = "/jobs/" if args.kind == "status" else "/corpus/"
         print(json.dumps(client.request(path), indent=2))
         return 0
     body = {"kind": args.kind, "identifiers": args.identifier, "years": args.year}

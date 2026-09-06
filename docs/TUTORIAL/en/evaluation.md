@@ -24,11 +24,19 @@ Select and read a question in Golden dataset, including its source spans. Open N
 
 **Visible result:** the setup closes and a queued job appears in Evaluation runs. Select its row to inspect request settings and actual progress. A successful run exposes Result details, recorded configuration, metrics, and case ranks. No result means no measured scores yet.
 
+Selecting an evaluation opens its focused details. While the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
+
 **Completion:** the selected run succeeded, the result ID and dataset are correct, and you inspected at least one hit/miss against its source evidence. Do not treat a successful job from another suite as the result of this setup.
 
 **Common failure:** Sources unavailable or Corpus not ready. Read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
 
 **Next:** [12. Compare results and save a snapshot](snapshots.md#step-12).
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=focused-evaluation-detail; locale=en; theme=light; capture=selected-evaluation-with-result-details-and-back-to-list-without-empty-history-message; issue=21; preserve-existing-assets=true -->
+
+**Screenshot pending for the focused evaluation detail and return-to-list state. Existing screenshots remain unchanged.**
 
 <!-- capture:11-evaluation-inputs -->
 

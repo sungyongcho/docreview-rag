@@ -525,7 +525,7 @@ def test_live_postgres_admin_snapshot_reports_schema_state() -> None:
         live_postgres_unavailable(snapshot.status.schema_message)
     assert snapshot.status.schema_status in {"compatible", "empty", "drifted"}
     if snapshot.status.schema_status == "drifted":
-        assert snapshot.status.writable is False
+        assert isinstance(snapshot.status.writable, bool)
         assert "DROP TABLE" not in snapshot.status.schema_message
 
 
@@ -761,3 +761,76 @@ def test_stored_command_rejects_invalid_json_types(kind, payload):
             corpus_admin._command_from_stored(row)
 
     asyncio.run(scenario())
+
+
+def test_schema_drift_does_not_misreport_source_permissions(tmp_path, monkeypatch):
+    """A schema mismatch must not masquerade as an unwritable corpus directory."""
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+
+    async def drifted():
+        """Report only the database mismatch."""
+        return "drifted", "Missing source relationship columns", set()
+
+    monkeypatch.setattr(service, "_schema_state", drifted)
+    snapshot = asyncio.run(service.snapshot())
+    assert snapshot.status.schema_status == "drifted"
+    assert snapshot.status.writable is True
+
+
+def test_acquisition_is_independent_of_corpus_schema_writes(tmp_path, monkeypatch):
+    """File acquisition can proceed while incompatible corpus indexing stays blocked."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+    blocked = AsyncMock(side_effect=RuntimeError("schema blocked"))
+    acquire = AsyncMock(
+        return_value=SimpleNamespace(
+            fetched=("filing",), manifest="manifest.json", selection_id="selected"
+        )
+    )
+    monkeypatch.setattr(service, "_assert_writable_schema", blocked)
+    monkeypatch.setattr(corpus_admin, "acquire_edgar", acquire)
+    result = asyncio.run(
+        service._run_operation(
+            AdminCommand("acquire_edgar", identifiers=("NVDA",), years=(2024,)),
+            lambda progress: None,
+        )
+    )
+    assert result.selection_id == "selected"
+    blocked.assert_not_awaited()
+    with pytest.raises(RuntimeError, match="schema blocked"):
+        asyncio.run(service._run_operation(AdminCommand("rebuild_bm25"), lambda progress: None))
+
+
+def test_manifest_file_counts_do_not_count_archives_as_extra_filings(tmp_path):
+    """A primary source and its archive represent one available filing."""
+    _write_manifest(tmp_path)
+    path = tmp_path / "manifest.json"
+    payload = json.loads(path.read_text())
+    artifact = dict(payload["artifacts"][0])
+    artifact.update(artifact_id="archive-copy", role="archive", path="archive.zip", encoding=None)
+    (tmp_path / "archive.zip").write_bytes(b"archive")
+    payload["artifacts"].append(artifact)
+    path.write_text(json.dumps(payload))
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+    summary = service._manifest_summaries()[0]
+    assert summary.valid is True
+    assert summary.sources_present == 1
+    assert summary.documents == 1
+
+
+def test_manifest_companies_are_available_before_source_download(tmp_path):
+    """Project source registry and company labels without requiring ingested rows or bytes."""
+    _write_manifest(tmp_path)
+    path = tmp_path / "manifest.json"
+    payload = json.loads(path.read_text())
+    payload["documents"][0]["aliases"] = ["NVDA", "NVIDIA"]
+    path.write_text(json.dumps(payload))
+    (tmp_path / "report.html").unlink()
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+    summary = service._manifest_summaries()[0]
+    assert summary.sources_present == 0
+    assert [(item.registry, item.issuer, item.name) for item in summary.issuers] == [
+        ("sec", "NVDA", "NVIDIA")
+    ]

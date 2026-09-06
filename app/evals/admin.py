@@ -246,7 +246,7 @@ class EvaluationAdminService:
         self, request: EvaluationRunRequest, *, retry_of: str | None = None
     ) -> EvaluationJobResource:
         """Queue one quick or matrix evaluation on the single worker."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
         if self._queue.full():
             raise RuntimeError("evaluation queue is full")
         job_id = f"eval-{uuid4().hex}"
@@ -276,18 +276,53 @@ class EvaluationAdminService:
 
     async def jobs(self) -> EvaluationJobsResponse:
         """Return active, queued, and completed jobs in newest-first order."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
+        visible = None
+        if self._job_store is not None:
+            visible = {
+                row.job_id
+                for row in await self._job_store.list(
+                    domain="evaluation", limit=MAX_EVALUATION_JOBS
+                )
+            }
         return EvaluationJobsResponse(
-            jobs=tuple(sorted(self._jobs.values(), key=lambda job: job.created_at, reverse=True))
+            jobs=tuple(
+                sorted(
+                    (
+                        job
+                        for job in self._jobs.values()
+                        if visible is None or job.job_id in visible
+                    ),
+                    key=lambda job: job.created_at,
+                    reverse=True,
+                )
+            )
         )
 
     async def job(self, job_id: str) -> EvaluationJobResource | None:
         """Return one job without exposing internal task objects."""
         return self._jobs.get(job_id)
 
+    def forget_history(self, job_ids: tuple[str, ...]) -> None:
+        """Release terminal cache records only after their persistent deletion."""
+        for job_id in job_ids:
+            job = self._jobs.get(job_id)
+            if job is not None and job.status not in {"queued", "running"}:
+                self._jobs.pop(job_id, None)
+        self._history = deque(
+            (job_id for job_id in self._history if job_id not in job_ids),
+            maxlen=self._history.maxlen,
+        )
+
     async def retry(self, job_id: str) -> EvaluationJobResource:
         """Create a new evaluation from one failed or interrupted persisted request."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
+        if self._job_store is not None:
+            record = await self._job_store.get(job_id)
+            if record is None or record.result_refs.get("__history_archived") is True:
+                raise ValueError(
+                    "Restore archived history before retrying; deleted jobs cannot be retried."
+                )
         current = self._jobs.get(job_id)
         if current is not None:
             if current.status not in {"failed", "interrupted"}:
@@ -312,7 +347,7 @@ class EvaluationAdminService:
 
     async def cancel(self, job_id: str) -> EvaluationJobResource:
         """Cancel one queued evaluation before provider or corpus work begins."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
         job = self._jobs.get(job_id)
         if job is None or job.status != "queued":
             raise ValueError("only a queued evaluation can be cancelled")
@@ -330,7 +365,7 @@ class EvaluationAdminService:
             await self._job_store.cancel(job_id)
         return cancelled
 
-    async def _ensure_job_recovery(self) -> None:
+    async def recover_jobs(self) -> None:
         """Interrupt stale process-owned evaluations once before accepting work."""
         if self._recovered_jobs:
             return

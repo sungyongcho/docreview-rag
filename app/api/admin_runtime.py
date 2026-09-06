@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import func, select
@@ -26,6 +27,9 @@ from app.api.admin_schemas import (
     GoldenRevisionResource,
     GoldenSuiteId,
     GoldenSuiteResource,
+    JobHistoryRequest,
+    JobHistoryResultResource,
+    JobHistorySummaryResource,
     OperatorJobResource,
     OperatorJobsResponse,
     RetrievalPreviewRequest,
@@ -49,6 +53,7 @@ from app.api.schemas import (
     SnapshotComparisonResponse,
     SnapshotResource,
 )
+from app.config import get_settings
 from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
 from app.db.models import (
     Run,
@@ -59,6 +64,7 @@ from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
 from app.llm.local_connection import LocalConnectionError, LocalConnectionManager, LocalProtocol
+from app.operator.job_history import JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.service import ComponentRankings, RetrievalResult, retrieve
@@ -86,6 +92,9 @@ class RuntimeAdminApiServices:
             embedding_identity=runtime.embedding_provider.identity,
         )
         self._job_store = job_store or JobStore(session_factory=runtime.session_factory)
+        self._job_history = JobHistoryService(
+            runtime.session_factory, get_settings().corpus_dir.parent / "job-history-backups"
+        )
         execution_lock = asyncio.Lock()
         execution_coordinator = JobExecutionCoordinator()
         self._corpus = corpus or RuntimeCorpusAdminService(
@@ -339,17 +348,49 @@ class RuntimeAdminApiServices:
                     and job.kind == "backfill_embeddings"
                 )
             ),
-            can_retry=job.status in {"failed", "interrupted"},
+            can_retry=(
+                job.status in {"failed", "interrupted"}
+                and not (
+                    job.domain == "corpus"
+                    and job.kind == "ingest_manifest"
+                    and not (
+                        job.request_json.get("manifest") and job.request_json.get("selection_id")
+                    )
+                )
+            ),
             created_at=job.created_at,
             started_at=job.started_at,
             finished_at=job.finished_at,
             updated_at=job.updated_at,
         )
 
+    async def job_history_summary(self) -> JobHistorySummaryResource:
+        """Read history counts without changing records or running jobs."""
+        return JobHistorySummaryResource(**asdict(await self._job_history.summary()))
+
+    async def manage_job_history(self, request: JobHistoryRequest) -> JobHistoryResultResource:
+        """Archive, restore or back up and delete only reviewed terminal history."""
+        result = await self._job_history.apply(
+            request.action, request.expected_count, request.confirmation
+        )
+        if result.action == "delete":
+            self._corpus.forget_history(result.changed_ids)
+            self._evaluations.forget_history(result.changed_ids)
+        return JobHistoryResultResource(
+            action=result.action,
+            changed_count=len(result.changed_ids),
+            backup_id=result.backup_id,
+            summary=await self.job_history_summary(),
+        )
+
+    def job_history_backup(self, backup_id: str) -> Path:
+        """Resolve only an owned private backup for an authenticated download."""
+        return self._job_history.backup_path(backup_id)
+
     async def operator_jobs(self) -> OperatorJobsResponse:
         """Return the persistent unified corpus and evaluation job board."""
-        await self._corpus.jobs()
-        await self._evaluations.jobs()
+        await self._corpus.recover_jobs()
+        await self._evaluations.recover_jobs()
         rows = await self._job_store.list(limit=100)
         queued = sorted(
             (job for job in rows if job.status == "queued"), key=lambda job: job.created_at

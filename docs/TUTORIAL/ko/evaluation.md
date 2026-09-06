@@ -24,11 +24,19 @@
 
 **보이는 변화:** 설정 창이 닫히고 평가 목록에 대기 작업이 추가됩니다. 행을 선택하면 제출 설정과 실제 진행 상황을 확인할 수 있습니다. 성공한 평가에는 결과 상세·기록된 설정·지표·문항별 순위가 표시됩니다. 결과가 없으면 아직 측정된 점수가 없는 상태입니다.
 
+평가를 선택하면 해당 평가의 상세에 집중해 표시합니다. 목록을 잠시 숨긴 상세 화면을 작업 이력이 비었다는 상태로 표시하지 않습니다. 다른 작업은 평가 목록으로 돌아가 확인합니다.
+
 **완료 조건:** 선택한 작업이 성공했고 결과 ID와 데이터셋이 맞으며, 적어도 한 문항의 hit/miss를 원문 근거와 대조했습니다. 다른 suite의 성공 작업을 방금 설정한 평가의 결과로 해석하지 않습니다.
 
 **흔한 실패:** 원문을 사용할 수 없거나 문서가 준비되지 않았다는 안내입니다. 표시된 원문 오류를 읽고 [문서](documents.md)와 [인덱싱](indexing.md)을 확인하세요. 실패·중단 작업은 [평가 복구](troubleshooting.md#evaluation)를 확인한 뒤 다시 실행합니다.
 
 **다음 단계:** [12. 결과 비교와 스냅샷 저장](snapshots.md#step-12).
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=focused-evaluation-detail; locale=ko; theme=light; capture=selected-evaluation-with-result-details-and-back-to-list-without-empty-history-message; issue=21; preserve-existing-assets=true -->
+
+**평가 상세에 집중한 화면과 목록 복귀 상태의 스크린샷이 필요합니다. 기존 스크린샷은 유지합니다.**
 
 <!-- capture:11-evaluation-inputs -->
 

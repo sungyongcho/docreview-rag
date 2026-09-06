@@ -35,6 +35,7 @@ function persistLocale(locale: Locale) {
 function runtimeKorean(source: string): string | undefined {
   const known = (value: string) => KO[value] ?? value;
   const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+    [/^Open (.+) and inspect its current state\.$/, (stage) => `${translate("ko", stage)} 단계로 이동해 현재 상태를 확인하세요.`],
     [/^Next step · (.+)$/, (stage) => `다음 단계 · ${known(stage)}`],
     [/^Running · (.+)$/, (stage) => `실행 중 · ${known(stage)}`],
     [/^Blocked · (.+)$/, (stage) => `선행 조건 필요 · ${known(stage)}`],

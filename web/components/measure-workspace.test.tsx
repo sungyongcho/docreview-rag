@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -19,11 +19,14 @@ function stubFetch(handler: StubHandler) {
 }
 
 /** Owns the tab like the shell does so tab-strip clicks work in tests. */
-function Host({ live, ready = true, initialTab = "playground", onApplyProfile = vi.fn(), onRefreshJobs = vi.fn() }: { live: boolean; ready?: boolean; initialTab?: MeasureTab; onApplyProfile?: () => void; onRefreshJobs?: () => void }) {
+function Host({ live, ready = true, initialTab = "playground", onApplyProfile = vi.fn(), onRefreshJobs = vi.fn(), initialResultId = null }: { initialResultId?: number | null; live: boolean; ready?: boolean; initialTab?: MeasureTab; onApplyProfile?: () => void; onRefreshJobs?: () => void }) {
   const [tab, setTab] = useState<MeasureTab>(initialTab);
+  const [resultId, setResultId] = useState<number | null>(initialResultId);
   return (
     <MeasureWorkspace
       live={live}
+      focusResultId={resultId}
+      onResultSelectionChange={setResultId}
       ready={ready}
       profile={DEFAULT_PROFILE}
       onProfileChange={vi.fn()}
@@ -138,6 +141,57 @@ describe("Measure workspace", () => {
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
     fireEvent.click(await screen.findByRole("button", { name: "Use selected set" }));
     expect(onApplyProfile).toHaveBeenCalledWith(profileSource === "default" ? DEFAULT_PROFILE : { ...DEFAULT_PROFILE, k: 9 }, "sec-ko:16");
+  });
+
+  it("retains a focused stored result without an empty-list panel and returns to the list", async () => {
+    stubFetch((url) => {
+      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
+      if (url.endsWith("/admin/evaluations/results/113")) return { result_id: 113, suite: "sec-ko", config: { k: 5 }, metrics: { mrr: 0.8 }, cases: [], created_at: "2026-09-06T12:00:00Z" };
+      return [];
+    });
+    render(<Host live initialTab="runs" initialResultId={113} />);
+    await waitFor(() => expect(screen.getByText("Recorded configuration")).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Result details · #113" })).toBeInTheDocument();
+    expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New evaluation" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
+    fireEvent.click(screen.getByRole("button", { name: "3. Run evaluation" }));
+    expect(screen.getByRole("heading", { name: "Result details · #113" })).toBeVisible();
+    expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to evaluations" }));
+    expect(await screen.findByText(/No evaluations yet/)).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Result details · #113" })).not.toBeInTheDocument();
+  });
+
+  it("shows list loading and failure without claiming no evaluations exist", async () => {
+    let rejectJobs!: (reason: Error) => void;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith("/admin/evaluations/runs")) return new Promise((_resolve, reject) => { rejectJobs = reject; });
+      return Promise.resolve(new Response("[]", { status: 200 }));
+    }));
+    render(<Host live initialTab="runs" />);
+    expect(screen.getByText("Loading evaluations…")).toBeVisible();
+    expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
+    await act(async () => rejectJobs(new Error("Operator offline")));
+    expect(await screen.findByText("Evaluations could not be loaded.")).toBeVisible();
+    expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  it("keeps the requested result identity visible when detail loading fails", async () => {
+    let rejectResult!: (reason: Error) => void;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith("/admin/evaluations/results/113")) return new Promise((_resolve, reject) => { rejectResult = reject; });
+      return Promise.resolve(new Response(String(input).endsWith("/admin/evaluations/runs") ? '{"jobs":[]}' : "[]", { status: 200 }));
+    }));
+    render(<Host live initialTab="runs" initialResultId={113} />);
+    expect(screen.getByText("Loading evaluation result…")).toBeVisible();
+    await act(async () => rejectResult(new Error("Result unavailable")));
+    expect(await screen.findByText("Evaluation detail could not be loaded.")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Result details · #113" })).toBeVisible();
+    expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to evaluations" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
   });
 
   it("locks Playground and Runs in the public build without calling the administrator API", async () => {

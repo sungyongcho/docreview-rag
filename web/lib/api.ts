@@ -1,3 +1,4 @@
+import type { components } from "./api-generated";
 import { DEFAULT_SESSION_PROFILE } from "./types";
 import { presentationFetch } from "./production-preview";
 import type {
@@ -424,4 +425,16 @@ export function getDocumentDetail(docId: string): Promise<DocumentDetail> {
 
 export function apiBase(): string {
   return API_BASE;
+}
+
+export function getJobHistorySummary() {
+  return request<components["schemas"]["JobHistorySummaryResource"]>("/admin/jobs/history");
+}
+
+export function manageJobHistory(payload: Omit<components["schemas"]["JobHistoryRequest"], "confirmation"> & { confirmation?: string }) {
+  return request<components["schemas"]["JobHistoryResultResource"]>("/admin/jobs/history", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function jobHistoryBackupUrl(id: string): string {
+  return `${API_BASE}/admin/jobs/history/backups/${encodeURIComponent(id)}`;
 }

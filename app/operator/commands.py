@@ -108,6 +108,26 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 "verify",
             ),
             OperatorCommand(
+                "schema-check",
+                "Check schema",
+                "Inspect this checkout's local database schema without changing data.",
+                (".venv/bin/python", "-m", "scripts.schema_status", "check"),
+                Path("."),
+                60,
+                "verify",
+            ),
+            OperatorCommand(
+                "schema-prepare",
+                "Prepare empty schema",
+                "Create schema objects only in an empty local database; preserve existing data.",
+                (".venv/bin/python", "-m", "scripts.schema_status", "prepare"),
+                Path("."),
+                120,
+                "service",
+                "Create the current schema only if the local database is empty. "
+                "Existing data is never reset.",
+            ),
+            OperatorCommand(
                 "db-start",
                 "Start PostgreSQL",
                 "Start the local pgvector service and retain its existing volume.",

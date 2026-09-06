@@ -118,6 +118,7 @@ it("discards an expired preview and never sends its token", async () => {
   render(<WipeRuntime enabled />);
   await openPreview();
   fireEvent.click(screen.getByRole("button", { name: "Close reset dialog" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset runtime data" }));
   vi.useFakeTimers();
   fireEvent.click(screen.getByRole("button", { name: "Wipe everything" }));
   await act(async () => { await Promise.resolve(); });
@@ -227,7 +228,7 @@ it("shows the exact permission diagnosis and allows cancellation after a preview
   expect(cancel).toBeEnabled();
   fireEvent.click(cancel);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(screen.getByText("Reset runtime data").closest("summary")).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Reset runtime data" })).toHaveFocus();
   expect(startWipe).not.toHaveBeenCalled();
 });
 
@@ -267,4 +268,27 @@ it("opens a terminal-initiated completed reset without submitting another wipe",
   expect(previewWipe).not.toHaveBeenCalled();
   expect(startWipe).not.toHaveBeenCalled();
   expect(screen.getByText(/run rag-fresh-start/)).toBeInTheDocument();
+});
+
+
+it("opens all reset controls in a popup and returns focus without clearing data", async () => {
+  localStorage.setItem("docreview:conversations:v2", "keep");
+  const { container } = render(<WipeRuntime enabled />);
+  const trigger = screen.getByRole("button", { name: "Reset runtime data" });
+  expect(container.querySelector("details")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Wipe everything" })).not.toBeInTheDocument();
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog");
+  expect(container).not.toContainElement(dialog);
+  expect(dialog).toHaveFocus();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Wipe everything" })).toBeEnabled());
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(previewWipe).not.toHaveBeenCalled();
+  expect(startWipe).not.toHaveBeenCalled();
+  expect(recoverWipe).not.toHaveBeenCalled();
+  expect(localStorage.getItem("docreview:conversations:v2")).toBe("keep");
 });

@@ -366,3 +366,69 @@ def test_ingestion_route_requires_and_forwards_explicit_selection():
     assert schema["paths"]["/admin/corpus"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]["$ref"].endswith("CorpusSnapshotResource")
+
+
+def test_history_routes_validate_scope_and_translate_conflicts(tmp_path) -> None:
+    """History routes retain typed confirmation, conflict and backup failures."""
+    from app.operator.job_history import HistoryConflictError
+
+    class HistoryServices(FakeAdminServices):
+        """Expose predictable history outcomes without touching any user records."""
+
+        async def job_history_summary(self):
+            """Return explicit visible, archived and protected active counts."""
+            return {"visible": 2, "archived": 1, "active": 3}
+
+        async def manage_job_history(self, request):
+            """Exercise route translation for conflict and backup errors."""
+            if request.expected_count != 3:
+                raise HistoryConflictError("Job history changed; refresh")
+            if request.action == "delete":
+                if request.confirmation != "DELETE JOB HISTORY":
+                    raise ValueError("Type DELETE JOB HISTORY to confirm deletion")
+                raise OSError("private filesystem details")
+            return {
+                "action": request.action,
+                "changed_count": 3,
+                "backup_id": None,
+                "summary": {"visible": 3, "archived": 0, "active": 3},
+            }
+
+        def job_history_backup(self, backup_id):
+            """Return only the known fixture and reject all other identities."""
+            if backup_id != "known":
+                raise ValueError("Invalid backup identifier")
+            path = tmp_path / "backup.json"
+            path.write_text('{"records": []}')
+            return path
+
+    services = cast(RuntimeAdminApiServices, HistoryServices())
+    with TestClient(create_api_app(admin_services=services)) as client:
+        assert client.get("/admin/jobs/history").json()["active"] == 3
+        assert (
+            client.post(
+                "/admin/jobs/history", json={"action": "restore", "expected_count": 3}
+            ).status_code
+            == 200
+        )
+        conflict = client.post(
+            "/admin/jobs/history", json={"action": "archive", "expected_count": 1}
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["error"]["code"] == "history_changed"
+        assert (
+            client.post(
+                "/admin/jobs/history", json={"action": "delete", "expected_count": 3}
+            ).status_code
+            == 400
+        )
+        failure = client.post(
+            "/admin/jobs/history",
+            json={"action": "delete", "expected_count": 3, "confirmation": "DELETE JOB HISTORY"},
+        )
+        assert failure.status_code == 503
+        assert "private filesystem details" not in failure.text
+        assert client.get("/admin/jobs/history/backups/unknown").status_code == 404
+        assert client.get("/admin/jobs/history/backups/known").json() == {"records": []}
+    with TestClient(create_api_app()) as client:
+        assert client.get("/admin/jobs/history/backups/known").status_code == 404

@@ -2,21 +2,24 @@
 import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 
+import { TerminalHandoff } from "@/components/terminal-handoff";
 import { PipelineReference } from "@/components/pipeline-reference";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { WipeRuntime } from "@/components/wipe-runtime";
 import { Activity, ArrowDown, ArrowRight, Check, RefreshCw } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { elapsedLabel, JobProgress } from "@/components/job-center";
 import { AcquisitionFields } from "@/components/acquisition-fields";
+import { acquisitionGroups, acquisitionRegistry, type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { companyLabel } from "@/lib/company-labels";
 import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeline";
+import { diagnosePreparation } from "@/lib/preparation-diagnostics";
+import type { Diagnosis } from "@/lib/preparation-diagnostics";
 import { stageStatusLabel } from "@/lib/pipeline";
 import type { CorpusDocument, ManifestSummary } from "@/lib/types";
 
 export interface AcquisitionForm {
-  registry: "sec" | "dart";
   identifiers: string;
   years: string;
 }
@@ -26,6 +29,7 @@ export interface BuildPipelineProps {
   focusStage?: string | null;
   embeddingProvider?: string | null;
   documents?: CorpusDocument[];
+  companies?: AcquisitionCompany[];
   live: boolean;
   busy: boolean;
   canOperateCorpus: boolean;
@@ -60,10 +64,10 @@ export interface BuildPipelineProps {
   onOpenDocuments: () => void;
   onOpenJobs: () => void;
   onOpenStatus: () => void;
-  onRefresh: () => void;
+  onRefresh: () => unknown | Promise<unknown>;
 }
 
-const REGISTRY_LABELS: Record<AcquisitionForm["registry"], string> = { sec: "SEC EDGAR", dart: "DART" };
+const REGISTRY_LABELS: Record<"sec" | "dart", string> = { sec: "SEC EDGAR", dart: "DART" };
 const STEP_DEPENDENCIES: Record<Stage["id"], string> = {
   filings: "Start with SEC or DART filings",
   index: "Source files → chunks",
@@ -97,10 +101,13 @@ export function BuildPipeline(props: BuildPipelineProps) {
   const selected = pipeline.stages.find((stage) => stage.id === selectedId) ?? pipeline.stages[0];
 
 
+  const focusId = props.focusStage === "setup" ? "setup" : pipeline.stages.find((item) => item.id === props.focusStage || String(item.order) === props.focusStage)?.id;
   useEffect(() => {
-    const stage = pipeline.stages.find((item) => item.id === props.focusStage || String(item.order) === props.focusStage);
-    if (stage) setSelectedId(stage.id);
-  }, [props.focusStage, pipeline.stages]);
+    if (focusId === "setup") {
+      const setup = document.getElementById("pipeline-setup-checks") as HTMLDetailsElement | null;
+      if (setup) { setup.open = true; setup.focus(); }
+    } else if (focusId) setSelectedId(focusId);
+  }, [focusId]);
 
   function handler(kind: StageActionKind): () => void {
     switch (kind) {
@@ -116,9 +123,28 @@ export function BuildPipeline(props: BuildPipelineProps) {
   }
 
   function disabled(kind: StageActionKind): boolean {
+    if (OPERATOR_ACTIONS.has(kind) && props.live) {
+      if (props.databaseConnected === false || props.schemaStatus === "empty" || props.schemaStatus === "unavailable") return true;
+      if (kind !== "acquire" && props.schemaStatus === "drifted") return true;
+    }
     if (kind === "acquire" && !acquisitionValid) return true;
     if (!OPERATOR_ACTIONS.has(kind)) return false;
     return pipeline.readOnly || props.busy || (props.live && !props.canOperateCorpus);
+  }
+
+  const diagnosis = diagnosePreparation(selected.id === "filings" && props.schemaStatus === "empty" ? "index" : selected.id, pipeline, {
+    databaseConnected: props.databaseConnected ?? null,
+    schemaStatus: props.schemaStatus ?? null,
+    writable: props.writable ?? null,
+  });
+
+  function navigatePreparation(target: NonNullable<Diagnosis["returnTo"]>) {
+    if (target === "setup") {
+      const setup = document.getElementById("pipeline-setup-checks") as HTMLDetailsElement | null;
+      if (setup) { setup.open = true; setup.focus(); setup.scrollIntoView?.({ block: "nearest" }); }
+    } else {
+      setSelectedId(target);
+    }
   }
 
   return (
@@ -165,6 +191,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
           <StageCard
             key={stage.id}
             stage={stage}
+            recovery={props.live && !pipeline.readOnly ? <TerminalHandoff diagnosis={diagnosis} steps={diagnosis.terminalSteps} blocking={diagnosis.state === "blocked"} onNavigate={diagnosis.returnTo !== selected.id ? navigatePreparation : undefined} onRefresh={props.onRefresh} /> : null}
             isNext={pipeline.next?.id === stage.id}
             readOnly={pipeline.readOnly}
             handler={handler}
@@ -172,6 +199,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
             documents={props.documents ?? []}
+            companies={props.companies ?? []}
             onAcquisitionValidityChange={setAcquisitionValid}
             manifests={props.manifests}
             selectedSources={props.selectedSources}
@@ -204,7 +232,7 @@ interface RuntimeStripProps {
   answerModel: string | null;
   /** Set only when Local Operations can run the fix for a problem from the browser. */
   onRunOperation: ((commandId: string) => void) | null;
-  onRefresh: () => void;
+  onRefresh: () => unknown | Promise<unknown>;
 }
 
 interface RuntimeProblem {
@@ -232,20 +260,23 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
 
   const problems: RuntimeProblem[] = [];
   if (databaseConnected === false) {
-    problems.push({ reason: schemaMessage || "The database is not connected.", fix: "docker compose up -d db", commands: [{ id: "db-start", label: "Start database" }] });
+    problems.push({ reason: schemaMessage || "The database is not connected.", fix: "rag-dev up --build -d", commands: [{ id: "db-start", label: "Start database" }] });
+  } else if (schemaStatus === "empty") {
+    problems.push({ reason: "The local database needs its initial schema.", fix: "uv run python -m scripts.schema_status prepare", commands: [] });
   } else if (schemaStatus === "drifted" || schemaStatus === "unavailable") {
-    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, guidance: "Keep this database intact. Use an empty isolated database or a compatible database for setup.", fix: "", commands: [] });
+    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, guidance: "Keep this database intact. Use an empty isolated database or a compatible database for setup.", fix: "uv run python -m scripts.schema_status check", commands: [] });
   }
   if (writable === false) {
-    problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files. Set HOST_GID=$(id -g) in .env, then rebuild the app.", fix: "HOST_GID=$(id -g) docker compose up -d app", commands: [{ id: "app-start", label: "Rebuild app" }] });
+    problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files. Set HOST_GID=$(id -g) in .env, then rebuild the app.", fix: 'HOST_GID="$(id -g)" rag-dev up --build -d', commands: [{ id: "app-start", label: "Rebuild app" }] });
   }
 
   return (
-    <details className="runtime-disclosure" data-help="build.runtime">
+    <details id="pipeline-setup-checks" tabIndex={-1} className="runtime-disclosure" data-help="build.runtime">
       <summary><Activity size={15} /><span>{t(apiDown ? "API unavailable" : problems.length ? "Runtime needs attention" : known ? "Runtime connected" : "Checking runtime…")}</span></summary>
       <div className="runtime-strip">
       <div className="runtime-items">{items.map((item, index) => <Fragment key={t(item)}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}</div>
       <div className="runtime-actions">
+        {live && <button className="button ghost" type="button" onClick={() => void onRefresh()}>{t("Check schema")}</button>}
         {live && onRunOperation && !problems.length && <button className="button ghost" type="button" onClick={() => onRunOperation("app-start")}>{t("Rebuild app")}</button>}
         {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button>}
       </div>
@@ -277,6 +308,7 @@ function StatusPill({ status, detail }: { status: StageStatus; detail: string })
 }
 
 interface StageCardProps {
+  recovery?: ReactNode;
   stage: Stage;
   isNext: boolean;
   readOnly: boolean;
@@ -284,6 +316,7 @@ interface StageCardProps {
   disabled: (kind: StageActionKind) => boolean;
   acquisition: AcquisitionForm;
   documents: CorpusDocument[];
+  companies: AcquisitionCompany[];
   onAcquisitionValidityChange: (valid: boolean) => void;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
@@ -305,13 +338,13 @@ function manifestSummary(manifest: ManifestSummary, registryCounts: Record<strin
   return parts.join(" · ");
 }
 
-function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
   const readOnlyNote = readOnly && OPERATOR_STAGES.has(stage.id);
   const identifiers = splitList(acquisition.identifiers);
-  const companyNames = (code: string) => companyLabel(code, documents.find((document) => document.registry === acquisition.registry && document.issuer === code)?.issuer_name);
+  const companyNames = (code: string) => companyLabel(code, documents.find((document) => document.issuer === code)?.issuer_name ?? companies.find((company) => company.issuer === code)?.name);
   const years = splitList(acquisition.years).map((year) => `FY${year}`);
 
   return (
@@ -330,7 +363,7 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
             </p>
           )}
           {stage.id === "filings" && (
-            <p className="stage-summary">{[REGISTRY_LABELS[acquisition.registry], identifiers.map(companyNames).join(", ") || t("no tickers"), years.join(", ") || t("no fiscal years")].join(" · ")}</p>
+            <p className="stage-summary">{[acquisitionGroups(identifiers, companies).map((group) => REGISTRY_LABELS[group.registry]).join(" / "), identifiers.map(companyNames).join(", ") || t("no tickers"), years.join(", ") || t("no fiscal years")].join(" · ")}</p>
           )}
           {job && (
             <div className="stage-job">
@@ -339,14 +372,15 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
             </div>
           )}
           {showHint && <p className="stage-hint">{t(stage.hint)}</p>}
+          {recovery}
           {readOnlyNote && <p className="stage-note">{t(READ_ONLY_NOTE)}</p>}
           <p className="stage-why"><strong>{t("Why it matters:")}</strong> {t(stage.why)}</p>
           {stage.id === "filings" && (
             <details className="stage-advanced" open>
               <summary>{t("Change…")}</summary>
               <div>
-                <AcquisitionFields acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly} documents={documents} onValidityChange={onAcquisitionValidityChange} />
-                <p className="helper">{acquisition.registry === "sec" ? t("EDGAR downloads need SEC_USER_AGENT in .env.") : t("DART downloads need DART_API_KEY in .env.")}</p>
+                <AcquisitionFields acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly} documents={documents} companies={companies} onValidityChange={onAcquisitionValidityChange} />
+                <p className="helper">{identifiers.some((code) => acquisitionRegistry(code, companies) === "sec") && t("EDGAR downloads need SEC_USER_AGENT in .env.")} {identifiers.some((code) => acquisitionRegistry(code, companies) === "dart") && t("DART downloads need DART_API_KEY in .env.")}</p>
               </div>
             </details>
           )}

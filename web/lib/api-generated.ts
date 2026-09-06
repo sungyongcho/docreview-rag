@@ -372,6 +372,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/jobs/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job History Summary
+         * @description Read protected active and terminal history counts.
+         */
+        get: operations["job_history_summary_admin_jobs_history_get"];
+        put?: never;
+        /**
+         * Manage Job History
+         * @description Apply one explicitly confirmed terminal-history operation.
+         */
+        post: operations["manage_job_history_admin_jobs_history_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/jobs/history/backups/{backup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job History Backup
+         * @description Download an owned backup without exposing arbitrary filesystem paths.
+         */
+        get: operations["job_history_backup_admin_jobs_history_backups__backup_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -860,7 +904,7 @@ export interface paths {
          *     services : Services
          *         Injected service boundary with observer support.
          *     telemetry : Literal["stages"] | None
-         *         Opt-in for additive stage events; omitted headers retain the legacy event sequence.
+         *         Opt-in for measured stage events alongside committed-node progress.
          *
          *     Returns
          *     -------
@@ -1314,7 +1358,10 @@ export interface components {
              * @enum {string}
              */
             schema_status: "compatible" | "empty" | "drifted" | "unavailable";
-            /** Writable */
+            /**
+             * Writable
+             * @description Source directory write permission, independent of database schema compatibility.
+             */
             writable: boolean;
         };
         /**
@@ -2185,6 +2232,52 @@ export interface components {
             /** Documents */
             documents: number;
         };
+        /**
+         * JobHistoryRequest
+         * @description An explicit history operation against a reviewed eligible count.
+         */
+        JobHistoryRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "archive" | "restore" | "delete";
+            /**
+             * Confirmation
+             * @default
+             */
+            confirmation: string;
+            /** Expected Count */
+            expected_count: number;
+        };
+        /**
+         * JobHistoryResultResource
+         * @description Confirmed history changes and a private backup reference.
+         */
+        JobHistoryResultResource: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "archive" | "restore" | "delete";
+            /** Backup Id */
+            backup_id: string | null;
+            /** Changed Count */
+            changed_count: number;
+            summary: components["schemas"]["JobHistorySummaryResource"];
+        };
+        /**
+         * JobHistorySummaryResource
+         * @description Terminal history counts and protected active jobs.
+         */
+        JobHistorySummaryResource: {
+            /** Active */
+            active: number;
+            /** Archived */
+            archived: number;
+            /** Visible */
+            visible: number;
+        };
         JsonValue: unknown;
         /**
          * LocalConnectionRequest
@@ -2364,6 +2457,21 @@ export interface components {
             server_id: string;
         };
         /**
+         * ManifestIssuerResource
+         * @description A company and source registry available before ingestion.
+         */
+        ManifestIssuerResource: {
+            /** Issuer */
+            issuer: string;
+            /** Name */
+            name: string;
+            /**
+             * Registry
+             * @enum {string}
+             */
+            registry: "sec" | "dart";
+        };
+        /**
          * ManifestResource
          * @description A common corpus catalog and its available processing selections.
          */
@@ -2372,6 +2480,11 @@ export interface components {
             corpus_id: string | null;
             /** Documents */
             documents: number | null;
+            /**
+             * Issuers
+             * @default []
+             */
+            issuers: components["schemas"]["ManifestIssuerResource"][];
             /** Name */
             name: string;
             /** Registries */
@@ -4140,6 +4253,124 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OperatorJobsResponse"];
                 };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    job_history_summary_admin_jobs_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobHistorySummaryResource"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    manage_job_history_admin_jobs_history_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobHistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobHistoryResultResource"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    job_history_backup_admin_jobs_history_backups__backup_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Request validation failed. */
             422: {

@@ -3,6 +3,7 @@
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query
+from fastapi.responses import FileResponse
 
 from app.api.admin_deps import AdminServices
 from app.api.admin_schemas import (
@@ -26,6 +27,9 @@ from app.api.admin_schemas import (
     GoldenRevisionResource,
     GoldenSuiteId,
     GoldenSuiteResource,
+    JobHistoryRequest,
+    JobHistoryResultResource,
+    JobHistorySummaryResource,
     LocalConnectionRequest,
     LocalConnectionResponse,
     LocalDiagnosticsRequest,
@@ -42,8 +46,9 @@ from app.api.admin_schemas import (
     SnapshotVisibilityRequest,
     UsageResponse,
 )
-from app.api.errors import not_found, translate_runtime_errors
+from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
 from app.api.schemas import ErrorResponse, SnapshotComparisonResponse, SnapshotResource
+from app.operator.job_history import HistoryConflictError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 ResultId = Annotated[int, Query(gt=0)]
@@ -300,6 +305,45 @@ async def provider_usage(services: AdminServices) -> UsageResponse:
     """Return locally persisted token and estimated-cost totals."""
     async with translate_runtime_errors():
         return await services.usage()
+
+
+@router.get("/jobs/history", response_model=JobHistorySummaryResource)
+async def job_history_summary(services: AdminServices) -> JobHistorySummaryResource:
+    """Read protected active and terminal history counts."""
+    async with translate_runtime_errors():
+        return await services.job_history_summary()
+
+
+@router.post("/jobs/history", response_model=JobHistoryResultResource)
+async def manage_job_history(
+    request: JobHistoryRequest, services: AdminServices
+) -> JobHistoryResultResource:
+    """Apply one explicitly confirmed terminal-history operation."""
+    try:
+        async with translate_runtime_errors():
+            return await services.manage_job_history(request)
+    except HistoryConflictError as error:
+        raise ApiProblemError(
+            status_code=409, code="history_changed", message=str(error)
+        ) from error
+    except OSError as error:
+        raise ApiProblemError(
+            status_code=503,
+            code="history_backup_failed",
+            message="The history backup could not be written; deletion was not completed.",
+        ) from error
+
+
+@router.get("/jobs/history/backups/{backup_id}", response_class=FileResponse)
+async def job_history_backup(backup_id: str, services: AdminServices) -> FileResponse:
+    """Download an owned backup without exposing arbitrary filesystem paths."""
+    try:
+        path = services.job_history_backup(backup_id)
+    except (ValueError, OSError) as error:
+        raise not_found("job_history_backup", backup_id) from error
+    return FileResponse(
+        path, media_type="application/json", filename=f"job-history-{backup_id}.json"
+    )
 
 
 @router.get("/jobs", response_model=OperatorJobsResponse)

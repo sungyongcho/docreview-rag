@@ -858,6 +858,7 @@
             "type": "string"
           },
           "writable": {
+            "description": "Source directory write permission, independent of database schema compatibility.",
             "title": "Writable",
             "type": "boolean"
           }
@@ -2874,6 +2875,107 @@
         "title": "IngestResponse",
         "type": "object"
       },
+      "JobHistoryRequest": {
+        "additionalProperties": false,
+        "description": "An explicit history operation against a reviewed eligible count.",
+        "properties": {
+          "action": {
+            "enum": [
+              "archive",
+              "restore",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "confirmation": {
+            "default": "",
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "expected_count": {
+            "minimum": 0.0,
+            "title": "Expected Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "expected_count"
+        ],
+        "title": "JobHistoryRequest",
+        "type": "object"
+      },
+      "JobHistoryResultResource": {
+        "additionalProperties": false,
+        "description": "Confirmed history changes and a private backup reference.",
+        "properties": {
+          "action": {
+            "enum": [
+              "archive",
+              "restore",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "backup_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Id"
+          },
+          "changed_count": {
+            "minimum": 0.0,
+            "title": "Changed Count",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/JobHistorySummaryResource"
+          }
+        },
+        "required": [
+          "action",
+          "changed_count",
+          "backup_id",
+          "summary"
+        ],
+        "title": "JobHistoryResultResource",
+        "type": "object"
+      },
+      "JobHistorySummaryResource": {
+        "additionalProperties": false,
+        "description": "Terminal history counts and protected active jobs.",
+        "properties": {
+          "active": {
+            "minimum": 0.0,
+            "title": "Active",
+            "type": "integer"
+          },
+          "archived": {
+            "minimum": 0.0,
+            "title": "Archived",
+            "type": "integer"
+          },
+          "visible": {
+            "minimum": 0.0,
+            "title": "Visible",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "visible",
+          "archived",
+          "active"
+        ],
+        "title": "JobHistorySummaryResource",
+        "type": "object"
+      },
       "JsonValue": {},
       "LocalConnectionRequest": {
         "additionalProperties": false,
@@ -3355,6 +3457,35 @@
         "title": "LocalServerSelectionRequest",
         "type": "object"
       },
+      "ManifestIssuerResource": {
+        "additionalProperties": false,
+        "description": "A company and source registry available before ingestion.",
+        "properties": {
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "registry": {
+            "enum": [
+              "sec",
+              "dart"
+            ],
+            "title": "Registry",
+            "type": "string"
+          }
+        },
+        "required": [
+          "registry",
+          "issuer",
+          "name"
+        ],
+        "title": "ManifestIssuerResource",
+        "type": "object"
+      },
       "ManifestResource": {
         "additionalProperties": false,
         "description": "A common corpus catalog and its available processing selections.",
@@ -3381,6 +3512,14 @@
               }
             ],
             "title": "Documents"
+          },
+          "issuers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManifestIssuerResource"
+            },
+            "title": "Issuers",
+            "type": "array"
           },
           "name": {
             "title": "Name",
@@ -6968,6 +7107,144 @@
         ]
       }
     },
+    "/admin/jobs/history": {
+      "get": {
+        "description": "Read protected active and terminal history counts.",
+        "operationId": "job_history_summary_admin_jobs_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobHistorySummaryResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Job History Summary",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Apply one explicitly confirmed terminal-history operation.",
+        "operationId": "manage_job_history_admin_jobs_history_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobHistoryResultResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Manage Job History",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/jobs/history/backups/{backup_id}": {
+      "get": {
+        "description": "Download an owned backup without exposing arbitrary filesystem paths.",
+        "operationId": "job_history_backup_admin_jobs_history_backups__backup_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "backup_id",
+            "required": true,
+            "schema": {
+              "title": "Backup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Job History Backup",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/jobs/{job_id}": {
       "get": {
         "description": "Return one persisted operator job by identity.",
@@ -8517,7 +8794,7 @@
     },
     "/review/stream": {
       "post": {
-        "description": "Stream node progress and one secret-safe terminal result.\n\nParameters\n----------\nrequest : ReviewRequest\n    Validated review request.\nservices : Services\n    Injected service boundary with observer support.\ntelemetry : Literal[\"stages\"] | None\n    Opt-in for additive stage events; omitted headers retain the legacy event sequence.\n\nReturns\n-------\nStreamingResponse\n    SSE stream containing ``node`` events, one ``report`` or ``error``, and\n    a final ``done`` marker.\n\nNotes\n-----\nThe producer begins with iterator consumption and is cancelled when the body\niterator closes, including ASGI send failures and client disconnects.",
+        "description": "Stream node progress and one secret-safe terminal result.\n\nParameters\n----------\nrequest : ReviewRequest\n    Validated review request.\nservices : Services\n    Injected service boundary with observer support.\ntelemetry : Literal[\"stages\"] | None\n    Opt-in for measured stage events alongside committed-node progress.\n\nReturns\n-------\nStreamingResponse\n    SSE stream containing ``node`` events, one ``report`` or ``error``, and\n    a final ``done`` marker.\n\nNotes\n-----\nThe producer begins with iterator consumption and is cancelled when the body\niterator closes, including ASGI send failures and client disconnects.",
         "operationId": "review_stream_review_stream_post",
         "parameters": [
           {

@@ -56,7 +56,7 @@ function manifest(registry: string, documents: number, sourcesPresent: number): 
   return {
     name: registry === "sec" ? "manifest.json" : `${registry}-manifest.json`,
     corpus_id: registry,
-    registries: [registry as "sec" | "dart"],
+    issuers: [], registries: [registry as "sec" | "dart"],
     selections: [{selection_id: `${registry}-evaluation`, document_ids: Array.from({length: documents}, (_, i) => `${registry}-${i}`), artifact_ids: Array.from({length: documents}, (_, i) => `${registry}-source-${i}`), sources_present: sourcesPresent}],
     documents,
     valid: true,
@@ -697,7 +697,7 @@ describe("derivePipeline", () => {
   });
 
   it("ignores invalid manifests when counting filings in live mode", () => {
-    const broken: ManifestSummary = { name: "broken.json", corpus_id: null, registries: [], documents: null, valid: false, sources_present: null, selections: [] };
+    const broken: ManifestSummary = { name: "broken.json", corpus_id: null, issuers: [], registries: [], documents: null, valid: false, sources_present: null, selections: [] };
     const pipeline = derivePipeline(liveInput({ manifests: [...SEC_AND_DART, broken] }));
     expect(stage(pipeline, "filings").numbers).toEqual(["30 / 30 filings on disk", "SEC 21/21", "DART 9/9"]);
   });

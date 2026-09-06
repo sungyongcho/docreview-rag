@@ -2,7 +2,7 @@
 import { LOCALE_KEY, useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ChevronDown, X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { getWipeCapability, getWipeStatus, operatorAvailable, OperatorRequestError, previewWipe, recoverWipe, startWipe, type WipeCapability, type WipeDiagnosis, type WipePreview, type WipeResult } from "@/lib/operator-api";
 
@@ -27,7 +27,7 @@ function ResetDiagnosis({ diagnosis }: { diagnosis: WipeDiagnosis }) {
 export function WipeRuntime({ enabled }: { enabled: boolean }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLElement>(null);
-  const disclosure = useRef<HTMLDetailsElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const active = useRetainedPanelActive();
   const visible = open && active && enabled;
@@ -99,7 +99,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.focus();
     return () => {
-      const target = previous?.isConnected && !previous.matches(":disabled") ? previous : disclosure.current?.querySelector<HTMLElement>("summary");
+      const target = trigger.current ?? (previous?.isConnected && !previous.matches(":disabled") ? previous : null);
       if (!target?.closest("[hidden], [inert]")) target?.focus();
     };
   }, [visible]);
@@ -185,33 +185,25 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
   }
   if (!enabled) return null;
   return <section className="wipe-danger-zone">
-    <details ref={disclosure}><summary><AlertTriangle size={16} aria-hidden="true" /><span>{t("Reset runtime data")}</span><ChevronDown className="wipe-disclosure-arrow" size={16} aria-hidden="true" /></summary>
+    <button ref={trigger} type="button" className="button danger-button" aria-haspopup="dialog" aria-expanded={visible} onClick={() => setOpen(true)}><AlertTriangle size={16} aria-hidden="true" /><span>{t("Reset runtime data")}</span></button>
+    {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="wipe-title" aria-describedby="wipe-warning" className="wipe-dialog">
+      <header><h2 id="wipe-title">{t("Delete all runtime data?")}</h2><button type="button" className="icon-button" aria-label={t("Close reset dialog")} disabled={busy || result?.status === "running"} onClick={close}><X size={18} /></button></header>
       <div className="wipe-disclosure-body">
         <p>{t("Start over by clearing this local runtime. Source files and credentials are preserved.")}</p>
         <p>{t("After reset, download SEC/DART filings again, ingest them, generate embeddings, rebuild BM25, and configure your answer model in Build.")}</p>
         <p>{t("For a terminal reset followed by a full rebuild and restart, run rag-fresh-start. Run rag-help for the equivalent corpus commands.")}</p>
-        <button className="button danger-button" type="button" disabled={!canPreview || busy || checking} onClick={() => void inspect()}>{t("Wipe everything")}</button>
+        <button className="button danger-button" type="button" disabled={!canPreview || busy || checking || Boolean(preview)} onClick={() => void inspect()}>{t("Wipe everything")}</button>
         {!connected && <p>{t("Start the development stack with rag-dev to enable Local Operations.")}</p>}
         {connected && <>
           <p role="status" className="wipe-availability">{checking ? t("Checking reset availability…") : canPreview ? t("Reset is available. All preview checks passed.") : t("Reset is blocked.")}</p>
           {!checking && checkedAt && <p className="muted">{t("Last checked")}: <time dateTime={checkedAt}>{new Date(checkedAt).toLocaleString()}</time></p>}
           {!checking && !canPreview && !error && <p>{capability?.reason || t("Runtime reset is unavailable.")}</p>}
-          {!open && error && <p role="alert" className="notice error">{error}</p>}
-          {!open && !checking && diagnosis && <ResetDiagnosis diagnosis={diagnosis} />}
           <button type="button" className="button" disabled={busy || checking} onClick={() => { setOpen(true); recheck(); }}>{t("View reset status")}</button>
           <button type="button" className="button" disabled={busy || checking} onClick={recheck}>{t("Check reset availability")}</button>
         </>}
       </div>
-    </details>
-    {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="wipe-title" aria-describedby="wipe-warning" className="wipe-dialog">
-      <header><h2 id="wipe-title">{t("Delete all runtime data?")}</h2><button type="button" className="icon-button" aria-label={t("Close reset dialog")} disabled={busy || result?.status === "running"} onClick={close}><X size={18} /></button></header>
       <p id="wipe-warning" className="notice error"><strong>{t("No backup. This cannot be undone.")}</strong> {t("Database records, downloaded filings, generated evaluation artifacts, saved connections and DocReview browser data will be cleared.")}</p>
       {busy && <p role="status">{t("Checking the local runtime…")}</p>}
-      {checking && <p role="status">{t("Checking reset availability…")}</p>}
-      {!checking && !busy && !preview && !result && !error && <>
-        <p role="status">{canPreview ? t("Reset is available. All preview checks passed.") : t("Reset is blocked.")}</p>
-        {canPreview && <button type="button" className="button" onClick={() => void inspect()}>{t("Review a fresh deletion preview")}</button>}
-      </>}
       {error && <p role="alert" className="notice error">{error}</p>}
       {diagnosis && <ResetDiagnosis diagnosis={diagnosis} />}
       {preview && <>
@@ -233,7 +225,6 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
         </>}
       </>}
       <footer className="wipe-dialog-actions">
-        {error && !preview && <button type="button" className="button" disabled={busy || checking || result?.status === "running"} onClick={recheck}>{t("Check reset availability")}</button>}
         <button type="button" className="button" disabled={busy || result?.status === "running"} onClick={close}>{t("Cancel")}</button>
       </footer>
     </section></div>, document.body)}

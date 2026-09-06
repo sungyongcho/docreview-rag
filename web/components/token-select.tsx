@@ -8,6 +8,7 @@ import "./token-select.css";
 export interface TokenOption {
   value: string;
   label: string;
+  badge?: { label: string; tone: "blue" | "amber" };
 }
 
 interface Props {
@@ -24,10 +25,11 @@ interface Props {
   invalidValues?: string[];
   quickOptions?: TokenOption[];
   onValidityChange?: (valid: boolean) => void;
+  overlayOptions?: boolean;
 }
 
 /** Keep editing text separate from committed filters and expose keyboard-friendly choices. */
-export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange }: Props) {
+export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false }: Props) {
   const { t } = useI18n();
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -84,7 +86,19 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
   }
 
   const showError = (attempted || draft.trim().length > 0) && parsed === null;
-  return <div className="token-select" onBlur={(event) => {
+  const suggestionPanel = (expanded && !disabled && <div id={`${id}-choices`} className="token-options" ref={choices} role="group" aria-label={t("{field} suggestions", { field: label })} onKeyDown={(event) => {
+      if (!["ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button"));
+      const index = buttons.indexOf(event.target as HTMLButtonElement);
+      if (event.key === "Escape" || (event.key === "ArrowUp" && index === 0)) { input.current?.focus(); if (event.key === "Escape") setExpanded(false); }
+      else buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+    }}>
+      {suggestions.length ? suggestions.map((option) => <button type="button" key={option.value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><span className="token-option-label">{option.label}{option.badge && <span className={`token-badge token-badge-${option.badge.tone}`}>{option.badge.label}</span>}</span><Plus size={13} aria-hidden="true" /></button>) : <p className="token-hint">{t("No matching choices in this scope.")}</p>}
+    </div>);
+
+  return <div className={`token-select${overlayOptions ? " token-select-overlay" : ""}`} onBlur={(event) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     setExpanded(false);
     commit();
@@ -92,10 +106,12 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
     <label className="token-select-label" htmlFor={id}>{label}</label>
     {values.length > 0 && <ul className="token-selection" aria-label={t("Selected {field}", { field: label })}>
       {values.map((value) => {
-        const caption = options.find((option) => option.value === value)?.label ?? value;
+        const option = options.find((option) => option.value === value);
+        const caption = option?.label ?? value;
         const invalid = invalidValues.includes(value);
         return <li className={`token-chip${invalid ? " token-chip-invalid" : ""}`} key={value}>
           <span>{caption}{invalid && <small>{t("Outside this scope")}</small>}</span>
+          {option?.badge && <span className={`token-badge token-badge-${option.badge.tone}`}>{option.badge.label}</span>}
           <button type="button" disabled={disabled} aria-label={t("Remove {value}", { value: caption })} onClick={() => { onChange(values.filter((item) => item !== value)); input.current?.focus(); }}><X size={13} aria-hidden="true" /></button>
         </li>;
       })}
@@ -133,21 +149,12 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
           if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); setExpanded(false); }
         }} />
       {parseCustom && <button className="token-add" type="button" disabled={disabled || !draft.trim() || parsed === null} aria-label={t("Add {field}", { field: label })} onClick={() => { commit(); input.current?.focus(); }}><Plus size={16} aria-hidden="true" /></button>}
+      {overlayOptions && suggestionPanel}
     </div>
     <p className="token-hint" id={`${id}-hint`}>{hint ?? t("Search and choose. Remove a chip to undo.")}</p>
     {showError && <p className="token-error" id={`${id}-error`} role="alert">{invalidMessage ?? t("Choose a matching option before leaving this field.")}</p>}
     {invalidValues.length > 0 && <p className="token-error">{t("Some selections are unavailable in this scope. Remove them to change the filter.")}</p>}
-    {expanded && !disabled && <div id={`${id}-choices`} className="token-options" ref={choices} role="group" aria-label={t("{field} suggestions", { field: label })} onKeyDown={(event) => {
-      if (!["ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button"));
-      const index = buttons.indexOf(event.target as HTMLButtonElement);
-      if (event.key === "Escape" || (event.key === "ArrowUp" && index === 0)) { input.current?.focus(); if (event.key === "Escape") setExpanded(false); }
-      else buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
-    }}>
-      {suggestions.length ? suggestions.map((option) => <button type="button" key={option.value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><span>{option.label}</span><Plus size={13} aria-hidden="true" /></button>) : <p className="token-hint">{t("No matching choices in this scope.")}</p>}
-    </div>}
+    {!overlayOptions && suggestionPanel}
     {quickOptions && quickOptions.some((option) => !values.includes(option.value)) && <div className="token-quick" role="group" aria-label={t("Quick add {field}", { field: label })}>
       {quickOptions.filter((option) => !values.includes(option.value)).map((option) => <button className="chip" type="button" key={option.value} disabled={disabled} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><Plus size={12} aria-hidden="true" />{option.label}</button>)}
     </div>}

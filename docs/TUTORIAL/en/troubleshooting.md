@@ -74,12 +74,24 @@ For a local server, inspect **Settings → Local LLM** and the selected answer-c
 
 See [dataset editing](evaluation.md#golden) and [comparison conditions](snapshots.md#comparison). Do not use a displayed illustrative example as evidence that an evaluation ran.
 
+## Manage job history {#job-history}
+
+Open **Manage history** in Jobs. **Sync history** reads the server again; it does not replay jobs. **Archive finished jobs** hides terminal records from the normal list, and **Restore archived jobs** makes them visible again. These actions preserve queued/running jobs, source files, embeddings, and evaluation results.
+
+**Delete job history** permanently removes both visible and archived terminal job records only. Review the displayed count and type `DELETE JOB HISTORY`. The server must first create a private backup of the complete records; a backup failure leaves the records intact. Download the backup through **Download job history backup** after success. If the eligible count changed, sync and review again. Restoring an archive does not reimport a deleted backup, and no action automatically reruns a job.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=job-history-and-reset-dialogs; locale=en; theme=light; capture=history-dialog-visible-archived-active-counts-confirmation-and-backup-link-using-test-records-plus-reset-dialog-read-only-eligibility; issues=20,21; preserve-existing-assets=true -->
+
+**Screenshots pending for the history controls and reset dialog. Existing captures below document earlier states, not the updated dialog layout.**
+
 ## Runtime reset: inspect eligibility before deletion {#reset}
 
 > [!DEV]
 > Runtime reset, its eligibility checks, and recovery controls require DEV and the local operator. The public interface cannot delete runtime data.
 
-**Screen path:** **Build → Pipeline**, upper-left red **Reset runtime data** disclosure. Opening it only reveals controls. **Check reset availability** performs read-only checks and shows checking, available/blocked state, and **Last checked**. Eligibility covers relevant runtime-file permissions, active database jobs, and active application requests, as deletion preview does.
+**Screen path:** **Build → Pipeline**, upper-left red **Reset runtime data** button. It opens a modal dialog; opening or closing the dialog does not reset data. **Check reset availability** performs read-only checks and shows checking, available/blocked state, and **Last checked**. Eligibility covers relevant runtime-file permissions, active database jobs, and active application requests, as deletion preview does.
 
 When blocked, read **Reset diagnosis**, the blocking code, file and parent details, and manual remediation. A permission diagnosis identifies the actual operator UID/GID and file/directory ownership and modes. A file writable by the application may still be inaccessible to a different host operator. The check does not change ownership, permissions, or ACLs.
 

@@ -104,7 +104,7 @@ describe("help topic coverage", () => {
       healthKind: "healthy",
       readiness: READINESS,
       corpus: { ...READINESS.corpus, provider: "deterministic" },
-      manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
+      manifests: [{ name: "manifest.json", corpus_id: "sec", issuers: [], registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
       registryCounts: { sec: 21 },
       jobs: [],
       evaluationResults: 1,
@@ -117,7 +117,7 @@ describe("help topic coverage", () => {
         live
         busy={false}
         canOperateCorpus
-        acquisition={{ registry: "sec", identifiers: "NVDA", years: "2024" }}
+        acquisition={{ identifiers: "NVDA", years: "2024" }}
         onAcquisitionChange={noop}
         manifests={input.manifests}
         onCancelJob={noop}
@@ -139,7 +139,7 @@ describe("help topic coverage", () => {
 
     expect(coverage("build").missing).toEqual([]);
     cleanup();
-    render(<BuildPipeline pipeline={derivePipeline({ ...input, live: false, readiness: null, corpus: null })} live={false} busy={false} canOperateCorpus={false} acquisition={{ registry: "sec", identifiers: "", years: "" }} onAcquisitionChange={noop} manifests={[]} onCancelJob={noop} onDownload={noop} onIngestAll={noop} onIngest={noop} onBackfill={noop} onRebuildBm25={noop} onAsk={noop} onRecheck={noop} onEvaluate={noop} onCompareSnapshots={noop} onOpenDocuments={noop} onOpenJobs={noop} onOpenStatus={noop} onRefresh={noop} />);
+    render(<BuildPipeline pipeline={derivePipeline({ ...input, live: false, readiness: null, corpus: null })} live={false} busy={false} canOperateCorpus={false} acquisition={{ identifiers: "", years: "" }} onAcquisitionChange={noop} manifests={[]} onCancelJob={noop} onDownload={noop} onIngestAll={noop} onIngest={noop} onBackfill={noop} onRebuildBm25={noop} onAsk={noop} onRecheck={noop} onEvaluate={noop} onCompareSnapshots={noop} onOpenDocuments={noop} onOpenJobs={noop} onOpenStatus={noop} onRefresh={noop} />);
     expect(coverage("build").missing).toEqual([]);
   });
 

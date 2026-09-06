@@ -5,6 +5,8 @@ import { derivePipeline, type PipelineInput } from "@/lib/pipeline";
 import type { OperatorJob, Readiness } from "@/lib/types";
 import { BuildPipeline, type BuildPipelineProps } from "./build-pipeline";
 
+afterEach(cleanup);
+
 const READINESS: Readiness = {
   status: "ready",
   mode: "runtime",
@@ -60,7 +62,7 @@ function liveInput(overrides: Partial<PipelineInput> = {}): PipelineInput {
       database_connected: true, schema_status: "compatible", schema_message: "ok",
       documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, bm25_ready: false, writable: true, provider: "deterministic",
     },
-    manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
+    manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], issuers: [], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
     registryCounts: {},
     jobs: [],
     evaluationResults: 0,
@@ -93,7 +95,7 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
       live={input.live}
       busy={false}
       canOperateCorpus={input.live}
-      acquisition={{ registry: "sec", identifiers: "NVDA AMD", years: "2023 2024" }}
+      acquisition={{ identifiers: "NVDA AMD", years: "2023 2024" }}
       manifests={input.manifests}
       {...handlers}
       {...overrides}
@@ -142,7 +144,7 @@ describe("BuildPipeline", () => {
     for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
   });
 
-  afterEach(cleanup);
+
 
   it("points at the next stage and wires its primary action", () => {
     const handlers = renderPipeline(liveInput());
@@ -205,8 +207,23 @@ describe("BuildPipeline", () => {
 
     // A handler alone is not enough: the button only appears when a local operator is attached.
     renderPipeline(input, { databaseConnected: false, schemaStatus: "unavailable", schemaMessage: "db down", operationsAvailable: false, onRunOperation });
-    expect(screen.getByText("docker compose up -d db")).toBeInTheDocument();
+    expect(screen.getAllByText("rag-dev up --build -d").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Start database" })).toBeNull();
     expect(onRunOperation).toHaveBeenCalledTimes(1);
   });
+});
+
+it("keeps empty-schema setup explicit and rechecks after terminal work", () => {
+  const handlers = renderPipeline(liveInput(), { schemaStatus: "empty", databaseConnected: true, focusStage: "filings" });
+  expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("uv run python -m scripts.schema_status prepare");
+  expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+  expect(handlers.onDownload).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
+});
+
+it("opens canonical setup checks from the selected step diagnosis", () => {
+  renderPipeline(liveInput(), { databaseConnected: true, schemaStatus: "drifted", writable: true, focusStage: "index" });
+  fireEvent.click(screen.getByRole("button", { name: "Open setup checks" }));
+  expect(document.getElementById("pipeline-setup-checks")).toHaveAttribute("open");
+  expect(document.getElementById("pipeline-setup-checks")).toHaveFocus();
 });

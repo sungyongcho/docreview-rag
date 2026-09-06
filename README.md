@@ -535,6 +535,8 @@ Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 
 | `web-tests` | `npm test` | Run the Vitest component and client-contract suite. | no |
 | `web-typecheck` | `npm run typecheck` | Run TypeScript without emitting build output. | no |
 | `web-build` | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
+| `schema-check` | `.venv/bin/python -m scripts.schema_status check` | Inspect this checkout's local database schema without changing data. | no |
+| `schema-prepare` | `.venv/bin/python -m scripts.schema_status prepare` | Create schema objects only in an empty local database; preserve existing data. | required |
 | `db-start` | `docker compose --project-directory . -f docker/docker-compose.yml up -d db` | Start the local pgvector service and retain its existing volume. | required |
 | `db-stop` | `docker compose --project-directory . -f docker/docker-compose.yml stop db` | Stop the local database without deleting its volume. | required |
 | `app-start` | `docker compose --project-directory . -f docker/docker-compose.yml up --build -d app` | Build the local image and start the app with its database dependency. | required |

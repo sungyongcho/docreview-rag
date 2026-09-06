@@ -111,6 +111,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const [suites, setSuites] = useState<GoldenSuite[]>([]);
   const [suiteId, setSuiteId] = useState<SuiteId>(experimentDefaults.suite_id);
   const [jobs, setJobs] = useState<EvaluationJob[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(live);
+  const [jobsError, setJobsError] = useState("");
+  const jobsRequestRef = useRef(0);
   const [comparison, setComparison] = useState<EvaluationComparison | null>(null);
   const [busy, setBusy] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -143,6 +146,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const [mode, setMode] = useState<"quick" | "matrix">(experimentDefaults.mode);
   const [chunkTargets, setChunkTargets] = useState("1024 2048");
   const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
+  const [resultError, setResultError] = useState("");
   const [resultDetail, setResultDetail] = useState<EvaluationResultDetail | null>(null);
   const [snapshots, setSnapshots] = useState<PublishedSnapshot[]>([]);
   const [snapshotIds, setSnapshotIds] = useState<[number | null, number | null]>([experimentDefaults.baseline_snapshot_id, experimentDefaults.snapshot_id]);
@@ -208,12 +212,25 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   }, [goldenCaseJson]);
 
 
+  async function refreshJobs() {
+    const requestId = ++jobsRequestRef.current;
+    setJobsLoading(true); setJobsError("");
+    try {
+      const rows = await getEvaluationJobs();
+      if (requestId === jobsRequestRef.current) setJobs(Array.isArray(rows) ? rows : []);
+    } catch (reason) {
+      if (requestId === jobsRequestRef.current) setJobsError(reason instanceof Error ? reason.message : t("Evaluations could not be loaded."));
+    } finally {
+      if (requestId === jobsRequestRef.current) setJobsLoading(false);
+    }
+  }
+
   async function refresh() {
     if (!live) return;
+    void refreshJobs();
     try {
-      const [suiteRows, jobRows, snapshotRows] = await Promise.all([getGoldenSuites(), getEvaluationJobs(), getAdminSnapshots()]);
+      const [suiteRows, snapshotRows] = await Promise.all([getGoldenSuites(), getAdminSnapshots()]);
       setSuites(Array.isArray(suiteRows) ? suiteRows : []);
-      setJobs(Array.isArray(jobRows) ? jobRows : []);
       setSnapshots(Array.isArray(snapshotRows) ? snapshotRows : []);
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : t("Refresh failed."), "error", "measure-refresh");
@@ -225,7 +242,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   }, [live]);
   useEffect(() => {
     if (!live) return;
-    void getEvaluationJobs().then((rows) => setJobs(Array.isArray(rows) ? rows : [])).catch(() => undefined);
+    void refreshJobs();
   }, [live, jobBoard]);
   useEffect(() => {
     if (!live) void getPublishedSnapshots().then((rows) => setSnapshots(Array.isArray(rows) ? rows : [])).catch(() => undefined);
@@ -254,7 +271,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     if (!live || focusResultId === selectedResultId) return;
     if (focusResultId === null) { resultRequestRef.current += 1; setSelectedResultId(null); setResultDetail(null); return; }
     const job = jobs.find((item) => item.result_ids.includes(focusResultId));
-    if (job) setSelectedJobId(job.job_id);
+    setSelectedJobId(job?.job_id ?? null);
     void openResult(focusResultId);
   }, [live, focusResultId]);
 
@@ -298,12 +315,15 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     if (!live) return;
     const requestId = ++resultRequestRef.current;
     selectResult(resultId);
-    setResultDetail(null);
+    setResultDetail(null); setResultError("");
     try {
       const detail = await getEvaluationResult(resultId);
       if (requestId === resultRequestRef.current) setResultDetail(detail);
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Evaluation detail could not be loaded."), "error", "evaluation-detail");
+      if (requestId !== resultRequestRef.current) return;
+      const message = reason instanceof Error ? reason.message : t("Evaluation detail could not be loaded.");
+      setResultError(message);
+      notify(message, "error", "evaluation-detail");
     }
   }
 
@@ -433,7 +453,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const goldenReadOnly = !activeGoldenRevision || activeGoldenRevision.status === "published";
   const goldenScoreResult = resultDetail?.suite === suiteId ? resultDetail : null;
   const canRun = live && ready && !!selectedSuite?.source_ready;
-  const selectedJob = jobs.find((job) => job.job_id === selectedJobId) ?? null;
+  const selectedJob = jobs.find((job) => job.job_id === selectedJobId) ?? jobs.find((job) => job.result_ids.includes(selectedResultId ?? -1)) ?? null;
   const selectedOperatorJob = jobBoard.jobs.find((job) => job.job_id === selectedJobId);
   const baselineJob = jobs.find((job) => job.result_ids.includes(compareIds[0] ?? -1));
   const candidateJob = jobs.find((job) => job.result_ids.includes(compareIds[1] ?? -1));
@@ -517,12 +537,17 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       <RetainedPanel active={tab === "runs"}>{live ? <div className="panel-stack run-workspace evaluation-runs">
         <section className="surface">
           <div className="surface-heading"><div><h2 data-help="measure.runs.results">{t("Evaluation runs")}</h2><p className="helper">{t("Select a run to inspect its progress, settings, and recorded results.")}</p></div><button className="button primary" type="button" onClick={() => setSetupOpen(true)}><Plus size={15} />{t("New evaluation")}</button></div>
+          {selectedResultId !== null ? <button className="button" type="button" onClick={() => { resultRequestRef.current += 1; selectResult(null); setSelectedJobId(null); setResultDetail(null); setResultError(""); }}>{t("Back to evaluations")}</button> : <>
+          {jobsLoading && <p role="status">{t("Loading evaluations…")}</p>}
+          {jobsError && <div role="alert" className="notice error"><p>{t("Evaluations could not be loaded.")}</p><p>{jobsError}</p><button className="button" type="button" onClick={() => void refreshJobs()}>{t("Retry")}</button></div>}
           <div className="evaluation-run-list">{jobs.map((job) => <article className={`job-row ${selectedJobId === job.job_id ? "selected" : ""}`} key={job.job_id}>
             <div className="job-select"><input type="radio" name="evaluation-result" aria-label={t("Select {p0}", { p0: job.job_id })} disabled={job.status !== "succeeded" || !job.result_id} checked={selectedResultId !== null && selectedResultId === job.result_id} onChange={() => chooseJob(job)} /><button className="row-detail" type="button" aria-pressed={selectedJobId === job.job_id} onClick={() => chooseJob(job)}><strong>{job.request.suite_id} · {t(job.request.mode)}</strong><p>{job.message}</p></button></div>
             <div className="evaluation-run-state"><span className={`job-status ${job.status}`}>{t(job.status)}</span><small>{job.total ? `${job.current} / ${job.total}` : t(job.stage)}</small><time dateTime={job.created_at}>{new Date(job.created_at).toLocaleString(locale)}</time></div>
           </article>)}</div>
-          {!jobs.length && <div className="empty-state"><Beaker size={24} /><p>{t("No evaluations yet. Create a new evaluation when your dataset and index are ready.")}</p></div>}
+          {!jobsLoading && !jobsError && !jobs.length && <div className="empty-state"><Beaker size={24} /><p>{t("No evaluations yet. Create a new evaluation when your dataset and index are ready.")}</p></div>}
+          </>}
         </section>
+        {selectedResultId !== null && !resultDetail && <section className="surface"><h2>{t("Result details")} · #{selectedResultId}</h2>{resultError ? <div role="alert" className="notice error"><p>{t("Evaluation detail could not be loaded.")}</p><p>{resultError}</p><button className="button" type="button" onClick={() => void openResult(selectedResultId)}>{t("Retry")}</button></div> : <p role="status">{t("Loading evaluation result…")}</p>}</section>}
         {selectedJob && <section className="surface evaluation-job-detail" aria-live="polite"><div className="surface-heading"><div><p className="eyebrow">{t("Selected evaluation")}</p><h2>{selectedJob.request.suite_id}</h2></div><span className={`job-status ${selectedOperatorJob?.status ?? selectedJob.status}`}>{t(selectedOperatorJob?.status ?? selectedJob.status)}</span></div>
           <dl className="evaluation-metadata"><div><dt>{t("Job ID")}</dt><dd><code>{selectedJob.job_id}</code></dd></div><div><dt>{t("Golden revision")}</dt><dd>{selectedJob.request.golden_revision_id ? `#${selectedJob.request.golden_revision_id}` : t("Canonical JSON")}</dd></div><div><dt>{t("Retrieval profile")}</dt><dd>{profileSummary(selectedJob.request.profile ?? DEFAULT_PROFILE, locale)}</dd></div><div><dt>{t("Run mode")}</dt><dd>{t(selectedJob.request.mode)}</dd></div></dl>
           <p>{selectedOperatorJob?.message ?? selectedJob.message}</p>
@@ -534,6 +559,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
         </section>}
         {resultDetail && <section className="surface detail-panel" data-help="measure.runs.result_detail">
           <div className="surface-heading"><h2>{t("Result details")} · #{resultDetail.result_id}</h2><div className="action-row"><button className="button" type="button" data-help="measure.runs.use_selected" disabled={selectedResultId === null} onClick={applySelectedResult}>{t("Use selected set")}</button>{selectedJob?.baseline_id && <button className="button" type="button" onClick={() => void loadComparison(resultDetail.result_id, selectedJob.baseline_id!)}>{t("Compare")}</button>}</div></div>
+          <p className="helper">{resultDetail.suite} · <time dateTime={resultDetail.created_at}>{new Date(resultDetail.created_at).toLocaleString(locale)}</time></p>
           <div className="metric-grid compact">{Object.entries(resultDetail.metrics).map(([name, value]) => <Metric key={name} icon={<Beaker />} label={name} value={value.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })} />)}</div>
           <details><summary>{t("Recorded configuration")}</summary><pre>{JSON.stringify(resultDetail.config, null, 2)}</pre></details><h3>{t("Cases")}</h3>{resultDetail.cases.slice(0, 10).map((item) => <article className="case-row" key={item.case_id}><div><strong>{item.case_id}</strong><p>{item.question}</p></div><span>{item.first_relevant_rank ? t("rank {p0}", { p0: item.first_relevant_rank }) : t("miss")}</span></article>)}
           <div className="evaluation-save"><label>{t("Snapshot label")}<input value={snapshotLabel} onChange={(event) => setSnapshotLabel(event.target.value)} placeholder={t("BM25 tuned baseline")} /></label><button className="button" type="button" data-help="measure.snapshots.freeze" title={locale === "ko" ? "개발 모드 전용" : "DEV only"} disabled={selectedResultId === null || !snapshotLabel.trim()} onClick={() => void freezeSnapshot()}>{t("Save result as snapshot")}<span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span></button></div>
