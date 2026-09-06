@@ -227,7 +227,7 @@ it("opens canonical setup checks from the selected step diagnosis", () => {
   renderPipeline(liveInput(), { databaseConnected: true, schemaStatus: "drifted", writable: true, focusStage: "index" });
   fireEvent.click(screen.getByRole("button", { name: "Open setup checks" }));
   expect(document.getElementById("pipeline-setup-checks")).toHaveAttribute("open");
-  expect(document.getElementById("pipeline-setup-checks")).toHaveFocus();
+  expect(document.querySelector("#pipeline-setup-checks > summary")).toHaveFocus();
 });
 
 it.each(["en", "ko"])("contains drift detail only inside the localized notice (%s)", (locale) => {

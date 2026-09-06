@@ -92,6 +92,13 @@ function isApiDown(pipeline: Pipeline): boolean {
   return pipeline.stages.some((stage) => stage.status === "unknown" && stage.statusDetail === "API unavailable");
 }
 
+/** Move focus to the disclosure's summary: the details element renders as `display: contents` and has no box to focus. */
+function focusSetupSummary(setup: HTMLDetailsElement, scroll = false): void {
+  const target = setup.querySelector<HTMLElement>("summary") ?? setup;
+  target.focus();
+  if (scroll) target.scrollIntoView?.({ block: "nearest" });
+}
+
 export function BuildPipeline(props: BuildPipelineProps) {
   const { t, locale } = useI18n();
   const { pipeline } = props;
@@ -105,7 +112,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
   useEffect(() => {
     if (focusId === "setup") {
       const setup = document.getElementById("pipeline-setup-checks") as HTMLDetailsElement | null;
-      if (setup) { setup.open = true; setup.focus(); }
+      if (setup) { setup.open = true; focusSetupSummary(setup); }
     } else if (focusId) setSelectedId(focusId);
   }, [focusId]);
 
@@ -141,7 +148,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
   function navigatePreparation(target: NonNullable<Diagnosis["returnTo"]>) {
     if (target === "setup") {
       const setup = document.getElementById("pipeline-setup-checks") as HTMLDetailsElement | null;
-      if (setup) { setup.open = true; setup.focus(); setup.scrollIntoView?.({ block: "nearest" }); }
+      if (setup) { setup.open = true; focusSetupSummary(setup, true); }
     } else {
       setSelectedId(target);
     }
@@ -274,14 +281,13 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
   }
 
   return (
-    <details id="pipeline-setup-checks" tabIndex={-1} className="runtime-disclosure" data-help="build.runtime">
-      <summary><Activity size={15} /><span>{t(apiDown ? "API unavailable" : problems.length ? "Runtime needs attention" : known ? "Runtime connected" : "Checking runtime…")}</span></summary>
+    <details id="pipeline-setup-checks" className="runtime-disclosure" data-help="build.runtime">
+      <summary tabIndex={0}><Activity size={15} /><span>{t(apiDown ? "API unavailable" : problems.length ? "Runtime needs attention" : known ? "Runtime connected" : "Checking runtime…")}</span></summary>
       <div className="runtime-strip">
       <div className="runtime-items">{items.map((item, index) => <Fragment key={t(item)}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}</div>
       <div className="runtime-actions">
-        {live && <button className="button ghost" type="button" onClick={() => void onRefresh()}>{t("Check schema")}</button>}
+        {live && <button className="button ghost" type="button" onClick={() => void onRefresh()}><RefreshCw size={14} />{t("Check schema")}</button>}
         {live && onRunOperation && !problems.length && <button className="button ghost" type="button" onClick={() => onRunOperation("app-start")}>{t("Rebuild app")}</button>}
-        {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button>}
       </div>
       {problems.map((problem) => (
         <div className="notice error" role="alert" key={problem.fix || problem.reason}>

@@ -56,10 +56,10 @@ button:disabled { cursor: not-allowed; }
 .table-wrap { scrollbar-gutter: stable; padding-bottom: 8px; }
 table th { background: var(--surface-2); }
 table td { line-height: 1.55; }
-.pipeline-toolbar { display: flex; justify-content: flex-end; margin-top: -12px; min-height: 32px; }
-.runtime-disclosure { position: relative; font-size: 12px; z-index: 4; }
+.pipeline-toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; margin-top: -12px; min-height: 32px; }
+.runtime-disclosure { display: contents; font-size: 12px; }
 .runtime-disclosure > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; list-style: none; color: var(--muted); }
-.runtime-disclosure .runtime-strip { position: absolute; right: 0; top: calc(100% + 6px); width: min(420px, 80vw); display: grid; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: 0 12px 35px #0002; }
+.runtime-disclosure .runtime-strip { flex-basis: 100%; display: grid; margin: 0; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .runtime-strip .runtime-items { display: grid; gap: 8px; }
 .runtime-items .sep { display: none; }
 .runtime-readonly { color: var(--muted); font-size: 12px; }
@@ -243,7 +243,7 @@ table td { line-height: 1.55; }
 .wipe-danger-zone > details[open] .wipe-disclosure-arrow { transform: rotate(180deg); }
 .wipe-disclosure-body { margin-top: 10px; padding: 16px 18px; border: 1px solid color-mix(in srgb, var(--bad) 25%, var(--border)); border-radius: 10px; background: var(--surface); }
 .wipe-disclosure-body > p:first-child { margin-top: 0; }
-.pipeline-toolbar .runtime-disclosure { margin-left: auto; flex: none; }
+.pipeline-toolbar .runtime-disclosure > summary { margin-left: auto; flex: none; }
 @media (max-width:560px) { .pipeline-toolbar { flex-wrap: wrap; gap: 8px; }.pipeline-toolbar .wipe-danger-zone > details > summary { min-height: 44px; } }
 .wipe-availability { margin-top: 12px; font-size: 12px; line-height: 1.6; }
 .wipe-diagnosis { margin-top: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: 12px; }

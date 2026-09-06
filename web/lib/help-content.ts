@@ -214,7 +214,7 @@ const BUILD: HelpTopic[] = [
     body: [
       "Expand the compact runtime summary to inspect API, database, schema, data directory access, and answer model readiness.",
       "A problem turns into a notice with its fix: the command line to run, or Operations buttons (Start database, Plan and Apply migrations, Rebuild app) when a local operator is attached.",
-      "Refresh re-reads readiness and the administrator corpus snapshot; the public build shows a read-only label instead.",
+      "Check schema re-reads readiness and the administrator corpus snapshot; the public build shows a read-only label instead.",
     ],
     seeAlso: ["build.next-step", "system.status"],
   },
