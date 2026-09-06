@@ -763,9 +763,7 @@ select.chip { appearance: auto; padding-right: 6px; }
 .topbar > .topbar-status { flex-direction:row; }
 
 /* Five phases represent received events, never simulated elapsed-time progress. */
-.composer-progress { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 10px 0 12px; background: var(--surface); }
-.composer-progress > button { margin-top: 8px; font-size: 11px; padding: 4px 8px; }
-.review-progress { --phase-green: light-dark(#17633c, #5fe09b); display: grid; gap: 10px; width: 100%; }
+.review-progress { --phase-green: light-dark(#17633c, #5fe09b); --phase-warning: light-dark(#795500, #e7bc64); display: grid; gap: 10px; width: 100%; }
 .review-progress-heading { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .review-progress-heading > span { color: var(--muted); display: inline-flex; gap: 5px; align-items: center; font-size: 11px; }
 .review-progress-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; font-size: 11px; }
@@ -777,6 +775,7 @@ select.chip { appearance: auto; padding-right: 6px; }
 .review-progress-steps li.done .review-phase-icon, .review-progress-steps li.current .review-phase-icon { color: var(--phase-green); }
 .review-progress-steps li.current { box-shadow: inset 0 2px 0 var(--phase-green); }
 .review-progress-steps li.current .review-phase-icon svg { animation: phase-spin 1.2s linear infinite; }
+.review-progress-steps li.skipped { border-color: var(--phase-warning); color: var(--phase-warning); }
 .review-progress-steps li.failed { border-color: var(--bad); color: var(--bad); }
 .review-progress-steps li.cancelled { border-color: #b88b2e; color: light-dark(#795500, #e7bc64); }
 .review-execution-summary { margin: 16px 0; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
@@ -784,7 +783,7 @@ select.chip { appearance: auto; padding-right: 6px; }
 .review-execution-summary[open] > summary { margin-bottom: 14px; }
 @keyframes phase-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .review-progress-steps li.current .review-phase-icon svg { animation: none; } }
-@media (max-width: 800px) { .review-progress-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }.review-progress-steps small { display: none; }.composer-progress { padding: 10px; } }
+@media (max-width: 800px) { .review-progress-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }.review-progress-steps small { display: none; } }
 @media (max-width: 480px) { .review-progress-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pipeline-reference { margin: 0 20px 20px; border-top: 1px solid var(--border); padding-top: 16px; font-size: 13px; line-height: 1.65; }
 .pipeline-reference summary { cursor: pointer; font-weight: 600; }
@@ -802,3 +801,6 @@ select.chip { appearance: auto; padding-right: 6px; }
 .welcome-links a { color: var(--muted); }
 @media (max-width:700px) { .first-review-path { flex-direction: column; gap: 8px; }.first-review-path li { max-width: none; }.step-design { grid-template-columns: 1fr; gap: 12px; } }
 .data-origin { font-size: 11px; color: var(--muted); border-left: 2px solid var(--border); padding-left: 9px; margin: 12px 0 6px; }
+
+.review-execution-summary > button { margin-top: 10px; }
+.message.pending .review-execution-summary { margin-top: 0; }

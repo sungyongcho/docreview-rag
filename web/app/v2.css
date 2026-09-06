@@ -306,3 +306,8 @@ table td { line-height: 1.55; }
 .evidence-actions button[data-action="pin"][aria-pressed="true"] { border-color: var(--good); }
 .evidence-hit.pinned { border-left: 2px solid var(--good); }.evidence-hit.excluded { border-left: 2px solid var(--bad); }
 @media (max-width:560px) { .evidence-actions button, .evidence-card-toggle { min-height: 44px; } }
+
+/* Intentional skips remain readable when compact progress hides ordinary details. */
+.review-progress-steps li.skipped { border-color: var(--phase-warning); color: var(--phase-warning); }
+.review-progress-steps li.skipped .review-phase-icon { color: var(--phase-warning); }
+.review-progress-steps small.review-phase-reason { display: block; color: var(--phase-warning); font-size: 11px; }

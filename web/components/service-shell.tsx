@@ -143,7 +143,11 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const ragTrigger = useRef<HTMLButtonElement>(null);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [progress, setProgress] = useState<ReviewProgressState | null>(null);
+  const [activeReview, setActiveReview] = useState<{ conversationId: string; messageId: string } | null>(null);
+  const currentConversationId = useRef(activeId);
+  currentConversationId.current = activeId;
+  const messagesViewport = useRef<HTMLDivElement>(null);
+  const followReview = useRef(true);
   /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error; cleared by the next successful review. */
   const [resetAt, setResetAt] = useState<string | null>(null);
   /** Build stage card to scroll into view once the Build workspace has rendered. */
@@ -199,9 +203,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       if (!["dev", "prod"].includes(value.environment)) { setCapabilities(null); return; }
       if (!initialized.current) {
         initialized.current = true;
-        const restored = loadConversations();
+        const restored = loadConversations().map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
         const initial = restored.length ? restored : [newConversation(adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
-        setConversations(initial);
+        setConversations(saveConversations(initial));
         setActiveId(initial[0].id);
       }
       setCapabilities(adminBuild ? value : {
@@ -228,6 +232,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
     [activeId, conversations],
   );
+  useLayoutEffect(() => {
+    if (view !== "review" || !activeReview || activeReview.conversationId !== active?.id || !followReview.current) return;
+    const element = messagesViewport.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [active?.messages, active?.id, activeReview, view]);
+
   const activeSessionProfile = active?.profile ?? profile;
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
   const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt });
@@ -427,13 +437,18 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     )));
   }
 
-  /** Append one message to the conversation a review started in, even if the user moved on. */
-  function appendMessage(conversationId: string, message: ChatMessage) {
+  /** Append submitted messages atomically to their original conversation. */
+  function appendMessage(conversationId: string, added: ChatMessage | ChatMessage[]) {
     setConversations((current) => saveConversations(current.map((conversation) => {
       if (conversation.id !== conversationId) return conversation;
-      const messages = [...conversation.messages, message];
+      const messages = [...conversation.messages, ...(Array.isArray(added) ? added : [added])];
       return { ...conversation, title: conversationTitle(messages), updatedAt: new Date().toISOString(), messages };
     })));
+  }
+
+  /** Update one reserved assistant identity without overwriting concurrent profile or evidence edits. */
+  function updateMessage(conversationId: string, messageId: string, patch: Partial<Omit<ChatMessage, "id" | "role">>) {
+    setConversations((current) => saveConversations(current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: new Date().toISOString(), messages: conversation.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message) } : conversation)));
   }
 
   /** One-off read of the reset time after a `daily_cost_limit` error so the banner can say when answers resume. */
@@ -451,23 +466,25 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     setBusy(true);
     const requestStarted = Date.now();
     let execution = initialReviewProgress(false, 0, (active.profile ?? profile).corpus_scope);
-    let retainFailure = false;
-    setProgress(execution);
+
     reviewAbort.current?.abort();
     const controller = new AbortController();
     reviewAbort.current = controller;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: question };
     const conversationId = active.id;
+    const assistantId = crypto.randomUUID();
     const pending = [...active.messages, userMessage];
+    setActiveReview({ conversationId, messageId: assistantId });
+    followReview.current = true;
     let preparedEvidence: EvidenceHit[] = [];
     const selectedProfile = { ...(active.profile ?? profile), local_model: localModel };
-    appendMessage(conversationId, userMessage);
+    appendMessage(conversationId, [userMessage, { id: assistantId, role: "assistant", text: "", pending: true, execution, question }]);
     try {
       let evidence: EvidenceHit[] = [];
       let candidateToken: string | undefined;
       const history = pending
         .slice(0, -1)
-        .filter((message) => message.role === "user" || message.role === "assistant")
+        .filter((message) => !message.pending && message.text.trim() && (message.role === "user" || message.role === "assistant"))
         .slice(-6)
         .map((message) => ({ role: message.role, text: message.text }));
       const response = await streamReview(
@@ -475,23 +492,24 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         selectedProfile,
         null,
         history,
-        (event) => { execution = reviewProgressFromEvent(event, execution); setProgress(execution); },
+        (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
         controller.signal,
         (payload) => {
+          if (controller.signal.aborted) return;
           evidence = payload.candidates.length ? payload.candidates : payload.results;
           preparedEvidence = evidence;
           candidateToken = payload.candidate_token ?? undefined;
           execution = candidateProgress(execution, evidence.length, payload.resolved_scope);
-          setProgress(execution);
+          updateMessage(conversationId, assistantId, { execution });
         },
       );
+      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
       const answer = terminalAnswer(response);
       const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution);
+      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
       setResetAt(null);
-      const assistant: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
+      const assistant: Partial<ChatMessage> = {
+        pending: false,
         text: answer,
         execution,
         performance: terminal.execution as Record<string, unknown> | undefined,
@@ -506,13 +524,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         pinnedChunkIds: [],
         excludedChunkIds: [],
       };
-      appendMessage(conversationId, assistant);
+      updateMessage(conversationId, assistantId, assistant);
     } catch (reason) {
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       if (isInfrastructureFailure(reason)) {
-        retainFailure = true;
-        setProgress(execution);
-        setQuery(question);
+        updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") });
+        if (currentConversationId.current === conversationId) setQuery((current) => current || question);
         await runtimeHealth.check();
         return;
       }
@@ -530,6 +547,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       }
       noteDailyBudget(reason);
       const message =
+        controller.signal.aborted ? t("Request cancelled") :
         reason instanceof ApiError && reason.code === "daily_cost_limit"
           ? "The daily answer budget is exhausted. Retrieved evidence is shown without an LLM answer."
           : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
@@ -537,9 +555,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           : reason instanceof Error
             ? reason.message
             : "The review could not be completed.";
-      appendMessage(conversationId, {
-        id: crypto.randomUUID(),
-        role: "assistant",
+      updateMessage(conversationId, assistantId, {
+        pending: false,
         text: message,
         execution,
         evidence,
@@ -547,7 +564,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       });
     } finally {
       setBusy(false);
-      if (!retainFailure) setProgress(null);
+      setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
     }
   }
@@ -625,7 +642,10 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     const selected = (message.evidence ?? []).filter((hit) => !(message.excludedChunkIds ?? []).includes(hit.chunk_id)).length;
     const requestStarted = Date.now();
     let execution = initialReviewProgress(true, selected, (active.profile ?? profile).corpus_scope);
-    setProgress(execution);
+    const assistantId = crypto.randomUUID();
+    setActiveReview({ conversationId, messageId: assistantId });
+    followReview.current = true;
+    appendMessage(conversationId, { id: assistantId, role: "assistant", text: "", pending: true, execution, question: message.question });
     const controller = new AbortController();
     reviewAbort.current = controller;
     try {
@@ -638,15 +658,15 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           excluded: message.excludedChunkIds ?? [],
         },
         active.messages.slice(-(active.profile ?? profile).prompt_policy.history_turns).map((item) => ({ role: item.role, text: item.text })),
-        (event) => { execution = reviewProgressFromEvent(event, execution); setProgress(execution); },
+        (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
         controller.signal,
       );
+      if (controller.signal.aborted) throw new DOMException("Request cancelled", "AbortError");
       setResetAt(null);
       const terminal = (response.run ?? response) as Record<string, unknown>;
-      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution);
-      appendMessage(conversationId, {
-        id: crypto.randomUUID(),
-        role: "assistant",
+      execution = finishReviewProgress(execution, terminal.failure ? "failed" : "completed", Date.now() - requestStarted, terminal.execution, terminal.report);
+      updateMessage(conversationId, assistantId, {
+        pending: false,
         execution,
         performance: terminal.execution as Record<string, unknown> | undefined,
         text: terminalAnswer(response),
@@ -659,12 +679,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       });
     } catch (reason) {
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
-      appendMessage(conversationId, { id: crypto.randomUUID(), role: "assistant", text: reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
+      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
       noteDailyBudget(reason);
       notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review");
     } finally {
       setBusy(false);
-      setProgress(null);
+      setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
     }
   }
@@ -800,7 +820,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         </header>
 
         <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
-          <div className="messages">
+          <div className="messages" ref={messagesViewport} onScroll={(event) => { const element = event.currentTarget; followReview.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
             <div className="messages-inner">
               {!active?.messages.length && (
                 <div className="welcome">
@@ -831,6 +851,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   message={message}
                   latestEvidence={message.id === latestEvidenceId}
                   busy={busy || sendBlocked}
+                  onStop={message.pending && activeReview?.conversationId === active?.id && activeReview.messageId === message.id ? () => reviewAbort.current?.abort() : undefined}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
                   onOpenFix={openSettings}
@@ -857,7 +878,6 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
             />
 
-            {progress && <div className="composer-progress"><ReviewProgressSteps state={progress} /><button className="button ghost" type="button" onClick={() => busy ? reviewAbort.current?.abort() : setProgress(null)}>{t(busy ? "Stop request" : "Dismiss progress")}</button></div>}
             <label className="composer">
               <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
@@ -946,6 +966,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
 interface ReviewMessageProps {
   message: ChatMessage;
+  onStop?: () => void;
   /** Opens Settings at the category that owns the limit this run hit. */
   onOpenFix?: (category: "limits" | "runtime") => void;
   /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
@@ -966,17 +987,18 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
+function ReviewMessage({ message, latestEvidence, busy, onStop, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
   const { t, locale } = useI18n();
+  const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
   const notInDocs = message.evidenceLabel === "Related evidence — not direct support";
   return (
-    <article className={`message ${message.role}`}>
+    <article className={`message ${message.role}${message.pending ? " pending" : ""}`} data-message-id={message.id} aria-busy={message.pending || undefined}>
       <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
-        {message.role === "assistant" ? <MarkdownMessage>{message.text}</MarkdownMessage> : <p>{message.text}</p>}
-        {message.execution && <><details className="review-execution-summary"><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} /></details><ExecutionPerformance data={message.performance} state={message.execution} /></>}
+        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{!message.pending && <ExecutionPerformance data={message.performance} state={message.execution} />}</>}
         {message.evidence?.length ? (
           <>
             {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}

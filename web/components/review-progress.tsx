@@ -55,6 +55,8 @@ export function candidateProgress(previous: ReviewProgressState, evidence: numbe
 /** Only actual observed phases become complete; skipped phases stay explicit. */
 export function phaseStatus(state: ReviewProgressState, index: number): string {
   const current = currentStepIndex(state.node);
+  if (state.outcome === "completed" && state.skippedNodes?.[REVIEW_STEPS[index]?.node]) return "skipped";
+  const stopped = state.outcome === "failed" || state.outcome === "cancelled";
   const seen = new Set((state.observed ?? [state.node]).map(currentStepIndex));
   if (state.completedNodes) {
     const done = state.completedNodes.some((node) => currentStepIndex(node) === index);
@@ -62,19 +64,42 @@ export function phaseStatus(state: ReviewProgressState, index: number): string {
     if (index === current && (state.outcome === "failed" || state.outcome === "cancelled")) return state.outcome;
     if (state.activeNode && currentStepIndex(state.activeNode) === index) return "current";
     if (done) return "done";
+    if (stopped) return "not-run";
     return state.node === "waiting" && index === 0 ? "waiting" : "pending";
   }
   if (state.outcome === "completed") return seen.has(index) ? "done" : "not-run";
   if (index === current) return state.outcome === "failed" || state.outcome === "cancelled" ? state.outcome : state.node === "waiting" ? "waiting" : "current";
-  return index < current && seen.has(index) ? "done" : "pending";
+  return index < current && seen.has(index) ? "done" : stopped ? "not-run" : "pending";
 }
 
-export function finishReviewProgress(state: ReviewProgressState, outcome: "completed" | "failed" | "cancelled", elapsedMs: number, performance?: unknown): ReviewProgressState {
-  const data = performance && typeof performance === "object" ? performance as Record<string, unknown> : undefined;
-  const effective = data?.effective_settings && typeof data.effective_settings === "object" ? data.effective_settings as Record<string, unknown> : undefined;
-  state = { ...state, resolvedScope: resolvedScopeFromServer(effective?.resolved_scope ?? data?.resolved_scope) ?? state.resolvedScope };
+/** Apply terminal evidence without inferring execution from the verdict alone. */
+export function finishReviewProgress(state: ReviewProgressState, outcome: "completed" | "failed" | "cancelled", elapsedMs: number, performance?: unknown, report?: unknown): ReviewProgressState {
+  const data = objectRecord(performance);
+  const effective = objectRecord(data?.effective_settings);
+  state = { ...state, resolvedScope: resolvedScopeFromServer(effective?.resolved_scope ?? data?.resolved_scope) ?? state.resolvedScope, skippedNodes: undefined };
+  const stages = Array.isArray(data?.stages) ? data.stages.map(objectRecord).filter((value) => value && ["gate", "route", "retrieve", "chat", "grade", "check", "report"].includes(String(value.node)) && value.phase !== "start" && ["completed", "failed"].includes(String(value.status))) : [];
+  if (stages.length) {
+    let recorded: ReviewProgressState = { ...state, node: "waiting", observed: [], completedNodes: [], activeNode: null, retries: 0 };
+    for (const stage of stages) recorded = reviewProgressFromEvent({ node: stage!.node as ReviewProgress["node"], phase: "end", status: stage!.status as "completed" | "failed" }, recorded);
+    state = { ...state, node: recorded.node, observed: recorded.observed, completedNodes: recorded.completedNodes, activeNode: null, retries: recorded.retries };
+  }
   if (outcome !== "completed") return { ...state, outcome, elapsedMs };
+  const result = objectRecord(report);
+  const results = Array.isArray(data?.stage_results) ? data.stage_results.map(objectRecord).filter((value) => value !== undefined) : [];
+  const reported = results.filter((value) => value?.node === "report").at(-1);
+  const label = result?.label ?? objectRecord(reported?.decision)?.label;
+  const reasons = [result?.reasons, ...results.filter((value) => value?.node === "grade" || value?.node === "report").map((value) => value?.reasons)].flatMap((value) => Array.isArray(value) ? value : []);
+  const threshold = reasons.map(objectRecord).find((reason) => reason?.code === "relevance_below_threshold");
+  const checkObserved = (state.observed ?? []).includes("check") || (state.completedNodes ?? []).includes("check");
+  if (label === "NOT_IN_DOCS" && threshold && !checkObserved) {
+    state = { ...state, skippedNodes: { check: "relevance_below_threshold" }, evidence: typeof threshold.candidate_count === "number" ? threshold.candidate_count : state.evidence, relevant: typeof threshold.relevant_count === "number" ? threshold.relevant_count : state.relevant };
+  }
   return { ...state, node: "report", activeNode: null, completedNodes: state.completedNodes ? [...new Set([...state.completedNodes, "report" as const])] : undefined, observed: [...new Set([...(state.observed ?? []), "report" as const])], outcome, elapsedMs };
+}
+
+/** Accept only JSON objects at the optional historical execution boundary. */
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 /** Read only actual applied filters, never infer routing from the question or selected mode. */
@@ -129,8 +154,8 @@ export function ReviewProgressSteps({ state }: { state: ReviewProgressState }) {
       {REVIEW_STEPS.map((step, index) => {
         const phase = phaseStatus(state, index);
         return <li key={step.node} className={phase} aria-current={phase === "current" || phase === "waiting" ? "step" : undefined}>
-          <span className="review-phase-icon" aria-hidden="true">{phase === "done" ? <Check size={14} /> : phase === "current" ? <LoaderCircle size={14} /> : phase === "failed" || phase === "cancelled" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
-          <span><strong>{index + 1}. {t(step.label)}</strong><small>{t(phase === "not-run" ? "Not performed in this request" : step.detail)}</small></span>
+          <span className="review-phase-icon" aria-hidden="true">{phase === "done" ? <Check size={14} /> : phase === "current" ? <LoaderCircle size={14} /> : phase === "failed" || phase === "cancelled" || phase === "skipped" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
+          <span><strong>{index + 1}. {t(step.label)}</strong><small className={phase === "skipped" ? "review-phase-reason" : undefined}>{t(phase === "skipped" ? "Skipped: relevance threshold not met" : phase === "not-run" ? "Not performed in this request" : step.detail)}</small></span>
         </li>;
       })}
     </ol>}
