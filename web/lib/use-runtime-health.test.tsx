@@ -78,6 +78,8 @@ describe("useRuntimeHealth", () => {
     act(() => { void result.current.check(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(readinessRequests).toBe(2);
+    expect(result.current.kind).toBe("healthy");
+    expect(result.current.checking).toBe(true);
     rerender({ active: false });
     expect(pendingSignal?.aborted).toBe(true);
     await act(async () => {
@@ -146,11 +148,55 @@ describe("useRuntimeHealth", () => {
     expect(result.current.modalVisible).toBe(false);
   });
 
+  it("retains healthy state during a transient failure and clears waiting on recovery", async () => {
+    vi.useFakeTimers();
+    let failing = false;
+    vi.stubGlobal("fetch", vi.fn(async input => {
+      if (failing) throw new TypeError("temporary network failure");
+      return response(String(input).endsWith("/health") ? { status: "ok" } : READY);
+    }));
+    const { result } = renderHook(() => useRuntimeHealth());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    failing = true;
+    await act(async () => { await result.current.check(); });
+    expect(result.current.kind).toBe("healthy");
+    expect(result.current.modalVisible).toBe(false);
+    expect(result.current.waiting).toBe(true);
+    failing = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(result.current.waiting).toBe(false);
+    expect(result.current.kind).toBe("healthy");
+  });
+
+  it("uses cheap probes when readiness is slow and does not declare a live API down", async () => {
+    vi.useFakeTimers();
+    let readyCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async input => {
+      if (String(input).endsWith("/health")) return response({ status: "ok" });
+      readyCalls++;
+      throw new Error("readiness delayed");
+    }));
+    const { result } = renderHook(() => useRuntimeHealth());
+    await act(async () => { await vi.advanceTimersByTimeAsync(9_000); });
+    expect(readyCalls).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(24_000); });
+    expect(result.current.kind).not.toBe("api_down");
+    expect(result.current.waiting).toBe(true);
+    expect(readyCalls).toBeLessThan(5);
+    await act(async () => { window.dispatchEvent(new Event("offline")); await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.kind).not.toBe("api_down");
+    expect(result.current.waiting).toBe(true);
+  });
+
   it("treats an unreachable API as a non-dismissible modal issue", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     const { result } = renderHook(() => useRuntimeHealth());
-
-    await waitFor(() => expect(result.current.kind).toBe("api_down"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.modalVisible).toBe(false);
+    expect(result.current.waiting).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(21_000); });
+    expect(result.current.kind).toBe("api_down");
     expect(result.current.modalVisible).toBe(true);
     act(() => result.current.dismissWarning());
     expect(result.current.modalVisible).toBe(true);
