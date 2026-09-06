@@ -16,10 +16,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
 
-from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.admin_runtime import READINESS_STATUS_MAX_AGE_S, RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.runtime import RuntimeApiServices
 from app.config import Settings
+from app.corpus_admin import RuntimeCorpusAdminService
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
@@ -342,11 +343,23 @@ def create_release_app(
             daily_cost_reset_at_utc=cost_reset,
         )
 
-    async def default_readiness_probe() -> dict[str, Any]:
-        """Inspect runtime corpus state without creating or altering schema."""
-        from app.corpus_admin import RuntimeCorpusAdminService
+    fallback_corpus: RuntimeCorpusAdminService | None = None
 
-        return asdict(await RuntimeCorpusAdminService().snapshot())
+    async def default_readiness_probe() -> dict[str, Any]:
+        """Report corpus status without document rows, file scans or schema changes.
+
+        The live administrator service memoizes its status reading and knows whether
+        a job is running; a runtime without administration keeps one private service
+        instead of constructing a new one per poll.
+        """
+        nonlocal fallback_corpus
+        if admin_services is not None:
+            status = await admin_services.readiness_status()
+        else:
+            if fallback_corpus is None:
+                fallback_corpus = RuntimeCorpusAdminService()
+            status = await fallback_corpus.status(max_age_s=READINESS_STATUS_MAX_AGE_S)
+        return {"status": asdict(status)}
 
     @application.get(
         "/ready",

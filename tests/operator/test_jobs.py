@@ -13,7 +13,7 @@ from app.config import Settings, get_settings
 from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
 from app.db.models import OperatorJob
 from app.ingestion.progress import OperationProgress
-from app.operator.jobs import JobStore, ProgressPersister
+from app.operator.jobs import JobExecutionCoordinator, JobStore, ProgressPersister
 from tests.live_postgres import live_postgres_unavailable
 
 
@@ -209,3 +209,23 @@ def test_corpus_worker_persists_progress_and_terminal_state(tmp_path):
     reachable, detail = asyncio.run(_exercise_corpus_worker(tmp_path))
     if not reachable:
         live_postgres_unavailable(detail)
+
+
+def test_coordinator_is_busy_while_a_ticket_is_pending_or_active() -> None:
+    """Report busy from registration until the turn ends, and idle after a cancellation."""
+
+    async def scenario() -> None:
+        """Walk one ticket through registration, its turn and a cancelled successor."""
+        coordinator = JobExecutionCoordinator()
+        assert coordinator.busy is False
+        await coordinator.register("job-1", datetime.now(UTC))
+        assert coordinator.busy is True
+        async with coordinator.turn("job-1"):
+            assert coordinator.busy is True
+        assert coordinator.busy is False
+        await coordinator.register("job-2", datetime.now(UTC))
+        assert coordinator.busy is True
+        await coordinator.cancel("job-2")
+        assert coordinator.busy is False
+
+    asyncio.run(scenario())

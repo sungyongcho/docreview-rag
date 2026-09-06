@@ -6,7 +6,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from app.api.admin_runtime import RuntimeAdminApiServices
+from app.api.runtime import RuntimeApiServices
+from app.corpus_admin import CorpusStatus
 from app.operator.jobs import StoredJob
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
 def test_job_board_reads_history_without_revalidating_ingestion_arguments():
@@ -56,3 +59,46 @@ def test_document_detail_checks_schema_before_serializing():
         asyncio.run(service.document_detail("test"))
     assert error.value.error.code == "schema_not_ready"
     service._corpus.document_detail.assert_not_called()
+
+
+class _RecordingCorpus:
+    """Stand-in corpus service that records the reuse window each readiness read allowed."""
+
+    def __init__(self) -> None:
+        self.ages: list[float] = []
+
+    async def status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
+        """Return one fixed compatible status."""
+        self.ages.append(max_age_s)
+        return CorpusStatus(
+            database_connected=True,
+            schema_status="compatible",
+            schema_message="ok",
+            documents=1,
+            chunks=1,
+            embedded_chunks=1,
+            pending_embeddings=0,
+            bm25_ready=True,
+            writable=True,
+            provider="deterministic",
+        )
+
+
+def test_readiness_status_extends_max_age_while_a_job_is_registered() -> None:
+    """Readiness reuses a reading for 2 s normally and 10 s while a job holds or awaits its turn."""
+    corpus = _RecordingCorpus()
+    services = RuntimeAdminApiServices(
+        runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        corpus=corpus,  # type: ignore[arg-type]
+    )
+
+    async def scenario() -> None:
+        """Read readiness idle, with a registered job, and after its cancellation."""
+        await services.readiness_status()
+        await services._execution_coordinator.register("job-1", datetime.now(UTC))
+        await services.readiness_status()
+        await services._execution_coordinator.cancel("job-1")
+        await services.readiness_status()
+
+    asyncio.run(scenario())
+    assert corpus.ages == [2.0, 10.0, 2.0]

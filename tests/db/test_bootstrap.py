@@ -1,7 +1,7 @@
 """Database bootstrap ordering and schema-compatibility tests."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -182,3 +182,29 @@ def test_live_schema_check_passes_on_freshly_created_tables() -> None:
     reachable, detail = asyncio.run(_exercise_clean_schema(get_settings().database_url))
     if not reachable:
         live_postgres_unavailable(detail)
+
+
+def test_schema_drift_reads_all_present_tables_in_one_catalog_round_trip() -> None:
+    """Read present tables with one multi-column call and report only missing ORM columns."""
+    present = {table.name for table in Base.metadata.sorted_tables} - {"chunks"}
+    columns = {
+        (None, table.name): [
+            {"name": column.name}
+            for column in table.columns
+            if not (table.name == "documents" and column.name == "language")
+        ]
+        for table in Base.metadata.sorted_tables
+        if table.name in present
+    }
+    inspector = MagicMock()
+    inspector.get_table_names.return_value = sorted(present)
+    inspector.get_multi_columns.return_value = columns
+
+    with patch.object(bootstrap, "inspect", return_value=inspector):
+        drift = bootstrap._collect_schema_drift(MagicMock())
+
+    assert drift == {"documents": ["language"]}
+    inspector.get_table_names.assert_called_once()
+    inspector.get_multi_columns.assert_called_once()
+    assert set(inspector.get_multi_columns.call_args.kwargs["filter_names"]) == present
+    inspector.get_columns.assert_not_called()

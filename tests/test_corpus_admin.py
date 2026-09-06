@@ -898,3 +898,119 @@ def test_restored_embedding_usage_ledger_cannot_be_retried_or_read_as_a_command(
             await service.retry(row.job_id)
 
     asyncio.run(scenario())
+
+
+def _status_service(tmp_path, monkeypatch, *, tables=None):
+    """Build a service whose schema and count probes are counted and never load documents."""
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+    calls = {"schema": 0, "counts": 0}
+    present = tables if tables is not None else {"documents", "chunks", "bm25_corpus_stats"}
+
+    async def compatible():
+        """Report one compatible schema and count the measurement."""
+        calls["schema"] += 1
+        return "compatible", "ok", set(present)
+
+    async def counts(_tables):
+        """Report fixed counts and count the measurement."""
+        calls["counts"] += 1
+        return 3, 30, 30, True
+
+    async def documents(_tables):
+        """Fail if the status path ever loads document rows."""
+        raise AssertionError("status must not load document rows")
+
+    monkeypatch.setattr(service, "_schema_state", compatible)
+    monkeypatch.setattr(service, "_counts", counts)
+    monkeypatch.setattr(service, "_documents", documents)
+    return service, calls
+
+
+def test_status_reuses_a_fresh_probe_and_never_loads_document_rows(tmp_path, monkeypatch):
+    """Two status reads inside the window measure once and skip document rows entirely."""
+    service, calls = _status_service(tmp_path, monkeypatch)
+
+    async def scenario():
+        """Read the status twice within one two-second window."""
+        first = await service.status(max_age_s=2.0)
+        second = await service.status(max_age_s=2.0)
+        return first, second
+
+    first, second = asyncio.run(scenario())
+    assert (first.documents, first.chunks, first.embedded_chunks, first.bm25_ready) == (
+        3,
+        30,
+        30,
+        True,
+    )
+    assert first.pending_embeddings == 0
+    assert first.writable is True
+    assert second == first
+    assert calls == {"schema": 1, "counts": 1}
+
+
+def test_status_recomputes_after_the_max_age_and_on_invalidation(tmp_path, monkeypatch):
+    """A reading older than the window, an invalidation, or a zero window measures again."""
+    service, calls = _status_service(tmp_path, monkeypatch)
+    clock = {"now": 100.0}
+    monkeypatch.setattr(corpus_admin.time, "monotonic", lambda: clock["now"])
+
+    async def scenario():
+        """Age the memo past the window, invalidate it, then demand a fresh reading."""
+        await service.status(max_age_s=2.0)
+        clock["now"] += 1.0
+        await service.status(max_age_s=2.0)
+        clock["now"] += 2.0
+        await service.status(max_age_s=2.0)
+        service.invalidate_status()
+        await service.status(max_age_s=2.0)
+        await service.status(max_age_s=0.0)
+
+    asyncio.run(scenario())
+    assert calls["schema"] == 4
+
+
+def test_snapshot_refreshes_the_status_memo(tmp_path, monkeypatch):
+    """snapshot() always measures and its reading serves the next status() in the window."""
+    service, calls = _status_service(tmp_path, monkeypatch)
+
+    async def documents(_tables):
+        """Return no document rows for the administrator table."""
+        return ()
+
+    monkeypatch.setattr(service, "_documents", documents)
+
+    async def scenario():
+        """Take a snapshot, a cached status, then a second fresh snapshot."""
+        snapshot = await service.snapshot()
+        status = await service.status(max_age_s=2.0)
+        await service.snapshot()
+        return snapshot, status
+
+    snapshot, status = asyncio.run(scenario())
+    assert status == snapshot.status
+    assert calls["schema"] == 2
+
+
+@pytest.mark.live_postgres
+def test_live_postgres_admin_status_matches_snapshot_status() -> None:
+    """The status path reports the same non-secret status as the full snapshot."""
+    service = RuntimeCorpusAdminService()
+
+    async def both():
+        """Take one full snapshot and one fresh status reading on this event loop."""
+        # The shared engine may hold connections opened by an earlier asyncio.run loop;
+        # recycle them so this reading measures the database, not a stale pool.
+        from app.db.session import engine
+
+        await engine.dispose()
+        return await service.snapshot(), await service.status(max_age_s=0.0)
+
+    try:
+        snapshot, status = asyncio.run(both())
+    except Exception as error:  # noqa: BLE001 - shared live-test availability policy
+        live_postgres_unavailable(str(error))
+
+    if not status.database_connected:
+        live_postgres_unavailable(status.schema_message)
+    assert status == snapshot.status

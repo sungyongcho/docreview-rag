@@ -717,7 +717,7 @@ http://127.0.0.1:8000/docs
 | 메서드 | 경로 | 역할 |
 |---|---|---|
 | `GET` | `/health` | 프로세스 상태 |
-| `GET` | `/ready` | 모델 정책·DB·schema·corpus readiness |
+| `GET` | `/ready` | 모델 정책·DB·schema·corpus readiness (상태 판독은 최대 2초, 작업 실행 중에는 10초 동안 재사용하고 작업이 끝나면 새로 잽니다) |
 | `POST` | `/retrieve` | 인용 근거 검색 |
 | `POST` | `/review` | 근거 검증 리뷰 |
 | `POST` | `/review/stream` | SSE 리뷰 스트림 |

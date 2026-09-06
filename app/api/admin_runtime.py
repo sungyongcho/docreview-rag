@@ -55,7 +55,7 @@ from app.api.schemas import (
     SnapshotResource,
 )
 from app.config import get_settings
-from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
+from app.corpus_admin import AdminCommand, CorpusStatus, RuntimeCorpusAdminService
 from app.db.models import (
     OperatorJob,
     Run,
@@ -72,6 +72,11 @@ from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.service import ComponentRankings, RetrievalResult, retrieve
 from app.retrieval.types import RetrievalFilters
+
+#: Seconds a readiness status reading may be reused between ``/ready`` calls.
+READINESS_STATUS_MAX_AGE_S = 2.0
+#: The same bound while a corpus or evaluation job holds or awaits the execution turn.
+READINESS_STATUS_MAX_AGE_BUSY_S = 10.0
 
 
 class RuntimeAdminApiServices:
@@ -100,6 +105,7 @@ class RuntimeAdminApiServices:
         )
         execution_lock = asyncio.Lock()
         execution_coordinator = JobExecutionCoordinator()
+        self._execution_coordinator = execution_coordinator
         self._corpus = corpus or RuntimeCorpusAdminService(
             session_factory=runtime.session_factory,
             job_store=self._job_store,
@@ -114,6 +120,20 @@ class RuntimeAdminApiServices:
         )
         self._golden = golden or GoldenAdminService()
         self._snapshots = snapshots or SnapshotService()
+
+    async def readiness_status(self) -> CorpusStatus:
+        """Return corpus status for ``/ready``, reusing a recent reading longer while a job runs.
+
+        A queued or running corpus or evaluation job already loads the database and the
+        invalidation trigger keeps ``bm25_ready`` false until it finishes, so re-measuring
+        every poll would only add catalog sweeps to the contention it reports.
+        """
+        max_age = (
+            READINESS_STATUS_MAX_AGE_BUSY_S
+            if self._execution_coordinator.busy
+            else READINESS_STATUS_MAX_AGE_S
+        )
+        return await self._corpus.status(max_age_s=max_age)
 
     def _local_connection(self) -> LocalConnectionManager:
         """Require an enabled developer connection manager, including on SSH admin routes."""

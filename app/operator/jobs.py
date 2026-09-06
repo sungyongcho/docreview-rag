@@ -139,6 +139,15 @@ class JobExecutionCoordinator:
         self._pending: list[tuple[datetime, str]] = []
         self._active: str | None = None
 
+    @property
+    def busy(self) -> bool:
+        """True while a job holds the turn or waits for it.
+
+        Both fields change only on the event loop between awaits, so a plain read
+        needs no lock; readiness uses it to decide how long a status reading may age.
+        """
+        return self._active is not None or bool(self._pending)
+
     async def register(self, job_id: str, created_at: datetime) -> None:
         """Register one job before either domain worker can compete for execution."""
         async with self._condition:

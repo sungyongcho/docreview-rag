@@ -1,6 +1,6 @@
 """Minimal idempotent PostgreSQL schema bootstrap."""
 
-from sqlalchemy import inspect, text
+from sqlalchemy import Table, inspect, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -60,21 +60,32 @@ async def ensure_bm25_stats_invalidation(
 
 
 def _collect_schema_drift(sync_connection: Connection) -> dict[str, list[str]]:
-    """Map each existing table to the ORM-mapped columns it is missing."""
+    """Map each existing table to the ORM-mapped columns it is missing.
+
+    Columns of every present table are read in one ``get_multi_columns`` round trip per
+    schema rather than one query per table; the readiness probe runs this on every
+    uncached poll, so the catalog cost is paid by the health check of a busy server.
+    """
     inspector = inspect(sync_connection)
-    existing_by_schema: dict[str | None, set[str]] = {}
     drift: dict[str, list[str]] = {}
+    by_schema: dict[str | None, list[Table]] = {}
     for table in Base.metadata.sorted_tables:
-        if table.schema not in existing_by_schema:
-            existing_by_schema[table.schema] = set(inspector.get_table_names(schema=table.schema))
-        if table.name not in existing_by_schema[table.schema]:
+        by_schema.setdefault(table.schema, []).append(table)
+    for schema, tables in by_schema.items():
+        existing = set(inspector.get_table_names(schema=schema))
+        present = [table for table in tables if table.name in existing]
+        if not present:
             continue
-        live_columns = {
-            column["name"] for column in inspector.get_columns(table.name, schema=table.schema)
-        }
-        missing = sorted(column.name for column in table.columns if column.name not in live_columns)
-        if missing:
-            drift[table.name] = missing
+        columns = inspector.get_multi_columns(
+            schema=schema, filter_names=[table.name for table in present]
+        )
+        for table in present:
+            live_columns = {column["name"] for column in columns.get((schema, table.name), ())}
+            missing = sorted(
+                column.name for column in table.columns if column.name not in live_columns
+            )
+            if missing:
+                drift[table.name] = missing
     return drift
 
 

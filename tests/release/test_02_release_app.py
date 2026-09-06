@@ -1,11 +1,13 @@
 """Canned-default release application and runtime composition tests."""
 
+from dataclasses import asdict
 from typing import cast
 
 from fastapi.testclient import TestClient
 import pytest
 
 from app.api.runtime import RuntimeApiServices
+from app.corpus_admin import CorpusStatus, RuntimeCorpusAdminService
 from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import RawProviderResponse
 from app.release.app import build_runtime_services, create_release_app
@@ -356,3 +358,56 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
         "model": "text-embedding-3-large",
         "key": "sk-development-fixture" if environment == "dev" else "sk-production-fixture",
     }
+
+
+def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_payload(
+    monkeypatch,
+) -> None:
+    """The default probe reads the memoized administrator status and matches an injected probe."""
+    for name in ("OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "OPENAI_API_KEY_DEV", "MODE"):
+        monkeypatch.delenv(name, raising=False)
+    status = CorpusStatus(
+        database_connected=True,
+        schema_status="compatible",
+        schema_message="compatible",
+        documents=2,
+        chunks=20,
+        embedded_chunks=20,
+        pending_embeddings=0,
+        bm25_ready=True,
+        writable=True,
+        provider="deterministic",
+    )
+    ages: list[float] = []
+
+    async def fake_status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
+        """Serve the fixed status and record the reuse window the caller allowed."""
+        ages.append(max_age_s)
+        return status
+
+    monkeypatch.setattr(RuntimeCorpusAdminService, "status", fake_status)
+
+    async def injected_probe():
+        """Return the same status through the injection seam."""
+        return {"status": asdict(status)}
+
+    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1", _env_file=None)
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        )
+    ) as client:
+        default = client.get("/ready")
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+            readiness_probe=injected_probe,
+        )
+    ) as client:
+        injected = client.get("/ready")
+
+    assert ages == [2.0]
+    assert default.status_code == injected.status_code == 200
+    assert default.text == injected.text
