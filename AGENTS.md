@@ -1,5 +1,14 @@
 # AGENTS.md — Product Development Workflow
 
+## Execution workers: read this first
+
+If the user assigns issue implementation or identifies you as a worker, read and
+follow [WORKER.md](WORKER.md) before applying the workflow below. It defines the
+worker's PR-only delivery, isolated worktrees, latest-main integration, and backup
+retention. Its role-specific rules override conflicting issue-management, merge,
+checkout-synchronization, and cleanup instructions below. Other engineering and
+verification requirements remain applicable.
+
 ## Current branch and release policy
 
 - `main` is the stable integration branch, the GitHub default, and the default local checkout.
