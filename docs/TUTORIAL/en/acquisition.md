@@ -1,5 +1,22 @@
 # Acquire SEC and DART filings
 
+## Reference acquisition scope
+
+The initial company selection is **NVDA, AMD** with fiscal years **2023, 2024**. Company choices come from the current manifest and remain available before ingestion; the reference manifest includes: SEC offers NVDA, AMD, INTC and MU; DART offers Samsung Electronics (005930), SK hynix (000660) and NAVER (035420). Choose companies from one combined list. SEC and DART use distinct colored text badges; there is no registry tab. A mixed selection queues one source-specific acquisition job per registry and retains their explicit selections in the common manifest.
+
+The suggested five-year test range is **2020–2024**. Suggestions do not add years automatically, and a year being selectable does not guarantee that the provider has published the requested filing. The displayed filing count counts available primary documents, not archive files or overlapping processing selections.
+
+Source acquisition can proceed while corpus schema drift blocks indexing, provided source storage and tracked-job storage are available. Read the separate schema diagnosis rather than changing HOST_GID for a schema problem. After acquisition completes, choose the returned manifest/selection pair for ingestion.
+
+Company and year suggestions open directly below the active input, above nearby hints and quick-add controls. Select SEC and DART companies together in that same list; source badges identify each selection.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=mixed-company-picker-and-input-anchored-overlays; locale=en; theme=light; capture=seven-company-options-source-badges-and-year-overlay; issue=17; preserve-existing-assets=true -->
+
+**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
+
+
 > [!DEV]
 > Editing acquisition inputs and downloading filings require DEV. The public pipeline can be inspected, but its acquisition controls cannot start work.
 
@@ -7,17 +24,17 @@ Acquisition downloads original reports and records their identities in the commo
 storage happen later. Check [Documents](documents.md#step-2) first: a report already prepared in this
 environment does not need another download.
 
-## 3. Choose source, companies, and years {#step-3}
+## 3. Choose companies and years {#step-3}
 
 - **Goal:** define the source reports you intend to prepare.
 - **Prerequisites:** [environment checks](environment.md#step-1) complete; know which reports are missing.
 - **Screen:** Build → Pipeline → Filings → Change….
-- **Inputs:** choose SEC EDGAR with `NVDA` and `2024`, or DART with `005930` and `2024` for a Korean report.
+- **Inputs:** choose `NVDA` and `2024`, or `005930` and `2024` for a Korean report. Both sources can be selected together.
   The year is the report's fiscal year, not necessarily its publication year.
 - **Primary action:** select the company and year chips. This configures the form without downloading.
 - **Visible result:** each accepted identifier and year appears as a removable chip; the terminal
   reference reflects the same values.
-- **Completion:** registry, companies, and years describe the intended source, with no invalid draft left.
+- **Completion:** companies and years describe the intended source, with no invalid draft left.
 - **Recovery:** keep an invalid draft visible, correct the highlighted token, and press Enter. For source
   credentials or unavailable reports, see [acquisition failures](troubleshooting.md).
 - **Next:** [download missing sources](#step-4), or [parse existing sources](indexing.md#step-5).

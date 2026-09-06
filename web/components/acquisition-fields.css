@@ -1,8 +1,11 @@
-/* Suggestions must not move the action button between pointer down and pointer up. */
+/* Anchor suggestions to the input row, independently of hints and adjacent fields. */
+.acquisition-fields .token-search-row { position: relative; }
 .acquisition-fields .token-options {
   position: absolute;
   inset-inline: 0;
-  top: 100%;
-  z-index: 10;
-  margin-top: 4px;
+  top: calc(100% + 4px);
+  z-index: 20;
+  margin: 0;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 16%);
+  max-height: min(320px, 50vh);
 }

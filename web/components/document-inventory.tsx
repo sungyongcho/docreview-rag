@@ -33,10 +33,11 @@ interface DocumentInventoryProps {
   /** Initial inventory supplied by the enclosing workspace. */
   fallbackDocuments: AdminDocument[];
   onOpenPipeline?: (stage?: string) => void;
+  onInspectPipeline?: () => void;
   onOpenJobs?: () => void;
 }
 
-export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onOpenJobs }: DocumentInventoryProps) {
+export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onOpenJobs, onInspectPipeline }: DocumentInventoryProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [documents, setDocuments] = useState<AdminDocument[]>(fallbackDocuments);
@@ -209,7 +210,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
         <button className="button" type="button" aria-expanded={filtersOpen} aria-controls="document-advanced-filters" onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={15} />{t("Filters")}{activeFilters.length > 0 ? ` · ${activeFilters.length}` : ""}</button>
       </div>
       {activeFilters.length > 0 && <div className={styles.chips} aria-label={t("Applied filters")}>{activeFilters.map((filter) => <button type="button" key={filter.label} aria-label={t("Remove filter: {label}", { label: filter.label })} onClick={filter.remove}>{filter.label}: {t(filter.displayValue ?? filter.value)}<X size={12} /></button>)}</div>}
-      {facetError && <div className={styles.error} role="alert"><p>{t("Could not load document filters.")}</p><p>{facetError}</p><button className="button" type="button" onClick={() => setFacetRefresh((value) => value + 1)}>{t("Retry filters")}</button></div>}
+      {facetError && <div className={styles.error} role="alert"><p>{t("Could not load document filters.")}</p><p>{facetError}</p><button className="button" type="button" onClick={() => setFacetRefresh((value) => value + 1)}>{t("Retry filters")}</button>{live && onInspectPipeline && <button className="button" type="button" onClick={onInspectPipeline}>{t("Inspect this step")}</button>}</div>}
       {filtersOpen && <div id="document-advanced-filters" className={styles.advanced}>
         <FacetSelect label={t("Registry")} value={documentRegistry} allLabel="All registries" facets={documentFacets.registries} onChange={setDocumentRegistry} />
         <FacetSelect label={t("Language")} value={documentLanguage} allLabel="All languages" facets={documentFacets.languages} onChange={setDocumentLanguage} />
@@ -239,7 +240,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
           </div>)}
         </div>}
         {!loading && !visibleDocuments.length && !listError && <p className={styles.status}>{t("No documents match these filters.")}</p>}
-        {listError && <div className={styles.error} role="alert"><p>{t("Could not load documents.")}</p><p>{listError}</p><button className="button" type="button" onClick={() => documentNextCursor ? void loadMoreDocuments() : setRefresh((value) => value + 1)}>{t("Retry")}</button></div>}
+        {listError && <div className={styles.error} role="alert"><p>{t("Could not load documents.")}</p><p>{listError}</p><button className="button" type="button" onClick={() => documentNextCursor ? void loadMoreDocuments() : setRefresh((value) => value + 1)}>{t("Retry")}</button>{live && onInspectPipeline && <button className="button" type="button" onClick={onInspectPipeline}>{t("Inspect this step")}</button>}</div>}
         {documentNextCursor && !listError && <button className="button document-load-more" type="button" disabled={loadingMore} onClick={() => void loadMoreDocuments()}>{t(loadingMore ? "Loading documents…" : "Load next 50")}</button>}
       </div>
     </section>
@@ -248,7 +249,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
       <button className="button ghost" type="button" onClick={layout.closeDetail}><ArrowLeft size={15} />{t("Back to documents")}</button>
       {selectedExcluded ? <section className="surface" role="status"><h2>{t("Document outside current filters")}</h2><p className="helper">{t("The selected document is not in these results. Clear filters or choose another document.")}</p><button className="button" type="button" onClick={() => { resetDocumentFilters(); layout.closeDetail(); }}>{t("Reset filters")}</button></section>
         : detailLoading ? <section className="surface" role="status">{t("Loading document details…")}</section>
-        : detailError ? <section className="surface" role="alert"><h2>{t("Could not load document details.")}</h2><p className="helper">{detailError}</p><button className="button" type="button" onClick={() => setDetailRefresh((value) => value + 1)}>{t("Retry")}</button></section>
+        : detailError ? <section className="surface" role="alert"><h2>{t("Could not load document details.")}</h2><p className="helper">{detailError}</p><button className="button" type="button" onClick={() => setDetailRefresh((value) => value + 1)}>{t("Retry")}</button>{live && onInspectPipeline && <button className="button" type="button" onClick={onInspectPipeline}>{t("Inspect this step")}</button>}</section>
         : documentDetail && <DocumentDetailPanel detail={documentDetail} onOpenPipeline={live ? onOpenPipeline : undefined} onOpenJobs={live ? onOpenJobs : undefined} />}
     </div>}
   </div>;

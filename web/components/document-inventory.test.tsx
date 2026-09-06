@@ -212,3 +212,15 @@ describe("DocumentInventory", () => {
     expect(screen.getByRole("link", { name: "Open original filing" })).toHaveAttribute("href", "https://example.com/doc-a");
   });
 });
+
+it.each(["filters", "documents", "details"] as const)("offers pipeline inspection for %s failures while preserving retry", async (failure) => {
+  const inspect = vi.fn();
+  if (failure === "filters") api.getDocumentFacets.mockRejectedValueOnce(new Error("Filters unavailable"));
+  if (failure === "documents") api.getAdminDocuments.mockRejectedValueOnce(new Error("Documents unavailable"));
+  if (failure === "details") api.getDocumentDetail.mockRejectedValueOnce(new Error("Details unavailable"));
+  render(<DocumentInventory live fallbackDocuments={[]} onInspectPipeline={inspect} />);
+  if (failure === "details") fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Inspect this step" }));
+  expect(inspect).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: failure === "filters" ? "Retry filters" : "Retry" })).toBeEnabled();
+});

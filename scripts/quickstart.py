@@ -85,8 +85,8 @@ async def prepare_schema(url: str) -> bool:
                 missing = set(Base.metadata.tables) - tables
                 if missing:
                     raise ValueError(
-                        "Existing schema is incomplete; inspect migrations before continuing: "
-                        + ", ".join(sorted(missing))
+                        "Existing schema is incomplete; preserve this database "
+                        "and inspect the missing tables: " + ", ".join(sorted(missing))
                     )
                 return False
         await bootstrap_schema(engine)

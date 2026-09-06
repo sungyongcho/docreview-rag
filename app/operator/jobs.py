@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import OperatorJob
+from app.operator.job_history import ARCHIVE_KEY
 
 type JobDomain = Literal["corpus", "evaluation"]
 type JobStatus = Literal["queued", "running", "succeeded", "failed", "interrupted", "cancelled"]
@@ -284,7 +285,7 @@ class JobStore:
         return self._stored(row) if row is not None else None
 
     async def list(
-        self, *, domain: JobDomain | None = None, limit: int = 100
+        self, *, domain: JobDomain | None = None, limit: int = 100, include_archived: bool = False
     ) -> tuple[StoredJob, ...]:
         """Return newest-first persisted jobs with an optional domain filter."""
         statement = select(OperatorJob).order_by(
@@ -292,6 +293,11 @@ class JobStore:
         )
         if domain is not None:
             statement = statement.where(OperatorJob.domain == domain)
+        if not include_archived:
+            statement = statement.where(
+                ~OperatorJob.result_refs.contains({ARCHIVE_KEY: True})
+                | OperatorJob.status.in_(("queued", "running"))
+            )
         async with self._session_factory() as session:
             rows = tuple(await session.scalars(statement.limit(limit)))
         return tuple(self._stored(row) for row in rows)

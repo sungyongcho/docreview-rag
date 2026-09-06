@@ -38,7 +38,7 @@ export const CANNED_CORPUS: { status: CorpusSnapshot["status"]; manifests: Manif
     provider: "deterministic",
   },
   manifests: [{
-    name: "manifest.json", corpus_id: "demo", registries: ["sec", "dart"], documents: 22, valid: true, sources_present: 22,
+    name: "manifest.json", corpus_id: "demo", issuers: [], registries: ["sec", "dart"], documents: 22, valid: true, sources_present: 22,
     selections: [
       { selection_id: "sec-evaluation", document_ids: Array.from({ length: 20 }, (_, i) => `sec-${i}`), artifact_ids: Array.from({ length: 20 }, (_, i) => `sec-source-${i}`), sources_present: 20 },
       { selection_id: "dart-evaluation", document_ids: ["dart-0", "dart-1"], artifact_ids: ["dart-source-0", "dart-source-1"], sources_present: 2 },

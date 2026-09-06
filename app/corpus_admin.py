@@ -7,6 +7,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 from typing import Literal, Protocol, cast
 from uuid import uuid4
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from app.config import Settings, get_settings
 from app.db.bootstrap import SchemaDriftError, bootstrap_schema, ensure_schema_compatibility
 from app.db.models import (
+    Base,
     BM25CorpusStat,
     Chunk,
     ChunkEmbedding,
@@ -117,6 +119,15 @@ class ProcessingSelectionSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class ManifestIssuer:
+    """A selectable company projected from source-independent filing references."""
+
+    registry: Literal["sec", "dart"]
+    issuer: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
 class ManifestSummary:
     """Expose one validated common corpus catalog and its selections."""
 
@@ -127,6 +138,7 @@ class ManifestSummary:
     registries: tuple[str, ...] = ()
     sources_present: int | None = None
     selections: tuple[ProcessingSelectionSummary, ...] = ()
+    issuers: tuple[ManifestIssuer, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -635,17 +647,21 @@ class RuntimeCorpusAdminService:
                 tables = await connection.run_sync(
                     lambda sync: set(inspect(sync).get_table_names())
                 )
-        except SchemaDriftError:
-            return (
-                "drifted",
-                "Existing tables do not match the current models. "
-                "Rebuild the schema outside this administrator UI before running writes.",
-                set(),
-            )
+        except SchemaDriftError as error:
+            return "drifted", str(error), set()
         except Exception as error:  # noqa: BLE001 - translated into non-secret status
             return "unavailable", self._redact(type(error).__name__), set()
-        if not tables.intersection({"documents", "chunks"}):
+        if not tables:
             return "empty", "No corpus tables exist yet.", tables
+        missing = sorted(set(Base.metadata.tables) - tables)
+        if missing:
+            return (
+                "drifted",
+                "The schema is incomplete. Missing tables: "
+                + ", ".join(missing)
+                + ". Existing data is preserved; inspect the schema before indexing.",
+                tables,
+            )
         return "compatible", "Schema matches the current ORM models.", tables
 
     def _manifest_summaries(self) -> tuple[ManifestSummary, ...]:
@@ -667,6 +683,17 @@ class RuntimeCorpusAdminService:
                 present[artifact.artifact_id] = (
                     source.is_relative_to(self._corpus_root) and source.is_file()
                 )
+            issuers = {
+                (document.registry, document.issuer): ManifestIssuer(
+                    document.registry,
+                    document.issuer,
+                    next(
+                        (alias for alias in document.aliases if alias != document.issuer),
+                        document.issuer,
+                    ),
+                )
+                for document in manifest.documents
+            }
             selections = []
             for selection in manifest.selections:
                 sources = manifest.selected_sources(selection.selection_id, self._corpus_root)
@@ -685,8 +712,15 @@ class RuntimeCorpusAdminService:
                     True,
                     manifest.corpus.corpus_id,
                     tuple(sorted({document.registry for document in manifest.documents})),
-                    sum(present.values()),
+                    len(
+                        {
+                            artifact.document_id
+                            for artifact in manifest.artifacts
+                            if artifact.role == "primary" and present[artifact.artifact_id]
+                        }
+                    ),
                     tuple(selections),
+                    tuple(issuers[key] for key in sorted(issuers)),
                 )
             )
         return tuple(summaries)
@@ -795,7 +829,7 @@ class RuntimeCorpusAdminService:
                 embedded_chunks=embedded,
                 pending_embeddings=max(chunks - embedded, 0),
                 bm25_ready=bm25_ready,
-                writable=schema_status in {"compatible", "empty"},
+                writable=os.access(self._corpus_root, os.W_OK | os.X_OK),
                 provider=self._settings.embedding_provider,
             ),
             manifests=self._manifest_summaries(),
@@ -915,7 +949,7 @@ class RuntimeCorpusAdminService:
 
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one operation and start the persistent single worker lazily."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
         if self._queue.full():
             raise RuntimeError(f"administrator queue is full ({MAX_QUEUED_JOBS})")
         job = AdminJob(
@@ -946,9 +980,26 @@ class RuntimeCorpusAdminService:
             self._worker = asyncio.create_task(self._work(), name="corpus-admin-worker")
         return job
 
+    def forget_history(self, job_ids: tuple[str, ...]) -> None:
+        """Release terminal cache records only after their persistent deletion."""
+        for job_id in job_ids:
+            job = self._jobs.get(job_id)
+            if job is not None and job.status not in {"queued", "running"}:
+                self._jobs.pop(job_id, None)
+        self._history = deque(
+            (job_id for job_id in self._history if job_id not in job_ids),
+            maxlen=self._history.maxlen,
+        )
+
     async def retry(self, job_id: str) -> AdminJob:
         """Requeue the command from one failed or interrupted operation only."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
+        if self._job_store is not None:
+            record = await self._job_store.get(job_id)
+            if record is None or record.result_refs.get("__history_archived") is True:
+                raise ValueError(
+                    "Restore archived history before retrying; deleted jobs cannot be retried."
+                )
         job = self._jobs.get(job_id)
         if job is None and self._job_store is not None:
             stored = await self._job_store.get(job_id)
@@ -963,7 +1014,7 @@ class RuntimeCorpusAdminService:
 
     async def cancel(self, job_id: str) -> AdminJob:
         """Cancel queued work or request cooperative running-job cancellation."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
         job = self._jobs.get(job_id)
         if job is None or job.status not in {"queued", "running"}:
             raise ValueError("only a known queued or running job can be cancelled")
@@ -986,7 +1037,7 @@ class RuntimeCorpusAdminService:
 
     async def jobs(self) -> JobBoard:
         """Return one active job, FIFO queue, and newest-first bounded history."""
-        await self._ensure_job_recovery()
+        await self.recover_jobs()
         if self._job_store is not None:
             rows = await self._job_store.list(domain="corpus", limit=MAX_JOB_HISTORY + 16)
             jobs = tuple(_job_from_stored(row) for row in rows)
@@ -1026,7 +1077,7 @@ class RuntimeCorpusAdminService:
         if self._job_store is not None:
             self._persister.schedule(job_id)
 
-    async def _ensure_job_recovery(self) -> None:
+    async def recover_jobs(self) -> None:
         """Mark stale process-owned jobs interrupted once before accepting work."""
         if self._recovered_jobs:
             return
@@ -1078,7 +1129,8 @@ class RuntimeCorpusAdminService:
         """Execute one safe operation through reusable in-process boundaries."""
         if self._operation_runner is not None:
             return await self._operation_runner(command, publish)
-        await self._assert_writable_schema()
+        if command.kind not in {"acquire_edgar", "acquire_dart"}:
+            await self._assert_writable_schema()
 
         if command.kind == "acquire_edgar":
             publish(OperationProgress("prepare", 0, 1, "Preparing EDGAR acquisition"))

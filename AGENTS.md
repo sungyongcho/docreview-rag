@@ -2,22 +2,146 @@
 
 ## Current branch and release policy
 
-- `main` is the stable v2 product branch, the GitHub default, and the default local checkout.
+- `main` is the stable integration branch, the GitHub default, and the default local checkout.
 - `v1` is a frozen legacy archive with one parentless commit. Never modify it or merge it into `main`.
 - `v2.0.0` identifies product commit `61cb17b49b0b6bf0745b6fb7cfdd16b67d101731`.
-- Use short-lived `v2/<type>/<issue-number>-<description>` branches. Omit the issue number when unavailable. Never create a permanent `v2` branch: it conflicts with `v2/...` refs.
+- Use short-lived `<type>/<issue-number>-<description>` branches, such as `feat/<issue-number>-improve-navigation`, `fix/<issue-number>-refresh-readiness`, or `refactor/<issue-number>-simplify-settings`. Resolve the actual GitHub issue number first; never invent one.
+- Do not prepend product versions such as `v2/` or `v3/` to ordinary work branches. Use release tags such as `v2.1.0` and `v3.0.0` for versions; creating or moving a tag remains a separately requested release action. Supporting multiple release lines requires an explicit maintenance policy.
 - Keep only `main` and `v1` as canonical local branches at rest, tracking their remote counterparts.
+
+## Repository-wide GitHub tracking
+
+This policy applies to the entire repository, on every working branch. GitHub is the
+shared work record so humans and agents can discover the purpose, current state,
+implementation, verification and delivery of each change without reading a chat.
+
+- Treat requests to implement a feature, fix a bug or address an issue as triggers to
+  manage the scoped work through GitHub using `gh`, even without an explicit skill
+  invocation. Requests such as "트래킹 업데이트", "이슈 관리", "PR 정리" or equivalent
+  action requests also trigger tracking. Questions, explanations and read-only reviews
+  authorize inspection only; a keyword in quoted material is not an action request.
+- Triage incoming requests and user-provided screenshot observations first. Update the
+  related issue when the outcome overlaps; create a new issue for a distinct outcome.
+  Record observed behavior, desired behavior, affected surface and acceptance checks.
+  An intake-only or status request does not start implementation. Follow the user's
+  actual work instruction before dispatching implementation.
+- The user authorizes scoped GitHub tracking and, when implementation/delivery is
+  requested, the associated branch, commit, ordinary push, PR, verified squash merge,
+  completed-branch retirement and actual local `main` synchronization. Render concrete
+  scope/messages/evidence, but do not repeatedly request approval for that same flow.
+  Dependabot authorization is defined separately below. Destructive user-data actions,
+  credentials, deployment, repository protection changes and history rewriting remain
+  separate boundaries.
+- Use English Conventional Commit headers for commits and PR titles:
+  `<type>(<scope>): <concise outcome>`. Prefer the same format for actionable issue
+  titles when type/scope are clear. Do not rename unrelated historical items merely
+  for consistency. Group related issues into one coherent PR when shared files or
+  integration make that appropriate; link every actual issue and close only completed
+  scope, leaving deferred work open.
+- Parallelize only independently owned issue-sized work, with an explicit file map
+  and at most two workers plus a coordinator. Shared contracts, Git operations and
+  final integration belong to the coordinator. Reuse passing evidence; do not run
+  duplicate full suites or mutate the same database concurrently.
+- Fetch before work, before publishing and before merging: a user, another agent,
+  Dependabot or the GitHub web UI can advance the remote at any time. Synchronize only
+  after checking divergence, foreign changes and affected verification. Prefer
+  fast-forward updates; never use automatic stash/reset/rebase to conceal conflicts.
+- Before implementation, resolve the repository from its remote and check `gh` access.
+  Search only related issues and PRs; reuse the matching work item instead of creating
+  duplicates. If absent, create an English issue with the problem/outcome, scope and
+  acceptance checks. Obtain its actual number before naming the implementation branch.
+  Split into linked issues only when the work has independently verifiable outcomes.
+- Before a commit, reconcile the issue scope and checklist with the actual diff and
+  completed checks. Record concrete blockers and remaining work. Use the issue number
+  in the branch name and `Refs` in the English commit message.
+- After an authorized commit and push, link the actual commit and branch to the issue;
+  create or update the authorized PR with scope, verification, remaining work and the
+  correct base/head. Use `Closes` only for fully satisfied issue scope; otherwise use
+  `Refs`. Never close an issue just because a branch was pushed or a PR was opened.
+- After an authorized merge, verify the merge SHA, issue state and branch retirement.
+  Verify the actual working checkout, not just a local `main` ref: report its branch,
+  HEAD and remaining staged/unstaged/untracked paths. Preserve foreign work and ignored
+  configuration/data; report any incomplete checkout transition explicitly.
+- Use `gh issue list/view/create/edit`, `gh pr list/view/create/edit/checks` and, when
+  authorized, `gh pr merge`. Resolve `--repo` explicitly and use `--body-file` for
+  multiline prose. Reuse existing labels or project conventions rather than inventing
+  workflow state. GitHub Projects boards, assignee/reviewer notifications and scheduled
+  monitoring require their own applicable authorization.
+- Update tracking at meaningful transitions: scope agreed, implementation ready,
+  verification changed, blocker found, PR published and merge completed. Prefer editing
+  the existing checklist/summary to repetitive comments or broad repository scans.
+  Distinguish planned, implemented, verified and merged; retain failed/unrun checks.
+- If GitHub access is unavailable, report tracking as blocked and continue safe local
+  work within its existing authorization. Never fabricate issue numbers, URLs, checks
+  or completion. Deployment, credential changes, paid operations, destructive data
+  changes and history rewriting remain separate boundaries.
+
+### Issue body format
+
+Use the following English structure for new actionable issues and substantive scope
+updates. Use concise bullets for scope and Markdown task checkboxes for independently
+verifiable acceptance checks; nested bullets are appropriate for real subrequirements.
+
+```markdown
+## Problem / outcome
+
+Describe the observed problem, concrete trigger and desired result.
+
+## Scope
+
+- Describe each affected behavior or implementation boundary.
+
+## Acceptance checks
+
+- [ ] State an observable result and its relevant verification command or evidence.
+```
+
+The three headings are a baseline, not a limit. For complex work, add focused
+sections such as `Diagnosis`, `Behavior and state transitions`, `API contracts`,
+`Recovery procedure`, `Dependencies` or `Verification evidence` when they clarify
+implementation or review. Explain concrete causes, decisions and edge cases at the
+depth the issue needs; avoid filler and do not hide actionable acceptance checks in prose.
+
+Mark a checkbox complete only when its stated check has passed. Keep blocked or unrun
+checks open with a concise reason. Extend an existing related issue instead of copying
+its checklist into duplicate issues. Preserve useful prior evidence while updating scope.
+
+## Dependabot management across this repository
+
+The user authorizes agents to manage genuine Dependabot PRs through `gh` before and
+after commit/delivery checkpoints in this repository. Follow commit-it's Dependabot
+reconciliation procedure and preserve this repository's frozen `v1` archive and tags.
+This authorization covers compatible, verified dependency PR merges, necessary
+cherry-picks onto authorized active work branches, and reasoned closure of duplicate,
+superseded or demonstrably incompatible updates. It does not authorize production
+deployment, history rewriting, protection bypasses or advisory suppression.
+
+- Inspect Dependabot author metadata, exact PR/base/head, dependency and lockfile diffs,
+  compatibility/security impact and required checks. Run focused checks where CI is
+  absent or insufficient; major releases require impact review, not blanket approval.
+- Merge using the normal squash policy and the reviewed head only after applicable
+  checks pass. Prefer updating from the merged base over unnecessary cherry-picks.
+  For a necessary cherry-pick, verify the target, prevent duplicate patches, preserve
+  the PR reference and validate the resulting lockfile and target behavior.
+- Close only with a concrete reason and relevant replacement/follow-up link. Pending
+  or transiently failing checks are blockers to investigate or defer, not automatic
+  rejection. Keep unresolved security work tracked; never disable alerts or future
+  updates merely to clear the queue.
+- If a dependency merge advances `main` during feature work, reassess the affected
+  integration before delivery. Stop on conflicts, missing permissions or failed gates.
+  Report PR decisions, checks and actual resulting SHAs so agents and humans can follow
+  the same GitHub record. Do not repeatedly poll or comment on unchanged PRs.
 
 ## GitHub Flow
 
 1. Preserve unrelated staged, unstaged, untracked, and ignored work. Do not stash, reset, overwrite, or stage it without explicit authorization.
 2. Start from a clean, updated `main`: `git switch main` followed by `git pull --ff-only origin main`. Stop on divergence or conflicting local work.
-3. Create the scoped branch with `git switch -c v2/<type>/<issue-number>-<description>`.
+3. Resolve or create the scoped GitHub issue under the tracking policy, then create the branch with `git switch -c <type>/<issue-number>-<description>`.
 4. Make the smallest coherent change and run focused behavioral checks plus the applicable static checks below. Review the complete diff and run `git diff --check`.
-5. Prepare exact staging paths and complete English Conventional Commit messages. Use the `commit-it` preview and obtain approval before staging, committing, and pushing. Stage explicit paths with `git add -- <paths>`; never absorb unrelated work.
+5. Prepare exact staging paths and complete English Conventional Commit messages. Use the `commit-it` preview and obtain any missing approval before staging, committing, and pushing; an explicitly approved sequence needs no repeated approval. Stage explicit paths with `git add -- <paths>`; never absorb unrelated work.
 6. Open a focused pull request against `main`, recording the outcome and actual verification. Obtain explicit authorization for external writes and merges unless the exact action is already approved.
 7. Squash-merge the reviewed pull request. Preserve the existing product history; do not force-push or rewrite it.
-8. Update local `main` with a fast-forward pull, verify the merged result, and delete the completed development branch locally and remotely with explicit deletion authorization. A squash merge does not preserve the development commit as an ancestor; verify the PR merge and final tree before removing its local ref.
+8. Verify the PR merge and final tree, switch off the completed work branch, and delete that branch locally and remotely when authorized. Refresh the actual local `main` with a fast-forward pull and confirm its HEAD and worktree state. A squash merge does not preserve the development commit as an ancestor; verify the merged result before removing its local ref.
 
 Restore `core.hooksPath=.githooks` in each fresh clone. Tags identify releases; application deployment and GitHub Pages are separate operations requiring their own scope and authorization.
 
@@ -25,11 +149,28 @@ Restore `core.hooksPath=.githooks` in each fresh clone. Tags identify releases; 
 
 The coding, test placement, docstring, foreign-work protection, focused verification, English commit-message, and runtime guidance below remain applicable. Report checks as passed, failed, not run, or blocked; never claim mock checks establish live PostgreSQL behavior.
 
-## Screenshot verification
+## Tutorial maintenance and screenshot evidence
 
-- Capture documentation and UI verification screenshots in light mode by default.
-- Capture both Korean and English versions of every documented UI state unless the user explicitly requests a narrower set.
-- Use actual application states and matching captions; never fabricate successful results or expose credentials in screenshots.
+For each requested feature, bug fix or changed user flow, consult this repository's
+AGENTS.md before writing documentation and apply commit-it's tutorial checkpoint.
+Update the relevant sources in `docs/TUTORIAL/en/` and `docs/TUTORIAL/ko/`, plus README
+or CLI guidance only when affected. Preserve unrelated documentation and distinguish
+implemented behavior from verification or remaining work. A change with no tutorial
+impact needs only a brief explanation in its PR; do not create filler documentation.
+
+By default, update tutorial text and preserve existing screenshots. Do not capture,
+replace or regenerate screenshot assets unless the user requests it. When visual
+evidence would help or an existing screenshot no longer illustrates the changed flow,
+add a prominent `### SCREENSHOT NEEDED` callout and an adjacent HTML comment specifying
+the feature, exact UI state, locale and expected evidence. Explain that the screenshot
+is pending; never present an old or synthetic capture as proof of new behavior.
+
+When screenshots are explicitly requested, capture actual application states in light
+mode and both Korean and English unless the user narrows the scope. Reuse valid
+existing evidence, exclude credentials and remove each pending marker only after the
+matching screenshot is captured and verified. Consult commit-it for issue/PR delivery
+and this section for repository-specific tutorial paths and screenshot policy; do not
+recursively re-read either file when the relevant rules are already known.
 
 ## Historical assembly reference
 

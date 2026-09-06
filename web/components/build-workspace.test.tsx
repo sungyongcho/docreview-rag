@@ -1,11 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
+import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
 import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const READY_RUNTIME: Readiness = {
   status: "ready",
@@ -419,14 +422,14 @@ it("queues the committed acquisition after editing focused token fields", async 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} onRefreshJobs={onRefreshJobs} />);
   await screen.findByText("0 / 22 filings on disk");
-  fireEvent.click(screen.getByRole("button", { name: "Remove AMD" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Remove AMD/ }));
   fireEvent.click(screen.getByRole("button", { name: "Remove 2023" }));
   const years = screen.getByRole("textbox", { name: "Fiscal years" });
   const download = screen.getByRole("button", { name: "Download missing filings" });
@@ -440,4 +443,47 @@ it("queues the committed acquisition after editing focused token fields", async 
   expect(submitted).toHaveLength(1);
   expect(JSON.parse(String(submitted[0][1]?.body))).toEqual({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
   cleanup(); vi.unstubAllGlobals();
+});
+
+
+it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Harness live ready={false} />);
+  expect(await screen.findByRole("button", { name: "Download missing filings" })).toBeEnabled();
+  expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("This step is ready to run");
+  expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema_status check");
+  expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
+  expect(screen.queryByText("data/ not writable")).not.toBeInTheDocument();
+});
+
+
+it.each([false, true])("queues mixed companies by source and reports partial submission (failure=%s)", async (failDart) => {
+  const submitted: Record<string, unknown>[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body)); submitted.push(body);
+      if (failDart && body.kind === "acquire_dart") return new Response(JSON.stringify({ error: { message: "DART submission unavailable" } }), { status: 503, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ job_id: String(submitted.length), status: "queued" });
+    }
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  }));
+  render(<NotificationProvider><Harness live ready={false} /></NotificationProvider>);
+  await screen.findByText("0 / 22 filings on disk");
+  fireEvent.paste(screen.getByRole("textbox", { name: "Tickers / stock codes" }), { clipboardData: { getData: () => "005930,000660" } });
+  fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
+  await waitFor(() => expect(submitted).toHaveLength(2));
+  expect(submitted).toEqual([
+    { kind: "acquire_edgar", identifiers: ["NVDA", "AMD"], years: [2023, 2024] },
+    { kind: "acquire_dart", identifiers: ["005930", "000660"], years: [2023, 2024] },
+  ]);
+  if (failDart) expect(await screen.findByText(/Acquisition stopped after 1 queued jobs/)).toBeInTheDocument();
 });

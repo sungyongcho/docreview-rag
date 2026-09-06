@@ -371,14 +371,14 @@ function filingsDraft(manifests: ManifestSummary[], documents: number, writable:
     const numbers = source === "pending" ? [] : [`${n(documents)} ${label}`];
     return { status: readOnly ? "readonly" : "unknown", statusDetail: readOnly ? "" : "Checking…", numbers, action };
   }
-  const total = new Set(manifests.flatMap((item) => item.selections.flatMap((selection) => selection.document_ids))).size;
+  const total = manifests.reduce((sum, item) => sum + count(item.documents), 0);
   const present = manifests.reduce((sum, item) => sum + count(item.sources_present), 0);
   const perRegistry = manifests.map((item) => `${registryLabel(item.registries.join(" / "))} ${n(count(item.sources_present))}/${n(count(item.documents))}`);
   if (writable === false) {
     return { status: "blocked", statusDetail: "data/ not writable", numbers: [`${n(present)} / ${n(total)} filings on disk`, ...perRegistry], hint: "Set HOST_GID=<id -g> in .env and restart the app so the container can write data/.", action };
   }
   if (total === 0) {
-    return { status: "action", numbers: ["No filings yet."], hint: "Choose a registry, keep the default tickers and fiscal years, then run Download missing filings.", action };
+    return { status: "action", numbers: ["No filings yet."], hint: "Choose companies, keep the default fiscal years, then run Download missing filings.", action };
   }
   if (present >= total) {
     return { status: "done", numbers: [`${n(present)} / ${n(total)} filings on disk`, ...perRegistry], action };

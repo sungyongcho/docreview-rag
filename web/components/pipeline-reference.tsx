@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { acquisitionGroups, type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { Copy } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import type { StageId } from "@/lib/pipeline";
@@ -19,12 +20,12 @@ const DESIGN: Record<StageId, { mechanism: string; tradeoff: string }> = {
 
 function quote(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'"; }
 
-export function pipelineReferenceCommand(stage: StageId, acquisition: AcquisitionForm, manifest: string, provider: string | null | undefined, question: string, selectionId: string = ""): string | null {
+export function pipelineReferenceCommand(stage: StageId, acquisition: AcquisitionForm, manifest: string, provider: string | null | undefined, question: string, selectionId: string = "", companies: AcquisitionCompany[] = []): string | null {
   const identifiers = acquisition.identifiers.split(/[\s,]+/).filter(Boolean);
   const years = acquisition.years.split(/[\s,]+/).filter(Boolean);
   if (stage === "filings") {
     if (!identifiers.length || !years.length || years.some((year) => !/^\d{4}$/.test(year))) return null;
-    return `rag-corpus ${acquisition.registry === "dart" ? "acquire_dart" : "acquire_edgar"} ${[...new Set(identifiers)].map((identifier) => `--identifier ${quote(identifier)}`).join(" ")} ${[...new Set(years)].map((year) => `--year ${year}`).join(" ")}`;
+    return acquisitionGroups(identifiers, companies).map((group) => `rag-corpus ${group.registry === "dart" ? "acquire_dart" : "acquire_edgar"} ${group.identifiers.map((identifier) => `--identifier ${quote(identifier)}`).join(" ")} ${[...new Set(years)].map((year) => `--year ${year}`).join(" ")}`).join("\n");
   }
   if (stage === "index") return manifest && selectionId ? `rag-corpus ingest_manifest --manifest ${quote(manifest)} --selection ${quote(selectionId)}` : null;
   if (stage === "embeddings") return "rag-corpus backfill_embeddings";
@@ -42,7 +43,7 @@ export function PipelineReference({ stage, acquisition, manifests, provider }: {
   const selectedManifest = manifests.some((item) => item.valid && item.name === manifest) ? manifest : "";
   const selections = manifests.find((item) => item.name === selectedManifest)?.selections ?? [];
   const selectedSelection = selections.some((item) => item.selection_id === selection) ? selection : "";
-  const command = pipelineReferenceCommand(stage, acquisition, selectedManifest, provider, question, selectedSelection);
+  const command = pipelineReferenceCommand(stage, acquisition, selectedManifest, provider, question, selectedSelection, manifests.flatMap((item) => item.issuers ?? []));
   const design = DESIGN[stage];
   useEffect(() => setCopyStatus(""), [command]);
   async function copy() {

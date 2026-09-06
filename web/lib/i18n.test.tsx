@@ -79,6 +79,7 @@ describe("Korean and English UI", () => {
   });
 
   it("translates generated counts, dependencies and model status without changing identifiers", () => {
+    expect(translate("ko", "Open Parse & chunk and inspect its current state.")).toBe("파싱·청킹 단계로 이동해 현재 상태를 확인하세요.");
     expect(translate("ko", "1 result")).toBe("1개 평가 결과");
     expect(translate("ko", "2 published snapshots")).toBe("2개 게시된 스냅샷");
     expect(translate("ko", "1,200 pending · text-embedding-3-large")).toBe("1,200개 미처리 · text-embedding-3-large");

@@ -4,6 +4,7 @@ import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 import { ArrowLeft, RefreshCw } from "lucide-react";
 
+import { JobHistoryControls } from "./job-history-controls";
 import { useMasterDetail } from "@/components/use-master-detail";
 import { MasterDetailDivider } from "@/components/master-detail-divider";
 import styles from "./master-detail.module.css";
@@ -76,7 +77,7 @@ export function JobActivityPanel({ board, loading, onOpenJobs }: { board: Operat
 }
 
 /** Keep job selection explicit and expose only actions supported by its current state. */
-export function JobCenter({ board, loading, onRetry, onCancel, onRefresh, onOpenResult, onOpenPipeline }: { board: OperatorJobBoard; loading: boolean; onRetry: (jobId: string) => void; onCancel: (jobId: string) => void; onRefresh: () => void; onOpenResult: (resultId: number) => void; onOpenPipeline?: (stage: string) => void }) {
+export function JobCenter({ board, loading, onRetry, onCancel, onRefresh, onOpenResult, onOpenPipeline, historyEnabled = false }: { board: OperatorJobBoard; loading: boolean; onRetry: (jobId: string) => void; onCancel: (jobId: string) => void; onRefresh: () => void; onOpenResult: (resultId: number) => void; onOpenPipeline?: (stage: string) => void; historyEnabled?: boolean }) {
   const { t, locale } = useI18n();
   const [domain, setDomain] = useState<"all" | OperatorJob["domain"]>("all");
   const [group, setGroup] = useState<"all" | "active" | "queued" | "history" | "failed">("all");
@@ -100,7 +101,7 @@ export function JobCenter({ board, loading, onRetry, onCancel, onRefresh, onOpen
 
   return <div ref={layout.workspaceRef} style={layout.splitStyle} className={`job-center ${styles.workspace} ${compact ? styles.split : ""}`} data-help="build.jobs.center" data-detail-open={showDetail}>
     <section id={layout.listPanelId} className={`surface ${styles.listPanel} ${compact ? styles.compact : ""}`} hidden={showDetail && layout.narrow}>
-      <div className={styles.heading}><div><h2>{t("Job Center")}</h2><p className="helper">{t("{active} active · {queued} queued", { active: board.active_count.toLocaleString(locale), queued: board.queued_count.toLocaleString(locale) })}</p></div><button className="button" type="button" disabled={loading} onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button></div>
+      <div className={styles.heading}><div><h2>{t("Job Center")}</h2><p className="helper">{t("{active} active · {queued} queued", { active: board.active_count.toLocaleString(locale), queued: board.queued_count.toLocaleString(locale) })}</p></div><div className="action-row">{historyEnabled && <JobHistoryControls onChanged={onRefresh} />}<button className="button" type="button" disabled={loading} onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button></div></div>
       <div className={styles.jobsFilters}>
         <div aria-label={t("Job domain")}>{(["all", "corpus", "evaluation"] as const).map((value) => <button key={value} type="button" aria-pressed={domain === value} onClick={() => setDomain(value)}>{t(value)}</button>)}</div>
         <div aria-label={t("Job status")}>{(["all", "active", "queued", "failed", "history"] as const).map((value) => <button key={value} type="button" aria-pressed={group === value} onClick={() => setGroup(value)}>{t(value)}</button>)}</div>

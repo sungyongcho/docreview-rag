@@ -1,5 +1,30 @@
 # Environment setup
 
+## Recover a blocked preparation step
+
+Build shows database schema status separately from source storage permissions. A schema mismatch does not mean `data/` is unwritable. Use **Check schema** to reload its reported state. When **Run in terminal** appears, copy its command, run it from this checkout, then return to the same step and select **Check updated status**. An unchanged blocker remains visible; clicking the button alone does not repair it.
+
+```bash
+uv run python -m scripts.schema_status check
+```
+
+For an empty local database only, prepare its schema and check again:
+
+```bash
+uv run python -m scripts.schema_status prepare
+```
+
+Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing; do not use destructive reset as installation recovery. Service and actual storage-permission blockers display their own terminal command and expected result.
+
+An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=schema-and-terminal-handoff-recheck; locale=en; theme=light; capture=blocked-and-resolved-states; issue=17; preserve-existing-assets=true -->
+
+**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
+
+
 Start by separating four questions: can the browser reach the API, can the API use the
 database, is the schema compatible, and does this environment permit the operation?
 Corpus readiness and answer-model availability are additional checks, not substitutes

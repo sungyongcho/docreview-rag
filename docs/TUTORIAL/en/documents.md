@@ -96,6 +96,8 @@ the search, filters, selection, and list scroll retained. Tab changes and naviga
 between workspaces keep the relevant state during the session. When returning to a
 conversation after a readiness check, use the explicit **Back to conversation** action.
 
+Preparation-related errors offer **Inspect this step** to open the relevant pipeline stage. Inspect the prerequisite and any terminal work there, then return and refresh Documents. Following the link does not ingest, embed, rebuild an index, or mark a failed request complete.
+
 ## Development and public visibility {#visibility}
 
 > [!DEV]

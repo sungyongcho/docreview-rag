@@ -250,6 +250,14 @@ class ProcessingSelectionResource(StrictAdminModel):
     sources_present: NonnegativeInt
 
 
+class ManifestIssuerResource(StrictAdminModel):
+    """A company and source registry available before ingestion."""
+
+    registry: Literal["sec", "dart"]
+    issuer: str
+    name: str
+
+
 class ManifestResource(StrictAdminModel):
     """A common corpus catalog and its available processing selections."""
 
@@ -260,6 +268,7 @@ class ManifestResource(StrictAdminModel):
     registries: tuple[Literal["sec", "dart"], ...]
     sources_present: NonnegativeInt | None
     selections: tuple[ProcessingSelectionResource, ...]
+    issuers: tuple[ManifestIssuerResource, ...] = ()
 
 
 class CorpusStatusResource(StrictAdminModel):
@@ -273,7 +282,11 @@ class CorpusStatusResource(StrictAdminModel):
     embedded_chunks: NonnegativeInt
     pending_embeddings: NonnegativeInt
     bm25_ready: StrictBool
-    writable: StrictBool
+    writable: StrictBool = Field(
+        description=(
+            "Source directory write permission, independent of database schema compatibility."
+        )
+    )
     provider: str
 
 
@@ -733,3 +746,28 @@ class LocalDiagnosticsResponse(BaseModel):
     answer_model_count: int | None
     models: tuple[dict[str, Any], ...]
     checks: tuple[LocalDiagnosticCheck, ...]
+
+
+class JobHistorySummaryResource(StrictAdminModel):
+    """Terminal history counts and protected active jobs."""
+
+    visible: NonnegativeInt
+    archived: NonnegativeInt
+    active: NonnegativeInt
+
+
+class JobHistoryRequest(StrictAdminModel):
+    """An explicit history operation against a reviewed eligible count."""
+
+    action: Literal["archive", "restore", "delete"]
+    expected_count: NonnegativeInt
+    confirmation: str = ""
+
+
+class JobHistoryResultResource(StrictAdminModel):
+    """Confirmed history changes and a private backup reference."""
+
+    action: Literal["archive", "restore", "delete"]
+    changed_count: NonnegativeInt
+    backup_id: str | None
+    summary: JobHistorySummaryResource

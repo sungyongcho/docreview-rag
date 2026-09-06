@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
+import { acquisitionGroups } from "@/lib/acquisition-catalog";
 import { BuildPipeline, splitList, type AcquisitionForm } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
 import { JobCenter } from "@/components/job-center";
@@ -73,7 +74,7 @@ const TABS: Array<[BuildTab, string]> = [
   ["jobs", "Jobs"],
 ];
 
-const DEFAULT_ACQUISITION: AcquisitionForm = { registry: "sec", identifiers: "NVDA AMD", years: "2023 2024" };
+const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "NVDA AMD", years: "2023 2024" };
 
 const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: null, schema_message: null, documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: null, writable: null, provider: null };
 
@@ -94,6 +95,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const completedJobs = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
+  const [historyWarning, setHistoryWarning] = useState("");
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
   useEffect(() => {
@@ -102,19 +104,23 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
 
   async function refresh() {
     if (!live) return;
+    setHistoryWarning("");
+    const historyUnavailable = () => { setHistoryWarning(t("Some history could not be loaded. Corpus status is shown separately.")); return []; };
     try {
       const [jobRows, corpusSnapshot, facets] = await Promise.all([
-        getEvaluationJobs(), getCorpusSnapshot(), getDocumentFacets().catch(() => null),
+        getEvaluationJobs().catch(historyUnavailable), getCorpusSnapshot(), getDocumentFacets().catch(() => null),
       ]);
       setJobs(Array.isArray(jobRows) ? jobRows : []);
       setCorpus(corpusSnapshot);
       setAdminLoaded(true);
       const registries = facets && Array.isArray(facets.registries) ? facets.registries : [];
       setRegistryCounts(Object.fromEntries(registries.filter((item) => typeof item.value === "string" && typeof item.count === "number").map((item) => [item.value, item.count])));
-      const snapshotRows = await getAdminSnapshots();
+      const snapshotRows = await getAdminSnapshots().catch(historyUnavailable);
       setSnapshotCount(Array.isArray(snapshotRows) ? snapshotRows.length : 0);
+      return true;
     } catch (reason) {
       notify(reason instanceof Error ? reason.message : t("Refresh failed."), "error", "build-refresh");
+      return false;
     }
   }
 
@@ -169,12 +175,21 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     }
   }
 
-  function downloadFilings() {
-    void queueCorpus({
-      kind: acquisition.registry === "sec" ? "acquire_edgar" : "acquire_dart",
-      identifiers: splitList(acquisition.identifiers),
-      years: splitList(acquisition.years).map(Number).filter(Number.isInteger),
-    });
+  async function downloadFilings() {
+    if (!live) return;
+    setBusy(true);
+    let queued = 0;
+    try {
+      const years = splitList(acquisition.years).map(Number).filter(Number.isInteger);
+      for (const group of acquisitionGroups(splitList(acquisition.identifiers), referenceCompanies)) {
+        await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years });
+        queued += 1;
+        onRefreshJobs();
+      }
+      notify(t("Acquisition jobs queued: {count}.", { count: queued }), "success", "corpus-operation");
+    } catch (reason) {
+      notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation");
+    } finally { setBusy(false); }
   }
 
   async function runQuickEvaluation() {
@@ -213,6 +228,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     if (!live) return CANNED_CORPUS.documents;
     return corpus?.documents ?? [];
   }, [live, corpus]);
+  const referenceCompanies = manifests.flatMap((manifest) => manifest.issuers ?? []);
   const selectedDocumentCount = new Set(manifests.flatMap((manifest) => manifest.selections.filter((selection) => selectedSources.includes(`${manifest.name}:${selection.selection_id}`)).flatMap((selection) => selection.document_ids))).size;
   const evaluationResults = jobs.filter((job) => job.status === "succeeded" && job.result_id !== null).length;
   const pipeline = useMemo(() => derivePipeline({
@@ -239,6 +255,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
 
   return (
     <section className="lab-shell build-workspace">
+      {historyWarning && <p className="notice" role="status">{historyWarning}</p>}
       <header className="page-heading">
         <div>
           <h1>{t("From filings to verified answers.")}</h1>
@@ -264,6 +281,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         busy={busy}
         canOperateCorpus={canOperateCorpus}
         acquisition={acquisition}
+        companies={referenceCompanies}
         onAcquisitionChange={setAcquisition}
         manifests={manifests}
         selectedSources={selectedSources}
@@ -290,13 +308,14 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         onOpenDocuments={() => onTabChange("documents")}
         onOpenJobs={() => onTabChange("jobs")}
         onOpenStatus={() => onNavigate({ view: "system", tab: "status" })}
-        onRefresh={() => void refresh()}
+        onRefresh={refresh}
       /></RetainedPanel>
 
-      <RetainedPanel active={tab === "documents"}><DocumentInventory live={live} fallbackDocuments={live ? [] : CANNED_CORPUS.documents} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
+      <RetainedPanel active={tab === "documents"}><DocumentInventory onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={live ? [] : CANNED_CORPUS.documents} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter
+            historyEnabled={live}
             onOpenPipeline={(stage) => { setFocusStage(stage); onTabChange("pipeline"); }}
             board={jobBoard}
             loading={jobsLoading}

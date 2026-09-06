@@ -1,0 +1,11 @@
+.terminal-handoff { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--border, #daddd1); border-radius: 9px; background: var(--surface-2, #f1f2ec); font-size: 13px; line-height: 1.5; }
+.terminal-handoff.is-blocking { border-inline-start: 3px solid var(--warn, #c39340); }
+.terminal-handoff-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.terminal-handoff .button { padding: 6px 10px; font-size: 12px; flex: none; }
+.terminal-handoff summary { cursor: pointer; color: var(--muted, #677586); padding-block: 6px; }
+.terminal-handoff p { margin: 6px 0; }
+.terminal-command { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border, #daddd1); border-radius: 7px; background: var(--surface, #fff); padding: 4px 8px; }
+.terminal-command pre { flex: 1; min-width: 0; overflow-x: auto; margin: 0; padding: 6px 0; font-size: 12px; }
+.terminal-handoff-status { color: var(--muted, #677586); font-size: 12px; }
+.terminal-handoff-status:empty { display: none; }
+@media (max-width: 600px) { .terminal-command { flex-wrap: wrap; } .terminal-command pre { flex-basis: 100%; } }

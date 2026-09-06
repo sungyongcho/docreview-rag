@@ -178,3 +178,25 @@ def test_client_preserves_web_auth_and_does_not_retry_errors(monkeypatch):
     assert requests[0].get_header("Authorization") == "Bearer private-token"
     assert requests[0].get_header("Origin") == "http://127.0.0.1:8000"
     assert "private-token" not in str(error.value)
+
+
+def test_status_reads_the_unified_job_board(monkeypatch, tmp_path, capsys):
+    """CLI status reads historical jobs through the same record projection as the UI."""
+    from types import SimpleNamespace
+
+    paths = []
+
+    def request(path):
+        """Record a read without replaying any stored command."""
+        paths.append(path)
+        return {"jobs": []}
+
+    monkeypatch.setattr(
+        commands,
+        "load_local_environment",
+        lambda *a, **k: {"DOCREVIEW_LOCAL_HOST": "127.0.0.1", "APP_PORT": "8000"},
+    )
+    monkeypatch.setattr(commands, "LocalClient", lambda *a, **k: SimpleNamespace(request=request))
+    assert commands.corpus(argparse.Namespace(kind="status"), tmp_path) == 0
+    assert paths == ["/jobs/"]
+    assert '"jobs"' in capsys.readouterr().out

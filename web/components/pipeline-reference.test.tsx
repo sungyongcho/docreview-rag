@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AcquisitionForm } from "./build-pipeline";
 import { PipelineReference, pipelineReferenceCommand } from "./pipeline-reference";
 
-const ACQUISITION: AcquisitionForm = { registry: "sec", identifiers: "NVDA AMD", years: "2023 2024" };
+const ACQUISITION: AcquisitionForm = { identifiers: "NVDA AMD", years: "2023 2024" };
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -13,7 +13,7 @@ describe("Pipeline terminal reference", () => {
     expect(pipelineReferenceCommand("filings", { ...ACQUISITION, years: "2023,2024 2023" }, "", null, "")).toBe(
       "rag-corpus acquire_edgar --identifier 'NVDA' --identifier 'AMD' --year 2023 --year 2024",
     );
-    expect(pipelineReferenceCommand("filings", { registry: "dart", identifiers: "005930,000660", years: "2023 2024" }, "", null, "")).toBe(
+    expect(pipelineReferenceCommand("filings", { identifiers: "005930,000660", years: "2023 2024" }, "", null, "")).toBe(
       "rag-corpus acquire_dart --identifier '005930' --identifier '000660' --year 2023 --year 2024",
     );
   });
@@ -49,8 +49,8 @@ describe("Pipeline terminal reference", () => {
 
   it("only offers valid discovered manifests and clears a reference when its source disappears", () => {
     const props = { stage: "index" as const, acquisition: ACQUISITION, manifests: [
-      { name: "valid.json", corpus_id: "sec", registries: ["sec" as const], documents: 1, valid: true, sources_present: 1, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 1}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 1}, (_, i) => `sec-source-${i}`), sources_present: 1 }] },
-      { name: "invalid.json", corpus_id: null, registries: [], documents: null, valid: false, sources_present: null, selections: [] },
+      { name: "valid.json", corpus_id: "sec", issuers: [], registries: ["sec" as const], documents: 1, valid: true, sources_present: 1, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 1}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 1}, (_, i) => `sec-source-${i}`), sources_present: 1 }] },
+      { name: "invalid.json", corpus_id: null, issuers: [], registries: [], documents: null, valid: false, sources_present: null, selections: [] },
     ] };
     const { rerender } = render(<PipelineReference {...props} />);
     fireEvent.click(screen.getByText("Implementation and terminal reference"));
@@ -87,4 +87,10 @@ describe("Pipeline terminal reference", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Copy failed. Select the code and copy it manually."));
   });
+});
+
+
+it("keeps mixed source commands explicit in one shared selection", () => {
+  const result = pipelineReferenceCommand("filings", { identifiers: "NVDA AMD 005930 000660", years: "2023 2024" }, "", null, "");
+  expect(result).toBe("rag-corpus acquire_edgar --identifier 'NVDA' --identifier 'AMD' --year 2023 --year 2024\nrag-corpus acquire_dart --identifier '005930' --identifier '000660' --year 2023 --year 2024");
 });
