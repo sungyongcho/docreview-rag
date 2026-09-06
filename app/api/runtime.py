@@ -486,6 +486,11 @@ class RuntimeApiServices(ApiServices):
                 )
         return tuple(ranks)
 
+    def _registry_name(self, doc_id: str) -> str | None:
+        """Return the publishing registry of an indexed document, or ``None`` when unknown."""
+        metadata = self._manifest_scope_index().documents.get(doc_id)
+        return None if metadata is None else metadata.registry
+
     def _candidate_resource(
         self,
         hit: ChunkHit,
@@ -500,7 +505,7 @@ class RuntimeApiServices(ApiServices):
                 "evidence_metadata_unavailable",
                 f"Retrieved document {hit.doc_id} has no corpus metadata.",
             )
-        base = EvidenceHit.from_chunk_hit(hit).model_dump(mode="python")
+        base = EvidenceHit.from_chunk_hit(hit, registry=metadata.registry).model_dump(mode="python")
         return EvidenceCandidate(
             **base,
             rank=rank,
@@ -607,7 +612,10 @@ class RuntimeApiServices(ApiServices):
                 )
                 return RetrieveResponse(
                     query=request.query,
-                    results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
+                    results=tuple(
+                        EvidenceHit.from_chunk_hit(hit, registry=self._registry_name(hit.doc_id))
+                        for hit in result.hits
+                    ),
                     candidates=tuple(
                         self._candidate_resource(hit, rank=rank, result=result)
                         for rank, hit in enumerate(result.candidates, start=1)

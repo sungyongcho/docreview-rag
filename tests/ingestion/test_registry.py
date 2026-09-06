@@ -2,9 +2,9 @@
 
 import pytest
 
-from app.ingestion.dart import parse_dart_filing
-from app.ingestion.edgar import parse_filing
-from app.ingestion.registry import REGISTRIES, registry_for, resolve_registry
+from app.ingestion.dart import DART_PARTS, parse_dart_filing
+from app.ingestion.edgar import CANONICAL, parse_filing
+from app.ingestion.registry import REGISTRIES, registry_for, resolve_registry, section_title
 from tests.ingestion.support import filing_document, filing_source
 
 
@@ -38,4 +38,30 @@ def test_registry_configuration_is_immutable_and_has_no_chunk_profiles():
     assert registry_for("sec").language == "en"
     assert registry_for("sec").section_label("7") == "Item 7"
     assert "회사" in registry_for("dart").section_label("I")
+    assert registry_for("sec").section_title("7") == "Management's Discussion and Analysis"
+    assert registry_for("dart").section_title("II") == "사업의 내용"
     assert not hasattr(registry_for("sec"), "chunk_target")
+
+
+def test_section_title_uses_only_the_named_registry():
+    """A known registry answers for its own codes and stays silent about foreign ones."""
+    market_risk = "Quantitative and Qualitative Disclosures About Market Risk"
+    assert section_title("7A", "sec") == market_risk
+    assert section_title("II", "dart") == "사업의 내용"
+    assert section_title("II", "sec") is None
+    assert section_title("7", "dart") is None
+
+
+def test_section_title_falls_back_across_registries_without_a_name():
+    """Registry-less hits still resolve because the two code spaces never collide."""
+    assert section_title("7") == "Management's Discussion and Analysis"
+    assert section_title("III") == "재무에 관한 사항"
+    assert section_title("III", "unknown") == "재무에 관한 사항"
+    assert section_title("99") is None
+    assert section_title(None) is None
+    assert section_title("") is None
+
+
+def test_registry_section_codes_never_overlap():
+    """The registry-less fallback is only sound while EDGAR and DART codes stay disjoint."""
+    assert not set(CANONICAL) & set(DART_PARTS)

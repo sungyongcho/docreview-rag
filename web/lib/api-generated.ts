@@ -2017,6 +2017,8 @@ export interface components {
              * @enum {string}
              */
             score_stage: "rrf" | "reranker";
+            /** Section Title */
+            section_title: string | null;
             /** Source Sha256 */
             source_sha256: string;
             /** Start Char */
@@ -2066,6 +2068,8 @@ export interface components {
             kind: "text" | "table";
             /** Score */
             score: number;
+            /** Section Title */
+            section_title: string | null;
             /** Source Sha256 */
             source_sha256: string;
             /** Start Char */

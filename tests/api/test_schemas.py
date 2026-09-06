@@ -45,6 +45,26 @@ def test_evidence_projection_exposes_complete_source_identity(hit):
     assert evidence.end_char == 180
     assert evidence.source_sha256 == "d" * 64
     assert evidence.citation == "ACME FY2024 - Item 7"
+    assert evidence.section_title == "Management's Discussion and Analysis"
+
+
+def test_evidence_projection_titles_dart_sections_by_registry(hit):
+    """Resolve a DART numeral through the named registry without touching the citation."""
+    dart_hit = hit.model_copy(update={"item": "II", "citation": "005930 FY2024 · II. 사업의 내용"})
+
+    evidence = EvidenceHit.from_chunk_hit(dart_hit, registry="dart")
+
+    assert evidence.section_title == "사업의 내용"
+    assert evidence.citation == "005930 FY2024 · II. 사업의 내용"
+
+
+def test_evidence_projection_leaves_unknown_sections_untitled(hit):
+    """Unnumbered sections and foreign codes carry no title instead of a guess."""
+    unnumbered = EvidenceHit.from_chunk_hit(hit.model_copy(update={"item": None}))
+    foreign = EvidenceHit.from_chunk_hit(hit.model_copy(update={"item": "II"}), registry="sec")
+
+    assert unnumbered.section_title is None
+    assert foreign.section_title is None
 
 
 def test_ingest_and_review_requests_reject_empty_bodies():

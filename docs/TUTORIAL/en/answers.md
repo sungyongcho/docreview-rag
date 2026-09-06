@@ -67,9 +67,22 @@ screens. It scrolls independently and returns focus when closed. It separates re
 prompt composition, and outgoing payload. Evidence is unresolved before execution; server-applied values
 belong to the resulting execution record, when collected.
 
-Expand **Retrieved evidence candidates** and read document identity, year, source links, and excerpts.
-Candidate count and citation count measure different things. Pin/Exclude choices apply only when you
-[review again with selected evidence](settings.md#step-10); they do not rewrite the current answer.
+Expand **Retrieved evidence candidates** to see one collapsed card per candidate, titled by its filing
+section: `Item 7 - (Management's Discussion and Analysis)` for EDGAR filings, the division name such as
+`II. 사업의 내용` for DART filings, and the bare citation label when no title is known. The header also
+carries the document id, a table badge and the character span; open a card to read the excerpt and its
+full citation. Ten cards show per page. The sticky toolbar always shows the visible range, the pinned and
+excluded counts, **Expand all** / **Collapse all** and, beyond one page, **Previous page** / **Next page**.
+Pinned cards start open; every other card starts closed. Pin/Exclude sit in each header, so they work on
+collapsed cards and across pages. Candidate count and citation count measure different things.
+Pin/Exclude choices apply only when you [review again with selected evidence](settings.md#step-10); they
+do not rewrite the current answer.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=collapsed-titled-paginated-evidence-candidates; locale=en; theme=light; capture=collapsed-cards-with-section-titles-toolbar-and-pager; issue=67; preserve-existing-assets=true -->
+
+**Screenshot pending for the collapsed, section-titled candidate cards with the toolbar and pager. Existing screenshots remain unchanged.**
 
 Use **View corpus readiness** to inspect preparation and **Back to conversation** to return to the retained
 draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated

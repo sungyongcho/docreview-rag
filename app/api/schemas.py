@@ -22,6 +22,7 @@ from pydantic.functional_validators import model_validator
 from app.api.evidence import EvidenceSelection
 from app.api.execution import ExecutionData
 from app.api.review_profile import ResolvedRetrievalProfile, ReviewSessionProfile
+from app.ingestion.registry import section_title as registry_section_title
 from app.llm.schemas import NonNegativeDecimal
 from app.observability.persistence import redact_sensitive_text, sanitize_json
 from app.observability.types import (
@@ -100,6 +101,7 @@ class EvidenceHit(StrictApiModel):
     chunk_id: PositiveInt
     doc_id: NonBlank
     item: NonBlank | None
+    section_title: NonBlank | None
     kind: Literal["text", "table"]
     citation: NonBlank
     start_char: NonnegativeInt
@@ -117,14 +119,19 @@ class EvidenceHit(StrictApiModel):
         return self
 
     @classmethod
-    def from_chunk_hit(cls, hit: ChunkHit) -> Self:
-        """Project the public evidence fields from one validated retrieval hit."""
+    def from_chunk_hit(cls, hit: ChunkHit, *, registry: str | None = None) -> Self:
+        """Project the public evidence fields from one validated retrieval hit.
+
+        ``registry`` names the publishing registry when the caller knows it; otherwise the
+        section title is resolved from the item code alone.
+        """
         if not isinstance(hit, ChunkHit):
             raise TypeError("evidence responses require ChunkHit values")
         return cls(
             chunk_id=hit.chunk_id,
             doc_id=hit.doc_id,
             item=hit.item,
+            section_title=registry_section_title(hit.item, registry),
             kind=hit.kind,
             citation=hit.citation,
             start_char=hit.start_char,

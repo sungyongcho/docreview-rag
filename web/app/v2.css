@@ -288,9 +288,21 @@ table td { line-height: 1.55; }
 .evidence-selection-guide dt { display: flex; align-items: center; gap: 6px; color: var(--text); font-weight: 550; }
 .evidence-selection-guide dd { margin: 0; }
 .evidence-selection-guide > p { margin: 10px 0 0; line-height: 1.6; }
-.evidence-selection-controls { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 16px; background: var(--surface); border-block: 1px solid var(--border); font-size: 12px; }
+.evidence-toolbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; background: var(--surface); border-block: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.evidence-toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.evidence-toolbar .button { min-height: 30px; padding: 4px 9px; font-size: 12px; }
+.evidence-pager { display: inline-flex; align-items: center; gap: 6px; }
+.evidence-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.evidence-card-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.evidence-card-toggle svg { flex: none; color: var(--muted); }
+.evidence-card-toggle .evidence-heading { display: inline; font-size: 13px; }
+.evidence-card-header .evidence-meta { flex: 1 1 auto; }
+.evidence-card-header .evidence-actions { margin-top: 0; margin-left: auto; }
+.evidence-card-body { margin-top: 8px; }
+.evidence-card-body .evidence-citation { display: block; font-size: 11px; color: var(--muted); }
+.evidence-hit.excluded .evidence-heading { color: var(--muted); text-decoration: line-through; }
 .evidence-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px 10px; }
 .evidence-actions button[data-action="exclude"][aria-pressed="true"] { color: var(--bad); border-color: var(--bad); }
 .evidence-actions button[data-action="pin"][aria-pressed="true"] { border-color: var(--good); }
 .evidence-hit.pinned { border-left: 2px solid var(--good); }.evidence-hit.excluded { border-left: 2px solid var(--bad); }
-@media (max-width:560px) { .evidence-actions button { min-height: 44px; } }
+@media (max-width:560px) { .evidence-actions button, .evidence-card-toggle { min-height: 44px; } }

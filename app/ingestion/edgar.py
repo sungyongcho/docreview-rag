@@ -127,6 +127,11 @@ def edgar_section_label(item: str) -> str:
     return f"Item {item}"
 
 
+def edgar_section_title(item: str) -> str | None:
+    """Return the canonical SEC title for an Item code, or ``None`` for an unknown code."""
+    return CANONICAL.get(item)
+
+
 def _inline_css(el: Tag) -> str:
     """Return space-joined inline CSS from an element and up to two nested spans."""
     styles: list[str] = []

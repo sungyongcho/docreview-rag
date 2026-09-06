@@ -6,6 +6,7 @@ import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
 import { GuidesNavigation } from "@/components/guides-navigation";
 import { ExecutionPerformance } from "@/components/execution-performance";
+import { EvidenceCandidates } from "@/components/evidence-candidates";
 import { LanguageSwitch } from "@/lib/i18n";
 import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
@@ -19,8 +20,6 @@ import {
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
-  Pin as PinIcon,
-  CircleMinus,
   Send,
   SquarePen,
   Trash2,
@@ -970,8 +969,6 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
 function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
   const { t, locale } = useI18n();
   const pill = message.role === "assistant" ? verdictPill(message) : null;
-  const pinned = message.pinnedChunkIds ?? [];
-  const excluded = message.excludedChunkIds ?? [];
   const notInDocs = message.evidenceLabel === "Related evidence — not direct support";
   return (
     <article className={`message ${message.role}`}>
@@ -985,34 +982,7 @@ function ReviewMessage({ message, latestEvidence, busy, onMark, onUseSelected, o
             {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}
             <details className="evidence" data-help={latestEvidence ? "review.evidence" : undefined}>
               <summary data-tour="evidence-toggle">{t(message.evidenceLabel === "Cited evidence" ? "Retrieved evidence candidates" : message.evidenceLabel ?? "Retrieved candidates")} · {message.evidence.length}</summary>
-              <div className="evidence-selection-guide" id={`evidence-selection-${message.id}`}>
-                <dl><div><dt><PinIcon size={13} aria-hidden="true" />{t("Pin")}</dt><dd>{t("Include this evidence first when reviewing the answer again.")}</dd></div><div><dt><CircleMinus size={13} aria-hidden="true" />{t("Exclude")}</dt><dd>{t("Leave this evidence out of the next review.")}</dd></div></dl>
-                <p>{t("Pinning does not guarantee that the answer cites this evidence.")}</p>
-                <p>{t("Selections apply when you review again. The current answer stays unchanged, and a new answer is added.")}</p>
-                {!message.candidateToken && <p>{t("This saved result cannot change evidence. Run the question again to retrieve a fresh selection.")}</p>}
-              </div>
-              {message.candidateToken && pinned.length + excluded.length > 0 && <div className="evidence-selection-controls"><span>{t("{pinned} pinned · {excluded} excluded", { pinned: pinned.length, excluded: excluded.length })}</span><button className="button primary" type="button" disabled={busy} onClick={onUseSelected}>{t("Review again with selected evidence")}</button></div>}
-              {message.evidence.map((hit) => {
-                const isPinned = pinned.includes(hit.chunk_id);
-                const isExcluded = excluded.includes(hit.chunk_id);
-                return (
-                  <div className={`evidence-hit${isPinned ? " pinned" : ""}${isExcluded ? " excluded" : ""}`} key={hit.chunk_id}>
-                    <div className="evidence-meta">
-                      <strong>{hit.citation}</strong>
-                      <span aria-hidden="true">·</span>
-                      <span className="doc-chip">{hit.doc_id}</span>
-                      {hit.kind === "table" && <><span aria-hidden="true">·</span><span className="kind-badge">{t("table")}</span></>}
-                      <span aria-hidden="true">·</span>
-                      <span>{t("chars")}{" "}{hit.start_char}–{hit.end_char}</span>
-                    </div>
-                    <p>{hit.body}</p>
-                    <div className="evidence-actions" aria-describedby={`evidence-selection-${message.id}`}>
-                      <button type="button" disabled={!message.candidateToken} aria-pressed={isPinned} data-action="pin" title={t("Include this evidence first when reviewing the answer again.")} onClick={() => onMark(hit.chunk_id, "pin")}><PinIcon size={13} aria-hidden="true" />{t("Pin")}</button>
-                      <button type="button" disabled={!message.candidateToken} aria-pressed={isExcluded} data-action="exclude" title={t("Leave this evidence out of the next review.")} onClick={() => onMark(hit.chunk_id, "exclude")}><CircleMinus size={13} aria-hidden="true" />{t("Exclude")}</button>
-                    </div>
-                  </div>
-                );
-              })}
+              <EvidenceCandidates key={message.id} message={message} busy={busy} onMark={onMark} onUseSelected={onUseSelected} />
             </details>
           </>
         ) : null}

@@ -87,7 +87,7 @@ The scope and preset **?** controls support hover, focus, touch, and Escape. **V
 - Selecting either action only updates the selection and its count. It does not change the displayed answer.
 - **Review again with selected evidence** submits a new review and adds a new result. It may incur provider costs.
 
-Click a selected Pin or Exclude again to deselect it. A chunk cannot be pinned and excluded at the same time. Retrieved candidate count and actual citation count describe different things. Older saved results without a usable selection token explain why their selection buttons are disabled; retrieve a fresh result if you need to change evidence.
+Click a selected Pin or Exclude again to deselect it. Both buttons sit in each card header, so they work while a card is collapsed and the selection survives paging; pinned cards open by default when the list renders. A chunk cannot be pinned and excluded at the same time. Retrieved candidate count and actual citation count describe different things. Older saved results without a usable selection token explain why their selection buttons are disabled; retrieve a fresh result if you need to change evidence.
 
 ## Evidence size and execution limits {#budgets}
 
