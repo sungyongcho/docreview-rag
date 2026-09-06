@@ -10,7 +10,6 @@ from tests.ingestion.golden import (
     BLOCKS,
     COVERAGE,
     N_ITEMS,
-    NVDA_FY2024_FILE,
     NVDA_FY2024_ITEM15_MIN_CHARS,
     NVDA_FY2024_OFFSETS,
     PROFILE_RULES,
@@ -270,11 +269,10 @@ def test_heading_based_items_stay_in_sec_order(
 
 
 def test_nvda_fy2024_heading_offsets_match_the_source(
-    edgar_module: ModuleType,
     parsed: dict,
 ) -> None:
     """Prove selected Item heading elements against exact source positions."""
-    raw = edgar_module.read_source(NVDA_FY2024_FILE)
+    raw = parsed["NVDA-FY2024"].source.read()
     by_item = {section.item: section for section in parsed["NVDA-FY2024"].sections}
 
     for item, (expected_offset, expected_text) in NVDA_FY2024_OFFSETS.items():

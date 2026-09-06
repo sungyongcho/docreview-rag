@@ -56,7 +56,7 @@ function sampleEvaluationRequest(): EvaluationRequest {
     golden_revision_id: defaults.golden_revision_id,
     mode: defaults.mode,
     profile: DEFAULT_PROFILE,
-    target_text_chars: [500, 1200],
+    target_tokens: [1024, 2048],
     strategies: ["lexical", "vector", "hybrid"],
     lexical_rankers: ["ts_rank_cd", "bm25"],
   };

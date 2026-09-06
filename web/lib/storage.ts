@@ -1,5 +1,5 @@
 import { browserStorage } from "./production-preview";
-import type { Conversation, ExperimentDefaults, ReviewSessionProfile } from "./types";
+import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./types";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
 
 const STORAGE_KEY = "docreview:conversations:v2";
@@ -36,7 +36,7 @@ export function saveConversations(conversations: Conversation[]): Conversation[]
   return bounded;
 }
 
-export function newConversation(profile: ReviewSessionProfile = loadDefaultProfile()): Conversation {
+export function newConversation(profile: ReviewSessionDraft = loadDefaultProfile()): Conversation {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
@@ -48,17 +48,17 @@ export function newConversation(profile: ReviewSessionProfile = loadDefaultProfi
   };
 }
 
-export function loadDefaultProfile(): ReviewSessionProfile {
+export function loadDefaultProfile(): ReviewSessionDraft {
   if (typeof window === "undefined") return DEFAULT_SESSION_PROFILE;
   try {
-    const value = JSON.parse(browserStorage().getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionProfile> | null;
+    const value = JSON.parse(browserStorage().getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionDraft> | null;
     return value ? mergeProfile(value) : DEFAULT_SESSION_PROFILE;
   } catch {
     return DEFAULT_SESSION_PROFILE;
   }
 }
 
-export function saveDefaultProfile(profile: ReviewSessionProfile): void {
+export function saveDefaultProfile(profile: ReviewSessionDraft): void {
   if (typeof window !== "undefined") browserStorage().setItem(DEFAULT_PROFILE_KEY, JSON.stringify(profile));
 }
 
@@ -143,7 +143,7 @@ export function browserStorageUsage(): number {
 }
 
 
-function mergeProfile(profile: Partial<ReviewSessionProfile>): ReviewSessionProfile {
+function mergeProfile(profile: Partial<ReviewSessionDraft>): ReviewSessionDraft {
   return {
     ...DEFAULT_SESSION_PROFILE,
     ...profile,
@@ -167,7 +167,7 @@ function migrateConversation(conversation: Conversation): Conversation {
   if (profile && "engine" in profile) {
     return {
       ...conversation,
-      profile: mergeProfile(profile as Partial<ReviewSessionProfile>),
+      profile: mergeProfile(profile as Partial<ReviewSessionDraft>),
     };
   }
   return {

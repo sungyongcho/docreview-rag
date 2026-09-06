@@ -4,9 +4,8 @@ from collections.abc import Callable
 import os
 from pathlib import Path
 import tempfile
-from typing import cast
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +30,9 @@ def _default_session_factory() -> AsyncSession:
     from app.db.session import Session
 
     return Session()
+
+
+_GOLDEN_SUITE_ID = TypeAdapter(GoldenSuiteId)
 
 
 class GoldenAdminService:
@@ -59,16 +61,18 @@ class GoldenAdminService:
     @staticmethod
     def _resource(revision: GoldenRevision) -> GoldenRevisionResource:
         """Project one ORM row onto the strict administrator schema."""
-        return GoldenRevisionResource(
-            revision_id=revision.id,
-            suite_id=cast("GoldenSuiteId", revision.suite_id),
-            version=revision.version,
-            status=cast("str", revision.status),
-            payload=tuple(revision.payload),
-            sha256=revision.sha256,
-            parent_id=revision.parent_id,
-            created_at=revision.created_at,
-            updated_at=revision.updated_at,
+        return GoldenRevisionResource.model_validate(
+            {
+                "revision_id": revision.id,
+                "suite_id": revision.suite_id,
+                "version": revision.version,
+                "status": revision.status,
+                "payload": tuple(revision.payload),
+                "sha256": revision.sha256,
+                "parent_id": revision.parent_id,
+                "created_at": revision.created_at,
+                "updated_at": revision.updated_at,
+            }
         )
 
     async def list(self, suite_id: GoldenSuiteId) -> tuple[GoldenRevisionResource, ...]:
@@ -189,8 +193,11 @@ class GoldenAdminService:
                 raise ValueError("golden draft changed; refresh before validating")
             cases = GOLDEN_CASES.validate_python(revision.payload)
             validate_unique_cases(cases)
-            _golden_path, manifest_path = self._paths(cast("GoldenSuiteId", revision.suite_id))
-            validate_golden_sources(cases, manifest_path)
+            suite_id = _GOLDEN_SUITE_ID.validate_python(revision.suite_id, strict=True)
+            _golden_path, manifest_path = self._paths(suite_id)
+            validate_golden_sources(
+                cases, manifest_path, selection_id=SUITES[suite_id].selection_id
+            )
             revision.status = "validated"
             await session.commit()
             await session.refresh(revision)
@@ -206,7 +213,9 @@ class GoldenAdminService:
                 raise ValueError("golden revision must be validated before publication")
             if revision.sha256 != expected_sha256:
                 raise ValueError("golden revision changed; refresh before publishing")
-            path, _manifest_path = self._paths(cast("GoldenSuiteId", revision.suite_id))
+            path, _manifest_path = self._paths(
+                _GOLDEN_SUITE_ID.validate_python(revision.suite_id, strict=True)
+            )
             path.parent.mkdir(parents=True, exist_ok=True)
             descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
             try:

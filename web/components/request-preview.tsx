@@ -6,19 +6,19 @@ import { PanelRightOpen, X } from "lucide-react";
 import "./review-controls.css";
 import { useI18n } from "@/lib/i18n";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionProfile, type RetrievalPreset } from "@/lib/types";
+import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft, type RetrievalPreset } from "@/lib/types";
 
 const PRESETS: Array<[RetrievalPreset, string]> = [["balanced", "Balanced"], ["korean", "Korean"], ["accuracy", "Accuracy"], ["custom", "Custom"]];
 
 /** Compare effective values, so preset descriptions cannot drift from request settings. */
-export function presetChanges(profile: ReviewSessionProfile, preset: RetrievalPreset) {
+export function presetChanges(profile: ReviewSessionDraft, preset: RetrievalPreset) {
   const baseline = resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE);
   const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset });
   return Object.entries(effective).filter(([key, value]) => value !== baseline[key as keyof typeof baseline]);
 }
 
 /** One description shared by the visible control and the full comparison. */
-export function presetDescription(profile: ReviewSessionProfile, preset: RetrievalPreset) {
+export function presetDescription(profile: ReviewSessionDraft, preset: RetrievalPreset) {
   const effective = resolvedRetrievalProfile({ ...profile, retrieval_preset: preset });
   const changes = presetChanges(profile, preset);
   return {
@@ -27,7 +27,7 @@ export function presetDescription(profile: ReviewSessionProfile, preset: Retriev
   };
 }
 
-export function RequestPreview({ profile, query }: { profile: ReviewSessionProfile; query: string }) {
+export function RequestPreview({ profile, query }: { profile: ReviewSessionDraft; query: string }) {
   const { t } = useI18n();
   const effective = resolvedRetrievalProfile(profile);
   const [open, setOpen] = useState(false);

@@ -4,13 +4,13 @@ import { useI18n } from "@/lib/i18n";
 
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
-import type { Readiness, ReviewSessionProfile } from "@/lib/types";
+import type { Readiness, ReviewSessionDraft } from "@/lib/types";
 
 /** Keep model selection beside the engine while exposing unavailable server states. */
 export function LocalEngineSettings({ profile, readiness, onChange }: {
-  profile: ReviewSessionProfile;
+  profile: ReviewSessionDraft;
   readiness: Readiness | null;
-  onChange: (update: Partial<ReviewSessionProfile>) => void;
+  onChange: (update: Partial<ReviewSessionDraft>) => void;
 }) {
   const { t, locale } = useI18n();
   if (!LOCAL_ENGINE_VISIBLE) return null;
@@ -22,7 +22,7 @@ export function LocalEngineSettings({ profile, readiness, onChange }: {
   const issue = localModelIssue(profile, readiness);
   const label = !local ? "Local LLM (Checking…)" : !available ? "Local LLM (Unavailable)" : profile.engine === "local" ? "Local LLM (Selected)" : "Local LLM";
   return <>
-    <label className="composer-engine-field"><span className="composer-engine-label">{t("Answer engine")}</span><select value={profile.engine} onChange={(event) => onChange({ engine: event.target.value as ReviewSessionProfile["engine"], local_model: selected })}>
+    <label className="composer-engine-field"><span className="composer-engine-label">{t("Answer engine")}</span><select value={profile.engine} onChange={(event) => onChange({ engine: event.target.value as ReviewSessionDraft["engine"], local_model: selected })}>
       <option value="openai">{t("OpenAI API")}</option>
       <option value="local" disabled={!available}>{t(label)}</option>
     </select></label>

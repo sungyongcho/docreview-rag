@@ -17,6 +17,7 @@ from app.retrieval.bm25 import TermStatCounts, backfill_term_stats
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
+    OpenAIEmbeddingProvider,
     embed_missing_chunks,
     get_embedding_provider,
 )
@@ -231,7 +232,7 @@ async def _run(
                     "input_tokens": provider.usage.input_tokens,
                     "estimated_cost_usd": format(provider.usage.estimated_cost_usd, "f"),
                 }
-                if hasattr(provider, "usage")
+                if isinstance(provider, OpenAIEmbeddingProvider)
                 else None
             ),
         )

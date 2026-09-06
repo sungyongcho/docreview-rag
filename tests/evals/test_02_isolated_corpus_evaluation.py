@@ -21,8 +21,10 @@ from app.evals.arms import RetrievalStrategy, make_retriever
 from app.evals.corpus import temporary_corpus_session
 from app.evals.retrieval_eval import evaluate_retriever, persist_evaluation
 from app.evals.types import GoldenCase, GoldenSpan
-from app.ingestion.seed import ChunkRecord, DocumentRecord, SeedBatch
+from app.ingestion.chunk import Chunk
+from app.ingestion.seed import SeedBatch, filing_records
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.ingestion.seed.support import sample_filing
 from tests.live_postgres import live_postgres_unavailable
 
 SOURCE_SHA256 = "a" * 64
@@ -30,38 +32,20 @@ SOURCE_SHA256 = "a" * 64
 
 def _batch() -> SeedBatch:
     """Build the one-document corpus indexed into the temporary tables."""
-    document = DocumentRecord(
-        doc_id="NVDA-FY2024",
-        registry="sec",
-        language="en",
-        issuer="NVDA",
-        issuer_id="1045810",
-        fiscal_year=2024,
-        form="10-K",
-        filing_date="2024-02-21",
-        report_period="2024-01-28",
-        filing_id="0001045810-24-000029",
-        source_url="https://example.test/nvda-2024",
-        parse_status="parsed",
-        item_index=({"item": "7", "status": "parsed"},),
-        source_length=1_000,
-        source_sha256=SOURCE_SHA256,
-    )
+    filing = replace(sample_filing(), source_length=1000)
     bodies = (
         "research expense increased 2024 research expense increased 2024",
         "inventory and supply obligations decreased during the year",
         "a collaboration agreement discussed unrelated operating terms",
     )
     chunks = tuple(
-        ChunkRecord(
-            doc_id=document.doc_id,
-            language="en",
+        Chunk(
+            doc_id=filing.source.document.document_id,
             item="7",
             kind="text",
             ordinal=index,
             body=body,
             context_header="NVDA FY2024 · Item 7",
-            index_text=f"NVDA FY2024 · Item 7\n\n{body}",
             start_char=(index + 1) * 100,
             end_char=(index + 1) * 100 + 90,
             source_sha256=SOURCE_SHA256,
@@ -69,7 +53,8 @@ def _batch() -> SeedBatch:
         )
         for index, body in enumerate(bodies)
     )
-    return SeedBatch(documents=(document,), chunks=chunks)
+    document, records = filing_records(filing, chunks)
+    return SeedBatch(documents=(document,), chunks=records, filings=(filing,))
 
 
 def _cases() -> list[GoldenCase]:
@@ -130,19 +115,25 @@ async def _exercise(database_url: URL) -> tuple[bool, str]:
         await connection.close()
         connection = None
 
-        provider = DeterministicEmbeddingProvider()
+        provider = DeterministicEmbeddingProvider(dimensions=12)
         recorded_at = datetime(2026, 8, 12, 16, tzinfo=UTC)
         evaluations = {}
         async with temporary_corpus_session(
             engine,
             _batch(),
             provider,
-            target_text_chars=500,
+            target_tokens=500,
             embedding_provider="deterministic",
         ) as (session, indexing):
             assert indexing.document_count == 1
             assert indexing.chunk_count == 3
             assert indexing.passed
+            assert (
+                await session.scalar(
+                    text("SELECT min(vector_dims(embedding)) FROM chunk_embeddings")
+                )
+                == 12
+            )
 
             # The corpus arm owns its BM25 statistics: indexing built them once,
             # before any experiment ran, and every BM25 arm below reads the same set.
@@ -204,22 +195,6 @@ async def _exercise(database_url: URL) -> tuple[bool, str]:
             await session.rollback()
             assert await session.scalar(text("SELECT count(*) FROM chunks")) == 3
             assert await session.scalar(text("SELECT count(*) FROM chunk_lengths")) == 3
-
-            await session.execute(
-                text(
-                    """
-                    CREATE TEMP TABLE eval_results (
-                        id bigserial PRIMARY KEY,
-                        suite varchar(128) NOT NULL,
-                        config jsonb NOT NULL,
-                        metrics jsonb NOT NULL,
-                        raw_artifact_path text NOT NULL,
-                        created_at timestamptz NOT NULL DEFAULT now()
-                    ) ON COMMIT PRESERVE ROWS
-                    """
-                )
-            )
-            await session.commit()
 
             first = await persist_evaluation(
                 session,

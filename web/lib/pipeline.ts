@@ -223,20 +223,20 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     const facetsKnown = facetTotal > 0 && facetTotal === documents;
     const gaps = facetsKnown
       ? manifests
-        .filter((item) => item.registry && count(item.documents) > count(input.registryCounts[item.registry]))
-        .map((item) => ({ registry: item.registry, gap: count(item.documents) - count(input.registryCounts[item.registry as string]) }))
+        .filter((item) => item.registries.length === 1 && count(item.documents) > count(input.registryCounts[item.registries[0]]))
+        .map((item) => ({ registry: item.registries[0], gap: count(item.documents) - count(input.registryCounts[item.registries[0]]) }))
       : [];
     let hint = "";
     if (source === "admin" && indexDone && gaps.length) {
       for (const item of gaps) numbers.push(`${n(item.gap)} listed filing${item.gap === 1 ? "" : "s"} not ingested yet (${registryLabel(item.registry)})`);
-      hint = "Re-run Ingest all manifests to add them.";
+      hint = "Re-run Ingest selected sources to add them.";
     }
     if (indexDone) drafts.index = { status: "done", numbers, hint };
     else if (schemaBroken) drafts.index = { status: "blocked", statusDetail: "database", numbers, hint: schemaMessage };
     else if (filingsUnknown) drafts.index = { ...checking };
     else if (!filingsDone) drafts.index = { status: "blocked", statusDetail: `after ${stepRef(1, "Filings")}`, numbers: ["Nothing ingested yet."], hint: "Download filings first (step 1).", blockedBy: "filings" };
-    else drafts.index = { status: "action", numbers: ["Nothing ingested yet."], hint: "Pick the manifests that list your filings and run Ingest all manifests." };
-    drafts.index.action = { label: "Ingest all manifests", kind: "ingest_all" };
+    else drafts.index = { status: "action", numbers: ["Nothing ingested yet."], hint: "Pick the manifests that list your filings and run Ingest selected sources." };
+    drafts.index.action = { label: "Ingest selected sources", kind: "ingest_all" };
   }
 
   // Step 3 — Embeddings
@@ -371,9 +371,9 @@ function filingsDraft(manifests: ManifestSummary[], documents: number, writable:
     const numbers = source === "pending" ? [] : [`${n(documents)} ${label}`];
     return { status: readOnly ? "readonly" : "unknown", statusDetail: readOnly ? "" : "Checking…", numbers, action };
   }
-  const total = manifests.reduce((sum, item) => sum + count(item.documents), 0);
+  const total = new Set(manifests.flatMap((item) => item.selections.flatMap((selection) => selection.document_ids))).size;
   const present = manifests.reduce((sum, item) => sum + count(item.sources_present), 0);
-  const perRegistry = manifests.map((item) => `${registryLabel(item.registry)} ${n(count(item.sources_present))}/${n(count(item.documents))}`);
+  const perRegistry = manifests.map((item) => `${registryLabel(item.registries.join(" / "))} ${n(count(item.sources_present))}/${n(count(item.documents))}`);
   if (writable === false) {
     return { status: "blocked", statusDetail: "data/ not writable", numbers: [`${n(present)} / ${n(total)} filings on disk`, ...perRegistry], hint: "Set HOST_GID=<id -g> in .env and restart the app so the container can write data/.", action };
   }

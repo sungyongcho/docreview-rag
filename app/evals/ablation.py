@@ -30,7 +30,7 @@ DEFAULT_LEXICAL_RANKERS: tuple[LexicalRanker, ...] = LEXICAL_RANKERS
 
 
 def experiment_name(
-    target_text_chars: int,
+    target_tokens: int,
     strategy: RetrievalStrategy,
     lexical_ranker: LexicalRanker | None,
 ) -> str:
@@ -44,7 +44,7 @@ def experiment_name(
     KeyError
         If ``lexical_ranker`` has no registered filename slug.
     """
-    stem = f"structure-{target_text_chars}-{strategy}"
+    stem = f"structure-{target_tokens}-{strategy}"
     return stem if lexical_ranker is None else f"{stem}-{RANKER_SLUG[lexical_ranker]}"
 
 
@@ -56,7 +56,7 @@ def sort_key(config: ExperimentConfig) -> tuple[int, int, int, str]:
     name breaks final ties.
     """
     return (
-        config.target_text_chars,
+        config.target_tokens,
         STRATEGY_ORDER[config.strategy],
         -1 if config.lexical_ranker is None else RANKER_ORDER[config.lexical_ranker],
         config.name,
@@ -82,7 +82,7 @@ class ExperimentConfig:
     """
 
     name: str
-    target_text_chars: int
+    target_tokens: int
     strategy: RetrievalStrategy
     embedding_provider: str
     dimensions: int
@@ -98,7 +98,7 @@ class ExperimentConfig:
         """Reject contradictory or incomplete experiment provenance."""
         if ARM_NAME.fullmatch(self.name) is None:
             raise ValueError("experiment name must be lowercase kebab-case")
-        if self.target_text_chars <= 0 or self.dimensions <= 0:
+        if self.target_tokens <= 0 or self.dimensions <= 0:
             raise ValueError("chunk target and embedding dimensions must be positive")
         if self.strategy not in STRATEGY_ORDER:
             raise ValueError(f"unsupported retrieval strategy: {self.strategy}")
@@ -145,7 +145,7 @@ class ExperimentConfig:
             "name": self.name,
             "chunking": {
                 "strategy": "structure-aware",
-                "target_text_chars": self.target_text_chars,
+                "target_tokens": self.target_tokens,
                 "golden_identity": "source-sha256-and-half-open-span",
             },
             "retrieval": retrieval,
@@ -206,7 +206,7 @@ class AblationReport:
         return markdown_table(
             [
                 "Config",
-                "Chunk target",
+                "Chunk target (tokens)",
                 "Retrieval",
                 "Lexical ranker",
                 "Recall@k",
@@ -219,7 +219,7 @@ class AblationReport:
             [
                 [
                     outcome.config.name,
-                    str(outcome.config.target_text_chars),
+                    str(outcome.config.target_tokens),
                     outcome.config.strategy,
                     outcome.config.lexical_ranker or "-",
                     f"{outcome.evaluation.score.recall_at_k:.6f}",
@@ -235,7 +235,7 @@ class AblationReport:
 
 def experiment_matrix(
     *,
-    target_text_chars: Sequence[int] = (500, 1200),
+    target_tokens: Sequence[int] = (1024, 2048),
     strategies: Sequence[RetrievalStrategy] = ("lexical", "vector", "hybrid"),
     lexical_rankers: Sequence[LexicalRanker] = DEFAULT_LEXICAL_RANKERS,
     bm25_k1: float = DEFAULT_BM25_K1,
@@ -251,8 +251,8 @@ def experiment_matrix(
 
     Parameters
     ----------
-    target_text_chars : Sequence[int]
-        Unique chunk-size targets to evaluate.
+    target_tokens : Sequence[int]
+        Unique token-count targets to evaluate.
     strategies : Sequence[RetrievalStrategy]
         Unique retrieval paths to cross with each chunk target.
     lexical_rankers : Sequence[LexicalRanker]
@@ -293,9 +293,9 @@ def experiment_matrix(
     retrieval therefore contributes one arm per chunk target regardless of the
     number of lexical rankers.
     """
-    if not target_text_chars or not strategies:
+    if not target_tokens or not strategies:
         raise ValueError("experiment matrix axes must not be empty")
-    if len(set(target_text_chars)) != len(target_text_chars):
+    if len(set(target_tokens)) != len(target_tokens):
         raise ValueError("chunk targets must be unique")
     if len(set(strategies)) != len(strategies):
         raise ValueError("retrieval strategies must be unique")
@@ -307,7 +307,7 @@ def experiment_matrix(
             raise ValueError("lexical rankers must be unique")
 
     configs: list[ExperimentConfig] = []
-    for target in target_text_chars:
+    for target in target_tokens:
         for strategy in strategies:
             rankers: tuple[LexicalRanker | None, ...] = (
                 (None,) if strategy == "vector" else tuple(lexical_rankers)
@@ -317,7 +317,7 @@ def experiment_matrix(
                 configs.append(
                     ExperimentConfig(
                         name=experiment_name(target, strategy, ranker),
-                        target_text_chars=target,
+                        target_tokens=target,
                         strategy=strategy,
                         embedding_provider=embedding_provider,
                         dimensions=dimensions,

@@ -5,8 +5,8 @@ from app.ingestion.tables import table_to_markdown
 from tests.ingestion.chunk.support import build_filing, markdown_cells
 
 
-def test_table_is_not_split_without_row_level_provenance(C):
-    """Keep each rendered table whole when only table-level provenance exists."""
+def test_small_table_stays_whole_with_row_level_provenance(C):
+    """Keep a small complete table intact and preserve enclosing source coordinates."""
     html = """<table>
       <tr><td></td><td>2024</td><td>2023</td></tr>
       <tr><td>Revenue</td><td>100</td><td>90</td></tr>
@@ -22,8 +22,8 @@ def test_table_is_not_split_without_row_level_provenance(C):
     assert (chunks[0].start_char, chunks[0].end_char) == (10, 200)
 
 
-def test_each_renderable_source_table_becomes_exactly_one_chunk(C, corpus, chunks_by_doc):
-    """Map every renderable table in parsed sections to exactly one chunk."""
+def test_each_renderable_source_table_has_complete_fragment_coverage(C, corpus, chunks_by_doc):
+    """Map each source table to a distinct enclosing span with typed fragment membership."""
     for doc_id, (filing, _raw) in corpus.items():
         renderable = sum(
             section.status == "parsed"
@@ -32,16 +32,22 @@ def test_each_renderable_source_table_becomes_exactly_one_chunk(C, corpus, chunk
             for section in filing.sections
             for block in section.blocks
         )
-        output = sum(chunk.kind == "table" for chunk in chunks_by_doc[doc_id])
+        output = len(
+            {
+                (chunk.start_char, chunk.end_char)
+                for chunk in chunks_by_doc[doc_id]
+                if chunk.kind == "table"
+            }
+        )
         assert output == renderable, (
             f"{doc_id}: table chunks do not map one-to-one to source tables"
         )
 
 
-def test_table_chunk_spans_are_unique_within_a_document(chunks_by_doc):
-    """Give every table chunk a unique source span within its document."""
+def test_table_chunk_identities_are_unique_within_a_document(chunks_by_doc):
+    """Give table fragments stable identities independently of repeated source spans."""
     for doc_id, chunks in chunks_by_doc.items():
-        spans = [(chunk.start_char, chunk.end_char) for chunk in chunks if chunk.kind == "table"]
+        spans = [chunk.stable_key for chunk in chunks if chunk.kind == "table"]
         assert len(spans) == len(set(spans)), f"{doc_id}: duplicate table citation span"
 
 

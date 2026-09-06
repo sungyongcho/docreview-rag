@@ -93,7 +93,7 @@ async def review_stream(
     services : Services
         Injected service boundary with observer support.
     telemetry : Literal["stages"] | None
-        Opt-in for additive stage events; omitted headers retain the legacy event sequence.
+        Opt-in for measured stage events alongside committed-node progress.
 
     Returns
     -------
@@ -119,7 +119,7 @@ async def review_stream(
         await queue.put(("node", event.model_dump_json()))
 
     async def on_stage(event: StageEvent) -> None:
-        """Queue measured transitions separately from the legacy committed-node events."""
+        """Queue measured transitions separately from the committed-node events."""
         await queue.put(("stage", event.model_dump_json()))
 
     async def run_review() -> None:
@@ -132,8 +132,6 @@ async def review_stream(
                         RetrieveRequest(
                             query=request.query,
                             session_profile=request.session_profile,
-                            k=request.k,
-                            filters=request.filters,
                         )
                     )
                     if isinstance(prepared, RetrieveResponse):

@@ -10,7 +10,9 @@
     "predev": "node scripts/prepare-tutorial.mjs",
     "pretest": "node scripts/prepare-tutorial.mjs",
     "pretypecheck": "node scripts/prepare-tutorial.mjs",
-    "prebuild": "node scripts/prepare-tutorial.mjs"
+    "prebuild": "node scripts/prepare-tutorial.mjs",
+    "generate:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts",
+    "check:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts --check"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -28,6 +30,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
   }

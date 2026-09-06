@@ -1,4 +1,4 @@
-import type { AdminDocument, CorpusCounts, EvaluationComparison, EvaluationJob, GoldenSuite, ManifestSummary } from "./types";
+import type { AdminDocument, CorpusSnapshot, EvaluationComparison, EvaluationJob, GoldenSuite, ManifestSummary } from "./types";
 import { DEFAULT_PROFILE } from "./types";
 
 export const CANNED_SUITES: GoldenSuite[] = [
@@ -24,7 +24,7 @@ export const CANNED_SUITES: GoldenSuite[] = [
 }));
 
 /** Stored portfolio numbers shown when no administrator API is reachable. */
-export const CANNED_CORPUS: { status: CorpusCounts; manifests: ManifestSummary[]; documents: AdminDocument[] } = {
+export const CANNED_CORPUS: { status: CorpusSnapshot["status"]; manifests: ManifestSummary[]; documents: AdminDocument[] } = {
   status: {
     database_connected: false,
     schema_status: "compatible",
@@ -37,10 +37,13 @@ export const CANNED_CORPUS: { status: CorpusCounts; manifests: ManifestSummary[]
     writable: false,
     provider: "deterministic",
   },
-  manifests: [
-    { name: "manifest.json", registry: "sec", documents: 20, valid: true, sources_present: 20 },
-    { name: "dart-manifest.json", registry: "dart", documents: 2, valid: true, sources_present: 2 },
-  ],
+  manifests: [{
+    name: "manifest.json", corpus_id: "demo", registries: ["sec", "dart"], documents: 22, valid: true, sources_present: 22,
+    selections: [
+      { selection_id: "sec-evaluation", document_ids: Array.from({ length: 20 }, (_, i) => `sec-${i}`), artifact_ids: Array.from({ length: 20 }, (_, i) => `sec-source-${i}`), sources_present: 20 },
+      { selection_id: "dart-evaluation", document_ids: ["dart-0", "dart-1"], artifact_ids: ["dart-source-0", "dart-source-1"], sources_present: 2 },
+    ],
+  }],
   documents: [
     {
       doc_id: "NVDA-FY2024", registry: "sec", language: "en", issuer: "NVDA", issuer_id: "0001045810",
@@ -66,7 +69,7 @@ export const CANNED_JOB: EvaluationJob = {
     golden_revision_id: null,
     mode: "quick",
     profile: { ...DEFAULT_PROFILE, strategy: "vector", lexical_ranker: null },
-    target_text_chars: [500, 1200],
+    target_tokens: [1024, 2048],
     strategies: ["lexical", "vector", "hybrid"],
     lexical_rankers: ["ts_rank_cd", "bm25"],
   },

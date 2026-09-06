@@ -43,8 +43,8 @@ class LocalLLMProvider(LLMProvider):
         self.api_url = f"local://{local_kind}"
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
-        self._owned_client = httpx.AsyncClient(timeout=timeout_s) if client is None else None
-        self._client = client or self._owned_client
+        self._client = client if client is not None else httpx.AsyncClient(timeout=timeout_s)
+        self._owned_client = self._client if client is None else None
 
     async def aclose(self) -> None:
         """Close only the HTTP client owned by this provider."""

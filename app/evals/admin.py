@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import hashlib
 from pathlib import Path
@@ -30,10 +30,11 @@ from app.api.admin_schemas import (
     RetrievalProfile,
 )
 from app.config import Settings, get_settings
-from app.db.models import Document, EvalResult, GoldenRevision
+from app.db.models import EvalResult, GoldenRevision
 from app.evals.arms import Retriever, make_retriever
 from app.evals.artifacts import read_strict_json
 from app.evals.identity import artifact_filename
+from app.evals.index_identity import index_fingerprint
 from app.evals.loader import (
     GOLDEN_CASES,
     GoldenDataError,
@@ -90,6 +91,11 @@ class GoldenSuiteDefinition:
     golden_name: str
     manifest_name: str
 
+    @property
+    def selection_id(self) -> str:
+        """Bind the suite to its committed registry evaluation selection."""
+        return f"{self.registry}-evaluation"
+
 
 SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
     "sec-en_v2_astra": GoldenSuiteDefinition(
@@ -138,7 +144,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
         "en",
         "ko",
         "dart_retrieval.json",
-        "dart-manifest.json",
+        "manifest.json",
     ),
     "dart-ko": GoldenSuiteDefinition(
         "dart-ko",
@@ -147,7 +153,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
         "ko",
         "ko",
         "dart_retrieval_ko.json",
-        "dart-manifest.json",
+        "manifest.json",
     ),
 }
 
@@ -209,7 +215,9 @@ class EvaluationAdminService:
             source_ready = True
             source_error = None
             try:
-                load_golden_cases(golden_path, manifest_path=manifest_path)
+                load_golden_cases(
+                    golden_path, manifest_path=manifest_path, selection_id=definition.selection_id
+                )
             except (GoldenDataError, OSError) as error:
                 source_ready = False
                 source_error = str(error)
@@ -382,18 +390,8 @@ class EvaluationAdminService:
             self._persister.schedule(job_id)
 
     async def _corpus_fingerprint(self, session: AsyncSession) -> str:
-        """Hash current document identities and source snapshots in deterministic order."""
-        rows = (
-            await session.execute(
-                select(Document.doc_id, Document.source_sha256).order_by(Document.doc_id)
-            )
-        ).all()
-        if not rows:
-            raise RuntimeError("evaluation requires an ingested corpus")
-        digest = hashlib.sha256()
-        for doc_id, source_sha256 in rows:
-            digest.update(f"{doc_id}:{source_sha256}\n".encode())
-        return digest.hexdigest()
+        """Bind evaluation to exact current inputs and the configured vector space."""
+        return await index_fingerprint(session, self._provider.identity)
 
     def _quick_retriever(
         self,
@@ -494,6 +492,7 @@ class EvaluationAdminService:
                 load_golden_cases,
                 golden_path,
                 manifest_path=manifest_path,
+                selection_id=self._definition(request.suite_id).selection_id,
             )
             return cases, self._golden_sha256(golden_path)
         payload, sha256 = await self._golden_revision_payload(request)
@@ -501,6 +500,7 @@ class EvaluationAdminService:
             validate_golden_payload,
             payload,
             manifest_path=manifest_path,
+            selection_id=self._definition(request.suite_id).selection_id,
             label=f"golden revision {request.golden_revision_id}",
         )
         return cases, sha256
@@ -540,6 +540,7 @@ class EvaluationAdminService:
                         "corpus_fingerprint": corpus_fingerprint,
                     },
                     "retrieval_profile": request.profile.model_dump(mode="json"),
+                    "embedding": asdict(self._provider.identity),
                 },
                 k=request.profile.k,
                 recorded_at=recorded_at,
@@ -574,6 +575,7 @@ class EvaluationAdminService:
                 validate_golden_payload,
                 payload,
                 manifest_path=manifest_path,
+                selection_id=self._definition(request.suite_id).selection_id,
                 label=f"golden revision {request.golden_revision_id}",
             )
             self._artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -595,12 +597,14 @@ class EvaluationAdminService:
                 str(golden_path),
                 "--manifest-name",
                 definition.manifest_name,
+                "--selection-id",
+                definition.selection_id,
                 "--artifact-dir",
                 str(self._artifact_dir),
                 "--provider",
                 self._settings.embedding_provider,
-                "--target-text-chars",
-                *(str(value) for value in request.target_text_chars),
+                "--target-tokens",
+                *(str(value) for value in request.target_tokens),
                 "--strategies",
                 *request.strategies,
                 "--lexical-rankers",
@@ -747,9 +751,11 @@ class EvaluationAdminService:
             raise ValueError("evaluation suites are not compatible")
         if candidate.config.get("admin_identity") != baseline.config.get("admin_identity"):
             raise ValueError("evaluation corpus or golden identity is not compatible")
-        if candidate.config.get("_scoring", {}).get("k") != baseline.config.get("_scoring", {}).get(
-            "k"
-        ):
+        candidate_scoring = candidate.config.get("_scoring", {})
+        baseline_scoring = baseline.config.get("_scoring", {})
+        if not isinstance(candidate_scoring, dict) or not isinstance(baseline_scoring, dict):
+            raise ValueError("evaluation scoring metadata must be an object")
+        if candidate_scoring.get("k") != baseline_scoring.get("k"):
             raise ValueError("evaluation cutoffs are not compatible")
         candidate_payload = read_strict_json(
             self._artifact_path(candidate.raw_artifact_path), error=ValueError
@@ -843,7 +849,8 @@ class EvaluationAdminService:
         for item in payload.get("cases", [])[:50]:
             if not isinstance(item, dict) or not isinstance(item.get("golden"), dict):
                 continue
-            score = item.get("score") if isinstance(item.get("score"), dict) else {}
+            raw_score = item.get("score")
+            score = raw_score if isinstance(raw_score, dict) else {}
             cases.append(
                 EvaluationCaseSummary(
                     case_id=str(item["golden"].get("id", "unknown")),

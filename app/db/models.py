@@ -1,5 +1,7 @@
 """SQLAlchemy models for filing chunks, evaluation runs, and workflow runs."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 
@@ -12,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Numeric,
     String,
@@ -20,7 +23,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, synonym
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from app.config import get_settings
 
@@ -45,39 +48,182 @@ class Base(DeclarativeBase):
     """Declarative base for application tables."""
 
 
+class Corpus(Base):
+    """A named corpus independent of its current storage location."""
+
+    __tablename__ = "corpora"
+
+    corpus_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SourceArtifact(Base):
+    """Exact acquired bytes and their filing, decoding, and acquisition provenance."""
+
+    __tablename__ = "source_artifacts"
+
+    corpus_id: Mapped[str] = mapped_column(ForeignKey("corpora.corpus_id"), primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(ForeignKey("documents.doc_id"), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    byte_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    encoding: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    acquisition: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("corpus_id", "path", name="uq_source_artifacts_corpus_path"),
+        UniqueConstraint("corpus_id", "artifact_id", "sha256", name="uq_source_artifacts_identity"),
+        CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_source_artifacts_digest"),
+        CheckConstraint("byte_length > 0", name="ck_source_artifacts_length"),
+        CheckConstraint(
+            "role IN ('primary', 'archive', 'attachment')", name="ck_source_artifacts_role"
+        ),
+        CheckConstraint(
+            "role <> 'primary' OR encoding IS NOT NULL", name="ck_source_artifacts_text_encoding"
+        ),
+        CheckConstraint(
+            "role <> 'archive' OR encoding IS NULL", name="ck_source_artifacts_binary_encoding"
+        ),
+    )
+
+
+class ProcessingSelection(Base):
+    """A named set of exact source artifacts chosen for processing."""
+
+    __tablename__ = "processing_selections"
+
+    corpus_id: Mapped[str] = mapped_column(ForeignKey("corpora.corpus_id"), primary_key=True)
+    selection_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+
+
+class SelectionArtifact(Base):
+    """Referentially bind a processing selection to an acquired source artifact."""
+
+    __tablename__ = "selection_artifacts"
+
+    corpus_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    selection_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["corpus_id", "selection_id"],
+            ["processing_selections.corpus_id", "processing_selections.selection_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["corpus_id", "artifact_id"],
+            ["source_artifacts.corpus_id", "source_artifacts.artifact_id"],
+        ),
+    )
+
+
+class ParsedStructure(Base):
+    """An immutable source-linked structural parse with an explicit parser identity."""
+
+    __tablename__ = "parsed_structures"
+
+    structure_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    corpus_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    parse_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    item_index: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    structure: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["corpus_id", "artifact_id", "artifact_sha256"],
+            [
+                "source_artifacts.corpus_id",
+                "source_artifacts.artifact_id",
+                "source_artifacts.sha256",
+            ],
+        ),
+        CheckConstraint("source_length > 0", name="ck_parsed_structures_source_length"),
+        CheckConstraint(
+            "parse_status IN ('parsed', 'needs_profile_update')", name="ck_parsed_structures_status"
+        ),
+        CheckConstraint("source_sha256 ~ '^[0-9a-f]{64}$'", name="ck_parsed_structures_digest"),
+        CheckConstraint("jsonb_typeof(structure) = 'object'", name="ck_parsed_structures_object"),
+    )
+
+
+class ChunkEmbedding(Base):
+    """A reusable vector bound to exact indexed input and embedding configuration."""
+
+    __tablename__ = "chunk_embeddings"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("chunks.id", ondelete="CASCADE"), primary_key=True
+    )
+    input_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    model: Mapped[str] = mapped_column(String(128), primary_key=True)
+    dimensions: Mapped[int] = mapped_column(primary_key=True)
+    tokenizer: Mapped[str] = mapped_column(String(128), primary_key=True)
+    embedding: Mapped[list[float]] = mapped_column(Vector(DIM), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("input_sha256 ~ '^[0-9a-f]{64}$'", name="ck_chunk_embeddings_digest"),
+        CheckConstraint(f"dimensions = {DIM}", name="ck_chunk_embeddings_dimensions"),
+        CheckConstraint(
+            "btrim(provider) <> '' AND btrim(model) <> '' AND btrim(tokenizer) <> ''",
+            name="ck_chunk_embeddings_configuration",
+        ),
+    )
+
+
 class Document(Base):
     """One immutable filing snapshot and its registry identity."""
 
     __tablename__ = "documents"
 
-    doc_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     registry: Mapped[str] = mapped_column(String(16), nullable=False)
     language: Mapped[str] = mapped_column(String(8), nullable=False)
-    issuer: Mapped[str] = mapped_column(String(32), nullable=False)
-    issuer_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    issuer: Mapped[str] = mapped_column(Text, nullable=False)
+    issuer_id: Mapped[str] = mapped_column(String(128), nullable=False)
     fiscal_year: Mapped[int] = mapped_column(nullable=False)
-    form: Mapped[str] = mapped_column(String(32), nullable=False)
+    form: Mapped[str] = mapped_column(Text, nullable=False)
     filing_date: Mapped[str] = mapped_column(String(10), nullable=False)
     report_period: Mapped[str] = mapped_column(String(10), nullable=False)
-    filing_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    filing_id: Mapped[str] = mapped_column(String(128), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
-    parse_status: Mapped[str] = mapped_column(String(32), nullable=False)
-    item_index: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
-    source_length: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    sec: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    dart: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    current_parse: Mapped[DocumentParse] = relationship(uselist=False, lazy="raise", viewonly=True)
 
     __table_args__ = (
-        CheckConstraint(
-            "parse_status IN ('parsed', 'needs_profile_update')",
-            name="ck_documents_parse_status",
-        ),
-        CheckConstraint("source_length > 0", name="ck_documents_source_length_positive"),
+        UniqueConstraint("registry", "filing_id", name="uq_documents_filing_identity"),
         CheckConstraint("language ~ '^[a-z]{2}$'", name="ck_documents_language_format"),
         CheckConstraint(
-            "source_sha256 ~ '^[0-9a-f]{64}$'",
-            name="ck_documents_source_sha256_format",
+            "(registry = 'sec' AND sec IS NOT NULL AND dart IS NULL) OR "
+            "(registry = 'dart' AND dart IS NOT NULL AND sec IS NULL)",
+            name="ck_documents_registry_metadata",
         ),
     )
+
+
+class DocumentParse(Base):
+    """Select the current parsed structure without merging it into filing identity."""
+
+    __tablename__ = "document_parses"
+
+    doc_id: Mapped[str] = mapped_column(ForeignKey("documents.doc_id"), primary_key=True)
+    structure_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_structures.structure_id"), nullable=False
+    )
+    structure: Mapped[ParsedStructure] = relationship(lazy="raise", viewonly=True)
 
 
 class Chunk(Base):
@@ -86,6 +232,13 @@ class Chunk(Base):
     __tablename__ = "chunks"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    stable_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    structure_id: Mapped[str] = mapped_column(
+        ForeignKey("parsed_structures.structure_id"), nullable=False
+    )
+    index_text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    table_fragment: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    text_fragment: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
     doc_id: Mapped[str] = mapped_column(
         ForeignKey("documents.doc_id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -96,7 +249,6 @@ class Chunk(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     context_header: Mapped[str] = mapped_column(Text, nullable=False)
     index_text: Mapped[str] = mapped_column(Text, nullable=False)
-    content: Mapped[str] = synonym("index_text")
     start_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
     end_char: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -104,10 +256,6 @@ class Chunk(Base):
     # Korean rows store the n-gram tokenization of index_text (app.retrieval.korean);
     # English rows leave it NULL and the tsvector falls through to index_text.
     lexical_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
-    embedding_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    embedding_dimensions: Mapped[int | None] = mapped_column(nullable=True)
     content_tsv: Mapped[str] = mapped_column(
         TSVECTOR,
         Computed(CONTENT_TSV_SQL, persisted=True),
@@ -118,7 +266,8 @@ class Chunk(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("doc_id", "ordinal", name="uq_doc_ordinal"),
+        CheckConstraint("stable_key ~ '^[0-9a-f]{64}$'", name="ck_chunks_stable_key"),
+        CheckConstraint("index_text_sha256 ~ '^[0-9a-f]{64}$'", name="ck_chunks_input_digest"),
         CheckConstraint("ordinal >= 0", name="ck_chunks_ordinal_nonnegative"),
         CheckConstraint("kind IN ('text', 'table')", name="ck_chunks_kind"),
         CheckConstraint(LANGUAGE_FORMAT_CHECK_SQL, name="ck_chunks_language_format"),
@@ -128,13 +277,6 @@ class Chunk(Base):
         CheckConstraint(
             "source_sha256 ~ '^[0-9a-f]{64}$'",
             name="ck_chunks_source_sha256_format",
-        ),
-        CheckConstraint(
-            "(embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL "
-            "AND embedding_dimensions IS NULL) OR (embedding IS NOT NULL AND "
-            "btrim(embedding_provider) <> '' AND btrim(embedding_model) <> '' AND "
-            "embedding_dimensions > 0)",
-            name="ck_chunks_embedding_identity_complete",
         ),
         Index("ix_chunks_tsv", "content_tsv", postgresql_using="gin"),
     )
@@ -318,7 +460,7 @@ class SnapshotDocument(Base):
     snapshot_id: Mapped[int] = mapped_column(
         ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
     )
-    doc_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     chunk_count: Mapped[int] = mapped_column(nullable=False)
     embedding_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -345,7 +487,11 @@ class SnapshotChunk(Base):
         ForeignKey("evaluation_snapshots.id", ondelete="CASCADE"), primary_key=True
     )
     chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    doc_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    stable_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    index_text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    table_fragment: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    text_fragment: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
+    doc_id: Mapped[str] = mapped_column(String(128), nullable=False)
     registry: Mapped[str] = mapped_column(String(16), nullable=False)
     language: Mapped[str] = mapped_column(String(8), nullable=False)
     issuer: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -365,6 +511,7 @@ class SnapshotChunk(Base):
     embedding_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     embedding_dimensions: Mapped[int | None] = mapped_column(nullable=True)
+    embedding_tokenizer: Mapped[str | None] = mapped_column(String(128), nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(DIM), nullable=True)
     content_tsv: Mapped[str] = mapped_column(
         TSVECTOR,
@@ -388,9 +535,10 @@ class SnapshotChunk(Base):
         ),
         CheckConstraint(
             "(embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL "
-            "AND embedding_dimensions IS NULL) OR (embedding IS NOT NULL AND "
+            "AND embedding_dimensions IS NULL AND embedding_tokenizer IS NULL) OR "
+            "(embedding IS NOT NULL AND "
             "btrim(embedding_provider) <> '' AND btrim(embedding_model) <> '' AND "
-            "embedding_dimensions > 0)",
+            "embedding_dimensions > 0 AND btrim(embedding_tokenizer) <> '')",
             name="ck_snapshot_chunks_embedding_identity_complete",
         ),
         Index("ix_snapshot_chunks_chunk_id", "chunk_id"),

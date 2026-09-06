@@ -21,7 +21,13 @@ def test_retrieve_route_returns_complete_evidence_identity(
 
     response = client_factory(services).post(
         "/retrieve",
-        json={"query": "How much did revenue increase?", "k": 3},
+        json={
+            "query": "How much did revenue increase?",
+            "session_profile": {
+                "retrieval_preset": "custom",
+                "custom_retrieval": {"k": 3},
+            },
+        },
     )
 
     assert response.status_code == 200
@@ -40,7 +46,8 @@ def test_retrieve_route_returns_complete_evidence_identity(
         "context_header": "ACME FY2024 - Item 7",
         "score": 1.0,
     }
-    assert services.last_retrieve_request.k == 3
+    assert services.last_retrieve_request.session_profile.custom_retrieval.k == 3
+    assert body["resolved_profile"]["k"] == 3
 
 
 def test_documents_route_returns_typed_collection(client_factory, services):

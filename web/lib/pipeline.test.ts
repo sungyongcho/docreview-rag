@@ -55,7 +55,9 @@ function baseReadiness(overrides: Partial<Readiness> = {}): Readiness {
 function manifest(registry: string, documents: number, sourcesPresent: number): ManifestSummary {
   return {
     name: registry === "sec" ? "manifest.json" : `${registry}-manifest.json`,
-    registry,
+    corpus_id: registry,
+    registries: [registry as "sec" | "dart"],
+    selections: [{selection_id: `${registry}-evaluation`, document_ids: Array.from({length: documents}, (_, i) => `${registry}-${i}`), artifact_ids: Array.from({length: documents}, (_, i) => `${registry}-source-${i}`), sources_present: sourcesPresent}],
     documents,
     valid: true,
     sources_present: sourcesPresent,
@@ -145,8 +147,8 @@ describe("derivePipeline", () => {
 
     const index = stage(pipeline, "index");
     expect(index.numbers).toEqual(["29 documents", "21,927 chunks", "1 listed filing not ingested yet (SEC)"]);
-    expect(index.hint).toContain("Ingest all manifests");
-    expect(index.action).toEqual({ label: "Ingest all manifests", kind: "ingest_all" });
+    expect(index.hint).toContain("Ingest selected sources");
+    expect(index.action).toEqual({ label: "Ingest selected sources", kind: "ingest_all" });
 
     expect(stage(pipeline, "embeddings").numbers).toEqual(["21,927 embedded", "0 pending"]);
     expect(stage(pipeline, "lexical").numbers).toEqual(["BM25 ready"]);
@@ -207,7 +209,7 @@ describe("derivePipeline", () => {
   });
 
   // Case 3: filings are on disk, the schema exists, but nothing has been ingested yet.
-  it("asks for Ingest all manifests on an empty database and blocks everything after step 2", () => {
+  it("asks for Ingest selected sources on an empty database and blocks everything after step 2", () => {
     const pipeline = derivePipeline(liveInput({
       corpus: emptyCorpus(),
       manifests: [manifest("sec", 21, 21)],
@@ -226,8 +228,8 @@ describe("derivePipeline", () => {
     const index = stage(pipeline, "index");
     expect(index.status).toBe("action");
     expect(index.numbers).toEqual(["Nothing ingested yet."]);
-    expect(index.hint).toContain("Ingest all manifests");
-    expect(index.action).toEqual({ label: "Ingest all manifests", kind: "ingest_all" });
+    expect(index.hint).toContain("Ingest selected sources");
+    expect(index.action).toEqual({ label: "Ingest selected sources", kind: "ingest_all" });
 
     for (const id of ["embeddings", "lexical"] as const) {
       const item = stage(pipeline, id);
@@ -695,7 +697,7 @@ describe("derivePipeline", () => {
   });
 
   it("ignores invalid manifests when counting filings in live mode", () => {
-    const broken: ManifestSummary = { name: "broken.json", registry: null, documents: null, valid: false, sources_present: null };
+    const broken: ManifestSummary = { name: "broken.json", corpus_id: null, registries: [], documents: null, valid: false, sources_present: null, selections: [] };
     const pipeline = derivePipeline(liveInput({ manifests: [...SEC_AND_DART, broken] }));
     expect(stage(pipeline, "filings").numbers).toEqual(["30 / 30 filings on disk", "SEC 21/21", "DART 9/9"]);
   });

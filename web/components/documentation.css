@@ -48,3 +48,10 @@
 @media (max-width: 560px) {
   .docs-site .docs-brand .product-ascii-compact { display: none; }
 }
+
+/* The first-run guide changes interface without moving to another document. */
+.quickstart-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); margin: 1.5rem 0; }
+.quickstart-tabs button { flex: 1; max-width: 12rem; padding: .8rem 1.2rem; background: transparent; color: inherit; border: 2px solid transparent; font: inherit; cursor: pointer; }
+.quickstart-tabs button[aria-selected="true"] { border-bottom-color: currentColor; font-weight: 700; }
+.quickstart-tabs button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.quickstart-guide [hidden] { display: none; }

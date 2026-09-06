@@ -17,6 +17,7 @@ import warnings
 
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 
+from app.ingestion.manifest import FilingSource
 from app.ingestion.tables import CELL_TAGS
 
 ItemStatus = Literal["parsed", "empty_disclosure", "incorporated_by_reference"]
@@ -62,18 +63,9 @@ class ParsedFiling:
     Reading a filing out of DART instead of EDGAR changes the values, not the shape.
     """
 
-    doc_id: str  # "NVDA-FY2024"
-    registry: str  # publishing registry: "sec", "dart"
-    issuer: str  # issuer symbol used in doc_id: "NVDA"
-    issuer_id: str  # registry key for the issuer: SEC CIK, DART corp_code
-    filing_id: str  # registry key for this filing: SEC accession, DART rcept_no
-    form: str  # filing type as the registry names it: "10-K"
-    filing_date: str
-    report_period: str
-    fiscal_year: int
-    source_url: str
+    source: FilingSource
     source_length: int = 0  # Unicode code points in the canonical decoded source
-    source_sha256: str = ""  # SHA-256 of the exact source bytes
+    source_sha256: str = ""  # SHA-256 of canonical decoded text encoded as UTF-8
     sections: list[Section] = field(default_factory=list)
     item_index: list[dict] = field(default_factory=list)  # xref-only source index
     parse_status: str = "parsed"  # parsed | needs_profile_update

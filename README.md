@@ -11,6 +11,34 @@ SEC 10-K와 한국 DART 사업보고서를 원문 근거와 함께 검토하는 
 제공합니다. 공개 배포에서는 실제 검색과 비용 제한 LLM 리뷰를 제공하고, corpus 변경과
 골든 평가 작업은 SSH tunnel을 통한 local operator 모드에서만 실행합니다.
 
+## 처음 실행하기
+
+원문·DB·청크·임베딩과 `.env`는 clone에 포함되지 않습니다. Bash 또는 Zsh에서
+[uv](https://docs.astral.sh/uv/getting-started/installation/)와 Docker Engine·Compose 2.24.4+를 준비하세요.
+RAG Helper는 저장소에 포함되어 있어 따로 내려받지 않습니다.
+
+```bash
+git clone https://github.com/sungyongcho/docreview-rag-agent.git
+cd docreview-rag-agent
+source ./rag_alias.sh
+rag-help
+rag-quickstart
+```
+
+`rag-quickstart`는 Python 환경을 설치하고, `.env`가 없으면 템플릿을 생성합니다.
+안내된 SEC 연락처·DART 키·OpenAI 개발 키를 **로컬 `.env`에서만** 입력하고 다시 실행하세요.
+OpenAI 임베딩은 `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-large`로 설정합니다.
+기존 설정과 데이터는 보존하며, 첫 실행 자체는 원문 다운로드나 유료 모델 호출을 하지 않습니다.
+
+서비스가 준비되면 표시된 **Quick Start** 링크를 여세요. 기본 포트에서는
+[한국어 Quick Start](http://localhost:8000/docreview-rag-agent/docs/ko/quickstart/) 또는
+[English Quick Start](http://localhost:8000/docreview-rag-agent/docs/en/quickstart/)에서
+**CLI / Web** 중 하나를 선택해 NVIDIA SEC FY2024와 삼성전자 DART FY2024의 원문부터
+청킹·OpenAI 임베딩·BM25까지 준비합니다. [GitHub에서 바로 읽기](docs/TUTORIAL/ko/quickstart.md)도 가능합니다.
+
+`source` 등록은 현재 터미널에 적용됩니다. 영구 등록은 아래 설치 절의 절대경로 안내를 따르세요.
+`rag-fresh-start`는 기존 데이터를 지우는 재시작 명령이므로 새 clone의 첫 실행에는 사용하지 않습니다.
+
 ## 주요 기능
 
 - SEC EDGAR·DART 원문 수집과 registry별 파싱
@@ -21,7 +49,7 @@ SEC 10-K와 한국 DART 사업보고서를 원문 근거와 함께 검토하는 
 - 순서형 Build 파이프라인(원문 → 파싱·청킹 → 임베딩 → BM25 → 질문 → 답변 모델 → 평가), 인용 카드, 단계형 튜토리얼을 갖춘 Next.js 서비스
 - Playground·골든셋·평가 실행·스냅샷 비교를 갖춘 Measure와 readiness·Operations·API inspector·Usage를 갖춘 System
 - Recall@k·Hit Rate@k·MRR·latency, 교차언어 parity, ablation 평가
-- FastAPI·SSE·MCP agent·Gradio 내부 evidence fixture
+- FastAPI·SSE·MCP agent와 공통 웹·CLI 작업
 - Firebase Hosting, GCP VM, Caddy, Cloudflare Worker 배포 구성
 
 ## 시스템 구조
@@ -63,7 +91,7 @@ PostgreSQL + pgvector + language-aware lexical index
 - [uv](https://docs.astral.sh/uv/)
 - Docker Engine과 Docker Compose 2.24.4+
 - Node.js 24+와 npm 11+ — Next 개발·테스트 시
-- 선택: `OPENAI_API_KEY`, 또는 `MODE`별 슬롯 `OPENAI_API_KEY_LOCAL`(dev)·`OPENAI_API_KEY_PROD`(prod) — 실제 LLM 리뷰
+- 선택: `MODE`별 슬롯 `OPENAI_API_KEY_LOCAL`(dev)·`OPENAI_API_KEY_PROD`(prod) — 실제 LLM 리뷰
 - 선택: `DART_API_KEY` — DART 원문 수집
 - SEC 수집 시 연락처를 포함한 `SEC_USER_AGENT`
 
@@ -98,8 +126,8 @@ OPENAI_API_KEY_PROD=<your-prod-openai-key>
 키는 사용하는 기능에만 필요합니다. 기본 deterministic embedding과 retrieval 테스트는
 OpenAI 키 없이 실행됩니다.
 
-OpenAI 키는 세 슬롯 중 하나로 둡니다. `OPENAI_API_KEY`가 있으면 항상 그 키를 씁니다.
-없으면 `rag-dev`는 `OPENAI_API_KEY_LOCAL`, `rag-prod`는 `OPENAI_API_KEY_PROD`를 읽습니다.
+OpenAI 키는 환경별 전용 슬롯에 둡니다. `rag-dev`는 `OPENAI_API_KEY_LOCAL`,
+`rag-prod`는 `OPENAI_API_KEY_PROD`만 읽으며 다른 환경의 키로 대체하지 않습니다.
 모드는 명령이 지정하므로 `.env`에 `MODE`를 적지 않습니다. dev(live operator)는 공개 rate/cost 한도를 적용하지 않고 prod(readonly)는
 적용하므로, 슬롯마다 다른 프로젝트 키를 두면 비용 경계가 분리됩니다. `/ready`의
 `review_engines.openai.key_slot`이 어느 슬롯이 쓰였는지 값 없이 알려 줍니다.
@@ -365,75 +393,47 @@ CPU 모델의 실제 답변은 상태 조회보다 오래 걸릴 수 있습니�
 
 ## 5분 로컬 실행
 
-### 1. 원문 준비
+### 1. 환경과 원문 준비
 
-새 clone에는 manifest만 있고 원문은 없습니다. SEC 20건을 내려받으려면 `.env`의
-`SEC_USER_AGENT`를 먼저 설정합니다.
-
-```bash
-uv run python -m app.ingestion.edgar_api
-```
-
-DART manifest의 삼성전자·SK하이닉스·NAVER FY2022~FY2024 원문은 선택 사항입니다.
+Helper를 등록한 뒤 `rag-quickstart`를 실행하면 Python 환경과 빈 스키마를 준비하고
+개발 서비스를 시작합니다. 기존 설정과 호환되는 데이터는 보존합니다.
 
 ```bash
-uv run python -m app.ingestion.dart_api
+source ./rag_alias.sh
+rag-help
+rag-quickstart
+rag-corpus acquire_edgar --identifier NVDA --year 2024
+rag-corpus acquire_dart --identifier 005930 --year 2024
+rag-corpus status
 ```
 
-수집 명령은 원문과 manifest까지만 준비합니다. 파싱·청킹·DB 저장은 다음 ingest
-단계가 담당합니다.
+SEC는 `SEC_USER_AGENT`, DART는 `DART_API_KEY`가 필요합니다. 두 수집 작업은 공통
+`manifest.json`에 원문과 문서 선택을 기록합니다. 완료 작업의 `selection_id`를 다음
+단계에서 사용합니다. CLI와 웹 Build는 같은 애플리케이션 작업을 실행합니다.
 
-### 2. PostgreSQL과 인제스트
+### 2. 파싱, 인덱스와 검색
+
+각 수집 작업의 선택 ID로 인제스트하고 작업 완료를 확인합니다.
 
 ```bash
-docker compose --project-directory . -f docker/docker-compose.yml up -d db
-docker compose --project-directory . -f docker/docker-compose.yml ps db
+rag-corpus ingest_manifest --manifest manifest.json --selection <selection-id>
+rag-corpus status
+rag-corpus backfill_embeddings --manifest manifest.json --selection <selection-id>
+rag-corpus status
+rag-corpus rebuild_bm25
+rag-corpus inspect
 ```
 
-SEC corpus를 넣고, 비어 있는 DB에 현재 schema를 만듭니다. 파싱·청킹·DB batch 저장·
-BM25 재계산은 터미널 진행률로 표시됩니다.
+임베딩은 설정된 공급자에 따라 비용이 발생합니다. 변경되지 않은 입력과 동일한 임베딩
+설정은 기존 벡터를 재사용합니다. 웹의 준비 상태는 작업 완료 후 자동 갱신됩니다.
 
-```bash
-uv run python -m app.cli ingest \
-  --manifest data/corpus/manifest.json \
-  --create-schema
-```
+`schema_drift`는 저장된 스키마와 현재 모델이 맞지 않는다는 뜻입니다. 실행 중인 코드와
+DB 연결을 확인하고 기존 데이터를 보존한 상태에서 운영자가 원인을 조사해야 합니다.
+설치 복구를 위해 데이터를 초기화하지 마십시오. `rag-fresh-start`는 별도 선택하는
+파괴적 개발 명령이며 일반 설치에 필요하지 않습니다.
 
-기존 volume에서 `schema_drift`가 나오면 그 DB는 현재 ORM보다 오래된 것입니다.
-먼저 등록된 data-preserving migration이 해당 drift를 처리하는지 확인하고 적용합니다.
-
-```bash
-uv run python -m app.db.migrate --plan
-uv run python -m app.db.migrate --apply
-```
-
-`--create-schema`는 기존 table을 변경하지 않습니다. migration 적용 뒤에도 알 수 없는
-drift가 남고, 기존 DB 내용을 버리고 corpus에서 다시 만들기로 결정한 경우에만 아래
-명령을 사용합니다.
-
-> **경고:** model table, chunk, embedding, BM25 통계, run/eval 결과가 삭제됩니다.
-
-```bash
-uv run python -m app.cli ingest \
-  --manifest data/corpus/manifest.json \
-  --recreate-schema
-```
-
-DART corpus를 추가합니다.
-
-```bash
-uv run python -m app.cli ingest \
-  --manifest data/corpus/dart-manifest.json
-```
-
-첫 검색에서 비어 있는 embedding을 채웁니다.
-
-```bash
-uv run python -m app.cli retrieve \
-  --query "data center revenue drivers" \
-  --embed-missing \
-  --provider deterministic
-```
+검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를
+따릅니다. Quick Start는 답변 질문을 제출하기 전에 끝납니다.
 
 ### 3. 전체 서비스 시작
 
@@ -531,8 +531,6 @@ Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 
 | `web-tests` | `npm test` | Run the Vitest component and client-contract suite. | no |
 | `web-typecheck` | `npm run typecheck` | Run TypeScript without emitting build output. | no |
 | `web-build` | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
-| `db-migrate-plan` | `.venv/bin/python -m app.db.migrate --plan` | Inspect pending data-preserving schema migrations without changing the database. | no |
-| `db-migrate-apply` | `.venv/bin/python -m app.db.migrate --apply` | Apply pending additive migrations while preserving corpus and run rows. | required |
 | `db-start` | `docker compose --project-directory . -f docker/docker-compose.yml up -d db` | Start the local pgvector service and retain its existing volume. | required |
 | `db-stop` | `docker compose --project-directory . -f docker/docker-compose.yml stop db` | Stop the local database without deleting its volume. | required |
 | `app-start` | `docker compose --project-directory . -f docker/docker-compose.yml up --build -d app` | Build the local image and start the app with its database dependency. | required |
@@ -568,7 +566,7 @@ uv run python -m app.ingestion.dart_api \
 모든 수집 작업은 재실행 가능하며 기존 manifest 항목을 보존합니다. DART는 manifest의
 파일 길이와 SHA-256이 원문과 일치하면 해당 회사·사업연도를 API 호출 전에 건너뜁니다.
 Build의 `Pipeline`에서는
-단계 카드로 누락 문서 수집, `Ingest all manifests`(manifest별 순차 job), embedding backfill,
+단계 카드로 누락 문서 수집, `Ingest selected documents`(manifest별 순차 job), embedding backfill,
 BM25 통계 재구축을 background job으로 실행할 수 있습니다. 2단계 카드는 manifest 항목 수와
 실제 인제스트 수의 차이를, 1단계 카드는 manifest별 원문 파일 존재 수(`sources_present`)를
 표시합니다.
@@ -836,8 +834,8 @@ scripts/run_operator_web.sh
 | 증상 | 확인할 것 |
 |---|---|
 | `database_unavailable` | `docker compose --project-directory . -f docker/docker-compose.yml ps db`, `DB_PORT`, `DATABASE_URL` |
-| `schema drift` | `app.db.migrate --plan` 후 등록 migration 적용. 남으면 아래 rebuild 경고 참고 |
-| `/review` 503 | `REVIEW_MODEL`, `OPENAI_API_KEY`, `/ready`의 model policy 상태 |
+| `schema_drift` | 코드와 DB 연결 대상 및 스키마 진단을 확인. 기존 데이터를 보존하고 운영자 조사 |
+| `/review` 503 | `REVIEW_MODEL`, MODE에 맞는 개발/운영 키, `/ready`의 model policy 상태 |
 | 공개 review 429 | IP rate limit 또는 UTC daily cost limit |
 | 검색 결과 없음 | ingest 여부와 최초 `--embed-missing` 실행 |
 | BM25 stale | ingest 또는 BM25 stats rebuild 실행 |
@@ -851,227 +849,8 @@ scripts/run_operator_web.sh
 
 리뷰 실패의 세 모양과 각 필드의 뜻은 `AGENTS.md` §11에 정리돼 있습니다.
 
-등록된 additive migration만 명시적 plan/apply로 실행하며 startup에서는 DDL을 수행하지
-않습니다. 등록 migration으로 해결되지 않는 drift의 마지막 수단은 재구축입니다. 다음
-명령은 모델 테이블·청크·embedding·통계를 삭제하고 다시 생성하는 **파괴적 개발 명령**
-이므로 백업과 재인제스트 준비 없이 실행하지 마십시오.
-
-```bash
-uv run python -m app.cli ingest \
-  --manifest data/corpus/manifest.json \
-  --recreate-schema
-```
-
 ## 관련 운영 문서
 
 - [Docker Compose 운영](deploy/docker-compose.md)
 - [골든셋 author review queue](data/golden/REVIEW.md)
 - [테스트 파일 배치 규칙](tests/RULES.md)
-
-## 제품 완성 로드맵
-
-`planned`는 설계만 확정된 상태, `implemented`는 코드와 focused test가 있는 상태,
-`verified`는 아래 증거와 실제 로컬 화면까지 확인한 상태입니다.
-
-<!-- product-roadmap:start -->
-| Gate | State | Included behavior | Verification evidence |
-|---|---|---|---|
-| Model policy | verified | role allowlist, reasoning, cached/cache-write pricing, Agent USD cap | Python policy/provider tests |
-| Schema migration | verified | explicit additive usage-accounting migration with row preservation | live PostgreSQL migration test and local ledger |
-| Readiness | verified | typed `/ready`, policy and corpus state, 200/503 split | release API tests and local `/ready` response |
-| Review UX | verified | composer toolbar and readiness banners, six-step SSE progress, verdict-first answer cards, cancel, safe GFM, right-edge scroll, runtime modal, target-click tour | Vitest and local browser review QA (Supported · N citations, stepper, evidence fold) |
-| Build / Measure / System | verified | ordered Build pipeline with per-stage state and one action, Ingest all manifests, Measure Playground/golden/runs/compare/snapshots, System status/Operations/API inspector/usage, public read-only parity | component/API tests, local Ingest all manifests → backfill run, Playground rankings and quick evaluation in the browser |
-| Local Operations | verified | authenticated fixed command registry, logs, cancel, service confirmation | operator API tests and browser Git-status run |
-| Runtime strip shortcuts | implemented | Build's runtime strip runs `db-start`, migration plan/apply, and `app-start` through Local Operations when an operator is attached; command lines otherwise | build-pipeline component tests; browser run pending an operator session |
-| Release UI | verified | test, typecheck, isolated static build, fixed shell chrome, canned build never calls `/admin/*` | static live and canned builds and local browser QA |
-| Build pipeline | verified | client-derived stage state from `/ready`, `/admin/corpus`, `/admin/jobs`; manifest registry and on-disk source counts; canned fixture labelled as such | pipeline unit tests, admin ordering tests, and a local browser job run |
-| Key slots | verified | `rag-dev`/`rag-prod`-selected OpenAI key (`OPENAI_API_KEY_LOCAL` / `_PROD`) with explicit override, `key_slot` in `/ready` | settings tests and local `/ready` on the rebuilt container |
-| Local answer engine | verified | Command-selected prod blocks local discovery and execution; dev supports persisted web connection settings, automatic metadata and per-conversation model selection | 218 focused Python tests, 176 web tests, real Ollama RAG response with a citation, prod HTTP/UI block, connection persistence across down/up |
-| Job ledger | verified | coalesced progress writes, terminal write last with retry, worker survives ledger failures | offline ledger tests, live PostgreSQL suite, stuck ingest reproduced and fixed locally |
-<!-- product-roadmap:end -->
-
-## 재조립 기록
-
-아래 영역은 현재 서비스 사용 설명이 아니라 `assemble` 재구현 과정의 기계 입력과
-역사 기록입니다. `.dashboard/`와 `.githooks/pre-commit`이 marker가 있는 표를 직접
-읽으므로 marker·열 구조를 변경하지 않습니다.
-
-<details>
-<summary>재조립 순서, 이식 범위, 리뷰 기록과 대시보드</summary>
-
-### implementation order
-재배치 비교표 (zero 완성본 기준)
-
-#	모듈	zero 완성 순서	재배치 (수작업 재구현 루트)	변경
-1	M1 — Ingestion	M1.1 → M1.2 → M1.3 → M1.4	동일	계약만 source-agnostic으로 설계
-2	M2 — Retrieval	M2.1 → … → M2.11	동일	—
-3	M3 — Evaluation	M3.1 → (M3.2+M3.3) → M3.4 → M3.5	동일	—
-4	M4 — LLM Workflow	M4.1 → M4.2 → M4.3 → M4.4	M4.1 → M4.4 → M4.2 → M4.3	M4.4 전진 (기존 결론 유지)
-5	M8 — Crosslingual	(M7 뒤) M8.1 → M8.2 → M8.3 → M8.4	M4 직후로 전진, 내부 동일	모듈 성격이 바뀌어서 이동
-6	M10 — KR filings (신규)	없음	M10.1 → … → M10.6	DART 파서 삽입 지점
-7	M5 — Serving	M5.1 → M5.2 → M5.3 → M5.4	M5.1 → M5.4 → M5.2 → M5.3	M5.4 전진 (기존 결론 유지)
-8	M9 — Agent	(M8 뒤) M9.1 → … → M9.6	내부 동일, M5 직후	기존 결론 유지
-9	M6 — Demo	(M5 뒤) (M6.1+M6.2) → M6.3	내부 동일, M9 뒤로	기존 결론 유지
-10	M7 — Deployment	(M6 뒤) M7.1 → M7.2 → M7.3	내부 동일, 종점	localization 소멸로 자연 종점화
-
-
-재배치 후 체인 한 줄씩
-M1 — Ingestion: M1.1 → M1.2 → M1.3 → M1.4
-M2 — Retrieval: M2.1 → M2.2 → M2.3 → M2.4 → M2.5 → M2.6 → M2.7 → M2.8 → M2.9 → M2.10 → M2.11
-M3 — Evaluation: M3.1 → (M3.2 + M3.3) → M3.4 → M3.5
-M4 — LLM Workflow: M4.1 → M4.4 → M4.2 → M4.3
-M8 — Crosslingual: M8.1 → M8.2 → M8.3 → M8.4
-M10 — KR filings (DART): M10.1 → M10.2 → M10.3 → M10.4 → M10.5 → M10.6
-M5 — Serving: M5.1 → M5.4 → M5.2 → M5.3
-M9 — Agent: M9.1 → M9.2 → M9.3 → M9.4 → M9.5 → M9.6
-M6 — Demo: (M6.1 + M6.2) → M6.3
-M7 — Deployment: M7.1 → M7.2 → M7.3
-
-### 이식 범위 (실측)
-
-각 행은 실제 이식 덩이 하나이며 커밋 하나에 대응합니다. `zero 범위`는 그 덩이가
-`zero`에서 가져온 파일이고, `assemble 착지`는 이 브랜치에서 어디에 놓였는지입니다.
-착지가 zero와 다른 행은 그 사실을 함께 적습니다.
-
-`기준`이 채워져 있으면 그 덩이는 들어온 것이고, `—`이면 아직입니다. 별도의 상태 칸을
-두지 않는 이유는 그 둘이 언제나 같은 말이었고, 손으로 맞춰야 하는 칸이 하나 늘수록
-표가 어긋날 자리도 하나 늘기 때문입니다. 이 칸은 커밋 훅이 자동으로 채웁니다
-(`.githooks/pre-commit`). 훅은 클론마다 한 번 켜야 동작합니다:
-`git config core.hooksPath .githooks`.
-
-`기준`은 그 덩이가 **올라간 시점의 HEAD**이며, 덩이 자신의 커밋 해시가 아닙니다.
-자기 해시는 커밋을 만든 뒤에야 생기므로 그 행을 같은 커밋에 넣을 수 없고, 표가 항상
-한 커밋씩 뒤처집니다. 기준은 커밋 전에 이미 알 수 있으므로 행을 코드와 같은 커밋에
-담을 수 있고, 그래야 표가 어긋나지 않습니다. 덩이 자신의 커밋은 `기준`의 자식이며,
-코드 리뷰 범위도 `git diff <그 모듈 첫 덩이의 기준>..HEAD`로 바로 나옵니다.
-
-`.dashboard/`의 대시보드가 이 표를 읽어 다음 단계를 표시하므로 마커를 지우지 마십시오.
-
-<!-- port-map:start -->
-| 단계 | zero 범위 | assemble 착지 | 기준 |
-|---|---|---|---|
-| init | 스캐폴드 | app/ingestion/xref.py | 루트 |
-| M1.1, M1.2 | app/ingestion/{parser,tables}.py | 동일 + data/profiles | ab2c23b |
-| M1.3 | app/ingestion/chunk.py | 동일 | a2ba790 |
-| M1.4 | app/ingestion/seed.py, app/db/ | 동일 | 2b47b71 |
-| M2.1~M2.4 | app/retrieval/{types,embeddings,vector,lexical}.py | 동일 + _sql.py 분리 | 7fde61e |
-| M2.5~M2.8 | app/retrieval/{hybrid,rerank,service,__main__}.py | 동일 | bc33427 |
-| M2.9~M2.11 | app/retrieval/{bm25,sbert,cross_encoder}.py | 동일 + _sentence_transformers.py | d8c0439 |
-| M3.1~M3.3 | app/evals/{types,loader,scoring,regression}.py | 동일 | 7532b72 |
-| M3.4 | app/evals/{ablation,retrieval_eval}.py | retrieval_eval 1449줄을 arms·artifacts·corpus·measurement·run으로 분할 | dd4cc60 |
-| M3.5 | app/evals/{curation,breakdown}.py | 동일 + reporting.py 공유 | c55a4ec |
-| M4.1, M4.4 | app/llm/ | 동일 | 17cad6e |
-| M4.2 | app/observability/ | 동일 + db Run·Trace 모델 | 2790ece |
-| M4.3 | app/workflow/ | 동일 | 81b668f |
-| M8.1~M8.4 | app/evals/{bilingual,crosslingual,parity}.py, app/retrieval/{language,translate}.py | 동일 + identity·cli 공유. tests/crosslingual은 tests/evals·tests/retrieval로 분산 | b1475b7 |
-| M10.0 | zero 없음 (신규) | app/ingestion/registry.py | cc1957b |
-| M10.1~M10.3 | zero 없음 (신규) | app/ingestion/{dart,dart_api}.py | a370c44 |
-| M10.4~M10.6 | zero 없음 (신규) | app/retrieval/korean.py, data/golden/dart_* | b5a3e54 |
-| M5.1, M5.4 | app/api/{schemas,errors,deps,app}.py, app/api/routes/ — 1069줄 | app/api/ | 0881a52 |
-| M5.3 | app/api/runtime.py — 522줄 | app/api/ — 문서 리소스를 레지스트리 중립으로 교정 | fd71a74 |
-| M5.2 | app/cli.py, app/main.py, Dockerfile, docker-compose.yml | app/ — compose는 병합, db healthcheck 유지 | 8d2264c |
-| M9.1~M9.4 | app/agent/{types,tools,registry,provider,loop,builtin_tools}.py — 1359줄 | app/agent/ — 도구 스키마를 레지스트리 중립으로 교정 | b150fdb |
-| M9.5~M9.6 | app/agent/{decompose,eval,mcp_server,__main__}.py — 735줄 | app/agent/ — 리뷰 반영으로 eval은 app/evals/decomposition.py로, 융합은 retrieval의 fuse_ranked_lists로 이동 | 71cbabb |
-| M6.1~M6.3 | app/demo.py — 595줄 | app/demo.py | bceca7f |
-| M7.1~M7.3 | app/release/ — 7파일 518줄, deploy/huggingface/, 클린 체크아웃 스크립트 | app/release/ — 검증 스크립트를 실재하는 경로로 교정 | da34df5 |
-<!-- port-map:end -->
-
-### 리뷰 단위
-
-코드 리뷰는 덩이 하나가 아니라 **모듈 하나가 다 들어온 뒤**에 받습니다. 덩이는 커밋을
-가르는 단위이고, 리뷰는 모듈이 단위입니다 — 한 모듈의 경계가 다 서기 전에는 서로를
-어떻게 쓰는지가 아직 안 보여서, 덩이 하나만 놓고 보는 리뷰는 같은 지적을 다음 덩이에서
-다시 받게 됩니다. 소속 모듈은 위 표의 단계 라벨 앞자리(`M5.1` → `M5`)로 정해지므로 여기에
-따로 적지 않습니다.
-
-아래는 모듈별로 리뷰에서 특히 볼 것입니다. 대시보드의 `이식 진행`이 이 표를 읽어
-모듈이 다 차면 알려주고, 상세 화면에서 해당 문단을 클립보드로 넘깁니다.
-
-`리뷰` 칸은 그 모듈의 코드 리뷰 반영분이 **올라간 시점의 HEAD**입니다(이식 범위표의
-`기준`과 같은 규칙). 비어 있으면 아직 리뷰 전이고, 채워져 있으면 대시보드가 리뷰
-시점 알림을 멈춥니다. 이 칸이 생기기 전에 리뷰한 모듈은 `기록 이전`으로 둡니다.
-
-<!-- review-focus:start -->
-| 모듈 | 리뷰 | 리뷰에서 집중할 것 |
-|---|---|---|
-| M1 | 기록 이전 | 청크가 원문 오프셋과 해시로 되짚어지는가. 표 파싱이 레지스트리별 규칙에 갇혀 있는가 |
-| M2 | 기록 이전 | 융합 순위가 각 경로의 점수 척도에 휘둘리지 않는가. SQL이 파이썬으로 새어나오지 않는가 |
-| M3 | 기록 이전 | 측정이 설정 지문에 묶여 재현되는가. 골든 케이스가 구현을 따라 바뀌지 않았는가 |
-| M4 | 기록 이전 | 모델이 증거 규칙을 스스로 정하지 못하게 막혀 있는가. 예산 초과와 스키마 거절이 서로 다른 실패로 남는가 |
-| M5 | 3129e63 | 타입 계약이 경계에서만 검증되는가. 오류 봉투가 5xx 세부나 비밀을 흘리지 않는가. 주입이 실제로 교체 가능한가. SSE가 클라이언트 이탈에 워크플로까지 취소하는가 |
-| M6 | 최종으로 미룸 | 데모가 실제 파이프라인을 쓰는가, 아니면 결과를 흉내내는가. 오프라인 기본 경로가 유료 공급자를 부르지 않는가. **개별 리뷰를 건너뛴다**(§4-1 예외) — 배포용 개편 뒤 최종 전체 리뷰가 대신한다 |
-| M7 | 최종으로 미룸 | 릴리스 가드가 게시되지 않은 것을 게시됐다고 주장하지 않는가. 아카이브가 비밀이나 코퍼스 원문을 담지 않는가. **개별 리뷰를 건너뛴다**(§4-1 예외) — 배포용 개편 뒤 최종 전체 리뷰가 대신한다 |
-| M8 | 기록 이전 | 언어 라우팅이 번역 암과 분리돼 측정되는가. 패리티 게이트가 한쪽 언어에 맞춰 느슨해지지 않았는가 |
-| M9 | d1dd9b7 | 도구 선택을 모델에 넘기고도 중단 조건이 계약으로 남아 있는가. 인용 없는 종료가 막혀 있는가. **두 덩이로 나눠 리뷰한다**(§4-1 예외) — 앞 덩이로는 "하나의 스키마가 LLM·MCP·프롬프트를 모두 먹여 살린다"를 닫을 수 없다. MCP가 뒤 덩이에 있다 |
-| M10 | 기록 이전 | 레지스트리 어댑터가 SEC 이름을 경계 밖으로 내보내지 않는가. 한국어 lexical 통계가 언어별로 분리돼 있는가 |
-<!-- review-focus:end -->
-
-이식 덩이가 아닌 커밋: `17cad6e` `2790ece` `91b42d1` 리팩터·수정, `e130627` `afb8242` `3714d62` 문서·도구.
-
-모듈 총량 (zero 대 현재):
-
-| 모듈 | zero | assemble |
-|---|---|---|
-| M1 ingestion | 7파일 3471줄 | 10파일 4352줄 |
-| M2 retrieval | 14파일 2184줄 | 17파일 2774줄 |
-| M3 evals | 12파일 4901줄 | 20파일 5653줄 |
-| M4 llm+observability+workflow | 14파일 3115줄 | 14파일 2999줄 |
-| M5 api (대기) | 17파일 2035줄 | — |
-| M9 agent (대기) | 11파일 2145줄 | — |
-| M6 demo (대기) | 1파일 595줄 | — |
-| M7 release (대기) | 7파일 509줄 | — |
-
-### Review runtime과 혼합언어 검색
-
-Review 입력은 먼저 conversation gate를 통과합니다. 완전한 인사·짧은 잡담은 retrieval 없이
-응답하고, 공시 질문은 manifest issuer alias로 corpus를 제한한 뒤 활성 언어별 query variant,
-vector, lexical lane을 실행해 RRF로 합칩니다. 사용자 원문은 answer question으로 유지하며
-검색용 번역은 provenance로만 전달됩니다. 내부 `NOT_IN_DOCS`와 citation membership 계약은
-완화하지 않습니다.
-
-Answer provider가 설정되지 않은 Dev에서도 명확한 greeting은 provider 없이 응답합니다.
-공시 질문은 Balanced retrieval을 실행해 실제 evidence를 표시하고, 생성 답변이 없다는 점을
-명시합니다. Korean처럼 language routing을 요청한 profile만 translation provider를 요구합니다.
-Request validation 오류는 실패한 field 위치를 conversation에 함께 표시합니다.
-
-Session profile은 OpenAI API 또는 server-side Local LLM, Auto/SEC/DART corpus, retrieval
-preset을 conversation별로 보관합니다. Local endpoint와 credential은 browser에 노출되지
-않습니다. Evidence candidates는 30분 signed snapshot으로 pin/exclude 후 재검증할 수 있고,
-Evaluation Jobs의 성공한 result profile은 `Use selected set`으로 현재 review에 적용합니다.
-
-OpenAI embedding 기본 모델은 `text-embedding-3-large`이며 pgvector 폭은 `dimensions=384`로
-고정합니다. Vector row에는 provider/model/dimensions identity를 함께 저장하므로 모델 변경 뒤
-기존 vector는 stale 처리되고 명시적 backfill 전까지 검색에서 제외됩니다. 실제 OpenAI
-review·translation·embedding 호출은 운영자가 유효한 key와 budget을 설정한 경우에만 수행합니다.
-
-Build·Measure 상단의 `DEV`/`PROD`는 현재 hostname에서 자동으로 결정되며 선택 control이 아닙니다.
-Provider 인증·schema·usage 실패는 `NOT_IN_DOCS`로 숨기지 않고 typed engine error로 표시합니다.
-
-### 대시보드
-
-브랜치·품질·이식 진행·반복 점검을 한 화면에서 봅니다. 표시만 하고 아무것도 고치지
-않습니다. `space`는 즉시 갱신, `1`~`6`은 섹션 접기, `m`은 증거 창 전환, `q`는 종료이고,
-마우스가 되는 터미널이면 줄을 눌러 상세 화면으로 들어갑니다(`esc`로 복귀).
-
-```bash
-.dashboard/dashboard.sh            # 1초마다 제자리 갱신
-.dashboard/dashboard.sh --once     # 한 프레임만 출력 (파이프·CI)
-.dashboard/dashboard-refresh.sh    # 전체 스위트·수집 수 캐시 갱신
-```
-
-전체 스위트는 몇 분이 걸리므로 틱에서 돌리지 않습니다. 위 갱신 스크립트가
-`.dashboard-cache/`에 결과를 넣고 대시보드는 그 값과 나이를 읽습니다. 캐시보다 나중에
-수정된 소스가 있으면 그 결과는 이 트리를 설명하지 못하므로 나이 대신 경고를 띄웁니다.
-
-작업 중인 세션이 대시보드에 한 줄을 올릴 수 있고, 읽는 쪽의 반응은
-`.dashboard-cache/events.jsonl`에 한 줄짜리 JSON으로 쌓입니다.
-
-```bash
-.dashboard/dash-send.sh note "M5.1 범위 확인 중"
-.dashboard/dash-send.sh ask "한 덩이로 갈까?" "그렇게" "나눠서"
-.dashboard/dash-send.sh clear
-```
-
-클릭이 이스케이프 문자로 새어 나오는 터미널이면 `--no-mouse`로 끄고 키만 씁니다.
-
-</details>

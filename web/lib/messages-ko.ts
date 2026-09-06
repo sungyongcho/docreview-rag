@@ -1,4 +1,27 @@
 export const KO: Record<string, string> = {
+  "documents": "문서",
+  "preparation needed": "문서 준비 필요",
+  "Close preparation notice": "문서 준비 안내 닫기",
+  "Corpus preparation is needed": "문서 준비가 필요합니다",
+  "The database is connected and its schema is compatible. Prepare documents, chunks, embeddings, and BM25 in Build before asking.": "DB가 연결되어 있고 스키마도 호환됩니다. 질문하기 전에 데이터 준비에서 문서·청크·임베딩·BM25를 준비하세요.",
+
+  "Keep this database intact. Use an empty isolated database or a compatible database for setup.": "기존 데이터베이스는 보존하세요. 설치에는 비어 있는 별도 데이터베이스나 현재 구조와 호환되는 데이터베이스를 사용하세요.",
+  "Select processing sources first.": "먼저 처리할 원문 묶음을 선택하세요.",
+  "Selections queued for ingest: {count}.": "선택한 원문 묶음 {count}개를 적재 대기열에 추가했습니다.",
+
+  "Chunk targets (tokens)": "청크 목표 크기(토큰)",
+
+  "Ingest selected sources": "선택한 원문 DB 적재",
+  "Re-run Ingest selected sources to add them.": "선택한 원문을 다시 적재하여 추가하세요.",
+  "Pick the manifests that list your filings and run Ingest selected sources.": "처리할 원문 묶음을 선택한 뒤 DB에 적재하세요.",
+
+  "Processing selection": "처리 선택",
+  "Selected documents: {count}": "선택한 문서: {count}",
+
+  "View reset status": "초기화 상태 보기",
+  "After reset, download SEC/DART filings again, ingest them, generate embeddings, rebuild BM25, and configure your answer model in Build.": "초기화 후 Build에서 SEC/DART 원문을 다시 내려받고, 문서 수집·임베딩 생성·BM25 재구축·답변 모델 설정을 진행하세요.",
+  "For a terminal reset followed by a full rebuild and restart, run rag-fresh-start. Run rag-help for the equivalent corpus commands.": "터미널에서 초기화 후 전체 재빌드·재시작하려면 rag-fresh-start를 실행하세요. 같은 데이터 작업 명령은 rag-help에서 확인할 수 있습니다.",
+
   "Guides & development": "가이드와 개발 기록",
   "User guide": "사용 가이드",
   "Development log": "개발 기록",

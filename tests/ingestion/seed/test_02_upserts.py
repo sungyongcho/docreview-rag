@@ -1,9 +1,8 @@
 """PostgreSQL statement and transaction tests without a live database."""
 
-import argparse
 import asyncio
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -23,19 +22,22 @@ def test_document_upsert_targets_doc_id_and_updates_snapshot_metadata():
     batch = sample_batch()
     sql = _sql(seed.document_upsert_statement(batch.documents))
     assert "ON CONFLICT (doc_id) DO UPDATE SET" in sql
-    assert "source_length = excluded.source_length" in sql
-    assert "source_sha256 = excluded.source_sha256" in sql
+    assert "aliases = excluded.aliases" in sql
+    assert "sec = excluded.sec" in sql
+    assert "dart = excluded.dart" in sql
     assert "report_period = excluded.report_period" in sql
-    assert "parse_status = excluded.parse_status" in sql
-    assert "item_index = excluded.item_index" in sql
+    assert "parse_status" not in sql
+    assert "item_index" not in sql
+    assert "source_sha256" not in sql
+    assert "source_length" not in sql
 
 
-def test_chunk_upsert_targets_doc_ordinal_and_never_writes_embeddings():
+def test_chunk_upsert_targets_stable_identity_and_never_writes_embeddings():
     """Upsert chunk content without inserting an embedding payload."""
     batch = sample_batch()
     statement = seed.chunk_upsert_statement(batch.chunks)
     sql = _sql(statement)
-    assert "ON CONFLICT (doc_id, ordinal) DO UPDATE SET" in sql
+    assert "ON CONFLICT (stable_key) DO UPDATE SET" in sql
     assert "body = excluded.body" in sql
     assert "context_header = excluded.context_header" in sql
     assert "index_text = excluded.index_text" in sql
@@ -45,12 +47,12 @@ def test_chunk_upsert_targets_doc_ordinal_and_never_writes_embeddings():
     assert not any("embedding" in name for name in statement.compile().params)
 
 
-def test_chunk_upsert_invalidates_only_stale_embeddings():
-    """Preserve embeddings only when indexed text remains unchanged."""
+def test_chunk_upsert_leaves_independent_embedding_versions_untouched():
+    """Keep source chunk persistence separate from every embedding configuration."""
     sql = _sql(seed.chunk_upsert_statement(sample_batch().chunks))
     normalized = " ".join(sql.split())
-    assert "embedding = CASE WHEN (chunks.index_text = excluded.index_text)" in normalized
-    assert "THEN chunks.embedding END" in normalized
+    assert "embedding" not in normalized
+    assert "ON CONFLICT (stable_key)" in normalized
 
 
 class _Transaction:
@@ -112,7 +114,16 @@ def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
     assert session.begins == 1
     assert session.commits == 1
     assert session.rollbacks == 0
-    assert len(session.executed) == 4
+    statements = [_sql(statement) for statement in session.executed]
+    assert len(statements) == 8
+    structure_position = next(
+        i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO parsed_structures")
+    )
+    pointer_position = next(
+        i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO document_parses")
+    )
+    assert structure_position < pointer_position
+    assert "ON CONFLICT (doc_id) DO UPDATE SET structure_id" in statements[pointer_position]
     assert [(update.stage, update.current, update.total) for update in progress] == [
         ("documents", 0, 1),
         ("documents", 1, 1),
@@ -152,71 +163,18 @@ def test_persist_seed_batch_rejects_nonpositive_batch_size():
         )
 
 
-def test_seed_corpus_offloads_preparation_before_persisting(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Run blocking corpus preparation through ``asyncio.to_thread``."""
+def test_persistence_rebuilds_statistics_after_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rebuild lexical statistics after successful chunk persistence."""
     batch = sample_batch()
     expected = seed.SeedResult(documents=1, chunks=2)
-    to_thread = AsyncMock(return_value=batch)
     persist = AsyncMock(return_value=expected)
     rebuild = AsyncMock()
-    monkeypatch.setattr(asyncio, "to_thread", to_thread)
     monkeypatch.setattr(seed, "persist_seed_batch", persist)
     monkeypatch.setattr("app.retrieval.bm25.backfill_term_stats", rebuild)
-
     session = cast(AsyncSession, object())
-    result = asyncio.run(seed.seed_corpus(session, expected_documents=1, chunk_batch_size=7))
+
+    result = asyncio.run(seed.persist_seed_batch_with_stats(session, batch, chunk_batch_size=7))
 
     assert result == expected
-    to_thread.assert_awaited_once_with(
-        seed.prepare_seed_batch,
-        None,
-        expected_documents=1,
-    )
-    persist.assert_awaited_once_with(session, batch, chunk_batch_size=7)
+    persist.assert_awaited_once_with(session, batch, chunk_batch_size=7, on_progress=None)
     rebuild.assert_awaited_once_with(session)
-
-
-def test_seed_cli_uses_the_same_seed_plus_statistics_wrapper(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Route the CLI through the high-level persistence and BM25 rebuild boundary."""
-    import app.db.bootstrap as bootstrap
-    import app.db.session as db_session
-
-    batch = sample_batch()
-    session = object()
-    prepare = MagicMock(return_value=batch)
-    persist_with_stats = AsyncMock(return_value=seed.SeedResult(documents=1, chunks=2))
-    create_schema = AsyncMock()
-
-    class SessionContext:
-        """Async context manager handing out the one recording session."""
-
-        async def __aenter__(self):
-            return session
-
-        async def __aexit__(self, _exc_type, _exc, _traceback):
-            return None
-
-    monkeypatch.setattr(seed, "prepare_seed_batch", prepare)
-    monkeypatch.setattr(seed, "persist_seed_batch_with_stats", persist_with_stats)
-    monkeypatch.setattr(bootstrap, "bootstrap_schema", create_schema)
-    monkeypatch.setattr(db_session, "Session", SessionContext)
-    engine = object()
-    monkeypatch.setattr(db_session, "engine", engine)
-    args = argparse.Namespace(
-        manifest=None,
-        expected_documents=1,
-        chunk_batch_size=7,
-        create_schema=True,
-        recreate_schema=False,
-    )
-
-    asyncio.run(seed._run_cli(args))
-
-    prepare.assert_called_once_with(None, expected_documents=1)
-    create_schema.assert_awaited_once_with(engine)
-    persist_with_stats.assert_awaited_once_with(session, batch, chunk_batch_size=7)
-    assert capsys.readouterr().out == "Committed 1 documents and 2 chunks.\n"

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Readiness, ReviewSessionProfile } from "@/lib/types";
+import type { Readiness, ReviewSessionDraft } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { ComposerBanner, ComposerToolbar, composerBanner, readinessChipLabel, readinessStatusLabel, type ComposerToolbarProps } from "./composer-toolbar";
 
@@ -74,7 +74,7 @@ describe("corpus readiness summary", () => {
 });
 
 describe("composerBanner", () => {
-  const vectorProfile: ReviewSessionProfile = { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: { ...DEFAULT_PROFILE, strategy: "vector" } };
+  const vectorProfile: ReviewSessionDraft = { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: { ...DEFAULT_PROFILE, strategy: "vector" } };
   const resetAt = "2026-09-03T00:00:00Z";
 
   it("returns null when nothing blocks the composer", () => {

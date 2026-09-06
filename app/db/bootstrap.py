@@ -9,8 +9,6 @@ from app.db.models import Base
 
 BM25_INVALIDATION_FUNCTION = "docreview_invalidate_bm25_stats"
 BM25_INVALIDATION_TRIGGER = "docreview_chunks_invalidate_bm25_stats"
-SNAPSHOT_PROTECTION_FUNCTION = "docreview_protect_snapshot_chunks"
-SNAPSHOT_PROTECTION_TRIGGER = "docreview_chunks_protect_snapshots"
 
 
 class SchemaDriftError(RuntimeError):
@@ -61,64 +59,6 @@ async def ensure_bm25_stats_invalidation(
     )
 
 
-async def ensure_snapshot_chunk_protection(
-    connection: AsyncConnection, *, schema: str = "public"
-) -> None:
-    """Prevent mutation of chunk or embedding bytes retained by a snapshot."""
-    preparer = postgresql.dialect().identifier_preparer
-    namespace = preparer.quote_schema(schema)
-    chunks = f"{namespace}.{preparer.quote('chunks')}"
-    memberships = f"{namespace}.{preparer.quote('snapshot_chunks')}"
-    function = f"{namespace}.{preparer.quote(SNAPSHOT_PROTECTION_FUNCTION)}"
-    trigger = preparer.quote(SNAPSHOT_PROTECTION_TRIGGER)
-    await connection.execute(
-        text(
-            f"""
-            CREATE OR REPLACE FUNCTION {function}()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $function$
-            BEGIN
-                IF EXISTS (SELECT 1 FROM {memberships} WHERE chunk_id = OLD.id) THEN
-                    RAISE EXCEPTION 'chunk % is retained by an evaluation snapshot', OLD.id;
-                END IF;
-                IF TG_OP = 'DELETE' THEN
-                    RETURN OLD;
-                END IF;
-                RETURN NEW;
-            END;
-            $function$
-            """
-        )
-    )
-    await connection.execute(text(f"DROP TRIGGER IF EXISTS {trigger} ON {chunks}"))
-    await connection.execute(
-        text(
-            f"""
-            CREATE TRIGGER {trigger}
-            BEFORE DELETE OR UPDATE OF source_sha256, index_text, lexical_text,
-                embedding, embedding_provider, embedding_model, embedding_dimensions
-            ON {chunks}
-            FOR EACH ROW
-            EXECUTE FUNCTION {function}()
-            """
-        )
-    )
-
-
-async def remove_snapshot_chunk_protection(
-    connection: AsyncConnection, *, schema: str = "public"
-) -> None:
-    """Remove the legacy live-chunk guard after snapshots become self-contained."""
-    preparer = postgresql.dialect().identifier_preparer
-    namespace = preparer.quote_schema(schema)
-    chunks = f"{namespace}.{preparer.quote('chunks')}"
-    function = f"{namespace}.{preparer.quote(SNAPSHOT_PROTECTION_FUNCTION)}"
-    trigger = preparer.quote(SNAPSHOT_PROTECTION_TRIGGER)
-    await connection.execute(text(f"DROP TRIGGER IF EXISTS {trigger} ON {chunks}"))
-    await connection.execute(text(f"DROP FUNCTION IF EXISTS {function}()"))
-
-
 def _collect_schema_drift(sync_connection: Connection) -> dict[str, list[str]]:
     """Map each existing table to the ORM-mapped columns it is missing."""
     inspector = inspect(sync_connection)
@@ -152,9 +92,7 @@ async def ensure_schema_compatibility(connection: AsyncConnection) -> None:
     ------
     SchemaDriftError
         If any table that already exists in the database is missing at least
-        one ORM-mapped column. The message lists every drifted table with its
-        missing columns and the rebuild remedy: drop the listed tables and
-        rerun with schema creation, then re-seed.
+        one ORM-mapped column. Existing data is preserved and setup stops.
     """
     drift = await connection.run_sync(_collect_schema_drift)
     if not drift:
@@ -163,14 +101,11 @@ async def ensure_schema_compatibility(connection: AsyncConnection) -> None:
         f"table {table!r} is missing columns: {', '.join(columns)}"
         for table, columns in sorted(drift.items())
     )
-    drop_statements = " ".join(f"DROP TABLE {table} CASCADE;" for table in sorted(drift))
     raise SchemaDriftError(
-        f"The live database schema is behind the ORM models: {details}. "
-        "Run `python -m app.db.migrate --plan` and apply a registered additive "
-        "migration when one covers this drift. If drift remains, rerun seeding with "
-        "--recreate-schema, or drop the listed tables yourself "
-        f"(e.g. {drop_statements}) and rerun with --create-schema; "
-        "re-seeding restores all derived state."
+        f"The database schema does not match the application contract: {details}. "
+        "Existing data is preserved. Use an empty isolated database for setup, "
+        "or connect a database matching the application schema. "
+        "Do not use a destructive reset to recover an installation."
     )
 
 
@@ -188,4 +123,3 @@ async def bootstrap_schema(engine: AsyncEngine) -> None:
         await ensure_schema_compatibility(connection)
         await connection.run_sync(Base.metadata.create_all)
         await ensure_bm25_stats_invalidation(connection)
-        await remove_snapshot_chunk_protection(connection)

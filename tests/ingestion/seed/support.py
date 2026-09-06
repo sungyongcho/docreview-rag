@@ -1,26 +1,64 @@
 """Small deterministic records shared by seed tests."""
 
+from pathlib import Path
+
 from app.ingestion import seed
 from app.ingestion.chunk import Chunk
+from app.ingestion.manifest import (
+    Acquisition,
+    CorpusIdentity,
+    DocumentReference,
+    FilingSource,
+    SecMetadata,
+    SourceArtifact,
+)
 from app.ingestion.parser import ParsedFiling, Section
 
 SOURCE_SHA256 = "a" * 64
 
 
-def sample_filing(doc_id: str = "NVDA-FY2024") -> ParsedFiling:
-    """Return a complete synthetic filing without parsing corpus HTML."""
+def sample_source(doc_id: str) -> FilingSource:
+    """Construct a typed source reference for injected-parser tests."""
     issuer, year = doc_id.split("-FY", maxsplit=1)
-    return ParsedFiling(
-        doc_id=doc_id,
+    cik = str(sum(map(ord, issuer))).zfill(10)
+    accession = f"{cik}-{year[-2:]}-000001"
+    url = f"https://www.sec.gov/{doc_id}.html"
+    document = DocumentReference(
+        document_id=doc_id,
         registry="sec",
+        language="en",
         issuer=issuer,
-        issuer_id="1045810",
-        filing_id=f"0001045810-{year[-2:]}-000001",
+        issuer_id=cik,
+        filing_id=accession,
+        fiscal_year=int(year),
         form="10-K",
         filing_date=f"{year}-02-21",
         report_period=f"{year}-01-28",
-        fiscal_year=int(year),
-        source_url=f"https://www.sec.gov/Archives/{doc_id}.htm",
+        source_url=url,
+        sec=SecMetadata(cik=cik, accession=accession, primary_document=f"{doc_id}.html"),
+    )
+    artifact = SourceArtifact(
+        artifact_id=f"{doc_id}-source",
+        document_id=doc_id,
+        role="primary",
+        path=f"{doc_id}.html",
+        sha256=SOURCE_SHA256,
+        byte_length=200,
+        encoding="utf-8",
+        acquisition=Acquisition(acquired_at=None, url=url, media_type="text/html"),
+    )
+    return FilingSource(
+        document,
+        artifact,
+        Path("/synthetic-corpus"),
+        CorpusIdentity(corpus_id="test", name="Test corpus"),
+    )
+
+
+def sample_filing(doc_id: str = "NVDA-FY2024") -> ParsedFiling:
+    """Return a complete synthetic filing without parsing corpus HTML."""
+    return ParsedFiling(
+        source=sample_source(doc_id),
         source_length=200,
         source_sha256=SOURCE_SHA256,
         sections=[
@@ -78,4 +116,4 @@ def sample_batch() -> seed.SeedBatch:
     """Build one deterministic seed batch."""
     filing = sample_filing()
     document, chunks = seed.filing_records(filing, sample_chunks())
-    return seed.SeedBatch((document,), chunks)
+    return seed.SeedBatch((document,), chunks, (filing,))

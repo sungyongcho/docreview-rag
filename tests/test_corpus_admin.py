@@ -14,6 +14,7 @@ import app.corpus_admin as corpus_admin
 from app.corpus_admin import (
     AdminCommand,
     CannedCorpusAdminService,
+    OperationOutcome,
     RuntimeCorpusAdminService,
 )
 from app.ingestion.progress import OperationProgress
@@ -38,9 +39,8 @@ def test_canned_snapshot_is_read_only_filterable_and_db_free() -> None:
     assert snapshot.status.database_connected is False
     assert snapshot.status.writable is False
     assert [document.registry for document in snapshot.documents] == ["dart"]
-    assert [(item.registry, item.sources_present) for item in snapshot.manifests] == [
-        ("sec", 20),
-        ("dart", 2),
+    assert [(item.registries, item.sources_present) for item in snapshot.manifests] == [
+        (("sec", "dart"), 2),
     ]
     assert detail is not None
     assert len(detail.chunks) == 1
@@ -78,14 +78,14 @@ def test_runtime_queue_is_fifo_and_reports_progress(tmp_path: Path) -> None:
         gate = asyncio.Event()
         calls: list[str] = []
 
-        async def runner(command, publish) -> str:
+        async def runner(command, publish) -> OperationOutcome:
             """Record order while keeping the first job active long enough to queue another."""
             calls.append(command.kind)
             publish(OperationProgress("work", 1, 2, f"running {command.kind}"))
             if len(calls) == 1:
                 await gate.wait()
             publish(OperationProgress("work", 2, 2, f"finished {command.kind}"))
-            return f"completed {command.kind}"
+            return OperationOutcome(f"completed {command.kind}")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
@@ -122,14 +122,14 @@ def test_failed_job_is_redacted_and_retryable(tmp_path: Path) -> None:
         attempts = 0
         secret = "dart-test-secret-123"
 
-        async def runner(command, publish) -> str:
+        async def runner(command, publish) -> OperationOutcome:
             """Fail once with a secret-bearing message, then succeed."""
             nonlocal attempts
             del command, publish
             attempts += 1
             if attempts == 1:
                 raise RuntimeError(f"provider rejected {secret}")
-            return "retry succeeded"
+            return OperationOutcome("retry succeeded")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path, dart_api_key=SecretStr(secret)),
@@ -160,12 +160,12 @@ def test_queued_job_can_be_cancelled_without_running(tmp_path: Path) -> None:
         gate = asyncio.Event()
         calls: list[str] = []
 
-        async def runner(command, publish) -> str:
+        async def runner(command, publish) -> OperationOutcome:
             """Block the first command long enough to cancel its successor."""
             del publish
             calls.append(command.kind)
             await gate.wait()
-            return "done"
+            return OperationOutcome("done")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
@@ -193,13 +193,13 @@ def test_running_backfill_cancels_at_the_next_batch_boundary(tmp_path: Path) -> 
         """Request cancellation while a fake embedding batch is in flight."""
         gate = asyncio.Event()
 
-        async def runner(command, publish) -> str:
+        async def runner(command, publish) -> OperationOutcome:
             """Publish once, wait, then hit the cancellation-aware boundary."""
             assert command.kind == "backfill_embeddings"
             publish(OperationProgress("embedding", 1, 2, "first batch"))
             await gate.wait()
             publish(OperationProgress("embedding", 2, 2, "second batch"))
-            return "unexpected completion"
+            return OperationOutcome("unexpected completion")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
@@ -238,14 +238,14 @@ def test_backfill_refuses_false_success_when_committed_count_does_not_change(
 
     states = iter(((0, 3), (0, 3)))
 
-    async def fake_state(session, provider):
+    async def fake_state(session, provider, document_ids):
         """Report no committed change before or after the claimed update."""
-        del session, provider
+        del session, provider, document_ids
         return next(states)
 
-    async def fake_embed(session, provider, *, on_batch):
+    async def fake_embed(session, provider, *, on_batch, document_ids):
         """Claim three stored rows without changing persistence."""
-        del session, provider, on_batch
+        del session, provider, on_batch, document_ids
         return EmbeddingBackfillResult(selected=3, embedded=3, skipped_stale=0, batches=1)
 
     async def fake_bootstrap(engine):
@@ -277,7 +277,7 @@ def test_backfill_refuses_false_success_when_committed_count_does_not_change(
 
 def test_manifest_resolution_is_confined_to_valid_root_entries(tmp_path: Path) -> None:
     """Accept enumerated manifests and reject traversal or arbitrary JSON files."""
-    (tmp_path / "manifest.json").write_text("[]\n", encoding="utf-8")
+    _write_manifest(tmp_path)
     (tmp_path / "notes.json").write_text("[]\n", encoding="utf-8")
     service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
 
@@ -468,12 +468,12 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
         """Fail the first two writes, then require succeeded rows and a live worker."""
         store = _LedgerStore(failures=2)
 
-        async def runner(command, publish) -> str:
+        async def runner(command, publish) -> OperationOutcome:
             """Publish a burst of progress in one turn, then finish."""
             for step in range(1, 6):
                 publish(OperationProgress("work", step, 5, f"{command.kind} {step}"))
             await asyncio.sleep(0)
-            return f"completed {command.kind}"
+            return OperationOutcome(f"completed {command.kind}")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),
@@ -498,28 +498,19 @@ def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: 
 
 
 def test_manifest_summaries_report_registry_and_sources_on_disk(tmp_path: Path) -> None:
-    """Count listed sources that exist on disk and name each manifest's registry."""
-    present = tmp_path / "present.html"
-    present.write_text("<html></html>", encoding="utf-8")
-    entries = [
-        {"ticker": "NVDA", "file": str(present)},
-        {"ticker": "AMD", "file": str(tmp_path / "missing.html")},
-    ]
-    (tmp_path / "manifest.json").write_text(json.dumps(entries), encoding="utf-8")
-    (tmp_path / "dart-manifest.json").write_text("[]\n", encoding="utf-8")
-    (tmp_path / "broken-manifest.json").write_text("{", encoding="utf-8")
+    """Expose exact selection identities from the common catalog."""
+    _write_manifest(tmp_path)
+    (tmp_path / "broken-manifest.json").write_text("{")
     service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
-
     summaries = {item.name: item for item in service._manifest_summaries()}
-
-    assert summaries["manifest.json"].registry == "sec"
-    assert summaries["manifest.json"].documents == 2
-    assert summaries["manifest.json"].sources_present == 1
-    assert summaries["dart-manifest.json"].registry is None
-    assert summaries["dart-manifest.json"].sources_present == 0
+    summary = summaries["manifest.json"]
+    assert summary.registries == ("sec",)
+    assert summary.documents == 1
+    assert summary.sources_present == 1
+    assert summary.selections[0].document_ids == ("nvda-2024",)
+    assert summary.selections[0].artifact_ids == ("nvda-source",)
+    assert summary.selections[0].sources_present == 1
     assert summaries["broken-manifest.json"].valid is False
-    assert summaries["broken-manifest.json"].registry is None
-    assert summaries["broken-manifest.json"].sources_present is None
 
 
 @pytest.mark.live_postgres
@@ -536,3 +527,237 @@ def test_live_postgres_admin_snapshot_reports_schema_state() -> None:
     if snapshot.status.schema_status == "drifted":
         assert snapshot.status.writable is False
         assert "DROP TABLE" not in snapshot.status.schema_message
+
+
+def test_selection_payload_survives_retry_provenance():
+    """Persist the exact selection alongside its canonical manifest."""
+    command = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selected")
+    payload = corpus_admin._command_payload(command)
+    assert payload["selection_id"] == "selected"
+    assert payload["manifest"] == "manifest.json"
+
+
+def _write_manifest(root: Path) -> None:
+    """Write a small common catalog with one exact acquired selection."""
+    import hashlib
+
+    raw = b"report"
+    (root / "report.html").write_bytes(raw)
+    payload = {
+        "corpus": {"corpus_id": "test", "name": "Test"},
+        "documents": [
+            {
+                "document_id": "nvda-2024",
+                "registry": "sec",
+                "language": "en",
+                "issuer": "NVDA",
+                "issuer_id": "0001045810",
+                "filing_id": "0001045810-24-000001",
+                "fiscal_year": 2024,
+                "form": "10-K",
+                "filing_date": "2024-02-01",
+                "report_period": "2024-01-01",
+                "source_url": "https://example.org/report",
+                "sec": {
+                    "cik": "0001045810",
+                    "accession": "0001045810-24-000001",
+                    "primary_document": "report.html",
+                },
+            }
+        ],
+        "artifacts": [
+            {
+                "artifact_id": "nvda-source",
+                "document_id": "nvda-2024",
+                "role": "primary",
+                "path": "report.html",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "byte_length": len(raw),
+                "encoding": "utf-8",
+                "acquisition": {
+                    "acquired_at": "2024-02-01T00:00:00Z",
+                    "url": "https://example.org/report",
+                    "media_type": "text/html",
+                },
+            }
+        ],
+        "selections": [{"selection_id": "selected", "artifact_ids": ["nvda-source"]}],
+    }
+    (root / "manifest.json").write_text(json.dumps(payload))
+
+
+def test_acquisition_result_keeps_selection_in_completed_job(tmp_path):
+    """Keep machine-readable acquisition provenance on the shared job board."""
+
+    async def scenario():
+        """Complete an injected operation through the production queue."""
+
+        async def runner(command, publish):
+            """Return the same structured result as acquisition adapters."""
+            return OperationOutcome("Fetched 1 filing", "manifest.json", "selected")
+
+        service = RuntimeCorpusAdminService(
+            settings=Settings(corpus_dir=tmp_path), operation_runner=runner
+        )
+        await service.enqueue(AdminCommand("acquire_edgar", identifiers=("NVDA",), years=(2024,)))
+        await service._queue.join()
+        job = (await service.jobs()).history[0]
+        assert job.status == "succeeded"
+        assert job.result_refs == {
+            "manifest": "manifest.json",
+            "selection_id": "selected",
+            "summary": "Fetched 1 filing",
+        }
+
+    asyncio.run(scenario())
+
+
+def test_ingestion_rejects_unknown_selection_before_parsing(tmp_path, monkeypatch):
+    """Reject an unlisted selection before invoking any parser or persistence."""
+    _write_manifest(tmp_path)
+    service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))
+
+    async def writable():
+        """Isolate manifest validation from live database readiness."""
+        return None
+
+    monkeypatch.setattr(service, "_assert_writable_schema", writable)
+    with pytest.raises(ValueError, match="unknown processing selection"):
+        asyncio.run(
+            service._run_operation(
+                AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="missing"),
+                lambda progress: None,
+            )
+        )
+
+
+def test_selection_command_restores_from_stored_job(tmp_path):
+    """Restore the identical selection when retrying a persisted operation."""
+
+    async def scenario():
+        """Create the ledger row without starting any database work."""
+        store = _LedgerStore()
+        command = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selected")
+        row = await store.create(
+            job_id="selection",
+            domain="corpus",
+            kind=command.kind,
+            request_json=corpus_admin._command_payload(command),
+        )
+        assert corpus_admin._command_from_stored(row) == command
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("registry", ["sec", "dart"])
+def test_acquisition_returns_common_manifest_selection(tmp_path, monkeypatch, registry):
+    """Forward adapter provenance without creating a second catalog."""
+    from types import SimpleNamespace
+
+    service = RuntimeCorpusAdminService(
+        settings=Settings(corpus_dir=tmp_path, dart_api_key=SecretStr("test"))
+    )
+
+    async def writable():
+        """Isolate acquisition dispatch from database readiness."""
+        return None
+
+    async def acquire(*args, **kwargs):
+        """Return the canonical acquisition contract without a network call."""
+        return SimpleNamespace(
+            fetched=(object(),),
+            archived=(object(),),
+            manifest="manifest.json",
+            selection_id="selected",
+        )
+
+    monkeypatch.setattr(service, "_assert_writable_schema", writable)
+    monkeypatch.setattr(
+        corpus_admin, "acquire_edgar" if registry == "sec" else "acquire_dart", acquire
+    )
+    result = asyncio.run(
+        service._run_operation(
+            AdminCommand(
+                "acquire_edgar" if registry == "sec" else "acquire_dart",
+                identifiers=("NVDA",),
+                years=(2024,),
+            ),
+            lambda progress: None,
+        )
+    )
+    assert result.manifest == "manifest.json"
+    assert result.selection_id == "selected"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_backfill_uses_the_exact_selected_document_ids(tmp_path, monkeypatch):
+    """Constrain counting and embedding to the same explicit processing selection."""
+    from contextlib import asynccontextmanager
+
+    _write_manifest(tmp_path)
+    calls = []
+    states = iter(((0, 1), (1, 0)))
+
+    @asynccontextmanager
+    async def sessions():
+        """Isolate operation dispatch from database persistence."""
+        yield object()
+
+    async def writable():
+        """Bypass schema I/O for the argument-contract test."""
+        return None
+
+    async def bootstrap(engine):
+        """Keep the schema boundary free of database calls."""
+        return None
+
+    async def state(session, provider, document_ids):
+        """Record exactly the documents whose readiness is measured."""
+        calls.append(document_ids)
+        return next(states)
+
+    async def embed(session, provider, *, on_batch, document_ids):
+        """Verify the backfill uses the identical selection."""
+        assert document_ids == ("nvda-2024",)
+        return EmbeddingBackfillResult(selected=1, embedded=1, skipped_stale=0, batches=1)
+
+    service = RuntimeCorpusAdminService(
+        settings=Settings(corpus_dir=tmp_path),
+        session_factory=sessions,
+        embedding_provider=DeterministicEmbeddingProvider(),
+    )
+    monkeypatch.setattr(service, "_assert_writable_schema", writable)
+    monkeypatch.setattr(corpus_admin, "bootstrap_schema", bootstrap)
+    monkeypatch.setattr(corpus_admin, "_embedding_state", state)
+    monkeypatch.setattr(corpus_admin, "embed_missing_chunks", embed)
+    result = asyncio.run(
+        service._run_operation(
+            AdminCommand("backfill_embeddings", manifest="manifest.json", selection_id="selected"),
+            lambda progress: None,
+        )
+    )
+    assert "Embedded 1" in result.summary
+    assert calls == [("nvda-2024",), ("nvda-2024",)]
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("rebuild_bm25", {"identifiers": "NVDA"}),
+        ("rebuild_bm25", {"years": ["2024"]}),
+        ("rebuild_bm25", {"expected_documents": True}),
+        ("rebuild_bm25", {"manifest": []}),
+        ("unsupported", {}),
+    ],
+)
+def test_stored_command_rejects_invalid_json_types(kind, payload):
+    """Reject malformed persisted commands instead of coercing retry inputs."""
+
+    async def scenario():
+        """Validate one in-memory ledger row without starting an operation."""
+        store = _LedgerStore()
+        row = await store.create(job_id="invalid", domain="corpus", kind=kind, request_json=payload)
+        with pytest.raises(ValueError):
+            corpus_admin._command_from_stored(row)
+
+    asyncio.run(scenario())

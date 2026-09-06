@@ -6,6 +6,7 @@ from types import ModuleType
 
 import pytest
 
+from app.ingestion.manifest import FilingSource
 from tests.ingestion.golden import PROFILE_YEARS
 
 
@@ -36,13 +37,13 @@ def test_xref_profile_has_no_expected_item_count(parsed: dict, profiles_dir: Pat
 # Repeated learning and failed-profile recovery
 def test_profiles_converge_on_the_third_corpus_pass(
     edgar_module: ModuleType,
-    manifest: list[dict],
+    manifest: tuple[FilingSource, ...],
     isolated_profiles: Path,
 ) -> None:
     """Converge after missing historical years self-heal across three passes."""
     amd = sorted(
-        (entry for entry in manifest if entry["ticker"] == "AMD"),
-        key=lambda entry: entry["report_date"],
+        (entry for entry in manifest if entry.document.issuer == "AMD"),
+        key=lambda entry: entry.document.report_period,
     )
     passes = []
     for _ in range(3):
@@ -50,9 +51,9 @@ def test_profiles_converge_on_the_third_corpus_pass(
         for entry in amd:
             result, _profile = edgar_module.parse_filing(entry)
             assert result.parse_status == "parsed", (
-                f"{result.doc_id}: parse warnings {result.warnings}"
+                f"{result.source.document.document_id}: parse warnings {result.warnings}"
             )
-            used[result.fiscal_year] = result.profile_used
+            used[result.source.document.fiscal_year] = result.profile_used
         passes.append(used)
 
     assert passes[0] == {
@@ -76,14 +77,14 @@ def test_profiles_converge_on_the_third_corpus_pass(
 
 def test_failed_profile_is_relearned_before_it_is_saved(
     edgar_module: ModuleType,
-    manifest: list[dict],
+    manifest: tuple[FilingSource, ...],
     isolated_profiles: Path,
 ) -> None:
     """Persist only a profile that successfully reparses and validates the filing."""
     entry = next(
         item
         for item in manifest
-        if item["ticker"] == "NVDA" and item["report_date"].startswith("2024")
+        if item.document.issuer == "NVDA" and item.document.fiscal_year == 2024
     )
     edgar_module.save_profile(
         "NVDA",

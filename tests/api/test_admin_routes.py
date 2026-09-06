@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.admin_schemas import (
     AdminDocumentResource,
+    CorpusJobResource,
+    CorpusOperationRequest,
     DocumentFacetsResponse,
     DocumentFacetValue,
     DocumentInventoryResponse,
@@ -22,12 +24,48 @@ from app.api.admin_schemas import (
 from app.api.app import create_api_app
 
 
+def _corpus_job(request: CorpusOperationRequest, job_id: str = "corpus-1") -> CorpusJobResource:
+    """Return one complete shared job resource for route contract tests."""
+    return CorpusJobResource(
+        job_id=job_id,
+        command=request,
+        status="queued",
+        stage="queued",
+        current=0,
+        total=None,
+        message="Queued",
+        detail_current=None,
+        detail_total=None,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        started_at=None,
+        finished_at=None,
+        error_code=None,
+        result_refs={},
+    )
+
+
 class FakeAdminServices:
     """Small route-level administrator service fixture."""
 
     async def corpus_snapshot(self):
         """Return one schema-compatible empty corpus."""
-        return {"mode": "live", "status": {"schema_status": "compatible"}}
+        return {
+            "mode": "live",
+            "status": {
+                "schema_status": "compatible",
+                "database_connected": True,
+                "schema_message": "Compatible",
+                "documents": 0,
+                "chunks": 0,
+                "embedded_chunks": 0,
+                "pending_embeddings": 0,
+                "bm25_ready": False,
+                "writable": True,
+                "provider": "deterministic",
+            },
+            "manifests": (),
+            "documents": (),
+        }
 
     document_filters = None
 
@@ -63,6 +101,7 @@ class FakeAdminServices:
                     "provider": "deterministic",
                     "model": "token-hash-384",
                     "dimensions": 384,
+                    "tokenizer": "unicode-alnum:nfkc:casefold:v1",
                     "count": 2,
                 },
             ),
@@ -118,15 +157,15 @@ class FakeAdminServices:
 
     async def enqueue_corpus(self, request):
         """Echo one safe operation kind."""
-        return {"job_id": "corpus-1", "kind": request.kind}
+        return _corpus_job(request)
 
     async def corpus_jobs(self):
         """Return an empty queue."""
-        return {"active": None, "queued": [], "history": []}
+        return {"active": None, "queued": (), "history": ()}
 
     async def retry_corpus(self, job_id):
         """Return one retry identity."""
-        return {"job_id": job_id}
+        return _corpus_job(CorpusOperationRequest(kind="rebuild_bm25"), job_id)
 
     async def suites(self):
         """Return no suites for this route fixture."""
@@ -215,7 +254,7 @@ def test_admin_routes_are_injected_and_typed() -> None:
                 "suite_id": "sec-en",
                 "mode": "quick",
                 "profile": {},
-                "target_text_chars": [500, 1200],
+                "target_tokens": [1024, 2048],
                 "strategies": ["lexical", "vector", "hybrid"],
                 "lexical_rankers": ["ts_rank_cd", "bm25"],
             },
@@ -237,7 +276,7 @@ def test_admin_routes_are_injected_and_typed() -> None:
     assert queued.status_code == 200
     assert queued.json()["job_id"] == "eval-1"
     assert corpus_job.status_code == 200
-    assert corpus_job.json()["kind"] == "acquire_edgar"
+    assert corpus_job.json()["command"]["kind"] == "acquire_edgar"
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "operator_job_not_found"
     assert job_board.status_code == 200
@@ -293,3 +332,37 @@ def test_golden_canonical_route_is_read_only_and_typed() -> None:
     assert response.status_code == 200
     assert response.json()["filename"] == "retrieval.json"
     assert response.json()["sha256"] == "a" * 64
+
+
+def test_ingestion_route_requires_and_forwards_explicit_selection():
+    """Require selection identity in the shared corpus job request."""
+    services = FakeAdminServices()
+    received = []
+
+    async def enqueue(request):
+        """Record the validated operation without starting a worker."""
+        received.append(request)
+        return _corpus_job(request, "selection-job")
+
+    services.enqueue_corpus = enqueue
+    with TestClient(
+        create_api_app(admin_services=cast(RuntimeAdminApiServices, services))
+    ) as client:
+        invalid = client.post(
+            "/admin/corpus/jobs", json={"kind": "ingest_manifest", "manifest": "manifest.json"}
+        )
+        valid = client.post(
+            "/admin/corpus/jobs",
+            json={
+                "kind": "ingest_manifest",
+                "manifest": "manifest.json",
+                "selection_id": "selected",
+            },
+        )
+        schema = client.get("/openapi.json").json()
+    assert invalid.status_code == 422
+    assert valid.status_code == 200
+    assert received[0].selection_id == "selected"
+    assert schema["paths"]["/admin/corpus"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]["$ref"].endswith("CorpusSnapshotResource")

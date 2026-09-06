@@ -8,6 +8,7 @@ import zipfile
 import httpx
 import pytest
 
+from app.ingestion.acquisition import AcquiredFiling, merge_acquired
 import app.ingestion.dart_api as dart_api
 from app.ingestion.dart_api import (
     AnnualReport,
@@ -27,7 +28,8 @@ from app.ingestion.dart_api import (
     select_annual_report,
     select_primary_member,
 )
-from tests.ingestion.support import client_returning, run
+from app.ingestion.manifest import CorpusIdentity, Manifest
+from tests.ingestion.support import client_returning, filing_document, filing_source, run
 
 API_KEY = "k" * 40
 RCEPT_NO = "20250311001085"
@@ -415,20 +417,20 @@ def test_archive_document_writes_utf8_and_records_matching_identity(tmp_path):
 
     entry = archive_document(document, report, issuer, fiscal_year=2024, corpus_dir=tmp_path)
 
-    written = tmp_path / "dart" / "005930" / f"{RCEPT_NO}.xml"
+    written = tmp_path / entry.primary.path
     stored = written.read_bytes().decode("utf-8")
-    assert entry["registry"] == "dart"
-    assert entry["issuer"] == "005930"
-    assert entry["issuer_id"] == "00126380"
-    assert entry["filing_id"] == RCEPT_NO
-    assert entry["form"] == "사업보고서"
-    assert entry["language"] == "ko"
-    assert entry["filing_date"] == "2025-03-11"
-    assert entry["report_period"] == "2024-12-31"
-    assert entry["fiscal_year"] == 2024
-    assert entry["source_encoding"] == "euc-kr"
-    assert entry["source_length"] == len(stored)
-    assert entry["source_sha256"] == hashlib.sha256(stored.encode()).hexdigest()
+    assert entry.document.registry == "dart"
+    assert entry.document.issuer == "005930"
+    assert entry.document.issuer_id == "00126380"
+    assert entry.document.filing_id == RCEPT_NO
+    assert entry.document.form == "사업보고서"
+    assert entry.document.language == "ko"
+    assert entry.document.filing_date.isoformat() == "2025-03-11"
+    assert entry.document.report_period.isoformat() == "2024-12-31"
+    assert entry.document.fiscal_year == 2024
+    assert entry.primary.acquisition.original_encoding == "euc-kr"
+    assert entry.primary.byte_length == len(stored.encode())
+    assert entry.primary.sha256 == hashlib.sha256(stored.encode()).hexdigest()
     assert 'encoding="utf-8"' in stored
     assert "사업보고서 본문" in stored
 
@@ -446,80 +448,98 @@ def test_archive_document_rejects_a_broken_archive(tmp_path):
 # --- manifest merging ---
 
 
-def dart_entry(issuer: str, fiscal_year: int, filing_id: str) -> dict[str, object]:
-    """Build a DART manifest entry with the fields reading and merging depend on."""
-    return {
-        "issuer": issuer,
-        "fiscal_year": fiscal_year,
-        "filing_id": filing_id,
-        "file": f"data/corpus/dart/{issuer}/{filing_id}.xml",
-        "source_sha256": filing_id,
-    }
+def dart_acquired(tmp_path, year=2024, receipt=RCEPT_NO):
+    """Build a typed acquired filing with real test artifact bytes."""
+    path = tmp_path / f"{receipt}.xml"
+    path.write_text("사업보고서", encoding="utf-8")
+    document = filing_document(
+        registry="dart",
+        fiscal_year=year,
+        filing_id=receipt,
+        document_id=f"dart-{receipt}",
+        aliases=("삼성전자",),
+    )
+    source = filing_source(path, document=document)
+    return AcquiredFiling(document, (source.artifact,))
+
+
+def catalog_with(tmp_path, acquired):
+    """Publish the selected typed artifacts and preserve their corpus catalog."""
+    catalog = Manifest(corpus=CorpusIdentity(corpus_id="test", name="Test"))
+    catalog = merge_acquired(
+        catalog,
+        acquired,
+        selection_id="test-selection",
+        selected_document_ids=[item.document.document_id for item in acquired],
+        corpus_root=tmp_path,
+    )
+    dart_api.write_manifest(tmp_path / "manifest.json", catalog)
+    return catalog
 
 
 def test_a_missing_manifest_is_a_first_run(tmp_path):
-    """Creating the manifest is the command's job, so its absence is not an error."""
-    assert dart_api.read_manifest(tmp_path / "dart-manifest.json") == []
+    """Initialize the common catalog on a first acquisition."""
+    assert dart_api.read_manifest(tmp_path / "manifest.json").documents == ()
 
 
-def test_manifest_entry_without_an_identity_is_rejected(tmp_path):
-    """An entry that names no filing and no file cannot be merged against."""
-    path = tmp_path / "dart-manifest.json"
-    path.write_text(json.dumps([{"issuer": "005930"}]), encoding="utf-8")
-    with pytest.raises(ValueError, match="entry 0 has no nonblank 'filing_id'"):
+def test_manifest_without_common_identity_is_rejected(tmp_path):
+    """Reject the removed list-shaped DART format."""
+    path = tmp_path / "manifest.json"
+    path.write_text('[{"issuer":"005930"}]')
+    with pytest.raises(ValueError, match="object"):
         dart_api.read_manifest(path)
 
 
-def test_a_second_fiscal_year_does_not_erase_the_first():
-    """Writing the file wholesale used to cost the previous run's filings."""
-    existing = [dart_entry("005930", 2024, "a")]
-    merged, added = dart_api.merge_manifest(existing, [dart_entry("005930", 2023, "b")])
-
-    assert [item["fiscal_year"] for item in merged] == [2024, 2023]
-    assert [item["filing_id"] for item in added] == ["b"]
-
-
-def test_re_archiving_one_filing_replaces_its_entry():
-    """The bytes on disk were just rewritten, so the recorded digest must follow."""
-    existing = [dart_entry("005930", 2024, "a") | {"source_sha256": "stale"}]
-    merged, added = dart_api.merge_manifest(existing, [dart_entry("005930", 2024, "a")])
-
-    assert len(merged) == 1
-    assert merged[0]["source_sha256"] == "a"
-    assert added == []
+def test_a_second_fiscal_year_does_not_erase_the_first(tmp_path):
+    """Add an explicit new selection without replacing existing catalog documents."""
+    first = dart_acquired(tmp_path)
+    second = dart_acquired(tmp_path, 2023, "20240311001085")
+    catalog = catalog_with(tmp_path, [first])
+    merged = merge_acquired(
+        catalog,
+        [second],
+        selection_id="second",
+        selected_document_ids=[second.document.document_id],
+        corpus_root=tmp_path,
+    )
+    assert [document.fiscal_year for document in merged.documents] == [2024, 2023]
+    assert merged.selected_sources("test-selection", tmp_path)[0].document == first.document
+    assert merged.selected_sources("second", tmp_path)[0].document == second.document
 
 
-def test_two_receipts_for_one_issuer_year_stay_one_entry():
-    """The document ID is the database key: one issuer-year is one row."""
-    existing = [dart_entry("005930", 2024, "a")]
-    merged, _ = dart_api.merge_manifest(existing, [dart_entry("005930", 2024, "amended")])
+def test_re_archiving_one_filing_preserves_document_identity(tmp_path):
+    """An idempotent repeat must not duplicate the filing or artifact catalog."""
+    acquired = dart_acquired(tmp_path)
+    catalog = catalog_with(tmp_path, [acquired])
+    merged = merge_acquired(
+        catalog,
+        [acquired],
+        selection_id="test-selection",
+        selected_document_ids=[acquired.document.document_id],
+        corpus_root=tmp_path,
+    )
+    assert merged == catalog
 
-    assert len(merged) == 1
-    assert merged[0]["filing_id"] == "amended"
+
+def test_two_receipts_for_one_issuer_year_remain_distinct(tmp_path):
+    """Keep separate receipt identities instead of overwriting issuer-year evidence."""
+    first = dart_acquired(tmp_path)
+    second = dart_acquired(tmp_path, 2024, "20250311001086")
+    catalog = catalog_with(tmp_path, [first, second])
+    assert len(catalog.documents) == len(catalog.artifacts) == 2
 
 
 def test_manifest_round_trips_with_korean_names_intact(tmp_path):
-    """Issuer names stay readable in the file, so a human can check what was archived."""
-    path = tmp_path / "dart-manifest.json"
-    entries = [dart_entry("005930", 2024, "a") | {"corp_name": "삼성전자"}]
-    dart_api.write_manifest(path, entries)
-
-    assert "삼성전자" in path.read_text(encoding="utf-8")
-    assert dart_api.read_manifest(path) == entries
+    """Keep official aliases readable in the canonical manifest."""
+    catalog = catalog_with(tmp_path, [dart_acquired(tmp_path)])
+    assert "삼성전자" in (tmp_path / "manifest.json").read_text()
+    assert dart_api.read_manifest(tmp_path / "manifest.json") == catalog
 
 
 def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path, monkeypatch):
     """A matching file and digest avoid even the corp-code request."""
-    source_path = tmp_path / "dart/005930/existing.xml"
-    source_path.parent.mkdir(parents=True)
-    source_path.write_text("사업보고서", encoding="utf-8")
-    source = source_path.read_text(encoding="utf-8")
-    entry = dart_entry("005930", 2024, "existing") | {
-        "file": str(source_path),
-        "source_length": len(source),
-        "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
-    }
-    dart_api.write_manifest(tmp_path / "dart-manifest.json", [entry])
+    acquired = dart_acquired(tmp_path)
+    catalog_with(tmp_path, [acquired])
 
     def unexpected_client(**_kwargs):
         """Fail if a no-op acquisition attempts to construct a network client."""
@@ -545,15 +565,9 @@ def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path,
 
 def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monkeypatch):
     """A manifest identity alone is insufficient when the source digest has drifted."""
-    source_path = tmp_path / "dart/005930/existing.xml"
-    source_path.parent.mkdir(parents=True)
-    source_path.write_text("damaged", encoding="utf-8")
-    entry = dart_entry("005930", 2024, "existing") | {
-        "file": str(source_path),
-        "source_length": len("damaged"),
-        "source_sha256": "0" * 64,
-    }
-    dart_api.write_manifest(tmp_path / "dart-manifest.json", [entry])
+    acquired = dart_acquired(tmp_path)
+    catalog_with(tmp_path, [acquired])
+    (tmp_path / acquired.primary.path).write_text("damaged")
     corp_codes = zip_bytes({"CORPCODE.xml": CORPCODE_XML.encode()})
     document = zip_bytes(
         {
@@ -593,14 +607,11 @@ def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monke
 
     assert len(result.archived) == 1
     assert result.added == ()
-    assert requested_paths == [
-        "/api/corpCode.xml",
-        "/api/list.json",
-        "/api/document.xml",
-    ]
-    stored = dart_api.read_manifest(tmp_path / "dart-manifest.json")
-    assert stored[0]["filing_id"] == RCEPT_NO
-    assert stored[0]["source_sha256"] != "0" * 64
+    assert requested_paths == ["/api/list.json", "/api/document.xml"]
+    stored = dart_api.read_manifest(tmp_path / "manifest.json")
+    selected = stored.selected_sources(result.selection_id, tmp_path)
+    assert selected[0].document.filing_id == RCEPT_NO
+    assert "복구됨" in selected[0].read()
 
 
 def test_reusable_dart_acquisition_archives_and_merges_with_progress(tmp_path, monkeypatch):
@@ -644,5 +655,113 @@ def test_reusable_dart_acquisition_archives_and_merges_with_progress(tmp_path, m
 
     assert len(result.archived) == len(result.added) == 1
     assert result.manifest_entries == 1
-    assert (tmp_path / "dart/005930" / f"{RCEPT_NO}.xml").is_file()
+    assert result.manifest == "manifest.json"
+    assert (tmp_path / result.archived[0].primary.path).is_file()
+    assert len(dart_api.read_manifest(tmp_path / "manifest.json").artifacts) == 2
     assert updates[-1].current == updates[-1].total == 1
+
+
+def test_known_issuer_reuses_identity_but_discovers_the_requested_year_live(tmp_path, monkeypatch):
+    """Skip the large issuer archive while still selecting and downloading the new report."""
+    previous = filing_document(
+        registry="dart",
+        fiscal_year=2023,
+        filing_id="20240311001085",
+        aliases=("Unverified display alias",),
+    )
+    catalog = Manifest(corpus=CorpusIdentity(corpus_id="test", name="Test"), documents=(previous,))
+    catalog.write(tmp_path / "manifest.json")
+    archive = zip_bytes({f"{RCEPT_NO}.xml": b"<DOCUMENT>new report</DOCUMENT>"})
+    paths = []
+
+    def handler(request):
+        """Require fresh discovery with the exact previously recorded corporation ID."""
+        paths.append(request.url.path)
+        assert not request.url.path.endswith("corpCode.xml")
+        if request.url.path.endswith("list.json"):
+            assert request.url.params["corp_code"] == "00126380"
+            assert request.url.params["bgn_de"] == "20250101"
+            return httpx.Response(200, json={"status": "000", "list": [ANNUAL]})
+        assert request.url.params["rcept_no"] == RCEPT_NO
+        return httpx.Response(200, content=archive)
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx.MockTransport(handler)),
+    )
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+        )
+    )
+    assert paths == ["/api/list.json", "/api/document.xml"]
+    assert result.archived[0].document.filing_id == RCEPT_NO
+    assert result.archived[0].document.fiscal_year == 2024
+    assert result.archived[0].document.aliases[0] == ANNUAL["corp_name"]
+
+
+@pytest.mark.parametrize("index_contains_requested", [True, False])
+def test_unknown_issuer_fetches_archive_and_requires_an_exact_resolution(
+    tmp_path, monkeypatch, index_contains_requested
+):
+    """A different known issuer cannot supply or guess the requested corporation ID."""
+    known = filing_document(registry="dart")
+    Manifest(corpus=CorpusIdentity(corpus_id="test", name="Test"), documents=(known,)).write(
+        tmp_path / "manifest.json"
+    )
+    corp_xml = (
+        CORPCODE_XML if index_contains_requested else CORPCODE_XML.replace("000660", "999999")
+    )
+    corp_archive = zip_bytes({"CORPCODE.xml": corp_xml.encode()})
+    receipt = "20250319000665"
+    report = dict(ANNUAL, rcept_no=receipt, corp_name="SK하이닉스", rcept_dt="20250319")
+    archive = zip_bytes({f"{receipt}.xml": b"<DOCUMENT>new report</DOCUMENT>"})
+    paths = []
+
+    def handler(request):
+        """Serve the issuer archive and validate strict use of its newly resolved ID."""
+        paths.append(request.url.path)
+        if request.url.path.endswith("corpCode.xml"):
+            return httpx.Response(200, content=corp_archive)
+        if request.url.path.endswith("list.json"):
+            assert request.url.params["corp_code"] == "00164779"
+            return httpx.Response(200, json={"status": "000", "list": [report]})
+        assert request.url.params["rcept_no"] == receipt
+        return httpx.Response(200, content=archive)
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx.MockTransport(handler)),
+    )
+    operation = acquire_dart(
+        stock_codes=("000660",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+    )
+    if not index_contains_requested:
+        with pytest.raises(DartApiError, match="000660"):
+            run(operation)
+        assert paths == ["/api/corpCode.xml"]
+    else:
+        result = run(operation)
+        assert result.archived[0].document.issuer_id == "00164779"
+        assert paths == ["/api/corpCode.xml", "/api/list.json", "/api/document.xml"]
+
+
+def test_conflicting_typed_issuer_ids_are_not_reused():
+    """Ambiguous catalog IDs require live issuer-index resolution."""
+    first = filing_document(registry="dart")
+    second = filing_document(registry="dart", fiscal_year=2023, filing_id="20240311001085")
+    assert second.dart is not None
+    second = second.model_copy(
+        update={
+            "issuer_id": "00999999",
+            "dart": second.dart.model_copy(update={"corp_code": "00999999"}),
+        }
+    )
+    catalog = Manifest(
+        corpus=CorpusIdentity(corpus_id="test", name="Test"), documents=(first, second)
+    )
+    assert dart_api._known_issuers(catalog, ("005930",)) == {}

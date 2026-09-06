@@ -5,7 +5,7 @@ Start with the exact screen, operation, and error. Separate the observed symptom
 ## The page, API, or database is unavailable {#connection}
 
 > [!DEV]
-> Restoring local services or applying a schema migration is an operator action in the development environment. Public users may inspect the displayed connection error.
+> Restoring local services or diagnosing an incompatible schema is an operator action in the development environment. Public users may inspect the displayed connection error.
 
 **Where to look:** **System → System status**, or terminal logs when the page cannot load.
 
@@ -20,16 +20,14 @@ rag-dev logs --tail=80 app
 | Page does not load | Correct APP_PORT and the process/container listening on it; web logs. A failed page alone does not prove a DB problem. | Open the configured address and restore the failed web service. | The application and documentation load. |
 | API down | Health response and app logs. | Fix the reported application connection or startup error. | Refresh System; API health succeeds. |
 | Database disconnected | DB status and connection error. | Restore the intended database connection. Keep existing data. | System reports connected, then separately check schema. |
-| `schema_drift` | The stored schema differs from current models. | Inspect the migration plan; apply only the preserving migrations appropriate to that difference. | Schema is compatible and the original operation works. |
+| `schema_drift` | The stored schema differs from current models. | Keep this database intact and select an empty isolated or compatible database. | Schema is compatible and the original operation works. |
 | Operation disabled | DEV/PROD mode and server capabilities. | Use the permitted local development environment for operator work. | The specific required capability is available. |
 
-For a demonstrated schema mismatch, the read-only plan is:
+For a demonstrated schema mismatch, retain the reported table and column details. Startup stops
+before changing an incompatible database. Preserve that database and use an empty isolated or
+compatible database for this checkout, then verify the original operation.
 
-```bash
-MODE=dev uv run python -m app.db.migrate --plan
-```
-
-Do not use schema recreation to address a provider failure. [Environment setup](environment.md) and the [CLI reference](cli.md) explain startup and preserving migration procedures.
+[Environment setup](environment.md) and the [CLI reference](cli.md) describe safe startup and schema checks.
 
 ## Filters or retrieved evidence do not match the question {#retrieval}
 

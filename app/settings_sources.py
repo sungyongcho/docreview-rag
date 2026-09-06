@@ -3,10 +3,10 @@
 from typing import Any, Literal
 
 from pydantic import AliasChoices, SecretStr
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+from pydantic_settings import BaseSettings, InitSettingsSource, PydanticBaseSettingsSource
 
 type Environment = Literal["dev", "prod"]
-type KeySlot = Literal["explicit", "dev", "prod"]
+type KeySlot = Literal["dev", "prod"]
 
 # Structured output from a CPU-hosted local model over a full evidence prompt routinely
 # runs past a minute, so the default has to let the first attempt finish. It lives here
@@ -25,19 +25,15 @@ def _present(value: SecretStr | None) -> SecretStr | None:
 
 def resolve_openai_key(
     *,
-    explicit: SecretStr | None,
     dev: SecretStr | None,
     prod: SecretStr | None,
     environment: Environment,
 ) -> tuple[SecretStr | None, KeySlot | None]:
     """Pick the OpenAI key for one environment and report which slot supplied it.
 
-    An explicit ``OPENAI_API_KEY`` always wins so single-key deployments keep working.
-    Otherwise ``MODE=dev`` reads the local slot and ``MODE=prod`` reads the production
-    slot, which lets the two environments hold separate project keys and cost limits.
+    ``MODE=dev`` reads only the local slot and ``MODE=prod`` reads only the production
+    slot. A missing slot never falls back to another environment's credentials.
     """
-    if _present(explicit) is not None:
-        return explicit, "explicit"
     if environment == "dev" and _present(dev) is not None:
         return dev, "dev"
     if environment == "prod" and _present(prod) is not None:
@@ -97,4 +93,11 @@ class DotenvFirstSettings(BaseSettings):
                     values["local_llm_source"] = source
             return values
 
-        return init_settings, merged_settings, file_secret_settings
+        class MergedSettingsSource(InitSettingsSource):
+            """Expose merged aliases unchanged through the framework source interface."""
+
+            def __call__(self) -> dict[str, Any]:
+                """Evaluate the original merge without reinterpreting field aliases."""
+                return merged_settings()
+
+        return init_settings, MergedSettingsSource(settings_cls, {}), file_secret_settings

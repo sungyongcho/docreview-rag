@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings, get_settings
-from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
+from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
 from app.db.models import OperatorJob
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs import JobStore, ProgressPersister
@@ -168,11 +168,11 @@ async def _exercise_corpus_worker(tmp_path) -> tuple[bool, str]:
         )
         store = JobStore(session_factory=factory)
 
-        async def runner(command, publish) -> str:
-            """Publish committed-looking progress without external work."""
+        async def runner(command, publish) -> OperationOutcome:
+            """Publish synthetic progress through the real persistent job lifecycle."""
             publish(OperationProgress("work", 1, 2, f"running {command.kind}"))
             publish(OperationProgress("work", 2, 2, f"finished {command.kind}"))
-            return "verified test completion"
+            return OperationOutcome("verified test completion")
 
         service = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),

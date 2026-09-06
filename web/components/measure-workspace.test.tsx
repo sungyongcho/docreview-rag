@@ -120,11 +120,14 @@ describe("Measure workspace", () => {
     expect(await screen.findAllByText("Waiting")).toHaveLength(2);
   });
 
-  it("applies the selected succeeded result to the review profile", async () => {
+  it.each(["explicit", "default"] as const)("applies the selected result with its %s retrieval profile", async (profileSource) => {
     const onApplyProfile = vi.fn();
+    const request = { ...CANNED_JOB.request };
+    if (profileSource === "default") delete request.profile;
+    else request.profile = { ...DEFAULT_PROFILE, k: 9 };
     stubFetch((url) => {
       if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
-      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [CANNED_JOB] };
+      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [{ ...CANNED_JOB, request }] };
       if (url.endsWith("/admin/snapshots")) return [];
       if (url.endsWith("/admin/evaluations/results/16")) return { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at };
       if (url.includes("/admin/golden/")) return [];
@@ -134,7 +137,7 @@ describe("Measure workspace", () => {
 
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
     fireEvent.click(await screen.findByRole("button", { name: "Use selected set" }));
-    expect(onApplyProfile).toHaveBeenCalledWith(CANNED_JOB.request.profile, "sec-ko:16");
+    expect(onApplyProfile).toHaveBeenCalledWith(profileSource === "default" ? DEFAULT_PROFILE : { ...DEFAULT_PROFILE, k: 9 }, "sec-ko:16");
   });
 
   it("locks Playground and Runs in the public build without calling the administrator API", async () => {

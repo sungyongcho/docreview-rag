@@ -6,7 +6,10 @@ from fastapi import APIRouter, Query
 
 from app.api.admin_deps import AdminServices
 from app.api.admin_schemas import (
+    CorpusJobResource,
+    CorpusJobsResource,
     CorpusOperationRequest,
+    CorpusSnapshotResource,
     DocumentDetailResponse,
     DocumentEmbeddingStatus,
     DocumentFacetsResponse,
@@ -46,8 +49,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 ResultId = Annotated[int, Query(gt=0)]
 
 
-@router.get("/corpus", responses={503: {"model": ErrorResponse}})
-async def corpus_snapshot(services: AdminServices) -> dict[str, Any]:
+@router.get(
+    "/corpus", response_model=CorpusSnapshotResource, responses={503: {"model": ErrorResponse}}
+)
+async def corpus_snapshot(services: AdminServices) -> CorpusSnapshotResource:
     """Return live corpus, schema, index, manifest, and document state."""
     async with translate_runtime_errors():
         return await services.corpus_snapshot()
@@ -117,7 +122,9 @@ async def document_detail(doc_id: str, services: AdminServices) -> DocumentDetai
     return DocumentDetailResponse.model_validate(detail)
 
 
-@router.post("/corpus/jobs", responses={400: {"model": ErrorResponse}})
+@router.post(
+    "/corpus/jobs", response_model=CorpusJobResource, responses={400: {"model": ErrorResponse}}
+)
 async def enqueue_corpus(
     request: CorpusOperationRequest,
     services: AdminServices,
@@ -127,13 +134,17 @@ async def enqueue_corpus(
         return await services.enqueue_corpus(request)
 
 
-@router.get("/corpus/jobs")
+@router.get("/corpus/jobs", response_model=CorpusJobsResource)
 async def corpus_jobs(services: AdminServices) -> dict[str, Any]:
     """Return current corpus job queue and bounded history."""
     return await services.corpus_jobs()
 
 
-@router.post("/corpus/jobs/{job_id}/retry", responses={400: {"model": ErrorResponse}})
+@router.post(
+    "/corpus/jobs/{job_id}/retry",
+    response_model=CorpusJobResource,
+    responses={400: {"model": ErrorResponse}},
+)
 async def retry_corpus(job_id: str, services: AdminServices) -> dict[str, Any]:
     """Retry one known failed corpus job."""
     async with translate_runtime_errors():

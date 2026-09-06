@@ -38,7 +38,7 @@ tar --null --create --file=- --directory="$M7_SOURCE_ROOT" \
     --files-from="$M7_FILE_LIST" | tar --extract --file=- --directory="$M7_ARCHIVE_ROOT"
 
 cd "$M7_ARCHIVE_ROOT"
-unset OPENAI_API_KEY DOCREVIEW_OPENAI_API_KEY \
+unset \
     OPENAI_API_KEY_LOCAL OPENAI_API_KEY_DEV OPENAI_API_KEY_PROD MODE \
     LOCAL_LLM_BASE_URL LOCAL_LLM_MODEL LOCAL_LLM_PROTOCOL LOCAL_LLM_API_KEY \
     LOCAL_LLM_TIMEOUT_S LOCAL_LLM_MAX_INPUT_TOKENS LOCAL_LLM_MAX_OUTPUT_TOKENS
@@ -46,10 +46,10 @@ export DOCREVIEW_MODE=canned
 export UV_PROJECT_ENVIRONMENT="$M7_ARCHIVE_ROOT/.venv"
 
 printf 'Clean archive: fresh locked dependency sync\n'
-uv sync --locked --extra demo
+uv sync --locked
 
-printf 'Clean archive: focused release, demo, and API tests\n'
-uv run pytest -o addopts="" tests/release tests/test_demo.py tests/api -q
+printf 'Clean archive: focused release and API tests\n'
+uv run pytest -o addopts="" tests/release tests/api -q
 
 printf 'Clean archive: Next tests, typecheck, and static build\n'
 (

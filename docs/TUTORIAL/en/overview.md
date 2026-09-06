@@ -1,5 +1,7 @@
 # DocReview RAG guide
 
+For a fresh clone, start with [Quick Start](quickstart.md) and choose CLI or Web to prepare your data.
+
 All manual pages are available in both DEV and production; the DEV badge only marks where an operation can be executed.
 
 DocReview RAG v2 helps you read SEC and DART filings through retrieved evidence,

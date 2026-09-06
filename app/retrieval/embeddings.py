@@ -9,15 +9,18 @@ from decimal import Decimal
 import hashlib
 import math
 import re
-from typing import Any, Literal, Protocol, cast
+from typing import Literal, Protocol, cast
 import unicodedata
 
-from sqlalchemy import select, update, values
-from sqlalchemy.engine import CursorResult
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import and_, column, literal, select, values
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.config import Settings, get_settings
-from app.db.models import Chunk
+from app.db.models import Chunk, ChunkEmbedding
+from app.ingestion.tokens import MAX_REQUEST_INPUTS, MAX_REQUEST_TOKENS, tokenizer, validate_request
 from app.openai_models import resolve_openai_model
 from app.retrieval.types import finite_float
 
@@ -149,12 +152,29 @@ class EmbeddingIdentity:
     provider: str
     model: str
     dimensions: int
+    tokenizer: str
+
+    def __post_init__(self) -> None:
+        """Reject incomplete identities before querying or persisting vector spaces."""
+        if not self.provider.strip() or not self.model.strip() or not self.tokenizer.strip():
+            raise ValueError("embedding configuration fields must be nonblank")
+        if self.dimensions <= 0:
+            raise ValueError("embedding dimensions must be positive")
 
 
 class EmbeddingProvider(ABC):
     """Async provider boundary shared by query and document embeddings."""
 
     dimensions: int
+
+    @property
+    @abstractmethod
+    def max_input_tokens(self) -> int:
+        """Declare the model's maximum complete input, including special tokens."""
+
+    @abstractmethod
+    def count_input_tokens(self, text: str) -> int:
+        """Count complete model input without truncating it."""
 
     @abstractmethod
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
@@ -165,13 +185,9 @@ class EmbeddingProvider(ABC):
         return (await self.embed_documents([text]))[0]
 
     @property
+    @abstractmethod
     def identity(self) -> EmbeddingIdentity:
-        """Return the exact identity persisted beside generated vectors."""
-        return EmbeddingIdentity(
-            type(self).__name__.removesuffix("EmbeddingProvider").casefold(),
-            type(self).__name__,
-            self.dimensions,
-        )
+        """Declare the complete provider, model, dimension, and tokenizer configuration."""
 
 
 class DeterministicEmbeddingProvider(EmbeddingProvider):
@@ -182,9 +198,21 @@ class DeterministicEmbeddingProvider(EmbeddingProvider):
             raise ValueError("embedding dimensions must be positive")
         self.dimensions = dimensions
 
+    @property
+    def max_input_tokens(self) -> int:
+        """Apply the shared hard ceiling to the explicit deterministic tokenizer."""
+        return 8192
+
+    def count_input_tokens(self, text: str) -> int:
+        """Count the exact normalized Unicode words used by deterministic embedding."""
+        validate_texts([text])
+        return max(1, len(re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text).casefold())))
+
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         """Hash normalized alphanumeric tokens into unit-length bag-of-words vectors."""
         inputs = validate_texts(texts)
+        if any(self.count_input_tokens(text) > self.max_input_tokens for text in inputs):
+            raise ValueError("deterministic input exceeds its 8192-token limit")
         vectors: list[list[float]] = []
         for text in inputs:
             normalized = unicodedata.normalize("NFKC", text).casefold()
@@ -212,7 +240,12 @@ class DeterministicEmbeddingProvider(EmbeddingProvider):
     @property
     def identity(self) -> EmbeddingIdentity:
         """Return the deterministic token-hash identity."""
-        return EmbeddingIdentity("deterministic", f"token-hash-{self.dimensions}", self.dimensions)
+        return EmbeddingIdentity(
+            "deterministic",
+            f"token-hash-{self.dimensions}",
+            self.dimensions,
+            "unicode-alnum:nfkc:casefold:v1",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,12 +283,41 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             client = cast(EmbeddingClient, AsyncOpenAI(api_key=api_key))
         self._client = client
 
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        """Embed one batch and restore caller order from response indices."""
-        inputs = validate_texts(texts)
-        if not inputs:
-            return []
+    @property
+    def max_input_tokens(self) -> int:
+        """Return the supported complete-input OpenAI embedding limit."""
+        return 8192
 
+    def count_input_tokens(self, text: str) -> int:
+        """Count literal source text with the actual embedding model encoding."""
+        validate_texts([text])
+        return len(tokenizer(self.model).encode(text, disallowed_special=()))
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Preflight all complete inputs, then issue safely bounded provider requests."""
+        inputs = validate_texts(texts)
+        counts = [validate_request([text], model=self.model)[0] for text in inputs]
+        batches: list[list[str]] = []
+        current: list[str] = []
+        total = 0
+        for text, count in zip(inputs, counts, strict=True):
+            if current and (
+                len(current) == MAX_REQUEST_INPUTS or total + count > MAX_REQUEST_TOKENS
+            ):
+                batches.append(current)
+                current = []
+                total = 0
+            current.append(text)
+            total += count
+        if current:
+            batches.append(current)
+        vectors: list[list[float]] = []
+        for batch in batches:
+            vectors.extend(await self._embed_request(batch))
+        return vectors
+
+    async def _embed_request(self, inputs: list[str]) -> list[list[float]]:
+        """Issue one preflighted request and restore its exact input order."""
         response = await self._client.embeddings.create(
             input=inputs,
             model=self.model,
@@ -295,7 +357,12 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     @property
     def identity(self) -> EmbeddingIdentity:
         """Return the configured OpenAI embedding identity."""
-        return EmbeddingIdentity("openai", self.model, self.dimensions)
+        return EmbeddingIdentity(
+            "openai",
+            self.model,
+            self.dimensions,
+            f"tiktoken:{tokenizer(self.model).name}:literal-special:v1",
+        )
 
 
 def get_embedding_provider(
@@ -340,6 +407,12 @@ class PendingEmbedding:
 
     chunk_id: int
     index_text: str
+    input_sha256: str
+
+    def __post_init__(self) -> None:
+        """Bind a pending vector to the exact indexed input it represents."""
+        if hashlib.sha256(self.index_text.encode("utf-8")).hexdigest() != self.input_sha256:
+            raise ValueError("pending embedding input hash disagrees with indexed text")
 
 
 @dataclass(frozen=True, slots=True)
@@ -352,113 +425,104 @@ class EmbeddingBackfillResult:
     batches: int
 
 
+def matching_embedding(
+    identity: EmbeddingIdentity, *, chunk: type[Chunk] = Chunk
+) -> ColumnElement[bool]:
+    """Bind reusable vectors to the current input hash and exact configuration."""
+    return and_(
+        ChunkEmbedding.chunk_id == chunk.id,
+        ChunkEmbedding.input_sha256 == chunk.index_text_sha256,
+        ChunkEmbedding.provider == identity.provider,
+        ChunkEmbedding.model == identity.model,
+        ChunkEmbedding.dimensions == identity.dimensions,
+        ChunkEmbedding.tokenizer == identity.tokenizer,
+    )
+
+
 async def _missing_batch(
     session: AsyncSession,
     batch_size: int,
     *,
+    identity: EmbeddingIdentity,
     after_chunk_id: int | None = None,
-    identity: EmbeddingIdentity | None = None,
+    document_ids: tuple[str, ...] | None = None,
 ) -> list[PendingEmbedding]:
-    """Load one keyset-paginated batch and close its read transaction.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Session that owns the bounded read transaction.
-    batch_size : int
-        Maximum number of missing rows to select.
-    after_chunk_id : int | None
-        Exclusive chunk-id cursor, or ``None`` to start from the first row.
-
-    Returns
-    -------
-    list[PendingEmbedding]
-        Missing rows in ascending chunk-id order.
-
-    Notes
-    -----
-    The transaction closes before provider I/O, and the cursor prevents stale null rows
-    from being selected repeatedly in the same run.
-    """
-    stale = Chunk.embedding.is_(None)
-    if identity is not None:
-        stale = stale | Chunk.embedding_provider.is_distinct_from(identity.provider)
-        stale = stale | Chunk.embedding_model.is_distinct_from(identity.model)
-        stale = stale | Chunk.embedding_dimensions.is_distinct_from(identity.dimensions)
-    statement = select(Chunk.id, Chunk.index_text).where(stale)
+    """Select exact missing configurations in a closed bounded read transaction."""
+    exists = select(ChunkEmbedding.chunk_id).where(matching_embedding(identity)).exists()
+    statement = select(Chunk.id, Chunk.index_text, Chunk.index_text_sha256).where(~exists)
     if after_chunk_id is not None:
         statement = statement.where(Chunk.id > after_chunk_id)
-
+    if document_ids is not None:
+        statement = statement.where(Chunk.doc_id.in_(document_ids))
     async with session.begin():
         rows = (await session.execute(statement.order_by(Chunk.id).limit(batch_size))).all()
-    return [PendingEmbedding(chunk_id=row.id, index_text=row.index_text) for row in rows]
+    return [PendingEmbedding(row.id, row.index_text, row.index_text_sha256) for row in rows]
 
 
 async def _store_batch(
     session: AsyncSession,
     pending: Sequence[PendingEmbedding],
     vectors: Sequence[Sequence[float]],
-    identity: EmbeddingIdentity | None = None,
+    identity: EmbeddingIdentity,
 ) -> int:
-    """Bulk-store vectors guarded by null state and indexed-text identity.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Session that owns the bounded write transaction.
-    pending : Sequence[PendingEmbedding]
-        Row identities and indexed text selected before provider I/O.
-    vectors : Sequence[Sequence[float]]
-        Vectors corresponding to ``pending`` in the same order.
-
-    Returns
-    -------
-    int
-        Rows updated after both stale-write guards matched.
-
-    Raises
-    ------
-    ValueError
-        If pending rows and vectors have different lengths.
-    """
+    """Insert vectors from locked current chunks, preserving all other configurations."""
+    validated = validate_embeddings(
+        vectors, expected_count=len(pending), dimensions=identity.dimensions
+    )
+    if not pending:
+        return 0
     batch_values = values(
-        Chunk.id,
-        Chunk.index_text,
-        Chunk.embedding,
+        column("chunk_id", ChunkEmbedding.__table__.c.chunk_id.type),
+        column("input_sha256", ChunkEmbedding.__table__.c.input_sha256.type),
+        column("index_text", Chunk.__table__.c.index_text.type),
+        column("embedding", ChunkEmbedding.__table__.c.embedding.type),
         name="pending_embeddings",
     ).data(
         [
-            (item.chunk_id, item.index_text, list(vector))
-            for item, vector in zip(pending, vectors, strict=True)
+            (item.chunk_id, item.input_sha256, item.index_text, vector)
+            for item, vector in zip(pending, validated, strict=True)
         ]
     )
-
-    async with session.begin():
-        if not pending:
-            return 0
-        stale = Chunk.embedding.is_(None)
-        if identity is not None:
-            stale = stale | Chunk.embedding_provider.is_distinct_from(identity.provider)
-            stale = stale | Chunk.embedding_model.is_distinct_from(identity.model)
-            stale = stale | Chunk.embedding_dimensions.is_distinct_from(identity.dimensions)
-        result = cast(
-            CursorResult[Any],
-            await session.execute(
-                update(Chunk)
-                .where(
-                    Chunk.id == batch_values.c.id,
-                    stale,
-                    Chunk.index_text == batch_values.c.index_text,
-                )
-                .values(
-                    embedding=batch_values.c.embedding.cast(Chunk.__table__.c.embedding.type),
-                    embedding_provider=identity.provider if identity is not None else None,
-                    embedding_model=identity.model if identity is not None else None,
-                    embedding_dimensions=identity.dimensions if identity is not None else None,
-                )
-                .returning(Chunk.id)
+    current = (
+        select(
+            Chunk.id,
+            Chunk.index_text_sha256,
+            literal(identity.provider),
+            literal(identity.model),
+            literal(identity.dimensions),
+            literal(identity.tokenizer),
+            batch_values.c.embedding.cast(Vector(identity.dimensions)),
+        )
+        .select_from(Chunk)
+        .join(
+            batch_values,
+            and_(
+                Chunk.id == batch_values.c.chunk_id,
+                Chunk.index_text_sha256 == batch_values.c.input_sha256,
+                Chunk.index_text == batch_values.c.index_text,
             ),
         )
+        .with_for_update(of=Chunk)
+    )
+    statement = (
+        insert(ChunkEmbedding)
+        .from_select(
+            [
+                "chunk_id",
+                "input_sha256",
+                "provider",
+                "model",
+                "dimensions",
+                "tokenizer",
+                "embedding",
+            ],
+            current,
+        )
+        .on_conflict_do_nothing()
+        .returning(ChunkEmbedding.chunk_id)
+    )
+    async with session.begin():
+        result = await session.execute(statement)
         return len(result.scalars().all())
 
 
@@ -468,6 +532,7 @@ async def embed_missing_chunks(
     *,
     batch_size: int | None = None,
     on_batch: Callable[[EmbeddingBackfillResult], None] | None = None,
+    document_ids: tuple[str, ...] | None = None,
 ) -> EmbeddingBackfillResult:
     """Embed all currently missing chunks in bounded, resumable batches.
 
@@ -497,7 +562,7 @@ async def embed_missing_chunks(
     Notes
     -----
     Provider I/O occurs between transactions. Keyset pagination advances past stale rows,
-    which remain null for a later run.
+    which remain missing for this configuration until a later run.
     """
     effective_batch_size = get_settings().embedding_batch_size if batch_size is None else batch_size
 
@@ -506,6 +571,11 @@ async def embed_missing_chunks(
     if session.in_transaction():
         raise RuntimeError("embed_missing_chunks requires a session without an active transaction")
 
+    if document_ids is not None and any(not doc_id for doc_id in document_ids):
+        raise ValueError("embedding document selections require nonempty identities")
+    if document_ids == ():
+        return EmbeddingBackfillResult(0, 0, 0, 0)
+    identity = provider.identity
     selected = embedded = skipped_stale = batches = 0
     last_seen_chunk_id: int | None = None
 
@@ -513,7 +583,8 @@ async def embed_missing_chunks(
         session,
         effective_batch_size,
         after_chunk_id=last_seen_chunk_id,
-        identity=provider.identity,
+        identity=identity,
+        document_ids=document_ids,
     ):
         batches += 1
         selected += len(pending)
@@ -522,7 +593,7 @@ async def embed_missing_chunks(
         vectors = validate_embeddings(
             vectors, expected_count=len(pending), dimensions=provider.dimensions
         )
-        stored = await _store_batch(session, pending, vectors, provider.identity)
+        stored = await _store_batch(session, pending, vectors, identity)
         embedded += stored
         skipped_stale += len(pending) - stored
         if on_batch is not None:

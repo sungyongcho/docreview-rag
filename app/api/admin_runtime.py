@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
     CorpusOperationRequest,
+    CorpusSnapshotResource,
     DocumentEmbeddingStatus,
     DocumentFacetsResponse,
     DocumentInventoryResponse,
@@ -39,6 +40,7 @@ from app.api.admin_schemas import (
 )
 from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, unavailable
+from app.api.review_profile import ReviewSessionProfile
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import (
     EvidenceHit,
@@ -78,7 +80,10 @@ class RuntimeAdminApiServices:
     ) -> None:
         self._runtime = runtime
         self._documents = DocumentCatalog(
-            runtime.session_factory, public_only=False, company_names=runtime.company_names
+            runtime.session_factory,
+            public_only=False,
+            company_names=runtime.company_names,
+            embedding_identity=runtime.embedding_provider.identity,
         )
         self._job_store = job_store or JobStore(session_factory=runtime.session_factory)
         execution_lock = asyncio.Lock()
@@ -149,13 +154,13 @@ class RuntimeAdminApiServices:
             server_id=server_id, base_url=base_url, protocol=protocol
         )
 
-    async def corpus_snapshot(self) -> dict[str, Any]:
+    async def corpus_snapshot(self) -> CorpusSnapshotResource:
         """Return one JSON-ready live corpus and index snapshot."""
         snapshot = asdict(await self._corpus.snapshot())
         names = self._runtime.company_names()
         for document in snapshot["documents"]:
             document["issuer_name"] = names.get((document["registry"], document["issuer"]))
-        return snapshot
+        return CorpusSnapshotResource.model_validate(snapshot)
 
     async def document_detail(self, doc_id: str) -> dict[str, Any] | None:
         """Return one bounded document preview when present."""
@@ -215,6 +220,7 @@ class RuntimeAdminApiServices:
                 identifiers=request.identifiers,
                 years=request.years,
                 manifest=request.manifest,
+                selection_id=request.selection_id,
                 expected_documents=request.expected_documents,
             )
         )
@@ -487,7 +493,7 @@ class RuntimeAdminApiServices:
                 rrf_k=profile.rrf_k,
                 reranker=CrossEncoderReranker() if profile.reranker else None,
                 route_by_language=profile.route_by_language,
-                lexical_ranker=profile.lexical_ranker,
+                lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
                 bm25_k1=profile.bm25_k1,
                 bm25_b=profile.bm25_b,
                 bm25_idf=profile.bm25_idf,
@@ -496,7 +502,7 @@ class RuntimeAdminApiServices:
             session,
             strategy=profile.strategy,
             provider=self._runtime.embedding_provider,
-            lexical_ranker=profile.lexical_ranker,
+            lexical_ranker=profile.lexical_ranker or "ts_rank_cd",
             bm25_k1=profile.bm25_k1 if bm25 else None,
             bm25_b=profile.bm25_b if bm25 else None,
             bm25_idf=profile.bm25_idf if bm25 else None,
@@ -508,6 +514,7 @@ class RuntimeAdminApiServices:
         hits = tuple(await retriever(query, profile.k))
         ids = tuple(hit.chunk_id for hit in hits)
         return RetrievalResult(
+            candidates=hits,
             hits=hits,
             score_stage="rrf",
             component_rankings=ComponentRankings(
@@ -549,7 +556,24 @@ class RuntimeAdminApiServices:
             return await self._retrieve_profile(session, query, request.profile, filters)
 
         report = await self._runtime.review_with_retrieval(
-            ReviewRequest(query=request.query, k=request.profile.k, filters=request.filters),
+            ReviewRequest(
+                query=request.query,
+                session_profile=ReviewSessionProfile.model_validate(
+                    {
+                        "retrieval_preset": "custom",
+                        "custom_retrieval": request.profile.model_dump(),
+                        "doc_ids": request.filters.doc_ids,
+                        "registries": request.filters.registries,
+                        "kinds": request.filters.kinds,
+                        "languages": request.filters.languages,
+                        "issuers": request.filters.issuers,
+                        "fiscal_years": request.filters.fiscal_years,
+                        "forms": request.filters.forms,
+                        "sections": request.filters.items,
+                        "snapshot_id": request.filters.snapshot_id,
+                    }
+                ),
+            ),
             retrieval_override,
         )
         return ReviewPreviewResponse(

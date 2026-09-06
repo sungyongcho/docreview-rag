@@ -141,7 +141,9 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
         'rag-dev() { printf "%s\\n" foreign-command; }; '
         "alias rag-prod-up='printf foreign-alias'; "
         "rag-alias-delete; rag-dev; alias rag-prod-up; "
-        "if typeset -f rag-help >/dev/null; then exit 7; fi",
+        "if typeset -f rag-help >/dev/null; then exit 7; fi; "
+        "if typeset -f rag-fresh-start >/dev/null; then exit 8; fi; "
+        "if typeset -f rag-corpus >/dev/null; then exit 9; fi",
         env={"TEST_STARTUP": str(startup)},
         input="y\n",
     )
@@ -151,3 +153,15 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
     backups = list(tmp_path.glob("startup.docreview-backup-*"))
     assert len(backups) == 1
     assert backups[0].read_text() == original
+
+
+def test_fresh_start_help_and_registration(shell):
+    """Both shells advertise the warning and register reset and corpus wrappers."""
+    result = run_shell(
+        shell, 'source "$1" >/dev/null; typeset -f rag-fresh-start; typeset -f rag-corpus; rag-help'
+    )
+    assert "scripts.runtime_commands fresh-start" in result.stdout
+    assert "scripts.runtime_commands corpus" in result.stdout
+    assert "WARNING: rag-fresh-start permanently deletes" in result.stdout
+    assert "Download SEC/DART data again" in result.stdout
+    assert "View reset status" in result.stdout

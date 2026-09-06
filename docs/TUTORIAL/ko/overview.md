@@ -1,5 +1,7 @@
 # DocReview RAG 사용 안내
 
+처음 clone했다면 [Quick Start](quickstart.md)에서 CLI/Web을 선택해 데이터를 준비하세요.
+
 모든 문서 페이지는 DEV와 배포 환경에서 함께 제공되며, DEV 표시는 해당 작업을 실행할 수 있는 환경만 안내합니다.
 
 DocReview RAG v2는 SEC·DART 공시를 검색 근거와 원문 인용으로 읽고,

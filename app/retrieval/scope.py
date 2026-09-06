@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import re
-from typing import Any, Literal
+from typing import Literal
 import unicodedata
 
 from pydantic import BaseModel, ConfigDict
 
-from app.ingestion.registry import registry_for, registry_name, resolve_registry
+from app.ingestion.manifest import DocumentReference, Manifest
+from app.ingestion.registry import registry_for
 from app.retrieval.language import detect_query_languages
 from app.retrieval.types import RetrievalFilters
 
@@ -81,11 +81,9 @@ def _normalized(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
-def _aliases(entry: Mapping[str, Any], *, owner: str) -> tuple[str, ...]:
+def _aliases(entry: DocumentReference, *, owner: str) -> tuple[str, ...]:
     """Validate and canonicalize one manifest alias array."""
-    raw = entry.get("aliases")
-    if not isinstance(raw, list) or not raw:
-        raise ValueError(f"{owner} must define a nonempty aliases array")
+    raw = entry.aliases or (entry.issuer,)
     if not all(isinstance(alias, str) and alias.strip() for alias in raw):
         raise ValueError(f"{owner} aliases must be nonblank strings")
     by_normalized: dict[str, str] = {}
@@ -96,25 +94,6 @@ def _aliases(entry: Mapping[str, Any], *, owner: str) -> tuple[str, ...]:
             raise ValueError(f"{owner} aliases contain a normalized duplicate: {alias!r}")
         by_normalized[key] = canonical
     return tuple(by_normalized[key] for key in sorted(by_normalized))
-
-
-def _issuer(entry: Mapping[str, Any]) -> str:
-    """Return the canonical retrieval issuer used by one manifest adapter."""
-    value = entry.get("issuer") or entry.get("ticker")
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("manifest entry must name issuer or ticker")
-    return value.strip()
-
-
-def _fiscal_year(entry: Mapping[str, Any]) -> int:
-    """Return an explicit or registry-adapter fiscal year."""
-    value = entry.get("fiscal_year")
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    report_date = entry.get("report_date")
-    if isinstance(report_date, str) and report_date[:4].isdigit():
-        return int(report_date[:4])
-    raise ValueError("manifest entry must provide a fiscal year")
 
 
 class ManifestScopeIndex:
@@ -147,20 +126,18 @@ class ManifestScopeIndex:
         self._display_aliases = display_aliases
 
     @classmethod
-    def from_entries(cls, entries: Iterable[Mapping[str, Any]]) -> ManifestScopeIndex:
+    def from_entries(cls, entries: Iterable[DocumentReference]) -> ManifestScopeIndex:
         """Build an index while requiring identical aliases per canonical issuer."""
         issuers: dict[tuple[str, str], IssuerMetadata] = {}
         documents: list[DocumentMetadata] = []
-        for position, raw in enumerate(entries):
-            entry = dict(raw)
-            registry = registry_name(entry)
-            adapter = resolve_registry(entry)
-            issuer = _issuer(entry)
+        for position, entry in enumerate(entries):
+            registry = entry.registry
+            issuer = entry.issuer
             aliases = _aliases(entry, owner=f"manifest entry {position}")
             metadata = IssuerMetadata(
                 issuer=issuer,
                 registry=registry,
-                language=adapter.language,
+                language=entry.language,
                 aliases=aliases,
             )
             key = (registry, issuer)
@@ -170,28 +147,22 @@ class ManifestScopeIndex:
             issuers[key] = metadata
             documents.append(
                 DocumentMetadata(
-                    doc_id=adapter.doc_id(entry),
+                    doc_id=entry.document_id,
                     registry=registry,
-                    language=adapter.language,
+                    language=entry.language,
                     issuer=issuer,
-                    fiscal_year=_fiscal_year(entry),
-                    form=str(entry.get("form") or "10-K"),
+                    fiscal_year=entry.fiscal_year,
+                    form=entry.form,
                 )
             )
         return cls(tuple(issuers.values()), documents)
 
     @classmethod
     def from_paths(cls, paths: Sequence[Path]) -> ManifestScopeIndex:
-        """Load list-shaped UTF-8 manifests in caller order."""
-        entries: list[Mapping[str, Any]] = []
-        for path in paths:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, list) or not all(
-                isinstance(item, Mapping) for item in payload
-            ):
-                raise ValueError(f"manifest must hold a list of objects: {path}")
-            entries.extend(payload)
-        return cls.from_entries(entries)
+        """Index validated common corpus document identities in caller order."""
+        return cls.from_entries(
+            document for path in paths for document in Manifest.read(path).documents
+        )
 
     def issuer(self, registry: str, issuer: str) -> IssuerMetadata | None:
         """Return one canonical issuer when it exists in this corpus."""

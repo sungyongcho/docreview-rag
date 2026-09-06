@@ -186,10 +186,10 @@ class EvaluationRunRequest(StrictAdminModel):
     golden_revision_id: PositiveInt | None = None
     mode: EvaluationMode = "quick"
     profile: RetrievalProfile = Field(default_factory=RetrievalProfile)
-    target_text_chars: Annotated[
+    target_tokens: Annotated[
         tuple[PositiveInt, ...],
         BeforeValidator(_tuple_from_json_array),
-    ] = (500, 1200)
+    ] = (1024, 2048)
     strategies: Annotated[
         tuple[RetrievalStrategy, ...],
         BeforeValidator(_tuple_from_json_array),
@@ -202,10 +202,8 @@ class EvaluationRunRequest(StrictAdminModel):
     @model_validator(mode="after")
     def validate_matrix(self) -> Self:
         """Require unique nonempty matrix axes while keeping quick runs singular."""
-        if not self.target_text_chars or len(set(self.target_text_chars)) != len(
-            self.target_text_chars
-        ):
-            raise ValueError("target_text_chars must be nonempty and unique")
+        if not self.target_tokens or len(set(self.target_tokens)) != len(self.target_tokens):
+            raise ValueError("target_tokens must be nonempty and unique")
         if not self.strategies or len(set(self.strategies)) != len(self.strategies):
             raise ValueError("strategies must be nonempty and unique")
         if not self.lexical_rankers or len(set(self.lexical_rankers)) != len(self.lexical_rankers):
@@ -230,7 +228,110 @@ class CorpusOperationRequest(StrictAdminModel):
         BeforeValidator(_tuple_from_json_array),
     ] = ()
     manifest: str | None = None
+    selection_id: str | None = None
     expected_documents: PositiveInt | None = None
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> Self:
+        """Require an explicit source selection for ingestion."""
+        if self.kind == "ingest_manifest" and (
+            not (self.manifest or "").strip() or not (self.selection_id or "").strip()
+        ):
+            raise ValueError("ingestion requires a manifest and selection_id")
+        return self
+
+
+class ProcessingSelectionResource(StrictAdminModel):
+    """One exact document selection available for processing."""
+
+    selection_id: str
+    document_ids: tuple[str, ...]
+    artifact_ids: tuple[str, ...]
+    sources_present: NonnegativeInt
+
+
+class ManifestResource(StrictAdminModel):
+    """A common corpus catalog and its available processing selections."""
+
+    name: str
+    corpus_id: str | None
+    documents: NonnegativeInt | None
+    valid: StrictBool
+    registries: tuple[Literal["sec", "dart"], ...]
+    sources_present: NonnegativeInt | None
+    selections: tuple[ProcessingSelectionResource, ...]
+
+
+class CorpusStatusResource(StrictAdminModel):
+    """Current preparation state shared by CLI and web."""
+
+    database_connected: StrictBool
+    schema_status: Literal["compatible", "empty", "drifted", "unavailable"]
+    schema_message: str
+    documents: NonnegativeInt
+    chunks: NonnegativeInt
+    embedded_chunks: NonnegativeInt
+    pending_embeddings: NonnegativeInt
+    bm25_ready: StrictBool
+    writable: StrictBool
+    provider: str
+
+
+class CorpusDocumentResource(StrictAdminModel):
+    """An ingested filing summarized in preparation state."""
+
+    doc_id: str
+    registry: str
+    language: str
+    issuer: str
+    issuer_name: str | None = None
+    issuer_id: str
+    fiscal_year: StrictInt
+    form: str
+    parse_status: str
+    filing_date: str
+    report_period: str
+    filing_id: str
+    source_url: str
+    source_length: NonnegativeInt
+    source_sha256: str
+    chunk_count: NonnegativeInt
+
+
+class CorpusSnapshotResource(StrictAdminModel):
+    """Atomic typed preparation state with explicit source selections."""
+
+    mode: Literal["live", "canned"]
+    status: CorpusStatusResource
+    manifests: tuple[ManifestResource, ...]
+    documents: tuple[CorpusDocumentResource, ...]
+
+
+class CorpusJobResource(StrictAdminModel):
+    """The same corpus job snapshot returned to CLI and web clients."""
+
+    job_id: str
+    command: CorpusOperationRequest
+    status: Literal["queued", "running", "succeeded", "failed", "interrupted", "cancelled"]
+    stage: str
+    current: NonnegativeInt
+    total: NonnegativeInt | None
+    message: str
+    detail_current: NonnegativeInt | None
+    detail_total: NonnegativeInt | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    error_code: str | None
+    result_refs: dict[str, object] | None
+
+
+class CorpusJobsResource(StrictAdminModel):
+    """Current and terminal snapshots of the shared corpus job queue."""
+
+    active: CorpusJobResource | None
+    queued: tuple[CorpusJobResource, ...]
+    history: tuple[CorpusJobResource, ...]
 
 
 class AdminDocumentResource(StrictAdminModel):
@@ -333,6 +434,7 @@ class DocumentEmbeddingIdentityResource(StrictAdminModel):
     provider: str
     model: str
     dimensions: PositiveInt
+    tokenizer: str
     count: PositiveInt
 
 

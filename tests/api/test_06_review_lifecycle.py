@@ -26,6 +26,8 @@ from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.scope import ManifestScopeIndex
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.types import NodeError
+from tests.ingestion.seed.support import sample_batch
+from tests.ingestion.support import filing_document
 
 
 class FakeTransaction:
@@ -104,6 +106,7 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         session.transaction_open = True
         retrieval_calls.append((session, query, provider, k, filters, plan))
         return RetrievalResult(
+            candidates=(hit,),
             hits=(hit,),
             score_stage="rrf",
             component_rankings=ComponentRankings(vector=(hit.chunk_id,), lexical=()),
@@ -122,6 +125,7 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         return run
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, session_factory),
         llm_provider=llm_provider,
         provider_budget=provider_budget(),
@@ -131,20 +135,27 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         run_id_factory=lambda: "run-integration",
         lexical_ranker="bm25",
         route_by_language=True,
+        scope_index=ManifestScopeIndex.from_entries(
+            (filing_document(issuer="ACME", document_id=hit.doc_id),)
+        ),
     )
     explicit_profile = {
         "retrieval_preset": "custom",
-        "custom_retrieval": {"route_by_language": True},
+        "custom_retrieval": {"k": 3, "route_by_language": True},
+        "doc_ids": [hit.doc_id],
+        "registries": ["sec"],
+        "kinds": [hit.kind],
+        "prompt_policy": {"max_context_chars": 10000, "workflow_budget": {"max_iterations": 4}},
     }
 
     with TestClient(create_app(services)) as client:
         retrieved = client.post(
             "/retrieve",
-            json={"query": "Revenue?", "k": 3, "session_profile": explicit_profile},
+            json={"query": "Revenue?", "session_profile": explicit_profile},
         )
         reviewed = client.post(
             "/review",
-            json={"query": "Revenue?", "k": 3, "session_profile": explicit_profile},
+            json={"query": "Revenue?", "session_profile": explicit_profile},
         )
 
     assert retrieved.status_code == 200
@@ -156,6 +167,12 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
     # The configured ranking plan reaches every retrieval, HTTP and workflow alike.
     assert all(call[5]["lexical_ranker"] == "ts_rank_cd" for call in retrieval_calls)
     assert all(call[5]["route_by_language"] is True for call in retrieval_calls)
+    assert all(call[4].doc_ids == (hit.doc_id,) for call in retrieval_calls)
+    assert all(call[4].registries == ("sec",) for call in retrieval_calls)
+    assert all(call[4].kinds == (hit.kind,) for call in retrieval_calls)
+    assert workflow_calls[0][0].k == 3
+    assert workflow_calls[0][0].max_context_chars == 10000
+    assert workflow_calls[0][0].budget.max_iterations == 4
     assert workflow_calls[0][0].run_id == "run-integration"
     assert workflow_calls[0][1] is llm_provider
     assert workflow_calls[0][2].hits == (hit,)
@@ -171,14 +188,19 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
         """Return one deterministic hit without touching an answer provider."""
         del session, query, provider, k, filters, plan
         return RetrievalResult(
+            candidates=(hit,),
             hits=(hit,),
             score_stage="rrf",
             component_rankings=ComponentRankings(vector=(), lexical=(hit.chunk_id,)),
         )
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         retrieval_service=retrieval_service,
+        scope_index=ManifestScopeIndex.from_entries(
+            (filing_document(issuer="ACME", document_id=hit.doc_id),)
+        ),
         query_routing_enabled=True,
     )
 
@@ -200,17 +222,19 @@ def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
         """Record the actual runtime filter and return one controlled candidate."""
         observed.append(filters)
         return RetrievalResult(
-            hits=(hit,),
+            candidates=(hit.model_copy(update={"doc_id": "NVDA-FY2024"}),),
+            hits=(hit.model_copy(update={"doc_id": "NVDA-FY2024"}),),
             score_stage="rrf",
             component_rankings=ComponentRankings(vector=(), lexical=(hit.chunk_id,)),
         )
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         retrieval_service=retrieval_service,
         query_routing_enabled=True,
         scope_index=ManifestScopeIndex.from_entries(
-            [{"ticker": "NVDA", "report_date": "2024-01-28", "aliases": ["NVDA", "NVIDIA"]}]
+            [filing_document(issuer="NVDA", aliases=("NVDA", "NVIDIA"))]
         ),
     )
     with TestClient(create_app(services)) as client:
@@ -277,6 +301,7 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
         return run
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         llm_provider=provider,
         provider_budget=provider_budget(),
@@ -284,7 +309,7 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
         run_persister=run_persister,
         query_routing_enabled=True,
         scope_index=ManifestScopeIndex.from_entries(
-            [{"ticker": "NVDA", "report_date": "2024-01-28", "aliases": ["NVDA", "NVIDIA"]}]
+            [filing_document(issuer="NVDA", aliases=("NVDA", "NVIDIA"))]
         ),
     )
     asyncio.run(
@@ -344,7 +369,7 @@ def test_build_runtime_services_composes_from_settings():
             "lexical_ranker": "bm25",
             "query_language_routing": True,
             "bm25_k1": 1.4,
-            "openai_api_key": "sk-review-test-key",
+            "openai_api_key_dev": "sk-review-test-key",
             "review_model": "gpt-5.6-terra",
         }
     )
@@ -371,6 +396,7 @@ def test_semantically_invalid_filters_are_a_typed_400():
         raise ValueError("lexical retrieval cannot span corpus languages")
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         retrieval_service=rejecting_retrieval,
     )
@@ -378,7 +404,7 @@ def test_semantically_invalid_filters_are_a_typed_400():
     with TestClient(create_app(services), raise_server_exceptions=False) as client:
         response = client.post(
             "/retrieve",
-            json={"query": "revenue", "filters": {"languages": ["en", "ko"]}},
+            json={"query": "revenue", "session_profile": {"languages": ["en", "ko"]}},
         )
 
     assert response.status_code == 400
@@ -404,6 +430,7 @@ def test_runtime_maps_provider_exceptions_to_nonsecret_503():
         raise OpenAIError("secret provider endpoint")
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, session_factory),
         llm_provider=DeterministicLLMProvider(()),
         provider_budget=provider_budget(),
@@ -447,6 +474,7 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
         return run
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         llm_provider=DeterministicLLMProvider(()),
         provider_budget=provider_budget(),
@@ -466,15 +494,15 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
 def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
     """Prepare the corpus on another thread, leaving the event loop free."""
     manifest = tmp_path / "manifest.json"
-    manifest.write_text("[]", encoding="utf-8")
     caller_thread = threading.get_ident()
     preparation_threads = []
     bootstraps = []
 
-    def prepare(path, *, expected_documents):
+    def prepare(path, *, expected_documents, selection_id, embedding_provider):
         """Record which thread prepared the batch."""
+        assert path == manifest and selection_id == "selected"
         preparation_threads.append(threading.get_ident())
-        return object()
+        return sample_batch()
 
     async def bootstrap(engine):
         """Record that schema bootstrap ran."""
@@ -482,12 +510,13 @@ def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
 
     async def persist(session, batch, *, chunk_batch_size):
         """Stand in for persistence, returning an empty seed result."""
-        return SeedResult(documents=0, chunks=0)
+        return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 
     monkeypatch.setattr(runtime_module, "load_seed_batch", prepare)
     monkeypatch.setattr(runtime_module, "bootstrap_schema", bootstrap)
     monkeypatch.setattr(runtime_module, "persist_seed_batch_with_stats", persist)
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         database_engine=object(),  # pyright: ignore[reportArgumentType]
         corpus_root=tmp_path,
@@ -497,12 +526,13 @@ def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
         services.ingest(
             IngestRequest(
                 manifest_path="manifest.json",
+                selection_id="selected",
                 expected_documents=1,
             )
         )
     )
 
-    assert result == SeedResult(documents=0, chunks=0)
+    assert result == SeedResult(documents=1, chunks=2)
     assert len(preparation_threads) == 1
     assert preparation_threads[0] != caller_thread
     # Schema DDL is opt-in: without create_schema no bootstrap runs; with it, one does.
@@ -511,6 +541,7 @@ def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
         services.ingest(
             IngestRequest(
                 manifest_path="manifest.json",
+                selection_id="selected",
                 expected_documents=1,
                 create_schema=True,
             )
@@ -522,13 +553,20 @@ def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
 def test_ingest_confines_manifests_to_the_corpus_directory(tmp_path):
     """Reject absolute and relative escapes from the configured corpus root."""
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
         corpus_root=tmp_path,
     )
 
     for escape in ("/etc/passwd", "../outside.json"):
         try:
-            asyncio.run(services.ingest(IngestRequest(manifest_path=escape, expected_documents=1)))
+            asyncio.run(
+                services.ingest(
+                    IngestRequest(
+                        manifest_path=escape, selection_id="selected", expected_documents=1
+                    )
+                )
+            )
         except ApiProblemError as error:
             assert error.status_code == 400
             assert error.error.code == "manifest_outside_corpus"

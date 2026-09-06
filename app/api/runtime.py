@@ -53,6 +53,7 @@ from app.config import (
 )
 from app.db.bootstrap import bootstrap_schema
 from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, Trace
+from app.db.queries import join_current_parse
 from app.evals.snapshots import SnapshotService
 from app.ingestion.company_names import CompanyNames, read_company_names
 from app.ingestion.seed import (
@@ -80,19 +81,18 @@ from app.observability.types import JsonObject, RunReport, StepTrace, build_run_
 from app.openai_models import resolve_openai_model
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
-    DeterministicEmbeddingProvider,
     EmbeddingProvider,
     get_embedding_provider,
 )
 from app.retrieval.language import detect_query_language
+from app.retrieval.rerank import RerankProvider
 from app.retrieval.scope import (
-    DocumentMetadata,
     ManifestScopeIndex,
     QueryScopeError,
     ResolvedQueryScope,
     resolve_query_scope,
 )
-from app.retrieval.service import RetrievalResult, retrieve
+from app.retrieval.service import ComponentRankings, RetrievalResult, RetrievalStrategy, retrieve
 from app.retrieval.translate import QueryTranslationError, route_query
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
@@ -146,13 +146,13 @@ class RetrievalService(Protocol):
         query: str,
         *,
         provider: EmbeddingProvider | None,
-        strategy: str = "hybrid",
+        strategy: RetrievalStrategy = "hybrid",
         query_variants: dict[str, str] | None = None,
         k: int,
         candidate_k: int | None = None,
         filters: RetrievalFilters,
         rrf_k: int = 60,
-        reranker: object | None = None,
+        reranker: RerankProvider | None = None,
         route_by_language: bool = False,
         lexical_ranker: LexicalRanker = "ts_rank_cd",
         bm25_k1: float = DEFAULT_BM25_K1,
@@ -214,9 +214,11 @@ def _document_resource(document: Document, chunk_count: int) -> DocumentResource
         report_period=document.report_period,
         filing_id=document.filing_id,
         source_url=document.source_url,
-        parse_status=_PARSE_STATUS.validate_python(document.parse_status, strict=True),
-        source_length=document.source_length,
-        source_sha256=document.source_sha256,
+        parse_status=_PARSE_STATUS.validate_python(
+            document.current_parse.structure.parse_status, strict=True
+        ),
+        source_length=document.current_parse.structure.source_length,
+        source_sha256=document.current_parse.structure.source_sha256,
         chunk_count=chunk_count,
     )
 
@@ -244,7 +246,7 @@ class RuntimeApiServices(ApiServices):
         *,
         session_factory: SessionFactory = _default_session_factory,
         database_engine: AsyncEngine | None = None,
-        embedding_provider: EmbeddingProvider | None = None,
+        embedding_provider: EmbeddingProvider,
         llm_provider: LLMProvider | None = None,
         provider_budget: ProviderBudget | None = None,
         llm_providers: dict[str, LLMProvider] | None = None,
@@ -278,9 +280,7 @@ class RuntimeApiServices(ApiServices):
             raise ValueError("llm provider and budget registries must be configured together")
         self._session_factory = session_factory
         self._database_engine = database_engine
-        self._embedding_provider = (
-            DeterministicEmbeddingProvider() if embedding_provider is None else embedding_provider
-        )
+        self._embedding_provider = embedding_provider
         self._llm_provider = llm_provider
         self._provider_budget = provider_budget
         self._llm_providers = dict(llm_providers or {})
@@ -322,7 +322,10 @@ class RuntimeApiServices(ApiServices):
     def published_documents(self) -> DocumentCatalog:
         """Expose current identities explicitly included in ready public snapshots."""
         return DocumentCatalog(
-            self.session_factory, public_only=True, company_names=self.company_names
+            self.session_factory,
+            public_only=True,
+            company_names=self.company_names,
+            embedding_identity=self._embedding_provider.identity,
         )
 
     def company_names(self) -> CompanyNames:
@@ -350,19 +353,6 @@ class RuntimeApiServices(ApiServices):
             self._local_request.reset(token)
             if context.provider is not None:
                 await context.provider.aclose()
-
-    def _validate_legacy_controls(self, request: ReviewRequest | RetrieveRequest) -> None:
-        """Keep older top-level request fields from bypassing read-only policy controls."""
-        if (
-            not self._allow_custom_prompt_policy
-            and isinstance(request, ReviewRequest)
-            and (request.budget != type(request.budget)() or request.max_context_chars != 12_000)
-        ):
-            raise ApiProblemError(
-                status_code=403,
-                code="capability_disabled",
-                message="Custom evidence and run limits are available only in Dev.",
-            )
 
     def _validate_session_profile(self, profile: ReviewSessionProfile) -> None:
         """Reject developer controls before either retrieval or any model classification."""
@@ -431,7 +421,7 @@ class RuntimeApiServices(ApiServices):
         """Return the injected or lazily loaded committed manifest scope index."""
         if self._scope_index is None:
             root = (self._corpus_root or get_settings().corpus_dir).resolve()
-            paths = (root / "manifest.json", root / "dart-manifest.json")
+            paths = (root / "manifest.json",)
             try:
                 self._scope_index = ManifestScopeIndex.from_paths(paths)
             except (OSError, ValueError, TypeError) as error:
@@ -445,16 +435,10 @@ class RuntimeApiServices(ApiServices):
         self,
         query: str,
         session_profile: ReviewSessionProfile,
-        legacy_filters: RetrievalFilters | None,
-        legacy_k: int | None,
     ) -> tuple[ResolvedRetrievalProfile, ResolvedQueryScope]:
-        """Resolve one strict profile and query scope with legacy API overrides."""
+        """Resolve the session profile and its explicit query scope."""
         profile = resolve_retrieval_profile(session_profile)
-        if legacy_k is not None:
-            profile = profile.model_copy(
-                update={"k": legacy_k, "candidate_k": max(profile.candidate_k, legacy_k)}
-            )
-        explicit_filters = legacy_filters or session_profile.explicit_filters()
+        explicit_filters = session_profile.explicit_filters()
         if session_profile.snapshot_id is not None and explicit_filters.snapshot_id is None:
             explicit_filters = explicit_filters.model_copy(
                 update={"snapshot_id": session_profile.snapshot_id}
@@ -509,14 +493,9 @@ class RuntimeApiServices(ApiServices):
         """Combine one hit with manifest filing and component-rank provenance."""
         metadata = self._manifest_scope_index().documents.get(hit.doc_id)
         if metadata is None:
-            issuer, _, year_text = hit.doc_id.partition("-FY")
-            metadata = DocumentMetadata(
-                doc_id=hit.doc_id,
-                registry="dart" if issuer.isdigit() else "sec",
-                language="ko" if issuer.isdigit() else "en",
-                issuer=issuer,
-                fiscal_year=int(year_text) if year_text.isdigit() else 1,
-                form="사업보고서" if issuer.isdigit() else "10-K",
+            raise unavailable(
+                "evidence_metadata_unavailable",
+                f"Retrieved document {hit.doc_id} has no corpus metadata.",
             )
         base = EvidenceHit.from_chunk_hit(hit).model_dump(mode="python")
         return EvidenceCandidate(
@@ -551,7 +530,6 @@ class RuntimeApiServices(ApiServices):
             Typed 400 for semantically invalid input, typed 503 when the embedding
             provider or database is unavailable.
         """
-        self._validate_legacy_controls(request)
         async with self._request_connection(request.session_profile):
             async with translate_runtime_errors():
                 request = request.model_copy(
@@ -567,8 +545,6 @@ class RuntimeApiServices(ApiServices):
                         ReviewRequest(
                             query=request.query,
                             session_profile=request.session_profile,
-                            k=request.k,
-                            filters=request.filters,
                         )
                     )
                 if gate is not None and gate.intent == "casual_chat":
@@ -587,8 +563,6 @@ class RuntimeApiServices(ApiServices):
                     profile, scope = self._resolved_request(
                         request.query,
                         request.session_profile,
-                        request.filters,
-                        request.k,
                     )
                     routing_stage.resolved_scope = scope.model_dump(mode="json")
                 routed_queries: dict[str, str] = {}
@@ -625,14 +599,14 @@ class RuntimeApiServices(ApiServices):
                     query=request.query,
                     profile=profile,
                     filters=scope.filters,
-                    candidates=result.candidate_pool,
+                    candidates=result.candidates,
                 )
                 return RetrieveResponse(
                     query=request.query,
                     results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
                     candidates=tuple(
                         self._candidate_resource(hit, rank=rank, result=result)
-                        for rank, hit in enumerate(result.candidate_pool, start=1)
+                        for rank, hit in enumerate(result.candidates, start=1)
                     ),
                     candidate_token=token,
                     candidate_expires_at=snapshot.expires_at,
@@ -661,6 +635,7 @@ class RuntimeApiServices(ApiServices):
             .group_by(Document.doc_id)
             .order_by(Document.issuer, Document.fiscal_year, Document.doc_id)
         )
+        statement = join_current_parse(statement, load=True, grouped=True)
         async with translate_runtime_errors():
             async with self._session_factory() as session:
                 rows = (await session.execute(statement)).all()
@@ -713,6 +688,8 @@ class RuntimeApiServices(ApiServices):
             batch = await asyncio.to_thread(
                 load_seed_batch,
                 manifest_path,
+                selection_id=request.selection_id,
+                embedding_provider=self._embedding_provider,
                 expected_documents=request.expected_documents,
             )
         except ManifestError as error:
@@ -764,7 +741,6 @@ class RuntimeApiServices(ApiServices):
         and the resulting records are both persisted and returned, so redaction cost is
         paid a single time per run.
         """
-        self._validate_legacy_controls(request)
         async with self._request_connection(request.session_profile):
             request = request.model_copy(
                 update={"session_profile": await self._local_profile(request.session_profile)}
@@ -943,7 +919,6 @@ class RuntimeApiServices(ApiServices):
         on_node: NodeObserver | None = None,
     ) -> RunReport:
         """Run one review with an explicit request-scoped retrieval implementation."""
-        self._validate_legacy_controls(request)
         async with self._request_connection(request.session_profile):
             return await self._review(request, on_node=on_node, retrieval_override=retrieval)
 
@@ -984,8 +959,6 @@ class RuntimeApiServices(ApiServices):
             profile, scope = self._resolved_request(
                 request.query,
                 request.session_profile,
-                request.filters,
-                request.k,
             )
             routing_stage.resolved_scope = scope.model_dump(mode="json")
         snapshot = None
@@ -1028,11 +1001,7 @@ class RuntimeApiServices(ApiServices):
             query=request.query,
             k=profile.k,
             filters=scope.filters,
-            budget=(
-                policy.workflow_budget
-                if request.budget == type(request.budget)()
-                else request.budget
-            ),
+            budget=policy.workflow_budget,
             provider_budget=provider_budget,
             max_context_chars=policy.max_context_chars,
             evidence_overfetch=policy.evidence_overfetch,
@@ -1091,14 +1060,14 @@ class RuntimeApiServices(ApiServices):
                         hits=selected,
                         candidates=selected,
                         score_stage="rrf",
-                        component_rankings={
-                            "vector": (),
-                            "lexical": (),
-                            "lexical_by_language": {
+                        component_rankings=ComponentRankings(
+                            vector=(),
+                            lexical=(),
+                            lexical_by_language={
                                 language: tuple(chunk_ids)
                                 for language, chunk_ids in ids_by_language.items()
                             },
-                        },
+                        ),
                     )
 
                 async def retrieve_for_workflow(

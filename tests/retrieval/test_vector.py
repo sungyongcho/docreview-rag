@@ -9,21 +9,26 @@ import pytest
 from sqlalchemy import Table
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Chunk
+from app.db.models import ChunkEmbedding
 from app.retrieval import vector
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 from tests.retrieval.support import RecordingSession, hit_values, normalized_sql
+
+IDENTITY = DeterministicEmbeddingProvider().identity
 
 VALID_QUERY_VECTOR = (1.0,) + (0.0,) * 383
 
 
 def test_statement_uses_exact_cosine_excludes_nulls_and_fully_orders_ties():
     """Build an exact cosine query with complete deterministic ordering."""
-    statement = vector.vector_search_statement(VALID_QUERY_VECTOR, k=7)
+    statement = vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=7)
     sql, params = normalized_sql(statement)
 
-    assert "chunks.embedding <=>" in sql
-    assert "chunks.embedding IS NOT NULL" in sql
+    assert "CAST(chunk_embeddings.embedding AS VECTOR(384)) <=>" in sql
+    assert "JOIN chunk_embeddings ON" in sql
+    assert "chunk_embeddings.input_sha256 = chunks.index_text_sha256" in sql
+    assert "chunk_embeddings.tokenizer =" in sql
     assert "ORDER BY distance ASC" in sql
     assert (
         'chunks.doc_id COLLATE "C" ASC, chunks.source_sha256 COLLATE "C" ASC, '
@@ -58,7 +63,7 @@ def test_statement_applies_every_shared_filter_with_and_semantics():
         kinds=("table",),
     )
     sql, params = normalized_sql(
-        vector.vector_search_statement(VALID_QUERY_VECTOR, k=5, filters=filters)
+        vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=5, filters=filters)
     )
 
     assert "JOIN documents ON documents.doc_id = chunks.doc_id" in sql
@@ -82,6 +87,7 @@ def test_statement_confines_vector_search_to_snapshot_membership():
     sql, params = normalized_sql(
         vector.vector_search_statement(
             VALID_QUERY_VECTOR,
+            identity=IDENTITY,
             k=5,
             filters=RetrievalFilters(snapshot_id=7),
         )
@@ -97,6 +103,7 @@ def test_item_null_filter_does_not_emit_an_empty_in_predicate():
     sql, _params = normalized_sql(
         vector.vector_search_statement(
             VALID_QUERY_VECTOR,
+            identity=IDENTITY,
             k=3,
             filters=RetrievalFilters(items=(None,)),
         )
@@ -130,7 +137,7 @@ def test_query_vector_rejects_zero_norm():
 def test_statement_rejects_nonpositive_limits(k):
     """Reject nonpositive statement limits."""
     with pytest.raises(ValueError, match="positive"):
-        vector.vector_search_statement(VALID_QUERY_VECTOR, k=k)
+        vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=k)
 
 
 def test_search_returns_complete_chunk_hits_and_similarity_scores():
@@ -175,7 +182,11 @@ def test_search_returns_complete_chunk_hits_and_similarity_scores():
             )
 
     session = RecordingSession(Result())
-    hits = asyncio.run(vector.vector_search(cast(AsyncSession, session), VALID_QUERY_VECTOR, k=4))
+    hits = asyncio.run(
+        vector.vector_search(
+            cast(AsyncSession, session), VALID_QUERY_VECTOR, identity=IDENTITY, k=4
+        )
+    )
 
     assert len(session.statements) == 1
     assert len(hits) == 1
@@ -193,14 +204,16 @@ def test_zero_limit_returns_without_database_access_and_negative_limit_fails():
             raise AssertionError("zero-limit search must not execute SQL")
 
     session = cast(AsyncSession, Session())
-    assert asyncio.run(vector.vector_search(session, VALID_QUERY_VECTOR, k=0)) == []
+    assert (
+        asyncio.run(vector.vector_search(session, VALID_QUERY_VECTOR, identity=IDENTITY, k=0)) == []
+    )
     with pytest.raises(ValueError, match="negative"):
-        asyncio.run(vector.vector_search(session, VALID_QUERY_VECTOR, k=-1))
+        asyncio.run(vector.vector_search(session, VALID_QUERY_VECTOR, identity=IDENTITY, k=-1))
 
 
 def test_model_has_no_approximate_vector_index_without_measurement():
     """Keep approximate vector indexes disabled until measurements justify one."""
-    chunk_table = Chunk.__table__
+    chunk_table = ChunkEmbedding.__table__
     assert isinstance(chunk_table, Table)
     index_names = {index.name for index in chunk_table.indexes}
 
@@ -208,3 +221,17 @@ def test_model_has_no_approximate_vector_index_without_measurement():
     assert not any(
         index.dialect_options["postgresql"].get("using") == "hnsw" for index in chunk_table.indexes
     )
+
+
+def test_snapshot_vectors_require_the_complete_frozen_configuration():
+    """Keep frozen snapshot vectors separate and constrain tokenizer identity too."""
+    filters = RetrievalFilters(snapshot_id=1)
+    sql, params = normalized_sql(
+        vector.vector_search_statement(VALID_QUERY_VECTOR, identity=IDENTITY, k=5, filters=filters)
+    )
+    assert "snapshot_chunks.embedding_tokenizer =" in sql
+    assert "snapshot_chunks.embedding_provider =" in sql
+    assert "snapshot_chunks.embedding_model =" in sql
+    assert "snapshot_chunks.embedding_dimensions =" in sql
+    assert "JOIN chunk_embeddings" not in sql
+    assert IDENTITY.tokenizer in params.values()

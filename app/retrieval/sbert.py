@@ -6,7 +6,9 @@ torch backend extra leaves ``app.retrieval`` importable.
 
 import asyncio
 from collections.abc import Callable, Sequence
-from typing import Protocol, cast
+import hashlib
+import json
+from typing import Any, Protocol, cast
 
 from app.retrieval._sentence_transformers import ThreadSafeLazy, sentence_transformers_attribute
 from app.retrieval.embeddings import (
@@ -31,6 +33,9 @@ class _EmbeddingMatrix(Protocol):
 
 class _SentenceTransformer(Protocol):
     """Synchronous subset of the optional embedding dependency."""
+
+    max_seq_length: int
+    tokenizer: Callable[..., dict[str, Any]]
 
     def get_sentence_embedding_dimension(self) -> int | None:
         """Return the configured model's embedding width."""
@@ -71,6 +76,8 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
         self.model = model
         self.dimensions = dimensions
         self.batch_size = batch_size
+        self._maximum: int | None = None
+        self._token_counter: Callable[[str], int] | None = None
         self._encoder = ThreadSafeLazy[Callable[[list[str]], list[list[float]]]]()
 
     def _load(self) -> Callable[[list[str]], list[list[float]]]:
@@ -104,8 +111,45 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
                 f"but this database stores {self.dimensions}"
             )
 
+        maximum = model.max_seq_length
+        if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
+            raise ValueError(
+                "sentence-transformer must declare its positive maximum sequence length"
+            )
+
+        def counts(inputs: list[str]) -> list[int]:
+            """Count complete model inputs with the exact untruncated tokenizer."""
+            encoded = model.tokenizer(
+                inputs,
+                add_special_tokens=True,
+                truncation=False,
+                return_attention_mask=False,
+                return_token_type_ids=False,
+            )
+            token_ids = encoded.get("input_ids")
+            if not isinstance(token_ids, list) or len(token_ids) != len(inputs):
+                raise ValueError("sentence-transformer tokenizer returned invalid input lengths")
+            if any(not isinstance(tokens, list) for tokens in token_ids):
+                raise ValueError("sentence-transformer tokenizer returned invalid token IDs")
+            return [len(tokens) for tokens in token_ids]
+
+        def count_one(text: str) -> int:
+            """Expose the same special-token-inclusive count to structural planning."""
+            return counts([text])[0]
+
+        self._maximum = maximum
+        self._token_counter = count_one
+
         def encode(inputs: list[str]) -> list[list[float]]:
-            """Run the synchronous, CPU-bound forward pass for one batch."""
+            """Reject over-limit model inputs before the CPU-bound forward pass."""
+            for position, count in enumerate(counts(inputs)):
+                if count > maximum:
+                    raise ValueError(
+                        f"SBERT input {position} has {count} tokens including special tokens; "
+                        f"model {self.model!r} permits {maximum}. "
+                        "Rebuild retrieval units with this "
+                        "model's tokenizer budget; silent truncation is not permitted."
+                    )
             return model.encode(
                 inputs,
                 batch_size=self.batch_size,
@@ -114,6 +158,20 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
             ).tolist()
 
         return encode
+
+    @property
+    def max_input_tokens(self) -> int:
+        """Load the actual model limit lazily; callers should use a preparation worker."""
+        self._load()
+        assert self._maximum is not None
+        return self._maximum
+
+    def count_input_tokens(self, text: str) -> int:
+        """Count the complete input using the same tokenizer as encoding preflight."""
+        validate_texts([text])
+        self._load()
+        assert self._token_counter is not None
+        return self._token_counter(text)
 
     def _encode(self, inputs: list[str]) -> list[list[float]]:
         """Load the model if needed and run inference in the current worker."""
@@ -153,4 +211,10 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
     @property
     def identity(self) -> EmbeddingIdentity:
         """Return the configured sentence-transformer identity."""
-        return EmbeddingIdentity("sbert", self.model, self.dimensions)
+        configuration = json.dumps(
+            {"model": self.model, "special_tokens": True, "truncation": False},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        tokenizer = "hf-untruncated:" + hashlib.sha256(configuration.encode()).hexdigest()
+        return EmbeddingIdentity("sbert", self.model, self.dimensions, tokenizer)

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getHealth, getProductionPreviewReadiness, getReadiness } from "./api";
 import type { Readiness, ReviewEngineState } from "./types";
 
-export type RuntimeHealthKind = "checking" | "healthy" | "api_down" | "db_degraded";
+export type RuntimeHealthKind = "checking" | "healthy" | "api_down" | "db_degraded" | "preparation_needed";
 
 export interface RuntimeHealthState {
   kind: RuntimeHealthKind;
@@ -18,6 +18,7 @@ const HEALTH_TIMEOUT_MS = 5_000;
 
 function issueKey(state: RuntimeHealthState): string | null {
   if (state.kind === "api_down") return "api_down";
+  if (state.kind === "preparation_needed") return "preparation_needed";
   if (state.kind !== "db_degraded") return null;
   const corpus = state.readiness?.corpus;
   return `db:${corpus?.schema_status ?? "unknown"}:${corpus?.schema_message ?? ""}`;
@@ -60,7 +61,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
       if (!mounted.current || !activity.current || controller.current !== request) return;
       if (request.signal.aborted) throw new Error("Runtime readiness check timed out.");
       setState({
-        kind: healthy ? "healthy" : "db_degraded",
+        kind: healthy ? "healthy" : readiness.corpus.database_connected === true && readiness.corpus.schema_status === "compatible" ? "preparation_needed" : "db_degraded",
         readiness,
         checkedAt: new Date().toISOString(),
       });
@@ -126,7 +127,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
 
   const currentIssue = useMemo(() => issueKey(state), [state]);
   const modalVisible = active && (state.kind === "api_down"
-    || (state.kind === "db_degraded" && dismissedIssue !== currentIssue));
+    || ((state.kind === "db_degraded" || state.kind === "preparation_needed") && dismissedIssue !== currentIssue));
 
   return {
     ...state,
@@ -135,7 +136,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
     refreshLocal,
     modalVisible,
     dismissWarning: () => {
-      if (state.kind === "db_degraded") setDismissedIssue(currentIssue);
+      if (state.kind === "db_degraded" || state.kind === "preparation_needed") setDismissedIssue(currentIssue);
     },
   };
 }

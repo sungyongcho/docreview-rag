@@ -47,9 +47,7 @@ class Settings(DotenvFirstSettings):
     sbert_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embed_dim: Literal[384] = 384
     embedding_batch_size: int = Field(default=128, gt=0, le=2048)
-    openai_api_key: SecretStr | None = None
-    # `.env` may hold one key per environment; `MODE` picks the slot when no explicit
-    # key is set, so dev and prod can keep separate project keys and cost boundaries.
+    # MODE selects an isolated development or production credential slot.
     environment: Environment = Field(
         default="dev", validation_alias=AliasChoices("MODE", "DOCREVIEW_ENVIRONMENT")
     )
@@ -61,6 +59,7 @@ class Settings(DotenvFirstSettings):
         default=None, validation_alias=AliasChoices("OPENAI_API_KEY_PROD")
     )
     _openai_key_slot: KeySlot | None = PrivateAttr(default=None)
+    _resolved_openai_key: SecretStr | None = PrivateAttr(default=None)
     # Read only by the corpus acquisition command. The DART client takes the key as an
     # argument so no library code reaches the process environment for a credential.
     dart_api_key: SecretStr | None = None
@@ -148,17 +147,21 @@ class Settings(DotenvFirstSettings):
 
     @model_validator(mode="after")
     def resolve_openai_key_slot(self) -> Self:
-        """Fill the OpenAI key from the environment's slot when no explicit key is set."""
+        """Resolve only the credential slot selected by MODE."""
         key, slot = resolve_openai_key(
-            explicit=self.openai_api_key,
             dev=self.openai_api_key_dev,
             prod=self.openai_api_key_prod,
             environment=self.environment,
         )
-        # Assign through `object` so the same code also works on frozen settings.
-        object.__setattr__(self, "openai_api_key", key)
+        # Keep the derived credential private; it is not another settings input.
+        self._resolved_openai_key = key
         self._openai_key_slot = slot
         return self
+
+    @property
+    def openai_api_key(self) -> SecretStr | None:
+        """Expose the resolved key to clients without accepting a common credential input."""
+        return self._resolved_openai_key
 
     @property
     def openai_key_slot(self) -> KeySlot | None:
@@ -185,7 +188,9 @@ class Settings(DotenvFirstSettings):
         if self.embedding_provider == "openai" and (
             self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip()
         ):
-            raise ValueError("OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai")
+            raise ValueError(
+                "The MODE-selected OpenAI key slot is required when EMBEDDING_PROVIDER=openai"
+            )
         return self
 
     @model_validator(mode="after")
@@ -201,7 +206,9 @@ class Settings(DotenvFirstSettings):
         if not self.review_model.strip():
             raise ValueError("REVIEW_MODEL must not be blank when set")
         if self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip():
-            raise ValueError("OPENAI_API_KEY is required when REVIEW_MODEL is set")
+            raise ValueError(
+                "The MODE-selected OpenAI key slot is required when REVIEW_MODEL is set"
+            )
         resolve_openai_model("review", self.review_model)
         if (
             self.review_input_price_per_million_usd is not None

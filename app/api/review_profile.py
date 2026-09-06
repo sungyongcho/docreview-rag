@@ -43,7 +43,7 @@ class CustomRetrievalProfile(StrictProfileModel):
 
     strategy: RetrievalStrategy = "hybrid"
     k: Annotated[StrictInt, Field(gt=0, le=100)] = 5
-    candidate_k: Annotated[StrictInt, Field(gt=0, le=100)] = 20
+    candidate_k: Annotated[StrictInt, Field(gt=0, le=500)] = 20
     rrf_k: Annotated[StrictInt, Field(gt=0, le=10_000)] = DEFAULT_RRF_K
     lexical_ranker: LexicalRanker | None = "ts_rank_cd"
     bm25_k1: Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)] = DEFAULT_BM25_K1
@@ -105,6 +105,11 @@ class ReviewSessionProfile(StrictProfileModel):
     engine: ReviewEngine = "openai"
     local_model: Annotated[str, Field(min_length=1, max_length=256)] | None = None
     corpus_scope: CorpusScope = "auto"
+    doc_ids: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)] = ()
+    registries: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)] = ()
+    kinds: Annotated[
+        tuple[Literal["text", "table"], ...], BeforeValidator(_tuple_from_json_array)
+    ] = ()
     issuers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)] = ()
     languages: Annotated[
         tuple[Literal["en", "ko"], ...], BeforeValidator(_tuple_from_json_array)
@@ -131,6 +136,9 @@ class ReviewSessionProfile(StrictProfileModel):
     def explicit_filters(self) -> RetrievalFilters:
         """Project profile selections onto the shared exact-match filter contract."""
         return RetrievalFilters(
+            doc_ids=self.doc_ids,
+            registries=self.registries,
+            kinds=self.kinds,
             languages=self.languages,
             issuers=self.issuers,
             fiscal_years=self.fiscal_years,
@@ -146,7 +154,7 @@ class ResolvedRetrievalProfile(StrictProfileModel):
     preset: RetrievalPreset
     strategy: RetrievalStrategy
     k: Annotated[StrictInt, Field(gt=0, le=100)]
-    candidate_k: Annotated[StrictInt, Field(gt=0, le=100)]
+    candidate_k: Annotated[StrictInt, Field(gt=0, le=500)]
     rrf_k: Annotated[StrictInt, Field(gt=0, le=10_000)]
     lexical_ranker: LexicalRanker | None
     bm25_k1: Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)]

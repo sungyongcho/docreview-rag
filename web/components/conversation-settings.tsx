@@ -6,7 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { ProfileFields } from "@/components/profile-fields";
-import type { DocumentFacets, ReviewSessionProfile } from "@/lib/types";
+import type { DocumentFacets, ReviewSessionDraft } from "@/lib/types";
 import { getDocumentFacets, getPublishedDocumentFacets } from "@/lib/api";
 import { TokenSelect } from "@/components/token-select";
 import { resolvedRetrievalProfile } from "@/lib/types";
@@ -17,9 +17,9 @@ import "./conversation-settings.css";
 export type ConversationSettingsTab = "filters" | "retrieval" | "evidence" | "limits";
 interface Props {
   tab: ConversationSettingsTab;
-  profile: ReviewSessionProfile;
+  profile: ReviewSessionDraft;
   editable: boolean;
-  onChange: (update: Partial<ReviewSessionProfile>) => void;
+  onChange: (update: Partial<ReviewSessionDraft>) => void;
   onTabChange: (tab: ConversationSettingsTab) => void;
   onClose: () => void;
   onValidityChange?: (valid: boolean) => void;
@@ -79,8 +79,8 @@ export function ConversationSettings(props: Props) {
   const tabs: Array<[ConversationSettingsTab,string]> = [["filters","Filters"], ...(props.editable ? [["retrieval","Search"], ["evidence","Evidence"], ["limits","Run limits"]] as Array<[ConversationSettingsTab,string]> : [])];
   const tab = tabs.some(([id]) => id === props.tab) ? props.tab : "filters";
   const budget = props.profile.prompt_policy.workflow_budget;
-  function patch(update: Partial<ReviewSessionProfile>) { props.onChange(update); }
-  function patchPolicy(update: Partial<ReviewSessionProfile["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
+  function patch(update: Partial<ReviewSessionDraft>) { props.onChange(update); }
+  function patchPolicy(update: Partial<ReviewSessionDraft["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
   function patchBudget(update: Partial<typeof budget>) { patchPolicy({ workflow_budget: { ...budget, ...update } }); }
   return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
     <div className="conversation-settings-dialog" role="dialog" aria-modal={active ? true : undefined} aria-labelledby={titleId} tabIndex={-1} ref={panel}>

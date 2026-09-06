@@ -60,7 +60,7 @@ function liveInput(overrides: Partial<PipelineInput> = {}): PipelineInput {
       database_connected: true, schema_status: "compatible", schema_message: "ok",
       documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, bm25_ready: false, writable: true, provider: "deterministic",
     },
-    manifests: [{ name: "manifest.json", registry: "sec", documents: 21, valid: true, sources_present: 21 }],
+    manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
     registryCounts: {},
     jobs: [],
     evaluationResults: 0,
@@ -152,7 +152,7 @@ describe("BuildPipeline", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
     expect(screen.getByText("SEC EDGAR · NVDA, AMD · FY2023, FY2024")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    const buttons = screen.getAllByRole("button", { name: "Ingest all manifests" });
+    const buttons = screen.getAllByRole("button", { name: "Ingest selected sources" });
     expect(buttons).toHaveLength(1);
     fireEvent.click(buttons[0]);
     expect(handlers.onIngestAll).toHaveBeenCalledTimes(1);

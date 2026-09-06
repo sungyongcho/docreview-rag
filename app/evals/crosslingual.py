@@ -47,7 +47,8 @@ from app.evals.retrieval_eval import (
 from app.evals.types import GoldenCase
 from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
 from app.ingestion.registry import REGISTRIES, registry_for
-from app.ingestion.seed import DEFAULT_MANIFEST_NAME
+from app.ingestion.seed import DEFAULT_MANIFEST_NAME, embedding_chunk_config
+from app.ingestion.tokens import TARGET_INPUT_TOKENS
 from app.llm.provider import LLMProvider
 from app.llm.schemas import ProviderBudget
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
@@ -63,9 +64,9 @@ ProviderChoice = Literal["deterministic", "openai", "sbert", "sbert-multi"]
 CROSSLINGUAL_SUITE: Final[str] = "m8-crosslingual-v1"
 DART_CROSSLINGUAL_SUITE: Final[str] = "m10-dart-crosslingual-v1"
 
-# Kept for the committed EDGAR artifacts: the matrix measures only embedding space,
+# The matrix measures embedding space,
 # retrieval strategy, query language, and query handling at this fixed target.
-CROSSLINGUAL_TARGET_TEXT_CHARS: Final[int] = 1200
+CROSSLINGUAL_TARGET_TOKENS: Final[int] = TARGET_INPUT_TOKENS
 
 DART_GOLDEN_PATH: Final[Path] = DEFAULT_GOLDEN_PATH.parent / "dart_retrieval.json"
 DART_KO_GOLDEN_PATH: Final[Path] = DEFAULT_GOLDEN_PATH.parent / "dart_retrieval_ko.json"
@@ -76,9 +77,8 @@ class CorpusProfile:
     """One measured corpus per command run.
 
     A profile binds everything that changes with the corpus — suite, golden twins,
-    manifest, and document count — while the corpus language and chunk target are
-    read from the registry adapter, so retuning ``Registry.chunk_target`` cannot
-    leave this matrix measuring a corpus the seeding path no longer produces.
+    manifest, and document count. The registry supplies the corpus language; the
+    shared ingestion contract supplies the token target for every corpus.
     """
 
     registry: str
@@ -86,6 +86,7 @@ class CorpusProfile:
     golden: Path
     ko_golden: Path
     manifest_name: str
+    selection_id: str
     # Corpora are widened from the command line, so a profile pins a count only when
     # the comparison depends on one. ``None`` evaluates whatever the manifest holds.
     expected_documents: int | None
@@ -96,9 +97,9 @@ class CorpusProfile:
         return registry_for(self.registry).language
 
     @property
-    def target_text_chars(self) -> int:
-        """Return the registry's measured chunk target."""
-        return registry_for(self.registry).chunk_target
+    def target_tokens(self) -> int:
+        """Return the shared ingestion token target."""
+        return TARGET_INPUT_TOKENS
 
 
 CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
@@ -108,6 +109,7 @@ CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
         golden=DEFAULT_GOLDEN_PATH,
         ko_golden=KO_GOLDEN_PATH,
         manifest_name=DEFAULT_MANIFEST_NAME,
+        selection_id="sec-evaluation",
         expected_documents=None,
     ),
     "dart": CorpusProfile(
@@ -115,7 +117,8 @@ CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
         suite=DART_CROSSLINGUAL_SUITE,
         golden=DART_GOLDEN_PATH,
         ko_golden=DART_KO_GOLDEN_PATH,
-        manifest_name="dart-manifest.json",
+        manifest_name=DEFAULT_MANIFEST_NAME,
+        selection_id="dart-evaluation",
         expected_documents=None,
     ),
 }
@@ -170,7 +173,7 @@ class CrosslingualArm:
     bm25_idf: BM25Idf | None = None
     translator_model: str | None = None
     dimensions: int = 384
-    target_text_chars: int = CROSSLINGUAL_TARGET_TEXT_CHARS
+    target_tokens: int = CROSSLINGUAL_TARGET_TOKENS
     k: int = 5
     candidate_k: int = 20
     rrf_k: int = DEFAULT_RRF_K
@@ -205,8 +208,8 @@ class CrosslingualArm:
         # arm can never be labelled with BM25 parameters its queries did not run under.
         # Checked last so it reports on a shape that is otherwise already coherent.
         resolve_bm25_parameters(self.lexical_ranker, self.bm25_k1, self.bm25_b, self.bm25_idf)
-        if self.dimensions <= 0 or self.target_text_chars <= 0:
-            raise ValueError("dimensions and target_text_chars must be positive")
+        if self.dimensions <= 0 or self.target_tokens <= 0:
+            raise ValueError("dimensions and target_tokens must be positive")
         if self.k <= 0 or self.candidate_k < self.k or self.rrf_k <= 0:
             raise ValueError("k, candidate_k, and rrf_k are inconsistent")
         if ARM_NAME.fullmatch(self.name) is None:
@@ -272,7 +275,7 @@ class CrosslingualArm:
             },
             "chunking": {
                 "strategy": "structure-aware",
-                "target_text_chars": self.target_text_chars,
+                "target_tokens": self.target_tokens,
                 "golden_identity": "source-sha256-and-half-open-span",
             },
             "retrieval": retrieval,
@@ -782,6 +785,7 @@ def build_arms(
     args: argparse.Namespace,
     embedding_model: str,
     *,
+    target_tokens: int,
     settings: Settings | None = None,
 ) -> tuple[CrosslingualArm, ...]:
     """Expand parsed axes into sorted arms with explicit BM25 provenance."""
@@ -817,7 +821,7 @@ def build_arms(
                         translator_model=(
                             args.translator_model if handling == "translated" else None
                         ),
-                        target_text_chars=profile.target_text_chars,
+                        target_tokens=target_tokens,
                         k=args.k,
                         candidate_k=args.candidate_k,
                         rrf_k=args.rrf_k,
@@ -900,8 +904,13 @@ async def _run_cli(
     provider = get_embedding_provider(settings)
     profile = CORPUS_PROFILES[args.corpus]
     manifest_path = settings.corpus_dir / profile.manifest_name
-    suite = load_bilingual_suites(args.golden, args.ko_golden, manifest_path=manifest_path)
-    arms = build_arms(args, embedding_model, settings=settings)
+    suite = load_bilingual_suites(
+        args.golden, args.ko_golden, manifest_path=manifest_path, selection_id=profile.selection_id
+    )
+    target_tokens = embedding_chunk_config(
+        provider, target_tokens=profile.target_tokens
+    ).target_tokens
+    arms = build_arms(args, embedding_model, target_tokens=target_tokens, settings=settings)
     # Refused here, not after the matrix has been measured: the answer depends only on
     # the requested axes, and --handling defaults to direct, so plain --gate always
     # takes this path.
@@ -925,23 +934,23 @@ async def _run_cli(
     runs: list[LanguageRun] = []
     coverage: list[LexicalCoverage] = []
     translations = TranslationLog()
-    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
     try:
-        target_text_chars = profile.target_text_chars
         batch = build_chunking_batch(
-            target_text_chars,
+            target_tokens,
+            provider=provider,
             settings=settings,
             manifest_name=profile.manifest_name,
+            selection_id=profile.selection_id,
             expected_documents=profile.expected_documents,
-            **progress_options,
+            on_progress=on_progress,
         )
         async with temporary_corpus_session(
             engine,
             batch,
             provider,
-            target_text_chars=target_text_chars,
+            target_tokens=target_tokens,
             embedding_provider=args.provider,
-            **progress_options,
+            on_progress=on_progress,
         ) as (session, indexing):
             probe_bm25 = args.lexical_ranker == "bm25"
             lexical_probe = make_retriever(

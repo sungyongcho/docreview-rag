@@ -77,7 +77,6 @@ Use your real name and reachable email for SEC access. Do not put secrets in ter
 
 ```dotenv
 SEC_USER_AGENT=Your Real Name your-real-contact@example.com
-OPENAI_API_KEY=
 OPENAI_API_KEY_LOCAL=<replace-with-your-real-development-key>
 OPENAI_API_KEY_PROD=
 DART_API_KEY=
@@ -86,7 +85,7 @@ EMBEDDING_MODEL=text-embedding-3-large
 ```
 
 Do not leave the sample DART/prod placeholders in place. Check separately configured shell keys without
-printing them. A nonempty `OPENAI_API_KEY` overrides mode-specific slots; clear it to use the development slot.
+printing them. DEV uses only `OPENAI_API_KEY_LOCAL`; production uses only `OPENAI_API_KEY_PROD`.
 Do not add MODE to `.env`. Python examples set `MODE=dev`; `rag-dev` selects it automatically.
 
 The repository's model policy uses `text-embedding-3-large` at 384 dimensions, `gpt-5.6-terra` for answers,
@@ -102,39 +101,11 @@ shows API/DB and model availability. Never upload `.env` or enter keys into the 
 
 ## Initial schema setup
 
-Create tables so the **first document can be ingested in the web UI**. This does not ingest documents or
-create embeddings. Complete installation first and reuse an existing compatible schema.
-
 ```bash
-rag-dev up -d db
-rag-dev ps db
-rag-dev exec -T db psql -U filing -d filing -c '\dt'
+rag-quickstart
 ```
 
-For an empty DB, create missing schema objects. Existing model tables are not dropped or recreated.
-If schema drift is reported, use troubleshooting rather than deleting data.
-
-```bash
-MODE=dev uv run python - <<'PY'
-import asyncio
-from app.db.bootstrap import bootstrap_schema
-from app.db.session import engine
-
-async def prepare():
-    """Create missing schema objects and release the database connection."""
-    try:
-        await bootstrap_schema(engine)
-    finally:
-        await engine.dispose()
-
-asyncio.run(prepare())
-print("Schema ready")
-PY
-rag-dev exec -T db psql -U filing -d filing -c 'SELECT count(*) AS documents FROM documents;'
-```
-
-A fresh database has zero documents. Continue with [web acquisition and ingestion](walkthrough.md#3-download-nvidia-filings).
-No paid model is called by schema preparation.
+Quick Start bootstraps Python, validates configuration, prepares an empty schema, and starts development services. It preserves existing compatible data. If the schema is incompatible, it stops; keep that database intact and choose an empty isolated or compatible database. Do not use a reset as installation recovery.
 
 ## Development and local prod preview
 
@@ -189,7 +160,7 @@ API clients can opt in to stage start/end events by sending the request header
 `X-DocReview-Telemetry: stages` with the review stream request. These stage SSE events are additive;
 clients that omit the header retain the existing default event stream. The UI uses recorded events
 for execution progress and performance, without inventing missing timing values. Optional execution
-metadata is stored in existing JSON payloads; these fields do not require a schema migration.
+metadata is stored in existing JSON payloads.
 
 ## Inspect status and logs
 
@@ -238,86 +209,54 @@ For an older API without the shared diagnostic route, the command explicitly rep
 
 ## Prepare one NVIDIA filing
 
-This block creates a one-filing manifest for the guided exercise while preserving the main manifest.
-It checks an existing tutorial manifest rather than overwriting it. It does not download, ingest, or call a model.
-
 ```bash
-uv run python - <<'PY'
-import json
-from pathlib import Path
-
-source = Path("data/corpus/manifest.json")
-target = Path("data/corpus/tutorial-manifest.json")
-accession = "0001045810-24-000029"
-entries = [row for row in json.loads(source.read_text())
-           if row["ticker"] == "NVDA" and row["accession"] == accession]
-assert len(entries) == 1, "NVIDIA FY2024 must exist exactly once"
-if target.exists():
-    saved = json.loads(target.read_text())
-    assert len(saved) == 1 and saved[0]["accession"] == accession, "Inspect existing tutorial manifest"
-else:
-    target.write_text(json.dumps(entries, ensure_ascii=False, indent=2) + "\n")
-print(target)
-print(entries[0]["file"], "present:", Path(entries[0]["file"]).is_file())
-PY
+rag-corpus acquire_edgar --identifier NVDA --year 2024
+rag-corpus status
+rag-corpus ingest_manifest --manifest manifest.json --selection sec-08b5f645cc174083 --expected-documents 1
+rag-corpus status
 ```
 
-**Only when the source is missing**, download it using a real SEC contact. Existing source files are reused;
-`--force` is unnecessary.
-
-```bash
-MODE=dev uv run python -m app.ingestion.edgar_api --manifest data/corpus/tutorial-manifest.json
-test -s data/corpus/NVDA/2024-02-21_0001045810-24-000029.html && echo 'NVIDIA source ready'
-```
-
-If acquired through the web already, skip downloading and return to [manifest ingestion](walkthrough.md#4-ingest-the-source-into-documents-and-chunks).
+Wait for each job to succeed. The acquisition result identifies an exact processing selection inside the common manifest; no catalog extraction or copied manifest is needed.
 
 ## Python CLI reference
 
-Use these instead of the corresponding web operation, not in addition to completed work.
-
 ### Ingestion
 
+The Python CLI submits the same server job as the web interface:
+
 ```bash
-MODE=dev uv run python -m app.cli ingest \
-  --manifest data/corpus/tutorial-manifest.json --expected-documents 1 --create-schema
+uv run python -m app.cli ingest --manifest manifest.json --selection SELECTION_ID
 ```
 
-Parse, chunk, upsert, and recalculate BM25 for the selected manifest. `--create-schema` creates missing
-objects without altering/dropping existing tables. Expect `status: ok`, one document, and a positive chunk count.
+Use the selection ID returned by acquisition. For a non-default development address, pass `--api-url`. Schema preparation belongs to `rag-quickstart`; destructive reset belongs to `rag-fresh-start`.
 
 ### Embedding and retrieval
 
-**Paid OpenAI operation:** backfill missing/mismatched embeddings across the DB and then embed the query.
-The `--doc-id` filter restricts retrieval results, not the backfill scope.
-
 ```bash
-MODE=dev uv run python -m app.cli retrieve \
-  --query "What drove NVIDIA data center revenue growth in fiscal 2024?" \
-  --doc-id NVDA-FY2024 --provider openai --embed-missing -k 5
+rag-corpus backfill_embeddings --manifest manifest.json --selection SELECTION_ID
+rag-corpus status
+rag-corpus rebuild_bm25
+rag-corpus status
+uv run python -m app.cli retrieve --query 'NVIDIA revenue' --issuer NVDA --fiscal-year 2024
 ```
 
-Omit `--embed-missing` when vectors are ready. Query embedding still incurs cost. This returns evidence,
-not a generated answer.
+Embedding generation can incur provider usage. Retrieval tests the evidence; it does not submit an answer request. See [retrieval](retrieval.md) before the [first-answer guide](answers.md).
 
 ### DART acquisition
 
-Set a real DART_API_KEY. Before ingesting an existing manifest, verify sources for all its entries.
-
 ```bash
-MODE=dev uv run python -m app.ingestion.dart_api --stock-codes 005930 --fiscal-year 2024
-MODE=dev uv run python -m app.cli ingest --manifest data/corpus/dart-manifest.json
+rag-corpus acquire_dart --identifier 005930 --year 2024
+rag-corpus status
 ```
 
-Embedding is a separate step. Confirm new records in Documents.
+Use its returned selection ID for ingestion. SEC and DART share `manifest.json`.
 
 ### Option help
 
 ```bash
+rag-corpus --help
 uv run python -m app.cli ingest --help
 uv run python -m app.cli retrieve --help
-uv run python -m app.ingestion.edgar_api --help
-uv run python -m app.ingestion.dart_api --help
 ```
 
 ## Shutdown and selective cleanup
@@ -384,10 +323,6 @@ The new DB should have no app tables. Host source files and `.env` remain. Use
 [initial schema setup](#initial-schema-setup) and then web ingestion; re-embedding incurs cost again.
 Old browser conversations may remain but can no longer resolve deleted DB evidence or run IDs.
 
-`--recreate-schema` is a separate destructive option that drops model tables, recreates them, and ingests
-into the currently connected DB. It is not the same as volume deletion or non-destructive `--create-schema`.
-It is not required for this walkthrough.
-
 ### Delete only the downloaded source
 
 Finish acquisition/ingestion/evaluation first. Confirm the exact file, back it up or verify it can be downloaded
@@ -439,18 +374,18 @@ Read the actual error location and message first:
 ```bash
 rag-dev ps
 rag-dev logs --tail=80 app
-MODE=dev uv run python -m app.db.migrate --plan
+rag-corpus readiness
 ```
 
-The migration plan is for schema problems, not arbitrary connectivity failures. If the web opens, inspect
+An incompatible-schema diagnostic stops startup without changing existing data. If the web opens, inspect
 System status, Jobs, and the answer's Run trace. If the web itself is unavailable, inspect web logs first.
 
 | Symptom | Check | Action and completion |
 |---|---|---|
 | Web unavailable | web logs, APP_PORT, port owner | Inspect `rag-dev logs --tail=80 web`; use the correct URL |
 | API/DB unavailable | service and DB health | Restore the connection; refresh and verify schema |
-| schema_drift | existing schema versus current models | Read the migration plan, back up, apply applicable preserving migrations with `MODE=dev uv run python -m app.db.migrate --apply`, then verify compatibility |
-| Missing/stale embeddings | provider, identity, pending | Correct configuration and run needed paid backfill after reviewing its DB-wide scope |
+| schema_drift | Existing schema mismatch | Preserve this database and choose an empty isolated or compatible database |
+| Missing/stale embeddings | provider, identity, pending | Correct configuration and run needed paid backfill after checking the manifest and explicit selection |
 | BM25 not ready | missing/invalidated statistics | Rebuild BM25 and verify job success plus readiness |
 | NOT_IN_DOCS | scope, company/year filters, evidence | Inspect Documents and candidates; ask something actually supported by the corpus |
 | provider_failure | status, attempts, details, node | Fix key/access/connectivity/limits; schema recreation does not fix this |

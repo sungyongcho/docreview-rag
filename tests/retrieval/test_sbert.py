@@ -17,6 +17,12 @@ from app.retrieval.embeddings import get_embedding_provider
 from tests.retrieval.support import fake_sentence_transformers
 
 
+def fake_tokenizer(inputs, **kwargs):
+    """Expose untruncated mock token lengths including the two special tokens."""
+    assert kwargs["truncation"] is False and kwargs["add_special_tokens"] is True
+    return {"input_ids": [[0] * (len(text.split()) + 2) for text in inputs]}
+
+
 def test_public_surface_exports_sbert_provider():
     """Export the sentence-transformer provider from the public façade."""
     assert public.SentenceTransformerEmbeddingProvider is sbert.SentenceTransformerEmbeddingProvider
@@ -90,6 +96,9 @@ def test_load_rejects_a_model_with_the_wrong_dimension(monkeypatch):
     """Reject local models whose output width differs from the database."""
 
     class Encoder:
+        max_seq_length = 128
+        tokenizer = staticmethod(fake_tokenizer)
+
         def __init__(self, model):
             self.model = model
 
@@ -115,6 +124,9 @@ def test_embed_documents_reuses_the_model_and_runs_model_off_loop(monkeypatch):
             return [[1.0, 0.0], [0.0, 1.0]]
 
     class Encoder:
+        max_seq_length = 128
+        tokenizer = staticmethod(fake_tokenizer)
+
         def __init__(self, model):
             calls["constructed"] = int(calls["constructed"]) + 1
             calls["model"] = model
@@ -175,6 +187,9 @@ def test_simultaneous_cold_embeddings_construct_one_model(monkeypatch):
             return [[1.0, 0.0] for _ in range(self.size)]
 
     class Encoder:
+        max_seq_length = 128
+        tokenizer = staticmethod(fake_tokenizer)
+
         def __init__(self, model):
             constructors.append(model)
             time.sleep(0.05)
@@ -219,6 +234,9 @@ def test_provider_output_still_passes_through_shared_validation(monkeypatch):
             return [[1.0, 0.0]]
 
     class Encoder:
+        max_seq_length = 128
+        tokenizer = staticmethod(fake_tokenizer)
+
         def __init__(self, model):
             self.model = model
 
@@ -233,3 +251,35 @@ def test_provider_output_still_passes_through_shared_validation(monkeypatch):
 
     with pytest.raises(ValueError, match=r"returned 1 vectors for 2 inputs"):
         asyncio.run(provider.embed_documents(["first", "second"]))
+
+
+def test_sbert_planning_and_encoding_share_special_token_limits(monkeypatch):
+    """Plan with the actual model limit and reject excess tokens before encoding."""
+    calls = []
+
+    class Encoder:
+        max_seq_length = 8
+        tokenizer = staticmethod(fake_tokenizer)
+
+        def __init__(self, model):
+            """Record lazy model construction."""
+            calls.append("load")
+
+        def get_sentence_embedding_dimension(self):
+            """Declare the synthetic encoder's actual dimension."""
+            return 2
+
+        def encode(self, inputs, **kwargs):
+            """Record inference only after complete-input preflight."""
+            calls.append("encode")
+            return type("Matrix", (), {"tolist": lambda self: [[1.0, 0.0]]})()
+
+    fake_sentence_transformers(monkeypatch, SentenceTransformer=Encoder)
+    provider = sbert.SentenceTransformerEmbeddingProvider(dimensions=2)
+    assert calls == []
+    assert provider.max_input_tokens == 8
+    assert provider.count_input_tokens("one two three four five six") == 8
+    assert asyncio.run(provider.embed_documents(["one two three four five six"])) == [[1.0, 0.0]]
+    with pytest.raises(ValueError, match="9 tokens including special tokens"):
+        asyncio.run(provider.embed_documents(["one two three four five six seven"]))
+    assert calls == ["load", "encode"]

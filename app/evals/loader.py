@@ -12,8 +12,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.evals.artifacts import read_strict_json
 from app.evals.types import GoldenCase, GoldenSpan
-from app.ingestion.parser import read_source, source_digest
-from app.ingestion.registry import resolve_registry
+from app.ingestion.manifest import FilingSource, Manifest
+from app.ingestion.parser import source_digest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GOLDEN_PATH = REPO_ROOT / "data" / "golden" / "retrieval.json"
@@ -92,100 +92,23 @@ def validate_unique_cases(
             answer_identities.add(answer.identity)
 
 
-def _resolve_source_path(file_name: str, manifest_path: Path) -> Path:
-    """Return the existing file behind one manifest ``file`` entry.
-
-    Parameters
-    ----------
-    file_name : str
-        Absolute or repository-relative path recorded in the manifest.
-
-    manifest_path : Path
-        Manifest location whose parents anchor relative entries.
-
-    Returns
-    -------
-    Path
-        First existing candidate file.
-
-    Raises
-    ------
-    GoldenDataError
-        If no candidate resolves to an existing file.
-
-    Notes
-    -----
-    Candidates are tried in a fixed order — current directory, repository
-    root, then the manifest's parents — so resolution does not depend on the
-    process working directory alone.
-    """
-    source = Path(file_name)
-    if source.is_absolute() and source.is_file():
-        return source
-
-    manifest = manifest_path.resolve()
-    for base in (Path.cwd(), REPO_ROOT, *manifest.parents):
-        candidate = (base / source).resolve()
-        if candidate.is_file():
-            return candidate
-    raise GoldenDataError(f"manifest source file does not exist: {file_name}")
-
-
-def _manifest_sources(manifest_path: Path) -> dict[str, Path]:
-    """Map each manifest document id to its resolved source file.
-
-    Parameters
-    ----------
-    manifest_path : Path
-        Corpus manifest listing the registry identity and file per document.
-
-    Returns
-    -------
-    dict[str, Path]
-        ``ISSUER-FYyyyy`` document ids mapped to existing source files.
-
-    Raises
-    ------
-    GoldenDataError
-        If the manifest root is not an array, an entry is malformed, or two
-        entries produce the same document id.
-
-    Notes
-    -----
-    The registry-specific manifest keys stay inside the adapter that derives
-    ``doc_id``; this loader only checks the neutral id shape it returns.
-    """
-    payload = read_strict_json(manifest_path, error=GoldenDataError)
-    if not isinstance(payload, list):
-        raise GoldenDataError("corpus manifest root must be a JSON array")
-
-    sources: dict[str, Path] = {}
-    for index, entry in enumerate(payload):
-        if not isinstance(entry, dict):
-            raise GoldenDataError(f"manifest entry {index} must be an object")
-        try:
-            identifier = resolve_registry(entry).doc_id(entry)
-        except (KeyError, TypeError, ValueError) as exc:
-            raise GoldenDataError(
-                f"manifest entry {index} has no usable document identity: {exc}"
-            ) from exc
-        if not DOC_ID_PATTERN.fullmatch(identifier):
-            raise GoldenDataError(f"manifest entry {index} has an invalid document id")
-
-        file_name = entry.get("file")
-        if not isinstance(file_name, str) or not file_name.strip():
-            raise GoldenDataError(f"manifest entry {index} has an invalid source file")
-        if identifier in sources:
-            raise GoldenDataError(f"duplicate manifest document id: {identifier}")
-        sources[identifier] = _resolve_source_path(file_name, manifest_path)
-    return sources
+def _manifest_sources(manifest_path: Path, selection_id: str) -> dict[str, FilingSource]:
+    """Resolve only the exact primary artifacts selected by the common catalog."""
+    try:
+        manifest = Manifest.read(manifest_path)
+        sources = manifest.selected_sources(selection_id, manifest_path.resolve().parent)
+    except (OSError, ValueError) as exc:
+        raise GoldenDataError(f"invalid corpus manifest: {exc}") from exc
+    return {source.document.document_id: source for source in sources}
 
 
 def validate_golden_sources(
     cases: Iterable[GoldenCase],
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    *,
+    selection_id: str = "sec-evaluation",
 ) -> None:
-    """Verify each positive span against its exact UTF-8 source and SHA-256.
+    """Verify each positive span against its exact selected source and SHA-256.
 
     Parameters
     ----------
@@ -194,6 +117,8 @@ def validate_golden_sources(
 
     manifest_path : str | Path
         Corpus manifest used to resolve each cited document id.
+    selection_id : str
+        Explicit named processing selection; defaults to the committed SEC suite.
 
     Raises
     ------
@@ -205,11 +130,10 @@ def validate_golden_sources(
     -----
     Spans are grouped by cited document so each source is read, hashed, and
     checked once and then released; peak memory is one decoded filing rather
-    than the whole cited corpus. The digest comes from the same helpers the
-    ingestion path uses, so a golden citation and a stored
-    ``Document.source_sha256`` are equal by construction.
+    than the whole cited corpus. Each artifact verifies its acquired bytes before
+    decoding; golden hashes identify decoded text using the ingestion source digest.
     """
-    sources = _manifest_sources(Path(manifest_path))
+    sources = _manifest_sources(Path(manifest_path), selection_id)
     cited: dict[str, list[tuple[str, GoldenSpan]]] = defaultdict(list)
     for case in cases:
         for answer in case.answers:
@@ -221,9 +145,9 @@ def validate_golden_sources(
             first_case_id = spans[0][0]
             raise GoldenDataError(f"{first_case_id} cites unknown corpus document {document_id}")
         try:
-            raw_source = read_source(source_path)
-        except (OSError, UnicodeDecodeError) as exc:
-            raise GoldenDataError(f"cannot read UTF-8 source for {document_id}: {exc}") from exc
+            raw_source = source_path.read()
+        except (OSError, ValueError) as exc:
+            raise GoldenDataError(f"cannot read verified source for {document_id}: {exc}") from exc
         digest = source_digest(raw_source)
 
         for case_id, answer in spans:
@@ -248,6 +172,7 @@ def load_golden_cases(
     path: str | Path = DEFAULT_GOLDEN_PATH,
     *,
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    selection_id: str = "sec-evaluation",
 ) -> list[GoldenCase]:
     """Load one golden suite file and validate all of its source citations.
 
@@ -258,6 +183,8 @@ def load_golden_cases(
 
     manifest_path : str | Path
         Corpus manifest used to bind positive spans to source files.
+    selection_id : str
+        Explicit named processing selection; defaults to the committed SEC suite.
 
     Returns
     -------
@@ -283,6 +210,7 @@ def load_golden_cases(
     return validate_golden_payload(
         payload,
         manifest_path=manifest_path,
+        selection_id=selection_id,
         label=str(golden_path),
     )
 
@@ -291,6 +219,7 @@ def validate_golden_payload(
     payload: object,
     *,
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    selection_id: str = "sec-evaluation",
     label: str = "golden payload",
 ) -> list[GoldenCase]:
     """Validate in-memory revision cases against schema, uniqueness, and source bytes."""
@@ -302,5 +231,5 @@ def validate_golden_payload(
         raise GoldenDataError(f"invalid golden cases in {label}: {exc}") from exc
 
     validate_unique_cases(cases)
-    validate_golden_sources(cases, manifest_path)
+    validate_golden_sources(cases, manifest_path, selection_id=selection_id)
     return cases

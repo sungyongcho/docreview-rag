@@ -5,14 +5,11 @@ from collections.abc import Callable
 import hashlib
 import json
 from pathlib import Path
-from typing import cast
 
 from sqlalchemy import func, insert, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
-    EvalResultResource,
-    JsonObject,
     SnapshotCaseComparison,
     SnapshotComparisonResponse,
     SnapshotMetricDelta,
@@ -21,6 +18,7 @@ from app.api.schemas import (
 from app.db.models import (
     BM25CorpusStat,
     Chunk,
+    ChunkEmbedding,
     ChunkLength,
     ChunkTerm,
     Document,
@@ -35,7 +33,10 @@ from app.db.models import (
     SnapshotDocument,
     SnapshotLexemeStat,
 )
+from app.db.queries import join_current_parse
 from app.evals.artifacts import read_strict_json
+from app.evals.index_identity import index_fingerprint
+from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
 
 
 def _default_session_factory() -> AsyncSession:
@@ -74,6 +75,22 @@ def _cases_by_id(payload: dict[str, object]) -> dict[str, dict[str, object]]:
     return indexed
 
 
+def _evaluated_embedding(config: dict[str, object]) -> EmbeddingIdentity:
+    """Require the exact vector configuration recorded by the evaluated run."""
+    payload = config.get("embedding")
+    if not isinstance(payload, dict):
+        raise ValueError("evaluation result has no exact embedding identity")
+    names = ("provider", "model", "tokenizer")
+    if any(not isinstance(payload.get(name), str) or not payload[name].strip() for name in names):
+        raise ValueError("evaluation embedding identity is incomplete")
+    dimensions = payload.get("dimensions")
+    if type(dimensions) is not int or dimensions <= 0:
+        raise ValueError("evaluation embedding dimensions must be positive")
+    return EmbeddingIdentity(
+        payload["provider"], payload["model"], dimensions, payload["tokenizer"]
+    )
+
+
 class SnapshotService:
     """Create and read snapshots without rerunning retrieval or providers."""
 
@@ -108,6 +125,7 @@ class SnapshotService:
     ) -> SnapshotResource:
         """Freeze current document and embedding identity around one eval result."""
         async with self._session_factory() as session:
+            await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
             result = await session.get(EvalResult, eval_result_id)
             if result is None:
                 raise ValueError("evaluation result does not exist")
@@ -120,18 +138,26 @@ class SnapshotService:
                 raise ValueError("snapshot golden revision must be published")
             if golden is not None and _golden_sha256(result.config) != golden.sha256:
                 raise ValueError("evaluation result does not match the selected golden revision")
-            documents = tuple(await session.scalars(select(Document).order_by(Document.doc_id)))
+            embedding_identity = _evaluated_embedding(result.config)
+            documents = tuple(
+                await session.scalars(
+                    join_current_parse(select(Document), load=True).order_by(Document.doc_id)
+                )
+            )
             chunks = (
                 await session.execute(
                     select(
                         Chunk.id,
                         Chunk.doc_id,
                         Chunk.source_sha256,
-                        Chunk.embedding_provider,
-                        Chunk.embedding_model,
-                        Chunk.embedding_dimensions,
-                        Chunk.embedding,
-                    ).order_by(Chunk.doc_id, Chunk.ordinal)
+                        ChunkEmbedding.provider,
+                        ChunkEmbedding.model,
+                        ChunkEmbedding.dimensions,
+                        ChunkEmbedding.tokenizer,
+                        ChunkEmbedding.embedding,
+                    )
+                    .outerjoin(ChunkEmbedding, matching_embedding(embedding_identity))
+                    .order_by(Chunk.doc_id, Chunk.ordinal)
                 )
             ).all()
             corpus_stats = tuple(await session.scalars(select(BM25CorpusStat)))
@@ -139,26 +165,20 @@ class SnapshotService:
             by_document: dict[str, list[tuple[object, ...]]] = defaultdict(list)
             for row in chunks:
                 by_document[str(row.doc_id)].append(tuple(row))
-            corpus_rows = [
-                (document.doc_id, document.source_sha256, len(by_document[document.doc_id]))
-                for document in documents
-            ]
-            source_digest = hashlib.sha256()
-            for document in documents:
-                source_digest.update(f"{document.doc_id}:{document.source_sha256}\n".encode())
+            current_fingerprint = await index_fingerprint(session, embedding_identity)
             identity = result.config.get("admin_identity")
             recorded_fingerprint = (
                 identity.get("corpus_fingerprint") if isinstance(identity, dict) else None
             )
             if recorded_fingerprint is None:
                 raise ValueError("only live-index quick evaluations can become queryable snapshots")
-            if recorded_fingerprint != source_digest.hexdigest():
+            if recorded_fingerprint != current_fingerprint:
                 raise ValueError("evaluation corpus no longer matches the current index")
             snapshot = EvaluationSnapshot(
                 label=label.strip(),
                 status="ready",
                 public=public,
-                corpus_fingerprint=_hash_rows(corpus_rows),
+                corpus_fingerprint=current_fingerprint,
                 profile=dict(result.config),
                 golden_revision_id=golden_revision_id,
                 eval_result_id=result.id,
@@ -171,7 +191,7 @@ class SnapshotService:
                     SnapshotDocument(
                         snapshot_id=snapshot.id,
                         doc_id=document.doc_id,
-                        source_sha256=document.source_sha256,
+                        source_sha256=document.current_parse.structure.source_sha256,
                         chunk_count=len(identity_rows),
                         embedding_fingerprint=_hash_rows(identity_rows),
                     )
@@ -193,6 +213,10 @@ class SnapshotService:
                         "body",
                         "context_header",
                         "index_text",
+                        "index_text_sha256",
+                        "stable_key",
+                        "table_fragment",
+                        "text_fragment",
                         "lexical_text",
                         "start_char",
                         "end_char",
@@ -201,6 +225,7 @@ class SnapshotService:
                         "embedding_provider",
                         "embedding_model",
                         "embedding_dimensions",
+                        "embedding_tokenizer",
                         "embedding",
                     ),
                     select(
@@ -218,16 +243,23 @@ class SnapshotService:
                         Chunk.body,
                         Chunk.context_header,
                         Chunk.index_text,
+                        Chunk.index_text_sha256,
+                        Chunk.stable_key,
+                        Chunk.table_fragment,
+                        Chunk.text_fragment,
                         Chunk.lexical_text,
                         Chunk.start_char,
                         Chunk.end_char,
                         Chunk.source_sha256,
                         Chunk.citation,
-                        Chunk.embedding_provider,
-                        Chunk.embedding_model,
-                        Chunk.embedding_dimensions,
-                        Chunk.embedding,
-                    ).join(Document, Document.doc_id == Chunk.doc_id),
+                        ChunkEmbedding.provider,
+                        ChunkEmbedding.model,
+                        ChunkEmbedding.dimensions,
+                        ChunkEmbedding.tokenizer,
+                        ChunkEmbedding.embedding,
+                    )
+                    .join(Document, Document.doc_id == Chunk.doc_id)
+                    .outerjoin(ChunkEmbedding, matching_embedding(embedding_identity)),
                 )
             )
             await session.execute(
@@ -429,22 +461,24 @@ class SnapshotService:
         snapshot: EvaluationSnapshot, result: EvalResult, document_count: int
     ) -> SnapshotResource:
         """Project ORM rows onto the public strict snapshot resource."""
-        return SnapshotResource(
-            snapshot_id=snapshot.id,
-            label=snapshot.label,
-            status=cast("str", snapshot.status),
-            public=snapshot.public,
-            corpus_fingerprint=snapshot.corpus_fingerprint,
-            profile=cast("JsonObject", snapshot.profile),
-            golden_revision_id=snapshot.golden_revision_id,
-            eval_result=EvalResultResource(
-                result_id=result.id,
-                suite=result.suite,
-                config=cast("JsonObject", result.config),
-                metrics={name: float(value) for name, value in result.metrics.items()},
-                raw_artifact_path=result.raw_artifact_path,
-                created_at=result.created_at,
-            ),
-            document_count=document_count,
-            created_at=snapshot.created_at,
+        return SnapshotResource.model_validate(
+            {
+                "snapshot_id": snapshot.id,
+                "label": snapshot.label,
+                "status": snapshot.status,
+                "public": snapshot.public,
+                "corpus_fingerprint": snapshot.corpus_fingerprint,
+                "profile": snapshot.profile,
+                "golden_revision_id": snapshot.golden_revision_id,
+                "eval_result": {
+                    "result_id": result.id,
+                    "suite": result.suite,
+                    "config": result.config,
+                    "metrics": {name: float(value) for name, value in result.metrics.items()},
+                    "raw_artifact_path": result.raw_artifact_path,
+                    "created_at": result.created_at,
+                },
+                "document_count": document_count,
+                "created_at": snapshot.created_at,
+            }
         )

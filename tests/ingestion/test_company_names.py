@@ -1,54 +1,47 @@
-"""Company labels use explicit manifest names and preserve unknown issuer identity."""
-
-import json
-from pathlib import Path
+"""Optional display labels come only from common manifest document aliases."""
 
 from app.ingestion.company_names import company_names_from_entries, read_company_names
+from app.ingestion.manifest import CorpusIdentity, Manifest
+from tests.ingestion.support import filing_document
 
 
-def test_company_names_use_manifest_metadata_without_guessing_codes() -> None:
-    """SEC aliases and DART official names label their own registry identity only."""
-    names = company_names_from_entries(
-        [
-            {"ticker": "NVDA", "aliases": ["NVDA", "NVIDIA", "NVIDIA Corporation"]},
-            {"ticker": "UNKNOWN", "aliases": ["UNKNOWN", "unknown"]},
-            {
-                "registry": "dart",
-                "issuer": "005930",
-                "corp_name": "삼성전자",
-                "aliases": ["Samsung Electronics", "005930"],
-            },
-            {"registry": "dart", "issuer": "000660", "aliases": ["SK하이닉스", "000660"]},
-        ]
-    )
-    assert names == {
+def test_company_names_use_explicit_aliases_without_guessing_codes():
+    """Keep official source labels scoped to their publishing registry."""
+    documents = [
+        filing_document(aliases=("NVDA", "NVIDIA")),
+        filing_document(issuer="UNKNOWN", aliases=("UNKNOWN", "unknown")),
+        filing_document(registry="dart", aliases=("삼성전자", "Samsung Electronics")),
+    ]
+    assert company_names_from_entries(documents) == {
         ("sec", "NVDA"): "NVIDIA",
         ("dart", "005930"): "삼성전자",
-        ("dart", "000660"): "SK하이닉스",
     }
-    assert names.get(("dart", "NVDA")) is None
 
 
-def test_conflicting_company_names_are_not_assigned_to_a_code() -> None:
-    """Conflicting source metadata cannot silently name the wrong company."""
+def test_conflicting_company_names_are_not_assigned_to_a_code():
+    """Refuse an ambiguous alias shared by repeated issuer metadata."""
     assert (
         company_names_from_entries(
             [
-                {"ticker": "SAME", "aliases": ["SAME", "First Company"]},
-                {"ticker": "SAME", "aliases": ["SAME", "Second Company"]},
+                filing_document(aliases=("First Company",)),
+                filing_document(aliases=("Second Company",)),
             ]
         )
         == {}
     )
 
 
-def test_company_names_refresh_optional_manifest_metadata(tmp_path: Path, caplog) -> None:
-    """New acquisition metadata appears without retaining stale names or hiding read errors."""
+def test_optional_company_names_refresh_and_report_invalid_catalog(tmp_path, caplog):
+    """Read current aliases from one manifest and report unavailable metadata."""
     path = tmp_path / "manifest.json"
-    path.write_text(json.dumps([{"ticker": "NVDA", "aliases": ["NVDA", "NVIDIA"]}]))
+    catalog = Manifest(
+        corpus=CorpusIdentity(corpus_id="test", name="Test"),
+        documents=(filing_document(aliases=("NVIDIA",)),),
+    )
+    catalog.write(path)
     assert read_company_names(tmp_path) == {("sec", "NVDA"): "NVIDIA"}
+    Manifest(corpus=catalog.corpus).write(path)
+    assert read_company_names(tmp_path) == {}
     path.write_text("[]")
     assert read_company_names(tmp_path) == {}
-    path.write_text("broken JSON")
-    assert read_company_names(tmp_path) == {}
-    assert "Company labels unavailable for manifest.json (JSONDecodeError)" in caplog.text
+    assert "Company labels unavailable" in caplog.text

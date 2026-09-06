@@ -438,6 +438,13 @@ describe("service shell", () => {
     await waitFor(() =>
       expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument(),
     );
+    const guides = screen.getByText("Guides & development", { exact: true });
+    expect(guides.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("link", { name: "Development log" })).not.toBeVisible();
+    const build = screen.getByRole("button", { name: /^Build/ });
+    expect(guides.closest(".sidebar-nav")).toBe(build.parentElement);
+    expect(guides.compareDocumentPosition(build) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(guides);
     const documentation = screen.getByRole("link", { name: "User guide" });
 
     expect(screen.getByText("Review filings with verifiable evidence.")).toBeInTheDocument();
@@ -635,7 +642,7 @@ describe("service shell", () => {
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
     release();
 
-    expect(await screen.findByText("db degraded")).toBeInTheDocument();
+    expect(await screen.findByText("preparation needed")).toBeInTheDocument();
     await flushEffects();
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");

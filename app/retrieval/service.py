@@ -18,7 +18,6 @@ from app.config import (
     BM25Idf,
     LexicalRanker,
 )
-from app.db.models import DIM
 from app.retrieval.bm25 import BM25_IDF_VARIANTS, bm25_search
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
@@ -28,10 +27,6 @@ from app.retrieval.lexical import lexical_search
 from app.retrieval.rerank import RerankProvider, rerank_hits
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.retrieval.vector import vector_search
-
-# Kept as a patchable compatibility seam for older focused tests and callers. The
-# service now fans out language lanes and fuses them directly with fuse_ranked_lists.
-hybrid_search = None
 
 RankedChunkId = Annotated[StrictInt, Field(gt=0)]
 ScoreStage = Literal["rrf", "reranker"]
@@ -74,14 +69,9 @@ class RetrievalResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     hits: tuple[ChunkHit, ...]
-    candidates: tuple[ChunkHit, ...] = ()
+    candidates: tuple[ChunkHit, ...]
     score_stage: ScoreStage
     component_rankings: ComponentRankings
-
-    @property
-    def candidate_pool(self) -> tuple[ChunkHit, ...]:
-        """Return the full ranked pool, falling back for legacy injected results."""
-        return self.candidates or self.hits
 
 
 async def retrieve(
@@ -187,11 +177,6 @@ async def retrieve(
     active_provider = provider
     if strategy != "lexical":
         active_provider = provider if provider is not None else get_embedding_provider()
-        if active_provider.dimensions != DIM:
-            raise ValueError(
-                f"embedding provider dimension {active_provider.dimensions} does not match "
-                f"database dimension {DIM}"
-            )
 
     vector_hits: list[ChunkHit] = []
     vector_by_language: dict[str, tuple[RankedChunkId, ...]] = {}

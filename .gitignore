@@ -59,3 +59,6 @@ old/
 # Generated from the tutorial Markdown image references.
 web/public/tutorial-assets/
 web/.tutorial/
+
+# Runtime acquisition scopes for parsing only downloaded reports.
+data/corpus/acquired-*-manifest.json

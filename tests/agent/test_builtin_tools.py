@@ -9,11 +9,11 @@ import pytest
 
 from app.agent.builtin_tools import _QueryEmbeddingCache, build_default_registry
 from app.agent.tools import ToolError
-from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingProvider
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory, hit
 
 
-class CountingEmbeddings(EmbeddingProvider):
+class CountingEmbeddings(DeterministicEmbeddingProvider):
     """Deterministic provider that counts every real embedding request."""
 
     def __init__(self):
@@ -181,3 +181,6 @@ def test_query_embedding_cache_embeds_each_distinct_text_once():
     assert inner.query_calls == 2
     assert inner.document_calls == 1
     assert cache.dimensions == inner.dimensions
+    assert cache.identity == inner.identity
+    assert cache.max_input_tokens == inner.max_input_tokens
+    assert cache.count_input_tokens("two words") == inner.count_input_tokens("two words")

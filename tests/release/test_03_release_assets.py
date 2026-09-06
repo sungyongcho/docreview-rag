@@ -43,8 +43,13 @@ def test_clean_checkout_script_has_fresh_locked_and_smoke_gates() -> None:
 
     assert script.is_file()
     text = script.read_text(encoding="utf-8")
-    assert "uv sync --locked --extra demo" in text
-    assert "tests/release tests/test_demo.py tests/api" in text
+    assert "uv sync --locked\n" in text
+    assert "tests/release tests/api" in text
+    assert "npm ci" in text
+    assert "npm test" in text
+    assert "npm run typecheck" in text
+    assert "npm run build" in text
+    assert "canned health and Next smoke" in text
     assert "uv run ruff check --no-fix app tests scripts" in text
     assert (
         "docker compose --project-directory . -f docker/docker-compose.yml "

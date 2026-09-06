@@ -1,29 +1,22 @@
-"""Measured corpus regression tests for chunk counts."""
+"""Corpus invariants for complete embedding inputs and deterministic identities."""
 
-from tests.ingestion.chunk.golden import (
-    CHUNK_COUNTS,
-    TOTAL_CHUNKS,
-    TOTAL_TABLE_CHUNKS,
-    TOTAL_TEXT_CHUNKS,
-)
+from app.ingestion.tokens import count_tokens
 
 
-def test_chunk_counts_match_golden(chunks_by_doc):
-    """Keep per-document text and table chunk counts at the measured baseline."""
-    actual = {
-        doc_id: (
-            len(chunks),
-            sum(chunk.kind == "text" for chunk in chunks),
-            sum(chunk.kind == "table" for chunk in chunks),
-        )
-        for doc_id, chunks in chunks_by_doc.items()
-    }
-    assert actual == CHUNK_COUNTS
+def test_corpus_chunks_fit_complete_input_limits(chunks_by_doc):
+    """Bound context and body together for every corpus retrieval unit."""
+    for chunks in chunks_by_doc.values():
+        assert chunks
+        assert all(count_tokens(chunk.content) <= 8192 for chunk in chunks)
+        assert all(len(chunk.content) <= 32768 for chunk in chunks)
 
 
-def test_total_chunk_counts(chunks_by_doc):
-    """Keep aggregate chunk counts equal to the measured corpus totals."""
-    chunks = [chunk for document in chunks_by_doc.values() for chunk in document]
-    assert len(chunks) == TOTAL_CHUNKS
-    assert sum(chunk.kind == "text" for chunk in chunks) == TOTAL_TEXT_CHUNKS
-    assert sum(chunk.kind == "table" for chunk in chunks) == TOTAL_TABLE_CHUNKS
+def test_corpus_chunk_identities_are_deterministic(chunks_by_doc, corpus, chunker):
+    """Rebuilding unchanged sources reproduces every stable identity and body."""
+    for doc_id, (filing, _raw) in corpus.items():
+        actual = chunker(filing)
+        expected = chunks_by_doc[doc_id]
+        assert [(chunk.stable_key, chunk.body) for chunk in actual] == [
+            (chunk.stable_key, chunk.body) for chunk in expected
+        ]
+        assert len({chunk.stable_key for chunk in actual}) == len(actual)

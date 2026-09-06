@@ -1,5 +1,6 @@
 """Convert HTML filing tables into dense grids and markdown."""
 
+from dataclasses import dataclass
 import re
 
 from bs4 import BeautifulSoup, Tag
@@ -50,6 +51,7 @@ YEAR_CELL_RE = re.compile(r"^(?:19|20)\d{2}$")
 # "(단위 : 백만원)". Left in place it reads as a labelled first row, which corrupts
 # header inference; dropped it would silently strip the scale off every number.
 UNIT_CAPTION_RE = re.compile(r"^\(\s*단위\s*[:：]?\s*[^)]*\)$")
+DATE_CAPTION_RE = re.compile(r"^\(\s*기준일\s*[:：]\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\)$")
 
 
 def _cell_text(cell: Tag) -> str:
@@ -227,7 +229,9 @@ def drop_empty(grid: Grid) -> Grid:
     return [[r[j] if j < len(r) else "" for j in keep] for r in rows]
 
 
-def merge_unit_columns(grid: Grid) -> Grid:
+def merge_unit_columns(
+    grid: Grid, *, column_memberships: list[tuple[int, ...]] | None = None
+) -> Grid:
     """Merge symbol-only columns into an adjacent value column.
 
     Parameters
@@ -306,44 +310,65 @@ def merge_unit_columns(grid: Grid) -> Grid:
             label = out[row_i][col]
             if label.strip():
                 for target in targets:
-                    if not out[row_i][target].strip():
-                        out[row_i][target] = label
+                    existing = out[row_i][target]
+                    ordered = (label, existing) if col < target else (existing, label)
+                    out[row_i][target] = " ".join(
+                        dict.fromkeys(text for text in ordered if text.strip())
+                    )
 
+        if column_memberships is not None:
+            for target in targets:
+                column_memberships[target] = tuple(
+                    sorted(set(column_memberships[target] + column_memberships[col]))
+                )
         dropped[col] = True
         for target in targets:
             merged_into[target] = True
 
     keep = [i for i, skip in enumerate(dropped) if not skip]
+    if column_memberships is not None:
+        column_memberships[:] = [column_memberships[col] for col in keep]
     return [[out[row_i][col] for col in keep] for row_i in range(height)]
 
 
+def _annotation_texts(values: list[str]) -> list[str] | None:
+    """Join split date cells only when all text matches explicit date/unit grammar."""
+    joined = " ".join(values)
+    pattern = re.compile(f"(?:{UNIT_CAPTION_RE.pattern[1:-1]}|{DATE_CAPTION_RE.pattern[1:-1]})")
+    matches = [match.group(0) for match in pattern.finditer(joined)]
+    if pattern.sub("", joined).strip() or not any(
+        UNIT_CAPTION_RE.fullmatch(text) for text in matches
+    ):
+        return None
+    return matches
+
+
+def _caption_row_indices(grid: Grid) -> set[int]:
+    """Recognize explicit unit captions and their adjacent reference dates only."""
+    texts = [[cell.strip() for cell in row if cell.strip()] for row in grid]
+    # DART splits '(기준일 :', the date, and ')' over three cells. Joining them
+    # requires the complete explicit grammar, so ordinary numeric rows cannot
+    # become annotations merely because another row contains a unit declaration.
+    if _annotation_texts([value for row in texts for value in row]) is not None:
+        return {index for index, row in enumerate(texts) if row}
+    return {index for index, row in enumerate(texts) if _annotation_texts(row) is not None}
+
+
 def split_unit_captions(grid: Grid) -> tuple[list[str], Grid]:
-    """Extract unit-annotation rows from a grid before header inference sees them.
-
-    Parameters
-    ----------
-    grid
-        Dense matrix after span expansion and empty-column removal.
-
-    Returns
-    -------
-    tuple[list[str], Grid]
-        Deduplicated caption texts in row order, and the grid without those rows.
-        A row is a caption when every non-empty cell matches the DART unit pattern;
-        span expansion may have copied one annotation across several columns, so the
-        texts of one row collapse to their distinct values.
-    """
-    captions: list[str] = []
-    rows: Grid = []
-    for row in grid:
-        texts = [cell.strip() for cell in row if cell.strip()]
-        if texts and all(UNIT_CAPTION_RE.match(text) for text in texts):
-            for text in dict.fromkeys(texts):
-                if text not in captions:
-                    captions.append(text)
-        else:
-            rows.append(row)
-    return captions, rows
+    """Extract explicit units and accompanying reference dates without losing text."""
+    caption_rows = _caption_row_indices(grid)
+    values = [
+        cell.strip()
+        for index, row in enumerate(grid)
+        if index in caption_rows
+        for cell in row
+        if cell.strip()
+    ]
+    captions = _annotation_texts(values) if values else []
+    assert captions is not None
+    return list(dict.fromkeys(captions)), [
+        row for index, row in enumerate(grid) if index not in caption_rows
+    ]
 
 
 def _is_value(cell: str) -> bool:
@@ -494,6 +519,135 @@ def render_table(table: str | Tag | None) -> tuple[list[str], str]:
     return [], markdown
 
 
+@dataclass(frozen=True, slots=True)
+class SourceCell:
+    """One original HTML cell and its zero-based source grid coverage."""
+
+    row: int
+    column: int
+    rowspan: int
+    colspan: int
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class TableCell:
+    """One rendered column value with the original cells that contribute to it."""
+
+    column: int
+    text: str
+    sources: tuple[SourceCell, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TableRow:
+    """One retained source row after unit and spacer normalization."""
+
+    source_row: int
+    cells: tuple[TableCell, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredTable:
+    """Normalized rendering plus explicit original row, column, and span ownership."""
+
+    captions: tuple[str, ...]
+    headers: tuple[TableRow, ...]
+    rows: tuple[TableRow, ...]
+    caption_cells: tuple[SourceCell, ...] = ()
+
+    def render(self, rows: tuple[TableRow, ...] | None = None) -> str:
+        """Render selected body rows without reclassifying their values as headers."""
+        selected = self.rows if rows is None else rows
+        if not selected:
+            return ""
+        width = max(len(row.cells) for row in (*self.headers, *selected))
+        head = [
+            " ".join(row.cells[col].text for row in self.headers if row.cells[col].text)
+            for col in range(width)
+        ]
+
+        def line(values: list[str]) -> str:
+            """Escape a complete row using the established markdown rules."""
+            escaped = [
+                " ".join(value.replace("\\", "\\\\").replace("|", "\\|").split())
+                for value in values
+            ]
+            return "| " + " | ".join(escaped) + " |"
+
+        lines = [*self.captions, line(head), line(["---"] * width)]
+        lines.extend(line([cell.text for cell in row.cells]) for row in selected)
+        return "\n".join(lines)
+
+
+def structured_table(table: str | Tag | None) -> StructuredTable:
+    """Retain source cell relationships while applying the existing table transforms."""
+    node = _table_node(table)
+    if node is None:
+        return StructuredTable((), (), ())
+    grid = to_grid(node)
+    if not grid:
+        return StructuredTable((), (), ())
+    source_cells: list[SourceCell] = []
+    occupied: dict[int, int] = {}
+    for row_index, row in enumerate(_rows(node)):
+        col = 0
+        for cell in row.find_all(list(CELL_TAGS), recursive=False):
+            while occupied.get(col, -1) >= row_index:
+                col += 1
+            rowspan, colspan = _span(cell, "rowspan"), _span(cell, "colspan")
+            source_cells.append(SourceCell(row_index, col, rowspan, colspan, _cell_text(cell)))
+            if rowspan > 1:
+                for covered in range(col, col + colspan):
+                    occupied[covered] = row_index + rowspan - 1
+            col += colspan
+    retained = [i for i, row in enumerate(grid) if any(value.strip() for value in row)]
+    columns = [i for i in range(len(grid[0])) if any(row[i].strip() for row in grid)]
+    compact = [[grid[row][col] for col in columns] for row in retained]
+    captions, _ = split_unit_captions(compact)
+    caption_indices = _caption_row_indices(compact)
+    caption_source_rows = {retained[index] for index in caption_indices}
+    caption_cells = tuple(
+        cell for cell in source_cells if cell.row in caption_source_rows and cell.text
+    )
+    data_indices = [index for index in range(len(compact)) if index not in caption_indices]
+    retained = [retained[index] for index in data_indices]
+    compact = [compact[index] for index in data_indices]
+    if not compact:
+        return StructuredTable(tuple(captions), (), (), caption_cells)
+    used = [i for i in range(len(columns)) if any(row[i].strip() for row in compact)]
+    compact = [[row[i] for i in used] for row in compact]
+    memberships = [(columns[i],) for i in used]
+    compact = merge_unit_columns(compact, column_memberships=memberships)
+    coverage: dict[tuple[int, int], list[SourceCell]] = {}
+    for cell in source_cells:
+        for row_index in range(cell.row, min(cell.row + cell.rowspan, len(grid))):
+            for column in range(cell.column, min(cell.column + cell.colspan, len(grid[0]))):
+                coverage.setdefault((row_index, column), []).append(cell)
+    rows = tuple(
+        TableRow(
+            source_row,
+            tuple(
+                TableCell(
+                    col,
+                    value,
+                    tuple(
+                        dict.fromkeys(
+                            cell
+                            for original in memberships[col]
+                            for cell in coverage.get((source_row, original), ())
+                        )
+                    ),
+                )
+                for col, value in enumerate(values)
+            ),
+        )
+        for source_row, values in zip(retained, compact, strict=True)
+    )
+    header_count = len(split_header(compact)[0])
+    return StructuredTable(tuple(captions), rows[:header_count], rows[header_count:], caption_cells)
+
+
 def table_captions(table: str | Tag | None) -> list[str]:
     """Return the unit annotations of a caption-only table.
 
@@ -533,35 +687,31 @@ def table_to_markdown(table: str | Tag | None) -> str:
 
 if __name__ == "__main__":  # pragma: no cover - eyeball helper
     import argparse
-    import json
     from pathlib import Path
 
-    from app.ingestion.parser import leaf_blocks, normalize, read_source
-    from app.ingestion.registry import resolve_registry
+    from app.ingestion.manifest import Manifest
+    from app.ingestion.parser import leaf_blocks, normalize
 
     ap = argparse.ArgumentParser(description="Render filing tables as markdown.")
     ap.add_argument("--doc", default="NVDA-FY2024", help="doc_id, e.g. NVDA-FY2024")
     ap.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
     ap.add_argument("--contains", default="Gross profit", help="pick tables containing this text")
     ap.add_argument("--limit", type=int, default=2)
+    ap.add_argument("--selection", required=True)
     a = ap.parse_args()
 
     manifest_path = a.manifest
     if not manifest_path.exists():
         raise SystemExit(f"{manifest_path} not found; run this from the repository root")
 
-    manifest = json.loads(manifest_path.read_text())
-
-    def _doc_id(item: dict) -> str:
-        """Return one manifest entry's document id through its own registry."""
-        return resolve_registry(item).doc_id(item)
-
-    entry = next((e for e in manifest if _doc_id(e) == a.doc), None)
+    manifest = Manifest.read(manifest_path)
+    sources = manifest.selected_sources(a.selection, manifest_path.parent)
+    entry = next((source for source in sources if source.document.document_id == a.doc), None)
     if entry is None:
-        known = ", ".join(sorted(_doc_id(e) for e in manifest))
-        raise SystemExit(f"unknown doc {a.doc!r}; known documents: {known}")
+        known = ", ".join(source.document.document_id for source in sources)
+        raise SystemExit(f"unknown doc {a.doc!r}; selected documents: {known}")
 
-    soup = normalize(read_source(entry["file"]))
+    soup = normalize(entry.read())
     shown = 0
     for el in leaf_blocks(soup):
         if el.name != "table" or a.contains not in el.get_text(" ", strip=True):

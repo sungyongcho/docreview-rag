@@ -104,7 +104,7 @@ describe("help topic coverage", () => {
       healthKind: "healthy",
       readiness: READINESS,
       corpus: { ...READINESS.corpus, provider: "deterministic" },
-      manifests: [{ name: "manifest.json", registry: "sec", documents: 21, valid: true, sources_present: 21 }],
+      manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
       registryCounts: { sec: 21 },
       jobs: [],
       evaluationResults: 1,

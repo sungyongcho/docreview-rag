@@ -142,7 +142,9 @@ def _vector_retriever(
         """Embed one normalized query and search by vector distance."""
         _require_depth(candidate_k, k)
         query_vector = await provider.embed_query(normalize_query(query))
-        return await vector_search(session, query_vector, k=k, filters=filters)
+        return await vector_search(
+            session, query_vector, k=k, filters=filters, identity=provider.identity
+        )
 
     return run
 

@@ -1,8 +1,8 @@
-import type { Capabilities, ReviewSessionProfile } from "./types";
+import type { Capabilities, ReviewSessionDraft } from "./types";
 import { DEFAULT_SESSION_PROFILE } from "./types";
 
 /** Preserve restored experiments while refusing to send a profile the server cannot accept. */
-export function profileCompatibilityIssue(profile: ReviewSessionProfile, capabilities: Capabilities | null): string | null {
+export function profileCompatibilityIssue(profile: ReviewSessionDraft, capabilities: Capabilities | null): string | null {
   if (!capabilities || !["dev", "prod"].includes(capabilities.environment)) return "Checking server permissions before sending…";
   const unsupported: string[] = [];
   const policy = profile.prompt_policy;

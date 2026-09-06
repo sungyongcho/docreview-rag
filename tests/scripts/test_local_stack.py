@@ -14,13 +14,13 @@ def test_selected_mode_overrides_stale_flags_and_keeps_other_environment(monkeyp
     monkeypatch.setenv("DOCREVIEW_ADMIN_MODE", "live")
     monkeypatch.setenv("NEXT_PUBLIC_ADMIN_MODE", "live")
     monkeypatch.setenv("COMPOSE_FILE", "unrelated.yml")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-existing-explicit-key")
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", "test-existing-dev-key")
     environment = compose_environment("prod", {"MODE": "prod"})
     assert environment["MODE"] == "prod"
     assert environment["DOCREVIEW_ADMIN_MODE"] == "readonly"
     assert environment["NEXT_PUBLIC_ADMIN_MODE"] == "canned"
     assert environment["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
-    assert environment["OPENAI_API_KEY"] == "test-existing-explicit-key"
+    assert environment["OPENAI_API_KEY_LOCAL"] == "test-existing-dev-key"
     assert "COMPOSE_FILE" not in environment
     assert environment["NEXT_PUBLIC_OPERATOR_TOKEN"] == ""
 

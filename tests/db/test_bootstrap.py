@@ -72,10 +72,10 @@ def test_schema_drift_error_lists_tables_columns_and_remedy() -> None:
     message = str(excinfo.value)
     assert "'chunks' is missing columns: lexical_text" in message
     assert "'documents' is missing columns: language, registry" in message
-    assert "DROP TABLE chunks CASCADE" in message
-    assert "DROP TABLE documents CASCADE" in message
-    assert "app.db.migrate --plan" in message
-    assert "--create-schema" in message
+    assert "Existing data is preserved" in message
+    assert "empty isolated database" in message
+    assert "DROP TABLE" not in message
+    assert "--recreate-schema" not in message
 
 
 async def _probe_connection(
@@ -132,7 +132,8 @@ async def _exercise_drift_detection(database_url: str) -> tuple[bool, str]:
         assert "'chunks' is missing columns" in message
         for column_name in expected_missing:
             assert column_name in message
-        assert "DROP TABLE chunks CASCADE" in message
+        assert "Existing data is preserved" in message
+        assert "DROP TABLE" not in message
         return True, ""
     finally:
         await _cleanup_scratch_schema(connection, quoted, engine)
@@ -168,7 +169,7 @@ async def _exercise_clean_schema(database_url: str) -> tuple[bool, str]:
 
 
 @pytest.mark.live_postgres
-def test_live_schema_drift_is_reported_with_rebuild_remedy() -> None:
+def test_live_schema_drift_stops_without_a_destructive_recovery() -> None:
     """Raise SchemaDriftError naming chunks and its missing columns on a live table."""
     reachable, detail = asyncio.run(_exercise_drift_detection(get_settings().database_url))
     if not reachable:

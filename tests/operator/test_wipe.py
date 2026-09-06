@@ -11,6 +11,7 @@ import sys
 
 import pytest
 
+from app.ingestion.manifest import CorpusIdentity, Manifest
 from app.operator.wipe import WipeError, WipeService
 
 
@@ -85,6 +86,9 @@ def test_active_operations_block_inspection(tmp_path):
 @pytest.mark.live_postgres
 def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
     """Erase only an isolated test volume and verify a real empty pgvector schema."""
+    image = os.environ.get("DOCREVIEW_WIPE_TEST_IMAGE")
+    if not image:
+        pytest.fail("Set DOCREVIEW_WIPE_TEST_IMAGE to a freshly built application image")
     root = tmp_path / "docreview-wipe-test"
     root.mkdir()
     (root / "docker").mkdir()
@@ -110,7 +114,8 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_text("disposable data")
     preserved = root / "data/corpus/manifest.json"
-    preserved.write_text("[]")
+    Manifest(corpus=CorpusIdentity(corpus_id="reset-test", name="Reset test")).write(preserved)
+    preserved_manifest = preserved.read_text()
     preserved_sources = (
         "data/golden/untracked.json",
         "data/profiles/untracked.json",
@@ -137,7 +142,7 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
       interval: 1s
       retries: 30
   app:
-    image: docreview-v2-check:local
+    image: {json.dumps(image)}
     pull_policy: never
     volumes:
       - {repository}/app:/app/app:ro
@@ -151,8 +156,6 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
       CORPUS_DIR: /app/data/corpus
       EMBEDDING_PROVIDER: deterministic
       LOCAL_LLM_BASE_URL: ''
-      OPENAI_API_KEY: ''
-      DOCREVIEW_OPENAI_API_KEY: ''
       OPENAI_API_KEY_LOCAL: ''
       OPENAI_API_KEY_PROD: ''
       DART_API_KEY: ''
@@ -226,7 +229,7 @@ volumes:
             assert after["tables"]["documents"] == 0
             assert "wipe_probe" not in after["tables"]
             assert not after["files"]
-            assert preserved.read_text() == "[]"
+            assert preserved.read_text() == preserved_manifest
             assert (root / ".env").exists()
             assert (root / "app").is_symlink()
             assert all(

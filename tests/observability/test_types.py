@@ -1,5 +1,7 @@
 """Strict step traces, derived run-report totals, and their rejections."""
 
+from decimal import Decimal
+
 from pydantic import ValidationError
 import pytest
 
@@ -59,6 +61,9 @@ def test_run_report_derives_cumulative_tokens_requests_and_iterations():
     assert report.total_requests == 3
     assert report.total_input_tokens == 140
     assert report.total_output_tokens == 28
+    assert report.total_estimated_cost_usd == Decimal("0.000144")
+    assert type(report.total_input_tokens) is int
+    assert isinstance(report.total_estimated_cost_usd, Decimal)
     assert report.steps == tuple(steps)
 
 

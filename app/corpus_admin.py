@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 from typing import Literal, Protocol, cast
 from uuid import uuid4
 
+from pydantic import StrictInt, StrictStr, TypeAdapter
 from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -20,14 +20,16 @@ from app.db.bootstrap import SchemaDriftError, bootstrap_schema, ensure_schema_c
 from app.db.models import (
     BM25CorpusStat,
     Chunk,
+    ChunkEmbedding,
     Document,
     EvaluationSnapshot,
     SnapshotDocument,
 )
+from app.db.queries import join_current_parse
 from app.ingestion.dart_api import acquire_dart
 from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
+from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
-from app.ingestion.registry import resolve_registry
 from app.ingestion.seed import load_seed_batch, persist_seed_batch_with_stats
 from app.observability.persistence import redact_sensitive_text
 from app.operator.jobs import (
@@ -42,6 +44,7 @@ from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
     EmbeddingProvider,
     embed_missing_chunks,
+    matching_embedding,
 )
 
 type AdminJobKind = Literal[
@@ -89,52 +92,50 @@ class SessionFactory(Protocol):
         ...
 
 
-async def _embedding_state(session: AsyncSession, provider: EmbeddingProvider) -> tuple[int, int]:
+async def _embedding_state(
+    session: AsyncSession, provider: EmbeddingProvider, document_ids: tuple[str, ...] | None = None
+) -> tuple[int, int]:
     """Return committed compatible and pending chunk counts for one provider identity."""
     identity = provider.identity
-    compatible = (
-        Chunk.embedding.is_not(None)
-        & (Chunk.embedding_provider == identity.provider)
-        & (Chunk.embedding_model == identity.model)
-        & (Chunk.embedding_dimensions == identity.dimensions)
-    )
-    total = int(await session.scalar(select(func.count()).select_from(Chunk)) or 0)
+    compatible = select(ChunkEmbedding.chunk_id).where(matching_embedding(identity)).exists()
+    scope = (Chunk.doc_id.in_(document_ids),) if document_ids is not None else ()
+    total = int(await session.scalar(select(func.count()).select_from(Chunk).where(*scope)) or 0)
     ready = int(
-        await session.scalar(select(func.count()).select_from(Chunk).where(compatible)) or 0
+        await session.scalar(select(func.count()).select_from(Chunk).where(compatible, *scope)) or 0
     )
     return ready, total - ready
 
 
-def _manifest_registry(entries: Sequence[Mapping[str, object]]) -> str | None:
-    """Name the registry adapter the first manifest entry resolves to, if any."""
-    for entry in entries:
-        try:
-            return resolve_registry(entry).name
-        except ValueError:
-            return None
-    return None
+@dataclass(frozen=True, slots=True)
+class ProcessingSelectionSummary:
+    """Expose the exact acquired artifacts selected for processing."""
 
-
-def _source_present(entry: Mapping[str, object]) -> bool:
-    """Apply the acquisition rule: a listed source exists when its ``file`` path does."""
-    file = entry.get("file")
-    return isinstance(file, str) and Path(file).exists()
+    selection_id: str
+    document_ids: tuple[str, ...]
+    artifact_ids: tuple[str, ...]
+    sources_present: int
 
 
 @dataclass(frozen=True, slots=True)
 class ManifestSummary:
-    """One selectable corpus manifest confined to the configured root.
-
-    ``registry`` and ``sources_present`` are ``None`` for an invalid manifest. For a
-    valid one, ``sources_present`` counts entries whose listed source file exists on
-    disk, which is the same check acquisition uses to skip a download.
-    """
+    """Expose one validated common corpus catalog and its selections."""
 
     name: str
     documents: int | None
     valid: bool
-    registry: str | None = None
+    corpus_id: str | None = None
+    registries: tuple[str, ...] = ()
     sources_present: int | None = None
+    selections: tuple[ProcessingSelectionSummary, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class OperationOutcome:
+    """Return structured provenance alongside the operation completion."""
+
+    summary: str
+    manifest: str | None = None
+    selection_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +230,7 @@ class AdminCommand:
     identifiers: tuple[str, ...] = ()
     years: tuple[int, ...] = ()
     manifest: str | None = None
+    selection_id: str | None = None
     expected_documents: int | None = None
 
     def __post_init__(self) -> None:
@@ -238,8 +240,10 @@ class AdminCommand:
                 raise ValueError("acquisition requires identifiers and fiscal years")
             if any(year < 1900 or year > 2100 for year in self.years):
                 raise ValueError("fiscal years must be between 1900 and 2100")
-        if self.kind == "ingest_manifest" and not (self.manifest or "").strip():
-            raise ValueError("ingestion requires a selected manifest")
+        if self.kind == "ingest_manifest" and (
+            not (self.manifest or "").strip() or not (self.selection_id or "").strip()
+        ):
+            raise ValueError("ingestion requires a manifest and selection_id")
         if self.expected_documents is not None and self.expected_documents <= 0:
             raise ValueError("expected_documents must be positive")
 
@@ -283,23 +287,28 @@ def _command_payload(command: AdminCommand) -> dict[str, object]:
         "identifiers": list(command.identifiers),
         "years": list(command.years),
         "manifest": command.manifest,
+        "selection_id": command.selection_id,
         "expected_documents": command.expected_documents,
     }
 
 
+_JOB_KIND = TypeAdapter(AdminJobKind)
+_COMMAND_IDENTIFIERS = TypeAdapter(tuple[StrictStr, ...])
+_COMMAND_YEARS = TypeAdapter(tuple[StrictInt, ...])
+_COMMAND_TEXT = TypeAdapter(StrictStr | None)
+_COMMAND_COUNT = TypeAdapter(StrictInt | None)
+
+
 def _command_from_stored(job: StoredJob) -> AdminCommand:
-    """Revalidate one persisted corpus request before retry or display."""
+    """Validate persisted JSON before restoring command and retry provenance."""
     payload = job.request_json
     return AdminCommand(
-        kind=cast("AdminJobKind", job.kind),
-        identifiers=tuple(str(value) for value in payload.get("identifiers", [])),
-        years=tuple(int(value) for value in payload.get("years", [])),
-        manifest=(str(payload["manifest"]) if payload.get("manifest") is not None else None),
-        expected_documents=(
-            int(payload["expected_documents"])
-            if payload.get("expected_documents") is not None
-            else None
-        ),
+        kind=_JOB_KIND.validate_python(job.kind, strict=True),
+        identifiers=_COMMAND_IDENTIFIERS.validate_python(payload.get("identifiers", [])),
+        years=_COMMAND_YEARS.validate_python(payload.get("years", [])),
+        manifest=_COMMAND_TEXT.validate_python(payload.get("manifest")),
+        selection_id=_COMMAND_TEXT.validate_python(payload.get("selection_id")),
+        expected_documents=_COMMAND_COUNT.validate_python(payload.get("expected_documents")),
     )
 
 
@@ -492,8 +501,14 @@ class CannedCorpusAdminService:
                 provider="deterministic",
             ),
             manifests=(
-                ManifestSummary("manifest.json", 20, True, registry="sec", sources_present=20),
-                ManifestSummary("dart-manifest.json", 2, True, registry="dart", sources_present=2),
+                ManifestSummary(
+                    "manifest.json",
+                    2,
+                    True,
+                    corpus_id="demo",
+                    registries=("sec", "dart"),
+                    sources_present=2,
+                ),
             ),
             documents=self._documents,
         )
@@ -546,7 +561,7 @@ class CannedCorpusAdminService:
 
 OperationRunner = Callable[
     [AdminCommand, Callable[[OperationProgress], None]],
-    Awaitable[str],
+    Awaitable[OperationOutcome],
 ]
 
 
@@ -634,35 +649,44 @@ class RuntimeCorpusAdminService:
         return "compatible", "Schema matches the current ORM models.", tables
 
     def _manifest_summaries(self) -> tuple[ManifestSummary, ...]:
-        """List only manifest-shaped JSON files directly under the corpus root."""
-        summaries: list[ManifestSummary] = []
-        if not self._corpus_root.is_dir():
-            return ()
-        paths = sorted(
-            path
-            for path in self._corpus_root.glob("*.json")
-            if path.name == "manifest.json" or path.name.endswith("-manifest.json")
-        )
-        for path in paths:
+        """Validate root catalogs and expose exact processing selections."""
+        summaries = []
+        for path in sorted(self._corpus_root.glob("*.json")):
+            if path.name != "manifest.json" and not path.name.endswith("-manifest.json"):
+                continue
             try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                valid = isinstance(payload, list)
-                documents = len(payload) if valid else None
-            except OSError, UnicodeError, json.JSONDecodeError:
-                valid = False
-                documents = None
-            registry = sources_present = None
-            if valid:
-                entries = [entry for entry in payload if isinstance(entry, dict)]
-                registry = _manifest_registry(entries)
-                sources_present = sum(1 for entry in entries if _source_present(entry))
+                if path.resolve().parent != self._corpus_root:
+                    raise ValueError("manifest resolves outside the corpus root")
+                manifest = Manifest.read(path)
+            except OSError, ValueError:
+                summaries.append(ManifestSummary(path.name, None, False))
+                continue
+            present = {}
+            for artifact in manifest.artifacts:
+                source = (self._corpus_root / artifact.path).resolve()
+                present[artifact.artifact_id] = (
+                    source.is_relative_to(self._corpus_root) and source.is_file()
+                )
+            selections = []
+            for selection in manifest.selections:
+                sources = manifest.selected_sources(selection.selection_id, self._corpus_root)
+                selections.append(
+                    ProcessingSelectionSummary(
+                        selection.selection_id,
+                        tuple(source.document.document_id for source in sources),
+                        tuple(source.artifact.artifact_id for source in sources),
+                        sum(present[source.artifact.artifact_id] for source in sources),
+                    )
+                )
             summaries.append(
                 ManifestSummary(
                     path.name,
-                    documents,
-                    valid,
-                    registry=registry,
-                    sources_present=sources_present,
+                    len(manifest.documents),
+                    True,
+                    manifest.corpus.corpus_id,
+                    tuple(sorted({document.registry for document in manifest.documents})),
+                    sum(present.values()),
+                    tuple(selections),
                 )
             )
         return tuple(summaries)
@@ -676,7 +700,13 @@ class RuntimeCorpusAdminService:
             chunks = int(await session.scalar(select(func.count()).select_from(Chunk)) or 0)
             embedded = int(
                 await session.scalar(
-                    select(func.count()).select_from(Chunk).where(Chunk.embedding.is_not(None))
+                    select(func.count())
+                    .select_from(Chunk)
+                    .where(
+                        select(ChunkEmbedding.chunk_id)
+                        .where(matching_embedding(self._provider.identity))
+                        .exists()
+                    )
                 )
                 or 0
             )
@@ -697,6 +727,7 @@ class RuntimeCorpusAdminService:
             .group_by(Document.doc_id)
             .order_by(Document.registry, Document.issuer, Document.fiscal_year, Document.doc_id)
         )
+        statement = join_current_parse(statement, load=True, grouped=True)
         async with self._session_factory() as session:
             rows = (await session.execute(statement)).all()
         return tuple(
@@ -708,13 +739,13 @@ class RuntimeCorpusAdminService:
                 issuer_id=document.issuer_id,
                 fiscal_year=document.fiscal_year,
                 form=document.form,
-                parse_status=document.parse_status,
+                parse_status=document.current_parse.structure.parse_status,
                 filing_date=document.filing_date,
                 report_period=document.report_period,
                 filing_id=document.filing_id,
                 source_url=document.source_url,
-                source_length=document.source_length,
-                source_sha256=document.source_sha256,
+                source_length=document.current_parse.structure.source_length,
+                source_sha256=document.current_parse.structure.source_sha256,
                 chunk_count=int(chunk_count),
             )
             for document, chunk_count in rows
@@ -792,18 +823,21 @@ class RuntimeCorpusAdminService:
                     select(
                         Chunk.kind,
                         Chunk.item,
-                        Chunk.embedding_provider,
-                        Chunk.embedding_model,
-                        Chunk.embedding_dimensions,
-                        func.count(),
+                        ChunkEmbedding.provider,
+                        ChunkEmbedding.model,
+                        ChunkEmbedding.dimensions,
+                        ChunkEmbedding.tokenizer,
+                        func.count(func.distinct(Chunk.id)),
                     )
+                    .outerjoin(ChunkEmbedding, matching_embedding(self._provider.identity))
                     .where(Chunk.doc_id == doc_id)
                     .group_by(
                         Chunk.kind,
                         Chunk.item,
-                        Chunk.embedding_provider,
-                        Chunk.embedding_model,
-                        Chunk.embedding_dimensions,
+                        ChunkEmbedding.provider,
+                        ChunkEmbedding.model,
+                        ChunkEmbedding.dimensions,
+                        ChunkEmbedding.tokenizer,
                     )
                 )
             ).all()
@@ -822,23 +856,22 @@ class RuntimeCorpusAdminService:
                 )
             ).scalars()
             memberships = tuple(snapshot_rows)
-        text_chunks = sum(int(row[5]) for row in aggregate_rows if row.kind == "text")
-        table_chunks = sum(int(row[5]) for row in aggregate_rows if row.kind == "table")
-        embedded_chunks = sum(
-            int(row[5]) for row in aggregate_rows if row.embedding_provider is not None
-        )
+        text_chunks = sum(int(row[6]) for row in aggregate_rows if row.kind == "text")
+        table_chunks = sum(int(row[6]) for row in aggregate_rows if row.kind == "table")
+        embedded_chunks = sum(int(row[6]) for row in aggregate_rows if row.provider is not None)
         item_totals: dict[str, int] = {}
-        embedding_totals: dict[tuple[str, str, int], int] = {}
+        embedding_totals: dict[tuple[str, str, int, str], int] = {}
         for row in aggregate_rows:
             item = row.item or "unsectioned"
-            item_totals[item] = item_totals.get(item, 0) + int(row[5])
-            if row.embedding_provider is not None:
+            item_totals[item] = item_totals.get(item, 0) + int(row[6])
+            if row.provider is not None:
                 identity = (
-                    str(row.embedding_provider),
-                    str(row.embedding_model),
-                    int(row.embedding_dimensions),
+                    str(row.provider),
+                    str(row.model),
+                    int(row.dimensions),
+                    str(row.tokenizer),
                 )
-                embedding_totals[identity] = embedding_totals.get(identity, 0) + int(row[5])
+                embedding_totals[identity] = embedding_totals.get(identity, 0) + int(row[6])
         return DocumentDetail(
             document,
             tuple(
@@ -863,6 +896,7 @@ class RuntimeCorpusAdminService:
                     "provider": identity[0],
                     "model": identity[1],
                     "dimensions": identity[2],
+                    "tokenizer": identity[3],
                     "count": count,
                 }
                 for identity, count in sorted(embedding_totals.items())
@@ -1040,7 +1074,7 @@ class RuntimeCorpusAdminService:
         self,
         command: AdminCommand,
         publish: Callable[[OperationProgress], None],
-    ) -> str:
+    ) -> OperationOutcome:
         """Execute one safe operation through reusable in-process boundaries."""
         if self._operation_runner is not None:
             return await self._operation_runner(command, publish)
@@ -1055,7 +1089,9 @@ class RuntimeCorpusAdminService:
                 user_agent=self._settings.sec_user_agent or "",
                 on_progress=publish,
             )
-            return f"Fetched {len(result.fetched)} filing(s); {result.manifest_entries} recorded"
+            return OperationOutcome(
+                f"Fetched {len(result.fetched)} filing(s)", result.manifest, result.selection_id
+            )
 
         if command.kind == "acquire_dart":
             secret = self._settings.dart_api_key
@@ -1068,11 +1104,15 @@ class RuntimeCorpusAdminService:
                 api_key=secret.get_secret_value(),
                 on_progress=publish,
             )
-            return f"Archived {len(result.archived)} filing(s); {result.manifest_entries} recorded"
+            return OperationOutcome(
+                f"Archived {len(result.archived)} filing(s)", result.manifest, result.selection_id
+            )
 
         if command.kind == "ingest_manifest":
             assert command.manifest is not None
             manifest = self._resolve_manifest(command.manifest)
+            assert command.selection_id is not None
+            Manifest.read(manifest).selected_sources(command.selection_id, self._corpus_root)
             loop = asyncio.get_running_loop()
 
             def publish_from_parser(progress: OperationProgress) -> None:
@@ -1082,6 +1122,8 @@ class RuntimeCorpusAdminService:
             batch = await asyncio.to_thread(
                 load_seed_batch,
                 manifest,
+                selection_id=command.selection_id,
+                embedding_provider=self._provider,
                 expected_documents=command.expected_documents,
                 on_progress=publish_from_parser,
             )
@@ -1095,12 +1137,27 @@ class RuntimeCorpusAdminService:
                     batch,
                     on_progress=publish,
                 )
-            return f"Ingested {result.documents} document(s) and {result.chunks} chunk(s)"
+            return OperationOutcome(
+                f"Ingested {result.documents} document(s) and {result.chunks} chunk(s)",
+                command.manifest,
+                command.selection_id,
+            )
 
         if command.kind == "backfill_embeddings":
+            document_ids = None
+            if command.manifest is not None or command.selection_id is not None:
+                if not command.manifest or not command.selection_id:
+                    raise ValueError("selected backfill requires manifest and selection_id")
+                manifest_path = self._resolve_manifest(command.manifest)
+                sources = Manifest.read(manifest_path).selected_sources(
+                    command.selection_id, self._corpus_root
+                )
+                document_ids = tuple(source.document.document_id for source in sources)
             await bootstrap_schema(self._database_engine)
             async with self._session_factory() as session:
-                ready_before, pending = await _embedding_state(session, self._provider)
+                ready_before, pending = await _embedding_state(
+                    session, self._provider, document_ids
+                )
 
             def on_batch(result: EmbeddingBackfillResult) -> None:
                 """Publish cumulative batch counts from the resumable backfill."""
@@ -1114,16 +1171,20 @@ class RuntimeCorpusAdminService:
                 )
 
             async with self._session_factory() as session:
-                result = await embed_missing_chunks(session, self._provider, on_batch=on_batch)
+                result = await embed_missing_chunks(
+                    session, self._provider, on_batch=on_batch, document_ids=document_ids
+                )
             async with self._session_factory() as session:
-                ready_after, pending_after = await _embedding_state(session, self._provider)
+                ready_after, pending_after = await _embedding_state(
+                    session, self._provider, document_ids
+                )
             if ready_after < ready_before + result.embedded:
                 raise RuntimeError(
                     "embedding postcondition failed: reported rows were not committed"
                 )
             if pending_after > max(0, pending - result.embedded):
                 raise RuntimeError("embedding postcondition failed: pending rows did not decrease")
-            return (
+            return OperationOutcome(
                 f"Embedded {result.embedded} chunk(s); skipped {result.skipped_stale} stale; "
                 f"verified {ready_after} ready"
             )
@@ -1133,7 +1194,7 @@ class RuntimeCorpusAdminService:
         async with self._session_factory() as session:
             result = await backfill_term_stats(session)
         publish(OperationProgress("bm25", 1, 1, "BM25 statistics rebuilt"))
-        return f"Rebuilt BM25 statistics for {result.chunks} chunk(s)"
+        return OperationOutcome(f"Rebuilt BM25 statistics for {result.chunks} chunk(s)")
 
     async def _execute_job(self, queued: AdminJob) -> None:
         """Execute one corpus job while the shared operator lock is held."""
@@ -1176,6 +1237,10 @@ class RuntimeCorpusAdminService:
                 finished_at=_utc_now(),
             )
         else:
+            result_refs = {}
+            if message.manifest is not None:
+                result_refs = {"manifest": message.manifest, "selection_id": message.selection_id}
+            message = message.summary
             finished = replace(
                 self._jobs[queued.job_id],
                 status="succeeded",
@@ -1184,6 +1249,7 @@ class RuntimeCorpusAdminService:
                 finished_at=_utc_now(),
                 result_refs={
                     **(self._jobs[queued.job_id].result_refs or {}),
+                    **result_refs,
                     "summary": self._redact(message),
                 },
             )

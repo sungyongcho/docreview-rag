@@ -6,25 +6,12 @@ import json
 
 import pytest
 
-from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1
+from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, Settings
 from app.evals.measurement import assess_indexing_budget
 import app.evals.run as run
 from app.evals.run import _run_cli, arguments, main
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.evals.support import positive_case, relevant_hit
-
-
-class _Settings:
-    """Settings stub carrying only the fields the runner reads."""
-
-    database_url = "postgresql+asyncpg://stub/stub"
-    bm25_k1 = DEFAULT_BM25_K1
-    bm25_b = DEFAULT_BM25_B
-    bm25_idf = DEFAULT_BM25_IDF
-
-    def model_copy(self, *, update):
-        """Return the same stub, recording the requested provider override."""
-        self.embedding_provider = update["embedding_provider"]
-        return self
 
 
 class _Engine:
@@ -43,25 +30,43 @@ def _install(monkeypatch, *, indexing_seconds=1.0, arms=None):
     bound = [] if arms is None else arms
     engine = _Engine()
 
-    monkeypatch.setattr(run, "get_settings", _Settings)
-    provider = type("ProviderStub", (), {"dimensions": 8})()
+    monkeypatch.setattr(
+        run, "get_settings", lambda: Settings(embedding_provider="deterministic", review_model=None)
+    )
+    provider = DeterministicEmbeddingProvider(dimensions=8)
     monkeypatch.setattr(run, "get_embedding_provider", lambda _settings: provider)
-    monkeypatch.setattr(run, "load_golden_cases", lambda _path: [positive_case()])
+    monkeypatch.setattr(
+        run, "load_golden_cases", lambda _path, *, manifest_path, selection_id: [positive_case()]
+    )
     monkeypatch.setattr(
         run,
         "load_chunking_filings",
-        lambda *, settings, **_kwargs: (object(), object()),
+        lambda *, settings, manifest_name, selection_id, on_progress: (object(), object()),
     )
-    monkeypatch.setattr(run, "build_chunking_batch", lambda target, **_kwargs: object())
+    monkeypatch.setattr(
+        run,
+        "build_chunking_batch",
+        lambda target, *, provider, parsed_filings, selection_id, settings, on_progress: object(),
+    )
     monkeypatch.setattr(run, "create_async_engine", lambda *_a, **_k: engine)
 
     @asynccontextmanager
-    async def temporary_corpus_session(_engine, _batch, _provider, *, target_text_chars, **_kwargs):
+    async def temporary_corpus_session(
+        _engine,
+        _batch,
+        _provider,
+        *,
+        target_tokens,
+        embedding_provider,
+        shared_preparation_seconds,
+        started_at_ns,
+        on_progress,
+    ):
         """Yield a stub session with fixed indexing evidence for one chunk target."""
         yield (
             object(),
             assess_indexing_budget(
-                target_text_chars=target_text_chars,
+                target_tokens=target_tokens,
                 document_count=2,
                 chunk_count=6,
                 embedding_provider="deterministic",
@@ -106,7 +111,7 @@ def test_a_full_run_writes_one_artifact_per_arm_and_one_budget_artifact(monkeypa
     assert len({path for path in result["artifacts"]}) == 10
     assert result["budget_artifact"].endswith("-budgets.json")
     assert result["passed"] is True
-    assert "| structure-500-lexical-ts-rank-cd |" in result["comparison_table"]
+    assert "| structure-1024-lexical-ts-rank-cd |" in result["comparison_table"]
 
 
 def test_the_budget_artifact_names_the_arm_its_latency_belongs_to(monkeypatch, tmp_path):
@@ -115,7 +120,7 @@ def test_the_budget_artifact_names_the_arm_its_latency_belongs_to(monkeypatch, t
 
     arm = _budget(result)["query_budget"]["arm"]
 
-    assert arm["target_text_chars"] == 1200
+    assert arm["target_tokens"] == 2048
     assert arm["strategy"] == "hybrid"
     assert arm["lexical_ranker"] == "ts_rank_cd"
     assert arm["bm25"] is None
@@ -191,7 +196,7 @@ def test_the_command_exit_status_follows_the_measured_verdict(monkeypatch, tmp_p
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        (["--target-text-chars", "500"], 5),
+        (["--target-tokens", "1024"], 5),
         (["--strategies", "vector"], 2),
         (["--strategies", "lexical", "--lexical-rankers", "bm25"], 2),
     ],

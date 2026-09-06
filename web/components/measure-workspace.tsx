@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_PROFILE } from "@/lib/types";
 import { createPortal } from "react-dom";
 import { translate, useI18n, type Locale } from "@/lib/i18n";
 
@@ -140,7 +141,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const [goldenBusy, setGoldenBusy] = useState(false);
   const [sourceJsonOpen, setSourceJsonOpen] = useState(false);
   const [mode, setMode] = useState<"quick" | "matrix">(experimentDefaults.mode);
-  const [chunkTargets, setChunkTargets] = useState("500 1200");
+  const [chunkTargets, setChunkTargets] = useState("1024 2048");
   const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
   const [resultDetail, setResultDetail] = useState<EvaluationResultDetail | null>(null);
   const [snapshots, setSnapshots] = useState<PublishedSnapshot[]>([]);
@@ -194,7 +195,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     golden_revision_id: selectedGoldenRevision,
     mode,
     profile,
-    target_text_chars: chunkTargets
+    target_tokens: chunkTargets
       .split(/[\s,]+/)
       .map(Number)
       .filter((value) => Number.isInteger(value) && value > 0),
@@ -309,7 +310,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   function applySelectedResult() {
     const job = jobs.find((item) => item.result_ids.includes(selectedResultId ?? -1));
     if (!job || selectedResultId === null) return;
-    onApplyProfile(job.request.profile, `${job.request.suite_id}:${selectedResultId}`);
+    onApplyProfile(job.request.profile ?? DEFAULT_PROFILE, `${job.request.suite_id}:${selectedResultId}`);
   }
 
   async function newGoldenDraft() {
@@ -523,7 +524,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           {!jobs.length && <div className="empty-state"><Beaker size={24} /><p>{t("No evaluations yet. Create a new evaluation when your dataset and index are ready.")}</p></div>}
         </section>
         {selectedJob && <section className="surface evaluation-job-detail" aria-live="polite"><div className="surface-heading"><div><p className="eyebrow">{t("Selected evaluation")}</p><h2>{selectedJob.request.suite_id}</h2></div><span className={`job-status ${selectedOperatorJob?.status ?? selectedJob.status}`}>{t(selectedOperatorJob?.status ?? selectedJob.status)}</span></div>
-          <dl className="evaluation-metadata"><div><dt>{t("Job ID")}</dt><dd><code>{selectedJob.job_id}</code></dd></div><div><dt>{t("Golden revision")}</dt><dd>{selectedJob.request.golden_revision_id ? `#${selectedJob.request.golden_revision_id}` : t("Canonical JSON")}</dd></div><div><dt>{t("Retrieval profile")}</dt><dd>{profileSummary(selectedJob.request.profile, locale)}</dd></div><div><dt>{t("Run mode")}</dt><dd>{t(selectedJob.request.mode)}</dd></div></dl>
+          <dl className="evaluation-metadata"><div><dt>{t("Job ID")}</dt><dd><code>{selectedJob.job_id}</code></dd></div><div><dt>{t("Golden revision")}</dt><dd>{selectedJob.request.golden_revision_id ? `#${selectedJob.request.golden_revision_id}` : t("Canonical JSON")}</dd></div><div><dt>{t("Retrieval profile")}</dt><dd>{profileSummary(selectedJob.request.profile ?? DEFAULT_PROFILE, locale)}</dd></div><div><dt>{t("Run mode")}</dt><dd>{t(selectedJob.request.mode)}</dd></div></dl>
           <p>{selectedOperatorJob?.message ?? selectedJob.message}</p>
           {(selectedJob.status === "running" || selectedJob.status === "queued") && <div className="evaluation-progress"><progress aria-label={t("Evaluation progress")} value={selectedJob.total ? selectedJob.current : undefined} max={selectedJob.total ?? undefined} /><span>{t(selectedJob.stage)}{selectedJob.total ? ` · ${selectedJob.current} / ${selectedJob.total}` : ""}</span></div>}
           {selectedOperatorJob?.error_code && <p className="notice error" role="alert">{selectedOperatorJob.error_code}</p>}
@@ -542,7 +543,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           {suiteSelect("measure.runs.suite")}{revisionSelect("measure.runs.revision")}
           <dl className="evaluation-metadata"><div><dt>{t("Index")}</dt><dd>{t(mode === "quick" ? "Current index" : "Isolated corpus")}</dd></div><div><dt>{t("Readiness")}</dt><dd>{t(ready ? "Ready" : "Not ready")}</dd></div><div><dt>{t("Cases")}</dt><dd>{selectedSuite?.case_count ?? "—"}</dd></div><div><dt>{t("Golden revision")}</dt><dd>{activeGoldenRevision ? `v${activeGoldenRevision.version} · ${t(activeGoldenRevision.status)}` : t("Canonical JSON · read-only")}</dd></div></dl>
           <fieldset className="playground-core" data-help="measure.runs.profile"><legend>{t("Core search settings")}</legend><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" fields="core" /></fieldset>
-          <details><summary>{t("Advanced evaluation options")}</summary><label data-help="measure.runs.mode">{t("Run mode")}<select value={mode} onChange={(event) => setMode(event.target.value as "quick" | "matrix")}><option value="quick">{t("Quick · current index")}</option><option value="matrix">{t("Matrix · isolated corpus")}</option></select></label>{mode === "matrix" && <label data-help="measure.runs.chunk_targets">{t("Chunk targets")}<input value={chunkTargets} onChange={(event) => setChunkTargets(event.target.value)} placeholder="500 1200" /></label>}<ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" fields="advanced" /></details>
+          <details><summary>{t("Advanced evaluation options")}</summary><label data-help="measure.runs.mode">{t("Run mode")}<select value={mode} onChange={(event) => setMode(event.target.value as "quick" | "matrix")}><option value="quick">{t("Quick · current index")}</option><option value="matrix">{t("Matrix · isolated corpus")}</option></select></label>{mode === "matrix" && <label data-help="measure.runs.chunk_targets">{t("Chunk targets (tokens)")}<input value={chunkTargets} onChange={(event) => setChunkTargets(event.target.value)} placeholder="1024 2048" /></label>}<ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" fields="advanced" /></details>
           <p className="helper">{t("Retrieval profile ·")} {profileSummary(profile, locale)}</p>
           {!ready && <p className="notice">{t("Corpus not ready. Finish Build steps 2–4.")}</p>}{selectedSuite && !selectedSuite.source_ready && <p className="notice error">{t("Sources unavailable")}: {selectedSuite.source_error}</p>}
           <div className="action-row"><button className="button primary" type="button" data-help="measure.runs.queue" disabled={!canRun || busy} onClick={() => void runEvaluation()}><Play size={15} />{busy ? t("Queueing…") : t("Queue evaluation")}</button><button className="button" type="button" disabled={busy} onClick={() => setSetupOpen(false)}>{t("Cancel")}</button></div>
@@ -551,7 +552,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
 
       <RetainedPanel active={tab === "compare"}><div className="panel-stack" data-help="measure.compare.overview">
         {live && <section className="surface comparison-picker"><label>{t("Baseline")}<select value={compareIds[0] ?? ""} onChange={(event) => { comparisonRequestRef.current += 1; setComparison(null); setCompareIds([Number(event.target.value) || null, compareIds[1]]); }}><option value="">{t("Select result")}</option>{jobs.filter((job) => job.status === "succeeded").flatMap((job) => job.result_ids.map((id) => <option key={id} value={id}>#{id} · {job.request.suite_id}</option>))}</select></label><label>{t("Candidate")}<select value={compareIds[1] ?? ""} onChange={(event) => { comparisonRequestRef.current += 1; setComparison(null); setCompareIds([compareIds[0], Number(event.target.value) || null]); }}><option value="">{t("Select result")}</option>{jobs.filter((job) => job.status === "succeeded").flatMap((job) => job.result_ids.map((id) => <option key={id} value={id}>#{id} · {job.request.suite_id}</option>))}</select></label><button className="button primary" type="button" disabled={!compareIds[0] || !compareIds[1] || compareIds[0] === compareIds[1] || !!resultMismatch} onClick={() => void loadComparison(compareIds[1]!, compareIds[0]!)}>{t("Compare selected results")}</button></section>}
-        {(baselineJob || candidateJob) && <div className="evaluation-comparison-metadata">{([["Baseline", baselineJob], ["Candidate", candidateJob]] as const).map(([label, job]) => <section className="surface" key={label}><p className="eyebrow">{t(label)}</p>{job ? <><h3>{job.request.suite_id}</h3><dl className="evaluation-metadata"><div><dt>{t("Golden revision")}</dt><dd>{job.request.golden_revision_id ? `#${job.request.golden_revision_id}` : t("Canonical JSON")}</dd></div><div><dt>{t("Run mode")}</dt><dd>{t(job.request.mode)}</dd></div><div><dt>{t("Retrieval profile")}</dt><dd>{profileSummary(job.request.profile, locale)}</dd></div></dl><details><summary>{t("Request settings")}</summary><pre>{JSON.stringify(job.request, null, 2)}</pre></details></> : <p className="helper">{t("Select result")}</p>}</section>)}</div>}
+        {(baselineJob || candidateJob) && <div className="evaluation-comparison-metadata">{([["Baseline", baselineJob], ["Candidate", candidateJob]] as const).map(([label, job]) => <section className="surface" key={label}><p className="eyebrow">{t(label)}</p>{job ? <><h3>{job.request.suite_id}</h3><dl className="evaluation-metadata"><div><dt>{t("Golden revision")}</dt><dd>{job.request.golden_revision_id ? `#${job.request.golden_revision_id}` : t("Canonical JSON")}</dd></div><div><dt>{t("Run mode")}</dt><dd>{t(job.request.mode)}</dd></div><div><dt>{t("Retrieval profile")}</dt><dd>{profileSummary(job.request.profile ?? DEFAULT_PROFILE, locale)}</dd></div></dl><details><summary>{t("Request settings")}</summary><pre>{JSON.stringify(job.request, null, 2)}</pre></details></> : <p className="helper">{t("Select result")}</p>}</section>)}</div>}
         {resultMismatch && <p className="notice" role="status">{t("These results use different datasets. Select results from the same dataset to compare them.")}</p>}
         {compareIds[0] !== null && compareIds[0] === compareIds[1] && <p className="notice" role="status">{t("Choose two different results.")}</p>}
         <details className="surface"><summary>{t("See an example")}</summary><p>{t("Illustrative example only — not an evaluation result.")}</p><p>{t("Baseline: 2 of 3 questions found the right evidence. Candidate: 3 of 3. The candidate improves hit rate from 67% to 100%; check the changed question and latency before choosing it.")}</p></details>

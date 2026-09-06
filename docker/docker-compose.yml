@@ -33,9 +33,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://filing:filing@db:5432/filing
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-deterministic}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-large}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # One key slot per environment: MODE=dev reads OPENAI_API_KEY_LOCAL, MODE=prod
-      # reads OPENAI_API_KEY_PROD, and an explicit OPENAI_API_KEY always wins.
+      # reads OPENAI_API_KEY_PROD; the opposite environment is never a fallback.
       MODE: dev
       OPENAI_API_KEY_LOCAL: ${OPENAI_API_KEY_LOCAL:-}
       OPENAI_API_KEY_PROD: ${OPENAI_API_KEY_PROD:-}
@@ -45,7 +44,6 @@ services:
       DOCREVIEW_ADMIN_MODE: live
       DOCREVIEW_HOST: 127.0.0.1
       DOCREVIEW_ADMIN_CORS_ORIGIN: http://${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}
-      DOCREVIEW_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434}
       LOCAL_LLM_PROTOCOL: ${LOCAL_LLM_PROTOCOL:-auto}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}

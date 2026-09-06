@@ -13,11 +13,12 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import re
-from typing import Any, Literal
+from typing import Literal
 
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString
 
+from app.ingestion.manifest import FilingSource, Manifest
 from app.ingestion.parser import (
     HEADING_TAGS,
     REPORTED_TITLE_MAX,
@@ -29,7 +30,6 @@ from app.ingestion.parser import (
     leaf_blocks,
     line_offsets,
     normalize,
-    read_source,
     source_digest,
     source_pos,
 )
@@ -120,20 +120,6 @@ ITEM_RE = re.compile(
     r"^\s*item\s+(?P<num>1[0-6]|[1-9])(?P<suffix>[A-C])?\s*[.\-–—:]?\s*(?P<title>.*)$",
     re.I,
 )
-
-
-def doc_id(entry: dict) -> str:
-    """Return the document ID derived from an EDGAR manifest entry.
-
-    The ``"{issuer}-FY{year}"`` shape is the contract; reading it out of these particular
-    manifest keys is EDGAR-specific, so another registry supplies its own reader.
-    """
-    return f"{entry['ticker']}-FY{entry['report_date'][:4]}"
-
-
-def edgar_sort_key(entry: dict[str, Any]) -> tuple[str, ...]:
-    """Order EDGAR entries by ticker, then report date."""
-    return (str(entry.get("ticker", "")), str(entry.get("report_date", "")))
 
 
 def edgar_section_label(item: str) -> str:
@@ -868,39 +854,31 @@ def validate(sections: list[Section], profile: dict, index: list[dict] | None = 
     return problems
 
 
-def parse_filing(entry: dict) -> tuple[ParsedFiling, dict]:
+def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
     """Parse one filing with load/build/relearn validation loop.
 
     Parameters
     ----------
-    entry
-        Manifest entry containing filing metadata and source path.
+    source
+        Typed selected filing and verified source artifact.
 
     Returns
     -------
     tuple[ParsedFiling, dict]
         Parsed filing object and effective profile.
     """
-    issuer, year = entry["ticker"], int(entry["report_date"][:4])
-    document = doc_id(entry)
-    raw = read_source(entry["file"])
+    metadata = source.document
+    if metadata.registry != "sec":
+        raise ValueError("SEC parsing requires a selected SEC source")
+    issuer, year = metadata.issuer, metadata.fiscal_year
+    document = metadata.document_id
+    raw = source.read()
     soup = normalize(raw)
     blocks = leaf_blocks(soup)
     offsets = line_offsets(raw)
 
-    # This mapping is the EDGAR-specific half: manifest keys on the right, neutral
-    # contract on the left. A DART reader writes its own mapping and stops here.
     out = ParsedFiling(
-        doc_id=document,
-        registry=entry.get("registry", "sec"),
-        issuer=issuer,
-        issuer_id=str(entry.get("cik", "")),
-        filing_id=entry.get("accession", ""),
-        form=entry.get("form", "10-K"),
-        filing_date=entry.get("filing_date", ""),
-        report_period=entry.get("report_date", ""),
-        fiscal_year=year,
-        source_url=entry.get("url", ""),
+        source=source,
         source_length=len(raw),
         source_sha256=source_digest(raw),
         n_blocks=len(blocks),
@@ -942,6 +920,8 @@ if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser(description="10-K parser — step-by-step inspection")
+    ap.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
+    ap.add_argument("--selection", required=True)
     ap.add_argument("--ticker", help="one company only (e.g. NVDA)")
     ap.add_argument("--file", help="one file only (path)")
     ap.add_argument("--blocks", action="store_true", help="stages 1–2: block extraction results")
@@ -966,22 +946,28 @@ if __name__ == "__main__":
     ap.add_argument("--profile", action="store_true", help="learned profile JSON")
     a = ap.parse_args()
 
-    manifest = json.loads(Path("data/corpus/manifest.json").read_text())
-    targets = [e for e in manifest if not a.ticker or e["ticker"] == a.ticker]
+    manifest = Manifest.read(a.manifest)
+    targets = [
+        source
+        for source in manifest.selected_sources(a.selection, a.manifest.parent)
+        if source.document.registry == "sec"
+        and (not a.ticker or source.document.issuer == a.ticker)
+    ]
     if a.file:
-        targets = [e for e in manifest if e["file"] == a.file]
+        targets = [source for source in targets if source.artifact.path == a.file]
     if not targets:
         raise SystemExit(f"no targets (ticker={a.ticker} file={a.file})")
 
     stats: dict[str, int] = {}
-    for entry in sorted(targets, key=lambda e: (e["ticker"], e["report_date"])):
+    for entry in targets:
         # Handle stages 1-2 separately because they precede parsing.
         if a.blocks:
-            soup = normalize(read_source(entry["file"]))
+            soup = normalize(entry.read())
             blocks = leaf_blocks(soup)
             tables = [b for b in blocks if b.name == "table"]
             print(
-                f"{doc_id(entry):12} blocks {len(blocks):5,}  table blocks {len(tables):4}  "
+                f"{entry.document.document_id:12} blocks {len(blocks):5,}  "
+                f"table blocks {len(tables):4}  "
                 f"document tables {len(soup.find_all('table')):4}"
             )
             continue
@@ -990,13 +976,13 @@ if __name__ == "__main__":
         stats[r.segment_type] = stats.get(r.segment_type, 0) + 1
 
         if a.profile:
-            print(f"--- {r.doc_id} ({r.profile_used}) ---")
+            print(f"--- {r.source.document.document_id} ({r.profile_used}) ---")
             print(json.dumps(profile, indent=2, ensure_ascii=False))
             continue
 
         if a.headings:
-            raw = read_source(entry["file"])
-            print(f"--- {r.doc_id} ({r.segment_type}) ---")
+            raw = entry.read()
+            print(f"--- {r.source.document.document_id} ({r.segment_type}) ---")
             for sec in r.sections:
                 head = raw[sec.source_pos : sec.source_pos + 46] if sec.source_pos else ""
                 body = next((b.text for b in sec.blocks if b.kind == "paragraph"), "")
@@ -1017,7 +1003,7 @@ if __name__ == "__main__":
             # Items 1C (added 2023), 9C (added 2021), and optional 16 may be absent.
             odd = [m for m in missing if m not in ("1C", "9C", "16")]
             print(
-                f"{r.doc_id:12} {len(got):2} items  missing={missing or '-'}  "
+                f"{r.source.document.document_id:12} {len(got):2} items  missing={missing or '-'}  "
                 f"extra={extra or '-'}{'  ★' if (odd or extra) else ''}"
             )
             continue
@@ -1033,7 +1019,8 @@ if __name__ == "__main__":
         if a.coverage:
             pct = (body + tbl_chars) / r.n_chars * 100 if r.n_chars else 0
             print(
-                f"{r.doc_id:12} total {r.n_chars:>9,}  sections {body + tbl_chars:>9,}  "
+                f"{r.source.document.document_id:12} total {r.n_chars:>9,}  "
+                f"sections {body + tbl_chars:>9,}  "
                 f"coverage {pct:5.1f}%{'   ★LOW' if pct < 90 else ''}"
             )
             continue
@@ -1041,7 +1028,7 @@ if __name__ == "__main__":
         items = [s.item for s in r.sections if s.item]
         tbl = sum(1 for s in r.sections for b in s.blocks if b.kind == "table")
         print(
-            f"{r.doc_id:12} {r.parse_status:20} type={r.segment_type:9} "
+            f"{r.source.document.document_id:12} {r.parse_status:20} type={r.segment_type:9} "
             f"{r.profile_used:10} items={len(items):2} body={body:>8,} tables={tbl:3}"
         )
         for w in r.warnings:

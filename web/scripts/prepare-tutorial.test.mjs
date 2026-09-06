@@ -28,7 +28,7 @@ async function fixture() {
 
 it("copies only referenced assets and clears stale generated copies", async () => {
   const { root, output, png } = await fixture();
-  expect(await prepareTutorial(root, output)).toEqual({ documents: 31, images: 1 });
+  expect(await prepareTutorial(root, output)).toEqual({ documents: 33, images: 1 });
   expect(await readFile(join(output, "status.png"))).toEqual(png);
   expect(await readdir(output)).toEqual(["status.png"]);
   const originalDirectory = await stat(output);
@@ -43,7 +43,7 @@ it("prepares a fresh checkout without an untracked public directory", async () =
   const web = join(root, "web");
   await mkdir(web);
   const output = join(web, "public/tutorial-assets");
-  expect(await prepareTutorial(root, output)).toEqual({ documents: 31, images: 1 });
+  expect(await prepareTutorial(root, output)).toEqual({ documents: 33, images: 1 });
   expect(await readFile(join(output, "status.png"))).toEqual(png);
   expect((await stat(output)).uid).toBe((await stat(web)).uid);
 });

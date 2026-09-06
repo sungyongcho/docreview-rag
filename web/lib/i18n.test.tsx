@@ -131,7 +131,7 @@ describe("Korean and English UI", () => {
   });
 
   it.each([
-    ["/docreview-rag-agent/docs/", "walkthrough", "/docs/en/"],
+    ["/docreview-rag-agent/docs/", "overview", "/docs/en/"],
     ["/docreview-rag-agent/docs/cli/", "cli", "/docs/en/cli/"],
   ] as const)("resolves saved English for legacy route %s", (path, documentId, destination) => {
     window.history.replaceState({}, "", path);

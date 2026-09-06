@@ -12,6 +12,8 @@ from app.api.schemas import ReviewRequest
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
 from app.llm.local_inventory import LocalModelInventory
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.ingestion.support import filing_document
 
 
 def local_services(names: list[str]) -> RuntimeApiServices:
@@ -23,6 +25,7 @@ def local_services(names: list[str]) -> RuntimeApiServices:
         ),
     )
     return RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         llm_providers={},
         provider_budgets={
             "local": local_provider_budget(max_input_tokens=1000, max_output_tokens=100)
@@ -89,6 +92,7 @@ def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) 
         ),
     )
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         llm_providers={},
         provider_budgets={
             "local": local_provider_budget(max_input_tokens=1000, max_output_tokens=100)
@@ -122,7 +126,11 @@ def test_production_rejects_local_and_custom_controls_before_retrieval() -> None
     from app.api.review_profile import PromptPolicy
     from app.api.schemas import RetrieveRequest
 
-    services = RuntimeApiServices(allow_local_engine=False, allow_custom_prompt_policy=False)
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
+        allow_local_engine=False,
+        allow_custom_prompt_policy=False,
+    )
     for profile in (
         ReviewSessionProfile(engine="local"),
         ReviewSessionProfile(prompt_policy=PromptPolicy(additional_instructions="changed")),
@@ -152,16 +160,16 @@ def test_resolved_scope_is_observed_before_retrieval_without_model_or_database_c
         events.append(event)
 
     services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=stop_before_database,
         scope_index=ManifestScopeIndex.from_entries(
             (
-                {
-                    "registry": "dart",
-                    "issuer": "005930",
-                    "fiscal_year": 2024,
-                    "form": "사업보고서",
-                    "aliases": ["삼성전자", "Samsung Electronics"],
-                },
+                filing_document(
+                    registry="dart",
+                    issuer="005930",
+                    fiscal_year=2024,
+                    aliases=("삼성전자", "Samsung Electronics"),
+                ),
             )
         ),
     )
@@ -188,3 +196,70 @@ def test_resolved_scope_is_observed_before_retrieval_without_model_or_database_c
     assert scope["filters"]["registries"] == ["dart"]
     assert scope["filters"]["issuers"] == ["005930"]
     assert scope["filters"]["fiscal_years"] == [2024]
+
+
+def test_missing_candidate_metadata_is_an_explicit_failure(hit):
+    """Never guess filing metadata from legacy-looking or opaque document identifiers."""
+    from app.retrieval.scope import ManifestScopeIndex
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+
+    service = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
+        scope_index=ManifestScopeIndex.from_entries(()),
+    )
+    result = RetrievalResult(
+        candidates=(hit,),
+        hits=(hit,),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(vector=(), lexical=()),
+    )
+    with pytest.raises(ApiProblemError) as failure:
+        service._candidate_resource(hit, rank=1, result=result)
+    assert failure.value.status_code == 503
+    assert failure.value.error.code == "evidence_metadata_unavailable"
+
+
+def test_ingest_forwards_selection_and_model_planning_provider(tmp_path, monkeypatch):
+    """Pass the selected source set and actual embedding provider through the thread boundary."""
+    from contextlib import asynccontextmanager
+
+    import app.api.runtime as runtime_module
+    from app.api.schemas import IngestRequest
+    from app.ingestion.seed import SeedResult
+    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+    from tests.ingestion.seed.support import sample_batch
+
+    provider = DeterministicEmbeddingProvider()
+    batch = sample_batch()
+    manifest = tmp_path / "manifest.json"
+
+    @asynccontextmanager
+    async def sessions():
+        """Keep this argument-contract check free of database calls."""
+        yield object()
+
+    def load(path, *, selection_id, embedding_provider, expected_documents):
+        """Inspect the actual model-aware planning arguments."""
+        assert path == manifest
+        assert selection_id == "selected"
+        assert embedding_provider is provider
+        return batch
+
+    async def persist(session, received, *, chunk_batch_size):
+        """Preserve the prepared batch at the persistence boundary."""
+        assert received is batch
+        return SeedResult(documents=1, chunks=2)
+
+    monkeypatch.setattr(runtime_module, "load_seed_batch", load)
+    monkeypatch.setattr(runtime_module, "persist_seed_batch_with_stats", persist)
+    service = RuntimeApiServices(
+        session_factory=sessions, embedding_provider=provider, corpus_root=tmp_path
+    )
+    result = asyncio.run(
+        service.ingest(
+            IngestRequest(
+                manifest_path="manifest.json", selection_id="selected", create_schema=False
+            )
+        )
+    )
+    assert result.documents == 1 and result.chunks == 2

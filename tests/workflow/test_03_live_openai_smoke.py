@@ -17,7 +17,7 @@ from tests.workflow.support import (
 
 LIVE_ENABLED = os.getenv("RUN_OPENAI_WORKFLOW_LIVE") == "1"
 LIVE_MODEL = os.getenv("OPENAI_WORKFLOW_MODEL")
-LIVE_KEY = os.getenv("OPENAI_API_KEY")
+LIVE_KEY = os.getenv("OPENAI_API_KEY_LOCAL")
 
 
 @pytest.mark.skipif(

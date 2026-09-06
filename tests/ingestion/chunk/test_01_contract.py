@@ -6,17 +6,19 @@ import pytest
 
 
 def test_config_defaults_are_positive(C):
-    """Use a positive text grouping target by default."""
+    """Use a positive complete-input token target by default."""
     config = C.ChunkConfig()
-    assert config.target_text_chars > 0
+    assert config.target_tokens == 2048
+    assert config.max_tokens == 8192
+    assert config.max_chars == 12000
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    (("target_text_chars", 0), ("target_text_chars", -1)),
+    (("target_tokens", 0), ("target_tokens", -1), ("max_tokens", 8193), ("max_chars", 0)),
 )
 def test_config_rejects_non_positive_limits(C, field, value):
-    """Reject zero and negative text grouping targets."""
+    """Reject invalid token and character bounds."""
     with pytest.raises(ValueError):
         C.ChunkConfig(**{field: value})
 

@@ -73,10 +73,9 @@ export function documentationDocuments(value = registry) {
 
 export const DOCUMENTS = documentationDocuments();
 
-/** Keep legacy IDs at the boundary while every new page uses its stable registry ID. */
+/** Resolve a stable document ID in the requested language. */
 export function documentationDocument(id, locale = "ko", value = registry) {
-  const alias = value.documents.find((document) => document.legacyFiles?.includes(`${id}.md`));
-  return documentationDocuments(value).find((document) => document.id === (alias?.id ?? id) && document.locale === locale);
+  return documentationDocuments(value).find((document) => document.id === id && document.locale === locale);
 }
 
 /** Map an old walkthrough section to its focused document and stable bilingual anchor. */

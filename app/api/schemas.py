@@ -24,7 +24,6 @@ from app.api.review_profile import ResolvedRetrievalProfile, ReviewSessionProfil
 from app.llm.schemas import NonNegativeDecimal
 from app.observability.persistence import redact_sensitive_text, sanitize_json
 from app.observability.types import (
-    Budget,
     BudgetLimitFailure,
     RunId,
     RunReport,
@@ -33,7 +32,7 @@ from app.observability.types import (
     WorkflowNode,
 )
 from app.retrieval.scope import ResolvedQueryScope
-from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.retrieval.types import ChunkHit
 from app.workflow.gate import ConversationTurn
 from app.workflow.types import (
     NodeError,
@@ -163,8 +162,6 @@ class RetrieveRequest(StrictApiModel):
 
     query: NonBlank
     session_profile: ReviewSessionProfile = Field(default_factory=ReviewSessionProfile)
-    k: Annotated[StrictInt, Field(gt=0, le=100)] | None = None
-    filters: RetrievalFilters | None = None
 
 
 class RetrieveResponse(StrictApiModel):
@@ -216,6 +213,7 @@ class IngestRequest(StrictApiModel):
     """
 
     manifest_path: NonBlank
+    selection_id: NonBlank
     expected_documents: PositiveInt | None = None
     chunk_batch_size: PositiveInt = 500
     create_schema: StrictBool = False
@@ -239,10 +237,6 @@ class ReviewRequest(StrictApiModel):
         BeforeValidator(_tuple_from_json_array),
         Field(max_length=6),
     ] = ()
-    k: Annotated[StrictInt, Field(gt=0, le=100)] | None = None
-    filters: RetrievalFilters | None = None
-    budget: Budget = Field(default_factory=Budget)
-    max_context_chars: NonnegativeInt = 12_000
 
 
 RunFailure = Annotated[

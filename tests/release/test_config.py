@@ -35,7 +35,7 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
 def test_operator_key_is_secret_and_only_enables_explicit_runtime(monkeypatch) -> None:
     """Enable the provider only in the runtime mode, keeping the key out of every rendering."""
     secret = "sk-test-server-only"
-    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
 
     canned = ReleaseSettings(_env_file=None)
     runtime = ReleaseSettings(mode="runtime", _env_file=None)

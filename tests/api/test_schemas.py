@@ -15,17 +15,25 @@ from app.api.schemas import (
     RunResponse,
 )
 from app.observability.types import build_run_report
-from app.workflow.types import NodeError, ProviderFailure
+from app.workflow.types import NodeError, ProviderFailure, WorkflowReport
 
 
 def test_retrieve_request_is_strict_and_rejects_blank_or_unknown_input():
-    """Reject a blank query, a mistyped k, and any field the contract does not name."""
+    """Reject blank queries, mistyped profile controls, and unknown top-level fields."""
     with pytest.raises(ValidationError):
         RetrieveRequest(query=" ")
     with pytest.raises(ValidationError):
-        RetrieveRequest(query="Revenue?", k="5")  # pyright: ignore[reportArgumentType]
+        RetrieveRequest.model_validate(
+            {
+                "query": "Revenue?",
+                "session_profile": {
+                    "retrieval_preset": "custom",
+                    "custom_retrieval": {"k": "5"},
+                },
+            }
+        )
     with pytest.raises(ValidationError):
-        RetrieveRequest(query="Revenue?", unsupported=True)  # pyright: ignore[reportCallIssue]
+        RetrieveRequest.model_validate({"query": "Revenue?", "unsupported": True})
 
 
 def test_evidence_projection_exposes_complete_source_identity(hit):
@@ -86,7 +94,7 @@ def test_successful_run_maps_to_strict_workflow_report(successful_run):
 
     assert response.status == "ok"
     assert response.failure is None
-    assert response.report is not None
+    assert isinstance(response.report, WorkflowReport)
     assert response.report.label == "SUPPORTED"
     assert response.report.citations[0].chunk_id == 7
 
@@ -160,3 +168,44 @@ def test_run_response_redacts_public_prompt_and_failure_text():
 
     assert secret not in response.system_prompt
     assert secret not in repr(response.failure)
+
+
+@pytest.mark.parametrize("request_type", [RetrieveRequest, ReviewRequest])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("k", 3),
+        ("filters", {"doc_ids": ["ACME-FY2024"]}),
+        ("budget", {"max_iterations": 4}),
+        ("max_context_chars", 10000),
+    ],
+)
+def test_removed_top_level_controls_are_rejected(request_type, field, value):
+    """Accept configurable controls only through the explicit session profile."""
+    with pytest.raises(ValidationError) as error:
+        request_type.model_validate({"query": "Revenue?", field: value})
+    assert any(
+        item["loc"] == (field,) and item["type"] == "extra_forbidden"
+        for item in error.value.errors()
+    )
+
+
+@pytest.mark.parametrize("request_type", [RetrieveRequest, ReviewRequest])
+def test_session_profile_preserves_every_explicit_filter(request_type):
+    """Project document, registry, kind, and existing scope controls without losing any."""
+    filters = {
+        "doc_ids": ["ACME-FY2024"],
+        "registries": ["sec"],
+        "kinds": ["table"],
+        "issuers": ["ACME"],
+        "languages": ["en"],
+        "fiscal_years": [2024],
+        "forms": ["10-K"],
+        "snapshot_id": 1,
+    }
+    profile = {**filters, "sections": ["7", None]}
+    request = request_type.model_validate({"query": "Revenue?", "session_profile": profile})
+    assert request.session_profile.explicit_filters().model_dump(mode="json") == {
+        **filters,
+        "items": [None, "7"],
+    }
