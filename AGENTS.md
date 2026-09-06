@@ -15,6 +15,7 @@ verification requirements remain applicable.
 - `v1` is a frozen legacy archive with one parentless commit. Never modify it or merge it into `main`.
 - `v2.0.0` identifies product commit `61cb17b49b0b6bf0745b6fb7cfdd16b67d101731`.
 - Use short-lived `<type>/<issue-number>-<description>` branches, such as `feat/<issue-number>-improve-navigation`, `fix/<issue-number>-refresh-readiness`, or `refactor/<issue-number>-simplify-settings`. Resolve the actual GitHub issue number first; never invent one.
+- Exception for execution workers: a directly requested documentation-only change with no assigned issue may use `docs/<description>`. If an issue is assigned, retain its actual number. Do not create an issue merely to name a documentation branch.
 - Do not prepend product versions such as `v2/` or `v3/` to ordinary work branches. Use release tags such as `v2.1.0` and `v3.0.0` for versions; creating or moving a tag remains a separately requested release action. Supporting multiple release lines requires an explicit maintenance policy.
 - Keep only `main` and `v1` as canonical local branches at rest, tracking their remote counterparts.
 
