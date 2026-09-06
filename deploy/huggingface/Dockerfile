@@ -43,4 +43,5 @@ EXPOSE 7860
 HEALTHCHECK --interval=15s --timeout=3s --start-period=15s --retries=5 \
 	CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/health', timeout=2).read()"
 
-CMD ["uv", "run", "--no-sync", "uvicorn", "app.release.space:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1", "--log-level", "warning"]
+# Use installed dependencies without uv runtime cache writes on read-only filesystems.
+CMD ["/home/user/app/.venv/bin/python", "-m", "uvicorn", "app.release.space:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1", "--log-level", "warning"]
