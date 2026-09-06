@@ -59,10 +59,14 @@ export interface ReviewExecution {
   selectedScope?: CorpusScope;
   resolvedScope?: ReviewResolvedScope;
   stageTimings?: Array<{ node: ReviewEventNode; elapsed_ms: number; status: string }>;
+  /** Intentional bypasses backed by the terminal server result, never inferred from missing events. */
+  skippedNodes?: Partial<Record<ReviewEventNode, "relevance_below_threshold">>;
 }
 
 export interface ChatMessage {
   id: string;
+  /** The active request updates this same assistant message until its terminal outcome. */
+  pending?: boolean;
   role: "user" | "assistant";
   text: string;
   evidence?: EvidenceHit[];

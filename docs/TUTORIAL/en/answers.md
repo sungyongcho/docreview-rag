@@ -29,6 +29,15 @@ Sending may incur embedding, translation, and answer-model costs. The answer wor
 **Stop request** interrupts an active request. The UI never simulates completed stages or estimates time
 remaining. Returning to an earlier phase can make later phases wait again.
 
+The pending assistant message appears directly below your question. Its **Execution summary** shows the live stages, counts, elapsed time and **Stop request** action in that same message. Completion replaces the pending content with the answer or failure while retaining the summary; there is no separate progress card above the composer.
+
+If no evidence meets the relevance threshold, **Verify answer and citations** is marked **Skipped: threshold not met** in a warning tone. A skipped step is different from a failed or cancelled request's unperformed step; the result-preparation stage can still complete. Older records without the reason do not invent a skipped state.
+
+### SCREENSHOT NEEDED
+<!-- Feature: live execution summary inside the pending assistant message and NOT_IN_DOCS skipped verification; locale=en; light mode; show the question, pending stages, Stop request and visible composer, plus completed threshold failure. Preserve existing assets. -->
+
+The screenshot below predates this progress placement and is not evidence of the updated behavior.
+
 <!-- capture:15-cited-answer -->
 
 ![An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown.](../assets/15-cited-answer.en.jpg)

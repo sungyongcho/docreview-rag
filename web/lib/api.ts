@@ -177,21 +177,34 @@ export async function streamReview(
     throw new Error(`Review stream emitted an unknown event: ${frame.event}`);
   }
 
-  while (true) {
-    const { done: streamDone, value } = await reader.read();
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !streamDone }).replaceAll("\r\n", "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      await consume(frame);
-      boundary = buffer.indexOf("\n\n");
+  // The fetch wrapper releases its signal bridge when headers arrive; retain cancellation
+  // for the response body's full lifetime here, including an already-aborted request.
+  const abort = () => { void reader.cancel().catch(() => undefined); };
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  try {
+    if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
+    while (true) {
+      const { done: streamDone, value } = await reader.read();
+      if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !streamDone }).replaceAll("\r\n", "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        await consume(frame);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if (streamDone) break;
     }
-    if (streamDone) break;
+    if (buffer.trim()) await consume(buffer);
+    if (!done || !terminal) throw new Error("Review stream ended without a terminal report and done event.");
+    return terminal;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    reader.releaseLock();
   }
-  if (buffer.trim()) await consume(buffer);
-  if (!done || !terminal) throw new Error("Review stream ended without a terminal report and done event.");
-  return terminal;
+
 }
 
 export interface HealthResponse {
