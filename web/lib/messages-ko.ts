@@ -1951,4 +1951,6 @@ export const KO: Record<string, string> = {
   "Command category": "명령 유형",
   "Local Operations is not responding. Retrying status checks.": "로컬 작업 API가 응답하지 않습니다. 상태 확인을 다시 시도합니다.",
   "Cards are grouped by category (Inspect, Verify, Service) with read-only commands first; the filter choice is remembered in this browser.": "카드는 점검·검증·서비스 유형별로 묶이고 읽기 전용 명령이 먼저 표시됩니다. 필터 선택은 이 브라우저에 저장됩니다.",
+  "Skipped: relevance threshold not met": "기준 미달로 건너뜀",
+  "The request was interrupted. Send the question again.": "요청이 중단되었습니다. 질문을 다시 보내세요."
 };

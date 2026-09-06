@@ -214,7 +214,8 @@ describe("service shell", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.localStorage.setItem(ONBOARDING_KEY, "done");
-    vi.stubGlobal("crypto", { randomUUID: () => "conversation-id" });
+    let nextId = 0;
+    vi.stubGlobal("crypto", { randomUUID: () => `fixture-id-${++nextId}` });
   });
   afterEach(() => {
     cleanup();
@@ -939,7 +940,7 @@ it("preserves streamed messages and the submitted settings while background disc
     local = { enabled: true, protocol: "ollama", models: [{ name: "answer", selectable: true, size_bytes: null, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], loaded: false }] };
     await act(async () => { window.dispatchEvent(new Event("online")); });
     finish(new Response('event: report\ndata: {"run":{"run_id":"concurrency-check","status":"budget_exceeded","report":null,"failure":{"code":"budget_exceeded","resource":"iterations","limit":3,"observed":4,"blocked_node":"grade"}}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
-    await waitFor(() => expect(loadConversations()[0].messages).toHaveLength(2));
+    await waitFor(() => { expect(loadConversations()[0].messages).toHaveLength(2); expect(loadConversations()[0].messages[1].pending).toBe(false); });
     await waitFor(() => expect(loadConversations()[0].profile?.local_model).toBe("answer"));
     expect(loadConversations()[0].messages[0].text).toBe("Keep this question");
     expect(loadConversations()[0].profile?.prompt_policy.history_turns).toBe(4);
@@ -1044,7 +1045,7 @@ it("keeps confirmed routing with its submitted profile while next-request contro
       stream.enqueue(encoder.encode(`event: report\ndata: ${JSON.stringify({ run: { status: "error", failure: { code: "node_error", message: "Regression fixture" }, execution: { effective_settings: { resolved_scope: scope } } } })}\n\nevent: done\ndata: {}\n\n`));
       stream.close();
     });
-    await waitFor(() => expect(loadConversations()[0].messages).toHaveLength(2));
+    await waitFor(() => { expect(loadConversations()[0].messages).toHaveLength(2); expect(loadConversations()[0].messages[1].pending).toBe(false); });
     const conversation = loadConversations()[0];
     expect(conversation.messages[0].text).toBe("삼성전자 매출");
     expect(conversation.messages[1].execution).toMatchObject({ selectedScope: "auto", resolvedScope: scope });
@@ -1110,5 +1111,153 @@ describe("isolated production presentation preview", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/public/documents/facets"))).toBe(true));
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).endsWith("/ready") && !String(url).includes("/review/stream"))).toBe(true);
     expect(JSON.stringify(window.localStorage)).toBe(original);
+  });
+});
+
+
+describe("in-message review lifecycle", () => {
+  beforeEach(() => {
+    cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  /** Keep the streaming response open so the pending message can be inspected between events. */
+  async function startReview(question = "Explain this filing", revalidate = false) {
+    if (revalidate) {
+      seedAnsweredConversation();
+      const saved = loadConversations();
+      saved[0].messages[1] = { ...saved[0].messages[1], question, candidateToken: "fixture-token", pinnedChunkIds: [1], excludedChunkIds: [] };
+      saveConversations(saved);
+    }
+    const fetchMock = stubPublicApi();
+    const ordinaryFetch = fetchMock.getMockImplementation()!;
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/review/stream")) {
+        return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; init?.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")), { once: true }); } }), { headers: { "content-type": "text/event-stream" } }));
+      }
+      return ordinaryFetch(input, init);
+    });
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    if (revalidate) {
+      fireEvent.click(await screen.findByText(/Retrieved evidence candidates/));
+      fireEvent.click(screen.getByRole("button", { name: "Review again with selected evidence" }));
+    } else {
+      fireEvent.change(input, { target: { value: question } });
+      await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+      fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+    }
+    await screen.findByText("Waiting for the server");
+    const message = document.querySelector<HTMLElement>(".message.assistant.pending")!;
+    const summary = message.querySelector<HTMLDetailsElement>(".review-execution-summary")!;
+    const progress = message.querySelector<HTMLElement>(".review-progress")!;
+    return { stream, message, summary, progress, input, question, id: message.dataset.messageId!, encoder: new TextEncoder() };
+  }
+
+  it.each(["SUPPORTED", "NOT_IN_DOCS"])("keeps the same message, summary DOM and open state through %s", async (label) => {
+    const request = await startReview();
+    const pending = loadConversations()[0].messages;
+    expect(pending).toHaveLength(2);
+    expect(pending[0]).toMatchObject({ role: "user", text: request.question });
+    expect(pending[1]).toMatchObject({ id: request.id, role: "assistant", pending: true });
+    expect(pending[0].id).not.toBe(pending[1].id);
+    expect(request.message.closest(".messages-inner")).not.toBeNull();
+    expect(document.querySelector(".composer-wrap .review-progress")).toBeNull();
+    expect(within(request.message).getByRole("button", { name: "Stop request" })).toBeVisible();
+    expect(request.summary.open).toBe(true);
+    const nodes = label === "SUPPORTED" ? ["gate", "retrieve", "grade", "check"] : ["gate", "retrieve", "grade"];
+    await act(async () => { for (const node of nodes) request.stream.enqueue(request.encoder.encode(`event: stage\ndata: ${JSON.stringify({ node, phase: "end", status: "completed", evidence_count: 3, relevant_count: label === "SUPPORTED" ? 2 : 0, step_count: 1 })}\n\n`)); });
+    expect(request.message.querySelector(".review-progress")).toBe(request.progress);
+    const viewport = document.querySelector<HTMLElement>(".messages")!;
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 700 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 200 });
+    const reasons = label === "NOT_IN_DOCS" ? [{ code: "relevance_below_threshold", candidate_count: 3, relevant_count: 0, minimum_required: 1 }] : [];
+    await act(async () => { request.stream.enqueue(request.encoder.encode(`event: report\ndata: ${JSON.stringify({ run: { status: "ok", report: { label, answer: label === "SUPPORTED" ? "The cited result." : "NOT_IN_DOCS", reasons, citations: [] } } })}\n\nevent: done\ndata: {}\n\n`)); request.stream.close(); });
+    await waitFor(() => expect(loadConversations()[0].messages[1].pending).toBe(false));
+    expect(document.querySelector(`[data-message-id="${request.id}"]`)).toBe(request.message);
+    expect(request.message.querySelector(".review-execution-summary")).toBe(request.summary);
+    expect(request.message.querySelector(".review-progress")).toBe(request.progress);
+    expect(request.summary.open).toBe(true);
+    expect(within(request.message).queryByRole("button", { name: "Stop request" })).toBeNull();
+    expect(viewport.scrollTop).toBe(700);
+    expect(request.message.querySelectorAll(".review-progress-steps li.skipped")).toHaveLength(label === "NOT_IN_DOCS" ? 1 : 0);
+  });
+
+  it("updates cancellation in place and does not force a reader back to the bottom", async () => {
+    const request = await startReview();
+    const viewport = document.querySelector<HTMLElement>(".messages")!;
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 200 });
+    viewport.scrollTop = 50;
+    fireEvent.scroll(viewport);
+    fireEvent.click(within(request.message).getByRole("button", { name: "Stop request" }));
+    await waitFor(() => expect(loadConversations()[0].messages[1].pending).toBe(false));
+    expect(loadConversations()[0].messages[1]).toMatchObject({ id: request.id, execution: { outcome: "cancelled" } });
+    expect(request.message.querySelector(".review-progress")).toBe(request.progress);
+    expect(viewport.scrollTop).toBe(50);
+    expect(document.querySelectorAll(".message.assistant")).toHaveLength(1);
+    expect(request.summary.open).toBe(true);
+  });
+
+  it("keeps infrastructure failure in the pending message and restores the question for retry", async () => {
+    const request = await startReview();
+    await act(async () => request.stream.error(new TypeError("Network unavailable")));
+    await waitFor(() => expect(loadConversations()[0].messages[1].pending).toBe(false));
+    expect(loadConversations()[0].messages[1]).toMatchObject({ id: request.id, text: "Network unavailable", execution: { outcome: "failed" } });
+    expect(request.input).toHaveValue(request.question);
+    expect(request.message.querySelector(".review-progress")).toBe(request.progress);
+    expect(request.summary.open).toBe(true);
+    expect(document.querySelectorAll(".message.assistant")).toHaveLength(1);
+  });
+
+  it("finalizes the original message after switching conversations without changing the new draft", async () => {
+    const request = await startReview();
+    const originalId = loadConversations()[0].id;
+    fireEvent.click(screen.getByRole("button", { name: "New review" }));
+    fireEvent.change(request.input, { target: { value: "Different conversation draft" } });
+    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"run":{"status":"ok","report":{"report_kind":"conversation","answer":"Original conversation answer."}}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
+    await waitFor(() => expect(loadConversations().find((conversation) => conversation.id === originalId)?.messages[1].pending).toBe(false));
+    const original = loadConversations().find((conversation) => conversation.id === originalId)!;
+    expect(original.messages[1]).toMatchObject({ id: request.id, text: "Original conversation answer." });
+    expect(request.input).toHaveValue("Different conversation draft");
+    expect(screen.queryByText("Original conversation answer.")).toBeNull();
+  });
+
+
+  it("re-reviews selected evidence in one new message and keeps an explicitly collapsed summary collapsed", async () => {
+    const request = await startReview("Review the selected filing", true);
+    expect(loadConversations()[0].messages).toHaveLength(3);
+    expect(screen.getByText("Re-checking selected evidence")).toBeVisible();
+    fireEvent.click(within(request.summary).getByText("Execution summary"));
+    await waitFor(() => expect(request.summary.open).toBe(false));
+    await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"run":{"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed answer.","citations":[]}}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
+    await waitFor(() => expect(loadConversations()[0].messages[2].pending).toBe(false));
+    expect(loadConversations()[0].messages[2].id).toBe(request.id);
+    expect(loadConversations()[0].messages[1].text).toBe("Data center revenue grew on Hopper demand.");
+    expect(request.message.querySelector(".review-execution-summary")).toBe(request.summary);
+    expect(request.message.querySelector(".review-progress")).toBe(request.progress);
+    expect(request.summary.open).toBe(false);
+  });
+  it("cancels a pending request when its conversation is deleted instead of stranding the composer", async () => {
+    const request = await startReview();
+    const originalId = loadConversations()[0].id;
+    fireEvent.click(screen.getByRole("button", { name: `Delete ${request.question}` }));
+    fireEvent.change(request.input, { target: { value: "Question after deletion" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+    expect(loadConversations().some((conversation) => conversation.id === originalId)).toBe(false);
+    expect(document.querySelector(".message.pending")).toBeNull();
+    expect(loadConversations()[0].messages).toHaveLength(0);
+  });
+
+  it("restores an orphaned pending message as failed without replaying a request", async () => {
+    saveConversations([{ id: "orphan", title: "Interrupted", createdAt: "2026-09-06", updatedAt: "2026-09-06", profile: DEFAULT_SESSION_PROFILE, messages: [{ id: "question", role: "user", text: "Interrupted question" }, { id: "pending", role: "assistant", text: "", pending: true, execution: { node: "retrieve", evidence: 3, relevant: 0, steps: 0, observed: ["gate", "retrieve"], completedNodes: ["gate"], outcome: "running" } }] }]);
+    const fetchMock = stubPublicApi();
+    render(<ServiceShell />);
+    await screen.findByText("The request was interrupted. Send the question again.");
+    expect(loadConversations()[0].messages[1]).toMatchObject({ id: "pending", pending: false, execution: { outcome: "failed" } });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/review/stream"))).toBe(false);
+    expect(screen.queryByRole("button", { name: "Stop request" })).toBeNull();
   });
 });

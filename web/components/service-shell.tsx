@@ -148,6 +148,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   currentConversationId.current = activeId;
   const messagesViewport = useRef<HTMLDivElement>(null);
   const followReview = useRef(true);
+  const lastReview = useRef<{ conversationId: string; messageId: string } | null>(null);
+  const lastScrolledMessage = useRef<ChatMessage | null>(null);
   /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error; cleared by the next successful review. */
   const [resetAt, setResetAt] = useState<string | null>(null);
   /** Build stage card to scroll into view once the Build workspace has rendered. */
@@ -203,9 +205,10 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       if (!["dev", "prod"].includes(value.environment)) { setCapabilities(null); return; }
       if (!initialized.current) {
         initialized.current = true;
-        const restored = loadConversations().map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
+        const saved = loadConversations();
+        const restored = saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
         const initial = restored.length ? restored : [newConversation(adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
-        setConversations(saveConversations(initial));
+        setConversations(saved.some((conversation) => conversation.messages.some((message) => message.pending)) ? saveConversations(initial) : initial);
         setActiveId(initial[0].id);
       }
       setCapabilities(adminBuild ? value : {
@@ -233,10 +236,14 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     [activeId, conversations],
   );
   useLayoutEffect(() => {
-    if (view !== "review" || !activeReview || activeReview.conversationId !== active?.id || !followReview.current) return;
+    const target = lastReview.current;
+    if (view !== "review" || !target || target.conversationId !== active?.id) return;
+    const message = active.messages.find((item) => item.id === target.messageId);
+    if (!message || lastScrolledMessage.current === message) return;
+    lastScrolledMessage.current = message;
     const element = messagesViewport.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [active?.messages, active?.id, activeReview, view]);
+    if (element && followReview.current) element.scrollTop = element.scrollHeight;
+  }, [active?.messages, active?.id, view]);
 
   const activeSessionProfile = active?.profile ?? profile;
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
@@ -402,6 +409,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   function removeReview(id: string) {
+    if (activeReview?.conversationId === id) reviewAbort.current?.abort();
     const remaining = conversations.filter((conversation) => conversation.id !== id);
     const next = remaining.length ? remaining : [newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE)];
     persist(next);
@@ -409,6 +417,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   function clearReviews() {
+    reviewAbort.current?.abort();
     const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
     persist([conversation]);
     setActiveId(conversation.id);
@@ -474,7 +483,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     const conversationId = active.id;
     const assistantId = crypto.randomUUID();
     const pending = [...active.messages, userMessage];
-    setActiveReview({ conversationId, messageId: assistantId });
+    lastReview.current = { conversationId, messageId: assistantId };
+    setActiveReview(lastReview.current);
     followReview.current = true;
     let preparedEvidence: EvidenceHit[] = [];
     const selectedProfile = { ...(active.profile ?? profile), local_model: localModel };
@@ -643,7 +653,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     const requestStarted = Date.now();
     let execution = initialReviewProgress(true, selected, (active.profile ?? profile).corpus_scope);
     const assistantId = crypto.randomUUID();
-    setActiveReview({ conversationId, messageId: assistantId });
+    lastReview.current = { conversationId, messageId: assistantId };
+    setActiveReview(lastReview.current);
     followReview.current = true;
     appendMessage(conversationId, { id: assistantId, role: "assistant", text: "", pending: true, execution, question: message.question });
     const controller = new AbortController();
