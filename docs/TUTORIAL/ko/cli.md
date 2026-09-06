@@ -506,3 +506,28 @@ extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-qui
 
 
 `rag-fresh-start --status`는 extreme 삭제로 `.env`가 없어지거나 웹 컨테이너가 중지돼도 기존 로컬 operator 연결로 마지막 초기화 상태를 읽습니다. 삭제를 재요청하지 않습니다. 코드를 업데이트한 뒤에는 `rag-dev down`, `rag-dev up -d` 순서로 로컬 operator를 재시작한 후 새 옵션을 사용하세요. 이 명령들은 데이터 볼륨을 보존합니다.
+
+
+## 호환되지 않는 로컬 스키마 복구
+
+재시작이나 스키마 확인은 드리프트를 고치지 않습니다. 기존 DB를 보존하면서 사용 가능한 빈 환경을 만들려면 다음 순서로 진행하세요.
+
+```bash
+uv run python -m scripts.schema_status check
+uv run python -m scripts.schema_status recover --return-stage index
+# 선택 사항: --parent /existing/directory (원래 체크아웃 밖의 기존 디렉터리)
+```
+
+복구 명령은 선택한 상위 디렉터리(기본값은 원래 체크아웃의 상위)에 고유 이름의 비공개 체크아웃을 만듭니다. 커밋된 소스만 별도 Git 저장소로 복제하고 push 원격은 제거합니다. `.env`는 비공개로 복사하되 DB·웹·operator 포트를 새로 정하고 Compose 프로젝트와 볼륨을 분리합니다. 기존 설정·서비스·DB·다운로드한 코퍼스는 그대로 남습니다. 미커밋 코드와 다운로드·개인 코퍼스 파일은 복사하지 않습니다. 호스트 `DATABASE_URL`이나 Compose 환경변수로 원래 DB에 연결되지 않도록 새 환경의 대상을 고정합니다.
+
+잠긴 의존성 설치 → 새 DB 시작 → 빈 스키마 준비 → DEV 시작 → CLI와 웹 경유 API의 스키마 확인을 수행합니다. 공시 수집이나 모델 호출은 하지 않습니다. 두 확인이 모두 성공해야 **Recovery ready**와 원래 요청한 Build 단계로 이동하는 URL을 출력합니다. 단계는 filings·index·embeddings·lexical·ask·answer_model·evaluate 중 선택합니다. 새 빈 환경을 준비한 것이며 원래 호환되지 않는 스키마를 고친 것이 아닙니다.
+
+별도 터미널에서 출력된 `cd`와 `source ./rag_alias.sh`를 실행해 복구 환경 CLI를 선택하세요. 스키마 출력에는 로컬 DB 대상이 포함됩니다. 웹에서도 도착한 단계의 상태를 다시 확인하고 필요한 데이터를 순서대로 준비하세요. 원래 디렉터리의 명령이 복구 환경을 가리킨다고 생각하면 안 됩니다.
+
+설치·시작·준비 확인 실패 시 복구 디렉터리를 보존하고 재개 명령을 출력합니다. 해당 환경의 로그와 상태를 확인하세요. 실패나 알 수 없는 상태를 완료로 표시하지 않으며, 기존 DB 초기화·마이그레이션·유료 재처리는 하지 않습니다. 복구 디렉터리에서 `rag-dev down`을 실행하면 그 프로젝트만 중지하고 볼륨은 보존합니다.
+
+평가 오류에는 재시도·상세정보와 함께 준비 이동 버튼이 표시됩니다. 확인된 원문 부재는 수집, 청크 부재는 인덱싱, 임베딩 대기는 임베딩, 어휘 인덱스 부재는 BM25로 이동합니다. 스키마·원인 불명 오류와 원문 계약 오류는 설정 진단으로 이동합니다. 이동만으로 작업은 시작되지 않습니다. 도착한 곳에서 새로고침해 실제 상태를 확인하세요.
+
+### SCREENSHOT NEEDED
+<!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
+새 스크린샷 증거는 아직 없으며 기존 이미지는 유지합니다.

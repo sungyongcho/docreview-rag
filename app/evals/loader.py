@@ -26,6 +26,10 @@ class GoldenDataError(ValueError):
     """A golden file or its cited source snapshot violates the golden-data contract."""
 
 
+class SourceMissingError(GoldenDataError):
+    """A cited source artifact must be acquired before evaluation can run."""
+
+
 def encode_golden_payload(payload: list[dict[str, object]]) -> bytes:
     """Encode one canonical human-reviewable golden JSON document."""
     return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode()
@@ -146,6 +150,8 @@ def validate_golden_sources(
             raise GoldenDataError(f"{first_case_id} cites unknown corpus document {document_id}")
         try:
             raw_source = source_path.read()
+        except FileNotFoundError as exc:
+            raise SourceMissingError(f"missing verified source for {document_id}") from exc
         except (OSError, ValueError) as exc:
             raise GoldenDataError(f"cannot read verified source for {document_id}: {exc}") from exc
         digest = source_digest(raw_source)

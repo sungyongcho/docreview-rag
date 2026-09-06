@@ -401,6 +401,18 @@ describe("service shell", () => {
     confirm.mockRestore();
   });
 
+  it("returns a recovery URL to its requested Build step without running jobs", async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, "", "/?recovery_stage=evaluate");
+    try {
+      const requests = stubLiveApi(EMPTY_CORPUS);
+      render(<ServiceShell />);
+      await waitFor(() => expect(document.getElementById("stage-7")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Build, needs attention" })).toHaveAttribute("aria-pressed", "true");
+      expect(requests.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    } finally { window.history.replaceState({}, "", originalUrl); }
+  });
+
   it("restores the selected evaluation and API editor when returning between workspaces", async () => {
     const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     const ordinaryFetch = fetchMock.getMockImplementation()!;
@@ -428,7 +440,9 @@ describe("service shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
     fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
     expect(screen.getByRole("button", { name: "3. Run evaluation" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).toBeChecked();
+    // Result detail intentionally replaces the run list while preserving the selected result.
+    expect(screen.queryByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to evaluations" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Result details · #16" })).toBeVisible();
   });
 

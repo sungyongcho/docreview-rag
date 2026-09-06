@@ -73,7 +73,7 @@ type View = "review" | "build" | "measure" | "system";
 /** One deep-link target for every navigation call site: sidebar, topbar, modals, and workspaces. */
 export type NavigationTarget =
   | { view: "review"; conversationId?: string }
-  | { view: "build"; tab?: BuildTab; stage?: number }
+  | { view: "build"; tab?: BuildTab; stage?: number | "setup" }
   | { view: "measure"; tab?: MeasureTab; resultId?: number | null }
   | { view: "system"; tab?: SystemTab };
 
@@ -148,10 +148,20 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error; cleared by the next successful review. */
   const [resetAt, setResetAt] = useState<string | null>(null);
   /** Build stage card to scroll into view once the Build workspace has rendered. */
-  const [pendingStage, setPendingStage] = useState<number | null>(null);
+  const [pendingStage, setPendingStage] = useState<number | "setup" | null>(null);
   const reviewAbort = useRef<AbortController | null>(null);
   /** First-run routing fires once per page load and is cancelled by any explicit navigation before it. */
   const firstRunRouted = useRef(false);
+  const recoveryRouted = useRef(false);
+  useEffect(() => {
+    if (publicPreview || !sessionActive || recoveryRouted.current) return;
+    recoveryRouted.current = true;
+    const stage = new URLSearchParams(window.location.search).get("recovery_stage");
+    const stages: Record<string, number> = { filings: 1, index: 2, embeddings: 3, lexical: 4, ask: 5, answer_model: 6, evaluate: 7 };
+    if (!stage || !stages[stage]) return;
+    firstRunRouted.current = true;
+    setView("build"); setBuildTab("pipeline"); setPendingStage(stages[stage]);
+  }, [publicPreview, sessionActive]);
   const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live" && !publicPreview;
   const runtimeHealth = useRuntimeHealth({ active: sessionActive, publicPreview });
   const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
@@ -876,6 +886,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           capabilities={helpCapabilities}
           publicPreview={publicPreview}
           active={sessionActive && view === "measure"}
+          readiness={runtimeHealth.readiness}
+          onOpenPreparation={(stage) => navigate({ view: "build", tab: "pipeline", stage })}
           onDirtyChange={setUnsavedGolden}
           environment={permissions?.environment}
           live={adminBuild && permissions?.can_run_evaluation === true}

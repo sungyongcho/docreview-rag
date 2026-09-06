@@ -54,7 +54,7 @@ export function diagnosePreparation(stageId: StageId, pipeline: Pipeline, runtim
     // Acquisition writes source files; schema compatibility gates indexing, not files.
     if (stageId !== "filings") {
       if (runtime.schemaStatus === "drifted") {
-        return result("blocked", "Database schema is incompatible", "A rebuild or restart cannot repair an incompatible database layout. Preserve the database and follow the setup recovery guide before indexing.", "setup", [CHECK_SCHEMA]);
+        return result("blocked", "Database schema is incompatible", "A rebuild or restart cannot repair an incompatible database layout. Preserve the database and follow the setup recovery guide before indexing.", "setup", [CHECK_SCHEMA, { reason: "Create a separate recovery checkout; preserve the original database and files.", command: "uv run python -m scripts.schema_status recover --return-stage " + stageId, expected: "Open the printed recovery URL and re-check this step. The original schema remains unchanged." }]);
       }
       if (runtime.schemaStatus === "empty") {
         return result("blocked", "Database schema is empty", "Prepare the empty database schema, then re-check this step.", "setup", [{
