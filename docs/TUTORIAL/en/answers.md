@@ -17,7 +17,7 @@ separately instead of treating every completed request as a successful answer.
   or an explicit failure. With Auto scope, server-confirmed routing appears only when supplied.
 - **Completion:** the selected document/year is correct, the cited passages support the claims, and no
   operational failure is reported. `SUPPORTED` is a prompt to inspect evidence, not a substitute for it.
-- **Recovery:** distinguish `NOT_IN_DOCS` from a provider failure, node error, or run limit. Open Run trace
+- **Recovery:** distinguish `NOT_IN_DOCS` from a provider failure, node error, or run limit. Open **Run details → Trace**
   and use [runtime diagnosis](runtime.md) and [troubleshooting](troubleshooting.md).
 - **Next:** [adjust settings and evidence choices](settings.md#step-10).
 
@@ -132,3 +132,22 @@ while candidates and relevant evidence remain zero.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: path decision; state: completed context-aware review, chat-only reply, and scope conflict with Auto action; locale: en; evidence: first step, selected/resolved scope, routing queries, skipped phases and actual model calls in light mode. -->
+
+### Explore a stage or open run details
+
+The execution summary stays with its answer. Select any stage, including **Path decision**,
+to expand its recorded scope, ranked candidates, kept/rejected evidence, verification or
+result. One stage panel is open at a time; select it again to collapse it. Missing historical
+fields say **Not recorded for this run**.
+
+Use **Run details** for the right-side **Performance**, **Server settings** and **Trace** tabs.
+The `Q. <question>` heading and short message ID identify the selected answer. Reopening an
+answer restores its last tab. The edge control collapses or expands the panel; Escape, the
+close button, or clicking the conversation/composer closes it without discarding the draft.
+Help and run details share the right side and never open together. OpenAI calls show available
+request/token facts without an empty server-timing disclosure. Ollama timings and placement
+appear only when recorded.
+
+### SCREENSHOT NEEDED
+
+<!-- Feature: stage disclosures and right-side run details; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->

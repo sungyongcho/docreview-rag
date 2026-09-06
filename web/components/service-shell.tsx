@@ -5,7 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
 import { GuidesNavigation } from "@/components/guides-navigation";
-import { ExecutionPerformance } from "@/components/execution-performance";
+import { RunDetailsPanel } from "@/components/run-details-panel";
 import { EvidenceCandidates } from "@/components/evidence-candidates";
 import { LanguageSwitch } from "@/lib/i18n";
 import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
@@ -135,6 +135,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
   const [profile, setProfile] = useState<ReviewSessionDraft>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -720,6 +721,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   function setHelp(open: boolean) {
+    if (open) setRunDetailsMessageId(null);
     saveHelpOpen(open);
     setHelpOpen(open);
   }
@@ -743,6 +745,17 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const location = `${view}/${buildTab}/${measureTab}/${systemTab}`;
   /** The workspace reserves room for the panel only while it is actually on screen. */
   const helpVisible = sessionActive && helpOpen && !tourOpen;
+  const selectedRunIndex = active?.messages.findIndex((message) => message.id === runDetailsMessageId) ?? -1;
+  const selectedRun = selectedRunIndex >= 0 ? active!.messages[selectedRunIndex] : null;
+  const runDetailsMessage = selectedRun && sessionActive && view === "review" && !tourOpen && !helpVisible
+    ? { ...selectedRun, question: selectedRun.question ?? active!.messages.slice(0, selectedRunIndex).findLast((message) => message.role === "user")?.text }
+    : null;
+
+  /** Keep the question visible beside one selected run without changing conversation state. */
+  function openRunDetails(messageId: string) {
+    setHelp(false);
+    setRunDetailsMessageId(messageId);
+  }
 
   const readiness = runtimeHealth.readiness;
   /** First-run routing: an empty live corpus with nothing asked yet opens on Build, unless the user already went somewhere. */
@@ -792,7 +805,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   return (
-    <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}`}>
+    <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>
       {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
       <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
         <div className="brand"><ProductBrand /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
@@ -874,7 +887,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   onSwitchScope={!busy ? () => { updateSessionProfile({ corpus_scope: "auto" }); setQuery(message.question ?? ""); } : undefined}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
-                  onOpenFix={openSettings}
+                  onOpenDetails={() => openRunDetails(message.id)}
                 />
               ))}
 
@@ -966,6 +979,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       </section>
       <SettingsModal open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
+      <RunDetailsPanel message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
@@ -988,8 +1002,7 @@ interface ReviewMessageProps {
   message: ChatMessage;
   onStop?: () => void;
   onSwitchScope?: () => void;
-  /** Opens Settings at the category that owns the limit this run hit. */
-  onOpenFix?: (category: "limits" | "runtime") => void;
+  onOpenDetails?: () => void;
   /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
   latestEvidence: boolean;
   busy: boolean;
@@ -1008,19 +1021,28 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
+function ReviewMessage({ message, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails }: ReviewMessageProps) {
   const { t, locale } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
   const notInDocs = message.evidenceLabel === "Related evidence — not direct support";
+  const article = useRef<HTMLElement>(null);
+  /** Reveal only this message's evidence list when its report stage links to candidates. */
+  function showEvidence() {
+    const evidence = article.current?.querySelector<HTMLDetailsElement>("details.evidence");
+    if (!evidence) return;
+    evidence.open = true;
+    evidence.querySelector<HTMLElement>("summary")?.focus({ preventScroll: true });
+    evidence.scrollIntoView?.({ block: "nearest" });
+  }
   return (
-    <article className={`message ${message.role}${message.pending ? " pending" : ""}`} data-message-id={message.id} aria-busy={message.pending || undefined}>
+    <article ref={article} className={`message ${message.role}${message.pending ? " pending" : ""}`} data-message-id={message.id} aria-busy={message.pending || undefined}>
       <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
         {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
-        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} onSwitchScope={onSwitchScope} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{!message.pending && <ExecutionPerformance data={message.performance} state={message.execution} />}</>}
+        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details></>}
         {message.evidence?.length ? (
           <>
             {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}
@@ -1030,23 +1052,7 @@ function ReviewMessage({ message, latestEvidence, busy, onStop, onSwitchScope, o
             </details>
           </>
         ) : null}
-        {message.diagnostics?.length ? (
-          <details className="trace-details" data-help="review.run-trace">
-            <summary>{t("Run trace")}{message.failureFix ? t(" · why it stopped") : ""}</summary>
-            <dl className="status-list run-diagnostics">
-              {message.diagnostics.map((row) => (
-                <div key={row.label}><dt>{t(row.label)}</dt><dd>{row.label === "Status" ? t(row.value) : row.value}</dd></div>
-              ))}
-            </dl>
-            {message.failureFix && onOpenFix && (
-              <button className="button" type="button" onClick={() => onOpenFix(message.failureFix!.category)}>
-                {t(message.failureFix.label)}
-              </button>
-            )}
-          </details>
-        ) : message.trace ? (
-          <details className="trace-details" data-help="review.run-trace"><summary>{t("Run trace")}</summary><pre className="trace">{message.trace}</pre></details>
-        ) : null}
+        {message.role === "assistant" && (message.execution || message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={onOpenDetails}>{t("Run details")}</button>}
       </div>
     </article>
   );

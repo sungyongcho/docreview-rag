@@ -837,6 +837,8 @@ describe("service shell", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByText(/wall-clock limit of 120s/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Run details" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
     // The run identifier is the only handle for correlating this with the server traces.
     expect(screen.getByText("run-42")).toBeInTheDocument();
     expect(screen.getByText("138.6")).toBeInTheDocument();
@@ -1293,5 +1295,62 @@ describe("in-message review lifecycle", () => {
     expect(loadConversations()[0].messages[1]).toMatchObject({ id: "pending", pending: false, execution: { outcome: "failed" } });
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/review/stream"))).toBe(false);
     expect(screen.queryByRole("button", { name: "Stop request" })).toBeNull();
+  });
+});
+
+
+describe("right-side run details", () => {
+  beforeEach(() => {
+    cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+    stubPublicApi();
+    saveConversations([{ id: "runs", title: "Two questions", createdAt: "2026-09-07", updatedAt: "2026-09-07", profile: DEFAULT_SESSION_PROFILE, messages: [
+      { id: "q1", role: "user", text: "First filing question" },
+      { id: "answer-first", role: "assistant", text: "First answer", diagnostics: [{ label: "Run ID", value: "run-first" }], execution: { node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed" } },
+      { id: "q2", role: "user", text: "Second filing question" },
+      { id: "answer-second", role: "assistant", text: "Second answer", diagnostics: [{ label: "Run ID", value: "run-second" }], execution: { node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed" } },
+    ] }]);
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it("moves details out of the answer and restores each question's last section", async () => {
+    render(<ServiceShell />);
+    const buttons = await screen.findAllByRole("button", { name: "Run details" });
+    const composer = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(composer, { target: { value: "Keep this unsent draft" } });
+    expect(screen.queryByText("run-first")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".review-execution-summary")).toHaveLength(2);
+    expect(document.querySelector(".message .execution-performance")).toBeNull();
+    fireEvent.click(buttons[0]);
+    let panel = screen.getByRole("dialog", { name: "Run details" });
+    expect(within(panel).getByText("Q. First filing question")).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole("tab", { name: "Trace" }));
+    expect(within(panel).getByText("run-first")).toBeInTheDocument();
+    fireEvent.click(buttons[1]);
+    panel = screen.getByRole("dialog", { name: "Run details" });
+    expect(within(panel).getByText("Q. Second filing question")).toBeInTheDocument();
+    expect(within(panel).getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(buttons[0]);
+    expect(screen.getByRole("tab", { name: "Trace" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.pointerDown(composer);
+    expect(screen.queryByRole("dialog", { name: "Run details" })).toBeNull();
+    expect(composer).toHaveValue("Keep this unsent draft");
+    fireEvent.click(buttons[0]);
+    expect(screen.getByRole("tab", { name: "Trace" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("keeps only one right panel open and closes help from the composer", async () => {
+    render(<ServiceShell />);
+    const buttons = await screen.findAllByRole("button", { name: "Run details" });
+    fireEvent.click(screen.getByRole("button", { name: "Toggle help" }));
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+    fireEvent.click(buttons[0]);
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Run details" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle help" }));
+    expect(screen.queryByRole("dialog", { name: "Run details" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByPlaceholderText("Ask a question about the filing corpus"));
+    expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
+    expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
   });
 });
