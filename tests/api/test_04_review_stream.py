@@ -54,6 +54,8 @@ def test_stream_emits_node_events_then_the_terminal_run(client_factory, services
     ) as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.headers["cache-control"] == "no-store, no-transform"
+        assert response.headers["x-accel-buffering"] == "no"
         events = sse_events(response)
 
     kinds = [kind for kind, _ in events]

@@ -104,3 +104,10 @@ A run has both conversation Run limits and a server provider allowance. The smal
 For example, an output of `600 / 600` followed by a JSON validation error means the provider could not repair that output within its remaining allowance. Raising the conversation's input budget does not address that output ceiling. Check the applied provider limits and the original validation details before retrying.
 
 The execution record also retains the effective limits and their source, routing queries, candidate ranks, stage results, provider identity and available timing. Chat-only runs explicitly have no retrieval settings. Historical fields that were never recorded remain absent; a later run cannot reconstruct their measurements.
+
+### Live stage delivery
+
+The review stream preserves each server event through the development proxy.
+Its `Cache-Control: no-store, no-transform` response prevents intermediary compression
+from buffering small stage events until the model call finishes. A stage appears only
+after the server emits it; a slow model call does not hold back earlier completed stages.

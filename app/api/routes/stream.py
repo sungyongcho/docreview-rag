@@ -181,5 +181,5 @@ async def review_stream(
 
     return _ClosingStreamingResponse(
         events(),
-        headers={"cache-control": "no-store", "x-accel-buffering": "no"},
+        headers={"cache-control": "no-store, no-transform", "x-accel-buffering": "no"},
     )
