@@ -29,6 +29,15 @@ What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the
 **요청 중지**는 실행 중인 요청을 중단합니다. 화면은 완료 단계를 가짜로 채우거나 남은 시간을
 추정하지 않습니다. 앞 단계로 돌아가면 뒤 단계는 다시 대기할 수 있습니다.
 
+질문 바로 아래의 대기 중 답변 메시지에서 **실행 요약**을 확인합니다. 같은 메시지에 단계·개수·경과 시간·**요청 중단**이 표시되고, 완료되면 실행 요약을 유지한 채 답변이나 오류 결과로 바뀝니다. 입력창 위에 별도 진행 카드를 띄우지 않습니다.
+
+관련성 기준을 충족한 근거가 없으면 **답변·인용 검증** 단계는 경고색과 **기준 미달로 건너뜀**으로 표시됩니다. 의도적으로 건너뛴 단계는 실패·취소로 실행하지 못한 단계와 구분하며, 결과 준비 단계는 완료될 수 있습니다. 과거 기록에 이유가 없으면 건너뜀 상태를 추측하지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: live execution summary inside the pending assistant message and NOT_IN_DOCS skipped verification; locale=ko; light mode; show the question, pending stages, Stop request and visible composer, plus completed threshold failure. Preserve existing assets. -->
+
+아래 스크린샷은 진행 표시 위치가 바뀌기 전의 기록이며 새 동작의 검증 근거가 아닙니다.
+
 <!-- capture:15-cited-answer -->
 
 ![기존에 저장된 NVIDIA FY2024 답변과 검색 근거입니다.](../assets/15-cited-answer.ko.jpg)

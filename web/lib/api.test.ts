@@ -86,3 +86,37 @@ describe("API client", () => {
     ).rejects.toThrow("body.session_profile.languages: Input should be a valid tuple");
   });
 });
+
+
+describe("review response body cancellation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([false, true])("cancels the response reader after headers or for an already aborted signal (preaborted=%s)", async (preaborted) => {
+    const cancellation = vi.fn();
+    const response = new Response(new ReadableStream({ cancel: cancellation }), { headers: { "content-type": "text/event-stream" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    const controller = new AbortController();
+    const added = vi.spyOn(controller.signal, "addEventListener");
+    const removed = vi.spyOn(controller.signal, "removeEventListener");
+    if (preaborted) controller.abort();
+    const request = streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined, controller.signal);
+    const rejected = expect(request).rejects.toMatchObject({ name: "AbortError" });
+    if (!preaborted) {
+      await vi.waitFor(() => expect(response.body?.locked).toBe(true));
+      controller.abort();
+    }
+    await rejected;
+    expect(cancellation).toHaveBeenCalledTimes(1);
+    for (const [name, listener] of added.mock.calls) expect(removed.mock.calls.some(([removedName, removedListener]) => removedName === name && removedListener === listener)).toBe(true);
+    expect(response.body?.locked).toBe(false);
+  });
+
+  it("removes the body listener after ordinary completion", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse(['event: report\ndata: {"report":{"answer":"done"}}\n\nevent: done\ndata: {}\n\n'])));
+    const controller = new AbortController();
+    const added = vi.spyOn(controller.signal, "addEventListener");
+    const removed = vi.spyOn(controller.signal, "removeEventListener");
+    await streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined, controller.signal);
+    for (const [name, listener] of added.mock.calls) expect(removed.mock.calls.some(([removedName, removedListener]) => removedName === name && removedListener === listener)).toBe(true);
+  });
+});

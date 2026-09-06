@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, progressCountsLabel, reviewProgressFromEvent } from "./review-progress";
@@ -42,7 +43,7 @@ describe("Five real-event review phases", () => {
     for (const outcome of ["failed", "cancelled"] as const) {
       const result = finishReviewProgress(state, outcome, 1250);
       expect(result.elapsedMs).toBe(1250);
-      expect(REVIEW_STEPS.map((_, i) => phaseStatus(result, i))).toEqual(["pending", outcome, "pending", "pending", "pending"]);
+      expect(REVIEW_STEPS.map((_, i) => phaseStatus(result, i))).toEqual(["not-run", outcome, "not-run", "not-run", "not-run"]);
     }
   });
 
@@ -124,4 +125,62 @@ describe("Five real-event review phases", () => {
     expect(screen.getByText("Routing details not collected")).toBeVisible();
     expect(screen.queryByText("Server-confirmed scope")).toBeNull();
   });
+});
+
+
+describe("intentional verification skips", () => {
+  const threshold = { code: "relevance_below_threshold", candidate_count: 3, relevant_count: 0, minimum_required: 1 };
+  const performance = { stages: ["gate", "retrieve", "grade", "report"].map((node) => ({ node, phase: "end", status: "completed" })), stage_results: [{ node: "grade", reasons: [threshold] }] };
+
+  it("marks only an evidenced NOT_IN_DOCS threshold bypass as a warning", () => {
+    const state = finishReviewProgress(initialReviewProgress(), "completed", 6900, performance, { label: "NOT_IN_DOCS", reasons: [threshold] });
+    render(<ReviewProgressSteps state={state} />);
+    expect(REVIEW_STEPS.map((_, index) => phaseStatus(state, index))).toEqual(["done", "done", "done", "skipped", "done"]);
+    expect(screen.getByText("Skipped: relevance threshold not met")).toHaveClass("review-phase-reason");
+    expect(screen.getByText(/3 candidates · 0 relevant/)).toBeInTheDocument();
+  });
+
+  it("does not infer a skip from an unsupported verdict, zero counts or missing old metadata", () => {
+    for (const report of [{ label: "NOT_IN_DOCS" }, { label: "NOT_IN_DOCS", reasons: [{ code: "support_downgraded" }] }, { label: "SUPPORTED", reasons: [threshold] }]) {
+      const state = finishReviewProgress(initialReviewProgress(), "completed", 100, undefined, report);
+      expect(phaseStatus(state, 3)).toBe("not-run");
+    }
+  });
+
+  it("keeps executed verification green and never applies skips to failure or cancellation", () => {
+    const completed = { ...performance, stages: ["gate", "retrieve", "grade", "check", "report"].map((node) => ({ node, phase: "end", status: "completed" })) };
+    const success = finishReviewProgress(initialReviewProgress(), "completed", 100, completed, { label: "SUPPORTED" });
+    expect(REVIEW_STEPS.map((_, index) => phaseStatus(success, index))).toEqual(["done", "done", "done", "done", "done"]);
+    const downgraded = finishReviewProgress(initialReviewProgress(), "completed", 100, completed, { label: "NOT_IN_DOCS", reasons: [threshold] });
+    expect(phaseStatus(downgraded, 3)).toBe("done");
+    for (const outcome of ["failed", "cancelled"] as const) {
+      const stopped = finishReviewProgress(reviewProgressFromEvent({ ...event("grade"), phase: "start" }, initialReviewProgress()), outcome, 100, undefined, { label: "NOT_IN_DOCS", reasons: [threshold] });
+      expect(REVIEW_STEPS.map((_, index) => phaseStatus(stopped, index))).toEqual(["not-run", "not-run", outcome, "not-run", "not-run"]);
+    }
+  });
+
+  it("uses the last actual pass instead of reviving completion from before a retrieval retry", () => {
+    const state = finishReviewProgress(initialReviewProgress(), "completed", 100, { stages: ["gate", "retrieve", "grade", "check", "retrieve", "grade", "report"].map((node) => ({ node, phase: "end", status: "completed" })), stage_results: [{ node: "report", decision: { label: "NOT_IN_DOCS" }, reasons: [threshold] }] });
+    expect(REVIEW_STEPS.map((_, index) => phaseStatus(state, index))).toEqual(["done", "done", "done", "skipped", "done"]);
+    expect(state.retries).toBe(1);
+  });
+});
+
+
+it("keeps warning text readable in both actual themes and visible in the compact stylesheet", () => {
+  const styles = readFileSync("app/styles.css", "utf8");
+  const compact = readFileSync("app/v2.css", "utf8");
+  const warning = styles.match(/--phase-warning:\s*light-dark\((#[0-9a-f]+),\s*(#[0-9a-f]+)\)/i)!;
+  const backgrounds = [...compact.matchAll(/--(?:bg|surface|surface-2):\s*light-dark\((#[0-9a-f]+),\s*(#[0-9a-f]+)\)/gi)];
+  function luminance(hex: string) {
+    const channels = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255).map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  }
+  expect(backgrounds.length).toBeGreaterThan(0);
+  for (const background of backgrounds) for (const theme of [1, 2]) {
+    const foreground = luminance(warning[theme]);
+    const backdrop = luminance(background[theme]);
+    expect((Math.max(foreground, backdrop) + 0.05) / (Math.min(foreground, backdrop) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(compact).toContain(".review-progress-steps small.review-phase-reason { display: block;");
 });
