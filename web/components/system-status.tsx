@@ -1,5 +1,6 @@
 "use client";
 import { useI18n } from "@/lib/i18n";
+import { DevelopmentBadge } from "@/components/development-badge";
 import { RefreshCw } from "lucide-react";
 
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
@@ -94,7 +95,7 @@ function LocalModelPolicy({ readiness, selected }: { readiness: Readiness | null
   const embedding = readiness?.models?.embedding?.default ?? "—";
   return (
     <section className="surface local-policy" data-help="system.local-policy">
-      <h2>{t("Local model policy")}</h2>
+      <div className="surface-title"><h2>{t("Local model policy")}</h2><DevelopmentBadge locale={locale} compact /></div>
       <p className="helper">{t("The selected local model serves these roles when the conversation uses Local LLM.")}</p>
       <p className="helper" role="status">{t(localEngineStatus(local))}</p>
       {local?.checked_at && <p className="helper">{t("Last checked:")}{" "}{new Date(local.checked_at).toLocaleTimeString(locale === "ko" ? "ko-KR" : "en-US")}</p>}

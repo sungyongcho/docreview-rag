@@ -123,3 +123,9 @@ instead of claiming an outage, checks liveness every 3 seconds and retries readi
 at most once per 10 seconds. Browser offline events trigger an immediate probe rather than assuming a loopback
 API is down; the same grace period applies to actual failures. Routine polling does not change an already healthy `kind` to
 checking or disable Send. No mutation is retried by this mechanism.
+
+While a local command runs, **System → Operations** polls the operator every second (every
+five seconds in a hidden tab). Failed polls back off to 2, 4, 8 and then 10 seconds; after
+three consecutive failures one persistent waiting notice replaces per-failure error toasts,
+and the next successful poll removes it. A manual **Refresh** still reports its own error.
+See [Local operations](runtime.md#operations).

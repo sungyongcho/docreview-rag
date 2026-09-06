@@ -1,3 +1,4 @@
+import { OPERATION_CATEGORIES, type OperatorCommand, type OperationsFilter } from "./operator-api";
 import { browserStorage } from "./production-preview";
 import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./types";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
@@ -10,6 +11,7 @@ const DESKTOP_JOB_NOTIFICATIONS_KEY = "docreview:desktop-job-notifications:v1";
 const EXPERIMENT_DEFAULTS_KEY = "docreview:experiment-defaults:v1";
 /** Help mode open/closed; separate from the frozen onboarding key so the tour sentinel never changes. */
 export const HELP_KEY = "docreview:help:v1";
+const OPERATIONS_FILTER_KEY = "docreview:operations-filter:v1";
 const MAX_CONVERSATIONS = 30;
 const MAX_MESSAGES = 100;
 
@@ -188,4 +190,17 @@ function isConversation(value: unknown): value is Conversation {
     typeof item.updatedAt === "string" &&
     Array.isArray(item.messages)
   );
+}
+
+/** Category filter last chosen on System › Operations; unknown or missing values fall back to `all`. */
+export function loadOperationsFilter(): OperationsFilter {
+  if (typeof window === "undefined") return "all";
+  const value = browserStorage().getItem(OPERATIONS_FILTER_KEY);
+  return OPERATION_CATEGORIES.includes(value as OperatorCommand["category"]) ? (value as OperationsFilter) : "all";
+}
+
+export function saveOperationsFilter(filter: OperationsFilter): void {
+  if (typeof window === "undefined") return;
+  if (filter === "all") browserStorage().removeItem(OPERATIONS_FILTER_KEY);
+  else browserStorage().setItem(OPERATIONS_FILTER_KEY, filter);
 }

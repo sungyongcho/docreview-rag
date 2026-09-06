@@ -94,6 +94,12 @@ rag-dev up --build -d
 
 *시스템 상태에서 실제 API·DB·스키마 상태, 코퍼스 준비, 모델 사용 가능 여부를 나누어 확인합니다. 개발 코퍼스에는 공시 30건이 있으며 준비 작업을 다시 실행하지 않았습니다.*
 
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=system-status-dev-badges; locale=ko; theme=light; capture=system-status-tab-showing-dev-badges-on-local-model-policy-and-local-runtime-panels; issue=79; preserve-existing-assets=true -->
+
+**로컬 모델 구성과 로컬 실행 환경 패널의 DEV 배지 스크린샷이 필요합니다. 기존 스크린샷은 유지합니다.**
+
 **완료 조건:** API가 응답하고 DB가 연결되며 스키마를 사용할 수 있습니다.
 현재 환경에서 문서 준비를 허용하는지도 파악했습니다. 코퍼스가 비어 있어도 이
 조건은 충족할 수 있으며, 기존 데이터 확인은 다음 단계에서 합니다.

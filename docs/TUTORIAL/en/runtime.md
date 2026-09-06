@@ -77,11 +77,24 @@ Adjust a run budget under **Review settings → Run limits**. Prompt/evidence si
 > [!DEV]
 > Local-server configuration and model selection controls require DEV. Public requests use the release configuration; they do not expose local-server controls.
 
-**System → System status** distinguishes role configuration from installed models. **Settings → Local LLM** offers **Default**, saved servers, and **Add a server…**. Use **Run connection diagnostics** to inspect a candidate before explicitly connecting, then choose the answer engine and discovered model in the conversation. Saving a connection does not switch the engine automatically.
+**System → System status** distinguishes role configuration from installed models. The **Local model policy** and **Local runtime** panels carry a **DEV** badge because they exist only in a development runtime. **Settings → Local LLM** offers **Default**, saved servers, and **Add a server…**. Use **Run connection diagnostics** to inspect a candidate before explicitly connecting, then choose the answer engine and discovered model in the conversation. Saving a connection does not switch the engine automatically.
 
 If replacement discovery or saving fails, the working connection is preserved. Resolve the reported endpoint or model-capability error before trying again. A server responding to health checks can still fail an actual generation request. Changing the answer engine also does not replace the embedding identity already stored in the corpus.
 
 Installed, loaded, and answer-capable are separate facts. An installed model can be unloaded during normal standby; an unavailable inventory is unconfirmed, not a count of zero. DocReview only displays metadata actually returned by the server. It does not collect maximum/loaded context values or infer execution hardware from a model name. The [Ollama guide](ollama.md#models) explains independent model inspection. `rag-ollama-check` provides read-only connection diagnostics; [CLI reference](cli.md#diagnose-local-model-connectivity) defines its options.
+
+## Local operations {#operations}
+
+> [!DEV]
+> The Operations tab appears only when the local operator started by `scripts/run_local.sh` is configured for this build. Visitors never see it.
+
+**System → Operations** lists the registered local commands as cards grouped by category. **Inspect** reads state (Git status), **Verify** runs lint, tests, typecheck and the production build without changing files, and **Service** starts or stops PostgreSQL and the app or prepares an empty schema. Inside a group read-only commands come first and commands that ask for confirmation come last, each marked with a **Confirmation required** badge in its header. The **All · Inspect · Verify · Service** filter above the cards narrows the view and is remembered per browser. **Run** starts one command at a time; **Latest run** streams its output and offers **Cancel** while it is running.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=operations-category-groups-and-filter; locale=en; theme=light; capture=operations-tab-grouped-cards-with-verify-filter-selected-and-confirmation-required-badge; issue=81; preserve-existing-assets=true -->
+
+**Screenshot pending for the grouped Operations cards with the category filter and the confirmation badge. Existing screenshots remain unchanged.**
 
 ## Stop and continue later {#resume}
 

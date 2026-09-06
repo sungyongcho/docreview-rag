@@ -2,27 +2,84 @@
 import { useI18n } from "@/lib/i18n";
 
 
-import { CircleStop, Play, RefreshCw, TerminalSquare } from "lucide-react";
+import { CircleStop, Play, RefreshCw, TerminalSquare, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   cancelOperatorJob,
   getOperatorCommands,
   getOperatorJobs,
+  OPERATION_CATEGORIES,
+  type OperationsFilter,
   type OperatorCommand,
   type OperatorJob,
   startOperatorJob,
 } from "@/lib/operator-api";
+import { loadOperationsFilter, saveOperationsFilter } from "@/lib/storage";
 import { useNotifications } from "@/components/notifications";
+import { Segmented } from "@/components/segmented";
+
+/** Consecutive failed polls tolerated before one persistent waiting notice replaces per-failure toasts. */
+export const POLL_NOTICE_AFTER_FAILURES = 3;
+const POLL_INTERVAL_MS = 1_000;
+const POLL_HIDDEN_INTERVAL_MS = 5_000;
+const POLL_MAX_BACKOFF_MS = 10_000;
+
+const CATEGORY_LABELS: Record<OperatorCommand["category"], string> = { inspect: "Inspect", verify: "Verify", service: "Service" };
+const FILTER_OPTIONS: Array<{ value: OperationsFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "inspect", label: "Inspect" },
+  { value: "verify", label: "Verify" },
+  { value: "service", label: "Service" },
+];
+
+export interface CommandGroup {
+  category: OperatorCommand["category"];
+  commands: OperatorCommand[];
+}
+
+/**
+ * Group commands by category in display order, appending any category the registry adds later
+ * so nothing is hidden. Inside a group read-only commands come first and confirmation-required
+ * commands last; the stable sort keeps registry order within each half.
+ */
+export function groupCommands(commands: OperatorCommand[]): CommandGroup[] {
+  const categories = [...OPERATION_CATEGORIES, ...commands.map((command) => command.category)];
+  return [...new Set(categories)]
+    .map((category) => ({
+      category,
+      commands: commands
+        .filter((command) => command.category === category)
+        .sort((a, b) => Number(Boolean(a.confirmation)) - Number(Boolean(b.confirmation))),
+    }))
+    .filter((group) => group.commands.length > 0);
+}
+
+/** Delay before the next job poll: 1 s while healthy, doubling per consecutive failure up to 10 s, never under 5 s in a hidden tab. */
+export function pollDelay(failures: number, visible: boolean): number {
+  const delay = failures ? Math.min(POLL_INTERVAL_MS * 2 ** failures, POLL_MAX_BACKOFF_MS) : POLL_INTERVAL_MS;
+  return visible ? delay : Math.max(POLL_HIDDEN_INTERVAL_MS, delay);
+}
 
 /** `embedded` drops the page heading so a host workspace keeps the only h1; `helpId` is the Help mode hook. */
 export function Operations({ embedded = false, helpId }: { embedded?: boolean; helpId?: string } = {}) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [commands, setCommands] = useState<OperatorCommand[]>([]);
   const [jobs, setJobs] = useState<OperatorJob[]>([]);
-  const { notify } = useNotifications();
+  const { notify, dismissNotice } = useNotifications();
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<OperationsFilter>("all");
   const active = useMemo(() => jobs.find((job) => job.status === "running") ?? null, [jobs]);
+  const groups = useMemo(() => groupCommands(commands), [commands]);
+  const visibleGroups = filter === "all" ? groups : groups.filter((group) => group.category === filter);
+
+  // Read the remembered filter after mount so server and first client render agree.
+  useEffect(() => setFilter(loadOperationsFilter()), []);
+
+  function changeFilter(next: OperationsFilter) {
+    setFilter(next);
+    saveOperationsFilter(next);
+  }
 
   async function refresh() {
     try {
@@ -37,11 +94,47 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
   }
 
   useEffect(() => { void refresh(); }, []);
+
+  // Follow a running job with one request in flight at a time. Transient failures back off and,
+  // after a few in a row, raise a single persistent notice instead of a toast per failure.
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => void getOperatorJobs().then(setJobs).catch((reason) => notify(String(reason), "error", "operations-poll")), 1000);
-    return () => window.clearInterval(timer);
-  }, [active?.job_id]);
+    let stopped = false;
+    let failures = 0;
+    let noticed = false;
+    let timer = 0;
+    let request: AbortController | null = null;
+    const visible = () => document.visibilityState === "visible";
+    const poll = async () => {
+      const current = new AbortController();
+      request = current;
+      try {
+        const next = await getOperatorJobs(current.signal);
+        if (stopped) return;
+        failures = 0;
+        if (noticed) {
+          dismissNotice("operations-poll");
+          noticed = false;
+        }
+        setJobs(next);
+      } catch {
+        if (stopped || current.signal.aborted) return;
+        failures += 1;
+        if (failures === POLL_NOTICE_AFTER_FAILURES) {
+          notify(t("Local Operations is not responding. Retrying status checks."), "info", "operations-poll", 0);
+          noticed = true;
+        }
+      }
+      timer = window.setTimeout(poll, pollDelay(failures, visible()));
+    };
+    timer = window.setTimeout(poll, pollDelay(0, visible()));
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      request?.abort();
+      if (noticed) dismissNotice("operations-poll");
+    };
+  }, [active?.job_id, notify, dismissNotice, t]);
 
   async function run(command: OperatorCommand) {
     if (command.confirmation && !window.confirm(command.confirmation)) return;
@@ -74,16 +167,29 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
             <div><p className="eyebrow">{t("Local checkout only")}</p><h1>{t("Operations")}</h1><p>{t("Run fixed verification and service commands without exposing a shell.")}</p></div>
             <button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{t("Refresh")}</button>
           </header>}
-      <div className="command-grid">
-        {commands.map((command) => (
-          <article className="command-card" key={command.command_id}>
-            <div className="command-heading"><TerminalSquare size={16} /><span className={`command-kind ${command.category}`}>{t(command.category)}</span></div>
-            <h2>{t(command.label)}</h2><p>{t(command.description)}</p>
-            {command.confirmation && <small>{t("Confirmation required")}</small>}
-            <button className="button primary" type="button" disabled={Boolean(active)} onClick={() => void run(command)}><Play size={14} />{t("Run")}</button>
-          </article>
-        ))}
+      <div className="chip-group command-filter">
+        <Segmented<OperationsFilter> label="Command category" options={FILTER_OPTIONS} value={filter} onChange={changeFilter} />
       </div>
+      {visibleGroups.map((group) => (
+        <section className="command-group" key={group.category}>
+          <h3 className="command-group-heading">{t(CATEGORY_LABELS[group.category] ?? group.category)}</h3>
+          <div className="command-grid">
+            {group.commands.map((command) => (
+              <article className="command-card" key={command.command_id}>
+                <div className="command-heading">
+                  <TerminalSquare size={16} />
+                  <span className="command-badges">
+                    <span className={`command-kind ${command.category}`}>{t(command.category)}</span>
+                    {command.confirmation && <span className="command-kind confirmation" title={command.confirmation}><TriangleAlert size={11} aria-hidden="true" />{t("Confirmation required")}</span>}
+                  </span>
+                </div>
+                <h4>{t(command.label)}</h4><p>{t(command.description)}</p>
+                <button className="button primary" type="button" disabled={Boolean(active)} onClick={() => void run(command)}><Play size={14} />{t("Run")}</button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
       <section className="surface operation-output">
         <div className="operation-output-heading"><h2>{t("Latest run")}</h2>{active && <button className="button" type="button" onClick={() => void cancel()}><CircleStop size={14} />{t("Cancel")}</button>}</div>
         {latest ? <><p className="helper">{t(latest.label)} · {t(latest.status)}{latest.exit_code !== null ? t(" · exit {p0}", { p0: latest.exit_code }) : ""}</p><pre>{latest.output || t("Waiting for output…")}</pre></> : <p className="helper">{t("No local command has run in this session.")}</p>}

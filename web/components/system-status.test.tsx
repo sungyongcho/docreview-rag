@@ -56,6 +56,10 @@ describe("SystemStatus", () => {
     );
 
     const panel = screen.getByRole("heading", { name: "Local model policy" }).closest("section")!;
+    // The DEV badge sits beside the heading, not inside it, so the heading name stays exact.
+    expect(panel.querySelector(".development-badge")).toHaveAttribute("title", "DEV only");
+    expect(within(panel).getByText("DEV")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenAI model policy" }).closest("section")!.querySelector(".development-badge")).toBeNull();
     for (const role of ["review", "routing", "intent", "chat"]) {
       expect(within(panel).getByText(role)).toBeInTheDocument();
     }

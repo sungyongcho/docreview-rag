@@ -100,6 +100,12 @@ Corpus counts and model policy describe separate aspects of the same environment
 
 *System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.*
 
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=system-status-dev-badges; locale=en; theme=light; capture=system-status-tab-showing-dev-badges-on-local-model-policy-and-local-runtime-panels; issue=79; preserve-existing-assets=true -->
+
+**Screenshot pending for the DEV badges on the Local model policy and Local runtime panels. Existing screenshots remain unchanged.**
+
 **Completion criteria:** the API responds, the DB is connected, and the schema is usable.
 You know whether this environment allows document preparation. An empty corpus does not
 invalidate those checks; identifying existing data is the next step. Unknown fields

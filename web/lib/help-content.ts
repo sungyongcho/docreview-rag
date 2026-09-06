@@ -677,6 +677,7 @@ const SYSTEM: HelpTopic[] = [
     body: [
       "Runs allowlisted verification and service commands through the local operator (scripts/run_local.sh) without opening a shell; output streams into Latest run.",
       "The tab appears only when NEXT_PUBLIC_OPERATOR_BASE_URL and its token are configured for this build.",
+      "Cards are grouped by category (Inspect, Verify, Service) with read-only commands first; the filter choice is remembered in this browser.",
     ],
     seeAlso: ["build.runtime"],
     optional: true,
