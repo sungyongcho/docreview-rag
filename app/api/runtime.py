@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import secrets
 from typing import Literal, Protocol, cast
 from uuid import uuid4
@@ -75,7 +76,12 @@ from app.observability.persistence import (
     records_to_report,
     report_to_records,
 )
-from app.observability.stages import capture_stages, observed_stage, stage, stage_metadata
+from app.observability.stages import (
+    capture_stages,
+    routing_cache,
+    stage,
+    stage_metadata,
+)
 from app.observability.trace import step_trace_from_provider_result
 from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNode, build_run_report
 from app.observability.usage import provider_identity
@@ -98,10 +104,14 @@ from app.retrieval.translate import QueryTranslationError, route_query
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
 from app.workflow.gate import (
+    CASUAL_CUES,
+    FILING_CUES,
     ChatReply,
     ConversationDecision,
+    ConversationTurn,
     IntentClassification,
     deterministic_decision,
+    is_filing_followup,
 )
 from app.workflow.runner import NodeObserver, run_workflow
 from app.workflow.types import WorkflowRequest, WorkflowState
@@ -461,6 +471,158 @@ class RuntimeApiServices(ApiServices):
             ) from error
         return profile, scope
 
+    def _history(self, request: ReviewRequest | RetrieveRequest) -> tuple[ConversationTurn, ...]:
+        """Apply the server's history policy, including an explicit zero-turn limit."""
+        limit = request.session_profile.prompt_policy.history_turns
+        return request.conversation_history[-limit:] if limit else ()
+
+    def _followup_query(self, request: ReviewRequest | RetrieveRequest) -> tuple[str | None, str]:
+        """Carry filing topics forward while newer issuer and year references replace older ones."""
+        index = self._manifest_scope_index()
+        prior = None
+        for turn in self._history(request):
+            if turn.role != "user":
+                continue
+            if FILING_CUES.search(turn.text):
+                prior = turn.text
+            elif prior and (is_filing_followup(turn.text) or index.match(turn.text)):
+                prior = self._combine_followup(prior, turn.text)
+            else:
+                prior = None
+        follows = prior and (is_filing_followup(request.query) or index.match(request.query))
+        if prior is not None and follows and not CASUAL_CUES.search(request.query):
+            return prior, self._combine_followup(prior, request.query)
+        return None, request.query
+
+    def _combine_followup(self, prior: str, query: str) -> str:
+        """Keep the prior topic but remove superseded issuer aliases and fiscal years."""
+        index = self._manifest_scope_index()
+        if index.match(query):
+            for match in index.match(prior):
+                prior = re.sub(re.escape(match.alias), "", prior, flags=re.IGNORECASE)
+        if re.search(r"(?:19|20)\d{2}", query):
+            prior = re.sub(r"(?:19|20)\d{2}년?", "", prior)
+        return f"{prior.strip()} — {query}"
+
+    async def _path_decision(
+        self, request: ReviewRequest | RetrieveRequest
+    ) -> tuple[ConversationDecision, JsonObject]:
+        """Decide once per request and expose the bounded context used before retrieval."""
+        cache = routing_cache()
+        key = hashlib.sha256(
+            json.dumps(
+                {
+                    "query": request.query,
+                    "profile": request.session_profile.model_dump(mode="json"),
+                    "history": [turn.model_dump(mode="json") for turn in self._history(request)],
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if key in cache:
+            saved = cache[key]
+            return ConversationDecision.model_validate(saved["decision"]), dict(
+                cast("JsonObject", saved["path"])
+            )
+        async with stage("gate") as measurement:
+            prior, query = self._followup_query(request)
+            decision = deterministic_decision(
+                request.query,
+                has_issuer_alias=bool(self._manifest_scope_index().match(request.query)),
+                prior_filing_query=prior,
+            )
+            if decision is None and prior:
+                decision = ConversationDecision(
+                    intent="document_review",
+                    source="deterministic",
+                    matched_rule="filing_followup",
+                    rationale="An issuer follow-up continues the bounded filing context.",
+                )
+            if decision is None and self._intent_classifier_enabled:
+                decision = await self._classify_intent(
+                    ReviewRequest(
+                        query=request.query,
+                        session_profile=request.session_profile,
+                        conversation_history=self._history(request),
+                    )
+                )
+            if decision is None:
+                decision = ConversationDecision(
+                    intent="document_review",
+                    source="deterministic",
+                    matched_rule="review_default",
+                    rationale="Unclassified input defaults to evidence review.",
+                )
+            path: JsonObject = {
+                "intent": decision.intent,
+                "source": decision.source,
+                "matched_rule": decision.matched_rule,
+                "rationale": decision.rationale,
+                "history_turns": len(self._history(request)),
+                "selected_scope": request.session_profile.corpus_scope,
+                "resolved_scope": None,
+                "routing_queries": {},
+                "retrieval_query": query,
+                "scope_outcome": "not_applicable"
+                if decision.intent == "casual_chat"
+                else "resolved",
+                "stopping_reason": None,
+                "suggested_scope": None,
+            }
+            measurement.path_decision = path
+            cache[key] = {"decision": decision.model_dump(mode="json"), "path": dict(path)}
+            return decision, path
+
+    def _path_scope(
+        self, request: ReviewRequest | RetrieveRequest, path: JsonObject
+    ) -> tuple[ResolvedRetrievalProfile, ResolvedQueryScope]:
+        """Attach actionable scope failures before retrieval rather than producing NOT_IN_DOCS."""
+        query = cast("str", path["retrieval_query"])
+        try:
+            profile, scope = self._resolved_request(query, request.session_profile)
+            if query != request.query and not scope.filters.fiscal_years:
+                years = tuple(sorted({int(year) for year in re.findall(r"(?:19|20)\d{2}", query)}))
+                scope = scope.model_copy(
+                    update={"filters": scope.filters.model_copy(update={"fiscal_years": years})}
+                )
+            path["resolved_scope"] = scope.model_dump(mode="json")
+            filters = scope.filters
+            if request.session_profile.snapshot_id is None and not any(
+                (not filters.registries or doc.registry in filters.registries)
+                and (not filters.issuers or doc.issuer in filters.issuers)
+                and (not filters.languages or doc.language in filters.languages)
+                and (not filters.fiscal_years or doc.fiscal_year in filters.fiscal_years)
+                for doc in self._manifest_scope_index().documents.values()
+            ):
+                raise ApiProblemError(
+                    status_code=422,
+                    code="query_scope_empty",
+                    message=(
+                        "No corpus documents match the resolved scope. "
+                        "Switch scope to Auto or change the issuer/year filters."
+                    ),
+                )
+            return profile, scope
+        except ApiProblemError as error:
+            if error.error.code in {
+                "query_scope_conflict",
+                "profile_scope_conflict",
+                "query_scope_empty",
+                "unknown_issuer",
+            }:
+                path["scope_outcome"] = (
+                    "empty" if error.error.code == "query_scope_empty" else "conflict"
+                )
+                path["stopping_reason"] = error.error.code
+                path["suggested_scope"] = "auto"
+                raise ApiProblemError(
+                    status_code=error.status_code,
+                    code=error.error.code,
+                    message=error.error.message,
+                    path_decision=path,
+                ) from error
+            raise
+
     @staticmethod
     def _component_ranks(
         chunk_id: int,
@@ -519,6 +681,7 @@ class RuntimeApiServices(ApiServices):
             component_ranks=self._component_ranks(hit.chunk_id, result),
         )
 
+    @capture_stages
     async def retrieve(self, request: RetrieveRequest) -> RetrieveResponse:
         """Call retrieval through one request-owned database session.
 
@@ -543,18 +706,7 @@ class RuntimeApiServices(ApiServices):
                 request = request.model_copy(
                     update={"session_profile": await self._local_profile(request.session_profile)}
                 )
-                index = self._manifest_scope_index()
-                gate = deterministic_decision(
-                    request.query,
-                    has_issuer_alias=bool(index.match(request.query)),
-                )
-                if gate is None and self._intent_classifier_enabled:
-                    gate = await self._classify_intent(
-                        ReviewRequest(
-                            query=request.query,
-                            session_profile=request.session_profile,
-                        )
-                    )
+                gate, path = await self._path_decision(request)
                 if gate is not None and gate.intent == "casual_chat":
                     return RetrieveResponse(
                         query=request.query,
@@ -566,16 +718,16 @@ class RuntimeApiServices(ApiServices):
                         component_rankings={},
                         resolved_profile=resolve_retrieval_profile(request.session_profile),
                         resolved_scope=None,
+                        path_decision=path,
                     )
                 async with stage("route") as routing_stage:
-                    profile, scope = self._resolved_request(
-                        request.query,
-                        request.session_profile,
-                    )
+                    routing_stage.path_decision = path
+                    profile, scope = self._path_scope(request, path)
                     routing_stage.resolved_scope = scope.model_dump(mode="json")
+                retrieval_query = cast("str", path["retrieval_query"])
                 routed_queries: dict[str, str] = {}
                 if self._query_routing_enabled and profile.route_by_language:
-                    source_language = detect_query_language(request.query)
+                    source_language = detect_query_language(retrieval_query)
                     for language in scope.filters.languages or ("en",):
                         if language == source_language:
                             continue
@@ -583,7 +735,7 @@ class RuntimeApiServices(ApiServices):
                         try:
                             async with stage("route"):
                                 routed = await route_query(
-                                    request.query,
+                                    retrieval_query,
                                     target_language=cast("Literal['en', 'ko']", language),
                                     llm_provider=provider,
                                     provider_budget=budget,
@@ -597,14 +749,15 @@ class RuntimeApiServices(ApiServices):
                 async with stage("retrieve"), self._session_factory() as session:
                     result = await self._retrieve_with_session(
                         session,
-                        request.query,
+                        retrieval_query,
                         profile.k,
                         scope.filters,
                         profile,
                         routed_queries or None,
                     )
+                path["routing_queries"] = dict(routed_queries)
                 token, snapshot = self._snapshot_codec.issue(
-                    query=request.query,
+                    query=retrieval_query,
                     profile=profile,
                     filters=scope.filters,
                     candidates=result.candidates,
@@ -626,6 +779,7 @@ class RuntimeApiServices(ApiServices):
                     component_rankings=result.component_rankings.model_dump(mode="json"),
                     resolved_profile=profile,
                     resolved_scope=scope,
+                    path_decision=path,
                 )
 
     async def list_documents(self) -> Sequence[DocumentResource]:
@@ -757,19 +911,10 @@ class RuntimeApiServices(ApiServices):
             request = request.model_copy(
                 update={"session_profile": await self._local_profile(request.session_profile)}
             )
-            index = self._manifest_scope_index()
-            async with stage("gate"):
-                decision = deterministic_decision(
-                    request.query,
-                    has_issuer_alias=bool(index.match(request.query)),
-                )
-            if decision is not None and decision.intent == "casual_chat":
-                return await self._casual_report(request, decision)
-            if decision is None and self._intent_classifier_enabled:
-                decision = await self._classify_intent(request)
-                if decision.intent == "casual_chat":
-                    return await self._casual_report(request, decision)
-            return await self._review(request, on_node=on_node, retrieval_override=None)
+            decision, path = await self._path_decision(request)
+            if decision.intent == "casual_chat":
+                return await self._casual_report(request, decision, path)
+            return await self._review(request, on_node=on_node, retrieval_override=None, path=path)
 
     async def _local_profile(self, profile: ReviewSessionProfile) -> ReviewSessionProfile:
         """Pin one discovered model without replacing an explicit unavailable selection."""
@@ -834,7 +979,6 @@ class RuntimeApiServices(ApiServices):
             )
         return provider, budget
 
-    @observed_stage("gate")
     async def _classify_intent(self, request: ReviewRequest) -> ConversationDecision:
         """Classify only an input the deterministic gate cannot decide."""
         provider, budget = await self._engine(request)
@@ -844,7 +988,15 @@ class RuntimeApiServices(ApiServices):
                     "Classify whether the user asks to review SEC or DART filing evidence, "
                     "or is having casual conversation. Do not answer the user."
                 ),
-                user=request.query,
+                user=json.dumps(
+                    {
+                        "history": [
+                            turn.model_dump(mode="json") for turn in self._history(request)
+                        ],
+                        "message": request.query,
+                    },
+                    ensure_ascii=False,
+                ),
             ),
             IntentClassification,
             budget,
@@ -939,6 +1091,7 @@ class RuntimeApiServices(ApiServices):
         self,
         request: ReviewRequest,
         decision: ConversationDecision,
+        path: JsonObject,
     ) -> RunReport:
         """Persist a retrieval-free canned or selected-engine conversation response."""
         run_id = self._run_id_factory()
@@ -949,7 +1102,7 @@ class RuntimeApiServices(ApiServices):
         budget = None
         if answer is None:
             provider, budget = await self._engine(request)
-            history = [turn.model_dump(mode="json") for turn in request.conversation_history[-6:]]
+            history = [turn.model_dump(mode="json") for turn in self._history(request)]
             async with stage("chat"):
                 result = await provider.complete(
                     Prompt(
@@ -991,8 +1144,9 @@ class RuntimeApiServices(ApiServices):
                 "stage_results": [{"node": "gate", "intent": decision.model_dump(mode="json")}],
                 "routing_queries": {},
                 "intent": decision.model_dump(mode="json"),
+                "path_decision": path,
                 "engine": request.session_profile.engine,
-                "history_turns": len(request.conversation_history),
+                "history_turns": len(self._history(request)),
             },
         )
         safe_run, safe_traces = report_to_records(report, secret_values=self._secret_values)
@@ -1018,6 +1172,7 @@ class RuntimeApiServices(ApiServices):
         *,
         on_node: NodeObserver | None,
         retrieval_override: SessionRetrievalService | None,
+        path: JsonObject | None = None,
     ) -> RunReport:
         """Execute, sanitize, and persist one public or administrator review."""
         policy = request.session_profile.prompt_policy
@@ -1045,18 +1200,19 @@ class RuntimeApiServices(ApiServices):
                 )
             if selected_snapshot is None or selected_snapshot.status != "ready":
                 raise bad_request("snapshot_unavailable", "Selected snapshot is not ready.")
+        if path is None:
+            _, path = await self._path_decision(request)
         async with stage("route") as routing_stage:
-            profile, scope = self._resolved_request(
-                request.query,
-                request.session_profile,
-            )
+            routing_stage.path_decision = path
+            profile, scope = self._path_scope(request, path)
             routing_stage.resolved_scope = scope.model_dump(mode="json")
+        retrieval_query = cast("str", path["retrieval_query"])
         snapshot = None
         if request.evidence_selection is not None:
             try:
                 snapshot = self._snapshot_codec.verify(
                     request.evidence_selection.candidate_token,
-                    query=request.query,
+                    query=retrieval_query,
                     profile=profile,
                     filters=scope.filters,
                 )
@@ -1068,14 +1224,14 @@ class RuntimeApiServices(ApiServices):
                 ) from error
         routed_queries: dict[str, str] = dict(snapshot.routing_queries or {}) if snapshot else {}
         if snapshot is None and self._query_routing_enabled and profile.route_by_language:
-            source_language = detect_query_language(request.query)
+            source_language = detect_query_language(retrieval_query)
             for language in scope.filters.languages or ("en",):
                 if language == source_language:
                     continue
                 try:
                     async with stage("route"):
                         routed = await route_query(
-                            request.query,
+                            retrieval_query,
                             target_language=cast("Literal['en', 'ko']", language),
                             llm_provider=llm_provider,
                             provider_budget=provider_budget,
@@ -1086,9 +1242,10 @@ class RuntimeApiServices(ApiServices):
                         f"Query routing failed for {language} ({type(error).__name__}).",
                     ) from error
                 routed_queries[language] = routed.translated_query
+        path["routing_queries"] = dict(routed_queries)
         workflow_request = WorkflowRequest(
             run_id=self._run_id_factory(),
-            query=request.query,
+            query=retrieval_query,
             k=profile.k,
             filters=scope.filters,
             budget=policy.workflow_budget,
@@ -1248,6 +1405,7 @@ class RuntimeApiServices(ApiServices):
                     update={
                         "request_context": {
                             **execution,
+                            "path_decision": path,
                             "stage_results": stage_results,
                             "effective_settings": {
                                 **cast("JsonObject", execution["effective_settings"]),
