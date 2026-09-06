@@ -285,8 +285,11 @@ rag-help() {
         ''
     _docreview_line '1;33' '[QUICK START] Build and run'
     printf '%s\n' \
-        '  rag-quickstart               Prepare a new checkout and open the tutorial' \
+        '  rag-quickstart               Guide setup through readiness; print tutorial URLs' \
         '  rag-quickstart --help        Show first-run requirements' \
+        '  Setup: prerequisites -> .env -> service status/start -> schema -> ready server' \
+        '  If configuration blocks: edit the named local settings, then rerun rag-quickstart' \
+        '  After readiness: open Quick Start and choose CLI/Web step 1; data is not prepared yet' \
         '  rag-dev up --build -d         Rebuild and start development services' \
         '  rag-fresh-start              Reset project data, rebuild, and restart from scratch' \
         '  rag-fresh-start --help       Show reset requirements and warnings' \

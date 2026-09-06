@@ -6,7 +6,10 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     printf '%s\n' 'Usage: rag-quickstart' \
         'Prepare a new local DEV checkout without deleting existing data.' \
         'Requires uv, Docker Engine, and Docker Compose 2.24.4+.' \
-        'Creates .env only when absent; never displays credentials.' \
+        'Order: prerequisites -> local .env -> Compose state/start -> schema -> server readiness.' \
+        'Creates .env only when absent; edit the named settings locally and rerun this command.' \
+        'Reports stopped, starting, unhealthy and already-running services for this checkout.' \
+        'Prints application/tutorial URLs and the next data-preparation step after readiness.' \
         'Downloads Python dependencies and builds local containers.' \
         'Does not download filings, generate embeddings, or ask a model.'
     exit 0
@@ -16,7 +19,9 @@ for tool in uv docker; do
     command -v "$tool" >/dev/null || { printf 'Install %s, then rerun rag-quickstart.\n' "$tool" >&2; exit 1; }
 done
 cd "$root"
-docker info >/dev/null
+printf '%s\n' 'Checking prerequisites: uv, Docker Engine, Docker Compose.'
+docker info >/dev/null 2>&1 || { printf '%s\n' 'Docker Engine is unavailable. Start Docker/check access, then rerun rag-quickstart.' >&2; exit 1; }
 docker compose version --short >/dev/null
+printf '%s\n' 'Installing locked Python dependencies; local configuration is checked next.'
 uv sync --locked
 exec .venv/bin/python -m scripts.quickstart
