@@ -9,3 +9,7 @@
 .terminal-handoff-status { color: var(--muted, #677586); font-size: 12px; }
 .terminal-handoff-status:empty { display: none; }
 @media (max-width: 600px) { .terminal-command { flex-wrap: wrap; } .terminal-command pre { flex-basis: 100%; } }
+
+.schema-technical-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+
+.terminal-handoff-step.is-danger { border-inline-start: 3px solid var(--bad); padding-inline-start: 12px; }

@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
 import { derivePipeline, type PipelineInput } from "@/lib/pipeline";
 import type { OperatorJob, Readiness } from "@/lib/types";
 import { BuildPipeline, type BuildPipelineProps } from "./build-pipeline";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); localStorage.clear(); });
 
 const READINESS: Readiness = {
   status: "ready",
@@ -72,6 +73,7 @@ function liveInput(overrides: Partial<PipelineInput> = {}): PipelineInput {
 }
 
 function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelineProps> = {}) {
+  if (!localStorage.getItem(LOCALE_KEY)) localStorage.setItem(LOCALE_KEY, "en");
   const handlers = {
     onAcquisitionChange: vi.fn(),
     onDownload: vi.fn(),
@@ -90,7 +92,7 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
     onCancelJob: vi.fn(),
   };
   render(
-    <BuildPipeline
+    <I18nProvider><BuildPipeline
       pipeline={derivePipeline(input)}
       live={input.live}
       busy={false}
@@ -99,7 +101,7 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
       manifests={input.manifests}
       {...handlers}
       {...overrides}
-    />,
+    /></I18nProvider>,
   );
   return handlers;
 }
@@ -226,4 +228,35 @@ it("opens canonical setup checks from the selected step diagnosis", () => {
   fireEvent.click(screen.getByRole("button", { name: "Open setup checks" }));
   expect(document.getElementById("pipeline-setup-checks")).toHaveAttribute("open");
   expect(document.getElementById("pipeline-setup-checks")).toHaveFocus();
+});
+
+it.each(["en", "ko"])("contains drift detail only inside the localized notice (%s)", (locale) => {
+  localStorage.setItem(LOCALE_KEY, locale);
+  const message = "The database schema does not match: chunks missing index_text_sha256";
+  const input = liveInput();
+  const handlers = renderPipeline({ ...input, corpus: { ...input.corpus!, schema_status: "drifted", schema_message: message } }, {
+    focusStage: "index", databaseConnected: true, schemaStatus: "drifted", schemaMessage: message, writable: true,
+  });
+  const detail = screen.getByText(message);
+  expect(screen.getAllByText(message)).toHaveLength(1);
+  const disclosure = detail.closest("details");
+  expect(disclosure).not.toHaveAttribute("open");
+  expect(disclosure?.closest(".terminal-handoff")).not.toBeNull();
+  expect(document.querySelector(".stage-hint")?.textContent).not.toContain(message);
+  const summary = screen.getByText(locale === "en" ? "Schema technical details" : "스키마 기술 상세");
+  fireEvent.click(summary);
+  expect(disclosure).toHaveAttribute("open");
+  expect(document.querySelector(".pipeline-guidance button")?.textContent).toMatch(/Parse|파싱/);
+  expect(handlers.onAsk).not.toHaveBeenCalled();
+  localStorage.removeItem(LOCALE_KEY);
+});
+
+it("links schema-blocked downstream selection back to step 2", () => {
+  const input = liveInput();
+  renderPipeline({ ...input, corpus: { ...input.corpus!, schema_status: "drifted" } }, {
+    focusStage: "embeddings", databaseConnected: true, schemaStatus: "drifted", writable: true,
+  });
+  expect(document.querySelector("#pipeline-execution > .helper")?.textContent).toContain("Parse & chunk");
+  fireEvent.click(screen.getByRole("button", { name: "Go to prerequisite step" }));
+  expect(document.querySelector("#pipeline-execution h2")?.textContent).toContain("2. Parse & chunk");
 });

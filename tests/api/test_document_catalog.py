@@ -299,3 +299,52 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
         await engine.dispose()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("operation", ["documents", "document_facets", "document_detail"])
+def test_catalog_rejects_drift_before_data_queries(monkeypatch, operation):
+    """All catalog entry points fail with a typed error before querying missing ORM objects."""
+    from unittest.mock import AsyncMock, Mock
+
+    import app.api.document_catalog as module
+    from app.api.errors import ApiProblemError
+    from app.db.bootstrap import SchemaDriftError
+
+    session = AsyncMock()
+    session.__aenter__.return_value = session
+    monkeypatch.setattr(
+        module,
+        "ensure_complete_schema",
+        AsyncMock(side_effect=SchemaDriftError("missing chunk_embeddings")),
+    )
+    catalog = DocumentCatalog(
+        Mock(return_value=session),
+        public_only=False,
+        embedding_identity=EmbeddingIdentity("deterministic", "test", 384, "test"),
+    )
+    if operation == "documents":
+        pending = catalog.documents(
+            query="",
+            registry="",
+            issuer="",
+            fiscal_year=None,
+            language="",
+            form="",
+            parse_status="",
+            embedding_status=None,
+            snapshot_id=None,
+            sort="doc_id",
+            descending=False,
+            cursor=None,
+            limit=10,
+        )
+    elif operation == "document_detail":
+        pending = catalog.document_detail("test")
+    else:
+        pending = catalog.document_facets()
+    with pytest.raises(ApiProblemError) as error:
+        asyncio.run(pending)
+    assert error.value.status_code == 503
+    assert error.value.error.code == "schema_not_ready"
+    session.execute.assert_not_called()
+    session.scalar.assert_not_called()

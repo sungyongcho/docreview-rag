@@ -123,6 +123,8 @@ rag-quickstart
 
 Python 환경과 설정을 확인하고, 비어 있는 데이터베이스에 스키마를 준비한 뒤 개발 서비스를 시작합니다. 호환되는 기존 데이터는 보존합니다. 스키마가 맞지 않으면 중단하므로 기존 DB를 유지하고 비어 있는 별도 DB나 호환 DB를 선택하세요. 설치 오류를 복구하기 위해 초기화를 실행하지 않습니다.
 
+`rag-dev up --build -d`와 prod·배포 Compose에도 이미지 시작 게이트가 적용됩니다. 빈 DB는 ORM으로 초기화하고, 호환 DB는 보존 후 시작하며, 불일치 DB는 API 실행을 차단하고 복구 명령을 출력합니다. 자동 삭제나 마이그레이션은 하지 않습니다. 이미 실행 중인 앱의 문서 목록·필터·상세 조회도 스키마 확인 후 쿼리하므로 누락된 테이블·컬럼은 잘못된 SQL 대신 구조화된 503 오류를 반환합니다. 시작이 차단되면 `rag-dev logs --tail 80 app`을 확인하세요. 확인·재시작만으로 드리프트를 고치지 않습니다. 추가형 마이그레이션은 보류하며 DB만 재생성하는 로컬 DEV 명령은 아래의 명시적 선택입니다.
+
 ## dev와 prod 미리보기
 
 ```bash
@@ -475,3 +477,78 @@ rag-alias-delete
 해제하지만 별도로 실행한 `--uninstall`은 부모 셸을 바꿀 수 없으므로 안내된 후속 명령을 따릅니다.
 백업 경로를 보관하고 새 터미널에서 자동 로드되지 않는지 확인합니다. 다시 등록하려면
 [명령 등록과 도움말](#명령-등록과-도움말)을 따릅니다.
+
+
+## 일반 초기화와 extreme 초기화
+
+`rag-fresh-start`는 실행 중인 DEV 스택과 정확한 대화형 확인을 요구합니다. 웹과 같은 미리보기·상태 API를 사용하며, 409 거절 시 알려진 안전한 오류 코드와 복구 방법만 표시합니다. 권한 오류는 Reset diagnosis에서 확인하고 소유자에게 접근 권한을 요청하세요. 실행 중인 작업은 Jobs에서 완료를 기다리거나 취소하세요. 알 수 없는 코드·타임아웃·잘못된 응답은 실행 실패의 증거가 아닙니다. 재요청 전에 **View reset status**를 확인하세요. CLI는 삭제를 자동 재시도하지 않습니다.
+
+일반 초기화는 검증된 DB·파일 삭제와 이후 빌드·시작 결과를 나눠 표시합니다. 코드·Git·`.env`·키·추적된 원본·무관한 파일·호스트 Ollama는 보존합니다. 브라우저 데이터는 초기화 UI에서 별도로 지우기 전까지 남습니다. 시작 후 `rag-corpus readiness`로 확인하세요. Docker 시작 성공은 데이터 준비 완료가 아닙니다. 이후 수집·처리·인덱스 구축을 다시 진행합니다. 부분 삭제나 빌드·시작 실패는 전체 복구 성공으로 표시하지 않습니다.
+
+```bash
+rag-fresh-start --help
+rag-fresh-start --extreme
+```
+
+extreme은 정확한 삭제 목록을 먼저 표시합니다. `.env`·대화·사용자 코퍼스 백업 여부에 동의한 뒤, 복원 불가능한 삭제에 동의하려면 `EXTREME <체크아웃 이름>`을 입력해야 합니다. 두 단계 모두 기본값은 거절이며 Enter·No·EOF·비대화형 입력은 삭제를 승인하지 않습니다. 대상 변경이나 미리보기 만료도 실행을 막습니다. 백업은 생성되지 않으며 앱이 삭제한 데이터를 복구할 수 없습니다.
+
+새 clone 상태의 **런타임 콘텐츠** 범위는 다음과 같습니다.
+
+- `data/corpus`의 사용자 PDF·JSON을 포함해 `data/eval_runs`, `data/local-settings`, `build`, `dist`, `web/.next`, `web/out`, `web/.tutorial`, `web/public/tutorial-assets`, `.pytest_cache`, `.ruff_cache` 아래의 추적되지 않은 파일과 루트의 추적되지 않은 `.env*` 파일을 삭제합니다. 빈 디렉터리는 남을 수 있습니다.
+- 해당 체크아웃 소유로 확인된 `db`·`app`·`web` 컨테이너와 로컬 Compose `pg_data`·`web_next`·`web_node_modules` 볼륨만 삭제합니다. 외부·공유 볼륨, 예상 밖 컨테이너, 심볼릭 링크가 있으면 중단합니다.
+- Git 추적 파일과 수정 내용·히스토리, 호스트 `.venv`·`node_modules`, 그 밖의 개인 파일, 다른 Docker 프로젝트, 호스트 Ollama·외부 자격증명·초기화 감사 기록은 보존합니다. 전체 `git clean`이나 호스트 초기화가 아닙니다.
+
+터미널에서 두 번 확인한 뒤 다른 DocReview 탭을 닫고, 대화가 저장된 브라우저로 출력된 `/reset-local/#<operation-id>` URL을 여세요. 페이지가 해당 주소의 DocReview local/session storage를 삭제·검증하고 같은 작업 ID로 인증된 확인 응답을 보내야 로컬 삭제가 진행됩니다. CLI는 그 확인을 받은 브라우저·주소에 한해 삭제 완료를 표시합니다. 다른 프로필·기기·포트와 localhost/127.0.0.1 주소는 별개입니다. 메모리에 대화가 남은 이전 탭을 다시 열지 마세요. 확인이 만료되면 로컬 삭제는 시작하지 않지만 브라우저 삭제는 이미 발생했을 수 있으므로 상태를 먼저 확인하세요.
+
+extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-quickstart`로 새 `.env`를 준비하고 로컬에서 설정한 다음 Quick Start를 따라 데이터를 다시 준비하세요. 부분 실패는 완료된 단계를 확인하세요. 자동 재시작이나 삭제 재시도는 하지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: extreme CLI browser acknowledgement. State: matching waiting operation on reset-local, then acknowledged deletion. Capture en and ko in light mode using disposable data only; no credentials. -->
+브라우저 확인 페이지의 새 스크린샷 증거는 아직 없습니다.
+
+
+`rag-fresh-start --status`는 extreme 삭제로 `.env`가 없어지거나 웹 컨테이너가 중지돼도 기존 로컬 operator 연결로 마지막 초기화 상태를 읽습니다. 삭제를 재요청하지 않습니다. 코드를 업데이트한 뒤에는 `rag-dev down`, `rag-dev up -d` 순서로 로컬 operator를 재시작한 후 새 옵션을 사용하세요. 이 명령들은 데이터 볼륨을 보존합니다.
+
+
+## 호환되지 않는 로컬 스키마 복구
+
+재시작이나 스키마 확인은 드리프트를 고치지 않습니다. 기존 DB를 보존하면서 사용 가능한 빈 환경을 만들려면 다음 순서로 진행하세요.
+
+```bash
+uv run python -m scripts.schema_status check
+uv run python -m scripts.schema_status recover --return-stage index
+# 선택 사항: --parent /existing/directory (원래 체크아웃 밖의 기존 디렉터리)
+```
+
+복구 명령은 선택한 상위 디렉터리(기본값은 원래 체크아웃의 상위)에 고유 이름의 비공개 체크아웃을 만듭니다. 커밋된 소스만 별도 Git 저장소로 복제하고 push 원격은 제거합니다. `.env`는 비공개로 복사하되 DB·웹·operator 포트를 새로 정하고 Compose 프로젝트와 볼륨을 분리합니다. 기존 설정·서비스·DB·다운로드한 코퍼스는 그대로 남습니다. 미커밋 코드와 다운로드·개인 코퍼스 파일은 복사하지 않습니다. 호스트 `DATABASE_URL`이나 Compose 환경변수로 원래 DB에 연결되지 않도록 새 환경의 대상을 고정합니다.
+
+잠긴 의존성 설치 → 새 DB 시작 → 빈 스키마 준비 → DEV 시작 → CLI와 웹 경유 API의 스키마 확인을 수행합니다. 공시 수집이나 모델 호출은 하지 않습니다. 두 확인이 모두 성공해야 **Recovery ready**와 원래 요청한 Build 단계로 이동하는 URL을 출력합니다. 단계는 filings·index·embeddings·lexical·ask·answer_model·evaluate 중 선택합니다. 새 빈 환경을 준비한 것이며 원래 호환되지 않는 스키마를 고친 것이 아닙니다.
+
+별도 터미널에서 출력된 `cd`와 `source ./rag_alias.sh`를 실행해 복구 환경 CLI를 선택하세요. 스키마 출력에는 로컬 DB 대상이 포함됩니다. 웹에서도 도착한 단계의 상태를 다시 확인하고 필요한 데이터를 순서대로 준비하세요. 원래 디렉터리의 명령이 복구 환경을 가리킨다고 생각하면 안 됩니다.
+
+설치·시작·준비 확인 실패 시 복구 디렉터리를 보존하고 재개 명령을 출력합니다. 해당 환경의 로그와 상태를 확인하세요. 실패나 알 수 없는 상태를 완료로 표시하지 않으며, 기존 DB 초기화·마이그레이션·유료 재처리는 하지 않습니다. 복구 디렉터리에서 `rag-dev down`을 실행하면 그 프로젝트만 중지하고 볼륨은 보존합니다.
+
+평가 오류에는 재시도·상세정보와 함께 준비 이동 버튼이 표시됩니다. 확인된 원문 부재는 수집, 청크 부재는 인덱싱, 임베딩 대기는 임베딩, 어휘 인덱스 부재는 BM25로 이동합니다. 스키마·원인 불명 오류와 원문 계약 오류는 설정 진단으로 이동합니다. 이동만으로 작업은 시작되지 않습니다. 도착한 곳에서 새로고침해 실제 상태를 확인하세요.
+
+### SCREENSHOT NEEDED
+<!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
+새 스크린샷 증거는 아직 없으며 기존 이미지는 유지합니다.
+
+
+## 명시적 로컬 DB 재생성
+
+`rag-up`은 `rag-dev up --build -d`의 단축 명령이며 `rag-quickstart` 또는 `uv sync --locked`로 준비한 Python 환경을 사용합니다. 자동 시작은 빈 DB만 준비하며 기존 데이터를 버리지 않습니다. 준비 안내에는 처음 프로젝트를 사용하거나 작업의 영향을 이해하는 사용자에게 다음 위험한 선택도 제공합니다.
+
+```bash
+uv run python -m scripts.schema_status recreate
+```
+
+확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 대상과 테이블별 행 수를 확인하고, 복구할 수 없는 데이터 손실에 동의할 때만 `RECREATE <체크아웃 이름>`을 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
+
+코드·`.env`·다운로드한 원문·평가 내보내기 파일·DB 볼륨·무관한 테이블·호스트 Ollama는 보존합니다. 백업은 만들지 않습니다. 알 수 없는 외래키 의존성이 있으면 연쇄 삭제 대신 트랜잭션을 롤백합니다. 실패 후 API는 중지된 상태일 수 있으므로 재시도 전에 스키마를 확인하세요. 성공 후 `rag-up`으로 시작하고 Build를 다시 확인한 뒤 파싱·임베딩·BM25를 명시적으로 다시 준비합니다. 유료 임베딩은 재생성 명령이 실행하지 않습니다.
+
+DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접힌 터미널 형태 박스에 표시됩니다. 펼쳐서 원문을 확인할 수 있고 기존 상태·이동·닫기 버튼 동작은 유지합니다.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=ko; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->

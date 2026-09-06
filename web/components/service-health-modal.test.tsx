@@ -62,3 +62,19 @@ it("renders the preparation notice in Korean", () => {
   expect(screen.getByRole("dialog")).not.toHaveTextContent("DB 준비가 필요합니다");
   cleanup();
 });
+
+it.each(["en", "ko"])("wraps DB errors in closed terminal details (%s)", (locale) => {
+  localStorage.setItem("docreview.locale", locale);
+  const raw = "Schema mismatch: table 'chunks' missing columns. <script>example</script>";
+  render(<I18nProvider><ServiceHealthModal kind="db_degraded" visible checking={false} degradedMessage={raw} {...handlers} /></I18nProvider>);
+  const summary = screen.getByText(locale === "en" ? "Please review the error" : "에러를 확인해주세요");
+  const details = summary.closest("details");
+  expect(details).not.toHaveAttribute("open");
+  expect(details?.querySelector("pre code")).toHaveTextContent(raw);
+  expect(details?.querySelector("script")).toBeNull();
+  fireEvent.click(summary);
+  expect(details).toHaveAttribute("open");
+  fireEvent.click(summary);
+  expect(details).not.toHaveAttribute("open");
+  cleanup(); localStorage.clear();
+});

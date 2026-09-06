@@ -305,3 +305,28 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         assert events == ["corpus-start", "corpus-finish", "evaluation-start"]
 
     asyncio.run(scenario())
+
+
+def test_suite_source_failure_is_typed_without_guessing(tmp_path: Path, monkeypatch) -> None:
+    """Only actual source absence is classified as an acquisition prerequisite."""
+    from app.evals.loader import GoldenDataError, SourceMissingError
+
+    service = EvaluationAdminService(
+        settings=Settings(corpus_dir=tmp_path),
+        provider=DeterministicEmbeddingProvider(),
+        artifact_dir=tmp_path / "runs",
+    )
+
+    def missing(*args, **kwargs):
+        """Simulate the loader's explicit absent-artifact contract."""
+        raise SourceMissingError("missing artifact")
+
+    monkeypatch.setattr(admin_module, "load_golden_cases", missing)
+    assert all(row.source_error_code == "source_missing" for row in asyncio.run(service.suites()))
+
+    def invalid(*args, **kwargs):
+        """Keep invalid hashes or manifests distinct from missing downloads."""
+        raise GoldenDataError("invalid source contract")
+
+    monkeypatch.setattr(admin_module, "load_golden_cases", invalid)
+    assert all(row.source_error_code == "source_invalid" for row in asyncio.run(service.suites()))

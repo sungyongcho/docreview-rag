@@ -20,7 +20,9 @@ from app.api.admin_schemas import (
     DocumentInventoryResponse,
     DocumentSort,
 )
+from app.api.errors import unavailable
 from app.corpus_admin import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
+from app.db.bootstrap import SchemaDriftError, ensure_complete_schema
 from app.db.models import (
     Chunk,
     ChunkEmbedding,
@@ -67,6 +69,18 @@ class DocumentCatalog:
         self._public_only = public_only
         self._embedding_identity = embedding_identity
         self._company_names = company_names
+
+    async def _require_schema(self, session: AsyncSession) -> None:
+        """Fail before any catalog query can reference an absent table or column."""
+        try:
+            await ensure_complete_schema(await session.connection())
+        except SchemaDriftError as error:
+            raise unavailable("schema_not_ready", str(error)) from None
+
+    async def ensure_ready(self) -> None:
+        """Expose the same gate to adapters that use a separate document-detail serializer."""
+        async with self._session_factory() as session:
+            await self._require_schema(session)
 
     def _snapshot_filters(self) -> tuple[ColumnElement[bool], ...]:
         """Restrict the public surface to explicitly published ready snapshots."""
@@ -234,6 +248,7 @@ class DocumentCatalog:
         ).subquery()
         count_statement = select(func.count()).select_from(filtered_documents)
         async with self._session_factory() as session:
+            await self._require_schema(session)
             total = int(await session.scalar(count_statement) or 0)
             rows = (await session.execute(statement)).all()
         documents = tuple(
@@ -320,6 +335,7 @@ class DocumentCatalog:
             .label("embedded")
         )
         async with self._session_factory() as session:
+            await self._require_schema(session)
             coverage_rows = (
                 await session.execute(
                     select(
@@ -404,6 +420,7 @@ class DocumentCatalog:
     async def document_detail(self, doc_id: str) -> DocumentDetailResponse | None:
         """Load a bounded published document preview without reading private corpus state."""
         async with self._session_factory() as session:
+            await self._require_schema(session)
             document = await session.scalar(
                 join_current_parse(select(Document), load=True).where(
                     Document.doc_id == doc_id, *self._document_filters()

@@ -192,7 +192,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const pending = count(counts.pending_embeddings);
   const bm25Ready = counts.bm25_ready === true;
   const schemaBroken = input.live && (counts.database_connected === false || counts.schema_status === "drifted" || counts.schema_status === "unavailable");
-  const schemaMessage = counts.schema_message || "The database or its schema is unavailable.";
+  const schemaHint = "Resolve database setup before continuing.";
 
   const drafts: Record<StageId, Draft> = {
     filings: filingsDraft(manifests, documents, counts.writable, source, readOnly),
@@ -231,8 +231,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       for (const item of gaps) numbers.push(`${n(item.gap)} listed filing${item.gap === 1 ? "" : "s"} not ingested yet (${registryLabel(item.registry)})`);
       hint = "Re-run Ingest selected sources to add them.";
     }
-    if (indexDone) drafts.index = { status: "done", numbers, hint };
-    else if (schemaBroken) drafts.index = { status: "blocked", statusDetail: "database", numbers, hint: schemaMessage };
+    if (schemaBroken) drafts.index = { status: "blocked", statusDetail: "Database setup required", numbers, hint: schemaHint };
+    else if (indexDone) drafts.index = { status: "done", numbers, hint };
     else if (filingsUnknown) drafts.index = { ...checking };
     else if (!filingsDone) drafts.index = { status: "blocked", statusDetail: `after ${stepRef(1, "Filings")}`, numbers: ["Nothing ingested yet."], hint: "Download filings first (step 1).", blockedBy: "filings" };
     else drafts.index = { status: "action", numbers: ["Nothing ingested yet."], hint: "Pick the manifests that list your filings and run Ingest selected sources." };
@@ -242,8 +242,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   // Step 3 — Embeddings
   {
     const numbers = [`${n(embedded)} embedded`, `${n(pending)} pending${provider}`];
-    if (embeddingsDone) drafts.embeddings = { status: "done", numbers };
-    else if (schemaBroken) drafts.embeddings = { status: "blocked", statusDetail: "database", numbers, hint: schemaMessage };
+    if (schemaBroken) drafts.embeddings = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: schemaHint, blockedBy: "index" };
+    else if (embeddingsDone) drafts.embeddings = { status: "done", numbers };
     else if (drafts.index.status === "unknown") drafts.embeddings = { ...checking };
     else if (!indexDone) drafts.embeddings = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["No chunks to embed yet."], hint: "Ingest a manifest first (step 2).", blockedBy: "index" };
     else drafts.embeddings = { status: "action", numbers, hint: `${n(pending)} chunk${pending === 1 ? " still needs" : "s still need"} vectors. Run Backfill embeddings.` };
@@ -253,8 +253,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   // Step 4 — Lexical index
   {
     const numbers = [bm25Ready ? "BM25 ready" : "BM25 not built"];
-    if (lexicalDone) drafts.lexical = { status: "done", numbers };
-    else if (schemaBroken) drafts.lexical = { status: "blocked", statusDetail: "database", numbers, hint: schemaMessage };
+    if (schemaBroken) drafts.lexical = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: schemaHint, blockedBy: "index" };
+    else if (lexicalDone) drafts.lexical = { status: "done", numbers };
     else if (drafts.index.status === "unknown") drafts.lexical = { ...checking };
     else if (!indexDone) drafts.lexical = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: "Ingest a manifest first (step 2).", blockedBy: "index" };
     else drafts.lexical = { status: "action", numbers, hint: "Run Rebuild BM25 to compute the term statistics." };
@@ -263,13 +263,15 @@ export function derivePipeline(input: PipelineInput): Pipeline {
 
   // Step 5 — Ask
   {
-    if (drafts.index.status === "unknown") {
+    if (schemaBroken) {
+      drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: [], hint: schemaHint, blockedBy: "index" };
+    } else if (drafts.index.status === "unknown") {
       drafts.ask = { ...checking };
     } else if (chunks > 0) {
       const detail = embeddingsDone && lexicalDone ? "hybrid ready" : embeddingsDone ? "vector ready · BM25 pending" : lexicalDone ? "lexical only · embeddings pending" : "retrieval limited";
       drafts.ask = { status: "done", statusDetail: detail, numbers: [`${n(chunks)} chunks searchable`] };
     } else {
-      drafts.ask = { status: "blocked", statusDetail: "corpus is empty", numbers: ["Nothing to search yet."], hint: "Finish steps 1–2 to enable retrieval.", blockedBy: "index" };
+      drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Nothing to search yet."], hint: "Finish steps 1–2 to enable retrieval.", blockedBy: "index" };
     }
     drafts.ask.action = { label: "Ask a question", kind: "ask" };
   }
@@ -281,9 +283,10 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     const numbers = readOnly
       ? [`${n(input.snapshots)} published snapshot${input.snapshots === 1 ? "" : "s"}`]
       : [`${n(input.evaluationResults)} result${input.evaluationResults === 1 ? "" : "s"}`, `${n(input.snapshots)} snapshot${input.snapshots === 1 ? "" : "s"}`];
-    if (source === "pending" || drafts.index.status === "unknown") drafts.evaluate = { ...checking };
+    if (schemaBroken) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: schemaHint, blockedBy: "index" };
+    else if (source === "pending" || drafts.index.status === "unknown") drafts.evaluate = { ...checking };
     else if (measured) drafts.evaluate = { status: "done", numbers };
-    else if (chunks === 0) drafts.evaluate = { status: "blocked", statusDetail: "after steps 2–4", numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
+    else if (chunks === 0) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
     else drafts.evaluate = { status: "action", statusDetail: succeeded ? "No results" : "Not run", numbers: readOnly ? ["Not measured yet."] : numbers, hint: succeeded ? "A job finished, but no evaluation results are available. Refresh results or run a quick evaluation to measure retrieval quality." : "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot." };
     drafts.evaluate.action = readOnly
       ? { label: "Compare published snapshots", kind: "compare" }
@@ -359,7 +362,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     };
   });
 
-  const next = stages.find((stage) => stage.status === "action" || stage.status === "failed") ?? null;
+  const next = stages.find((stage) => stage.status === "action" || stage.status === "failed" || (stage.status === "blocked" && stage.id !== "answer_model")) ?? null;
   const corpusReady = stages.slice(0, 4).every((stage) => stage.status === "done" || stage.status === "readonly");
   return { stages, next, corpusReady, readOnly, source };
 }

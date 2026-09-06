@@ -1,11 +1,21 @@
 # AGENTS.md — Product Development Workflow
 
+## Execution workers: read this first
+
+If the user assigns issue implementation or identifies you as a worker, read and
+follow [WORKER.md](WORKER.md) before applying the workflow below. It defines the
+worker's PR-only delivery, isolated worktrees, latest-main integration, and backup
+retention. Its role-specific rules override conflicting issue-management, merge,
+checkout-synchronization, and cleanup instructions below. Other engineering and
+verification requirements remain applicable.
+
 ## Current branch and release policy
 
 - `main` is the stable integration branch, the GitHub default, and the default local checkout.
 - `v1` is a frozen legacy archive with one parentless commit. Never modify it or merge it into `main`.
 - `v2.0.0` identifies product commit `61cb17b49b0b6bf0745b6fb7cfdd16b67d101731`.
 - Use short-lived `<type>/<issue-number>-<description>` branches, such as `feat/<issue-number>-improve-navigation`, `fix/<issue-number>-refresh-readiness`, or `refactor/<issue-number>-simplify-settings`. Resolve the actual GitHub issue number first; never invent one.
+- Exception for execution workers: a directly requested documentation-only change with no assigned issue may use `docs/<description>`. If an issue is assigned, retain its actual number. Do not create an issue merely to name a documentation branch.
 - Do not prepend product versions such as `v2/` or `v3/` to ordinary work branches. Use release tags such as `v2.1.0` and `v3.0.0` for versions; creating or moving a tag remains a separately requested release action. Supporting multiple release lines requires an explicit maintenance policy.
 - Keep only `main` and `v1` as canonical local branches at rest, tracking their remote counterparts.
 
@@ -160,6 +170,22 @@ work; intake alone does not start implementation or create a background service.
   sequence. Close only fulfilled scopes; group issues only when one coherent diff needs
   them. Fetch before integration, preserve active workers' checkouts and dirty work,
   and sync the correct integration checkout. No idle polling or unassigned backlog work.
+
+### Long-lived tracker pull requests
+
+`ideas.md` (issue #29) and `docs/DEVELOPMENT_STORY_OUTLINE.md` (issue #30) are maintained
+through dedicated living pull requests: #37 on `docs/29-project-ideas` and #38 on
+`docs/30-development-log`. Content the user supplies for either file is committed on its
+branch and pushed to its pull request; the umbrella issues keep links and decisions, not
+the content itself.
+
+- Never merge these pull requests without an explicit user instruction. They stay open
+  and accumulate commits until the user requests a merge before a release. A general
+  "check and merge the PRs" request does not include them.
+- Keep each branch limited to its own file. Product code, tutorials and evidence use
+  their own issue-linked branches.
+- Keep both pull requests in draft state. Update a branch from `main` only when needed
+  to keep it mergeable, and preserve the user's authored wording in both files.
 
 ## Dependabot management across this repository
 

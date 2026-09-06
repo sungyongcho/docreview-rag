@@ -81,7 +81,9 @@ table td { line-height: 1.55; }
 .pipeline-node.running .pipeline-node-status, .stage-status.running { color: var(--good); }
 .pipeline-node.running .status-beacon, .stage-status.running .status-beacon { animation: status-live 1.6s ease-out infinite; }
 .pipeline-node.failed .pipeline-node-status, .stage-status.failed { color: var(--bad); }
-.pipeline-node:is(.queued, .blocked, .action) .status-beacon, .stage-status:is(.queued, .blocked, .action) .status-beacon { color: var(--warn); }
+.pipeline-node:is(.queued, .action) .status-beacon, .stage-status:is(.queued, .action) .status-beacon { color: var(--warn); }
+.pipeline-node.blocked .pipeline-node-status, .stage-status.blocked { color: var(--blocked); }
+.pipeline-node.blocked .status-beacon, .stage-status.blocked .status-beacon { border-radius: 1px; }
 @keyframes status-breathe { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 0%, transparent); } 50% { opacity: .5; box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 10%, transparent); } }
 @keyframes status-live { 0% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 30%, transparent); } 75%, 100% { opacity: .65; box-shadow: 0 0 0 5px transparent; } }
 .pipeline-node .pipeline-dependency { display: none; }

@@ -694,3 +694,205 @@ def test_read_permission_failure_has_actionable_diagnosis(tmp_path, monkeypatch)
         service._files(set())
     assert failure.value.diagnosis["details"]["operation"] == "read"
     assert runtime.read_text() == "preserve runtime"
+
+
+def test_extreme_inventory_and_removal_preserve_tracked_and_unrelated(tmp_path):
+    """Delete only disposable allowlisted fixture files, including custom corpus formats."""
+    paths = [
+        ".env",
+        ".env.local",
+        "data/corpus/custom.pdf",
+        "data/corpus/private.json",
+        "data/local-settings/connection.json",
+        "build/generated.txt",
+        "data/corpus/tracked.html",
+        ".env.example",
+        "personal.txt",
+        ".venv/keep",
+    ]
+    for name in paths:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("sentinel")
+    service = WipeService(tmp_path, lambda: False)
+    service._extreme = True
+    tracked = {"data/corpus/tracked.html", ".env.example"}
+    files = service._files(tracked)
+    assert {item["path"] for item in files} == set(paths[:6])
+    for item in files:
+        service._remove_file(item)
+    assert not service._files(tracked)
+    assert all((tmp_path / name).read_text() == "sentinel" for name in paths[6:])
+
+
+def test_extreme_symlink_and_changed_file_fail_closed(tmp_path):
+    """An external link or a modified preview entry cannot be silently erased."""
+    service = WipeService(tmp_path, lambda: False)
+    service._extreme = True
+    target = tmp_path / ".env"
+    target.write_text("before")
+    item = service._files(set())[0]
+    target.write_text("changed")
+    with pytest.raises(WipeError, match="changed"):
+        service._remove_file(item)
+    assert target.read_text() == "changed"
+    (tmp_path / ".env.link").symlink_to(target)
+    with pytest.raises(WipeError, match="symbolic link"):
+        service._files(set())
+
+
+def test_browser_acknowledgement_is_operation_bound(tmp_path):
+    """Old, ordinary and finished operations cannot acknowledge browser deletion."""
+    service = WipeService(tmp_path, lambda: False)
+    service._result = {
+        "id": "current",
+        "extreme": True,
+        "status": "running",
+        "stage": "awaiting_browser",
+    }
+    with pytest.raises(WipeError, match="does not match"):
+        service.acknowledge_browser("old", "http://localhost:8000")
+    assert not service._browser_ack.is_set()
+    service.acknowledge_browser("current", "http://localhost:8000")
+    assert service._browser_ack.is_set()
+    assert service.result()["browser_cleared"] is True
+    service._result["status"] = "succeeded"
+    with pytest.raises(WipeError):
+        service.acknowledge_browser("current", "http://localhost:8000")
+
+
+def test_extreme_requires_backup_confirmation_before_execution(tmp_path, monkeypatch):
+    """An exact irreversible phrase alone is insufficient for extreme deletion."""
+    from unittest.mock import AsyncMock
+
+    service = WipeService(tmp_path, lambda: False)
+    monkeypatch.setattr(service, "inspect", AsyncMock(return_value={}))
+    execute = AsyncMock()
+    monkeypatch.setattr(service, "_execute", execute)
+
+    async def scenario():
+        """Reject a missing first gate before scheduling any destructive task."""
+        preview = await service.preview(extreme=True)
+        with pytest.raises(WipeError, match="backup confirmation"):
+            await service.start(preview["token"], preview["confirmation"])
+        execute.assert_not_called()
+
+    asyncio.run(scenario())
+
+
+def test_extreme_browser_timeout_never_touches_local_runtime(tmp_path, monkeypatch):
+    """A missing browser receipt cannot start any Docker or filesystem deletion."""
+    from unittest.mock import AsyncMock
+
+    service = WipeService(tmp_path, lambda: False)
+    service._extreme = True
+    service._result = {"id": "current", "status": "running", "completed": []}
+    monkeypatch.setattr(service._browser_ack, "wait", AsyncMock(side_effect=TimeoutError))
+    run = AsyncMock()
+    monkeypatch.setattr(service, "_run", run)
+    asyncio.run(service._execute({}))
+    run.assert_not_called()
+    assert service.result()["status"] == "failed"
+    assert "local data unchanged" in service.result()["message"]
+
+
+def test_extreme_disposable_execution_and_partial_failure(tmp_path, monkeypatch):
+    """Real fixture file deletion preserves unrelated data; Docker failures stop the sequence."""
+    service = WipeService(tmp_path, lambda: False)
+    service._extreme = True
+    (tmp_path / ".env").write_text("dummy-config")
+    (tmp_path / "personal.txt").write_text("sentinel")
+    service._result = {"id": "current", "status": "running", "completed": []}
+    target = {
+        "extra_containers": ["owned-container"],
+        "extra_volumes": ["owned-volume"],
+        "files": service._files(set()),
+    }
+    calls = []
+    snapshots = iter(
+        [
+            {k: target[k] for k in ("extra_containers", "extra_volumes")},
+            {"extra_containers": [], "extra_volumes": []},
+        ]
+    )
+
+    async def inventory():
+        """Expose pre- and post-deletion Docker fixture inventories."""
+        return next(snapshots)
+
+    async def run(*args, **kwargs):
+        """Record Docker commands without accessing real containers or volumes."""
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr(service, "_extreme_targets", inventory)
+    monkeypatch.setattr(service, "_run", run)
+    asyncio.run(service._execute_extreme(target))
+    assert not (tmp_path / ".env").exists()
+    assert (tmp_path / "personal.txt").read_text() == "sentinel"
+    assert service.result()["status"] == "succeeded"
+    assert calls[:3] == [
+        ("docker", "stop", "owned-container"),
+        ("docker", "rm", "owned-container"),
+        ("docker", "volume", "rm", "owned-volume"),
+    ]
+    assert not any("up" in call for call in calls)
+
+    (tmp_path / ".env").write_text("still-here")
+    service._result = {"status": "running", "completed": []}
+
+    async def unchanged():
+        """Keep the preview stable until Docker refuses volume removal."""
+        return {k: target[k] for k in ("extra_containers", "extra_volumes")}
+
+    async def fail(*args, **kwargs):
+        """Simulate a Docker volume deletion failure before file removal."""
+        if "volume" in args:
+            raise WipeError("Volume still in use")
+        return ""
+
+    monkeypatch.setattr(service, "_extreme_targets", unchanged)
+    monkeypatch.setattr(service, "_run", fail)
+    with pytest.raises(WipeError, match="still in use"):
+        asyncio.run(service._execute_extreme(target))
+    assert (tmp_path / ".env").read_text() == "still-here"
+    assert "extreme_complete" not in service.result()["completed"]
+
+
+def test_extreme_rejects_foreign_volume_users(tmp_path, monkeypatch):
+    """Project labels alone do not authorize removal when another container uses a volume."""
+    service = WipeService(tmp_path, lambda: False)
+
+    async def run(*args, **kwargs):
+        """Return a labelled project volume attached to an unrelated container."""
+        if args[:3] == ("docker", "volume", "ls"):
+            return "test_pg_data"
+        if args[:3] == ("docker", "volume", "inspect"):
+            return json.dumps(
+                [
+                    {
+                        "Labels": {
+                            "com.docker.compose.project": tmp_path.name,
+                            "com.docker.compose.volume": "pg_data",
+                        },
+                        "Driver": "local",
+                        "Options": {},
+                    }
+                ]
+            )
+        if any(arg.startswith("volume=") for arg in args):
+            return "foreign-container"
+        return ""
+
+    monkeypatch.setattr(service, "_run", run)
+    with pytest.raises(WipeError, match="unrelated container"):
+        asyncio.run(service._extreme_targets())
+
+
+def test_extreme_rejects_nested_repository_history(tmp_path):
+    """A nested user repository cannot be mistaken for disposable corpus content."""
+    (tmp_path / "data/corpus/custom/.git").mkdir(parents=True)
+    service = WipeService(tmp_path, lambda: False)
+    service._extreme = True
+    with pytest.raises(WipeError, match="nested Git repository"):
+        service._files(set())

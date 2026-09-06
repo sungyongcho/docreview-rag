@@ -400,6 +400,10 @@ CPU 모델의 실제 답변은 상태 조회보다 오래 걸릴 수 있습니�
 
 Helper를 등록한 뒤 `rag-quickstart`를 실행하면 Python 환경과 빈 스키마를 준비하고
 개발 서비스를 시작합니다. 기존 설정과 호환되는 데이터는 보존합니다.
+`rag-dev up --build -d`도 DB health 확인 후 이미지 시작 게이트에서 빈 DB 스키마를
+자동 생성합니다. 기존 DB는 검사만 하며 불일치하면 API 시작을 차단합니다.
+`rag-dev logs --tail 80 app`에서 원인과 `scripts.schema_status check`/`recover` 안내를 확인하세요.
+이 동작은 prod 미리보기와 배포 Compose에도 적용되며, 공개 예시 모드는 DB 없이 시작합니다.
 
 ```bash
 ./rag_alias.sh
@@ -433,7 +437,10 @@ rag-corpus inspect
 
 `schema_drift`는 저장된 스키마와 현재 모델이 맞지 않는다는 뜻입니다. 실행 중인 코드와
 DB 연결을 확인하고 기존 데이터를 보존한 상태에서 운영자가 원인을 조사해야 합니다.
-설치 복구를 위해 데이터를 초기화하지 마십시오. `rag-fresh-start`는 별도 선택하는
+기본 복구는 기존 데이터를 보존합니다. 로컬 DB 내용만 버리기로 명시적으로 결정했다면
+`uv run python -m scripts.schema_status recreate`에서 대상과 행 수를 확인하고 승인하세요.
+코드·`.env`·원문 파일은 보존하며, 완료 후 `rag-up`으로 시작하고 데이터를 다시 준비합니다.
+`rag-fresh-start`는 별도 선택하는
 파괴적 개발 명령이며 일반 설치에 필요하지 않습니다.
 
 검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를

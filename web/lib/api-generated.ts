@@ -2166,6 +2166,8 @@ export interface components {
             scored_positive_cases: number;
             /** Source Error */
             source_error?: string | null;
+            /** Source Error Code */
+            source_error_code?: ("source_missing" | "source_invalid") | null;
             /** Source Ready */
             source_ready: boolean;
             suite_id: components["schemas"]["GoldenSuiteId"];

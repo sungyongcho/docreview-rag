@@ -38,6 +38,7 @@ from app.evals.index_identity import index_fingerprint
 from app.evals.loader import (
     GOLDEN_CASES,
     GoldenDataError,
+    SourceMissingError,
     encode_golden_payload,
     load_golden_cases,
     validate_golden_payload,
@@ -214,6 +215,7 @@ class EvaluationAdminService:
             cases = GOLDEN_CASES.validate_python(payload)
             source_ready = True
             source_error = None
+            source_error_code = None
             try:
                 load_golden_cases(
                     golden_path, manifest_path=manifest_path, selection_id=definition.selection_id
@@ -221,6 +223,9 @@ class EvaluationAdminService:
             except (GoldenDataError, OSError) as error:
                 source_ready = False
                 source_error = str(error)
+                source_error_code = (
+                    "source_missing" if isinstance(error, SourceMissingError) else "source_invalid"
+                )
             positive = sum(bool(case.answers) for case in cases)
             resources.append(
                 GoldenSuiteResource(
@@ -238,6 +243,7 @@ class EvaluationAdminService:
                     golden_sha256=self._golden_sha256(golden_path),
                     source_ready=source_ready,
                     source_error=source_error,
+                    source_error_code=source_error_code,
                 )
             )
         return tuple(resources)

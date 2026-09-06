@@ -38,7 +38,10 @@ export function ServiceHealthModal({
         <div className="health-modal-icon" aria-hidden="true">{apiDown ? <ServerCrash /> : preparationNeeded ? <Layers /> : <DatabaseZap />}</div>
         <p className="eyebrow">{t("Runtime health")}</p>
         <h2 id="health-modal-title">{apiDown ? t("DocReview API is unavailable") : preparationNeeded ? t("Corpus preparation is needed") : t("Database is not ready")}</h2>
-        <p>{apiDown ? t("The API is not running normally. Check the service, then try again.") : preparationNeeded ? t("The database is connected and its schema is compatible. Prepare documents, chunks, embeddings, and BM25 in Build before asking.") : degradedMessage ?? "The API is running, but the database or corpus is not ready for review operations."}</p>
+        {!apiDown && !preparationNeeded && degradedMessage ? <details className="health-error-details">
+          <summary>{t("Please review the error")}</summary>
+          <pre><code>{degradedMessage}</code></pre>
+        </details> : <p>{apiDown ? t("The API is not running normally. Check the service, then try again.") : preparationNeeded ? t("The database is connected and its schema is compatible. Prepare documents, chunks, embeddings, and BM25 in Build before asking.") : t("The API is running, but the database or corpus is not ready for review operations.")}</p>}
         <div className="health-modal-actions">
           {!apiDown && <button className="button" type="button" onClick={onOpenStatus}>{t("Open System status")}</button>}
           {!apiDown && <button className="button" type="button" onClick={onDismiss}>{t("Continue")}</button>}

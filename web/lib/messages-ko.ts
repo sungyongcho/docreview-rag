@@ -1,4 +1,17 @@
 export const KO: Record<string, string> = {
+  "For first-time setup or users who understand the consequences. This may be dangerous: existing database contents will be deleted.": "처음 프로젝트를 사용하거나, 작업의 영향을 이해하는 사용자용입니다. 위험할 수 있습니다. 기존 DB 데이터가 삭제됩니다.",
+  "Review the table counts and type the exact RECREATE confirmation only if you accept data loss. Files stay; run rag-up and re-check this step afterward.": "테이블별 행 수를 확인하고 데이터 손실에 동의할 때만 정확한 RECREATE 확인 문구를 입력하세요. 파일은 보존됩니다. 이후 rag-up을 실행하고 이 단계를 다시 확인하세요.",
+  "Please review the error": "에러를 확인해주세요",
+  "Schema technical details": "스키마 기술 상세",
+  "Database setup required": "DB 설정 필요",
+  "Resolve database setup before continuing.": "계속하기 전에 DB 설정 문제를 해결하세요.",
+  "Open setup diagnosis": "설정 진단 열기",
+  "Open preparation step": "준비 단계 열기",
+  "Corpus not ready. Inspect the earliest verified prerequisite.": "코퍼스가 준비되지 않았습니다. 확인된 가장 앞선 선행조건을 점검하세요.",
+  "Preserve this database. Create a separate recovery checkout with its own ports and volume, then open the printed URL and re-check the blocked step.": "기존 DB를 보존하세요. 별도 포트와 볼륨을 가진 복구 체크아웃을 만든 뒤 출력된 URL에서 막힌 단계를 다시 확인하세요.",
+  "Create a separate recovery checkout; preserve the original database and files.": "기존 DB와 파일을 보존하는 별도 복구 체크아웃을 만듭니다.",
+  "Open the printed recovery URL and re-check this step. The original schema remains unchanged.": "출력된 복구 URL에서 이 단계를 다시 확인하세요. 기존 스키마는 변경되지 않습니다.",
+
   "Choose companies, keep the default fiscal years, then run Download missing filings.": "회사를 선택하고 기본 회계연도를 확인한 뒤 누락된 원문 다운로드를 실행하세요.",
   "Close": "닫기",
   "The current prerequisites are available. Return to this step and run its action; re-checking does not execute it.": "선행 조건이 준비됐습니다. 이 단계의 실행 버튼으로 진행하세요. 상태 확인은 작업을 실행하지 않습니다.",

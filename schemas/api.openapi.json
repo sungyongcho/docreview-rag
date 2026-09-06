@@ -2734,6 +2734,21 @@
             ],
             "title": "Source Error"
           },
+          "source_error_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "source_missing",
+                  "source_invalid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Error Code"
+          },
           "source_ready": {
             "title": "Source Ready",
             "type": "boolean"

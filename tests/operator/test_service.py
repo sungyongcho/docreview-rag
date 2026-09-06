@@ -19,7 +19,7 @@ HEADERS = {"origin": ORIGIN, "authorization": f"Bearer {TOKEN}"}
 def test_reset_preview_preserves_detail_and_returns_diagnosis(tmp_path, monkeypatch):
     """Keep existing clients compatible while returning the exact preview blocking evidence."""
 
-    async def preview(_service):
+    async def preview(_service, *, extreme=False):
         """Reject only the preview without creating reset state or modifying files."""
         raise WipeError(
             "Runtime file cannot be removed by this operator: data/local-settings/local-llm.json",
@@ -181,3 +181,13 @@ def test_running_job_can_be_cancelled_as_a_process_group(tmp_path):
         cancelled = client.post(f"/jobs/{job_id}/cancel", headers=HEADERS)
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
+
+
+def test_browser_ack_requires_auth_and_matching_reset(tmp_path):
+    """No unauthenticated or stale browser can authorize subsequent local deletion."""
+    application = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
+    with TestClient(application) as client:
+        assert client.post("/wipe/browser-cleared", json={"operation_id": "old"}).status_code == 403
+        result = client.post("/wipe/browser-cleared", headers=HEADERS, json={"operation_id": "old"})
+        assert result.status_code == 409
+        assert client.get("/wipe", headers=HEADERS).json()["status"] == "idle"

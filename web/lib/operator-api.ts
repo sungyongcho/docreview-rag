@@ -97,6 +97,7 @@ export interface WipeDiagnosis {
 }
 export interface WipeCapability { available: boolean; reason: string | null; checked_at?: string; diagnosis?: WipeDiagnosis | null }
 export interface WipeResult {
+  extreme?: boolean;
   id?: string;
   status: string;
   stage?: string;
@@ -113,3 +114,9 @@ export function previewWipe() { return operatorRequest<WipePreview>("/wipe/previ
 export function startWipe(token: string, confirmation: string) { return operatorRequest<WipeResult>("/wipe", { method: "POST", body: JSON.stringify({ token, confirmation }) }); }
 export function getWipeStatus() { return operatorRequest<WipeResult>("/wipe", { cache: "no-store" }); }
 export function recoverWipe() { return operatorRequest<WipeResult>("/wipe/recover", { method: "POST" }); }
+
+export function acknowledgeWipeBrowser(operationId: string) {
+  return operatorRequest<{ acknowledged: boolean; id: string }>("/wipe/browser-cleared", {
+    method: "POST", body: JSON.stringify({ operation_id: operationId }),
+  });
+}

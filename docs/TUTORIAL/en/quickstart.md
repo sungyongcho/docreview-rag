@@ -48,6 +48,24 @@ installation. Open the printed URL, normally `http://localhost:8000/docreview-ra
 seven steps. Choose one; switching tabs does not start any operation. The web path
 requires your DEV instance, even if you are reading this guide on a public deployment.
 
+The setup command reports five stages: prerequisites, local configuration, project
+service state/startup, schema preparation, and DEV server readiness. It identifies
+`db`, `app`, and `web` as stopped, starting, unhealthy, or running; a running container
+without a health check is not proof of server readiness. Existing healthy services
+are reported before Compose reconciles the development configuration.
+
+If configuration blocks progress, edit the printed `.env` path and correct or unset
+conflicting shell exports, then rerun `rag-quickstart` (or `bash scripts/quickstart.sh`).
+That invocation has not started services; any existing services remain unchanged.
+For startup failures, use `rag-dev ps -a` and `rag-dev logs --tail 50` before retrying.
+For incompatible schemas, run `.venv/bin/python -m scripts.schema_status check`;
+Quickstart uses the local `DB_PORT`, not an external `DATABASE_URL`. Safe target-selection
+recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).
+Do not reset your database to resolve this setup stop.
+
+After readiness succeeds, open the printed application or language-specific tutorial
+URL. Choose CLI or Web below and begin with step 1, then acquire the two reports.
+
 <!-- quickstart-cli -->
 
 ## CLI {#qs-cli}
