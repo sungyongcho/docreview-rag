@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { loadConversations, loadExperimentDefaults, newConversation, resetExperimentDefaults, saveConversations, saveExperimentDefaults } from "./storage";
+import { loadConversations, loadExperimentDefaults, loadOperationsFilter, newConversation, resetExperimentDefaults, saveConversations, saveExperimentDefaults, saveOperationsFilter } from "./storage";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
 
 describe("conversation storage", () => {
@@ -74,4 +74,21 @@ it("restores old conversation profiles without a model and remembers new selecti
   expect(loadConversations()[0].profile?.local_model).toBeNull();
   saveConversations([{ ...conversation, profile: { ...conversation.profile, local_model: "chosen" } }]);
   expect(loadConversations()[0].profile?.local_model).toBe("chosen");
+});
+
+describe("operations filter storage", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("remembers the Operations category filter and ignores unknown values", () => {
+    expect(loadOperationsFilter()).toBe("all");
+    saveOperationsFilter("service");
+    expect(window.localStorage.getItem("docreview:operations-filter:v1")).toBe("service");
+    expect(loadOperationsFilter()).toBe("service");
+
+    window.localStorage.setItem("docreview:operations-filter:v1", "bogus");
+    expect(loadOperationsFilter()).toBe("all");
+
+    saveOperationsFilter("all");
+    expect(window.localStorage.getItem("docreview:operations-filter:v1")).toBeNull();
+  });
 });

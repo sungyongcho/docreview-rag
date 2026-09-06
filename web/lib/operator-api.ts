@@ -20,6 +20,10 @@ export interface OperatorCommand {
   timeout_seconds: number;
 }
 
+/** Registry categories in display order; the operator sidecar emits exactly these values. */
+export const OPERATION_CATEGORIES = ["inspect", "verify", "service"] as const;
+export type OperationsFilter = "all" | OperatorCommand["category"];
+
 export interface OperatorJob {
   job_id: string;
   command_id: string;
@@ -67,8 +71,8 @@ export function getOperatorCommands() {
   return operatorRequest<OperatorCommand[]>("/commands");
 }
 
-export function getOperatorJobs() {
-  return operatorRequest<OperatorJob[]>("/jobs");
+export function getOperatorJobs(signal?: AbortSignal) {
+  return operatorRequest<OperatorJob[]>("/jobs", { signal });
 }
 
 export function startOperatorJob(commandId: string) {

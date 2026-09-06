@@ -1933,5 +1933,15 @@ export const KO: Record<string, string> = {
   "For first-time setup or users who understand the consequences. This deletes ORM data and downloaded source files.": "처음 설정하거나 영향을 이해하는 경우에만 사용하세요. ORM 데이터와 다운로드된 원문 파일을 삭제합니다.",
   "Review table counts and source paths, then confirm the entire preview. Use --keep-sources for a DB-only reset, or --sample for the sample draft without downloading. Run rag-up and re-check afterward.": "테이블 행 수와 원문 경로를 확인한 뒤 전체 미리보기에 승인하세요. DB만 초기화하려면 --keep-sources, 다운로드 없이 샘플 초안으로 시작하려면 --sample을 사용하세요. 완료 후 rag-up으로 시작하고 다시 확인하세요.",
   "Review the selected filings, then run Parse & chunk selected sources.": "선택한 원문을 확인한 뒤 선택한 원문 파싱 및 청크 생성을 실행하세요.",
-  "Advanced": "고급"
+  "Advanced": "고급",
+  "All": "전체",
+  "Inspect": "점검",
+  "Verify": "검증",
+  "Service": "서비스",
+  "inspect": "점검",
+  "verify": "검증",
+  "service": "서비스",
+  "Command category": "명령 유형",
+  "Local Operations is not responding. Retrying status checks.": "로컬 작업 API가 응답하지 않습니다. 상태 확인을 다시 시도합니다.",
+  "Cards are grouped by category (Inspect, Verify, Service) with read-only commands first; the filter choice is remembered in this browser.": "카드는 점검·검증·서비스 유형별로 묶이고 읽기 전용 명령이 먼저 표시됩니다. 필터 선택은 이 브라우저에 저장됩니다.",
 };

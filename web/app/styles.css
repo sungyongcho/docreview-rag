@@ -182,6 +182,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .two-column, .api-inspector { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .surface { padding: 16px; }
 .surface h2, .empty-state h2, .docs-grid h2 { margin: 0 0 12px; font-size: 16px; font-weight: 580; }
+.surface-title { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.surface .surface-title h2 { margin: 0; }
 .form-stack { display: grid; gap: 13px; }
 .form-stack label, .profile-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
 input, select, textarea { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 8px; }
@@ -345,9 +347,13 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 .command-heading { width: 100%; display: flex; align-items: center; justify-content: space-between; color: var(--muted); }
 .command-kind { border-radius: 999px; padding: 4px 7px; background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 10px; text-transform: uppercase; }
 .command-kind.service { color: var(--bad); }
-.command-card h2 { margin: 13px 0 5px; font-size: 15px; }
+.command-card h4 { margin: 13px 0 5px; font-size: 15px; }
 .command-card p { flex: 1; margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.command-card small { margin-bottom: 9px; color: var(--bad); }
+.command-filter { margin: 0 0 12px; }
+.command-group + .command-group { margin-top: 18px; }
+.command-group-heading { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 580; letter-spacing: .08em; text-transform: uppercase; }
+.command-badges { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.command-kind.confirmation { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
 .operation-output { margin-top: 14px; }
 .operation-output-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .operation-output-heading h2 { margin: 0; }

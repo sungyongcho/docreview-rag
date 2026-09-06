@@ -1,7 +1,26 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Readiness } from "@/lib/types";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); });
 import { RuntimeSettings, DesktopJobNotifications } from "./runtime-settings";
+
+const READINESS: Readiness = {
+  environment: "dev",
+  status: "ready",
+  mode: "runtime",
+  admin_mode: "live",
+  policy_revision: "2026-09-01",
+  models: {
+    review: { default: "gpt-5.6-terra", allowed: ["gpt-5.6-terra"], reasoning_effort: "medium", dimensions: null },
+    embedding: { default: "text-embedding-3-large", allowed: ["text-embedding-3-large"], reasoning_effort: null, dimensions: 384 },
+  },
+  review_enabled: true,
+  active_review_model: "gpt-5.6-terra",
+  corpus: {
+    availability: "ready", database_connected: true, schema_status: "compatible", schema_message: "ok",
+    documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0, bm25_ready: true, writable: true,
+  },
+};
   it("shows production token ceilings and non-consuming reset estimates", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       per_minute: 5,
@@ -26,6 +45,22 @@ import { RuntimeSettings, DesktopJobNotifications } from "./runtime-settings";
     expect(screen.getAllByText("42s").length).toBeGreaterThan(0);
     expect(screen.getByText(/reset 1h 0m/)).toBeInTheDocument();
     expect(screen.getByText(/12:00:00 AM UTC$/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Limits & availability" })).toBeInTheDocument();
+    expect(document.querySelector(".development-badge")).toBeNull();
+  });
+
+  it("marks the local runtime panel as DEV without requesting release limits", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<RuntimeSettings live readiness={READINESS} />);
+
+    const panel = screen.getByRole("heading", { name: "Local runtime" }).closest("section")!;
+    // The Mode metric also reads "DEV", so look at the badge itself.
+    const badge = panel.querySelector(".development-badge");
+    expect(badge).toHaveAttribute("title", "DEV only");
+    expect(badge).toHaveTextContent("DEV");
+    expect(within(panel).getByText("Operations URL")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("enables desktop completion notifications only after browser permission", async () => {
