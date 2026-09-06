@@ -1,4 +1,6 @@
 "use client";
+import { preparationErrorTarget, preparationTarget, type PreparationTarget } from "@/lib/preparation-navigation";
+import type { Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
 import { createPortal } from "react-dom";
 import { translate, useI18n, type Locale } from "@/lib/i18n";
@@ -72,6 +74,8 @@ export interface MeasureWorkspaceProps {
   environment?: "dev" | "prod";
   live: boolean;
   ready: boolean;
+  readiness?: Readiness | null;
+  onOpenPreparation?: (stage: PreparationTarget) => void;
   profile: RetrievalProfile;
   onProfileChange: (profile: RetrievalProfile) => void;
   onApplyProfile: (profile: RetrievalProfile, source?: string) => void;
@@ -103,7 +107,7 @@ function toCanonical(value: unknown): GoldenCanonical | null {
     : null;
 }
 
-export function MeasureWorkspace({ capabilities, publicPreview, active = true, live, ready, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange }: MeasureWorkspaceProps) {
+export function MeasureWorkspace({ capabilities, publicPreview, active = true, live, ready, readiness, onOpenPreparation, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange }: MeasureWorkspaceProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [experimentDefaults, setExperimentDefaults] = useState(loadExperimentDefaults);
@@ -113,6 +117,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const [jobs, setJobs] = useState<EvaluationJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(live);
   const [jobsError, setJobsError] = useState("");
+  const [submissionError, setSubmissionError] = useState("");
   const jobsRequestRef = useRef(0);
   const [comparison, setComparison] = useState<EvaluationComparison | null>(null);
   const [busy, setBusy] = useState(false);
@@ -284,6 +289,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval"); return; }
     if (!canRun || busy) return;
     setBusy(true);
+    setSubmissionError("");
     try {
       const job = await queueEvaluation(evaluationRequest);
       setJobs((current) => [job, ...current]);
@@ -292,6 +298,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       onRefreshJobs();
       notify(t("Evaluation queued."), "success", "evaluation-queued");
     } catch (reason) {
+      setSubmissionError(reason instanceof Error ? reason.message : t("Evaluation failed."));
       notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation");
     } finally {
       setBusy(false);
@@ -539,7 +546,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           <div className="surface-heading"><div><h2 data-help="measure.runs.results">{t("Evaluation runs")}</h2><p className="helper">{t("Select a run to inspect its progress, settings, and recorded results.")}</p></div><button className="button primary" type="button" onClick={() => setSetupOpen(true)}><Plus size={15} />{t("New evaluation")}</button></div>
           {selectedResultId !== null ? <button className="button" type="button" onClick={() => { resultRequestRef.current += 1; selectResult(null); setSelectedJobId(null); setResultDetail(null); setResultError(""); }}>{t("Back to evaluations")}</button> : <>
           {jobsLoading && <p role="status">{t("Loading evaluations…")}</p>}
-          {jobsError && <div role="alert" className="notice error"><p>{t("Evaluations could not be loaded.")}</p><p>{jobsError}</p><button className="button" type="button" onClick={() => void refreshJobs()}>{t("Retry")}</button></div>}
+          {jobsError && <div role="alert" className="notice error"><p>{t("Evaluations could not be loaded.")}</p><p>{jobsError}</p><button className="button" type="button" onClick={() => void refreshJobs()}>{t("Retry")}</button>{onOpenPreparation && <button className="button" type="button" onClick={() => onOpenPreparation("setup")}>{t("Open setup diagnosis")}</button>}</div>}
           <div className="evaluation-run-list">{jobs.map((job) => <article className={`job-row ${selectedJobId === job.job_id ? "selected" : ""}`} key={job.job_id}>
             <div className="job-select"><input type="radio" name="evaluation-result" aria-label={t("Select {p0}", { p0: job.job_id })} disabled={job.status !== "succeeded" || !job.result_id} checked={selectedResultId !== null && selectedResultId === job.result_id} onChange={() => chooseJob(job)} /><button className="row-detail" type="button" aria-pressed={selectedJobId === job.job_id} onClick={() => chooseJob(job)}><strong>{job.request.suite_id} · {t(job.request.mode)}</strong><p>{job.message}</p></button></div>
             <div className="evaluation-run-state"><span className={`job-status ${job.status}`}>{t(job.status)}</span><small>{job.total ? `${job.current} / ${job.total}` : t(job.stage)}</small><time dateTime={job.created_at}>{new Date(job.created_at).toLocaleString(locale)}</time></div>
@@ -547,12 +554,12 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           {!jobsLoading && !jobsError && !jobs.length && <div className="empty-state"><Beaker size={24} /><p>{t("No evaluations yet. Create a new evaluation when your dataset and index are ready.")}</p></div>}
           </>}
         </section>
-        {selectedResultId !== null && !resultDetail && <section className="surface"><h2>{t("Result details")} · #{selectedResultId}</h2>{resultError ? <div role="alert" className="notice error"><p>{t("Evaluation detail could not be loaded.")}</p><p>{resultError}</p><button className="button" type="button" onClick={() => void openResult(selectedResultId)}>{t("Retry")}</button></div> : <p role="status">{t("Loading evaluation result…")}</p>}</section>}
+        {selectedResultId !== null && !resultDetail && <section className="surface"><h2>{t("Result details")} · #{selectedResultId}</h2>{resultError ? <div role="alert" className="notice error"><p>{t("Evaluation detail could not be loaded.")}</p><p>{resultError}</p><button className="button" type="button" onClick={() => void openResult(selectedResultId)}>{t("Retry")}</button>{onOpenPreparation && <button className="button" type="button" onClick={() => onOpenPreparation("setup")}>{t("Open setup diagnosis")}</button>}</div> : <p role="status">{t("Loading evaluation result…")}</p>}</section>}
         {selectedJob && <section className="surface evaluation-job-detail" aria-live="polite"><div className="surface-heading"><div><p className="eyebrow">{t("Selected evaluation")}</p><h2>{selectedJob.request.suite_id}</h2></div><span className={`job-status ${selectedOperatorJob?.status ?? selectedJob.status}`}>{t(selectedOperatorJob?.status ?? selectedJob.status)}</span></div>
           <dl className="evaluation-metadata"><div><dt>{t("Job ID")}</dt><dd><code>{selectedJob.job_id}</code></dd></div><div><dt>{t("Golden revision")}</dt><dd>{selectedJob.request.golden_revision_id ? `#${selectedJob.request.golden_revision_id}` : t("Canonical JSON")}</dd></div><div><dt>{t("Retrieval profile")}</dt><dd>{profileSummary(selectedJob.request.profile ?? DEFAULT_PROFILE, locale)}</dd></div><div><dt>{t("Run mode")}</dt><dd>{t(selectedJob.request.mode)}</dd></div></dl>
           <p>{selectedOperatorJob?.message ?? selectedJob.message}</p>
           {(selectedJob.status === "running" || selectedJob.status === "queued") && <div className="evaluation-progress"><progress aria-label={t("Evaluation progress")} value={selectedJob.total ? selectedJob.current : undefined} max={selectedJob.total ?? undefined} /><span>{t(selectedJob.stage)}{selectedJob.total ? ` · ${selectedJob.current} / ${selectedJob.total}` : ""}</span></div>}
-          {selectedOperatorJob?.error_code && <p className="notice error" role="alert">{selectedOperatorJob.error_code}</p>}
+          {selectedOperatorJob?.error_code && <div className="notice error" role="alert"><p>{selectedOperatorJob.error_code}</p>{onOpenPreparation && <button className="button" type="button" onClick={() => onOpenPreparation(preparationErrorTarget(selectedOperatorJob.error_code))}>{t("Open preparation step")}</button>}</div>}
           {selectedOperatorJob?.can_cancel && <button className="button" type="button" onClick={() => void cancelSelectedJob()}>{t("Cancel job")}</button>}
           <details><summary>{t("Request settings")}</summary><pre>{JSON.stringify(selectedJob.request, null, 2)}</pre></details>
           {selectedJob.result_ids.length > 1 && <div className="job-arms">{selectedJob.result_ids.map((resultId) => <button key={resultId} className="button" type="button" aria-pressed={selectedResultId === resultId} onClick={() => void openResult(resultId)}>{t("Result")} #{resultId}</button>)}</div>}
@@ -571,7 +578,8 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           <fieldset className="playground-core" data-help="measure.runs.profile"><legend>{t("Core search settings")}</legend><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" fields="core" /></fieldset>
           <details><summary>{t("Advanced evaluation options")}</summary><label data-help="measure.runs.mode">{t("Run mode")}<select value={mode} onChange={(event) => setMode(event.target.value as "quick" | "matrix")}><option value="quick">{t("Quick · current index")}</option><option value="matrix">{t("Matrix · isolated corpus")}</option></select></label>{mode === "matrix" && <label data-help="measure.runs.chunk_targets">{t("Chunk targets (tokens)")}<input value={chunkTargets} onChange={(event) => setChunkTargets(event.target.value)} placeholder="1024 2048" /></label>}<ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" fields="advanced" /></details>
           <p className="helper">{t("Retrieval profile ·")} {profileSummary(profile, locale)}</p>
-          {!ready && <p className="notice">{t("Corpus not ready. Finish Build steps 2–4.")}</p>}{selectedSuite && !selectedSuite.source_ready && <p className="notice error">{t("Sources unavailable")}: {selectedSuite.source_error}</p>}
+          {submissionError && <div className="notice error" role="alert"><p>{submissionError}</p><button className="button" type="button" disabled={busy || !canRun} onClick={() => void runEvaluation()}>{t("Retry")}</button>{onOpenPreparation && <button className="button" type="button" onClick={() => onOpenPreparation("setup")}>{t("Open setup diagnosis")}</button>}</div>}
+          {!ready && <div className="notice"><p>{t("Corpus not ready. Inspect the earliest verified prerequisite.")}</p>{onOpenPreparation && <button className="button" type="button" onClick={() => onOpenPreparation(preparationTarget(readiness))}>{t("Open preparation step")}</button>}</div>}{selectedSuite && !selectedSuite.source_ready && <div className="notice error"><p>{t("Sources unavailable")}: {selectedSuite.source_error}</p>{onOpenPreparation && <button className="button" type="button" onClick={() => onOpenPreparation(preparationErrorTarget(selectedSuite.source_error_code))}>{t("Open preparation step")}</button>}</div>}
           <div className="action-row"><button className="button primary" type="button" data-help="measure.runs.queue" disabled={!canRun || busy} onClick={() => void runEvaluation()}><Play size={15} />{busy ? t("Queueing…") : t("Queue evaluation")}</button><button className="button" type="button" disabled={busy} onClick={() => setSetupOpen(false)}>{t("Cancel")}</button></div>
         </section></div>, document.body)}
       </div> : lockedRuns("Runs happen on the local operator build.")}</RetainedPanel>

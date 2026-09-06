@@ -19,7 +19,7 @@ function stubFetch(handler: StubHandler) {
 }
 
 /** Owns the tab like the shell does so tab-strip clicks work in tests. */
-function Host({ live, ready = true, initialTab = "playground", onApplyProfile = vi.fn(), onRefreshJobs = vi.fn(), initialResultId = null }: { initialResultId?: number | null; live: boolean; ready?: boolean; initialTab?: MeasureTab; onApplyProfile?: () => void; onRefreshJobs?: () => void }) {
+function Host({ live, ready = true, initialTab = "playground", onApplyProfile = vi.fn(), onRefreshJobs = vi.fn(), initialResultId = null, onOpenPreparation = vi.fn() }: { onOpenPreparation?: (stage: 1 | 2 | 3 | 4 | "setup") => void; initialResultId?: number | null; live: boolean; ready?: boolean; initialTab?: MeasureTab; onApplyProfile?: () => void; onRefreshJobs?: () => void }) {
   const [tab, setTab] = useState<MeasureTab>(initialTab);
   const [resultId, setResultId] = useState<number | null>(initialResultId);
   return (
@@ -28,6 +28,7 @@ function Host({ live, ready = true, initialTab = "playground", onApplyProfile = 
       focusResultId={resultId}
       onResultSelectionChange={setResultId}
       ready={ready}
+      onOpenPreparation={onOpenPreparation}
       profile={DEFAULT_PROFILE}
       onProfileChange={vi.fn()}
       onApplyProfile={onApplyProfile}
@@ -327,4 +328,21 @@ describe("evaluation preparation boundaries", () => {
     fireEvent.change(screen.getByLabelText("Candidate"), { target: { value: "3" } });
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
+});
+
+it("opens diagnosis from an unready evaluation without submitting work", async () => {
+  const onOpenPreparation = vi.fn();
+  const fetchMock = stubFetch(url => {
+    if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
+    if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
+    return [];
+  });
+  render(<I18nProvider><Host live ready={false} initialTab="runs" onOpenPreparation={onOpenPreparation} /></I18nProvider>);
+  await screen.findByRole("button", { name: /New evaluation|새 평가/ });
+  fireEvent.click(screen.getByRole("button", { name: /New evaluation|새 평가/ }));
+  const buttons = await screen.findAllByRole("button", { name: /Open preparation step|준비 단계 열기/ });
+  fireEvent.click(buttons[0]);
+  expect(onOpenPreparation).toHaveBeenCalledWith("setup");
+  expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  cleanup();
 });

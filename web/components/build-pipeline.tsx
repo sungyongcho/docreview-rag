@@ -155,6 +155,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         pipeline={pipeline}
         live={props.live}
         databaseConnected={props.databaseConnected ?? null}
+        returnStage={selected.id}
         schemaStatus={props.schemaStatus ?? null}
         schemaMessage={props.schemaMessage ?? null}
         writable={props.writable ?? null}
@@ -226,6 +227,7 @@ interface RuntimeStripProps {
   pipeline: Pipeline;
   live: boolean;
   databaseConnected: boolean | null;
+  returnStage: string;
   schemaStatus: string | null;
   schemaMessage: string | null;
   writable: boolean | null;
@@ -244,7 +246,7 @@ interface RuntimeProblem {
   commands: Array<{ id: string; label: string }>;
 }
 
-function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
+function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
   const { t, locale } = useI18n();
   if (pipeline.readOnly) {
     return <span className="runtime-readonly" data-help="build.runtime">{t("Read-only portfolio · stored snapshots + live retrieval")}</span>;
@@ -263,9 +265,10 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
     problems.push({ reason: schemaMessage || "The database is not connected.", fix: "rag-dev up --build -d", commands: [{ id: "db-start", label: "Start database" }] });
   } else if (schemaStatus === "empty") {
     problems.push({ reason: "The local database needs its initial schema.", fix: "uv run python -m scripts.schema_status prepare", commands: [] });
-  } else if (schemaStatus === "drifted" || schemaStatus === "unavailable") {
-    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, guidance: "Keep this database intact. Use an empty isolated database or a compatible database for setup.", fix: "uv run python -m scripts.schema_status check", commands: [] });
+  } else if (schemaStatus === "drifted") {
+    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, guidance: "Preserve this database. Create a separate recovery checkout with its own ports and volume, then open the printed URL and re-check the blocked step.", fix: `uv run python -m scripts.schema_status recover --return-stage ${returnStage}`, commands: [] });
   }
+  if (schemaStatus === "unavailable") { problems.push({ reason: schemaMessage || "Database schema is unavailable", fix: "uv run python -m scripts.schema_status check", commands: [] }); }
   if (writable === false) {
     problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files. Set HOST_GID=$(id -g) in .env, then rebuild the app.", fix: 'HOST_GID="$(id -g)" rag-dev up --build -d', commands: [{ id: "app-start", label: "Rebuild app" }] });
   }

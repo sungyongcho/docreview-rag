@@ -64,7 +64,7 @@ export interface BuildWorkspaceProps {
   onRunOperation?: (commandId: string) => void;
   tab: BuildTab;
   onTabChange: (tab: BuildTab) => void;
-  focusStep?: number | null;
+  focusStep?: number | "setup" | null;
   onNavigate: (target: BuildNavigationTarget) => void;
 }
 
@@ -81,7 +81,7 @@ const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: 
 export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
-  useEffect(() => { if (focusStep != null) setFocusStage(String(focusStep)); }, [focusStep]);
+  useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
   const { notify } = useNotifications();
   const environment = deploymentLabel(readiness?.environment);
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);

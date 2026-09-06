@@ -486,3 +486,51 @@ removed `.env` or stopped the web container. This command uses the existing loca
 operator connection and never resubmits deletion. After updating the code, restart
 the local operator with `rag-dev down` followed by `rag-dev up -d` before using the
 new reset options; these commands preserve data volumes.
+
+
+## Recover an incompatible local schema
+
+A restart or schema check does not repair drift. Preserve the original database and
+use a separate recovery environment when you need a usable empty runtime:
+
+```bash
+uv run python -m scripts.schema_status check
+uv run python -m scripts.schema_status recover --return-stage index
+# Optional: --parent /existing/directory (outside the original checkout)
+```
+
+Recovery creates a private, uniquely named checkout under the selected parent (the
+original checkout's parent by default). It clones the committed revision into a
+separate Git repository with no push remote, copies `.env` privately, selects distinct
+loopback DB/web/operator ports, and uses its own Compose project and volumes. Original
+configuration, services, database and downloaded corpus remain unchanged. Uncommitted
+source edits and downloaded/private corpus files are not copied. Host `DATABASE_URL`
+and Compose overrides cannot redirect the new project's operations to the old DB.
+
+The command installs locked dependencies, starts its DB, prepares only the empty
+schema, starts DEV services, and checks both CLI schema status and the API through
+the web origin. No filings or provider requests are submitted. Only after both checks
+succeed does it print **Recovery ready** and a URL returning to the requested Build
+step. Supported stages: filings, index, embeddings, lexical, ask, answer_model, evaluate.
+This is a new empty environment; the original incompatible schema is not repaired.
+
+Use the printed `cd` command and `source ./rag_alias.sh` in a separate terminal to
+select that recovery environment's CLI. Its schema output includes the local DB
+target. Re-check the destination in the web UI, then prepare missing data in order.
+Do not run commands from the original directory expecting them to target recovery.
+
+A failed installation/start/readiness check leaves the recovery directory intact and
+prints retry commands. Inspect its logs and recheck; never treat a failed or unknown
+check as completion. No reset, migration of the old DB, or automatic paid reprocessing
+is performed. `rag-dev down` from the recovery checkout stops that project while
+preserving its volumes.
+
+Evaluation errors now keep Retry/details alongside preparation navigation. Verified
+missing artifacts lead to acquisition, missing chunks to indexing, pending embeddings
+to embedding preparation, and a missing lexical index to BM25. Schema/unknown failures
+and invalid source contracts lead to setup diagnosis. Opening navigation never starts
+a job; refresh at the destination reads current state.
+
+### SCREENSHOT NEEDED
+<!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
+New screenshot evidence is pending; existing images are unchanged.

@@ -120,6 +120,7 @@ class GoldenSuiteResource(StrictAdminModel):
     golden_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     source_ready: StrictBool
     source_error: str | None = None
+    source_error_code: Literal["source_missing", "source_invalid"] | None = None
 
 
 class GoldenRevisionResource(StrictAdminModel):

@@ -287,6 +287,8 @@ rag-help() {
     printf '%s\n' \
         '  rag-quickstart               Guide setup through readiness; print tutorial URLs' \
         '  rag-quickstart --help        Show first-run requirements' \
+        '  uv run python -m scripts.schema_status recover   Create a separate recovery stack' \
+        '    --parent /existing/directory --return-stage index   Preserve the original DB' \
         '  Setup: prerequisites -> .env -> service status/start -> schema -> ready server' \
         '  If configuration blocks: edit the named local settings, then rerun rag-quickstart' \
         '  After readiness: open Quick Start and choose CLI/Web step 1; data is not prepared yet' \
