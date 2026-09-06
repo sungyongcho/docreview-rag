@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -21,6 +22,14 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.config import Settings, get_settings
 from app.db.models import Chunk, ChunkEmbedding
 from app.ingestion.tokens import MAX_REQUEST_INPUTS, MAX_REQUEST_TOKENS, tokenizer, validate_request
+from app.observability.usage import (
+    UsageSink,
+    emit_embedding_usage,
+    observe_embedding_usage,
+    persist_embedding_usage,
+    provider_identity,
+    usage_record,
+)
 from app.openai_models import resolve_openai_model
 from app.retrieval.types import finite_float
 
@@ -267,6 +276,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         dimensions: int = 384,
         client: EmbeddingClient | None = None,
         api_key: str | None = None,
+        credential_slot: str | None = None,
     ) -> None:
         selection = resolve_openai_model("embedding", model)
         if dimensions != selection.dimensions:
@@ -277,6 +287,11 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self.dimensions = dimensions
         self._input_price = selection.pricing.input_per_million_usd
         self._usage = EmbeddingUsage()
+        self.usage_identity = provider_identity(
+            provider="openai_embeddings",
+            local=False,
+            credential_slot=credential_slot or ("explicit" if api_key else None),
+        )
         if client is None:
             from openai import AsyncOpenAI
 
@@ -318,16 +333,41 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     async def _embed_request(self, inputs: list[str]) -> list[list[float]]:
         """Issue one preflighted request and restore its exact input order."""
-        response = await self._client.embeddings.create(
-            input=inputs,
-            model=self.model,
-            dimensions=self.dimensions,
-            encoding_format="float",
-        )
+        try:
+            response = await self._client.embeddings.create(
+                input=inputs,
+                model=self.model,
+                dimensions=self.dimensions,
+                encoding_format="float",
+            )
+        except BaseException:
+            await emit_embedding_usage(
+                usage_record(identity=self.usage_identity, model_name=self.model, role="embedding")
+            )
+            raise
         usage = getattr(response, "usage", None)
         input_tokens = getattr(usage, "prompt_tokens", None)
-        if not isinstance(input_tokens, int) or input_tokens < 0:
+        if type(input_tokens) is not int or input_tokens < 0:
+            await emit_embedding_usage(
+                usage_record(identity=self.usage_identity, model_name=self.model, role="embedding")
+            )
             raise ValueError("OpenAI embedding response did not include token usage")
+        cost = Decimal(input_tokens) * self._input_price / Decimal(1_000_000)
+        # A returned billable response remains usage even if its vectors fail validation.
+        self._usage = EmbeddingUsage(
+            requests=self._usage.requests + 1,
+            input_tokens=self._usage.input_tokens + input_tokens,
+            estimated_cost_usd=self._usage.estimated_cost_usd + cost,
+        )
+        await emit_embedding_usage(
+            usage_record(
+                identity=self.usage_identity,
+                model_name=self.model,
+                role="embedding",
+                input_tokens=input_tokens,
+                estimated_cost_usd=cost,
+            )
+        )
         by_index: dict[int, Sequence[float]] = {}
         for item in response.data:
             if not isinstance(item.index, int) or item.index in by_index:
@@ -340,12 +380,6 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             ordered,
             expected_count=len(inputs),
             dimensions=self.dimensions,
-        )
-        self._usage = EmbeddingUsage(
-            requests=self._usage.requests + 1,
-            input_tokens=self._usage.input_tokens + input_tokens,
-            estimated_cost_usd=self._usage.estimated_cost_usd
-            + Decimal(input_tokens) * self._input_price / Decimal(1_000_000),
         )
         return vectors
 
@@ -398,6 +432,7 @@ def get_embedding_provider(
         dimensions=configured.embed_dim,
         client=client,
         api_key=api_key,
+        credential_slot=configured.openai_key_slot,
     )
 
 
@@ -533,6 +568,7 @@ async def embed_missing_chunks(
     batch_size: int | None = None,
     on_batch: Callable[[EmbeddingBackfillResult], None] | None = None,
     document_ids: tuple[str, ...] | None = None,
+    on_usage: UsageSink | None = None,
 ) -> EmbeddingBackfillResult:
     """Embed all currently missing chunks in bounded, resumable batches.
 
@@ -579,6 +615,13 @@ async def embed_missing_chunks(
     selected = embedded = skipped_stale = batches = 0
     last_seen_chunk_id: int | None = None
 
+    async def record_usage(record: dict[str, object]) -> None:
+        """Record actual provider work before storing vectors, including direct CLI backfill."""
+        if on_usage is not None:
+            await on_usage(record)
+        else:
+            await persist_embedding_usage(session, record)
+
     while pending := await _missing_batch(
         session,
         effective_batch_size,
@@ -589,7 +632,33 @@ async def embed_missing_chunks(
         batches += 1
         selected += len(pending)
         last_seen_chunk_id = max(item.chunk_id for item in pending)
-        vectors = await provider.embed_documents([item.index_text for item in pending])
+        texts = [item.index_text for item in pending]
+        with observe_embedding_usage(record_usage):
+            if isinstance(provider, OpenAIEmbeddingProvider):
+                vectors = await provider.embed_documents(texts)
+            else:
+                # Local tokenizers describe an estimate, not provider-reported billing usage.
+                token_estimate = await asyncio.to_thread(
+                    sum, (provider.count_input_tokens(text) for text in texts)
+                )
+                try:
+                    vectors = await provider.embed_documents(texts)
+                finally:
+                    await record_usage(
+                        usage_record(
+                            identity=provider_identity(
+                                provider=identity.provider,
+                                local=identity.provider in {"deterministic", "sbert", "ollama"},
+                                credential_slot="none",
+                            ),
+                            model_name=identity.model,
+                            role="embedding",
+                            estimated_input_tokens=token_estimate,
+                            estimated_cost_usd=Decimal(0)
+                            if identity.provider in {"deterministic", "sbert", "ollama"}
+                            else None,
+                        )
+                    )
         vectors = validate_embeddings(
             vectors, expected_count=len(pending), dimensions=provider.dimensions
         )

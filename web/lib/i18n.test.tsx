@@ -128,6 +128,7 @@ describe("Korean and English UI", () => {
     expect(translate("ko", failureMessage({ status: "node_error", error_type: "StorageError", node: "retrieve", message: detail }))).toBe(`StorageError · retrieve 단계에서 실행이 중단됐습니다: ${detail}`);
     expect(translate("ko", failureMessage({ status: "budget_exceeded", resource: "wall_clock_s", limit: 120, blocked_node: "check" }))).toContain("실행 시간 한도(120초)를 초과했습니다. 중단 단계: check.");
     expect(translate("ko", failureMessage({ status: "budget_exceeded", resource: "output_tokens", limit: 4000, observed: 4100 }))).toBe("출력 토큰 예산을 초과했습니다. 사용량: 4100 / 4000.");
+    expect(translate("ko", failureMessage({ code: "provider_failure", status: "budget_exceeded", node: "grade", budget: { which: "output_tokens", used: 600, limit: 600 } }))).toBe("모델 호출의 출력 토큰 한도에 도달했습니다. 사용량: 600 / 600. 중단 단계: grade.");
     expect(translate("ko", `Last run interrupted: ${detail}`)).toBe(`이전 작업 재시작으로 중단: ${detail}`);
   });
 

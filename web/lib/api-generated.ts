@@ -1107,6 +1107,39 @@ export interface components {
             max_wall_clock_s: number;
         };
         /**
+         * BudgetExceeded
+         * @description Typed refusal when a call or repair cannot continue within its budget.
+         *
+         *     ``schema_errors`` carries the validation failure of the attempt whose repair the
+         *     budget blocked. A budget that runs out before anything failed validation leaves it
+         *     empty; without it a repair blocked at the exact boundary would report only that the
+         *     budget stopped, never that the output was also unusable.
+         */
+        BudgetExceeded: {
+            /** Attempts */
+            attempts: number;
+            /** Limit */
+            limit: number | string;
+            /**
+             * Schema Errors
+             * @default []
+             */
+            schema_errors: string[];
+            /**
+             * Status
+             * @default budget_exceeded
+             * @constant
+             */
+            status: "budget_exceeded";
+            /** Used */
+            used: number | string;
+            /**
+             * Which
+             * @enum {string}
+             */
+            which: "input_tokens" | "output_tokens" | "estimated_cost_usd";
+        };
+        /**
          * BudgetLimitFailure
          * @description A workflow node blocked by one exhausted cumulative resource.
          *
@@ -2057,6 +2090,147 @@ export interface components {
             pinned_chunk_ids: number[];
         };
         /**
+         * ExecutionCandidate
+         * @description Rank and identity of a candidate observed at a committed workflow stage.
+         */
+        ExecutionCandidate: {
+            /** Chunk Id */
+            chunk_id: number;
+            /** Citation */
+            citation: string;
+            /** Doc Id */
+            doc_id: string;
+            /** Rank */
+            rank: number;
+            /** Score */
+            score: number | null;
+        };
+        /**
+         * ExecutionData
+         * @description Versioned execution envelope; absent historical fields remain explicitly null.
+         */
+        ExecutionData: {
+            /**
+             * Contract Version
+             * @default 1
+             */
+            contract_version: number;
+            /** Effective Settings */
+            effective_settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Local Placement */
+            local_placement?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Model Calls */
+            model_calls?: components["schemas"]["ExecutionModelCall"][];
+            /** Provider Identity */
+            provider_identity?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Resolved Scope */
+            resolved_scope?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Routing Queries */
+            routing_queries?: {
+                [key: string]: string;
+            } | null;
+            /** Stage Results */
+            stage_results?: components["schemas"]["ExecutionStageResult"][] | null;
+            /** Stages */
+            stages?: components["schemas"]["StageEvent"][];
+            /** Total Elapsed Ms */
+            total_elapsed_ms: number;
+        };
+        /**
+         * ExecutionModelCall
+         * @description One measured call with explicit provider and optional server timing evidence.
+         */
+        ExecutionModelCall: {
+            /** Attempts */
+            attempts: number;
+            /** Cache Write Input Tokens */
+            cache_write_input_tokens?: number | null;
+            /** Cached Input Tokens */
+            cached_input_tokens?: number | null;
+            /**
+             * Credential Slot
+             * @default unknown
+             */
+            credential_slot: string;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Error */
+            error?: string | null;
+            /** Estimated Cost Usd */
+            estimated_cost_usd?: string | null;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Local */
+            local?: boolean | null;
+            /** Local Timings */
+            local_timings?: components["schemas"]["LocalModelTiming"][];
+            /** Model */
+            model: string;
+            /** Node */
+            node?: ("gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report") | null;
+            /** Output Tokens */
+            output_tokens: number;
+            /**
+             * Provider
+             * @default unknown
+             */
+            provider: string;
+            /** Provider Timing */
+            provider_timing?: components["schemas"]["LocalModelTiming"][] | null;
+            /** Reasoning Tokens */
+            reasoning_tokens?: number | null;
+            /** Step */
+            step: number;
+            /**
+             * Timing Unavailable Reason
+             * @default not_recorded
+             */
+            timing_unavailable_reason: string | null;
+        };
+        /**
+         * ExecutionStageResult
+         * @description Actual stage output; null separates unrecorded data from a measured empty set.
+         */
+        ExecutionStageResult: {
+            /** Candidates */
+            candidates?: components["schemas"]["ExecutionCandidate"][] | null;
+            /** Decision */
+            decision?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Evidence Chunk Ids */
+            evidence_chunk_ids?: number[] | null;
+            /** Failure */
+            failure?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Intent */
+            intent?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Kept Chunk Ids */
+            kept_chunk_ids?: number[] | null;
+            /**
+             * Node
+             * @enum {string}
+             */
+            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            /** Reasons */
+            reasons?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[] | null;
+            /** Rejected Chunk Ids */
+            rejected_chunk_ids?: number[] | null;
+        };
+        /**
          * GoldenCanonicalResource
          * @description Validated read-only canonical JSON for one golden suite.
          */
@@ -2675,6 +2849,9 @@ export interface components {
         ProviderFailure: {
             /** Attempts */
             attempts: number;
+            budget?: components["schemas"]["BudgetExceeded"] | null;
+            /** Budget Source */
+            budget_source?: ("provider_budget" | "run_limits" | "both") | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -3070,10 +3247,7 @@ export interface components {
          * @description One completed workflow run or its structured terminal failure.
          */
         RunResponse: {
-            /** Execution */
-            execution?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
+            execution?: components["schemas"]["ExecutionData"] | null;
             /** Failure */
             failure: (components["schemas"]["BudgetLimitFailure"] | components["schemas"]["ProviderFailure"] | components["schemas"]["NodeError"]) | null;
             /** Iterations */
@@ -3261,6 +3435,37 @@ export interface components {
             registry: "sec" | "dart";
         };
         /**
+         * StageEvent
+         * @description One measured stage transition; an active stage has no completed duration.
+         */
+        StageEvent: {
+            /** Elapsed Ms */
+            elapsed_ms?: number | null;
+            /**
+             * Node
+             * @enum {string}
+             */
+            node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "start" | "end";
+            /** Resolved Scope */
+            resolved_scope?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Started At */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "completed" | "failed";
+            /** Total Elapsed Ms */
+            total_elapsed_ms: number;
+        };
+        /**
          * StepTrace
          * @description One raw, traceable workflow step before persistence redaction.
          */
@@ -3351,18 +3556,84 @@ export interface components {
             cache_write_input_tokens: number;
             /** Cached Input Tokens */
             cached_input_tokens: number;
+            /**
+             * Credential Slot
+             * @default unknown
+             */
+            credential_slot: string;
             /** Estimated Cost Usd */
             estimated_cost_usd: string;
+            /**
+             * Estimated Input Tokens
+             * @default 0
+             */
+            estimated_input_tokens: number;
             /** Input Tokens */
             input_tokens: number;
+            /** Local */
+            local?: boolean | null;
             /** Model Name */
             model_name: string;
             /** Output Tokens */
             output_tokens: number;
+            /**
+             * Provider
+             * @default unknown
+             */
+            provider: string;
             /** Reasoning Tokens */
             reasoning_tokens: number;
             /** Requests */
             requests: number;
+            /**
+             * Role
+             * @default unknown
+             */
+            role: string;
+            /**
+             * Unreported Cost Requests
+             * @default 0
+             */
+            unreported_cost_requests: number;
+            /**
+             * Unreported Input Requests
+             * @default 0
+             */
+            unreported_input_requests: number;
+        };
+        /**
+         * UsageProviderResource
+         * @description One provider/credential group with exact subtotals of its model-role rows.
+         */
+        UsageProviderResource: {
+            /** Cache Write Input Tokens */
+            cache_write_input_tokens: number;
+            /** Cached Input Tokens */
+            cached_input_tokens: number;
+            /** Credential Slot */
+            credential_slot: string;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: string;
+            /** Estimated Input Tokens */
+            estimated_input_tokens: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Local */
+            local: boolean | null;
+            /** Models */
+            models: components["schemas"]["UsageModelResource"][];
+            /** Output Tokens */
+            output_tokens: number;
+            /** Provider */
+            provider: string;
+            /** Reasoning Tokens */
+            reasoning_tokens: number;
+            /** Requests */
+            requests: number;
+            /** Unreported Cost Requests */
+            unreported_cost_requests: number;
+            /** Unreported Input Requests */
+            unreported_input_requests: number;
         };
         /**
          * UsageResponse
@@ -3375,6 +3646,11 @@ export interface components {
             cached_input_tokens: number;
             /** Estimated Cost Usd */
             estimated_cost_usd: string;
+            /**
+             * Estimated Input Tokens
+             * @default 0
+             */
+            estimated_input_tokens: number;
             /** Input Tokens */
             input_tokens: number;
             /** Latest Run At */
@@ -3383,12 +3659,27 @@ export interface components {
             models: components["schemas"]["UsageModelResource"][];
             /** Output Tokens */
             output_tokens: number;
+            /**
+             * Providers
+             * @default []
+             */
+            providers: components["schemas"]["UsageProviderResource"][];
             /** Reasoning Tokens */
             reasoning_tokens: number;
             /** Requests */
             requests: number;
             /** Runs */
             runs: number;
+            /**
+             * Unreported Cost Requests
+             * @default 0
+             */
+            unreported_cost_requests: number;
+            /**
+             * Unreported Input Requests
+             * @default 0
+             */
+            unreported_input_requests: number;
         };
         /**
          * ValidationIssue

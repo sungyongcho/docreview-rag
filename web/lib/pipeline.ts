@@ -455,6 +455,21 @@ export function failureReport(failure: Record<string, unknown>): FailureReport {
   const at = (key: string) => (typeof failure[key] === "string" ? ` at the ${String(failure[key])} step` : "");
   const tried = typeof failure.attempts === "number" && failure.attempts > 1 ? ` after ${failure.attempts} attempts` : "";
 
+  if (status === "budget_exceeded" && failure.code === "provider_failure") {
+    const budget = failure.budget && typeof failure.budget === "object" ? failure.budget as Record<string, unknown> : null;
+    const first = Array.isArray(failure.details) && typeof failure.details[0] === "string" ? failure.details[0] : "";
+    // Older persisted reports carry this exact server-generated budget line.
+    const legacy = /^(input_tokens|output_tokens|estimated_cost_usd): used=([\d.]+) limit=([\d.]+)$/.exec(first);
+    const resource = budget?.which ?? legacy?.[1];
+    const used = budget?.used ?? legacy?.[2];
+    const limit = budget?.limit ?? legacy?.[3];
+    const kind = resource === "input_tokens" ? "input token" : resource === "output_tokens" ? "output token" : resource === "estimated_cost_usd" ? "estimated cost" : null;
+    const amount = used !== undefined && limit !== undefined ? ` (${used} of ${limit})` : "";
+    const text = kind ? `The model call reached its ${kind} limit${amount}${at("node")}.` : `The model call reached a budget limit${at("node")}.`;
+    const fix = failure.budget_source === "run_limits" ? RUN_LIMITS : failure.budget_source === "provider_budget" || failure.budget_source === "both" ? { label: "Open System status", category: "runtime" as const } : undefined;
+    return { text, fix };
+  }
+
   if (status === "budget_exceeded") {
     const node = at("blocked_node");
     const observed = typeof failure.observed === "number" ? failure.observed : null;
@@ -470,6 +485,7 @@ export function failureReport(failure: Record<string, unknown>): FailureReport {
     if (failure.resource === "iterations") {
       return { text: `The run used all of its allowed steps${reached}${node}.`, fix: RUN_LIMITS };
     }
+    if (failure.resource !== "input_tokens" && failure.resource !== "output_tokens") return { text: "The run reached an unspecified budget limit." };
     const half = failure.resource === "output_tokens" ? "output" : "input";
     return { text: `The run exceeded its ${half} token budget${reached}${node}.`, fix: RUN_LIMITS };
   }

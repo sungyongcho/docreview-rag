@@ -11,6 +11,7 @@ from typing import Literal
 
 from app.llm.schemas import NonNegativeFloat, ProviderMetadata, StrictSchema
 from app.observability.types import JsonObject, WorkflowNode
+from app.observability.usage import provider_identity
 
 
 class StageEvent(StrictSchema):
@@ -91,6 +92,11 @@ def record_model_call(metadata: ProviderMetadata) -> None:
             "elapsed_ms": metadata.request_time_ms,
             "input_tokens": metadata.input_tokens,
             "output_tokens": metadata.output_tokens,
+            "cached_input_tokens": metadata.cached_input_tokens,
+            "cache_write_input_tokens": metadata.cache_write_input_tokens,
+            "reasoning_tokens": metadata.reasoning_tokens,
+            "estimated_cost_usd": str(metadata.estimated_cost_usd),
+            **provider_identity(api_url=metadata.api_url),
             "local_timings": [
                 timing.model_dump(mode="json", exclude_none=True)
                 for timing in metadata.local_timings

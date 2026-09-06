@@ -40,6 +40,7 @@ from app.ingestion.source_selection import (
     source_inventory,
 )
 from app.observability.persistence import redact_sensitive_text
+from app.observability.usage import LEDGER_KIND, USAGE_KEY, UsageSink, merge_usage
 from app.operator.jobs import (
     JobExecutionCoordinator,
     JobStore,
@@ -1017,6 +1018,8 @@ class RuntimeCorpusAdminService:
         await self.recover_jobs()
         if self._job_store is not None:
             record = await self._job_store.get(job_id)
+            if record is not None and record.kind == LEDGER_KIND:
+                raise ValueError("Usage ledger entries cannot be executed or retried.")
             if record is None or record.result_refs.get("__history_archived") is True:
                 raise ValueError(
                     "Restore archived history before retrying; deleted jobs cannot be retried."
@@ -1061,7 +1064,7 @@ class RuntimeCorpusAdminService:
         await self.recover_jobs()
         if self._job_store is not None:
             rows = await self._job_store.list(domain="corpus", limit=MAX_JOB_HISTORY + 16)
-            jobs = tuple(_job_from_stored(row) for row in rows)
+            jobs = tuple(_job_from_stored(row) for row in rows if row.kind != LEDGER_KIND)
             active = next((item for item in jobs if item.status == "running"), None)
             queued = tuple(
                 sorted(
@@ -1153,6 +1156,7 @@ class RuntimeCorpusAdminService:
         self,
         command: AdminCommand,
         publish: Callable[[OperationProgress], None],
+        on_usage: UsageSink | None = None,
     ) -> OperationOutcome:
         """Execute one safe operation through reusable in-process boundaries."""
         if self._operation_runner is not None:
@@ -1252,7 +1256,11 @@ class RuntimeCorpusAdminService:
 
             async with self._session_factory() as session:
                 result = await embed_missing_chunks(
-                    session, self._provider, on_batch=on_batch, document_ids=document_ids
+                    session,
+                    self._provider,
+                    on_batch=on_batch,
+                    document_ids=document_ids,
+                    on_usage=on_usage,
                 )
             async with self._session_factory() as session:
                 ready_after, pending_after = await _embedding_state(
@@ -1290,9 +1298,25 @@ class RuntimeCorpusAdminService:
             self._persister.schedule(queued.job_id)
         try:
             job_id = queued.job_id
+
+            async def record_usage(record: dict[str, object]) -> None:
+                """Persist cumulative batch usage without stale progress overwriting it."""
+                await self._persister.flush(job_id)
+                current = self._jobs[job_id]
+                refs = dict(current.result_refs or {})
+                previous = refs.get(USAGE_KEY, [])
+                if not isinstance(previous, list) or any(
+                    not isinstance(row, dict) for row in previous
+                ):
+                    raise ValueError("Persisted embedding usage ledger is invalid")
+                refs[USAGE_KEY] = merge_usage([*previous, record])
+                self._jobs[job_id] = replace(current, result_refs=refs)
+                await self._persist_current_job(job_id)
+
             message = await self._run_operation(
                 queued.command,
                 lambda progress, job_id=job_id: self._publish(job_id, progress),
+                on_usage=record_usage,
             )
         except JobCancelledError:
             finished = replace(

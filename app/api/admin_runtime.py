@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
@@ -40,6 +40,7 @@ from app.api.admin_schemas import (
     SnapshotCreateRequest,
     SnapshotVisibilityRequest,
     UsageModelResource,
+    UsageProviderResource,
     UsageResponse,
 )
 from app.api.document_catalog import DocumentCatalog
@@ -56,6 +57,7 @@ from app.api.schemas import (
 from app.config import get_settings
 from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
 from app.db.models import (
+    OperatorJob,
     Run,
     Trace,
 )
@@ -64,6 +66,7 @@ from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
 from app.llm.local_connection import LocalConnectionError, LocalConnectionManager, LocalProtocol
+from app.observability.usage import USAGE_KEY, merge_usage, review_usage
 from app.operator.job_history import JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
 from app.retrieval.cross_encoder import CrossEncoderReranker
@@ -351,6 +354,7 @@ class RuntimeAdminApiServices:
             ),
             can_retry=(
                 job.status in {"failed", "interrupted"}
+                and job.kind != "embedding_usage"
                 and not (
                     job.domain == "corpus"
                     and job.kind == "ingest_manifest"
@@ -440,63 +444,116 @@ class RuntimeAdminApiServices:
         return resource
 
     async def usage(self) -> UsageResponse:
-        """Aggregate locally persisted provider usage without contacting OpenAI."""
+        """Aggregate review and embedding evidence without provider calls or schema migration."""
         async with self._runtime.session_factory() as session:
-            totals = (
+            runs = (
                 await session.execute(
                     select(
-                        func.count(Run.run_id),
-                        func.coalesce(func.sum(Run.total_requests), 0),
-                        func.coalesce(func.sum(Run.total_input_tokens), 0),
-                        func.coalesce(func.sum(Run.total_cached_input_tokens), 0),
-                        func.coalesce(func.sum(Run.total_cache_write_input_tokens), 0),
-                        func.coalesce(func.sum(Run.total_output_tokens), 0),
-                        func.coalesce(func.sum(Run.total_reasoning_tokens), 0),
-                        func.coalesce(func.sum(Run.total_estimated_cost_usd), Decimal("0")),
-                        func.max(Run.created_at),
+                        Run.run_id,
+                        Run.created_at,
+                        Run.request_context["model_calls"].label("model_calls"),
+                        Run.request_context["provider_identity"].label("provider_identity"),
                     )
-                )
-            ).one()
-            model_rows = (
-                await session.execute(
-                    select(
-                        Trace.model_name,
-                        func.sum(1 + Trace.retries),
-                        func.sum(Trace.input_tokens),
-                        func.sum(Trace.cached_input_tokens),
-                        func.sum(Trace.cache_write_input_tokens),
-                        func.sum(Trace.output_tokens),
-                        func.sum(Trace.reasoning_tokens),
-                        func.sum(Trace.estimated_cost_usd),
-                    )
-                    .group_by(Trace.model_name)
-                    .order_by(Trace.model_name)
                 )
             ).all()
-        models = tuple(
-            UsageModelResource(
-                model_name=row[0],
-                requests=int(row[1] or 0),
-                input_tokens=int(row[2] or 0),
-                cached_input_tokens=int(row[3] or 0),
-                cache_write_input_tokens=int(row[4] or 0),
-                output_tokens=int(row[5] or 0),
-                reasoning_tokens=int(row[6] or 0),
-                estimated_cost_usd=Decimal(row[7] or 0),
+            traces = (
+                await session.execute(
+                    select(
+                        Trace.run_id,
+                        Trace.node,
+                        Trace.model_name,
+                        Trace.api_url,
+                        Trace.retries,
+                        Trace.input_tokens,
+                        Trace.cached_input_tokens,
+                        Trace.cache_write_input_tokens,
+                        Trace.output_tokens,
+                        Trace.reasoning_tokens,
+                        Trace.estimated_cost_usd,
+                    ).order_by(Trace.run_id, Trace.step)
+                )
+            ).all()
+            ledgers = (
+                (
+                    await session.execute(
+                        select(OperatorJob.result_refs[USAGE_KEY]).where(
+                            OperatorJob.result_refs.op("?")(USAGE_KEY)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
             )
-            for row in model_rows
+        by_run = {}
+        for trace in traces:
+            by_run.setdefault(trace.run_id, []).append(trace)
+        records = []
+        for run in runs:
+            records.extend(
+                review_usage(
+                    {"model_calls": run.model_calls, "provider_identity": run.provider_identity},
+                    by_run.get(run.run_id, []),
+                )
+            )
+        for ledger in ledgers:
+            if not isinstance(ledger, list) or any(not isinstance(row, dict) for row in ledger):
+                raise ValueError("Persisted embedding usage ledger is invalid")
+            records.extend(ledger)
+        models = tuple(
+            UsageModelResource.model_validate(
+                {**row, "estimated_cost_usd": Decimal(str(row["estimated_cost_usd"]))}
+            )
+            for row in merge_usage(records)
         )
-        return UsageResponse(
-            runs=int(totals[0] or 0),
-            requests=int(totals[1] or 0),
-            input_tokens=int(totals[2] or 0),
-            cached_input_tokens=int(totals[3] or 0),
-            cache_write_input_tokens=int(totals[4] or 0),
-            output_tokens=int(totals[5] or 0),
-            reasoning_tokens=int(totals[6] or 0),
-            estimated_cost_usd=Decimal(totals[7] or 0),
-            latest_run_at=totals[8],
-            models=models,
+        grouped = {}
+        for model in models:
+            grouped.setdefault((model.provider, model.local, model.credential_slot), []).append(
+                model
+            )
+
+        def totals(
+            rows: list[UsageModelResource] | tuple[UsageModelResource, ...],
+        ) -> dict[str, object]:
+            """Compute all header and group totals from the same displayed model-role rows."""
+            counts = {
+                field: sum(getattr(row, field) for row in rows)
+                for field in (
+                    "requests",
+                    "input_tokens",
+                    "cached_input_tokens",
+                    "cache_write_input_tokens",
+                    "output_tokens",
+                    "reasoning_tokens",
+                    "estimated_input_tokens",
+                    "unreported_input_requests",
+                    "unreported_cost_requests",
+                )
+            }
+            return {
+                **counts,
+                "estimated_cost_usd": sum((row.estimated_cost_usd for row in rows), Decimal(0)),
+            }
+
+        providers = tuple(
+            UsageProviderResource.model_validate(
+                {
+                    "provider": key[0],
+                    "local": key[1],
+                    "credential_slot": key[2],
+                    "models": tuple(rows),
+                    **totals(rows),
+                }
+            )
+            for key, rows in grouped.items()
+        )
+        return UsageResponse.model_validate(
+            {
+                "runs": len(runs),
+                "latest_run_at": max((run.created_at for run in runs), default=None),
+                "models": models,
+                "providers": providers,
+                **totals(models),
+            }
         )
 
     async def evaluation_job(self, job_id: str) -> EvaluationJobResource | None:

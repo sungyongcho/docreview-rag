@@ -753,3 +753,13 @@ it("schema drift blocks stale completed counts without blocking the answer model
   expect(stage(pipeline, "answer_model").status).toBe("done");
   expect(pipeline.next?.id).toBe("index");
 });
+
+it("preserves the recorded provider output ceiling instead of guessing an input failure", () => {
+  const legacy = { code: "provider_failure", node: "grade", status: "budget_exceeded", details: ["output_tokens: used=600 limit=600", "$: Expecting value at line 1 column 1 [json_invalid]"], attempts: 1 };
+  expect(failureReport(legacy).text).toBe("The model call reached its output token limit (600 of 600) at the grade step.");
+  expect(failureReport(legacy).fix).toBeUndefined();
+  const structured = { ...legacy, budget: { which: "output_tokens", used: 600, limit: 600 }, budget_source: "provider_budget" };
+  expect(failureReport(structured).fix?.category).toBe("runtime");
+  expect(failureReport({ ...structured, budget_source: "run_limits" }).fix?.category).toBe("limits");
+  expect(failureReport({ ...legacy, details: [] }).text).not.toContain("input");
+});

@@ -567,3 +567,23 @@ def test_workflow_emits_started_and_completed_stages_around_real_node_work() -> 
     assert [call["node"] for call in metadata["model_calls"]] == ["grade", "check"]
     assert all(call["attempts"] == 1 for call in metadata["model_calls"])
     assert len(metadata["stages"]) == 4
+
+
+def test_grade_output_repair_limit_preserves_its_actual_source():
+    """Reproduce the recorded 600-token invalid output without a model or paid request."""
+    provider = _provider([_raw("", input_tokens=2521, output_tokens=600)])
+    result = asyncio.run(
+        run_workflow(
+            _request(
+                provider_budget=_provider_budget(max_input_tokens=12000, max_output_tokens=600)
+            ),
+            retriever=retriever_returning([_hit()]),
+            provider=provider,
+        )
+    )
+    failure = result.report["reason"]
+    assert result.status == "budget_exceeded"
+    assert failure["budget"]["which"] == "output_tokens"
+    assert failure["budget"]["used"] == failure["budget"]["limit"] == 600
+    assert failure["budget_source"] == "provider_budget"
+    assert "json_invalid" in " ".join(failure["details"])

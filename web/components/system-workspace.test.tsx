@@ -53,7 +53,7 @@ describe("System workspace", () => {
     expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("title", "DEV only");
     expect(screen.getByRole("button", { name: "System status" }).querySelector(".development-badge")).toBeNull();
     await waitFor(() => expect(screen.getByText("gpt-5.6-terra")).toBeInTheDocument());
-    expect(screen.getAllByText("$0.01")).toHaveLength(2);
+    expect(screen.getAllByText("$0.01")).toHaveLength(3);
     expect(fetchMock.mock.calls.every(([value]) => String(value).endsWith("/admin/usage"))).toBe(true);
   });
 
@@ -98,4 +98,21 @@ describe("System workspace", () => {
     expect(screen.getByText(/2026\. 9\. 5\./)).toBeInTheDocument();
     expect(screen.getByText("$0.0100")).toBeInTheDocument();
   });
+});
+
+
+it("groups external and local embedding usage with matching subtotals and explicit estimates", async () => {
+  const common = { cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, estimated_input_tokens: 0, unreported_input_requests: 0, unreported_cost_requests: 0 };
+  const external = { ...common, provider: "openai_embeddings", local: false, credential_slot: "OPENAI_API_KEY_LOCAL", model_name: "text-embedding-3-large", role: "embedding", requests: 2, input_tokens: 100, estimated_cost_usd: "0.000013" };
+  const local = { ...common, provider: "sbert", local: true, credential_slot: "none", model_name: "local-model", role: "embedding", requests: 1, input_tokens: 0, estimated_input_tokens: 12, unreported_input_requests: 1, estimated_cost_usd: "0" };
+  const payload = { ...common, runs: 0, requests: 3, input_tokens: 100, estimated_input_tokens: 12, unreported_input_requests: 1, estimated_cost_usd: "0.000013", latest_run_at: null, models: [external, local], providers: [{ ...external, models: [external] }, { ...local, models: [local] }] };
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } })));
+  renderSystem({ live: true, tab: "usage" });
+  await screen.findByText("text-embedding-3-large");
+  expect(screen.getByRole("region", { name: "openai_embeddings · OPENAI_API_KEY_LOCAL" })).toHaveTextContent("External API");
+  expect(screen.getByRole("region", { name: "sbert · none" })).toHaveTextContent("Local · free");
+  expect(screen.getByRole("region", { name: "sbert · none" })).toHaveTextContent("Not reported: 1");
+  expect(screen.getAllByText("Provider subtotal")).toHaveLength(2);
+  expect(screen.getAllByRole("columnheader", { name: "Reported input" })).toHaveLength(2);
+  expect(screen.getAllByRole("columnheader", { name: "Estimated input" })).toHaveLength(2);
 });

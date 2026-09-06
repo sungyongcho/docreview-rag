@@ -214,6 +214,74 @@
         "title": "Budget",
         "type": "object"
       },
+      "BudgetExceeded": {
+        "additionalProperties": false,
+        "description": "Typed refusal when a call or repair cannot continue within its budget.\n\n``schema_errors`` carries the validation failure of the attempt whose repair the\nbudget blocked. A budget that runs out before anything failed validation leaves it\nempty; without it a repair blocked at the exact boundary would report only that the\nbudget stopped, never that the output was also unusable.",
+        "properties": {
+          "attempts": {
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Limit"
+          },
+          "schema_errors": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Schema Errors",
+            "type": "array"
+          },
+          "status": {
+            "const": "budget_exceeded",
+            "default": "budget_exceeded",
+            "title": "Status",
+            "type": "string"
+          },
+          "used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Used"
+          },
+          "which": {
+            "enum": [
+              "input_tokens",
+              "output_tokens",
+              "estimated_cost_usd"
+            ],
+            "title": "Which",
+            "type": "string"
+          }
+        },
+        "required": [
+          "which",
+          "used",
+          "limit",
+          "attempts"
+        ],
+        "title": "BudgetExceeded",
+        "type": "object"
+      },
       "BudgetLimitFailure": {
         "additionalProperties": false,
         "description": "A workflow node blocked by one exhausted cumulative resource.\n\nOwned here, next to the budget guard that produces it, so the refusal payload and\nthe schema consumers validate against cannot drift apart.",
@@ -2520,6 +2588,474 @@
         "title": "EvidenceSelection",
         "type": "object"
       },
+      "ExecutionCandidate": {
+        "additionalProperties": false,
+        "description": "Rank and identity of a candidate observed at a committed workflow stage.",
+        "properties": {
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "integer"
+          },
+          "citation": {
+            "title": "Citation",
+            "type": "string"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "doc_id",
+          "citation",
+          "rank",
+          "score"
+        ],
+        "title": "ExecutionCandidate",
+        "type": "object"
+      },
+      "ExecutionData": {
+        "additionalProperties": false,
+        "description": "Versioned execution envelope; absent historical fields remain explicitly null.",
+        "properties": {
+          "contract_version": {
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "effective_settings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Settings"
+          },
+          "local_placement": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Placement"
+          },
+          "model_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionModelCall"
+            },
+            "title": "Model Calls",
+            "type": "array"
+          },
+          "provider_identity": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Identity"
+          },
+          "resolved_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Scope"
+          },
+          "routing_queries": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Queries"
+          },
+          "stage_results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExecutionStageResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Results"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageEvent"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "total_elapsed_ms": {
+            "title": "Total Elapsed Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "total_elapsed_ms"
+        ],
+        "title": "ExecutionData",
+        "type": "object"
+      },
+      "ExecutionModelCall": {
+        "additionalProperties": false,
+        "description": "One measured call with explicit provider and optional server timing evidence.",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "cache_write_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write Input Tokens"
+          },
+          "cached_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached Input Tokens"
+          },
+          "credential_slot": {
+            "default": "unknown",
+            "title": "Credential Slot",
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "number"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "estimated_cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost Usd"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "local": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local"
+          },
+          "local_timings": {
+            "items": {
+              "$ref": "#/components/schemas/LocalModelTiming"
+            },
+            "title": "Local Timings",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "node": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gate",
+                  "route",
+                  "retrieve",
+                  "chat",
+                  "grade",
+                  "check",
+                  "report"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "provider": {
+            "default": "unknown",
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_timing": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LocalModelTiming"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Timing"
+          },
+          "reasoning_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Tokens"
+          },
+          "step": {
+            "title": "Step",
+            "type": "integer"
+          },
+          "timing_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "not_recorded",
+            "title": "Timing Unavailable Reason"
+          }
+        },
+        "required": [
+          "step",
+          "model",
+          "attempts",
+          "elapsed_ms",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "ExecutionModelCall",
+        "type": "object"
+      },
+      "ExecutionStageResult": {
+        "additionalProperties": false,
+        "description": "Actual stage output; null separates unrecorded data from a measured empty set.",
+        "properties": {
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExecutionCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "evidence_chunk_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Chunk Ids"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "kept_chunk_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept Chunk Ids"
+          },
+          "node": {
+            "enum": [
+              "gate",
+              "route",
+              "retrieve",
+              "chat",
+              "grade",
+              "check",
+              "report"
+            ],
+            "title": "Node",
+            "type": "string"
+          },
+          "reasons": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/JsonValue"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasons"
+          },
+          "rejected_chunk_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected Chunk Ids"
+          }
+        },
+        "required": [
+          "node"
+        ],
+        "title": "ExecutionStageResult",
+        "type": "object"
+      },
       "GoldenCanonicalResource": {
         "additionalProperties": false,
         "description": "Validated read-only canonical JSON for one golden suite.",
@@ -4008,6 +4544,32 @@
             "title": "Attempts",
             "type": "integer"
           },
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetExceeded"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "provider_budget",
+                  "run_limits",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Source"
+          },
           "code": {
             "const": "provider_failure",
             "default": "provider_failure",
@@ -4916,16 +5478,12 @@
           "execution": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/ExecutionData"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Execution"
+            ]
           },
           "failure": {
             "anyOf": [
@@ -5443,6 +6001,86 @@
         "title": "SourceInventoryResource",
         "type": "object"
       },
+      "StageEvent": {
+        "additionalProperties": false,
+        "description": "One measured stage transition; an active stage has no completed duration.",
+        "properties": {
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          },
+          "node": {
+            "enum": [
+              "gate",
+              "route",
+              "retrieve",
+              "chat",
+              "grade",
+              "check",
+              "report"
+            ],
+            "title": "Node",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "start",
+              "end"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "resolved_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Scope"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_elapsed_ms": {
+            "minimum": 0.0,
+            "title": "Total Elapsed Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "node",
+          "phase",
+          "status",
+          "started_at",
+          "total_elapsed_ms"
+        ],
+        "title": "StageEvent",
+        "type": "object"
+      },
       "StepTrace": {
         "additionalProperties": false,
         "description": "One raw, traceable workflow step before persistence redaction.",
@@ -5630,15 +6268,37 @@
             "title": "Cached Input Tokens",
             "type": "integer"
           },
+          "credential_slot": {
+            "default": "unknown",
+            "title": "Credential Slot",
+            "type": "string"
+          },
           "estimated_cost_usd": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Estimated Cost Usd",
             "type": "string"
           },
+          "estimated_input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Estimated Input Tokens",
+            "type": "integer"
+          },
           "input_tokens": {
             "minimum": 0.0,
             "title": "Input Tokens",
             "type": "integer"
+          },
+          "local": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local"
           },
           "model_name": {
             "title": "Model Name",
@@ -5649,6 +6309,11 @@
             "title": "Output Tokens",
             "type": "integer"
           },
+          "provider": {
+            "default": "unknown",
+            "title": "Provider",
+            "type": "string"
+          },
           "reasoning_tokens": {
             "minimum": 0.0,
             "title": "Reasoning Tokens",
@@ -5657,6 +6322,23 @@
           "requests": {
             "minimum": 0.0,
             "title": "Requests",
+            "type": "integer"
+          },
+          "role": {
+            "default": "unknown",
+            "title": "Role",
+            "type": "string"
+          },
+          "unreported_cost_requests": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Unreported Cost Requests",
+            "type": "integer"
+          },
+          "unreported_input_requests": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Unreported Input Requests",
             "type": "integer"
           }
         },
@@ -5671,6 +6353,106 @@
           "estimated_cost_usd"
         ],
         "title": "UsageModelResource",
+        "type": "object"
+      },
+      "UsageProviderResource": {
+        "additionalProperties": false,
+        "description": "One provider/credential group with exact subtotals of its model-role rows.",
+        "properties": {
+          "cache_write_input_tokens": {
+            "minimum": 0.0,
+            "title": "Cache Write Input Tokens",
+            "type": "integer"
+          },
+          "cached_input_tokens": {
+            "minimum": 0.0,
+            "title": "Cached Input Tokens",
+            "type": "integer"
+          },
+          "credential_slot": {
+            "title": "Credential Slot",
+            "type": "string"
+          },
+          "estimated_cost_usd": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Estimated Cost Usd",
+            "type": "string"
+          },
+          "estimated_input_tokens": {
+            "minimum": 0.0,
+            "title": "Estimated Input Tokens",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "minimum": 0.0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "local": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/UsageModelResource"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "output_tokens": {
+            "minimum": 0.0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "reasoning_tokens": {
+            "minimum": 0.0,
+            "title": "Reasoning Tokens",
+            "type": "integer"
+          },
+          "requests": {
+            "minimum": 0.0,
+            "title": "Requests",
+            "type": "integer"
+          },
+          "unreported_cost_requests": {
+            "minimum": 0.0,
+            "title": "Unreported Cost Requests",
+            "type": "integer"
+          },
+          "unreported_input_requests": {
+            "minimum": 0.0,
+            "title": "Unreported Input Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "local",
+          "credential_slot",
+          "requests",
+          "input_tokens",
+          "cached_input_tokens",
+          "cache_write_input_tokens",
+          "output_tokens",
+          "reasoning_tokens",
+          "estimated_input_tokens",
+          "unreported_input_requests",
+          "unreported_cost_requests",
+          "estimated_cost_usd",
+          "models"
+        ],
+        "title": "UsageProviderResource",
         "type": "object"
       },
       "UsageResponse": {
@@ -5691,6 +6473,12 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Estimated Cost Usd",
             "type": "string"
+          },
+          "estimated_input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Estimated Input Tokens",
+            "type": "integer"
           },
           "input_tokens": {
             "minimum": 0.0,
@@ -5721,6 +6509,14 @@
             "title": "Output Tokens",
             "type": "integer"
           },
+          "providers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UsageProviderResource"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
           "reasoning_tokens": {
             "minimum": 0.0,
             "title": "Reasoning Tokens",
@@ -5734,6 +6530,18 @@
           "runs": {
             "minimum": 0.0,
             "title": "Runs",
+            "type": "integer"
+          },
+          "unreported_cost_requests": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Unreported Cost Requests",
+            "type": "integer"
+          },
+          "unreported_input_requests": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Unreported Input Requests",
             "type": "integer"
           }
         },

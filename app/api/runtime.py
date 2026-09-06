@@ -12,7 +12,7 @@ import secrets
 from typing import Literal, Protocol, cast
 from uuid import uuid4
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -77,7 +77,8 @@ from app.observability.persistence import (
 )
 from app.observability.stages import capture_stages, observed_stage, stage, stage_metadata
 from app.observability.trace import step_trace_from_provider_result
-from app.observability.types import JsonObject, RunReport, StepTrace, build_run_report
+from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNode, build_run_report
+from app.observability.usage import provider_identity
 from app.openai_models import resolve_openai_model
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
@@ -103,7 +104,7 @@ from app.workflow.gate import (
     deterministic_decision,
 )
 from app.workflow.runner import NodeObserver, run_workflow
-from app.workflow.types import WorkflowRequest
+from app.workflow.types import WorkflowRequest, WorkflowState
 
 type ParseStatus = Literal["parsed", "needs_profile_update"]
 
@@ -260,6 +261,7 @@ class RuntimeApiServices(ApiServices):
         run_persister: RunPersister = persist_run_records,
         run_id_factory: Callable[[], str] | None = None,
         secret_values: Iterable[str] = (),
+        credential_slot: str | None = None,
         route_by_language: bool = False,
         lexical_ranker: LexicalRanker = "ts_rank_cd",
         bm25_k1: float = DEFAULT_BM25_K1,
@@ -304,6 +306,7 @@ class RuntimeApiServices(ApiServices):
         self._run_persister = run_persister
         self._run_id_factory = run_id_factory or (lambda: f"run-{uuid4().hex}")
         self._secret_values = tuple(secret_values)
+        self._credential_slot = credential_slot
         self._route_by_language = route_by_language
         self._lexical_ranker: LexicalRanker = lexical_ranker
         self._bm25_k1 = bm25_k1
@@ -600,6 +603,7 @@ class RuntimeApiServices(ApiServices):
                     profile=profile,
                     filters=scope.filters,
                     candidates=result.candidates,
+                    routing_queries=routed_queries,
                 )
                 return RetrieveResponse(
                     query=request.query,
@@ -849,6 +853,80 @@ class RuntimeApiServices(ApiServices):
             rationale=result.parsed.reason,
         )
 
+    async def _execution_context(
+        self,
+        provider: LLMProvider | None,
+        budget: ProviderBudget | None,
+        request: ReviewRequest,
+        *,
+        chat_only: bool = False,
+    ) -> JsonObject:
+        """Capture the actual provider and applied limits without credential values."""
+        identity = provider_identity(
+            api_url=provider.api_url if provider is not None else None,
+            credential_slot=self._credential_slot
+            if request.session_profile.engine == "openai"
+            else "none",
+        )
+        context = self._local_request.get()
+        inventory = context.inventory if context is not None else self.local_inventory
+        if identity["local"] is True:
+            identity["credential_slot"] = (
+                "explicit" if inventory is not None and inventory.api_key else "none"
+            )
+        metadata = stage_metadata()
+        calls = metadata.get("model_calls", [])
+        assert isinstance(calls, list)
+        for call in calls:
+            assert isinstance(call, dict)
+            if (
+                call.get("provider") == identity["provider"]
+                and call.get("local") == identity["local"]
+            ):
+                call["credential_slot"] = identity["credential_slot"]
+        limits = request.session_profile.prompt_policy.workflow_budget
+        effective = budget.model_dump(mode="json") if budget is not None else None
+        sources = None
+        if effective is not None and not chat_only:
+            sources = {}
+            for name in ("max_input_tokens", "max_output_tokens"):
+                configured = effective[name]
+                requested = getattr(limits, name)
+                effective[name] = min(configured, requested)
+                sources[name] = (
+                    "provider_budget"
+                    if configured < requested
+                    else "run_limits"
+                    if requested < configured
+                    else "provider_budget_and_run_limits"
+                )
+        placement = None
+        if provider is not None and identity["provider"] == "ollama" and inventory is not None:
+            placement = await inventory.placement(provider.model_name)
+        return {
+            **metadata,
+            "provider_identity": identity if provider is not None else None,
+            "local_placement": placement,
+            "effective_settings": {
+                "engine": request.session_profile.engine,
+                "model": provider.model_name if provider is not None else None,
+                "retrieval_applicable": not chat_only,
+                "retrieval": None,
+                "provider_budget": budget.model_dump(mode="json") if budget else None,
+                "effective_provider_budget": effective,
+                "run_limits": None if chat_only else limits.model_dump(mode="json"),
+                "budget_sources": sources,
+                "run_limits_source": None
+                if chat_only
+                else (
+                    "request"
+                    if "workflow_budget" in request.session_profile.prompt_policy.model_fields_set
+                    else "application_default"
+                ),
+                "provider_budget_source": "server_configuration" if budget else None,
+            },
+        }
+
     async def _casual_report(
         self,
         request: ReviewRequest,
@@ -859,6 +937,8 @@ class RuntimeApiServices(ApiServices):
         traces: tuple[StepTrace, ...] = ()
         source = "canned"
         answer = decision.canned_answer
+        provider = None
+        budget = None
         if answer is None:
             provider, budget = await self._engine(request)
             history = [turn.model_dump(mode="json") for turn in request.conversation_history[-6:]]
@@ -899,7 +979,9 @@ class RuntimeApiServices(ApiServices):
                 "response_source": source,
             },
             request_context={
-                **stage_metadata(),
+                **await self._execution_context(provider, budget, request, chat_only=True),
+                "stage_results": [{"node": "gate", "intent": decision.model_dump(mode="json")}],
+                "routing_queries": {},
                 "intent": decision.model_dump(mode="json"),
                 "engine": request.session_profile.engine,
                 "history_turns": len(request.conversation_history),
@@ -976,7 +1058,7 @@ class RuntimeApiServices(ApiServices):
                     code=error.code,
                     message=error.message,
                 ) from error
-        routed_queries: dict[str, str] = {}
+        routed_queries: dict[str, str] = dict(snapshot.routing_queries or {}) if snapshot else {}
         if snapshot is None and self._query_routing_enabled and profile.route_by_language:
             source_language = detect_query_language(request.query)
             for language in scope.filters.languages or ("en",):
@@ -1014,6 +1096,7 @@ class RuntimeApiServices(ApiServices):
         async with translate_runtime_errors():
             async with self._session_factory() as session:
                 selected_result: RetrievalResult | None = None
+                snapshot_candidates: list[JsonValue] | None = None
                 if snapshot is not None and request.evidence_selection is not None:
                     ids = tuple(candidate.chunk_id for candidate in snapshot.candidates)
                     rows = tuple(await session.scalars(select(Chunk).where(Chunk.id.in_(ids))))
@@ -1050,6 +1133,16 @@ class RuntimeApiServices(ApiServices):
                             code=error.code,
                             message=error.message,
                         ) from error
+                    snapshot_candidates = [
+                        {
+                            "chunk_id": item.chunk_id,
+                            "doc_id": models[item.chunk_id].doc_id,
+                            "citation": models[item.chunk_id].citation,
+                            "rank": rank,
+                            "score": item.score,
+                        }
+                        for rank, item in enumerate(snapshot.candidates, 1)
+                    ]
                     ids_by_language: dict[str, list[int]] = {}
                     for hit in selected:
                         ids_by_language.setdefault(
@@ -1094,17 +1187,62 @@ class RuntimeApiServices(ApiServices):
                         await session.rollback()
                     return result
 
+                stage_results: list[JsonValue] = []
+
+                async def record_node(node: WorkflowNode, state: WorkflowState) -> None:
+                    """Retain actual stage outputs, including failed and repeated stages."""
+                    stage_results.append(
+                        {
+                            "node": node,
+                            "candidates": snapshot_candidates
+                            if snapshot_candidates is not None
+                            else [
+                                {
+                                    "chunk_id": hit.chunk_id,
+                                    "doc_id": hit.doc_id,
+                                    "citation": hit.citation,
+                                    "rank": rank,
+                                    "score": hit.score,
+                                }
+                                for rank, hit in enumerate(state.retrieved_hits, 1)
+                            ],
+                            "evidence_chunk_ids": [hit.chunk_id for hit in state.evidence],
+                            "kept_chunk_ids": list(state.relevant_chunk_ids)
+                            if node in {"grade", "check", "report"} and state.failure is None
+                            else None,
+                            "rejected_chunk_ids": [
+                                hit.chunk_id
+                                for hit in state.evidence
+                                if hit.chunk_id not in state.relevant_chunk_ids
+                            ]
+                            if node in {"grade", "check", "report"} and state.failure is None
+                            else None,
+                            "decision": state.decision.model_dump(mode="json")
+                            if state.decision
+                            else None,
+                            "reasons": [reason.model_dump(mode="json") for reason in state.reasons],
+                            "failure": state.failure.model_dump(mode="json")
+                            if state.failure
+                            else None,
+                        }
+                    )
+                    if on_node is not None:
+                        await on_node(node, state)
+
                 report = await self._workflow_service(
                     workflow_request,
                     retriever=retrieve_for_workflow,
                     provider=llm_provider,
-                    on_node=on_node,
+                    on_node=record_node,
                 )
+                execution = await self._execution_context(llm_provider, provider_budget, request)
                 report = report.model_copy(
                     update={
                         "request_context": {
-                            **stage_metadata(),
+                            **execution,
+                            "stage_results": stage_results,
                             "effective_settings": {
+                                **cast("JsonObject", execution["effective_settings"]),
                                 "engine": engine,
                                 "retrieval": profile.model_dump(mode="json"),
                                 "resolved_scope": scope.model_dump(mode="json"),
@@ -1117,7 +1255,9 @@ class RuntimeApiServices(ApiServices):
                             "requested_profile": request.session_profile.model_dump(mode="json"),
                             "resolved_profile": profile.model_dump(mode="json"),
                             "resolved_scope": scope.model_dump(mode="json"),
-                            "routing_queries": routed_queries,
+                            "routing_queries": routed_queries
+                            if snapshot is None or snapshot.routing_queries is not None
+                            else None,
                             "selection": (
                                 {
                                     "candidate_snapshot_sha256": hashlib.sha256(
@@ -1290,6 +1430,7 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         allow_local_engine=configured.environment != "prod",
         local_timeout_s=configured.local_llm_timeout_s,
         secret_values=secret_values,
+        credential_slot=configured.openai_key_slot,
         route_by_language=configured.query_language_routing,
         lexical_ranker=configured.lexical_ranker,
         bm25_k1=configured.bm25_k1,

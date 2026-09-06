@@ -243,7 +243,7 @@ def test_backfill_refuses_false_success_when_committed_count_does_not_change(
         del session, provider, document_ids
         return next(states)
 
-    async def fake_embed(session, provider, *, on_batch, document_ids):
+    async def fake_embed(session, provider, *, on_batch, document_ids, on_usage=None):
         """Claim three stored rows without changing persistence."""
         del session, provider, on_batch, document_ids
         return EmbeddingBackfillResult(selected=3, embedded=3, skipped_stale=0, batches=1)
@@ -716,7 +716,7 @@ def test_backfill_uses_the_exact_selected_document_ids(tmp_path, monkeypatch):
         calls.append(document_ids)
         return next(states)
 
-    async def embed(session, provider, *, on_batch, document_ids):
+    async def embed(session, provider, *, on_batch, document_ids, on_usage=None):
         """Verify the backfill uses the identical selection."""
         assert document_ids == ("nvda-2024",)
         return EmbeddingBackfillResult(selected=1, embedded=1, skipped_stale=0, batches=1)
@@ -834,3 +834,67 @@ def test_manifest_companies_are_available_before_source_download(tmp_path):
     assert [(item.registry, item.issuer, item.name) for item in summary.issuers] == [
         ("sec", "NVDA", "NVIDIA")
     ]
+
+
+@pytest.mark.parametrize("outcome", ["succeeded", "failed", "cancelled"])
+def test_embedding_usage_survives_job_transitions(tmp_path, outcome):
+    """Preserve charged usage through progress, failure and cancellation writes."""
+    from decimal import Decimal
+
+    from app.observability.usage import USAGE_KEY, provider_identity, usage_record
+
+    async def scenario():
+        """Use the bounded in-memory ledger to exercise real worker transition code."""
+        store = _LedgerStore()
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+
+        async def operation(command, publish, on_usage=None):
+            """Record two provider responses before selecting the terminal outcome."""
+            record = usage_record(
+                identity=provider_identity(
+                    provider="openai_embeddings", local=False, credential_slot="dev"
+                ),
+                model_name="text-embedding-3-large",
+                role="embedding",
+                input_tokens=12,
+                estimated_cost_usd=Decimal("0.0001"),
+            )
+            await on_usage(record)
+            publish(OperationProgress("embedding", 1, 2, "first batch"))
+            await on_usage(record)
+            if outcome == "failed":
+                raise ValueError("fixture failed after provider response")
+            if outcome == "cancelled":
+                raise corpus_admin.JobCancelledError("fixture cancellation")
+            return OperationOutcome("completed")
+
+        service._run_operation = operation
+        job = await service.enqueue(AdminCommand("backfill_embeddings"))
+        await service._queue.join()
+        stored = store.rows[job.job_id]
+        assert stored.status == outcome
+        assert stored.result_refs[USAGE_KEY][0]["requests"] == 2
+        assert stored.result_refs[USAGE_KEY][0]["input_tokens"] == 24
+
+    asyncio.run(scenario())
+
+
+def test_restored_embedding_usage_ledger_cannot_be_retried_or_read_as_a_command(tmp_path):
+    """An archived usage event stays non-executable even if history is restored manually."""
+
+    async def scenario():
+        """Use a restored terminal ledger without reaching a database or provider."""
+        store = _LedgerStore()
+        row = await store.create(
+            job_id="usage-ledger",
+            domain="corpus",
+            kind="embedding_usage",
+            request_json={"executable": False},
+        )
+        store.rows[row.job_id] = replace(row, status="failed")
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+        assert not (await service.jobs()).history
+        with pytest.raises(ValueError, match="cannot be executed"):
+            await service.retry(row.job_id)
+
+    asyncio.run(scenario())

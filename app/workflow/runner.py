@@ -369,8 +369,24 @@ async def run_workflow(
         """Build the terminating report for a state that already holds a failure."""
         if current.failure is None:
             raise ValueError("failure report requires a typed workflow failure")
+        reason = current.failure.model_dump(mode="json")
+        if isinstance(current.failure, ProviderFailure) and current.failure.budget is not None:
+            resource = current.failure.budget.which
+            source = "provider_budget"
+            if resource in {"input_tokens", "output_tokens"}:
+                name = "max_" + resource
+                configured = getattr(request.provider_budget, name)
+                requested = getattr(request.budget, name)
+                source = (
+                    "provider_budget"
+                    if configured < requested
+                    else "run_limits"
+                    if requested < configured
+                    else "both"
+                )
+            reason["budget_source"] = source
         report: JsonObject = {
-            "reason": current.failure.model_dump(mode="json"),
+            "reason": reason,
             "reasons": _reasons_json(current),
         }
         return build_run_report(

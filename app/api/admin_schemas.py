@@ -559,6 +559,13 @@ class UsageModelResource(StrictAdminModel):
     """One model's locally recorded token and estimated-cost totals."""
 
     model_name: str
+    provider: str = "unknown"
+    local: StrictBool | None = None
+    credential_slot: str = "unknown"
+    role: str = "unknown"
+    estimated_input_tokens: NonnegativeInt = 0
+    unreported_input_requests: NonnegativeInt = 0
+    unreported_cost_requests: NonnegativeInt = 0
     requests: NonnegativeInt
     input_tokens: NonnegativeInt
     cached_input_tokens: NonnegativeInt
@@ -566,6 +573,25 @@ class UsageModelResource(StrictAdminModel):
     output_tokens: NonnegativeInt
     reasoning_tokens: NonnegativeInt
     estimated_cost_usd: Decimal = Field(ge=0, allow_inf_nan=False)
+
+
+class UsageProviderResource(StrictAdminModel):
+    """One provider/credential group with exact subtotals of its model-role rows."""
+
+    provider: str
+    local: StrictBool | None
+    credential_slot: str
+    requests: NonnegativeInt
+    input_tokens: NonnegativeInt
+    cached_input_tokens: NonnegativeInt
+    cache_write_input_tokens: NonnegativeInt
+    output_tokens: NonnegativeInt
+    reasoning_tokens: NonnegativeInt
+    estimated_input_tokens: NonnegativeInt
+    unreported_input_requests: NonnegativeInt
+    unreported_cost_requests: NonnegativeInt
+    estimated_cost_usd: Decimal = Field(ge=0, allow_inf_nan=False)
+    models: tuple[UsageModelResource, ...]
 
 
 class UsageResponse(StrictAdminModel):
@@ -581,6 +607,10 @@ class UsageResponse(StrictAdminModel):
     estimated_cost_usd: Decimal = Field(ge=0, allow_inf_nan=False)
     latest_run_at: datetime | None
     models: tuple[UsageModelResource, ...]
+    providers: tuple[UsageProviderResource, ...] = ()
+    estimated_input_tokens: NonnegativeInt = 0
+    unreported_input_requests: NonnegativeInt = 0
+    unreported_cost_requests: NonnegativeInt = 0
 
 
 class RetrievalPreviewRequest(StrictAdminModel):
