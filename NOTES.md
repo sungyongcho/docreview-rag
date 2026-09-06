@@ -1,0 +1,1 @@
+[2026-08-26] [docs/{en,ko}/m3-evals/tutorial/{05-ablation,06-evaluation-records,07-evaluation-run}.md] [type: debt] [Six pre-existing user-modified tutorials fail the reflow format gate; preserved byte-for-byte by the M3 optimization scope.]

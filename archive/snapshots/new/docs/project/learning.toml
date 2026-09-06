@@ -1,0 +1,8 @@
+[learning]
+branch = "zero"
+completed_through = "M1.1"
+next_milestone = "M1.2"
+
+[documentation]
+allow_missing_sources = false
+reference_revision = "3efeba638a57c58a662ab6b113e981947e8b553c"

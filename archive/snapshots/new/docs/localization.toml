@@ -1,0 +1,20 @@
+[localization]
+schema_version = 1
+repository_root = ".."
+canonical_root = "docs"
+manifest = "docs/localization-manifest.json"
+locales = ["en", "ko"]
+reference_locale = "en"
+shared_roots = ["project"]
+
+[parity]
+required_fields = [
+  "heading_levels",
+  "code_fences",
+  "inline_code",
+  "link_shapes",
+  "link_destinations",
+  "table_shapes",
+  "checkpoint_ids",
+  "html_comments",
+]

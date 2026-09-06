@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Caches and coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+web/node_modules/
+web/.next/
+web/out/
+web/*.tsbuildinfo
+deploy/firebase/public/
+*.egg-info/
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime artifacts
+logs/
+*.log
+tmp/
+data/eval_runs/
+
+# Raw corpus filings are reproducible from each registry's manifest and downloader.
+# The manifests sit directly in data/corpus/ and match none of these patterns, so no
+# negation is needed to keep them tracked.
+data/corpus/**/*.html
+data/corpus/**/*.xml
+data/corpus/**/*.zip
+
+# Local or licensed source material is not part of the public portfolio.
+old/
+42_curriculum/
+
+# Dashboard cache written by .dashboard/dashboard-refresh.sh.
+.dashboard-cache/

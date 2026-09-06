@@ -1,0 +1,202 @@
+[
+  {
+    "ticker": "NVDA",
+    "cik": 1045810,
+    "accession": "0001045810-24-000029",
+    "filing_date": "2024-02-21",
+    "report_date": "2024-01-28",
+    "primary_doc": "nvda-20240128.htm",
+    "file": "data/corpus/NVDA/2024-02-21_0001045810-24-000029.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": 1045810,
+    "accession": "0001045810-23-000017",
+    "filing_date": "2023-02-24",
+    "report_date": "2023-01-29",
+    "primary_doc": "nvda-20230129.htm",
+    "file": "data/corpus/NVDA/2023-02-24_0001045810-23-000017.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000017/nvda-20230129.htm"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": 1045810,
+    "accession": "0001045810-22-000036",
+    "filing_date": "2022-03-18",
+    "report_date": "2022-01-30",
+    "primary_doc": "nvda-20220130.htm",
+    "file": "data/corpus/NVDA/2022-03-18_0001045810-22-000036.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581022000036/nvda-20220130.htm"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": 1045810,
+    "accession": "0001045810-21-000010",
+    "filing_date": "2021-02-26",
+    "report_date": "2021-01-31",
+    "primary_doc": "nvda-20210131.htm",
+    "file": "data/corpus/NVDA/2021-02-26_0001045810-21-000010.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000010/nvda-20210131.htm"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": 1045810,
+    "accession": "0001045810-20-000010",
+    "filing_date": "2020-02-20",
+    "report_date": "2020-01-26",
+    "primary_doc": "nvda-2020x10k.htm",
+    "file": "data/corpus/NVDA/2020-02-20_0001045810-20-000010.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000010/nvda-2020x10k.htm"
+  },
+  {
+    "ticker": "AMD",
+    "cik": 2488,
+    "accession": "0000002488-24-000012",
+    "filing_date": "2024-01-31",
+    "report_date": "2023-12-30",
+    "primary_doc": "amd-20231230.htm",
+    "file": "data/corpus/AMD/2024-01-31_0000002488-24-000012.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm"
+  },
+  {
+    "ticker": "AMD",
+    "cik": 2488,
+    "accession": "0000002488-23-000047",
+    "filing_date": "2023-02-27",
+    "report_date": "2022-12-31",
+    "primary_doc": "amd-20221231.htm",
+    "file": "data/corpus/AMD/2023-02-27_0000002488-23-000047.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248823000047/amd-20221231.htm"
+  },
+  {
+    "ticker": "AMD",
+    "cik": 2488,
+    "accession": "0000002488-22-000016",
+    "filing_date": "2022-02-03",
+    "report_date": "2021-12-25",
+    "primary_doc": "amd-20211225.htm",
+    "file": "data/corpus/AMD/2022-02-03_0000002488-22-000016.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248822000016/amd-20211225.htm"
+  },
+  {
+    "ticker": "AMD",
+    "cik": 2488,
+    "accession": "0001628280-21-001185",
+    "filing_date": "2021-01-29",
+    "report_date": "2020-12-26",
+    "primary_doc": "amd-20201226.htm",
+    "file": "data/corpus/AMD/2021-01-29_0001628280-21-001185.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000162828021001185/amd-20201226.htm"
+  },
+  {
+    "ticker": "AMD",
+    "cik": 2488,
+    "accession": "0000002488-20-000008",
+    "filing_date": "2020-02-04",
+    "report_date": "2019-12-28",
+    "primary_doc": "amdform10-kfy2019.htm",
+    "file": "data/corpus/AMD/2020-02-04_0000002488-20-000008.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000008/amdform10-kfy2019.htm"
+  },
+  {
+    "ticker": "INTC",
+    "cik": 50863,
+    "accession": "0000050863-24-000010",
+    "filing_date": "2024-01-26",
+    "report_date": "2023-12-30",
+    "primary_doc": "intc-20231230.htm",
+    "file": "data/corpus/INTC/2024-01-26_0000050863-24-000010.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086324000010/intc-20231230.htm"
+  },
+  {
+    "ticker": "INTC",
+    "cik": 50863,
+    "accession": "0000050863-23-000006",
+    "filing_date": "2023-01-27",
+    "report_date": "2022-12-31",
+    "primary_doc": "intc-20221231.htm",
+    "file": "data/corpus/INTC/2023-01-27_0000050863-23-000006.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086323000006/intc-20221231.htm"
+  },
+  {
+    "ticker": "INTC",
+    "cik": 50863,
+    "accession": "0000050863-22-000007",
+    "filing_date": "2022-01-27",
+    "report_date": "2021-12-25",
+    "primary_doc": "intc-20211225.htm",
+    "file": "data/corpus/INTC/2022-01-27_0000050863-22-000007.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086322000007/intc-20211225.htm"
+  },
+  {
+    "ticker": "INTC",
+    "cik": 50863,
+    "accession": "0000050863-21-000010",
+    "filing_date": "2021-01-22",
+    "report_date": "2020-12-26",
+    "primary_doc": "intc-20201226.htm",
+    "file": "data/corpus/INTC/2021-01-22_0000050863-21-000010.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086321000010/intc-20201226.htm"
+  },
+  {
+    "ticker": "INTC",
+    "cik": 50863,
+    "accession": "0000050863-20-000011",
+    "filing_date": "2020-01-24",
+    "report_date": "2019-12-28",
+    "primary_doc": "a12282019q4-10kdocument.htm",
+    "file": "data/corpus/INTC/2020-01-24_0000050863-20-000011.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086320000011/a12282019q4-10kdocument.htm"
+  },
+  {
+    "ticker": "MU",
+    "cik": 723125,
+    "accession": "0000723125-24-000027",
+    "filing_date": "2024-10-04",
+    "report_date": "2024-08-29",
+    "primary_doc": "mu-20240829.htm",
+    "file": "data/corpus/MU/2024-10-04_0000723125-24-000027.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312524000027/mu-20240829.htm"
+  },
+  {
+    "ticker": "MU",
+    "cik": 723125,
+    "accession": "0000723125-23-000054",
+    "filing_date": "2023-10-06",
+    "report_date": "2023-08-31",
+    "primary_doc": "mu-20230831.htm",
+    "file": "data/corpus/MU/2023-10-06_0000723125-23-000054.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312523000054/mu-20230831.htm"
+  },
+  {
+    "ticker": "MU",
+    "cik": 723125,
+    "accession": "0000723125-22-000048",
+    "filing_date": "2022-10-07",
+    "report_date": "2022-09-01",
+    "primary_doc": "mu-20220901.htm",
+    "file": "data/corpus/MU/2022-10-07_0000723125-22-000048.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312522000048/mu-20220901.htm"
+  },
+  {
+    "ticker": "MU",
+    "cik": 723125,
+    "accession": "0000723125-21-000065",
+    "filing_date": "2021-10-08",
+    "report_date": "2021-09-02",
+    "primary_doc": "mu-20210902.htm",
+    "file": "data/corpus/MU/2021-10-08_0000723125-21-000065.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000065/mu-20210902.htm"
+  },
+  {
+    "ticker": "MU",
+    "cik": 723125,
+    "accession": "0000723125-20-000082",
+    "filing_date": "2020-10-19",
+    "report_date": "2020-09-03",
+    "primary_doc": "mu-20200903.htm",
+    "file": "data/corpus/MU/2020-10-19_0000723125-20-000082.html",
+    "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000082/mu-20200903.htm"
+  }
+]

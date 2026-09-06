@@ -1,0 +1,622 @@
+[
+  {
+    "id": "m3c-01",
+    "question": "How did AMD's gross margin percentage change from fiscal 2018 to fiscal 2019?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2019",
+        "source_sha256": "45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+        "start_char": 643376,
+        "end_char": 644582
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Gross margin increased from 38% to 43%, a rise of 5 percentage points.",
+    "note": "Year-over-year percentage comparison in an MD&A table.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-02",
+    "question": "Which AMD products power Amazon Web Services' G4ad instance, and what workloads was it designed for?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2020",
+        "source_sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
+        "start_char": 251043,
+        "end_char": 251333
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "AMD EPYC processors and the AMD Radeon Pro V520 GPU power G4ad, which was designed for virtual workstations, game streaming, and graphics rendering.",
+    "note": "Named-product retrieval from narrative business disclosure.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-03",
+    "question": "What specific 7 nm supply risk did AMD identify involving TSMC?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2021",
+        "source_sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "start_char": 358705,
+        "end_char": 358908
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "AMD said that insufficient TSMC wafer supply at 7 nm or smaller nodes could materially harm its business.",
+    "note": "Concrete supplier-concentration risk with a process node and consequence.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-04",
+    "question": "What total purchase consideration and goodwill did AMD record for the Xilinx acquisition?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 1521761,
+        "end_char": 1522518
+      },
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 1522875,
+        "end_char": 1524006
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Total purchase consideration was $48.793 billion and goodwill was $22.784 billion.",
+    "note": "Two acquisition-accounting values in separate answer-bearing table rows.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-05",
+    "question": "In fiscal 2022, how did AMD's Data Center net revenue compare with Client net revenue?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 659886,
+        "end_char": 660328
+      },
+      {
+        "doc_id": "AMD-FY2022",
+        "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "start_char": 661285,
+        "end_char": 661525
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Data Center revenue was $6.043 billion and Client revenue was $6.201 billion, so Client was $158 million higher.",
+    "note": "Same-year segment comparison using two answer-bearing table rows.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-06",
+    "question": "What quarterly cash dividend per share did AMD declare for fiscal 2023?",
+    "category": "absent",
+    "facet": "policy",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No declared quarterly cash-dividend amount was found in the immutable corpus; the negative remains pending author approval.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-07",
+    "question": "What was AMD's research and development expense in fiscal 2023?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2023",
+        "source_sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+        "start_char": 756006,
+        "end_char": 756419
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "$5.872 billion.",
+    "note": "Exact-number retrieval from a multi-year financial statement table.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-08",
+    "question": "How much cash did Intel return through dividends and share repurchases in 2019, and what future repurchase did it announce?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2019",
+        "source_sha256": "9a7c79b6f02ac47f313dcf23020ae16d8fe7d82f8feeb0c51fc63e1d31f48474",
+        "start_char": 680567,
+        "end_char": 680782
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Intel paid $5.6 billion in dividends, repurchased $13.6 billion in shares, and announced an expected $20.0 billion repurchase over 15 to 18 months.",
+    "note": "Capital-allocation policy with three values in narrative text.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-09",
+    "question": "What shares of Intel's fiscal 2020 revenue came from sales outside the United States and from billings to China including Hong Kong?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2020",
+        "source_sha256": "455d47c6c6fbf103cadef13a2959d795b4149ab297a451df95bbe6f393a08123",
+        "start_char": 1368372,
+        "end_char": 1368574
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Sales outside the United States accounted for 79% of revenue, and China including Hong Kong contributed 26%.",
+    "note": "Geographic-concentration risk grounded in two explicit percentages.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-10",
+    "question": "What was the name of Intel's commercial quantum-computing subscription service in fiscal 2021?",
+    "category": "absent",
+    "facet": "factual",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No commercial quantum-computing subscription service was found in the immutable corpus; the negative remains pending author approval.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-11",
+    "question": "How much did Intel's IOTG and Mobileye revenues increase in fiscal 2021 versus 2020, and what drove Mobileye's increase?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2021",
+        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
+        "start_char": 841700,
+        "end_char": 841926
+      },
+      {
+        "doc_id": "INTC-FY2021",
+        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
+        "start_char": 842076,
+        "end_char": 842266
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "IOTG increased $991 million and Mobileye increased $419 million; Mobileye's increase reflected improved vehicle production, COVID-19 recovery, and greater ADAS adoption.",
+    "note": "Two business-line changes plus a disclosed causal explanation.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-12",
+    "question": "How did Intel's net revenue and gross margin percentage change from fiscal 2021 to fiscal 2022?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2022",
+        "source_sha256": "997ea49fc960f6763f4b530793f32f2bb5f2aff8f2a5d82af1f002a4adf58b4b",
+        "start_char": 852452,
+        "end_char": 854271
+      },
+      {
+        "doc_id": "INTC-FY2022",
+        "source_sha256": "997ea49fc960f6763f4b530793f32f2bb5f2aff8f2a5d82af1f002a4adf58b4b",
+        "start_char": 859259,
+        "end_char": 861539
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Net revenue fell from $79.024 billion to $63.054 billion, while gross margin fell from 55.4% to 42.6%.",
+    "note": "Two-metric year-over-year comparison in separate table rows.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-13",
+    "question": "Which named side-channel vulnerability variants did Intel cite, and why did it describe the risk as ongoing?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2023",
+        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
+        "start_char": 1136671,
+        "end_char": 1136951
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Intel cited Spectre and Meltdown and said that additional categories and variants had been and were expected to keep being identified.",
+    "note": "Security-risk retrieval with named variants and an explanation of persistence.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-14",
+    "question": "What was Intel's research and development expense in fiscal 2023, and what percentage of net revenue did it represent?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2023",
+        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
+        "start_char": 779047,
+        "end_char": 779979
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "$16.046 billion, representing 29.6% of net revenue.",
+    "note": "Exact amount and normalized percentage in one table row.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-15",
+    "question": "What inventory valuation and cost-flow policy did Micron use in fiscal 2020?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2020",
+        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
+        "start_char": 1667389,
+        "end_char": 1667465
+      },
+      {
+        "doc_id": "MU-FY2020",
+        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
+        "start_char": 1668198,
+        "end_char": 1668302
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Inventories were carried at the lower of average cost or net realizable value, and amounts were removed on an average-cost basis.",
+    "note": "Two exact accounting-policy sentences in one filing section.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-16",
+    "question": "Where were Micron's GDDR6 and GDDR6X products used, and what did Micron say distinguished GDDR6X?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2021",
+        "source_sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
+        "start_char": 430572,
+        "end_char": 431033
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "They were used in game consoles, PC graphics cards, and GPU-based data-center solutions; GDDR6X used innovative signal-transmission technology for very high speed and bandwidth.",
+    "note": "Product-and-use-case retrieval from narrative business disclosure.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-17",
+    "question": "What were Micron's fiscal 2022 DRAM and NAND revenues?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "MU-FY2022",
+        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
+        "start_char": 2174465,
+        "end_char": 2175478
+      },
+      {
+        "doc_id": "MU-FY2022",
+        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
+        "start_char": 2178112,
+        "end_char": 2178920
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "DRAM revenue was $22.386 billion and NAND revenue was $7.811 billion.",
+    "note": "Two exact product-revenue rows with distinct source spans.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-18",
+    "question": "What did China's CAC prohibit after its review of Micron products, and which sales channels did Micron say were affected?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 468317,
+        "end_char": 468762
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Critical information infrastructure operators in China could not purchase Micron products; affected revenue included direct and distributor sales to mainland China and Hong Kong customers, plus some outside-China customers.",
+    "note": "Geopolitical-risk case with a named regulator, prohibition, and channel impact.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-19",
+    "question": "How did Micron's revenue and gross margin change from fiscal 2022 to fiscal 2023?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 641759,
+        "end_char": 643237
+      },
+      {
+        "doc_id": "MU-FY2023",
+        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
+        "start_char": 647826,
+        "end_char": 649590
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Revenue fell from $30.758 billion to $15.540 billion, while gross margin moved from $13.898 billion (45%) to a $1.416 billion loss (-9%).",
+    "note": "Comparison across a sharp reversal, including negative table values.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-20",
+    "question": "What ransomware payment amount did Micron report for fiscal 2024?",
+    "category": "absent",
+    "facet": "risk",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No ransomware payment amount was found in the immutable corpus; the negative remains pending author approval.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-21",
+    "question": "How did Micron's board administer oversight of cybersecurity risk?",
+    "category": "simple_lookup",
+    "facet": "policy",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2024",
+        "source_sha256": "1d3523d9d69f031f8b83008b18f47a9210a001d488112d348b50ce4e3a129ba7",
+        "start_char": 590152,
+        "end_char": 590488
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "The full Board monitored strategic cyber-risk exposure and administered oversight directly as a whole and through the Security Committee.",
+    "note": "Concise Item 1C governance lookup with exact oversight roles.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-22",
+    "question": "How did NVIDIA's revenue and gross margin change from fiscal 2019 to fiscal 2020?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2020",
+        "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "start_char": 558289,
+        "end_char": 560408
+      },
+      {
+        "doc_id": "NVDA-FY2020",
+        "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "start_char": 560663,
+        "end_char": 562314
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Revenue fell 7%, from $11.716 billion to $10.918 billion, while gross margin increased 80 basis points from 61.2% to 62.0%.",
+    "note": "A declining dollar metric paired with an improving percentage metric.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-23",
+    "question": "Which NVIDIA platforms included Mellanox interconnects, and what new processor class did NVIDIA announce after the acquisition?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2021",
+        "source_sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "start_char": 261163,
+        "end_char": 261677
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Mellanox interconnects were included in DGX, HGX, and EGX; NVIDIA announced the data processing unit (DPU), supported by DOCA.",
+    "note": "Acquisition-to-product linkage using uncommon retrieval terms.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-24",
+    "question": "What was NVIDIA Grace, and what climate-focused supercomputer did NVIDIA plan to build?",
+    "category": "simple_lookup",
+    "facet": "factual",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 517875,
+        "end_char": 517933
+      },
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 518063,
+        "end_char": 518174
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Grace was NVIDIA's first Arm-based data-center CPU; Earth-2 was the planned AI supercomputer for addressing climate change.",
+    "note": "Two exact product-announcement fragments from one narrative paragraph.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-25",
+    "question": "What was NVIDIA's research and development expense in fiscal 2022, and how much did it increase from fiscal 2021?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2022",
+        "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "start_char": 581971,
+        "end_char": 583747
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "$5.268 billion, up $1.344 billion from $3.924 billion.",
+    "note": "Exact amount and absolute delta in one table row.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-26",
+    "question": "Which NVIDIA products did the new U.S. export licensing requirements targeting China affect in fiscal 2023?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": ["demo-hero"],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2023",
+        "source_sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+        "start_char": 446717,
+        "end_char": 447097
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "The requirements affected A100 and H100 integrated circuits, DGX and other systems or boards containing them, A100X, and future circuits or systems meeting specified performance thresholds.",
+    "note": "Export-control risk with exact model names and future-product thresholds.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-27",
+    "question": "What mandatory employee password-rotation interval did NVIDIA's Board approve in fiscal 2024?",
+    "category": "absent",
+    "facet": "policy",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "No Board-approved employee password-rotation interval was found in the immutable corpus; the negative remains pending author approval.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  },
+  {
+    "id": "m3c-28",
+    "question": "What were NVIDIA's revenue and net income in fiscal 2024?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "NVDA-FY2024",
+        "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "start_char": 745773,
+        "end_char": 746412
+      },
+      {
+        "doc_id": "NVDA-FY2024",
+        "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "start_char": 775222,
+        "end_char": 775871
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Revenue was $60.922 billion and net income was $29.760 billion.",
+    "note": "Two exact fiscal-year financial statement values in separate rows.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false
+  }
+]

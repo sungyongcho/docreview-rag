@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Caches and coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime artifacts
+logs/
+*.log
+tmp/
+data/eval_runs/
+
+# Raw corpus filings are reproducible from the manifest through the EDGAR downloader.
+data/corpus/**/*.html
+!data/corpus/manifest.json
+
+# Local or licensed source material is not part of the public portfolio.
+old/
+42_curriculum/

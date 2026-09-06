@@ -1,0 +1,181 @@
+[project]
+name = "docreview-rag-agent"
+version = "0.1.0"
+description = "Evidence-first SEC filing RAG project rebuilt from an M1.1 learning baseline"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "beautifulsoup4>=4.15.0",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "lxml>=6.1.1",
+    "mcp>=2.1.1,<3",
+    "openai>=2.53.0",
+    "pgvector>=0.5.0",
+    "pydantic-settings>=2.14.2",
+    "python-dotenv>=1.2.2",
+    "sqlalchemy>=2.0.51",
+    "starlette<1",
+    "uvicorn>=0.52.1",
+]
+
+
+[project.optional-dependencies]
+demo = ["gradio>=5.49.1"]
+
+# Local model serving. Exactly one backend extra may be installed at a time; the
+# conflict set below makes uv reject two. Default for development and deployment
+# is "cpu": the reranker is a 6-layer MiniLM over ~20 candidates and the
+# embedding backfill runs once, so batches are far too small for an accelerator
+# to pay off.
+#
+#   uv sync --extra cpu      # development and deployment default
+#   uv sync --extra rocm     # AMD; see docs before enabling on an iGPU
+#   uv sync --extra cu130    # NVIDIA
+cpu = [
+    "torch>=2.12",
+    "sentence-transformers>=3.0",
+]
+cu130 = [
+    "torch>=2.12",
+    "sentence-transformers>=3.0",
+]
+rocm = [
+    "torch>=2.12",
+    "sentence-transformers>=3.0",
+    "triton-rocm>=3.7",
+]
+
+[tool.uv]
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cu130" }, { extra = "rocm" }],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-rocm", extra = "rocm" },
+]
+triton-rocm = [
+    { index = "pytorch-rocm", extra = "rocm" },
+]
+
+# `explicit = true` keeps these indexes from serving any package that is not
+# routed here by [tool.uv.sources]; PyPI stays the default for everything else.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
+
+[dependency-groups]
+# uv sync --group dev
+dev = [
+    "pytest>=8.4",       # 테스트 러너
+    "pytest-cov>=6.0",   # 커버리지 — uv run pytest --cov=app
+    "ruff>=0.16",        # 린터 + 포매터 (아래 [tool.ruff] 설정을 따른다)
+    "ipython>=9.0",      # 탐색용 REPL — uv run ipython
+]
+# pytest-xdist는 일부러 뺐다. 이 스위트의 시간은 대부분 session 스코프 픽스처
+# (`blocks_by_doc`/`parsed`, 20문서 파싱)인데, 워커마다 픽스처가 새로 만들어져서
+# `-n 4`를 걸면 파싱을 4번 하게 된다. 병렬화가 오히려 느리다.
+
+[tool.pytest.ini_options]
+# The zero branch defaults to the completed M1.1 scope. Future harnesses remain available
+# through the explicit commands in each module tutorial.
+testpaths = [
+    "tests/test_doc_format.py",
+    "tests/ingestion/test_01_blocks.py",
+    "tests/ingestion/test_02_rules.py",
+    "tests/ingestion/test_03_segment.py",
+    "tests/ingestion/test_04_validate.py",
+    "tests/ingestion/test_05_profile.py",
+    "tests/ingestion/test_06_xref.py",
+    "tests/ingestion/test_07_coverage.py",
+    "tests/ingestion/test_08_items.py",
+]
+# `app`은 설치된 패키지가 아니라 소스 트리다. pytest는 conftest.py가 있는 tests/를
+# sys.path에 넣지 리포 루트를 넣지 않으므로 명시해야 `import app.ingestion.parser`가 된다.
+pythonpath = ["."]
+# 골든값 테스트는 20문서를 파싱한다(세션당 ~40초). 실패 시 첫 줄만 봐도 알게 짧게.
+addopts = "-q --tb=short"
+
+# ── ruff ─────────────────────────────────────────────────────────────────────
+# 프로젝트 설정은 사용자 전역 설정(~/.config/ruff/)을 **대체**한다(병합 아님).
+# 전역 프로파일(ANN + D + numpy convention)을 이 코드베이스에 걸면 376건이 나오는데
+# 거의 전부 노이즈였다 — 226건이 테스트 함수의 타입 어노테이션, 48건이 `P` 픽스처
+# 이름(N803). 실제로 볼 가치가 있는 건 2건(B905)뿐이었고 그것도 오탐이었다.
+# 그래서 여기서는 **잡히면 고쳐야 하는 것만** 켠다.
+[tool.ruff]
+line-length = 100        # 실측 p99가 90자. 88이면 39줄이 걸리고 100이면 8줄이다
+target-version = "py314" # requires-python >= 3.14
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle (PEP8 에러)
+    "W",   # pycodestyle (PEP8 워닝)
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "I",   # isort (import 정리)
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "D",   # pydocstyle (docstring)
+	"ANN", # flake8-annotations
+]
+ignore = [
+    "E203",   # Black/Ruff 포맷이랑 충돌 방지
+    "E266",   # 너무 빡센 # comment 들 관련
+    "D203",   # Google/Numpy 스타일과 충돌하는 docstring 룰
+    "D212",
+	"D100",
+	"D205",
+	"ANN002",
+	"ANN003",
+	"ANN204"
+]
+fixable = ["ALL"]
+unfixable = []
+# ANN과 D는 위에서 활성화한다. 가변 인자, 특수 메서드 반환값, 이 저장소의
+# 모듈/docstring 관례에 해당하는 예외만 명시적으로 제외한다.
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+# 테스트 함수의 어노테이션과 docstring은 계약 검증에 기여하지 않으므로 제외한다.
+# `P`는 "테스트 대상 모듈" 픽스처라 대문자 한 글자 이름도 의도적이다.
+"tests/*" = ["N802", "N803", "ANN", "D"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+# 명시하지 않으면 서드파티로 분류돼 import 순서가 엉킨다.
+known-first-party = ["app", "tests"]
+
+# pydocstyle 설정 (docstring 스타일)
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+# ── pyright / Pylance ────────────────────────────────────────────────────────
+# 타입 검사 기준의 단일 소스. Pylance(에디터)와 basedpyright(CLI)가 모두 이 섹션을
+# 읽는다. .vscode/settings.json에는 typeCheckingMode를 두지 않는다(중복/충돌 방지).
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"

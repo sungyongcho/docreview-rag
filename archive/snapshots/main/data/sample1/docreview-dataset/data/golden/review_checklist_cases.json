@@ -1,0 +1,51 @@
+{
+  "description": "Checklist-review cases. Each scenario is evaluated item-by-item against a policy document. Use to test the 'compare answer against policy/checklist' tool and the structured report output. Item results: PASS, FAIL, or NEEDS_INFO (the scenario does not state enough to decide).",
+  "version": "1.0.0",
+  "item_results": ["PASS", "FAIL", "NEEDS_INFO"],
+  "cases": [
+    {
+      "id": "RC-001",
+      "scenario": "An employee submits a $4,200 software-training expense 20 days after the purchase, with an itemized receipt, approved by their director.",
+      "checklist_doc_id": "EXP-001",
+      "items": [
+        { "requirement": { "doc_id": "EXP-001", "sections": ["2.2"] }, "expected": "PASS", "reason": "$4,200 is in the $500.01-$5,000 band and a director approved it." },
+        { "requirement": { "doc_id": "EXP-001", "sections": ["6.1"] }, "expected": "PASS", "reason": "Submitted within 30 days (20 days)." },
+        { "requirement": { "doc_id": "EXP-001", "sections": ["6.2"] }, "expected": "PASS", "reason": "Itemized receipt provided for an expense over $25." }
+      ],
+      "overall": "PASS"
+    },
+    {
+      "id": "RC-002",
+      "scenario": "An employee submits a $180 client dinner for one client attendee, of which $80 was wine, 45 days after the dinner.",
+      "checklist_doc_id": "EXP-001",
+      "items": [
+        { "requirement": { "doc_id": "EXP-001", "sections": ["4.2"] }, "expected": "FAIL", "reason": "$180 exceeds the $150-per-attendee cap, and $80 of alcohol exceeds the $50-per-attendee alcohol cap." },
+        { "requirement": { "doc_id": "EXP-001", "sections": ["6.1"] }, "expected": "FAIL", "reason": "Submitted after the 30-day deadline (45 days)." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-003",
+      "scenario": "Procurement wants to sign a $12,000/year analytics vendor that will process customer Confidential data. The vendor's security review was completed 14 months ago. A manager has approved.",
+      "checklist_doc_id": "VND-001",
+      "items": [
+        { "requirement": { "doc_id": "VND-001", "sections": ["2.2"] }, "expected": "FAIL", "reason": "A completed (valid) security review is required before signature for $10k+/year; the existing one is expired." },
+        { "requirement": { "doc_id": "VND-001", "sections": ["3.1"] }, "expected": "FAIL", "reason": "Handling Confidential data triggers a required security review; the current one is not valid." },
+        { "requirement": { "doc_id": "VND-001", "sections": ["3.2"] }, "expected": "FAIL", "reason": "The review is 14 months old and must be renewed every 12 months." },
+        { "requirement": { "doc_id": "VND-001", "sections": ["4.1"] }, "expected": "NEEDS_INFO", "reason": "A DPA is required if personal data is shared; the scenario does not state whether the Confidential data includes personal data." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-004",
+      "scenario": "A new hire on Day 1 has completed identity verification and signed the Acceptable Use Policy but has not enabled MFA, planning to do it in Week 2.",
+      "checklist_doc_id": "ONB-001",
+      "items": [
+        { "requirement": { "doc_id": "ONB-001", "sections": ["2.1"] }, "expected": "PASS", "reason": "Identity verified and AUP signed on Day 1." },
+        { "requirement": { "doc_id": "ONB-001", "sections": ["2.2"] }, "expected": "FAIL", "reason": "MFA must be enabled on Day 1, not deferred to Week 2." },
+        { "requirement": { "doc_id": "SEC-001", "sections": ["1.2"] }, "expected": "FAIL", "reason": "MFA is mandatory for all company systems; deferring it leaves accounts non-compliant." }
+      ],
+      "overall": "FAIL"
+    }
+  ]
+}

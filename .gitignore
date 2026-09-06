@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime
+logs/
+*.log
+tmp/
+
+# Corpus raw filings — 무거워서 제외. 재현 = manifest.json + `python -m app.ingestion.edgar`
+data/corpus/**/*.html
+!data/corpus/manifest.json
+
+# 42 subject PDFs — 학교 저작물. 요구사항 추출 근거로만 참조한다(real_new_plan/01-requirements.md).
+# 이 리포는 공개 포트폴리오라 배포하지 않는다.
+42_curriculum/
+
+
+.git
+.venv
+.env
+.env.*
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+htmlcov
+old
+42_curriculum
+data/corpus/**/*.html
+data/eval_runs

@@ -1,0 +1,118 @@
+{
+  "description": "Golden retrieval set for the Northwind Labs synthetic knowledge base. Each question has a known correct source. Use to measure retrieval recall (did the system retrieve the expected section?) and citation correctness (did the answer cite it?).",
+  "version": "1.0.0",
+  "questions": [
+    {
+      "id": "RQ-001",
+      "question": "How many PTO days does a new hire get per year?",
+      "expected": { "doc_id": "HR-001", "sections": ["2.1"] },
+      "answer": "18 days per calendar year (accrued at 1.5 days per month).",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-002",
+      "question": "How many unused PTO days can I carry into next year?",
+      "expected": { "doc_id": "HR-001", "sections": ["2.3"] },
+      "answer": "Up to 5 days; anything beyond 5 is forfeited on December 31.",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-003",
+      "question": "When can a new employee start working remotely?",
+      "expected": { "doc_id": "HR-001", "sections": ["4.1", "5.1"] },
+      "answer": "After completing the 90-day probation period.",
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ-004",
+      "question": "Do I need a doctor's note if I'm out sick for two days?",
+      "expected": { "doc_id": "HR-001", "sections": ["3.2"] },
+      "answer": "No. A medical note is only required for absences longer than 3 consecutive working days.",
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ-005",
+      "question": "Who approves a $3,000 expense?",
+      "expected": { "doc_id": "EXP-001", "sections": ["2.2"] },
+      "answer": "A director (the $500.01–$5,000 band).",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-006",
+      "question": "Can I fly business class on a 9-hour flight?",
+      "expected": { "doc_id": "EXP-001", "sections": ["3.2", "3.3"] },
+      "answer": "Premium economy is permitted for flights of 6+ hours; business class requires VP approval regardless of length.",
+      "difficulty": "hard"
+    },
+    {
+      "id": "RQ-007",
+      "question": "What's the limit on a client dinner, and how much can be alcohol?",
+      "expected": { "doc_id": "EXP-001", "sections": ["4.2"] },
+      "answer": "Up to $150 per attendee, of which at most $50 per attendee may be alcohol.",
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ-008",
+      "question": "How long do I have to submit an expense report?",
+      "expected": { "doc_id": "EXP-001", "sections": ["6.1"] },
+      "answer": "Within 30 days of the expense date.",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-009",
+      "question": "What's the minimum password length?",
+      "expected": { "doc_id": "SEC-001", "sections": ["1.1"] },
+      "answer": "At least 14 characters.",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-010",
+      "question": "Can I paste customer Confidential data into an AI assistant?",
+      "expected": { "doc_id": "SEC-001", "sections": ["4.2"] },
+      "answer": "No. Confidential or Restricted data must not be pasted into third-party AI tools.",
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ-011",
+      "question": "How quickly must a suspected security incident be reported?",
+      "expected": { "doc_id": "SEC-001", "sections": ["5.1"] },
+      "answer": "Within 1 hour of discovery, to the security team.",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-012",
+      "question": "What must a new hire do on Day 1?",
+      "expected": { "doc_id": "ONB-001", "sections": ["2.1", "2.2"] },
+      "answer": "Complete identity verification, sign the Acceptable Use Policy, and enable MFA on all assigned accounts.",
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ-013",
+      "question": "How long are application logs kept?",
+      "expected": { "doc_id": "DR-001", "sections": ["2.2"] },
+      "answer": "90 days.",
+      "difficulty": "easy"
+    },
+    {
+      "id": "RQ-014",
+      "question": "How fast must we fulfill a customer deletion request?",
+      "expected": { "doc_id": "DR-001", "sections": ["3.2"] },
+      "answer": "Within 30 days of identity verification.",
+      "difficulty": "medium"
+    },
+    {
+      "id": "RQ-015",
+      "question": "Does an $8,000/year vendor need a security review before signing?",
+      "expected": { "doc_id": "VND-001", "sections": ["2.1", "2.2", "3.1"] },
+      "answer": "Not by the value threshold ($8k is under $10k, so manager approval), but a security review is still required if the vendor handles Confidential or Restricted data.",
+      "difficulty": "hard"
+    },
+    {
+      "id": "RQ-016",
+      "question": "How often must a vendor security review be renewed?",
+      "expected": { "doc_id": "VND-001", "sections": ["3.2"] },
+      "answer": "Every 12 months.",
+      "difficulty": "easy"
+    }
+  ]
+}

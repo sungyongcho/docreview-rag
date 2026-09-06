@@ -1,0 +1,21 @@
+{
+  "issuer": "INTC",
+  "default_year": "2019",
+  "profiles": {
+    "2019": {
+      "segmentation": {
+        "type": "xref"
+      },
+      "validation": {
+        "must_have": [
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "INTC-FY2019",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:12+00:00"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "snapshots": [
+    {
+      "source": "zero",
+      "commit": "bd407e1f30f05bd0ef4b4e0fb9b5642446f8ba2a",
+      "tree": "e9fc636ce2170e9774b13b710119f6b1c0572521",
+      "destination": "."
+    },
+    {
+      "source": "main",
+      "commit": "2fada500fc27276cfc17bf528d5be65bdef0ca25",
+      "tree": "2051515de6a63d3262822b45923f25932d965514",
+      "destination": "archive/snapshots/main"
+    },
+    {
+      "source": "new",
+      "commit": "6185ede68a578247a40e7e508d69cf3e2d1b94c2",
+      "tree": "d935432017ca9f3fd1c33e2f132fae603d055d28",
+      "destination": "archive/snapshots/new"
+    },
+    {
+      "source": "lecture-tuto",
+      "commit": "155ec8d9d57b00e7d69ed0a445181b3e89402c05",
+      "tree": "827f06c938747c005dbb06bf2e2fb0a525bc7724",
+      "destination": "archive/snapshots/lecture-tuto"
+    },
+    {
+      "source": "lecture2-tuto",
+      "commit": "4fe607723800a9dac1dd2ba7e2e58097c008b23d",
+      "tree": "f18fc9c6a78fe6a20e40aed91e1751b693029b32",
+      "destination": "archive/snapshots/lecture2-tuto"
+    },
+    {
+      "source": "claude/optimistic-borg-3c4459",
+      "commit": "992e2712f389de65495789f3db63a8589284b6c3",
+      "tree": "a28266df258e05ab21327bf591efe050c281deb9",
+      "destination": "archive/snapshots/claude-optimistic-borg-3c4459"
+    },
+    {
+      "source": "recovered-evals-work",
+      "commit": "0f9969e6c6459f24124d0c2b690d1ce420ab776d",
+      "tree": "09c52e33fe6614efc6d524580fd5628a131b8e3d",
+      "destination": "archive/snapshots/recovered-evals-work"
+    }
+  ],
+  "aliases": {
+    "glassfish": "main",
+    "prod-test": "zero"
+  },
+  "policy": "Frozen committed snapshots only. Never merge v1 into main."
+}

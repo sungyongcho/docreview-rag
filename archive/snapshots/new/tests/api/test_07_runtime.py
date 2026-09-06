@@ -1,0 +1,60 @@
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.main import app, create_app
+
+
+def test_runtime_factory_is_import_safe_and_creates_distinct_apps():
+    first = create_app()
+    second = create_app()
+
+    assert isinstance(app, FastAPI)
+    assert isinstance(first, FastAPI)
+    assert first is not second
+
+
+def test_health_route_reports_process_liveness_without_external_services():
+    with TestClient(create_app()) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_runtime_openapi_includes_all_m5_resources():
+    paths = set(create_app().openapi()["paths"])
+
+    assert {
+        "/health",
+        "/retrieve",
+        "/documents",
+        "/ingest",
+        "/review",
+        "/runs/{run_id}",
+        "/runs/{run_id}/traces",
+        "/eval",
+    } <= paths
+
+
+def test_compose_preserves_postgres_and_has_no_worker_or_redis_service():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "pgvector/pgvector:pg16" in compose
+    assert "postgresql+asyncpg://filing:filing@db:5432/filing" in compose
+    assert "pg_data:/var/lib/postgresql/data" in compose
+    assert "  app:\n" in compose
+    assert "  redis:\n" not in compose
+    assert "  worker:\n" not in compose
+    assert "condition: service_healthy" in compose
+    assert "/health" in compose
+
+
+def test_container_uses_the_locked_runtime_and_nonroot_user():
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "uv sync --locked --no-dev --no-install-project" in dockerfile
+    assert "USER appuser" in dockerfile
+    assert '"app.cli", "serve"' in dockerfile
+    assert "HEALTHCHECK" in dockerfile

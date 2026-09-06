@@ -1,0 +1,363 @@
+[reference]
+revision = "3efeba638a57c58a662ab6b113e981947e8b553c"
+
+[[modules]]
+slug = "m1-1-parser"
+
+[[modules.groups]]
+id = "M1.1"
+files = [
+  "app/__init__.py",
+  "app/ingestion/__init__.py",
+  "app/ingestion/edgar.py",
+  "app/ingestion/parser.py",
+  "app/ingestion/xref.py",
+]
+commands = [
+  "uv run pytest tests/ingestion/test_01_blocks.py tests/ingestion/test_02_rules.py tests/ingestion/test_03_segment.py tests/ingestion/test_04_validate.py tests/ingestion/test_05_profile.py tests/ingestion/test_06_xref.py tests/ingestion/test_07_coverage.py tests/ingestion/test_08_items.py -q",
+]
+
+[[modules]]
+slug = "m1-2-tables"
+
+[[modules.groups]]
+id = "M1.2"
+files = [
+  "app/ingestion/tables.py",
+  "scripts/measure_tables.py",
+]
+commands = ["uv run pytest tests/ingestion/test_09_tables.py -q"]
+
+[[modules]]
+slug = "m1-3-chunk"
+
+[[modules.groups]]
+id = "M1.3"
+files = ["app/ingestion/chunk.py"]
+commands = ["uv run pytest tests/chunk -q"]
+
+[[modules]]
+slug = "m1-4-seed"
+
+[[modules.groups]]
+id = "M1.4"
+files = [
+  "app/db/models.py",
+  "app/db/session.py",
+  "app/db/bootstrap.py",
+  "app/ingestion/seed.py",
+]
+commands = ["uv run pytest tests/db -q"]
+
+[[modules]]
+slug = "m2-retrieval"
+
+[[modules.groups]]
+id = "M2.1"
+files = ["app/retrieval/__init__.py", "app/retrieval/types.py"]
+commands = ["uv run pytest tests/retrieval/test_01_contract.py -q"]
+
+[[modules.groups]]
+id = "M2.2"
+files = ["app/retrieval/embeddings.py"]
+commands = ["uv run pytest tests/retrieval/test_02_embeddings.py -q"]
+
+[[modules.groups]]
+id = "M2.3"
+files = ["app/retrieval/vector.py"]
+commands = ["uv run pytest tests/retrieval/test_03_vector.py -q"]
+
+[[modules.groups]]
+id = "M2.4"
+files = ["app/retrieval/lexical.py"]
+commands = ["uv run pytest tests/retrieval/test_04_lexical.py -q"]
+
+[[modules.groups]]
+id = "M2.5"
+files = ["app/retrieval/hybrid.py"]
+commands = ["uv run pytest tests/retrieval/test_05_hybrid.py -q"]
+
+[[modules.groups]]
+id = "M2.6"
+files = ["app/retrieval/rerank.py"]
+commands = ["uv run pytest tests/retrieval/test_06_rerank.py -q"]
+
+[[modules.groups]]
+id = "M2.7"
+files = [
+  "app/retrieval/service.py",
+  "app/retrieval/__main__.py",
+]
+commands = ["uv run pytest tests/retrieval/test_07_service.py -q"]
+
+[[modules.groups]]
+id = "M2.8"
+files = []
+commands = ["uv run pytest tests/retrieval/test_08_postgres.py -q"]
+
+[[modules.groups]]
+id = "M2.9"
+files = ["app/retrieval/bm25.py"]
+commands = ["uv run pytest tests/retrieval/test_09_bm25.py -q"]
+
+[[modules.groups]]
+id = "M2.10"
+files = ["app/retrieval/sbert.py"]
+commands = ["uv run pytest tests/retrieval/test_10_sbert.py -q"]
+
+[[modules.groups]]
+id = "M2.11"
+files = ["app/retrieval/cross_encoder.py"]
+commands = ["uv run pytest tests/retrieval/test_11_cross_encoder.py -q"]
+
+[[modules]]
+slug = "m3-evals"
+
+[[modules.groups]]
+id = "M3.1"
+files = [
+  "app/evals/__init__.py",
+  "app/evals/types.py",
+  "app/evals/loader.py",
+]
+commands = [
+  "uv run pytest tests/evals/test_01_contract.py tests/evals/test_02_loader.py -q",
+]
+
+[[modules.groups]]
+id = "M3.2"
+files = ["app/evals/scoring.py"]
+commands = ["uv run pytest tests/evals/test_02_scoring.py -q"]
+
+[[modules.groups]]
+id = "M3.3"
+files = ["app/evals/regression.py"]
+commands = ["uv run pytest tests/evals/test_03_regression.py -q"]
+
+[[modules.groups]]
+id = "M3.4"
+files = [
+  "app/evals/ablation.py",
+  "app/evals/retrieval_eval.py",
+  "app/evals/__main__.py",
+]
+commands = [
+  "uv run pytest tests/evals/test_04_ablation.py tests/evals/test_05_runner.py -q",
+]
+
+[[modules.groups]]
+id = "M3.5"
+files = [
+  "app/evals/curation.py",
+  "app/evals/breakdown.py",
+]
+commands = [
+  "uv run pytest tests/evals/test_07_curation.py -q",
+]
+
+[[modules]]
+slug = "m4-workflow"
+
+[[modules.groups]]
+id = "M4.1"
+files = [
+  "app/llm/__init__.py",
+  "app/llm/schemas.py",
+  "app/llm/provider.py",
+]
+commands = [
+  "uv run pytest tests/workflow/test_01_schemas.py tests/workflow/test_02_provider.py -q",
+]
+
+[[modules.groups]]
+id = "M4.2"
+files = [
+  "app/observability/__init__.py",
+  "app/observability/types.py",
+  "app/observability/cost.py",
+  "app/observability/budget.py",
+  "app/observability/trace.py",
+  "app/observability/persistence.py",
+]
+commands = ["uv run pytest tests/workflow/test_03_observability.py -q"]
+
+[[modules.groups]]
+id = "M4.3"
+files = [
+  "app/workflow/__init__.py",
+  "app/workflow/types.py",
+  "app/workflow/prompts.py",
+  "app/workflow/nodes.py",
+  "app/workflow/runner.py",
+]
+commands = [
+  "uv run pytest tests/workflow/test_04_nodes.py tests/workflow/test_05_runner.py -q",
+]
+
+[[modules]]
+slug = "m5-serving"
+
+[[modules.groups]]
+id = "M5.1"
+files = [
+  "app/api/__init__.py",
+  "app/api/schemas.py",
+  "app/api/deps.py",
+  "app/api/errors.py",
+  "app/api/routes/__init__.py",
+  "app/api/routes/documents.py",
+  "app/api/routes/eval.py",
+  "app/api/routes/ingest.py",
+  "app/api/routes/retrieve.py",
+  "app/api/routes/review.py",
+  "app/api/routes/runs.py",
+  "app/api/routes/traces.py",
+  "app/api/app.py",
+]
+commands = [
+  "uv run pytest tests/api/test_01_schemas.py tests/api/test_02_errors.py tests/api/test_03_resources.py tests/api/test_04_operations.py tests/api/test_05_routes.py -q",
+]
+
+[[modules.groups]]
+id = "M5.2"
+files = [
+  "app/config.py",
+  "app/api/runtime.py",
+  "app/main.py",
+  "app/cli.py",
+]
+commands = [
+  "uv run pytest tests/api/test_06_cli.py tests/api/test_07_runtime.py -q",
+]
+
+[[modules.groups]]
+id = "M5.3"
+files = []
+commands = ["uv run pytest tests/api/test_08_integration.py -q"]
+
+[[modules.groups]]
+id = "M5.4"
+files = ["app/api/routes/stream.py"]
+commands = ["uv run pytest tests/api/test_09_stream.py -q"]
+
+[[modules]]
+slug = "m6-demo"
+
+[[modules.groups]]
+id = "M6.1"
+files = ["app/demo.py"]
+commands = ["uv run pytest tests/demo -q"]
+
+[[modules.groups]]
+id = "M6.2"
+files = []
+commands = [
+  "uv run pytest tests/test_doc_sync.py tests/test_doc_parity.py -q",
+]
+
+[[modules.groups]]
+id = "M6.3"
+files = []
+commands = ["uv run pytest tests/demo tests/api/test_08_integration.py -q"]
+
+[[modules]]
+slug = "m7-deployment"
+
+[[modules.groups]]
+id = "M7.1"
+files = [
+  "app/release/__init__.py",
+  "app/release/config.py",
+  "app/release/limiter.py",
+  "app/release/middleware.py",
+  "app/release/secrets.py",
+  "app/release/app.py",
+  "app/release/space.py",
+]
+commands = ["uv run pytest tests/release/test_01_config.py tests/release/test_02_rate_limit.py tests/release/test_03_guards.py tests/release/test_04_app.py -q"]
+
+[[modules.groups]]
+id = "M7.2"
+files = [
+  ".dockerignore",
+  "Dockerfile",
+  "docker-compose.yml",
+  "deploy/huggingface/Dockerfile",
+  "deploy/huggingface/space.env.example",
+]
+commands = ["uv run pytest tests/release/test_05_assets.py -q"]
+
+[[modules.groups]]
+id = "M7.3"
+files = ["scripts/verify_clean_checkout.sh"]
+commands = ["uv run pytest tests/release -q"]
+
+[[modules]]
+slug = "m8-crosslingual"
+
+[[modules.groups]]
+id = "M8.1"
+files = ["data/golden/retrieval_ko.json", "app/evals/bilingual.py"]
+commands = ["uv run pytest tests/crosslingual/test_01_bilingual.py -q"]
+
+[[modules.groups]]
+id = "M8.2"
+files = ["app/evals/crosslingual.py", "app/retrieval/sbert.py"]
+commands = ["uv run pytest tests/crosslingual/test_02_crosslingual.py -q"]
+
+[[modules.groups]]
+id = "M8.3"
+files = [
+  "app/retrieval/language.py",
+  "app/retrieval/translate.py",
+  "app/retrieval/service.py",
+  "app/config.py",
+]
+commands = [
+  "uv run pytest tests/crosslingual/test_03_language.py tests/crosslingual/test_04_translate.py -q",
+]
+
+[[modules.groups]]
+id = "M8.4"
+files = ["app/evals/parity.py"]
+commands = ["uv run pytest tests/crosslingual/test_05_parity.py -q"]
+
+[[modules]]
+slug = "m9-agent"
+
+[[modules.groups]]
+id = "M9.1"
+files = [
+  "app/agent/__init__.py",
+  "app/agent/types.py",
+  "app/agent/tools.py",
+  "app/agent/registry.py",
+]
+commands = [
+  "uv run pytest tests/agent/test_01_contracts.py tests/agent/test_02_registry.py -q",
+]
+
+[[modules.groups]]
+id = "M9.2"
+files = ["app/agent/provider.py"]
+commands = ["uv run pytest tests/agent/test_03_provider.py -q"]
+
+[[modules.groups]]
+id = "M9.3"
+files = ["app/agent/loop.py"]
+commands = ["uv run pytest tests/agent/test_04_loop.py -q"]
+
+[[modules.groups]]
+id = "M9.4"
+files = ["app/agent/builtin_tools.py"]
+commands = ["uv run pytest tests/agent/test_05_builtin_tools.py -q"]
+
+[[modules.groups]]
+id = "M9.5"
+files = ["app/agent/decompose.py", "app/agent/eval.py"]
+commands = ["uv run pytest tests/agent/test_06_decompose.py -q"]
+
+[[modules.groups]]
+id = "M9.6"
+files = ["app/agent/mcp_server.py", "app/agent/__main__.py"]
+commands = ["uv run pytest tests/agent/test_07_mcp_cli.py -q"]

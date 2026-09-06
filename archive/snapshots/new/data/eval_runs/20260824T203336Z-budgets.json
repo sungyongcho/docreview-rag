@@ -1,0 +1,41 @@
+{
+  "indexing": [
+    {
+      "budget_seconds": 300.0,
+      "chunk_count": 12984,
+      "document_count": 20,
+      "embedding_provider": "deterministic",
+      "passed": true,
+      "target_text_chars": 500,
+      "total_seconds": 38.453082469
+    },
+    {
+      "budget_seconds": 300.0,
+      "chunk_count": 9172,
+      "document_count": 20,
+      "embedding_provider": "deterministic",
+      "passed": true,
+      "target_text_chars": 1200,
+      "total_seconds": 33.859792237
+    }
+  ],
+  "measurement_provenance": {
+    "budget_lexical_ranker": "ts_rank_cd",
+    "embedding_provider": "deterministic",
+    "environment": "isolated-temporary-postgresql",
+    "paid_api_calls": false,
+    "populated_corpus_embeddings_modified": false
+  },
+  "query_budget": {
+    "budget_seconds": 90.0,
+    "max_ms": 283.419542,
+    "mean_ms": 148.927701865,
+    "p50_ms": 148.145345,
+    "p95_ms": 213.559159,
+    "passed": true,
+    "query_count": 200,
+    "total_seconds": 29.785540373
+  },
+  "recorded_at": "2026-08-24T20:33:36.333246Z",
+  "schema_version": 1
+}

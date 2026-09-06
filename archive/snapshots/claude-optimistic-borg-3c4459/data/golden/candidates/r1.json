@@ -1,0 +1,83 @@
+[
+  {
+    "id": "m3s-01",
+    "question": "By what percentage did AMD's overall sales grow in fiscal 2021 versus the prior year, and what were the two annual totals?",
+    "category": "multi_hop",
+    "facet": "comparison",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "AMD-FY2021",
+        "source_sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "start_char": 509553,
+        "end_char": 509657
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "AMD's net revenue grew 68% year over year, from $9.8 billion in fiscal 2020 to $16.4 billion in fiscal 2021.",
+    "note": "One MD&A overview sentence states both fiscal-year totals and the growth rate; the question deliberately says overall sales instead of the filing's net revenue wording.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false,
+    "generator": "claude-fable-5"
+  },
+  {
+    "id": "m3s-02",
+    "question": "How much did Intel invest in property and equipment during fiscal 2020?",
+    "category": "exact_number",
+    "facet": "numeric",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "INTC-FY2020",
+        "source_sha256": "455d47c6c6fbf103cadef13a2959d795b4149ab297a451df95bbe6f393a08123",
+        "start_char": 1078830,
+        "end_char": 1079006
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "Capital expenditures were $14.3 billion in fiscal 2020, excluding NAND capital expenditures after the held-for-sale date, versus $16.2 billion in 2019 and $15.2 billion in 2018.",
+    "note": "The evidence sits in the investing-activities paragraph of the MD&A liquidity discussion; the question deliberately says invest in property and equipment instead of the filing's capital expenditures wording.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false,
+    "generator": "claude-fable-5"
+  },
+  {
+    "id": "m3s-03",
+    "question": "According to Micron's fiscal 2021 10-K, roughly what fraction of the company's sales in each of the three most recent years came from its ten biggest buyers?",
+    "category": "simple_lookup",
+    "facet": "risk",
+    "tags": [],
+    "answers": [
+      {
+        "doc_id": "MU-FY2021",
+        "source_sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
+        "start_char": 567089,
+        "end_char": 567648
+      }
+    ],
+    "expected_label": "SUPPORTED",
+    "reference_answer": "In each of the last three years, approximately one-half of Micron's total revenue came from its top ten customers.",
+    "note": "The evidence is the customer-concentration risk factor in Item 1A; the question deliberately paraphrases revenue, top ten customers, and approximately one-half as sales, ten biggest buyers, and roughly what fraction.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false,
+    "generator": "claude-fable-5"
+  },
+  {
+    "id": "m3s-04",
+    "question": "What employee attrition or turnover rate did AMD report in its fiscal 2022 Form 10-K?",
+    "category": "absent",
+    "facet": "factual",
+    "tags": [],
+    "answers": [],
+    "expected_label": "NOT_IN_DOCS",
+    "reference_answer": "NOT_IN_DOCS",
+    "note": "A case-insensitive sweep of all 20 filings found no AMD disclosure of any attrition, turnover, or retention rate, although NVIDIA and Intel filings in the corpus do disclose such rates.",
+    "curation_status": "agent-curated",
+    "approval_status": "pending-author-approval",
+    "human_verified": false,
+    "generator": "claude-fable-5"
+  }
+]

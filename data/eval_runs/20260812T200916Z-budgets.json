@@ -1,0 +1,40 @@
+{
+  "indexing": [
+    {
+      "budget_seconds": 300.0,
+      "chunk_count": 12984,
+      "document_count": 20,
+      "embedding_provider": "deterministic",
+      "passed": true,
+      "target_text_chars": 500,
+      "total_seconds": 75.15793384
+    },
+    {
+      "budget_seconds": 300.0,
+      "chunk_count": 9172,
+      "document_count": 20,
+      "embedding_provider": "deterministic",
+      "passed": true,
+      "target_text_chars": 1200,
+      "total_seconds": 63.880582629
+    }
+  ],
+  "measurement_provenance": {
+    "embedding_provider": "deterministic",
+    "environment": "isolated-temporary-postgresql",
+    "paid_api_calls": false,
+    "populated_corpus_embeddings_modified": false
+  },
+  "query_budget": {
+    "budget_seconds": 90.0,
+    "max_ms": 78.916108,
+    "mean_ms": 64.969809575,
+    "p50_ms": 64.604174,
+    "p95_ms": 71.48047,
+    "passed": true,
+    "query_count": 200,
+    "total_seconds": 12.993961915
+  },
+  "recorded_at": "2026-08-12T20:09:16.154450Z",
+  "schema_version": 1
+}

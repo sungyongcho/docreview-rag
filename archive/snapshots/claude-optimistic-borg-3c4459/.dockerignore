@@ -1,0 +1,19 @@
+# Keep the build context and image to what the container actually runs: the app tree,
+# the locked dependency metadata, and the corpus data/ingest reads.
+.git
+.venv
+.env
+.dashboard
+.dashboard-cache
+.claude
+tests
+docs
+data/eval_runs
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+web/node_modules
+web/.next
+web/out
+deploy/firebase/public

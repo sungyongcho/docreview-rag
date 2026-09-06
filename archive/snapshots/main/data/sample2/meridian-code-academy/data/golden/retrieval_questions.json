@@ -1,0 +1,29 @@
+{
+  "description": "Golden retrieval set for the Meridian Code Academy synthetic corpus. Each question has a known correct source section. Measures retrieval recall and citation correctness.",
+  "version": "1.0.0",
+  "questions": [
+    { "id": "RQ-001", "question": "How long are connection logs kept?", "expected": { "doc_id": "MCA-PRIV", "sections": ["3.2"] }, "answer": "6 months.", "difficulty": "easy" },
+    { "id": "RQ-002", "question": "How long is video-surveillance footage retained?", "expected": { "doc_id": "MCA-PRIV", "sections": ["3.4"] }, "answer": "21 days, unless preserved for an open incident.", "difficulty": "easy" },
+    { "id": "RQ-003", "question": "How long are academic transcripts archived?", "expected": { "doc_id": "MCA-PRIV", "sections": ["3.8"] }, "answer": "40 years after the student leaves.", "difficulty": "easy" },
+    { "id": "RQ-004", "question": "What happens to a failed candidate's admissions results?", "expected": { "doc_id": "MCA-PRIV", "sections": ["3.7"] }, "answer": "Deleted 14 days after the candidate fails.", "difficulty": "medium" },
+    { "id": "RQ-005", "question": "How long is an API token valid?", "expected": { "doc_id": "MCA-API", "sections": ["3.2"] }, "answer": "90 minutes, after which it must be regenerated.", "difficulty": "easy" },
+    { "id": "RQ-006", "question": "How often is the API secret rotated?", "expected": { "doc_id": "MCA-API", "sections": ["3.2"] }, "answer": "Every 14 days.", "difficulty": "easy" },
+    { "id": "RQ-007", "question": "What is the API rate limit?", "expected": { "doc_id": "MCA-API", "sections": ["3.2"] }, "answer": "1,200 requests per hour per token.", "difficulty": "easy" },
+    { "id": "RQ-008", "question": "How much does it cost to replace a lost badge?", "expected": { "doc_id": "MCA-RULES", "sections": ["3.3"] }, "answer": "EUR 8 for the first replacement, EUR 15 for each subsequent one.", "difficulty": "medium" },
+    { "id": "RQ-009", "question": "How long can a locker be used?", "expected": { "doc_id": "MCA-RULES", "sections": ["5.1"] }, "answer": "At most 72 hours.", "difficulty": "easy" },
+    { "id": "RQ-010", "question": "How long can a visitor stay on campus?", "expected": { "doc_id": "MCA-RULES", "sections": ["4.2"] }, "answer": "No more than 2 hours.", "difficulty": "easy" },
+    { "id": "RQ-011", "question": "What is the penalty for keeping a soda at a cluster workstation?", "expected": { "doc_id": "MCA-RULES", "sections": ["7.1"] }, "answer": "A Tier 1 offense: minimum 3 hours of community service.", "difficulty": "medium" },
+    { "id": "RQ-012", "question": "How often are toilet breaks offered during an exam?", "expected": { "doc_id": "MCA-EXAM", "sections": ["3.2"] }, "answer": "Every 45 minutes.", "difficulty": "easy" },
+    { "id": "RQ-013", "question": "How long do exams last?", "expected": { "doc_id": "MCA-EXAM", "sections": ["4"] }, "answer": "Between 2 and 6 hours, depending on the exam.", "difficulty": "easy" },
+    { "id": "RQ-014", "question": "When does alumni status trigger automatically?", "expected": { "doc_id": "MCA-PROG", "sections": ["3.2"] }, "answer": "After 6 months of inactivity following completion of the Core.", "difficulty": "medium" },
+    { "id": "RQ-015", "question": "What is the maximum total freeze duration?", "expected": { "doc_id": "MCA-PROG", "sections": ["4.3"] }, "answer": "6 months.", "difficulty": "medium" },
+    { "id": "RQ-016", "question": "A student scans a host that isn't listed in their security project subject. Is that allowed, and how serious is it?", "expected": { "doc_id": "MCA-CHARTER", "sections": ["2.1"] }, "answer": "Not allowed; acting against an unlisted target is a Tier 3 offense (referred to the Disciplinary Board under Internal Rules 7.3).", "difficulty": "hard" },
+    { "id": "RQ-017", "question": "How long are audience cookies stored?", "expected": { "doc_id": "MCA-COOKIE", "sections": ["2"] }, "answer": "At most 13 months (data from cookies, at most 25 months).", "difficulty": "easy" },
+    { "id": "RQ-018", "question": "How long is video-surveillance footage kept?", "expected": { "doc_id": "MCA-CCTV", "sections": ["4"] }, "answer": "21 days, unless preserved for an open incident.", "difficulty": "easy" },
+    { "id": "RQ-019", "question": "Does MCA guarantee the website is always available?", "expected": { "doc_id": "MCA-SITE", "sections": ["7"] }, "answer": "No; the site is provided without a guarantee of uninterrupted availability and may be suspended without notice.", "difficulty": "medium" },
+    { "id": "RQ-020", "question": "Who hosts the MCA websites?", "expected": { "doc_id": "MCA-LEGAL", "sections": ["2"] }, "answer": "Example Hosting SAS (fictional), Paris, France.", "difficulty": "easy" },
+    { "id": "RQ-021", "question": "What are the intranet password requirements?", "expected": { "doc_id": "MCA-SITE", "sections": ["4.1"] }, "answer": "At least 12 characters, including one uppercase letter, one lowercase letter, and one digit, and different from the previous password.", "difficulty": "medium" },
+    { "id": "RQ-022", "question": "Can I let a friend use my intranet account?", "expected": { "doc_id": "MCA-SITE", "sections": ["3.1"] }, "answer": "No; the account is strictly personal and lending it is prohibited.", "difficulty": "easy" },
+    { "id": "RQ-023", "question": "May I commercially reuse data published on the MCA site?", "expected": { "doc_id": "MCA-LEGAL", "sections": ["6"] }, "answer": "Not without MCA's prior written consent.", "difficulty": "medium" }
+  ]
+}

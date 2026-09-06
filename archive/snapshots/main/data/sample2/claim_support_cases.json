@@ -1,0 +1,36 @@
+{
+  "description": "Claim-support cases for the Meridian Code Academy corpus. Four labels: SUPPORTED, CONTRADICTED, NOT_IN_DOCS (plausible but absent), PARTIALLY_SUPPORTED (one part holds, another does not). A recurring twist for a coding school: a claim names the right rule but the wrong sanction tier.",
+  "version": "1.0.0",
+  "labels": ["SUPPORTED", "CONTRADICTED", "NOT_IN_DOCS", "PARTIALLY_SUPPORTED"],
+  "cases": [
+    { "id": "CS-001", "claim": "Connection logs are retained for 6 months.", "label": "SUPPORTED", "supporting": [{ "doc_id": "MCA-PRIV", "sections": ["3.2"] }], "rationale": "MCA-PRIV 3.2 states 6 months." },
+    { "id": "CS-002", "claim": "An API token is valid for 90 minutes.", "label": "SUPPORTED", "supporting": [{ "doc_id": "MCA-API", "sections": ["3.2"] }], "rationale": "MCA-API 3.2 sets token validity at 90 minutes." },
+    { "id": "CS-003", "claim": "A locker may be used for at most 72 hours.", "label": "SUPPORTED", "supporting": [{ "doc_id": "MCA-RULES", "sections": ["5.1"] }], "rationale": "MCA-RULES 5.1 caps locker use at 72 hours." },
+    { "id": "CS-004", "claim": "Exams last between 2 and 6 hours.", "label": "SUPPORTED", "supporting": [{ "doc_id": "MCA-EXAM", "sections": ["4"] }], "rationale": "MCA-EXAM 4 states 2 to 6 hours." },
+
+    { "id": "CS-005", "claim": "The API secret is rotated once a year.", "label": "CONTRADICTED", "supporting": [{ "doc_id": "MCA-API", "sections": ["3.2"] }], "rationale": "MCA-API 3.2 rotates the secret every 14 days, not yearly." },
+    { "id": "CS-006", "claim": "A lost badge is replaced free of charge.", "label": "CONTRADICTED", "supporting": [{ "doc_id": "MCA-RULES", "sections": ["3.3"] }], "rationale": "MCA-RULES 3.3 charges EUR 8 then EUR 15." },
+    { "id": "CS-007", "claim": "Phones may be kept on silent during an exam as long as they stay in a pocket.", "label": "CONTRADICTED", "supporting": [{ "doc_id": "MCA-EXAM", "sections": ["2"] }], "rationale": "MCA-EXAM 2 requires devices to be switched off and stored in the bag." },
+    { "id": "CS-008", "claim": "Alumni status triggers automatically after 12 months of inactivity.", "label": "CONTRADICTED", "supporting": [{ "doc_id": "MCA-PROG", "sections": ["3.2"] }], "rationale": "MCA-PROG 3.2 sets automatic transition at 6 months." },
+
+    { "id": "CS-009", "claim": "Students receive a free meal voucher every day.", "label": "NOT_IN_DOCS", "supporting": [], "rationale": "No document mentions meal vouchers." },
+    { "id": "CS-010", "claim": "The API provides a GraphQL endpoint.", "label": "NOT_IN_DOCS", "supporting": [], "rationale": "The API terms never mention GraphQL or any specific endpoint technology." },
+    { "id": "CS-011", "claim": "Students get a 40% discount at partner gyms.", "label": "NOT_IN_DOCS", "supporting": [], "rationale": "No partner-gym discount is described anywhere." },
+    { "id": "CS-012", "claim": "The selection bootcamp includes a mandatory English-language test.", "label": "NOT_IN_DOCS", "supporting": [], "rationale": "MCA-PROG 1.2 describes the bootcamp but says nothing about an English test." },
+
+    { "id": "CS-013", "claim": "Connection logs are kept for 6 months and backups are kept for 6 months.", "label": "PARTIALLY_SUPPORTED", "supporting": [{ "doc_id": "MCA-PRIV", "sections": ["3.2", "3.3"] }], "rationale": "Logs at 6 months is correct (3.2), but backups are 90 days (3.3), not 6 months." },
+    { "id": "CS-014", "claim": "An API token lasts 90 minutes and the rate limit is 5,000 requests per hour.", "label": "PARTIALLY_SUPPORTED", "supporting": [{ "doc_id": "MCA-API", "sections": ["3.2"] }], "rationale": "90 minutes is correct, but the rate limit is 1,200 requests per hour per token, not 5,000." },
+    { "id": "CS-015", "claim": "Lockers may be used for up to 72 hours and food may be stored in them.", "label": "PARTIALLY_SUPPORTED", "supporting": [{ "doc_id": "MCA-RULES", "sections": ["5.1"] }], "rationale": "72 hours is correct, but 5.1 forbids storing food in lockers." },
+    { "id": "CS-016", "claim": "A student who brings alcohol onto campus gets a 3-hour community-service penalty.", "label": "PARTIALLY_SUPPORTED", "supporting": [{ "doc_id": "MCA-RULES", "sections": ["7.1", "7.3"] }], "rationale": "Bringing alcohol is indeed penalized, but it is a Tier 3 offense (Disciplinary Board, up to exclusion) under 7.3, not a 3-hour Tier 1 penalty under 7.1." },
+
+    { "id": "CS-017", "claim": "Audience cookies are stored for at most 13 months.", "label": "SUPPORTED", "supporting": [{ "doc_id": "MCA-COOKIE", "sections": ["2"] }], "rationale": "MCA-COOKIE 2 sets audience cookies at a maximum of 13 months." },
+    { "id": "CS-018", "claim": "Video-surveillance footage is kept for 6 months.", "label": "CONTRADICTED", "supporting": [{ "doc_id": "MCA-CCTV", "sections": ["4"] }], "rationale": "MCA-CCTV 4 retains footage for 21 days, not 6 months." },
+    { "id": "CS-019", "claim": "The MCA website offers a dark-mode setting.", "label": "NOT_IN_DOCS", "supporting": [], "rationale": "No document mentions a dark-mode or any UI theming setting." },
+    { "id": "CS-020", "claim": "CCTV cameras cover entrances and also record individual workstations.", "label": "PARTIALLY_SUPPORTED", "supporting": [{ "doc_id": "MCA-CCTV", "sections": ["2"] }], "rationale": "Coverage of entrances is correct, but 2 states cameras are never positioned to view individual workstations." },
+
+    { "id": "CS-021", "claim": "An intranet password must be at least 12 characters long.", "label": "SUPPORTED", "supporting": [{ "doc_id": "MCA-SITE", "sections": ["4.1"] }], "rationale": "MCA-SITE 4.1 requires at least 12 characters." },
+    { "id": "CS-022", "claim": "An 8-character intranet password is acceptable.", "label": "CONTRADICTED", "supporting": [{ "doc_id": "MCA-SITE", "sections": ["4.1"] }], "rationale": "MCA-SITE 4.1 requires a minimum of 12 characters." },
+    { "id": "CS-023", "claim": "The intranet supports passwordless passkey login.", "label": "NOT_IN_DOCS", "supporting": [], "rationale": "No document mentions passkeys or passwordless authentication." },
+    { "id": "CS-024", "claim": "An intranet password must be at least 12 characters and must contain a special character.", "label": "PARTIALLY_SUPPORTED", "supporting": [{ "doc_id": "MCA-SITE", "sections": ["4.1"] }], "rationale": "The 12-character minimum is correct, but 4.1 requires an uppercase letter, a lowercase letter, and a digit, not a special character." }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "description": "Checklist-review cases for the Meridian Code Academy corpus. Each scenario is evaluated item-by-item against one or more documents. Item results: PASS, FAIL, NEEDS_INFO. Several cases require mapping a breach to the correct sanction tier - the showcase capability for this corpus.",
+  "version": "1.0.0",
+  "item_results": ["PASS", "FAIL", "NEEDS_INFO"],
+  "cases": [
+    {
+      "id": "RC-001",
+      "scenario": "During an exam, a student is found with their phone in their pocket and is then caught glancing at it.",
+      "checklist_doc_id": "MCA-EXAM",
+      "items": [
+        { "requirement": { "doc_id": "MCA-EXAM", "sections": ["2"] }, "expected": "FAIL", "reason": "Devices must be switched off and stored in the bag; a phone in the pocket breaches this." },
+        { "requirement": { "doc_id": "MCA-EXAM", "sections": ["5"] }, "expected": "FAIL", "reason": "Looking at a phone during the exam is defined as cheating." },
+        { "requirement": { "doc_id": "MCA-RULES", "sections": ["7.3"] }, "expected": "FAIL", "reason": "Cheating is a Tier 3 offense, referred to the Disciplinary Board." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-002",
+      "scenario": "A student keeps a can of soda at their cluster workstation and leaves the chair and keyboard untidy when they leave.",
+      "checklist_doc_id": "MCA-RULES",
+      "items": [
+        { "requirement": { "doc_id": "MCA-RULES", "sections": ["7.1"] }, "expected": "FAIL", "reason": "Holding a non-water drink at a cluster workstation is a Tier 1 offense (minimum 3 hours community service)." },
+        { "requirement": { "doc_id": "MCA-RULES", "sections": ["7.1"] }, "expected": "FAIL", "reason": "Failing to tidy the workstation is also a Tier 1 offense." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-003",
+      "scenario": "A student's project app stores API responses on a personal server and exposes an endpoint that lets a non-student friend query that data.",
+      "checklist_doc_id": "MCA-API",
+      "items": [
+        { "requirement": { "doc_id": "MCA-API", "sections": ["3.1"] }, "expected": "FAIL", "reason": "The API is read-only and local storage of API data is prohibited without end-user consent." },
+        { "requirement": { "doc_id": "MCA-API", "sections": ["4"] }, "expected": "FAIL", "reason": "Giving a non-authorized third party access and making data available outside the MCA network are prohibited practices." },
+        { "requirement": { "doc_id": "MCA-API", "sections": ["5"] }, "expected": "NEEDS_INFO", "reason": "Whether the app encrypts data in transit and at rest is not stated, so the security-measures requirement cannot be judged." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-004",
+      "scenario": "A security project subject lists only host TARGET-A and runs from 1-7 March. A student scans TARGET-B on 9 March directly from their laptop with no isolation.",
+      "checklist_doc_id": "MCA-CHARTER",
+      "items": [
+        { "requirement": { "doc_id": "MCA-CHARTER", "sections": ["2.1"] }, "expected": "FAIL", "reason": "TARGET-B is not a listed target; acting against it is a Tier 3 offense." },
+        { "requirement": { "doc_id": "MCA-CHARTER", "sections": ["2.2"] }, "expected": "FAIL", "reason": "9 March is outside the 1-7 March window." },
+        { "requirement": { "doc_id": "MCA-CHARTER", "sections": ["2.3"] }, "expected": "FAIL", "reason": "The action was not contained (no isolated VM)." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-005",
+      "scenario": "An automated bot scrapes the MCA public website at high volume, and the same actor repeatedly tries to log into an account that is not theirs.",
+      "checklist_doc_id": "MCA-SITE",
+      "items": [
+        { "requirement": { "doc_id": "MCA-SITE", "sections": ["5"] }, "expected": "FAIL", "reason": "Automated scraping without authorization and disrupting the site are prohibited uses." },
+        { "requirement": { "doc_id": "MCA-SITE", "sections": ["5"] }, "expected": "FAIL", "reason": "Attempting to gain unauthorized access to another account is a prohibited use." }
+      ],
+      "overall": "FAIL"
+    },
+    {
+      "id": "RC-006",
+      "scenario": "A student sets their intranet password to 'meridian2026' (12 characters, lowercase letters and digits only).",
+      "checklist_doc_id": "MCA-SITE",
+      "items": [
+        { "requirement": { "doc_id": "MCA-SITE", "sections": ["4.1"] }, "expected": "PASS", "reason": "The password is 12 characters, meeting the minimum length." },
+        { "requirement": { "doc_id": "MCA-SITE", "sections": ["4.1"] }, "expected": "FAIL", "reason": "It contains no uppercase letter, so it fails the character-class requirement." }
+      ],
+      "overall": "FAIL"
+    }
+  ]
+}

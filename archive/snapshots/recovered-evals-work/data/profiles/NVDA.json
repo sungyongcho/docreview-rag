@@ -1,0 +1,126 @@
+{
+  "issuer": "NVDA",
+  "default_year": "2024",
+  "profiles": {
+    "2020": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 11.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 20,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "NVDA-FY2020",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:23+00:00"
+    },
+    "2021": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 11.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 21,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "NVDA-FY2021",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:24+00:00"
+    },
+    "2022": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 11.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 22,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "NVDA-FY2022",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:24+00:00"
+    },
+    "2023": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 11.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 22,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "NVDA-FY2023",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:43+00:00"
+    },
+    "2024": {
+      "segmentation": {
+        "type": "number",
+        "rules": [
+          {
+            "font_weight": 700,
+            "font_size": 10.0,
+            "in_table": false
+          }
+        ]
+      },
+      "validation": {
+        "expected_items": 23,
+        "must_have": [
+          "1",
+          "1A",
+          "7",
+          "8"
+        ]
+      },
+      "learned_from": "NVDA-FY2024",
+      "learned_by": "bootstrap",
+      "learned_at": "2026-08-05T23:06:26+00:00"
+    }
+  }
+}

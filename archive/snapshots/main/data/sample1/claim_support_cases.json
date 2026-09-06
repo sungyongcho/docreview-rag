@@ -1,0 +1,119 @@
+{
+  "description": "Claim-support cases for the Northwind Labs synthetic knowledge base. Each claim is labeled against the documents. Four labels exercise the failure modes a citation-grounded checker must handle: SUPPORTED, CONTRADICTED, NOT_IN_DOCS (plausible but absent - the case naive RAG fails by hallucinating support), and PARTIALLY_SUPPORTED (one part holds, another does not).",
+  "version": "1.0.0",
+  "labels": ["SUPPORTED", "CONTRADICTED", "NOT_IN_DOCS", "PARTIALLY_SUPPORTED"],
+  "cases": [
+    {
+      "id": "CS-001",
+      "claim": "New hires accrue 18 PTO days per year.",
+      "label": "SUPPORTED",
+      "supporting": [{ "doc_id": "HR-001", "sections": ["2.1"] }],
+      "rationale": "HR-001 2.1 states new employees accrue 18 days per calendar year."
+    },
+    {
+      "id": "CS-002",
+      "claim": "Multi-factor authentication is mandatory for all company systems.",
+      "label": "SUPPORTED",
+      "supporting": [{ "doc_id": "SEC-001", "sections": ["1.2"] }],
+      "rationale": "SEC-001 1.2 makes MFA mandatory for all company systems."
+    },
+    {
+      "id": "CS-003",
+      "claim": "Application logs are retained for 90 days.",
+      "label": "SUPPORTED",
+      "supporting": [{ "doc_id": "DR-001", "sections": ["2.2"] }],
+      "rationale": "DR-001 2.2 states application and system logs are retained for 90 days."
+    },
+    {
+      "id": "CS-004",
+      "claim": "A vendor security review must be renewed every 12 months.",
+      "label": "SUPPORTED",
+      "supporting": [{ "doc_id": "VND-001", "sections": ["3.2"] }],
+      "rationale": "VND-001 3.2 requires renewal every 12 months."
+    },
+    {
+      "id": "CS-005",
+      "claim": "Employees may carry over an unlimited number of unused PTO days.",
+      "label": "CONTRADICTED",
+      "supporting": [{ "doc_id": "HR-001", "sections": ["2.3"] }],
+      "rationale": "HR-001 2.3 caps carryover at 5 days; the rest is forfeited. 'Unlimited' contradicts this."
+    },
+    {
+      "id": "CS-006",
+      "claim": "Passwords only need to be at least 8 characters.",
+      "label": "CONTRADICTED",
+      "supporting": [{ "doc_id": "SEC-001", "sections": ["1.1"] }],
+      "rationale": "SEC-001 1.1 requires at least 14 characters."
+    },
+    {
+      "id": "CS-007",
+      "claim": "Expense reports can be submitted up to 60 days after the expense.",
+      "label": "CONTRADICTED",
+      "supporting": [{ "doc_id": "EXP-001", "sections": ["6.1"] }],
+      "rationale": "EXP-001 6.1 sets the deadline at 30 days."
+    },
+    {
+      "id": "CS-008",
+      "claim": "Business class is automatically allowed on any flight over 6 hours.",
+      "label": "CONTRADICTED",
+      "supporting": [{ "doc_id": "EXP-001", "sections": ["3.2", "3.3"] }],
+      "rationale": "EXP-001 3.2 allows premium economy for 6+ hour flights; 3.3 requires VP approval for business class regardless of length, so it is not automatic."
+    },
+    {
+      "id": "CS-009",
+      "claim": "Employees receive a $1,000 annual home-office stipend.",
+      "label": "NOT_IN_DOCS",
+      "supporting": [],
+      "rationale": "No document mentions a home-office stipend. Plausible benefit, but absent - must not be reported as supported."
+    },
+    {
+      "id": "CS-010",
+      "claim": "Northwind Labs offers a 5% 401(k) matching contribution.",
+      "label": "NOT_IN_DOCS",
+      "supporting": [],
+      "rationale": "Retirement matching is not addressed anywhere in the corpus."
+    },
+    {
+      "id": "CS-011",
+      "claim": "Employees are entitled to 5 days of bereavement leave.",
+      "label": "NOT_IN_DOCS",
+      "supporting": [],
+      "rationale": "The handbook defines PTO, sick leave, and parental leave only; bereavement leave is not mentioned."
+    },
+    {
+      "id": "CS-012",
+      "claim": "Every vendor must provide a SOC 2 report before onboarding.",
+      "label": "NOT_IN_DOCS",
+      "supporting": [],
+      "rationale": "The vendor policy requires a security review and a DPA where applicable, but never mentions a SOC 2 report."
+    },
+    {
+      "id": "CS-013",
+      "claim": "New hires get 18 PTO days per year and may carry all of them into the next year.",
+      "label": "PARTIALLY_SUPPORTED",
+      "supporting": [{ "doc_id": "HR-001", "sections": ["2.1", "2.3"] }],
+      "rationale": "The 18-day figure is supported by 2.1, but 'carry all of them' contradicts the 5-day carryover cap in 2.3."
+    },
+    {
+      "id": "CS-014",
+      "claim": "Client meals are reimbursable up to $150 per attendee, including unlimited alcohol.",
+      "label": "PARTIALLY_SUPPORTED",
+      "supporting": [{ "doc_id": "EXP-001", "sections": ["4.2"] }],
+      "rationale": "The $150 per-attendee cap is supported by 4.2, but alcohol is capped at $50 per attendee, so 'unlimited alcohol' is false."
+    },
+    {
+      "id": "CS-015",
+      "claim": "Restricted data must not be stored on personal devices, but it may be pasted into approved AI tools.",
+      "label": "PARTIALLY_SUPPORTED",
+      "supporting": [{ "doc_id": "SEC-001", "sections": ["3.2", "4.2"] }],
+      "rationale": "The personal-device prohibition is supported by 3.2, but 4.2 forbids pasting Confidential or Restricted data into third-party AI tools, contradicting the second clause."
+    },
+    {
+      "id": "CS-016",
+      "claim": "A $12,000/year vendor handling Confidential data needs both a security review and VP plus Legal approval.",
+      "label": "PARTIALLY_SUPPORTED",
+      "supporting": [{ "doc_id": "VND-001", "sections": ["2.2", "2.3", "3.1"] }],
+      "rationale": "A security review is required (2.2 by value and 3.1 by data type), but VP and Legal approval is only required at $50,000+/year (2.3), so it is not required at $12,000."
+    }
+  ]
+}
