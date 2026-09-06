@@ -39,7 +39,9 @@ implementation, verification and delivery of each change without reading a chat.
   integration make that appropriate; link every actual issue and close only completed
   scope, leaving deferred work open.
 - Parallelize only independently owned issue-sized work, with an explicit file map
-  and at most two workers plus a coordinator. Shared contracts, Git operations and
+  with a default capacity of two subagents plus the current conversation's coordinator.
+  Increase that capacity only after explicit user agreement to the proposed expansion.
+  Shared contracts, Git operations and
   final integration belong to the coordinator. Reuse passing evidence; do not run
   duplicate full suites or mutate the same database concurrently.
 - Fetch before work, before publishing and before merging: a user, another agent,
@@ -96,6 +98,17 @@ Describe the observed problem, concrete trigger and desired result.
 - [ ] State an observable result and its relevant verification command or evidence.
 ```
 
+Keep issues compact by default: a short problem/outcome paragraph, roughly 3–6 scope
+bullets and 3–6 observable acceptance checks, usually 150–300 English words. These are
+editing targets, not limits that justify omitting essential requirements. Add a deeper
+section only when a concrete ambiguity or risk needs it. Link exact evidence instead
+of copying logs or repeating whole verification summaries across related issues.
+Read the issue summary/checklist first and expand only the evidence needed now.
+Use one primary issue and direct dependencies/follow-ups only when independently
+verifiable work requires them; avoid per-file issues, redundant parent trees and
+repeated cross-links. Keep brief work state only on assigned work. Batch related
+updates and report only changed scope, blockers or verification at meaningful points.
+
 The three headings are a baseline, not a limit. For complex work, add focused
 sections such as `Diagnosis`, `Behavior and state transitions`, `API contracts`,
 `Recovery procedure`, `Dependencies` or `Verification evidence` when they clarify
@@ -105,6 +118,48 @@ depth the issue needs; avoid filler and do not hide actionable acceptance checks
 Mark a checkbox complete only when its stated check has passed. Keep blocked or unrun
 checks open with a concise reason. Extend an existing related issue instead of copying
 its checklist into duplicate issues. Preserve useful prior evidence while updating scope.
+
+## Conversational intake and assigned execution
+
+GitHub issues carry task state across conversations. The current conversation assigns
+work; intake alone does not start implementation or create a background service.
+
+- Read only related issues/PRs and directly relevant code. Classify each request as
+  duplicate (reuse, no repetitive comment), additive (extend the existing scope) or
+  new (create one issue). A verified remaining delta after a merge can use one linked
+  follow-up. Report the issue number and concise disposition.
+- Preserve meaningful later observations in a dated comment with the new evidence and
+  acceptance additions; reconcile the current body and notify the assigned owner.
+  Batch related observations from one intake round. Do not repeat unchanged scope or
+  verification logs in both the body and comments. Owners read relevant comments,
+  acknowledge changes and rerun affected checks before delivery.
+- Attach relevant supplied screenshots with a symptom caption. Prefer an existing
+  durable attachment; otherwise, when publication is authorized, preserve the original
+  in `docs/issue-evidence/<issue>/` through the normal PR and link its pinned commit.
+  Check privacy; label historical evidence honestly. Do not recapture the UI, change
+  tutorial images, expose local-only paths or fabricate unavailable evidence.
+- Keep unassigned issues as backlog. For assigned work, add only useful `Work state`:
+  owner/task, branch/base, exact file ownership, last acknowledged scope update,
+  verification/blocker and next action. A new conversation reads this before resuming;
+  verify current ownership instead of launching a duplicate worker.
+- Default capacity: two subagents with the coordinator's same model/reasoning profile;
+  use inherited settings when available and fewer workers for small/coupled work.
+  Verify supported identifiers; do not silently substitute or claim an unverified model.
+- Increase capacity only after an observable independent backlog or sustained delay
+  harms delivery/intake. Explain the bottleneck, proposed total count, issue assignments
+  and resource impact; obtain explicit user agreement and respect runtime limits.
+  Shared-file contention or unresolved contracts are not reasons to add workers.
+- Approved expansion is temporary: assign within that envelope without repeated per-worker
+  approval, then stop excess assignments and safely drain back to two when it clears.
+  Keep ownership disjoint; the coordinator owns shared contracts/files and Git writes.
+- Notify an active owner of accepted issue changes and record acknowledgement or pending
+  handoff honestly. Pause only the unit affected by overlap/material scope changes.
+  Reconcile substantive body/comment changes at resumption, before verification and
+  before PR/merge; timestamps from your own status edits are not scope changes.
+- Assigned work continues through the authorized verification/PR/merge/branch-retirement
+  sequence. Close only fulfilled scopes; group issues only when one coherent diff needs
+  them. Fetch before integration, preserve active workers' checkouts and dirty work,
+  and sync the correct integration checkout. No idle polling or unassigned backlog work.
 
 ## Dependabot management across this repository
 
