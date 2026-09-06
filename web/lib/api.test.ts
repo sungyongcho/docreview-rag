@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getReadiness, streamReview } from "./api";
+import { ApiError, cancelOperatorJob, getCorpusSnapshot, getOperatorJobs, getReadiness, REQUEST_TIMEOUT_MS, streamReview } from "./api";
 import { DEFAULT_SESSION_PROFILE } from "./types";
 
 function streamResponse(parts: string[]) {
@@ -129,4 +129,48 @@ it("sends no history when the policy is zero", async () => {
     await streamReview("Hi", { ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, history_turns: 0 } }, null, [{ role: "user", text: "Prior filing" }], () => {});
     expect(JSON.parse(fetch.mock.calls[0][1].body).conversation_history).toEqual([]);
   } finally { vi.unstubAllGlobals(); }
+});
+
+describe("request deadlines", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it("times out idle GET reads with a request_timeout ApiError", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    })));
+    const outcome = getCorpusSnapshot().then(() => "resolved", (error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 408, code: "request_timeout" });
+  });
+
+  it("does not time out mutations", async () => {
+    vi.useFakeTimers();
+    let release!: (response: Response) => void;
+    let settled = false;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { release = resolve; })));
+    const pending = cancelOperatorJob("job-1").then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS * 4);
+    expect(settled).toBe(false);
+    release(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
+    await pending;
+    expect(settled).toBe(true);
+  });
+
+  it("keeps caller aborts as AbortError", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    })));
+    const pending = getOperatorJobs(controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("reports a non-JSON body as invalid_response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>502 Bad Gateway</html>", { status: 502, headers: { "content-type": "text/html" } })));
+    await expect(getCorpusSnapshot()).rejects.toMatchObject({ status: 502, code: "invalid_response" });
+  });
 });

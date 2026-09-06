@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
 import { I18nProvider } from "@/lib/i18n";
+import type { OperatorJob } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
 import { MeasureWorkspace, type MeasureTab } from "./measure-workspace";
 
@@ -345,4 +346,32 @@ it("opens diagnosis from an unready evaluation without submitting work", async (
   expect(onOpenPreparation).toHaveBeenCalledWith("setup");
   expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
   cleanup();
+});
+
+describe("evaluation run refetch keyed on evaluation jobs", () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  it("does not refetch evaluation runs when only a corpus job reports progress", async () => {
+    const fetchMock = stubFetch((url) => {
+      if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
+      if (url.endsWith("/admin/evaluations/runs")) return { jobs: [] };
+      return {};
+    });
+    const corpusJob: OperatorJob = { job_id: "corpus-progress", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 1, total: 9, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-01T12:00:00Z", started_at: "2026-09-01T12:00:01Z", finished_at: null, updated_at: "2026-09-01T12:00:02Z" };
+    const board = (rows: OperatorJob[]) => ({ jobs: rows, active_count: rows.length, queued_count: 0 });
+    const view = (rows: OperatorJob[]) => (
+      <MeasureWorkspace live ready onOpenPreparation={vi.fn()} profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onApplyProfile={vi.fn()} onApplySnapshot={vi.fn()} jobBoard={board(rows)} onRefreshJobs={vi.fn()} tab="runs" onTabChange={vi.fn()} />
+    );
+    const { rerender } = render(view([corpusJob]));
+    const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/evaluations/runs")).length;
+    await waitFor(() => expect(runsCalls()).toBeGreaterThan(0));
+    await act(async () => undefined);
+    const before = runsCalls();
+    rerender(view([{ ...corpusJob, current: 2, updated_at: "2026-09-01T12:00:03Z" }]));
+    rerender(view([{ ...corpusJob, current: 3, updated_at: "2026-09-01T12:00:04Z" }]));
+    await act(async () => undefined);
+    expect(runsCalls()).toBe(before);
+    rerender(view([corpusJob, { ...corpusJob, job_id: "eval-1", domain: "evaluation", kind: "quick" }]));
+    await waitFor(() => expect(runsCalls()).toBe(before + 1));
+  });
 });

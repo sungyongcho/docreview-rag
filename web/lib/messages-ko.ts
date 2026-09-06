@@ -2025,5 +2025,12 @@ export const KO: Record<string, string> = {
   "Local Operations is not responding. Retrying status checks.": "로컬 작업 API가 응답하지 않습니다. 상태 확인을 다시 시도합니다.",
   "Cards are grouped by category (Inspect, Verify, Service) with read-only commands first; the filter choice is remembered in this browser.": "카드는 점검·검증·서비스 유형별로 묶이고 읽기 전용 명령이 먼저 표시됩니다. 필터 선택은 이 브라우저에 저장됩니다.",
   "Skipped: relevance threshold not met": "기준 미달로 건너뜀",
-  "The request was interrupted. Send the question again.": "요청이 중단되었습니다. 질문을 다시 보내세요."
+  "The request was interrupted. Send the question again.": "요청이 중단되었습니다. 질문을 다시 보내세요.",
+  "Job activity may be out of date. Retrying…": "작업 현황이 최신이 아닐 수 있습니다. 다시 확인하는 중…",
+  "Job activity could not be loaded. Retrying…": "작업 현황을 불러오지 못했습니다. 다시 확인하는 중…",
+  "Job activity could not be loaded.": "작업 현황을 불러오지 못했습니다.",
+  "Job retry failed.": "작업 재시도에 실패했습니다.",
+  "Job cancellation failed.": "작업 취소에 실패했습니다.",
+  "Corpus status could not be refreshed: {message}": "코퍼스 상태를 갱신하지 못했습니다: {message}",
+  "Document filters could not be loaded: {message}": "문서 필터를 불러오지 못했습니다: {message}",
 };

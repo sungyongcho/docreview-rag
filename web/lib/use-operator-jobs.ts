@@ -4,10 +4,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useNotifications } from "@/components/notifications";
 import { cancelOperatorJob, getOperatorJobs, retryOperatorJob } from "./api";
+import { useI18n } from "./i18n";
 import { desktopJobNotificationsEnabled } from "./storage";
 import type { OperatorJob, OperatorJobBoard } from "./types";
 
 const EMPTY_BOARD: OperatorJobBoard = { jobs: [], active_count: 0, queued_count: 0 };
+const POLL_WORKING_MS = 1_000;
+const POLL_IDLE_MS = 5_000;
+const POLL_HIDDEN_MS = 15_000;
+const POLL_MAX_BACKOFF_MS = 10_000;
+
+/**
+ * Delay before the next board poll: 1 s while work runs, 5 s when idle, 15 s in a hidden tab.
+ * Consecutive failed polls double the wait 2 → 4 → 8 → 10 s, never below those floors, so a
+ * struggling API is not hammered every second while the last board stays on screen.
+ */
+export function pollDelay(failures: number, working: boolean, visible: boolean): number {
+  const base = visible ? (working ? POLL_WORKING_MS : POLL_IDLE_MS) : POLL_HIDDEN_MS;
+  const backoff = failures ? Math.min(POLL_WORKING_MS * 2 ** failures, POLL_MAX_BACKOFF_MS) : 0;
+  return Math.max(base, backoff);
+}
 
 function jobLabel(job: OperatorJob): string {
   return job.kind.replaceAll("_", " ").replace(/\b\w/g, (value) => value.toUpperCase());
@@ -27,8 +43,12 @@ export function useOperatorJobs(
   onTerminal?: () => void | Promise<void>,
   active = true,
 ) {
+  const { t } = useI18n();
   const [board, setBoard] = useState<OperatorJobBoard>(EMPTY_BOARD);
   const [loading, setLoading] = useState(enabled && active);
+  /** True while the newest poll failed after an earlier board loaded; the retained board may be out of date. */
+  const [stale, setStale] = useState(false);
+  const failures = useRef(0);
   const previous = useRef<Map<string, string>>(new Map());
   const initialized = useRef(false);
   const activity = useRef({ enabled, active });
@@ -64,22 +84,32 @@ export function useOperatorJobs(
     setLoading(false);
   }, [notify, onTerminal]);
 
-  const refresh = useCallback(async () => {
+  /** Load the board once; `manual` marks a user-initiated refresh, the only kind that reports its failure. */
+  const refresh = useCallback(async (manual = false) => {
     if (!mounted.current || !activity.current.enabled || !activity.current.active || request.current) return;
     const current = new AbortController();
     request.current = current;
     try {
       const next = await getOperatorJobs(current.signal);
       if (request.current !== current || !mounted.current || !activity.current.active || !activity.current.enabled) return;
+      failures.current = 0;
+      setStale(false);
+      // An unchanged board keeps its identity so consumers keyed on it do not refetch every tick.
+      if (initialized.current && JSON.stringify(next) === JSON.stringify(latestBoard.current)) {
+        setLoading(false);
+        return;
+      }
       apply(next);
     } catch (reason) {
       if (request.current !== current || current.signal.aborted || !mounted.current || !activity.current.active || !activity.current.enabled) return;
+      failures.current += 1;
+      setStale(true);
       setLoading(false);
-      notify(reason instanceof Error ? reason.message : "Job activity could not be loaded.", "error", "jobs-refresh");
+      if (manual) notify(reason instanceof Error ? reason.message : t("Job activity could not be loaded."), "error", "jobs-refresh");
     } finally {
       if (request.current === current) request.current = null;
     }
-  }, [apply, notify]);
+  }, [apply, notify, t]);
 
   useEffect(() => {
     mounted.current = true;
@@ -105,8 +135,7 @@ export function useOperatorJobs(
       await refresh();
       if (stopped) return;
       const working = latestBoard.current.active_count > 0 || latestBoard.current.queued_count > 0;
-      const delay = document.visibilityState === "visible" ? working ? 1_000 : 5_000 : 15_000;
-      timer = window.setTimeout(poll, delay);
+      timer = window.setTimeout(poll, pollDelay(failures.current, working, document.visibilityState === "visible"));
     };
     void poll();
     return () => {
@@ -124,9 +153,9 @@ export function useOperatorJobs(
       await refresh();
     } catch (reason) {
       if (!mounted.current || !activity.current.active || !activity.current.enabled) return;
-      notify(reason instanceof Error ? reason.message : "Job retry failed.", "error", `job-retry:${jobId}`);
+      notify(reason instanceof Error ? reason.message : t("Job retry failed."), "error", `job-retry:${jobId}`);
     }
-  }, [notify, refresh]);
+  }, [notify, refresh, t]);
 
   const cancel = useCallback(async (jobId: string) => {
     if (!mounted.current || !activity.current.enabled || !activity.current.active) return;
@@ -135,9 +164,9 @@ export function useOperatorJobs(
       await refresh();
     } catch (reason) {
       if (!mounted.current || !activity.current.active || !activity.current.enabled) return;
-      notify(reason instanceof Error ? reason.message : "Job cancellation failed.", "error", `job-cancel:${jobId}`);
+      notify(reason instanceof Error ? reason.message : t("Job cancellation failed."), "error", `job-cancel:${jobId}`);
     }
-  }, [notify, refresh]);
+  }, [notify, refresh, t]);
 
-  return { board, loading, refresh, retry, cancel };
+  return { board, loading, stale, refresh, retry, cancel };
 }

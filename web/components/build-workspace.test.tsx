@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -522,4 +522,65 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   fireEvent.click(screen.getByRole("button", { name: "Sync draft with downloaded sources" }));
   expect(screen.getByRole("button", { name: /^Remove AMD/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Sync draft with downloaded sources" })).not.toBeInTheDocument();
+});
+
+describe("refresh hygiene", () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  const failure = (code: string, message: string) => new Response(JSON.stringify({ error: { code, message } }), { status: 503, headers: { "content-type": "application/json" } });
+
+  function stubAdmin(override: (url: string) => Response | undefined) {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const custom = override(url);
+      if (custom) return custom;
+      if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
+      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+      if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
+      return jsonResponse([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  const corpusJob: OperatorJob = { job_id: "corpus-progress", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 1, total: 9, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-01T12:00:00Z", started_at: "2026-09-01T12:00:01Z", finished_at: null, updated_at: "2026-09-01T12:00:02Z" };
+
+  it("keeps the last corpus state, shows an inline notice and still fetches snapshots when the snapshot read fails", async () => {
+    const fetchMock = stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
+    render(<NotificationProvider><Harness live /></NotificationProvider>);
+    await screen.findByText("Corpus status could not be refreshed: Database is busy");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/admin/snapshots"))).toBe(true));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a facet failure inline with the server message", async () => {
+    stubAdmin((url) => url.endsWith("/documents/facets") ? failure("schema_not_ready", "Schema is not ready") : undefined);
+    render(<Harness live />);
+    await screen.findByText("Document filters could not be loaded: Schema is not ready");
+  });
+
+  it("toasts only for a manual refresh", async () => {
+    stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
+    render(<NotificationProvider><Harness live /></NotificationProvider>);
+    await screen.findByText("Corpus status could not be refreshed: Database is busy");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Database is busy");
+  });
+
+  it("does not refetch evaluation runs when only a corpus job reports progress", async () => {
+    const fetchMock = stubAdmin(() => undefined);
+    const board = (rows: OperatorJob[]) => ({ jobs: rows, active_count: rows.filter((row) => row.status === "running").length, queued_count: 0 });
+    const { rerender } = render(<Harness live jobBoard={board([corpusJob])} />);
+    const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/evaluations/runs")).length;
+    await waitFor(() => expect(runsCalls()).toBeGreaterThan(0));
+    await act(async () => undefined);
+    const before = runsCalls();
+    rerender(<Harness live jobBoard={board([{ ...corpusJob, current: 2, updated_at: "2026-09-01T12:00:03Z" }])} />);
+    rerender(<Harness live jobBoard={board([{ ...corpusJob, current: 3, updated_at: "2026-09-01T12:00:04Z" }])} />);
+    await act(async () => undefined);
+    expect(runsCalls()).toBe(before);
+    rerender(<Harness live jobBoard={board([corpusJob, { ...corpusJob, job_id: "eval-1", domain: "evaluation", kind: "quick" }])} />);
+    await waitFor(() => expect(runsCalls()).toBe(before + 1));
+  });
 });
