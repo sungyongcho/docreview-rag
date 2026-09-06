@@ -6,13 +6,14 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 import time
 
-from sqlalchemy import text
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import CheckConstraint, MetaData, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.config import Settings, get_settings
-from app.db.models import CONTENT_TSV_SQL, LANGUAGE_FORMAT_CHECK_SQL, LEXICAL_TEXT_CHECK_SQL
+from app.db.models import Base
 from app.evals.measurement import Clock, IndexingBudgetMeasurement, assess_indexing_budget
-from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing
+from app.ingestion.chunk import Chunk, chunk_filing
 from app.ingestion.parser import ParsedFiling
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
 from app.ingestion.seed import (
@@ -20,6 +21,7 @@ from app.ingestion.seed import (
     SeedBatch,
     build_seed_batch,
     build_seed_batch_from_filings,
+    embedding_chunk_config,
     load_manifest,
     parse_seed_filings,
     persist_seed_batch,
@@ -35,6 +37,7 @@ from app.retrieval.embeddings import (
 def load_chunking_filings(
     *,
     settings: Settings | None = None,
+    selection_id: str,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
     expected_documents: int | None = None,
     on_progress: OperationProgressCallback | None = None,
@@ -45,6 +48,8 @@ def load_chunking_filings(
     ----------
     settings : Settings | None, optional
         Explicit corpus settings, or the process settings when omitted.
+    selection_id : str
+        Exact common-manifest processing selection to evaluate.
     manifest_name : str, optional
         Manifest file under the configured corpus directory. One manifest describes one
         corpus, so a second registry is selected here rather than merged into the first.
@@ -72,20 +77,21 @@ def load_chunking_filings(
     across chunk targets and builds a fresh immutable ``SeedBatch`` for each target.
     """
     configured = settings or get_settings()
-    entries = load_manifest(configured.corpus_dir / manifest_name)
-    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
+    entries = load_manifest(configured.corpus_dir / manifest_name, selection_id=selection_id)
     return parse_seed_filings(
         entries,
         expected_documents=expected_documents,
-        **progress_options,
+        on_progress=on_progress,
     )
 
 
 def build_chunking_batch(
-    target_text_chars: int,
+    target_tokens: int,
     *,
+    provider: EmbeddingProvider,
     parsed_filings: Sequence[ParsedFiling] | None = None,
     settings: Settings | None = None,
+    selection_id: str,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
     expected_documents: int | None = None,
     on_progress: OperationProgressCallback | None = None,
@@ -94,13 +100,17 @@ def build_chunking_batch(
 
     Parameters
     ----------
-    target_text_chars : int
-        Soft text-length target for the structure-aware chunker.
+    target_tokens : int
+        Soft token-count target for the structure-aware chunker.
+    provider : EmbeddingProvider
+        Exact model budget and token counter used to plan the experiment chunks.
     parsed_filings : Sequence[ParsedFiling] | None, optional
         Parsed corpus snapshot to reuse. When omitted, this call loads and parses
         the configured manifest itself.
     settings : Settings | None, optional
         Explicit corpus settings used only by the independent path.
+    selection_id : str
+        Exact common-manifest processing selection to evaluate.
     manifest_name : str, optional
         Manifest file the independent path reads under the configured corpus directory.
     expected_documents : int | None, optional
@@ -126,138 +136,48 @@ def build_chunking_batch(
     Supplying ``parsed_filings`` bypasses settings and manifest parsing. The shared
     parser models are treated as read-only, and a new batch is returned for each call.
     """
-    chunk_config = ChunkConfig(target_text_chars=target_text_chars)
+    chunk_config = embedding_chunk_config(provider, target_tokens=target_tokens)
 
     def chunker(filing: ParsedFiling) -> list[Chunk]:
         """Chunk one parsed filing with the selected target."""
         return chunk_filing(filing, chunk_config)
 
-    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
     if parsed_filings is not None:
         return build_seed_batch_from_filings(
             parsed_filings,
             chunker=chunker,
-            **progress_options,
+            on_progress=on_progress,
         )
 
     configured = settings or get_settings()
-    entries = load_manifest(configured.corpus_dir / manifest_name)
+    entries = load_manifest(configured.corpus_dir / manifest_name, selection_id=selection_id)
     return build_seed_batch(
         entries,
         expected_documents=expected_documents,
         chunker=chunker,
-        **progress_options,
+        on_progress=on_progress,
     )
 
 
-# The temporary schema mirrors app/db/models.py, including every CHECK constraint, so a
-# record rejected by the populated corpus is rejected here too. It is written out rather
-# than derived from Base.metadata because the embedding width follows the experiment's
-# provider, not the application's configured dimension.
-_TEMPORARY_CORPUS_DDL: tuple[str, ...] = (
-    """
-    CREATE TEMP TABLE documents (
-        doc_id varchar(32) PRIMARY KEY,
-        registry varchar(16) NOT NULL,
-        language varchar(8) NOT NULL,
-        issuer varchar(32) NOT NULL,
-        issuer_id varchar(64) NOT NULL,
-        fiscal_year integer NOT NULL,
-        form varchar(32) NOT NULL,
-        filing_date varchar(10) NOT NULL,
-        report_period varchar(10) NOT NULL,
-        filing_id varchar(64) NOT NULL,
-        source_url text NOT NULL,
-        parse_status varchar(32) NOT NULL,
-        item_index jsonb NOT NULL,
-        source_length bigint NOT NULL,
-        source_sha256 varchar(64) NOT NULL,
-        CONSTRAINT ck_documents_parse_status
-            CHECK (parse_status IN ('parsed', 'needs_profile_update')),
-        CONSTRAINT ck_documents_source_length_positive CHECK (source_length > 0),
-        CONSTRAINT ck_documents_language_format CHECK ({language_format_check_sql}),
-        CONSTRAINT ck_documents_source_sha256_format
-            CHECK (source_sha256 ~ '^[0-9a-f]{{64}}$')
-    ) ON COMMIT PRESERVE ROWS
-    """,
-    """
-    CREATE TEMP TABLE chunks (
-        id bigserial PRIMARY KEY,
-        doc_id varchar(32) NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
-        language varchar(8) NOT NULL,
-        item varchar(8),
-        kind varchar(16) NOT NULL,
-        ordinal integer NOT NULL,
-        body text NOT NULL,
-        context_header text NOT NULL,
-        index_text text NOT NULL,
-        start_char bigint NOT NULL,
-        end_char bigint NOT NULL,
-        source_sha256 varchar(64) NOT NULL,
-        citation text NOT NULL,
-        lexical_text text,
-        embedding vector({dimensions}),
-        embedding_provider varchar(32),
-        embedding_model varchar(128),
-        embedding_dimensions integer,
-        content_tsv tsvector GENERATED ALWAYS AS ({content_tsv_sql}) STORED,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        CONSTRAINT uq_doc_ordinal UNIQUE (doc_id, ordinal),
-        CONSTRAINT ck_chunks_ordinal_nonnegative CHECK (ordinal >= 0),
-        CONSTRAINT ck_chunks_kind CHECK (kind IN ('text', 'table')),
-        CONSTRAINT ck_chunks_language_format CHECK ({language_format_check_sql}),
-        CONSTRAINT ck_chunks_lexical_text_language CHECK ({lexical_text_check_sql}),
-        CONSTRAINT ck_chunks_start_nonnegative CHECK (start_char >= 0),
-        CONSTRAINT ck_chunks_span_order CHECK (end_char > start_char),
-        CONSTRAINT ck_chunks_source_sha256_format
-            CHECK (source_sha256 ~ '^[0-9a-f]{{64}}$'),
-        CONSTRAINT ck_chunks_embedding_identity_complete CHECK (
-            (embedding IS NULL AND embedding_provider IS NULL AND embedding_model IS NULL
-                AND embedding_dimensions IS NULL)
-            OR (embedding IS NOT NULL AND btrim(embedding_provider) <> ''
-                AND btrim(embedding_model) <> '' AND embedding_dimensions > 0)
-        )
-    ) ON COMMIT PRESERVE ROWS
-    """,
-    "CREATE INDEX ON chunks USING gin (content_tsv)",
-    "CREATE INDEX ON chunks (doc_id)",
-    """
-    CREATE TEMP TABLE chunk_terms (
-        chunk_id bigint NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
-        lexeme text NOT NULL,
-        tf integer NOT NULL,
-        PRIMARY KEY (chunk_id, lexeme),
-        CONSTRAINT ck_chunk_terms_tf_positive CHECK (tf > 0)
-    ) ON COMMIT PRESERVE ROWS
-    """,
-    """
-    CREATE TEMP TABLE chunk_lengths (
-        chunk_id bigint PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-        dl integer NOT NULL,
-        CONSTRAINT ck_chunk_lengths_positive CHECK (dl > 0)
-    ) ON COMMIT PRESERVE ROWS
-    """,
-    """
-    CREATE TEMP TABLE lexeme_stats (
-        language varchar(8) NOT NULL,
-        lexeme text NOT NULL,
-        df integer NOT NULL,
-        PRIMARY KEY (language, lexeme),
-        CONSTRAINT ck_lexeme_stats_df_positive CHECK (df > 0)
-    ) ON COMMIT PRESERVE ROWS
-    """,
-    """
-    CREATE TEMP TABLE bm25_corpus_stats (
-        language varchar(8) PRIMARY KEY,
-        n bigint NOT NULL,
-        avgdl double precision NOT NULL,
-        CONSTRAINT ck_bm25_corpus_stats_language_format CHECK ({language_format_check_sql}),
-        CONSTRAINT ck_bm25_corpus_stats_n_positive CHECK (n > 0),
-        CONSTRAINT ck_bm25_corpus_stats_avgdl_positive CHECK (avgdl > 0)
-    ) ON COMMIT PRESERVE ROWS
-    """,
-    "CREATE INDEX ON chunk_terms (lexeme)",
-)
+def _temporary_metadata(dimensions: int) -> MetaData:
+    """Clone the actual normalized schema with experiment-specific vector width."""
+    if type(dimensions) is not int or dimensions <= 0:
+        raise ValueError("embedding dimensions must be a positive integer")
+    metadata = MetaData()
+    for table in Base.metadata.sorted_tables:
+        copied = table.to_metadata(metadata)
+        copied._prefixes = (*copied._prefixes, "TEMPORARY")
+        copied.dialect_options["postgresql"]["on_commit"] = "PRESERVE ROWS"
+        for constraint in copied.constraints:
+            if (
+                isinstance(constraint, CheckConstraint)
+                and constraint.name == "ck_chunk_embeddings_dimensions"
+            ):
+                constraint.sqltext = text(f"dimensions = {dimensions}")
+        for column in copied.columns:
+            if isinstance(column.type, Vector):
+                column.type = Vector(dimensions)
+    return metadata
 
 
 async def _create_temporary_corpus_tables(connection: AsyncConnection, dimensions: int) -> None:
@@ -289,17 +209,8 @@ async def _create_temporary_corpus_tables(connection: AsyncConnection, dimension
     )
     if extension is None:
         raise RuntimeError("the configured PostgreSQL database does not have pgvector")
-    for statement in _TEMPORARY_CORPUS_DDL:
-        await connection.execute(
-            text(
-                statement.format(
-                    dimensions=dimensions,
-                    content_tsv_sql=CONTENT_TSV_SQL,
-                    language_format_check_sql=LANGUAGE_FORMAT_CHECK_SQL,
-                    lexical_text_check_sql=LEXICAL_TEXT_CHECK_SQL,
-                )
-            )
-        )
+    metadata = _temporary_metadata(dimensions)
+    await connection.run_sync(lambda sync: metadata.create_all(sync, checkfirst=False))
     await connection.commit()
 
 
@@ -309,7 +220,7 @@ async def temporary_corpus_session(
     batch: SeedBatch,
     provider: EmbeddingProvider,
     *,
-    target_text_chars: int,
+    target_tokens: int,
     embedding_provider: str,
     shared_preparation_seconds: float = 0.0,
     clock: Clock = time.perf_counter_ns,
@@ -326,7 +237,7 @@ async def temporary_corpus_session(
         Complete source-stable records for one chunking target.
     provider : EmbeddingProvider
         Provider used to populate every missing temporary embedding.
-    target_text_chars : int
+    target_tokens : int
         Chunk-size target attached to indexing evidence.
     embedding_provider : str
         Provider identity recorded with the measurement.
@@ -407,7 +318,7 @@ async def temporary_corpus_session(
         await session.commit()
         target_phase_seconds = (clock() - started) / 1_000_000_000
         measurement = assess_indexing_budget(
-            target_text_chars=target_text_chars,
+            target_tokens=target_tokens,
             document_count=len(batch.documents),
             chunk_count=len(batch.chunks),
             embedding_provider=embedding_provider,
@@ -418,4 +329,5 @@ async def temporary_corpus_session(
     finally:
         if session is not None:
             await session.close()
+        await connection.invalidate()
         await connection.close()

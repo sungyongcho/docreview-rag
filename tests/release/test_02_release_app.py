@@ -1,5 +1,7 @@
 """Canned-default release application and runtime composition tests."""
 
+from typing import cast
+
 from fastapi.testclient import TestClient
 import pytest
 
@@ -9,12 +11,17 @@ from app.llm.schemas import RawProviderResponse
 from app.release.app import build_runtime_services, create_release_app
 from app.release.config import ReleaseSettings
 from app.release.middleware import ReleaseGuardMiddleware
+from app.retrieval.embeddings import (
+    DeterministicEmbeddingProvider,
+    EmbeddingClient,
+    OpenAIEmbeddingProvider,
+)
 
 
 def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> None:
     """Serve the offline mode with its limits published and no secret in the response."""
     secret = "sk-must-not-render"
-    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
     (tmp_path / "index.html").write_text(
         "<title>DocReview</title><p>Evidence-first SEC and DART filing review</p>",
         encoding="utf-8",
@@ -83,7 +90,7 @@ def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monke
     with TestClient(
         create_release_app(
             settings,
-            services=RuntimeApiServices(),
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
             readiness_probe=ready_probe,
         )
     ) as client:
@@ -96,7 +103,7 @@ def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monke
     with TestClient(
         create_release_app(
             settings,
-            services=RuntimeApiServices(),
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
             readiness_probe=degraded_probe,
         )
     ) as client:
@@ -144,7 +151,11 @@ def test_public_readiness_withholds_private_counts_without_faking_catalog_totals
         host="127.0.0.1",
     )
     with TestClient(
-        create_release_app(settings, services=RuntimeApiServices(), readiness_probe=probe)
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+            readiness_probe=probe,
+        )
     ) as client:
         response = client.get("/ready", headers=headers)
     assert response.status_code == (200 if ready else 503)
@@ -184,7 +195,7 @@ def test_release_app_blocks_ingest_and_rate_limits_post_requests() -> None:
 def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypatch) -> None:
     """Give the key to the provider and the redaction list, and nowhere else."""
     secret = "sk-runtime-only"
-    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
     captured: dict[str, str] = {}
 
     def provider_factory(*, model_name: str, api_key: str):
@@ -229,7 +240,12 @@ def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:
         host="127.0.0.1",
         _env_file=None,
     )
-    with TestClient(create_release_app(live_settings, services=RuntimeApiServices())) as client:
+    with TestClient(
+        create_release_app(
+            live_settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        )
+    ) as client:
         live_paths = set(client.get("/openapi.json").json()["paths"])
 
     assert not any(path.startswith("/admin") for path in hidden_paths)
@@ -245,7 +261,9 @@ def test_live_operator_disables_only_public_request_limits() -> None:
         host="127.0.0.1",
         _env_file=None,
     )
-    application = create_release_app(settings, services=RuntimeApiServices())
+    application = create_release_app(
+        settings, services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+    )
     guard = next(
         middleware
         for middleware in application.user_middleware
@@ -288,8 +306,53 @@ def test_live_capabilities_enable_developer_controls() -> None:
         host="127.0.0.1",
         _env_file=None,
     )
-    with TestClient(create_release_app(settings, services=RuntimeApiServices())) as client:
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        )
+    ) as client:
         capabilities = client.get("/capabilities").json()
 
     assert capabilities["can_edit_prompt_policy"] is True
     assert capabilities["can_run_evaluation"] is True
+
+
+@pytest.mark.parametrize("environment", ["dev", "prod"])
+def test_release_uses_configured_embedding_identity_and_credential_slot(
+    monkeypatch, tmp_path, environment
+) -> None:
+    """Use the indexed provider identity and the release's explicit credential slot."""
+    import app.release.app as release_app
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-3-large")
+    monkeypatch.setenv("MODE", environment)
+    selected = OpenAIEmbeddingProvider(client=cast(EmbeddingClient, object()))
+    captured = {}
+
+    def embedding_factory(settings):
+        """Capture composition without submitting an embedding request."""
+        captured["provider"] = settings.embedding_provider
+        captured["model"] = settings.embedding_model
+        captured["key"] = settings.openai_api_key.get_secret_value()
+        return selected
+
+    monkeypatch.setattr(release_app, "get_embedding_provider", embedding_factory)
+    services = build_runtime_services(
+        ReleaseSettings(
+            mode="runtime",
+            MODE=environment,
+            OPENAI_API_KEY_LOCAL="sk-development-fixture",
+            OPENAI_API_KEY_PROD="sk-production-fixture",
+            _env_file=None,
+        )
+    )
+
+    assert services.embedding_provider is selected
+    assert captured == {
+        "provider": "openai",
+        "model": "text-embedding-3-large",
+        "key": "sk-development-fixture" if environment == "dev" else "sk-production-fixture",
+    }

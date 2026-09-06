@@ -9,13 +9,12 @@ const ACQUISITION: AcquisitionForm = { registry: "sec", identifiers: "NVDA AMD",
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("Pipeline terminal reference", () => {
-  it("expands SEC years into distinct commands and preserves all selected tickers", () => {
+  it("queues acquisition through the shared CLI with exact identifiers and years", () => {
     expect(pipelineReferenceCommand("filings", { ...ACQUISITION, years: "2023,2024 2023" }, "", null, "")).toBe(
-      "MODE=dev uv run python -m app.ingestion.edgar_api --ticker 'NVDA' 'AMD' --years '2023'\n" +
-      "MODE=dev uv run python -m app.ingestion.edgar_api --ticker 'NVDA' 'AMD' --years '2024'",
+      "rag-corpus acquire_edgar --identifier 'NVDA' --identifier 'AMD' --year 2023 --year 2024",
     );
     expect(pipelineReferenceCommand("filings", { registry: "dart", identifiers: "005930,000660", years: "2023 2024" }, "", null, "")).toBe(
-      "MODE=dev uv run python -m app.ingestion.dart_api --stock-codes '005930' '000660' --fiscal-year 2023 2024",
+      "rag-corpus acquire_dart --identifier '005930' --identifier '000660' --year 2023 --year 2024",
     );
   });
 
@@ -29,7 +28,7 @@ describe("Pipeline terminal reference", () => {
       expect(pipelineReferenceCommand("ask", ACQUISITION, "", provider, "revenue")).toBeNull();
     }
     expect(pipelineReferenceCommand("ask", ACQUISITION, "", "openai", "  ")).toBeNull();
-    for (const stage of ["lexical", "answer_model", "evaluate"] as const) {
+    for (const stage of ["answer_model", "evaluate"] as const) {
       expect(pipelineReferenceCommand(stage, ACQUISITION, "manifest.json", "openai", "revenue")).toBeNull();
     }
   });
@@ -41,23 +40,24 @@ describe("Pipeline terminal reference", () => {
       `MODE=dev uv run python -m app.cli retrieve --provider 'deterministic' --query ${quoted}`,
     );
     expect(pipelineReferenceCommand("embeddings", ACQUISITION, "", "sbert", query)).toBe(
-      `MODE=dev uv run python -m app.cli retrieve --provider 'sbert' --embed-missing --query ${quoted}`,
+      "rag-corpus backfill_embeddings",
     );
-    expect(pipelineReferenceCommand("index", ACQUISITION, "owner's manifest.json", null, "")).toBe(
-      "MODE=dev uv run python -m app.cli ingest --manifest 'data/corpus/owner'\\''s manifest.json'",
+    expect(pipelineReferenceCommand("index", ACQUISITION, "owner's manifest.json", null, "", "sec-evaluation")).toBe(
+      "rag-corpus ingest_manifest --manifest 'owner'\\''s manifest.json' --selection 'sec-evaluation'",
     );
   });
 
   it("only offers valid discovered manifests and clears a reference when its source disappears", () => {
     const props = { stage: "index" as const, acquisition: ACQUISITION, manifests: [
-      { name: "valid.json", registry: "sec", documents: 1, valid: true, sources_present: 1 },
-      { name: "invalid.json", registry: "sec", documents: 1, valid: false, sources_present: 0 },
+      { name: "valid.json", corpus_id: "sec", registries: ["sec" as const], documents: 1, valid: true, sources_present: 1, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 1}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 1}, (_, i) => `sec-source-${i}`), sources_present: 1 }] },
+      { name: "invalid.json", corpus_id: null, registries: [], documents: null, valid: false, sources_present: null, selections: [] },
     ] };
     const { rerender } = render(<PipelineReference {...props} />);
     fireEvent.click(screen.getByText("Implementation and terminal reference"));
     expect(screen.queryByRole("option", { name: "invalid.json" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();
     fireEvent.change(screen.getByLabelText("CLI manifest reference"), { target: { value: "valid.json" } });
+    fireEvent.change(screen.getByLabelText("Processing selection"), { target: { value: "sec-evaluation" } });
     expect(screen.getByRole("button", { name: "Copy code" })).toBeVisible();
     rerender(<PipelineReference {...props} manifests={[]} />);
     expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();

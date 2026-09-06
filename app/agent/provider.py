@@ -11,7 +11,7 @@ from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
 from app.llm.schemas import NonNegativeInt, StrictSchema, TokenPricing
-from app.openai_models import resolve_openai_model
+from app.openai_models import ReasoningEffort, resolve_openai_model
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
@@ -173,7 +173,7 @@ class OpenAIToolProvider(ToolCallingProvider):
         if base_url is not None and not base_url.strip():
             raise ValueError("base_url must not be blank")
         self.model_name = selection.model
-        self.reasoning_effort = selection.reasoning_effort
+        self.reasoning_effort: ReasoningEffort | None = selection.reasoning_effort
         self.pricing = TokenPricing(
             input_per_million_usd=selection.pricing.input_per_million_usd,
             output_per_million_usd=selection.pricing.output_per_million_usd,

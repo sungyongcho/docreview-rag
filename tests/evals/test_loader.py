@@ -22,13 +22,46 @@ def _temporary_contract(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
-            [
-                {
-                    "ticker": "TEST",
-                    "report_date": "2024-12-31",
-                    "file": str(source),
-                }
-            ]
+            {
+                "corpus": {"corpus_id": "test", "name": "Test"},
+                "documents": [
+                    {
+                        "document_id": "TEST-FY2024",
+                        "registry": "sec",
+                        "language": "en",
+                        "issuer": "TEST",
+                        "issuer_id": "0000000001",
+                        "filing_id": "0000000001-24-000001",
+                        "fiscal_year": 2024,
+                        "form": "10-K",
+                        "filing_date": "2025-01-01",
+                        "report_period": "2024-12-31",
+                        "source_url": "https://example.org/source",
+                        "sec": {
+                            "cik": "0000000001",
+                            "accession": "0000000001-24-000001",
+                            "primary_document": "source.html",
+                        },
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifact_id": "source",
+                        "document_id": "TEST-FY2024",
+                        "role": "primary",
+                        "path": "source.html",
+                        "sha256": digest,
+                        "byte_length": len(raw.encode()),
+                        "encoding": "utf-8",
+                        "acquisition": {
+                            "acquired_at": "2025-01-01T00:00:00Z",
+                            "url": "https://example.org/source",
+                            "media_type": "text/html",
+                        },
+                    }
+                ],
+                "selections": [{"selection_id": "sec-evaluation", "artifact_ids": ["source"]}],
+            }
         ),
         encoding="utf-8",
     )
@@ -143,11 +176,51 @@ def test_loader_rejects_answer_identity_reused_by_another_case(tmp_path):
 
 
 def test_manifest_entries_without_a_usable_document_identity_are_rejected(tmp_path):
-    """Reject a manifest entry the registry adapter cannot turn into a document id."""
+    """Reject malformed catalogs before resolving golden document identities."""
     manifest, case = _temporary_contract(tmp_path)
     manifest.write_text(json.dumps([{"report_date": "2024-12-31", "file": "x"}]), encoding="utf-8")
     golden = tmp_path / "retrieval.json"
     _write_cases(golden, [case])
 
-    with pytest.raises(GoldenDataError, match="no usable document identity"):
+    with pytest.raises(GoldenDataError, match="invalid corpus manifest"):
         load_golden_cases(golden, manifest_path=manifest)
+
+
+def test_loader_rejects_artifact_bytes_changed_after_acquisition(tmp_path):
+    """Verify acquired bytes even when the golden still names the original digest."""
+    manifest, case = _temporary_contract(tmp_path)
+    golden = tmp_path / "retrieval.json"
+    _write_cases(golden, [case])
+    (tmp_path / "source.html").write_text("<p>Changed.</p>")
+    with pytest.raises(GoldenDataError, match="artifact bytes disagree"):
+        load_golden_cases(golden, manifest_path=manifest)
+
+
+def test_loader_requires_a_known_processing_selection(tmp_path):
+    """Never expand an unknown selection into the whole catalog."""
+    manifest, case = _temporary_contract(tmp_path)
+    golden = tmp_path / "retrieval.json"
+    _write_cases(golden, [case])
+    with pytest.raises(GoldenDataError, match="unknown processing selection"):
+        load_golden_cases(golden, manifest_path=manifest, selection_id="missing")
+
+
+def test_loader_distinguishes_acquired_bytes_from_decoded_source_digest(tmp_path):
+    """Bind Korean offsets to decoded text while verifying original encoded bytes."""
+    manifest, case = _temporary_contract(tmp_path)
+    raw = "<p>정답입니다.</p>"
+    acquired = raw.encode("cp949")
+    (tmp_path / "source.html").write_bytes(acquired)
+    catalog = json.loads(manifest.read_text())
+    artifact = catalog["artifacts"][0]
+    artifact.update(
+        encoding="cp949", sha256=hashlib.sha256(acquired).hexdigest(), byte_length=len(acquired)
+    )
+    manifest.write_text(json.dumps(catalog))
+    case["answers"][0].update(
+        source_sha256=hashlib.sha256(raw.encode()).hexdigest(), start_char=3, end_char=9
+    )
+    golden = tmp_path / "retrieval.json"
+    _write_cases(golden, [case])
+    loaded = load_golden_cases(golden, manifest_path=manifest)
+    assert loaded[0].answers[0].source_sha256 != artifact["sha256"]

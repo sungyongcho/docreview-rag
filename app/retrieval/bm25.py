@@ -277,6 +277,7 @@ def bm25_statement(
         source = Chunk
         term_table = ChunkTerm
         length_table = ChunkLength
+        length_join = ChunkLength.chunk_id == ChunkTerm.chunk_id
         corpus = select(
             BM25CorpusStat.language,
             BM25CorpusStat.n,
@@ -292,6 +293,9 @@ def bm25_statement(
         source = SnapshotChunk
         term_table = SnapshotChunkTerm
         length_table = SnapshotChunkLength
+        length_join = (SnapshotChunkLength.chunk_id == SnapshotChunkTerm.chunk_id) & (
+            SnapshotChunkLength.snapshot_id == SnapshotChunkTerm.snapshot_id
+        )
         corpus = (
             select(
                 SnapshotBM25CorpusStat.language,
@@ -339,8 +343,7 @@ def bm25_statement(
         )
         .join(
             length_table,
-            (length_table.chunk_id == term_table.chunk_id)
-            & (true() if source is Chunk else length_table.snapshot_id == term_table.snapshot_id),
+            length_join,
         )
         .join(corpus, corpus.c.language == source.language)
         .where(source.content_tsv.op("@@")(tsquery), *scope_predicates)

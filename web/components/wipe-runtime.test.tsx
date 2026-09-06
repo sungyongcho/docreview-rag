@@ -255,3 +255,16 @@ it("immediately discards a prior preview while an availability recheck is pendin
   expect(screen.queryByRole("button", { name: "Permanently clear this runtime" })).not.toBeInTheDocument();
   expect(startWipe).not.toHaveBeenCalled();
 });
+
+it("opens a terminal-initiated completed reset without submitting another wipe", async () => {
+  render(<WipeRuntime enabled />);
+  fireEvent.click(screen.getByText("Reset runtime data"));
+  const status = screen.getByRole("button", { name: "View reset status" });
+  await waitFor(() => expect(status).toBeEnabled());
+  vi.mocked(getWipeStatus).mockResolvedValue({ id: "terminal-reset", status: "succeeded", completed: ["empty_schema_created"] });
+  fireEvent.click(status);
+  expect(await screen.findByRole("button", { name: "Clear browser data and start again" })).toBeEnabled();
+  expect(previewWipe).not.toHaveBeenCalled();
+  expect(startWipe).not.toHaveBeenCalled();
+  expect(screen.getByText(/run rag-fresh-start/)).toBeInTheDocument();
+});

@@ -1,7 +1,7 @@
 """DART parser: part detection, section contract, and source identity fail-closed."""
 
+from dataclasses import replace
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
@@ -10,13 +10,13 @@ from app.ingestion.dart import (
     DART_LEAF_TAGS,
     DART_PARTS,
     DartParseError,
-    dart_doc_id,
     dart_section_label,
     parse_dart_filing,
     part_numeral,
     segment,
 )
 from app.ingestion.parser import leaf_blocks, normalize
+from tests.ingestion.support import filing_document, filing_source
 
 MINIMAL_SOURCE = """<?xml version="1.0" encoding="utf-8"?>
 <DOCUMENT>
@@ -45,22 +45,9 @@ def elements_of(source: str) -> list:
     return leaf_blocks(normalize(source), DART_LEAF_TAGS)
 
 
-def entry_for(path: Path, source: str) -> dict:
-    return {
-        "registry": "dart",
-        "issuer": "005930",
-        "issuer_id": "00126380",
-        "filing_id": "20250311001085",
-        "form": "사업보고서",
-        "language": "ko",
-        "filing_date": "2025-03-11",
-        "report_period": "2024-12-31",
-        "fiscal_year": 2024,
-        "file": str(path),
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250311001085",
-        "source_length": len(source),
-        "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
-    }
+def entry_for(path: Path, source: str):
+    """Bind a synthetic DART document to its exact acquired bytes."""
+    return filing_source(path, document=filing_document(registry="dart"))
 
 
 def write_source(tmp_path: Path, source: str) -> Path:
@@ -219,14 +206,14 @@ def test_parse_dart_filing_maps_registry_identity_without_derivation(tmp_path):
 
     filing, profile = parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
 
-    assert filing.doc_id == "005930-FY2024"
-    assert filing.registry == "dart"
-    assert filing.issuer == "005930"
-    assert filing.issuer_id == "00126380"
-    assert filing.filing_id == "20250311001085"
-    assert filing.form == "사업보고서"
-    assert filing.filing_date == "2025-03-11"
-    assert filing.fiscal_year == 2024
+    assert filing.source.document.document_id == "005930-FY2024"
+    assert filing.source.document.registry == "dart"
+    assert filing.source.document.issuer == "005930"
+    assert filing.source.document.issuer_id == "00126380"
+    assert filing.source.document.filing_id == "20250311001085"
+    assert filing.source.document.form == "사업보고서"
+    assert filing.source.document.filing_date.isoformat() == "2025-03-11"
+    assert filing.source.document.fiscal_year == 2024
     assert filing.source_length == len(MINIMAL_SOURCE)
     assert filing.source_sha256 == hashlib.sha256(MINIMAL_SOURCE.encode()).hexdigest()
     assert filing.segment_type == "dart_part"
@@ -246,25 +233,27 @@ def test_parse_dart_filing_keeps_sec_vocabulary_out_of_sections(tmp_path):
 
 def test_parse_dart_filing_rejects_a_foreign_registry(tmp_path):
     path = write_source(tmp_path, MINIMAL_SOURCE)
-    entry = entry_for(path, MINIMAL_SOURCE) | {"registry": "sec"}
+    entry = filing_source(path, document=filing_document())
 
-    with pytest.raises(DartParseError, match="not a DART filing"):
+    with pytest.raises(DartParseError, match="selected DART source"):
         parse_dart_filing(entry)
 
 
 def test_parse_dart_filing_rejects_a_source_that_drifted_from_the_manifest(tmp_path):
     path = write_source(tmp_path, MINIMAL_SOURCE)
-    entry = entry_for(path, MINIMAL_SOURCE) | {"source_sha256": "0" * 64}
+    entry = entry_for(path, MINIMAL_SOURCE)
+    entry = replace(entry, artifact=entry.artifact.model_copy(update={"sha256": "0" * 64}))
 
-    with pytest.raises(DartParseError, match="source digest"):
+    with pytest.raises(DartParseError, match="bytes disagree"):
         parse_dart_filing(entry)
 
 
 def test_parse_dart_filing_rejects_a_truncated_source(tmp_path):
     path = write_source(tmp_path, MINIMAL_SOURCE)
-    entry = entry_for(path, MINIMAL_SOURCE) | {"source_length": len(MINIMAL_SOURCE) + 1}
+    entry = entry_for(path, MINIMAL_SOURCE)
+    path.write_bytes(path.read_bytes()[:-1])
 
-    with pytest.raises(DartParseError, match="manifest records"):
+    with pytest.raises(DartParseError, match="bytes disagree"):
         parse_dart_filing(entry)
 
 
@@ -272,11 +261,15 @@ def test_parse_dart_filing_rejects_a_non_utf8_archive(tmp_path):
     path = tmp_path / "20250311001085.xml"
     path.write_bytes(MINIMAL_SOURCE.encode("cp949"))
 
-    with pytest.raises(DartParseError, match="not UTF-8"):
+    with pytest.raises(DartParseError, match="Invalid DART source"):
         parse_dart_filing(entry_for(path, MINIMAL_SOURCE))
 
 
-def test_dart_doc_id_reads_issuer_and_fiscal_year():
-    entry = json.loads('{"issuer": "000660", "fiscal_year": 2024}')
-
-    assert dart_doc_id(entry) == "000660-FY2024"
+def test_document_identity_is_explicit_and_not_rederived(tmp_path):
+    """Preserve the manifest document identity instead of rebuilding it from issuer-year."""
+    path = write_source(tmp_path, MINIMAL_SOURCE)
+    source = filing_source(
+        path, document=filing_document(registry="dart", document_id="report-identity")
+    )
+    filing, _ = parse_dart_filing(source)
+    assert filing.source.document.document_id == "report-identity"

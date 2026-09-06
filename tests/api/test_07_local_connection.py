@@ -9,6 +9,7 @@ from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import local_provider_budget
 from app.release.app import create_release_app
 from app.release.config import ReleaseSettings
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
 def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_origin=None):
@@ -26,6 +27,7 @@ def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_or
         transport=httpx.MockTransport(metadata),
     )
     runtime = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
         local_connection=manager,
         allow_local_engine=environment == "dev",
         llm_providers={},

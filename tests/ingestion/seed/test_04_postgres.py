@@ -4,11 +4,15 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import insert, select, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy.schema import CreateTable
 
 from app.config import get_settings
+from app.db.bootstrap import ensure_vector_extension
+from app.db.models import DIM, Base, Chunk, ChunkEmbedding
 import app.ingestion.seed as seed
 from tests.ingestion.seed.support import sample_batch
 from tests.live_postgres import live_postgres_unavailable
@@ -33,56 +37,10 @@ async def _exercise_rerun(module) -> None:
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
     try:
         async with engine.connect() as connection:
-            await connection.execute(
-                text(
-                    """
-                    CREATE TEMP TABLE documents (
-                        doc_id text PRIMARY KEY,
-                        registry text NOT NULL,
-                        language text NOT NULL,
-                        issuer text NOT NULL,
-                        issuer_id text NOT NULL,
-                        fiscal_year integer NOT NULL,
-                        form text NOT NULL,
-                        filing_date text NOT NULL,
-                        report_period text NOT NULL,
-                        filing_id text NOT NULL,
-                        source_url text NOT NULL,
-                        parse_status text NOT NULL,
-                        item_index jsonb NOT NULL,
-                        source_length bigint NOT NULL,
-                        source_sha256 text NOT NULL
-                    )
-                    """
-                )
-            )
-            await connection.execute(
-                text(
-                    """
-                    CREATE TEMP TABLE chunks (
-                        id bigserial PRIMARY KEY,
-                        doc_id text NOT NULL REFERENCES documents(doc_id),
-                        language text NOT NULL,
-                        item text,
-                        kind text NOT NULL,
-                        ordinal integer NOT NULL,
-                        body text NOT NULL,
-                        context_header text NOT NULL,
-                        index_text text NOT NULL,
-                        start_char bigint NOT NULL,
-                        end_char bigint NOT NULL,
-                        source_sha256 text NOT NULL,
-                        citation text NOT NULL,
-                        lexical_text text,
-                        embedding text,
-                        embedding_provider text,
-                        embedding_model text,
-                        embedding_dimensions integer,
-                        UNIQUE (doc_id, ordinal)
-                    )
-                    """
-                )
-            )
+            await ensure_vector_extension(connection)
+            for table in Base.metadata.sorted_tables:
+                ddl = str(CreateTable(table).compile(dialect=postgresql.dialect()))
+                await connection.execute(text(ddl.replace("CREATE TABLE", "CREATE TEMP TABLE", 1)))
             await connection.commit()
 
             batch = sample_batch()
@@ -90,8 +48,21 @@ async def _exercise_rerun(module) -> None:
                 first = await module.persist_seed_batch(session, batch)
                 assert first.documents == 1
                 assert first.chunks == 2
+            original = (
+                await connection.execute(
+                    select(Chunk.id, Chunk.index_text_sha256).where(Chunk.ordinal == 0)
+                )
+            ).one()
             await connection.execute(
-                text("UPDATE chunks SET embedding = 'existing-vector' WHERE ordinal = 0")
+                insert(ChunkEmbedding).values(
+                    chunk_id=original.id,
+                    input_sha256=original.index_text_sha256,
+                    provider="deterministic",
+                    model="test-model",
+                    dimensions=DIM,
+                    tokenizer="test-tokenizer",
+                    embedding=[1.0] + [0.0] * (DIM - 1),
+                )
             )
             await connection.commit()
 
@@ -99,11 +70,37 @@ async def _exercise_rerun(module) -> None:
                 second = await module.persist_seed_batch(session, batch)
                 assert second == first
             preserved = await connection.scalar(
-                text("SELECT embedding FROM chunks WHERE ordinal = 0")
+                select(ChunkEmbedding.embedding)
+                .join(Chunk, Chunk.id == ChunkEmbedding.chunk_id)
+                .where(Chunk.ordinal == 0)
             )
-            assert preserved == "existing-vector"
+            assert list(preserved) == [1.0] + [0.0] * (DIM - 1)
+            original_id = await connection.scalar(select(Chunk.id).where(Chunk.ordinal == 0))
+            reordered = module.SeedBatch(
+                batch.documents,
+                (replace(batch.chunks[1], ordinal=0), replace(batch.chunks[0], ordinal=1)),
+                batch.filings,
+            )
+            async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                await module.persist_seed_batch(session, reordered)
+            assert (
+                await connection.scalar(select(Chunk.id).where(Chunk.ordinal == 1)) == original_id
+            )
+            reordered_vector = await connection.scalar(
+                select(ChunkEmbedding.embedding)
+                .join(Chunk, Chunk.id == ChunkEmbedding.chunk_id)
+                .where(Chunk.ordinal == 1)
+            )
+            assert list(reordered_vector) == list(preserved)
+            async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                await module.persist_seed_batch(session, batch)
+            assert await connection.scalar(text("SELECT count(*) FROM source_artifacts")) == 1
+            assert await connection.scalar(text("SELECT count(*) FROM parsed_structures")) == 1
             persisted_status = await connection.scalar(
-                text("SELECT item_index->0->>'status' FROM documents")
+                text(
+                    "SELECT p.item_index->0->>'status' FROM document_parses d "
+                    "JOIN parsed_structures p ON p.structure_id = d.structure_id"
+                )
             )
             assert persisted_status == "empty_disclosure"
 
@@ -121,15 +118,19 @@ async def _exercise_rerun(module) -> None:
                 body="Changed source-derived narrative.",
                 index_text="NVDA-FY2024 context\n\nChanged source-derived narrative.",
             )
-            changed_batch = module.SeedBatch(batch.documents, (changed_chunk, batch.chunks[1]))
+            changed_batch = module.SeedBatch(
+                batch.documents, (changed_chunk, batch.chunks[1]), batch.filings
+            )
             async with AsyncSession(bind=connection, expire_on_commit=False) as session:
                 await module.persist_seed_batch(session, changed_batch)
             invalidated = await connection.scalar(
-                text("SELECT embedding FROM chunks WHERE ordinal = 0")
+                select(ChunkEmbedding.embedding)
+                .join(Chunk, Chunk.id == ChunkEmbedding.chunk_id)
+                .where(Chunk.ordinal == 0)
             )
             assert invalidated is None
 
-            shorter_batch = module.SeedBatch(batch.documents, (changed_chunk,))
+            shorter_batch = module.SeedBatch(batch.documents, (changed_chunk,), batch.filings)
             async with AsyncSession(bind=connection, expire_on_commit=False) as session:
                 await module.persist_seed_batch(session, shorter_batch)
             shortened_count = await connection.scalar(text("SELECT count(*) FROM chunks"))

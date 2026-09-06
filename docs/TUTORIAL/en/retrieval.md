@@ -36,6 +36,11 @@ retrieval. Preview retrieval does not persist an evaluation result or alter a co
 
 *Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5. Retrieval and answer preview remain separate explicit actions.*
 
+
+Example: `NVIDIA fiscal 2024 revenue` returns five NVIDIA FY2024 passages in the prepared corpus. Each result retains its source offsets and SHA-256. This is retrieval only; no answer is generated.
+
+![NVIDIA FY2024 retrieval results with source provenance.](../assets/quickstart/08-retrieval.en.png)
+
 ## Read the ranking information {#rankings}
 
 | Evidence | How to use it |

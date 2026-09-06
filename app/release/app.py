@@ -19,6 +19,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.runtime import RuntimeApiServices
+from app.config import Settings
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
@@ -28,6 +29,7 @@ from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
 from app.release.secrets import install_secret_redaction
+from app.retrieval.embeddings import get_embedding_provider
 from app.settings_sources import Environment
 
 ProviderFactory = Callable[..., LLMProvider]
@@ -194,7 +196,15 @@ def build_runtime_services(
         if settings.local_llm_api_key is not None:
             secrets.append(settings.local_llm_api_key.get_secret_value())
     install_secret_redaction(tuple(secrets))
+    corpus_settings = Settings.model_validate(
+        {
+            "MODE": settings.environment,
+            "OPENAI_API_KEY_LOCAL": settings.openai_api_key_dev,
+            "OPENAI_API_KEY_PROD": settings.openai_api_key_prod,
+        }
+    )
     return RuntimeApiServices(
+        embedding_provider=get_embedding_provider(corpus_settings),
         llm_providers=providers,
         provider_budgets=budgets,
         local_connection=local_connection,
@@ -346,6 +356,9 @@ def create_release_app(
     )
     async def readiness(request: Request) -> ReleaseReadiness | JSONResponse:
         """Report configured runtime readiness without contacting OpenAI."""
+        models = openai_policy_snapshot()["roles"]
+        if not isinstance(models, dict):
+            raise ValueError("model policy roles must be an object")
         if active_settings.mode == "canned":
             return ReleaseReadiness(
                 status="ready",
@@ -353,7 +366,7 @@ def create_release_app(
                 environment=active_settings.environment,
                 admin_mode=active_settings.admin_mode,
                 policy_revision=POLICY_REVISION,
-                models=openai_policy_snapshot()["roles"],
+                models=models,
                 review_enabled=False,
                 active_review_model=None,
                 review_engines={
@@ -437,7 +450,7 @@ def create_release_app(
             environment=active_settings.environment,
             admin_mode=active_settings.admin_mode,
             policy_revision=POLICY_REVISION,
-            models=openai_policy_snapshot()["roles"],
+            models=models,
             review_enabled=(
                 active_settings.openai_enabled or local_readiness.get("enabled") is True
             ),

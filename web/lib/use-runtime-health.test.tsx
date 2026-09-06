@@ -227,3 +227,22 @@ it("polls visible tabs every 30 seconds, pauses while hidden, and resumes on foc
     vi.useRealTimers();
   }
 });
+
+
+it("classifies an empty compatible corpus as preparation needed and preserves real DB failures", async () => {
+  let databaseConnected = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => response(String(input).endsWith("/health") ? { status: "ok" } : { ...READY, status: "degraded", corpus: { ...READY.corpus, availability: "degraded", database_connected: databaseConnected, documents: 0, chunks: 0, embedded_chunks: 0, bm25_ready: false } }, String(input).endsWith("/health") ? 200 : 503)));
+  const { result, unmount } = renderHook(() => useRuntimeHealth());
+  await waitFor(() => expect(result.current.kind).toBe("preparation_needed"));
+  expect(result.current.modalVisible).toBe(true);
+  act(() => result.current.dismissWarning());
+  expect(result.current.modalVisible).toBe(false);
+  await act(async () => { await result.current.check(); });
+  expect(result.current.kind).toBe("preparation_needed");
+  expect(result.current.modalVisible).toBe(false);
+  databaseConnected = false;
+  await act(async () => { await result.current.check(); });
+  expect(result.current.kind).toBe("db_degraded");
+  expect(result.current.modalVisible).toBe(true);
+  unmount(); vi.unstubAllGlobals();
+});

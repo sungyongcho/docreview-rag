@@ -15,6 +15,7 @@ from app.api.review_profile import PromptPolicy, ReviewSessionProfile
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
 from app.main import app, create_app
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
 def test_runtime_factory_is_import_safe_and_creates_distinct_apps():
@@ -46,7 +47,9 @@ def test_runtime_import_does_not_build_the_database_engine():
 
 def test_public_runtime_rejects_custom_prompt_policy_before_provider_or_database() -> None:
     """Fail closed on Dev-only policy before touching any runtime dependency."""
-    services = RuntimeApiServices(allow_custom_prompt_policy=False)
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(), allow_custom_prompt_policy=False
+    )
     request = ReviewRequest(
         query="Revenue?",
         session_profile=ReviewSessionProfile(
@@ -63,7 +66,9 @@ def test_public_runtime_rejects_custom_prompt_policy_before_provider_or_database
 
 def test_public_runtime_rejects_snapshot_query_before_provider_or_database() -> None:
     """Keep public snapshot access read-only and comparison-only."""
-    services = RuntimeApiServices(allow_snapshot_query=False)
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(), allow_snapshot_query=False
+    )
     request = ReviewRequest(
         query="Revenue?",
         session_profile=ReviewSessionProfile(snapshot_id=1),

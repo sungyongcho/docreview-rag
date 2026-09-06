@@ -2,6 +2,7 @@
 
 | 문서 | 한국어 | English |
 |---|---|---|
+| Quick Start | [새 clone에서 시작](TUTORIAL/ko/quickstart.md) | [Start from a fresh clone](TUTORIAL/en/quickstart.md) |
 | 실습 가이드 | [첫 공시부터 인용 답변까지](TUTORIAL/ko/walkthrough.md) | [Guided walkthrough](TUTORIAL/en/walkthrough.md) |
 | 명령 안내 | [로컬 실행 명령](TUTORIAL/ko/cli.md) | [Local command reference](TUTORIAL/en/cli.md) |
 

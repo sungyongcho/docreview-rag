@@ -1,0 +1,427 @@
+{
+  "$defs": {
+    "Acquisition": {
+      "additionalProperties": false,
+      "description": "Record where and when an artifact was acquired.",
+      "properties": {
+        "acquired_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Acquired At"
+        },
+        "url": {
+          "pattern": "^https?://[^\\s]+$",
+          "title": "Url",
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "archive_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archive Sha256"
+        },
+        "archive_member": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archive Member"
+        },
+        "original_encoding": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Encoding"
+        },
+        "normalized_separator_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Normalized Separator Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "acquired_at",
+        "url",
+        "media_type"
+      ],
+      "title": "Acquisition",
+      "type": "object"
+    },
+    "CorpusIdentity": {
+      "additionalProperties": false,
+      "description": "Identify a corpus independently of its filesystem location.",
+      "properties": {
+        "corpus_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Corpus Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "corpus_id",
+        "name"
+      ],
+      "title": "CorpusIdentity",
+      "type": "object"
+    },
+    "DartMetadata": {
+      "additionalProperties": false,
+      "description": "Preserve DART acquisition identifiers and report labels.",
+      "properties": {
+        "corp_code": {
+          "pattern": "^[0-9]{8}$",
+          "title": "Corp Code",
+          "type": "string"
+        },
+        "receipt_number": {
+          "pattern": "^[0-9]{14}$",
+          "title": "Receipt Number",
+          "type": "string"
+        },
+        "report_code": {
+          "minLength": 1,
+          "title": "Report Code",
+          "type": "string"
+        },
+        "report_name": {
+          "minLength": 1,
+          "title": "Report Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "corp_code",
+        "receipt_number",
+        "report_code",
+        "report_name"
+      ],
+      "title": "DartMetadata",
+      "type": "object"
+    },
+    "DocumentReference": {
+      "additionalProperties": false,
+      "description": "Describe one filing independently of acquisition and processing state.",
+      "properties": {
+        "document_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "registry": {
+          "enum": [
+            "sec",
+            "dart"
+          ],
+          "title": "Registry",
+          "type": "string"
+        },
+        "language": {
+          "enum": [
+            "en",
+            "ko"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "issuer": {
+          "minLength": 1,
+          "title": "Issuer",
+          "type": "string"
+        },
+        "issuer_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Issuer Id",
+          "type": "string"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "filing_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Filing Id",
+          "type": "string"
+        },
+        "fiscal_year": {
+          "maximum": 9999,
+          "minimum": 1900,
+          "title": "Fiscal Year",
+          "type": "integer"
+        },
+        "form": {
+          "minLength": 1,
+          "title": "Form",
+          "type": "string"
+        },
+        "filing_date": {
+          "format": "date",
+          "title": "Filing Date",
+          "type": "string"
+        },
+        "report_period": {
+          "format": "date",
+          "title": "Report Period",
+          "type": "string"
+        },
+        "source_url": {
+          "pattern": "^https?://[^\\s]+$",
+          "title": "Source Url",
+          "type": "string"
+        },
+        "sec": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dart": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DartMetadata"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "document_id",
+        "registry",
+        "language",
+        "issuer",
+        "issuer_id",
+        "filing_id",
+        "fiscal_year",
+        "form",
+        "filing_date",
+        "report_period",
+        "source_url"
+      ],
+      "title": "DocumentReference",
+      "type": "object"
+    },
+    "ProcessingSelection": {
+      "additionalProperties": false,
+      "description": "Select exact acquired artifacts for named processing work.",
+      "properties": {
+        "selection_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Selection Id",
+          "type": "string"
+        },
+        "artifact_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Artifact Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "selection_id",
+        "artifact_ids"
+      ],
+      "title": "ProcessingSelection",
+      "type": "object"
+    },
+    "SecMetadata": {
+      "additionalProperties": false,
+      "description": "Preserve SEC acquisition identifiers.",
+      "properties": {
+        "cik": {
+          "pattern": "^[0-9]{10}$",
+          "title": "Cik",
+          "type": "string"
+        },
+        "accession": {
+          "pattern": "^[0-9]{10}-[0-9]{2}-[0-9]{6}$",
+          "title": "Accession",
+          "type": "string"
+        },
+        "primary_document": {
+          "minLength": 1,
+          "title": "Primary Document",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cik",
+        "accession",
+        "primary_document"
+      ],
+      "title": "SecMetadata",
+      "type": "object"
+    },
+    "SourceArtifact": {
+      "additionalProperties": false,
+      "description": "Identify exact acquired bytes and their decoding contract.",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "document_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Document Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "archive",
+            "attachment"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "byte_length": {
+          "exclusiveMinimum": 0,
+          "title": "Byte Length",
+          "type": "integer"
+        },
+        "encoding": {
+          "anyOf": [
+            {
+              "enum": [
+                "utf-8",
+                "euc-kr",
+                "cp949"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Encoding"
+        },
+        "acquisition": {
+          "$ref": "#/$defs/Acquisition"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "document_id",
+        "role",
+        "path",
+        "sha256",
+        "byte_length",
+        "encoding",
+        "acquisition"
+      ],
+      "title": "SourceArtifact",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Describe a corpus without duplicating its catalog for each processing run.",
+  "properties": {
+    "corpus": {
+      "$ref": "#/$defs/CorpusIdentity"
+    },
+    "documents": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/DocumentReference"
+      },
+      "title": "Documents",
+      "type": "array"
+    },
+    "artifacts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SourceArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "selections": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProcessingSelection"
+      },
+      "title": "Selections",
+      "type": "array"
+    }
+  },
+  "required": [
+    "corpus"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

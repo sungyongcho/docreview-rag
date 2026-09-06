@@ -63,7 +63,7 @@ import { helpScreen } from "@/lib/help-content";
 import { helpTopicScreen } from "@/lib/help-search";
 import { getOperatorCommands, operatorAvailable, startOperatorJob } from "@/lib/operator-api";
 import { loadConversations, loadHelpOpen, newConversation, ONBOARDING_KEY, saveConversations, saveHelpOpen } from "@/lib/storage";
-import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionProfile } from "@/lib/types";
+import type { Capabilities, ChatMessage, Conversation, EvidenceHit, PublishedSnapshot, RetrievalProfile, ReviewSessionDraft } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
 import { useRuntimeHealth } from "@/lib/use-runtime-health";
 import { useOperatorJobs } from "@/lib/use-operator-jobs";
@@ -137,7 +137,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
-  const [profile, setProfile] = useState<ReviewSessionProfile>(DEFAULT_SESSION_PROFILE);
+  const [profile, setProfile] = useState<ReviewSessionDraft>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [conversationTab, setConversationTab] = useState<ConversationSettingsTab | null>(null);
   const [conversationInputsValid, setConversationInputsValid] = useState(true);
@@ -395,7 +395,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
    * Replace the active conversation's messages. Reads the current list at update time
    * so a change made while a review streams (a toolbar edit, a pin) is not reverted.
    */
-  function updateActive(messages: ChatMessage[], selectedProfile?: ReviewSessionProfile | null) {
+  function updateActive(messages: ChatMessage[], selectedProfile?: ReviewSessionDraft | null) {
     const targetId = activeId;
     setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
@@ -539,7 +539,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     const [suite] = source?.split(":") ?? [];
     const corpusScope = suite?.startsWith("dart") ? "dart" : suite?.startsWith("sec") ? "sec" : (active?.profile ?? profile).corpus_scope;
     const languages = suite?.endsWith("-ko") ? ["ko" as const] : suite?.endsWith("-en") ? ["en" as const] : (active?.profile ?? profile).languages;
-    const sessionProfile: ReviewSessionProfile = {
+    const sessionProfile: ReviewSessionDraft = {
       ...(active?.profile ?? profile),
       corpus_scope: corpusScope,
       languages,
@@ -552,7 +552,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   /** Patch preferences without replacing messages appended by an in-flight response. */
-  function updateSessionProfile(update: Partial<ReviewSessionProfile>) {
+  function updateSessionProfile(update: Partial<ReviewSessionDraft>) {
     const targetId = active?.id;
     setProfile((current) => ({ ...current, ...update }));
     if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
@@ -756,12 +756,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           <strong>{environment?.toUpperCase() ?? "CHECKING"}</strong><span>{t("MODE")}</span>
         </div>
         <div className="sidebar-nav">
+          <GuidesNavigation />
           <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
           <button data-tour="measure" type="button" aria-pressed={view === "measure"} onClick={() => navigate({ view: "measure" })}><FlaskConical size={17} /><span>{t("Measure")}</span></button>
           <button data-tour="system" className={`nav-secondary system-status-button ${healthBadge(runtimeHealth.kind)}`} type="button" aria-label={t("System · {p0}", { p0: t(healthLabel(runtimeHealth.kind)) })} aria-pressed={view === "system"} onClick={() => navigate({ view: "system", tab: "status" })}><Activity size={17} /><span>{t("System")}</span><span className="system-health"><i aria-hidden="true" />{t(healthLabel(runtimeHealth.kind))}</span></button>
           <button data-tour="settings" type="button" onClick={() => openSettings()}><Settings size={17} /><span>{t("Settings")}</span></button>
         </div>
-        <GuidesNavigation />
         {localAllowed && activeSessionProfile.engine === "local" && (
           <div className="local-mode-badge" role="note">
             <TriangleAlert size={14} aria-hidden="true" />

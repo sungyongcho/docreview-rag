@@ -36,6 +36,11 @@ What drove NVIDIA data center revenue growth in fiscal 2024?
 
 *NVIDIA FY2024 질문과 Hybrid·BM25·k=5를 지정한 검색 시험의 실행 전 화면입니다. 검색과 답변 미리보기는 각각 명시적으로 실행합니다.*
 
+
+예시: `삼성전자 2024년 매출`을 검색하면 준비된 코퍼스에서 삼성전자 FY2024 근거 다섯 개를 확인할 수 있습니다. 결과에는 원문 오프셋과 SHA-256이 유지됩니다. 검색만 실행하며 답변을 생성하지 않습니다.
+
+![원문 식별 정보가 유지된 삼성전자 FY2024 검색 결과.](../assets/quickstart/08-retrieval.ko.png)
+
 ## 순위 정보 읽기 {#rankings}
 
 | 확인할 정보 | 읽는 방법 |

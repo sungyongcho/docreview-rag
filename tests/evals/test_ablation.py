@@ -61,7 +61,7 @@ def hit() -> ChunkHit:
 def test_experiment_matrix_crosses_chunking_retrieval_and_lexical_ranker():
     """Cross every chunk target, retrieval path, and lexical ranker in canonical order."""
     configs = experiment_matrix(
-        target_text_chars=(1200, 500),
+        target_tokens=(2048, 1024),
         strategies=("hybrid", "lexical", "vector"),
         lexical_rankers=("bm25", "ts_rank_cd"),
         embedding_provider="deterministic",
@@ -69,29 +69,29 @@ def test_experiment_matrix_crosses_chunking_retrieval_and_lexical_ranker():
     )
 
     assert [
-        (config.target_text_chars, config.strategy, config.lexical_ranker) for config in configs
+        (config.target_tokens, config.strategy, config.lexical_ranker) for config in configs
     ] == [
-        (500, "lexical", "ts_rank_cd"),
-        (500, "lexical", "bm25"),
-        (500, "vector", None),
-        (500, "hybrid", "ts_rank_cd"),
-        (500, "hybrid", "bm25"),
-        (1200, "lexical", "ts_rank_cd"),
-        (1200, "lexical", "bm25"),
-        (1200, "vector", None),
-        (1200, "hybrid", "ts_rank_cd"),
-        (1200, "hybrid", "bm25"),
+        (1024, "lexical", "ts_rank_cd"),
+        (1024, "lexical", "bm25"),
+        (1024, "vector", None),
+        (1024, "hybrid", "ts_rank_cd"),
+        (1024, "hybrid", "bm25"),
+        (2048, "lexical", "ts_rank_cd"),
+        (2048, "lexical", "bm25"),
+        (2048, "vector", None),
+        (2048, "hybrid", "ts_rank_cd"),
+        (2048, "hybrid", "bm25"),
     ]
 
 
 def test_experiment_matrix_names_are_unique_and_filename_safe():
     """Name every arm uniquely with a filename-safe kebab-case slug."""
-    configs = experiment_matrix(target_text_chars=(500, 1200))
+    configs = experiment_matrix(target_tokens=(1024, 2048))
     names = [config.name for config in configs]
 
     assert len(set(names)) == len(names) == 10
-    assert "structure-500-lexical-ts-rank-cd" in names
-    assert "structure-1200-hybrid-bm25" in names
+    assert "structure-1024-lexical-ts-rank-cd" in names
+    assert "structure-2048-hybrid-bm25" in names
     for name in names:
         assert ARM_NAME.fullmatch(name)
 
@@ -99,25 +99,25 @@ def test_experiment_matrix_names_are_unique_and_filename_safe():
 def test_vector_arm_is_not_duplicated_across_rankers():
     """The vector path never runs a lexical query, so a ranker label would lie."""
     configs = experiment_matrix(
-        target_text_chars=(500,),
+        target_tokens=(1024,),
         strategies=("vector",),
         lexical_rankers=("ts_rank_cd", "bm25"),
     )
 
     assert len(configs) == 1
-    assert configs[0].name == "structure-500-vector"
+    assert configs[0].name == "structure-1024-vector"
     assert configs[0].lexical_ranker is None
 
 
 def test_matrix_is_sorted_the_same_way_however_the_axes_are_given():
     """Order arms by the matrix contract rather than by axis input order."""
     forward = experiment_matrix(
-        target_text_chars=(500, 1200),
+        target_tokens=(1024, 2048),
         strategies=("lexical", "vector", "hybrid"),
         lexical_rankers=("ts_rank_cd", "bm25"),
     )
     reversed_axes = experiment_matrix(
-        target_text_chars=(1200, 500),
+        target_tokens=(2048, 1024),
         strategies=("hybrid", "vector", "lexical"),
         lexical_rankers=("bm25", "ts_rank_cd"),
     )
@@ -128,15 +128,15 @@ def test_matrix_is_sorted_the_same_way_however_the_axes_are_given():
 def test_config_provenance_records_the_ranker_that_produced_the_numbers():
     """Record chunking, retrieval, embedding, and measurement provenance per arm."""
     lexical, _bm25, vector = experiment_matrix(
-        target_text_chars=(500,),
+        target_tokens=(1024,),
         strategies=("lexical", "vector"),
     )
 
     assert lexical.to_dict() == {
-        "name": "structure-500-lexical-ts-rank-cd",
+        "name": "structure-1024-lexical-ts-rank-cd",
         "chunking": {
             "strategy": "structure-aware",
-            "target_text_chars": 500,
+            "target_tokens": 1024,
             "golden_identity": "source-sha256-and-half-open-span",
         },
         "retrieval": {
@@ -162,7 +162,7 @@ def test_config_provenance_records_the_ranker_that_produced_the_numbers():
 def test_bm25_arms_record_explicit_project_defaults_only_when_used():
     """Carry the project BM25 defaults on BM25 arms and nowhere else."""
     ts_rank, bm25, vector = experiment_matrix(
-        target_text_chars=(500,),
+        target_tokens=(1024,),
         strategies=("lexical", "vector"),
     )
 
@@ -183,7 +183,7 @@ def test_bm25_arms_record_explicit_project_defaults_only_when_used():
 def test_experiment_matrix_propagates_explicit_bm25_parameters():
     """Propagate caller-supplied BM25 parameters into arm provenance."""
     (config,) = experiment_matrix(
-        target_text_chars=(500,),
+        target_tokens=(1024,),
         strategies=("hybrid",),
         lexical_rankers=("bm25",),
         bm25_k1=1.5,
@@ -201,10 +201,10 @@ def test_experiment_matrix_propagates_explicit_bm25_parameters():
 def test_matrix_rejects_a_lexical_axis_without_a_ranker():
     """Reject a lexical axis with no ranker or with a repeated ranker."""
     with pytest.raises(ValueError, match="requires a lexical ranker"):
-        experiment_matrix(target_text_chars=(500,), strategies=("lexical",), lexical_rankers=())
+        experiment_matrix(target_tokens=(1024,), strategies=("lexical",), lexical_rankers=())
     with pytest.raises(ValueError, match="must be unique"):
         experiment_matrix(
-            target_text_chars=(500,),
+            target_tokens=(1024,),
             strategies=("lexical",),
             lexical_rankers=("bm25", "bm25"),
         )
@@ -214,7 +214,7 @@ def test_matrix_rejects_a_lexical_axis_without_a_ranker():
     "changes",
     [
         {"name": "Not Stable"},
-        {"target_text_chars": 0},
+        {"target_tokens": 0},
         {"strategy": "unknown"},
         {"candidate_k": 4},
         {"lexical_ranker": None},
@@ -225,8 +225,8 @@ def test_matrix_rejects_a_lexical_axis_without_a_ranker():
 def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes):
     """Reject arm provenance that is malformed or internally contradictory."""
     values = {
-        "name": "structure-500-hybrid",
-        "target_text_chars": 500,
+        "name": "structure-1024-hybrid",
+        "target_tokens": 1024,
         "strategy": "hybrid",
         "embedding_provider": "deterministic",
         "dimensions": 384,
@@ -259,8 +259,8 @@ def test_experiment_config_rejects_ambiguous_or_inconsistent_values(changes):
 def test_bm25_config_rejects_missing_or_invalid_parameters(changes):
     """Reject a BM25 arm whose parameters are missing or out of range."""
     values = {
-        "name": "structure-500-hybrid-bm25",
-        "target_text_chars": 500,
+        "name": "structure-1024-hybrid-bm25",
+        "target_tokens": 1024,
         "strategy": "hybrid",
         "embedding_provider": "deterministic",
         "dimensions": 384,
@@ -282,8 +282,8 @@ def test_non_bm25_config_rejects_bm25_parameters(lexical_ranker):
 
     with pytest.raises(ValueError, match="only for bm25 arms"):
         ExperimentConfig(
-            name=f"structure-500-{strategy}",
-            target_text_chars=500,
+            name=f"structure-1024-{strategy}",
+            target_tokens=1024,
             strategy=strategy,
             embedding_provider="deterministic",
             dimensions=384,
@@ -296,7 +296,7 @@ def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path)
     """Evaluate arms in canonical order, writing one artifact and one table row each."""
     recorded_at = datetime(2026, 8, 12, 14, 30, tzinfo=UTC)
     configs = experiment_matrix(
-        target_text_chars=(500, 1200),
+        target_tokens=(1024, 2048),
         strategies=("lexical",),
         lexical_rankers=("bm25",),
     )
@@ -327,23 +327,23 @@ def test_run_ablation_writes_stable_raw_artifacts_and_comparison_table(tmp_path)
         )
     )
 
-    assert [outcome.config.target_text_chars for outcome in report.outcomes] == [500, 1200]
+    assert [outcome.config.target_tokens for outcome in report.outcomes] == [1024, 2048]
     assert [outcome.artifact_path.name for outcome in report.outcomes] == [
-        "20260812T143000Z-structure-500-lexical-bm25.json",
-        "20260812T143000Z-structure-1200-lexical-bm25.json",
+        "20260812T143000Z-structure-1024-lexical-bm25.json",
+        "20260812T143000Z-structure-2048-lexical-bm25.json",
     ]
     assert all(outcome.artifact_path.is_file() for outcome in report.outcomes)
     table = report.comparison_markdown()
-    assert "| Config | Chunk target | Retrieval | Lexical ranker |" in table
-    assert "| structure-500-lexical-bm25 | 500 | lexical | bm25 | 1.000000 |" in table
-    assert "20260812T143000Z-structure-1200-lexical-bm25.json" in table
+    assert "| Config | Chunk target (tokens) | Retrieval | Lexical ranker |" in table
+    assert "| structure-1024-lexical-bm25 | 1024 | lexical | bm25 | 1.000000 |" in table
+    assert "20260812T143000Z-structure-2048-lexical-bm25.json" in table
 
 
 def test_run_ablation_rejects_duplicate_config_names(tmp_path):
     """Reject repeated arm names before any evaluator runs."""
     config = ExperimentConfig(
         name="same-name",
-        target_text_chars=500,
+        target_tokens=1024,
         strategy="lexical",
         embedding_provider="deterministic",
         dimensions=384,

@@ -56,6 +56,7 @@ from app.evals.retrieval_eval import (
     persist_evaluation,
 )
 from app.ingestion.progress import OperationProgress, OperationProgressCallback, operation_bar
+from app.ingestion.seed import embedding_chunk_config
 from app.retrieval.embeddings import get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K
 
@@ -91,9 +92,10 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--suite", default="m3-retrieval-v1")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN_PATH)
     parser.add_argument("--manifest-name", default="manifest.json")
+    parser.add_argument("--selection-id", default="sec-evaluation")
     parser.add_argument("--artifact-dir", type=Path, default=Path("data/eval_runs"))
     parser.add_argument("--provider", choices=("deterministic", "openai"), default="deterministic")
-    parser.add_argument("--target-text-chars", type=positive_int, nargs="+", default=[500, 1200])
+    parser.add_argument("--target-tokens", type=positive_int, nargs="+", default=[1024, 2048])
     parser.add_argument(
         "--strategies",
         choices=RETRIEVAL_STRATEGIES,
@@ -117,7 +119,7 @@ def arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--persist-results", action="store_true")
     parsed = parser.parse_args(argv)
 
-    parsed.target_text_chars = sorted(set(parsed.target_text_chars))
+    parsed.target_tokens = sorted(set(parsed.target_tokens))
     parsed.strategies = [name for name in RETRIEVAL_STRATEGIES if name in parsed.strategies]
     parsed.lexical_rankers = [name for name in LEXICAL_RANKERS if name in parsed.lexical_rankers]
     if parsed.candidate_k < parsed.k:
@@ -187,7 +189,6 @@ async def _run_cli(
     """
     if args.candidate_k < args.k:
         raise ValueError("candidate_k must be at least k")
-    targets = sorted(set(args.target_text_chars))
     updates: dict[str, Any] = {"embedding_provider": args.provider}
     if args.bm25_k1 is not None:
         updates["bm25_k1"] = args.bm25_k1
@@ -196,19 +197,18 @@ async def _run_cli(
     if args.bm25_idf is not None:
         updates["bm25_idf"] = args.bm25_idf
     current_settings = get_settings()
-    settings = (
-        Settings.model_validate(current_settings.model_dump() | updates)
-        if isinstance(current_settings, Settings)
-        else current_settings.model_copy(update=updates)
-    )
+    settings = Settings.model_validate(current_settings.model_dump() | updates)
     provider = get_embedding_provider(settings)
-    cases = (
-        load_golden_cases(args.golden)
-        if args.manifest_name == "manifest.json"
-        else load_golden_cases(
-            args.golden,
-            manifest_path=settings.corpus_dir / args.manifest_name,
-        )
+    targets = sorted(
+        {
+            embedding_chunk_config(provider, target_tokens=value).target_tokens
+            for value in args.target_tokens
+        }
+    )
+    cases = load_golden_cases(
+        args.golden,
+        manifest_path=settings.corpus_dir / args.manifest_name,
+        selection_id=args.selection_id,
     )
     recorded_at = datetime.now(UTC)
 
@@ -216,17 +216,13 @@ async def _run_cli(
     budget_bm25: BM25Parameters | None = (
         (settings.bm25_k1, settings.bm25_b, settings.bm25_idf) if budget_ranker == "bm25" else None
     )
-    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
 
     preparation_started_at_ns = time.perf_counter_ns()
-    parsed_filings = (
-        load_chunking_filings(settings=settings, **progress_options)
-        if args.manifest_name == "manifest.json"
-        else load_chunking_filings(
-            settings=settings,
-            manifest_name=args.manifest_name,
-            **progress_options,
-        )
+    parsed_filings = load_chunking_filings(
+        settings=settings,
+        manifest_name=args.manifest_name,
+        selection_id=args.selection_id,
+        on_progress=on_progress,
     )
     shared_preparation = SharedPreparationMeasurement(
         operation="manifest-load-and-parse",
@@ -239,16 +235,18 @@ async def _run_cli(
     indexing_measurements: list[IndexingBudgetMeasurement] = []
     query_budget: QueryBudgetMeasurement | None = None
     try:
-        for target_text_chars in targets:
+        for target_tokens in targets:
             indexing_started_at_ns = time.perf_counter_ns()
             batch = build_chunking_batch(
-                target_text_chars,
+                target_tokens,
+                provider=provider,
                 parsed_filings=parsed_filings,
+                selection_id=args.selection_id,
                 settings=settings,
-                **progress_options,
+                on_progress=on_progress,
             )
             configs = experiment_matrix(
-                target_text_chars=(target_text_chars,),
+                target_tokens=(target_tokens,),
                 strategies=tuple(args.strategies),
                 lexical_rankers=tuple(args.lexical_rankers),
                 embedding_provider=args.provider,
@@ -264,11 +262,11 @@ async def _run_cli(
                 engine,
                 batch,
                 provider,
-                target_text_chars=target_text_chars,
+                target_tokens=target_tokens,
                 embedding_provider=args.provider,
                 shared_preparation_seconds=shared_preparation.total_seconds,
                 started_at_ns=indexing_started_at_ns,
-                **progress_options,
+                on_progress=on_progress,
             ) as (session, indexing):
                 indexing_measurements.append(indexing)
 
@@ -298,9 +296,6 @@ async def _run_cli(
                                 )
                             )
 
-                    evaluation_progress = (
-                        {"on_progress": publish_case} if on_progress is not None else {}
-                    )
                     return await evaluate_retriever(
                         cases,
                         retriever,
@@ -308,7 +303,7 @@ async def _run_cli(
                         config=config.to_dict(),
                         k=config.k,
                         recorded_at=recorded_at,
-                        **evaluation_progress,
+                        on_progress=publish_case if on_progress is not None else None,
                     )
 
                 report = await run_ablation(
@@ -319,7 +314,7 @@ async def _run_cli(
                 )
                 all_outcomes.extend(report.outcomes)
 
-                if target_text_chars == targets[-1]:
+                if target_tokens == targets[-1]:
                     budget_retriever = make_retriever(
                         session,
                         strategy=budget_strategy,
@@ -348,7 +343,7 @@ async def _run_cli(
             indexing=indexing_measurements,
             query_budget=query_budget,
             query_budget_arm=QueryBudgetArm(
-                target_text_chars=targets[-1],
+                target_tokens=targets[-1],
                 strategy=budget_strategy,
                 lexical_ranker=budget_ranker,
                 bm25=budget_bm25,

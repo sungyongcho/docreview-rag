@@ -91,6 +91,8 @@ class WipeService:
                 self._lease = tuple(recorded["lease"])
                 self._lease_instance = recorded["lease_instance"]
                 self._lease_daemon = recorded["lease_daemon"]
+                if self._lease_daemon is None:
+                    raise WipeError("Reset audit daemon identity is missing")
                 self._docker_host = self._lease_daemon["endpoint"]
             if self._result["status"] == "running":
                 self._result.update(status="interrupted", message="Operator restarted during reset")

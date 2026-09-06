@@ -13,7 +13,7 @@ import { AcquisitionFields } from "@/components/acquisition-fields";
 import { companyLabel } from "@/lib/company-labels";
 import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeline";
 import { stageStatusLabel } from "@/lib/pipeline";
-import type { AdminDocument, ManifestSummary } from "@/lib/types";
+import type { CorpusDocument, ManifestSummary } from "@/lib/types";
 
 export interface AcquisitionForm {
   registry: "sec" | "dart";
@@ -25,13 +25,16 @@ export interface BuildPipelineProps {
   pipeline: Pipeline;
   focusStage?: string | null;
   embeddingProvider?: string | null;
-  documents?: AdminDocument[];
+  documents?: CorpusDocument[];
   live: boolean;
   busy: boolean;
   canOperateCorpus: boolean;
   acquisition: AcquisitionForm;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
+  selectedSources?: string[];
+  selectedDocumentCount?: number;
+  onToggleSource?: (key: string) => void;
   /** Ingested documents per registry, used for the per-manifest "ingested" count. */
   registryCounts?: Record<string, number>;
   /** Runtime flags for the strip; `null` or `undefined` means "not known yet". */
@@ -47,7 +50,7 @@ export interface BuildPipelineProps {
   onCancelJob: (jobId: string) => void;
   onDownload: () => void;
   onIngestAll: () => void;
-  onIngest: (manifestName: string) => void;
+  onIngest: (manifestName: string, selectionId: string) => void;
   onBackfill: () => void;
   onRebuildBm25: () => void;
   onAsk: () => void;
@@ -171,6 +174,9 @@ export function BuildPipeline(props: BuildPipelineProps) {
             documents={props.documents ?? []}
             onAcquisitionValidityChange={setAcquisitionValid}
             manifests={props.manifests}
+            selectedSources={props.selectedSources}
+            selectedDocumentCount={props.selectedDocumentCount}
+            onToggleSource={props.onToggleSource}
             registryCounts={props.registryCounts ?? {}}
             onIngest={props.onIngest}
             onOpenDocuments={props.onOpenDocuments}
@@ -203,6 +209,7 @@ interface RuntimeStripProps {
 
 interface RuntimeProblem {
   reason: string;
+  guidance?: string;
   /** Command line shown when no local operator is attached. */
   fix: string;
   /** Operations registry commands that perform the fix, in order. */
@@ -227,7 +234,7 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
   if (databaseConnected === false) {
     problems.push({ reason: schemaMessage || "The database is not connected.", fix: "docker compose up -d db", commands: [{ id: "db-start", label: "Start database" }] });
   } else if (schemaStatus === "drifted" || schemaStatus === "unavailable") {
-    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, fix: "uv run python -m app.db.migrate --plan", commands: [{ id: "db-migrate-plan", label: "Plan migrations" }, { id: "db-migrate-apply", label: "Apply migrations" }] });
+    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, guidance: "Keep this database intact. Use an empty isolated database or a compatible database for setup.", fix: "", commands: [] });
   }
   if (writable === false) {
     problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files. Set HOST_GID=$(id -g) in .env, then rebuild the app.", fix: "HOST_GID=$(id -g) docker compose up -d app", commands: [{ id: "app-start", label: "Rebuild app" }] });
@@ -243,11 +250,12 @@ function RuntimeStrip({ pipeline, live, databaseConnected, schemaStatus, schemaM
         {live && <button className="button ghost" type="button" onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button>}
       </div>
       {problems.map((problem) => (
-        <div className="notice error" role="alert" key={problem.fix}>
+        <div className="notice error" role="alert" key={problem.fix || problem.reason}>
           <p>{t(problem.reason)}</p>
-          {onRunOperation
+          {problem.guidance && <p>{t(problem.guidance)}</p>}
+          {onRunOperation && problem.commands.length > 0
             ? <div className="action-row">{problem.commands.map((command) => <button className="button" type="button" key={command.id} onClick={() => onRunOperation(command.id)}>{t(command.label)}</button>)}</div>
-            : <code>{problem.fix}</code>}
+            : problem.fix && <code>{problem.fix}</code>}
         </div>
       ))}
       </div>
@@ -275,12 +283,15 @@ interface StageCardProps {
   handler: (kind: StageActionKind) => () => void;
   disabled: (kind: StageActionKind) => boolean;
   acquisition: AcquisitionForm;
-  documents: AdminDocument[];
+  documents: CorpusDocument[];
   onAcquisitionValidityChange: (valid: boolean) => void;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
+  selectedSources?: string[];
+  selectedDocumentCount?: number;
+  onToggleSource?: (key: string) => void;
   registryCounts: Record<string, number>;
-  onIngest: (manifestName: string) => void;
+  onIngest: (manifestName: string, selectionId: string) => void;
   onOpenDocuments: () => void;
   onOpenJobs: () => void;
   onOpenStatus: () => void;
@@ -290,11 +301,11 @@ interface StageCardProps {
 function manifestSummary(manifest: ManifestSummary, registryCounts: Record<string, number>, locale: Locale): string {
   if (!manifest.valid) return translate(locale, "invalid manifest");
   const parts = [translate(locale, "{count} entries", { count: (manifest.documents ?? 0).toLocaleString(locale) }), translate(locale, "{count} on disk", { count: (manifest.sources_present ?? 0).toLocaleString(locale) })];
-  if (manifest.registry && Object.hasOwn(registryCounts, manifest.registry)) parts.push(translate(locale, "{count} ingested", { count: registryCounts[manifest.registry].toLocaleString(locale) }));
+
   return parts.join(" · ");
 }
 
-function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, onAcquisitionValidityChange, manifests, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -343,10 +354,14 @@ function StageCard({ stage, isNext, readOnly, handler, disabled, acquisition, on
             <details className="stage-advanced" open>
               <summary>{t("Change…")}</summary>
               <div>
+                <p role="status">{t("Selected documents: {count}", { count: selectedDocumentCount })}</p>
                 {manifests.map((manifest) => (
                   <div className="manifest-row" key={manifest.name}>
-                    <span>{manifest.name} · {(manifest.registry ?? "other").toUpperCase()} · {manifestSummary(manifest, registryCounts, locale)}</span>
-                    <button className="button" type="button" aria-label={t("Ingest {p0}", { p0: manifest.name })} disabled={!manifest.valid || disabled("ingest_all")} onClick={() => onIngest(manifest.name)}>{t("Ingest")}</button>
+                    <span>{manifest.name} · {manifest.registries.join(" / ").toUpperCase()} · {manifestSummary(manifest, registryCounts, locale)}</span>
+                    {manifest.selections.map((selection) => {
+                      const key = `${manifest.name}:${selection.selection_id}`;
+                      return <div key={key}><label><input type="checkbox" checked={selectedSources.includes(key)} onChange={() => onToggleSource?.(key)} disabled={!manifest.valid || disabled("ingest_all")} />{selection.selection_id} · {selection.document_ids.length} {t("documents")}</label><button className="button" type="button" aria-label={t("Ingest {p0}", { p0: `${manifest.name} / ${selection.selection_id}` })} disabled={!manifest.valid || disabled("ingest_all")} onClick={() => onIngest(manifest.name, selection.selection_id)}>{t("Ingest")}</button></div>;
+                    })}
                   </div>
                 ))}
                 {!manifests.length && <p className="helper">{t("No manifests found in data/corpus.")}</p>}

@@ -1,16 +1,32 @@
 """Published inventory contracts against an explicitly isolated PostgreSQL database."""
 
 import asyncio
+import hashlib
 import os
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.document_catalog import DocumentCatalog, public_source_url
+from app.api.runtime import RuntimeApiServices
 from app.corpus_admin import CHUNK_PREVIEW_CHARS, CHUNK_PREVIEW_LIMIT
-from app.db.models import Base, Chunk, Document, EvalResult, EvaluationSnapshot, SnapshotDocument
+from app.db.models import (
+    Base,
+    Chunk,
+    ChunkEmbedding,
+    Corpus,
+    Document,
+    DocumentParse,
+    EvalResult,
+    EvaluationSnapshot,
+    ParsedStructure,
+    SnapshotDocument,
+    SourceArtifact,
+)
+from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingIdentity
+from tests.ingestion.support import filing_document
 from tests.live_postgres import live_postgres_unavailable
 
 
@@ -55,26 +71,53 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                 connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
             )
             async with factory() as session:
+                session.add(Corpus(corpus_id="catalog", name="Catalog test"))
+                await session.flush()
                 for index, name in enumerate(("published", "private", "archived", "changed"), 1):
+                    reference = filing_document(
+                        registry="dart" if name == "private" else "sec",
+                        issuer=name,
+                        document_id=name,
+                        fiscal_year=2020 + index,
+                        filing_id="20250311001085"
+                        if name == "private"
+                        else f"0001045810-24-{index:06d}",
+                    )
+                    metadata = reference.model_dump(mode="json")
+                    metadata.pop("document_id")
+                    metadata["source_url"] = "/home/private/source.html"
+                    session.add(Document(doc_id=name, **metadata))
+                    await session.flush()
                     session.add(
-                        Document(
+                        SourceArtifact(
+                            corpus_id="catalog",
+                            artifact_id=name,
                             doc_id=name,
-                            registry="dart" if name == "private" else "sec",
-                            language="ko" if name == "private" else "en",
-                            issuer=name,
-                            issuer_id=name,
-                            fiscal_year=2020 + index,
-                            form="사업보고서" if name == "private" else "10-K",
-                            filing_date="2024-01-01",
-                            report_period="2023-12-31",
-                            filing_id=name,
-                            source_url="/home/private/source.html",
-                            parse_status="parsed",
-                            item_index=[],
-                            source_length=100,
-                            source_sha256=str(index) * 64,
+                            role="primary",
+                            path=f"{name}.html",
+                            sha256=str(index) * 64,
+                            byte_length=100,
+                            encoding="utf-8",
+                            acquisition={},
                         )
                     )
+                    await session.flush()
+                    session.add(
+                        ParsedStructure(
+                            structure_id=str(index) * 64,
+                            corpus_id="catalog",
+                            artifact_id=name,
+                            artifact_sha256=str(index) * 64,
+                            parser_identity="catalog-test",
+                            source_sha256=str(index) * 64,
+                            source_length=100,
+                            structure={},
+                            parse_status="parsed",
+                            item_index=[],
+                        )
+                    )
+                    await session.flush()
+                    session.add(DocumentParse(doc_id=name, structure_id=str(index) * 64))
                     result = EvalResult(
                         suite=name, config={}, metrics={}, raw_artifact_path="/private/eval.json"
                     )
@@ -123,6 +166,9 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                             ordinal=ordinal,
                             body=body,
                             context_header="Published filing",
+                            stable_key=hashlib.sha256(f"published:{ordinal}".encode()).hexdigest(),
+                            structure_id="1" * 64,
+                            index_text_sha256=hashlib.sha256(body.encode()).hexdigest(),
                             index_text=body,
                             start_char=ordinal,
                             end_char=ordinal + len(body),
@@ -130,10 +176,31 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                             citation="Published filing, Item 1A",
                         )
                     )
+                await session.flush()
+                first_chunk = await session.scalar(select(Chunk).order_by(Chunk.id).limit(1))
+                assert first_chunk is not None
+                for model, tokenizer, input_hash in (
+                    ("catalog", "cl100k_base", first_chunk.index_text_sha256),
+                    ("other-model", "cl100k_base", first_chunk.index_text_sha256),
+                    ("catalog", "other-tokenizer", first_chunk.index_text_sha256),
+                    ("catalog", "cl100k_base", "e" * 64),
+                ):
+                    session.add(
+                        ChunkEmbedding(
+                            chunk_id=first_chunk.id,
+                            input_sha256=input_hash,
+                            provider="test",
+                            model=model,
+                            dimensions=384,
+                            tokenizer=tokenizer,
+                            embedding=[1.0, *([0.0] * 383)],
+                        )
+                    )
                 await session.commit()
             catalog = DocumentCatalog(
                 factory,
                 public_only=True,
+                embedding_identity=EmbeddingIdentity("test", "catalog", 384, "cl100k_base"),
                 company_names=lambda: {
                     ("sec", "published"): "Visible Company",
                     ("dart", "private"): "Hidden Company",
@@ -155,6 +222,15 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
                 cursor=None,
                 limit=50,
             )
+            runtime = RuntimeApiServices(
+                session_factory=factory, embedding_provider=DeterministicEmbeddingProvider()
+            )
+            runtime_documents = await runtime.list_documents()
+            assert len(runtime_documents) == 4
+            assert all(
+                document.parse_status == "parsed" and document.source_length == 100
+                for document in runtime_documents
+            )
             page = await catalog.documents(**parameters)
             assert [document.doc_id for document in page.documents] == ["published"]
             assert page.total == 1 and page.documents[0].snapshot_count == 1
@@ -172,7 +248,11 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
             assert (await catalog.document_facets(registry="sec")) == facets
             hidden_facets = await catalog.document_facets("dart")
             assert all(not values for values in hidden_facets.model_dump().values())
-            admin_facets = await DocumentCatalog(factory, public_only=False).document_facets("dart")
+            admin_facets = await DocumentCatalog(
+                factory,
+                public_only=False,
+                embedding_identity=EmbeddingIdentity("test", "catalog", 384, "cl100k_base"),
+            ).document_facets("dart")
             assert [value.value for value in admin_facets.issuers] == ["private"]
             assert [value.value for value in admin_facets.years] == ["2022"]
             assert [value.value for value in admin_facets.languages] == ["ko"]
@@ -185,7 +265,13 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
             assert len(detail.chunks) == CHUNK_PREVIEW_LIMIT
             assert all(len(chunk.body) == CHUNK_PREVIEW_CHARS for chunk in detail.chunks)
             assert detail.text_chunks == CHUNK_PREVIEW_LIMIT and detail.table_chunks == 1
-            assert detail.embedded_chunks == 0 and not detail.embedding_identities
+            assert detail.embedded_chunks == 1
+            assert len(detail.embedding_identities) == 1
+            assert detail.embedding_identities[0].model == "catalog"
+            assert detail.embedding_identities[0].tokenizer == "cl100k_base"
+            assert detail.embedding_identities[0].count == 1
+            assert page.documents[0].embedded_chunks == 1
+            assert page.documents[0].embedding_status == "partial"
             assert detail.item_counts[0].count == CHUNK_PREVIEW_LIMIT + 1
             assert [membership.snapshot_id for membership in detail.snapshot_memberships] == [
                 published_id
@@ -193,7 +279,11 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
             for name in ("private", "archived", "changed", "missing"):
                 assert await catalog.document_detail(name) is None
             assert (
-                await DocumentCatalog(factory, public_only=False).documents(**parameters)
+                await DocumentCatalog(
+                    factory,
+                    public_only=False,
+                    embedding_identity=EmbeddingIdentity("test", "catalog", 384, "cl100k_base"),
+                ).documents(**parameters)
             ).total == 4
             async with factory() as session:
                 await session.execute(

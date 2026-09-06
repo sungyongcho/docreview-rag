@@ -1,6 +1,7 @@
 """Live persistence and atomic publication for golden revisions."""
 
 import asyncio
+import hashlib
 import json
 
 import pytest
@@ -70,7 +71,55 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
         (golden_dir / "retrieval.json").write_text(
             json.dumps([_absent_case("Original question?")]), encoding="utf-8"
         )
-        (corpus_dir / "manifest.json").write_text("[]", encoding="utf-8")
+        raw = "<p>Source.</p>"
+        digest = hashlib.sha256(raw.encode()).hexdigest()
+        (corpus_dir / "source.html").write_text(raw)
+        manifest = corpus_dir / "manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "corpus": {"corpus_id": "test", "name": "Test"},
+                    "documents": [
+                        {
+                            "document_id": "TEST-FY2024",
+                            "registry": "sec",
+                            "language": "en",
+                            "issuer": "TEST",
+                            "issuer_id": "0000000001",
+                            "filing_id": "0000000001-24-000001",
+                            "fiscal_year": 2024,
+                            "form": "10-K",
+                            "filing_date": "2025-01-01",
+                            "report_period": "2024-12-31",
+                            "source_url": "https://example.org/source",
+                            "sec": {
+                                "cik": "0000000001",
+                                "accession": "0000000001-24-000001",
+                                "primary_document": "source.html",
+                            },
+                        }
+                    ],
+                    "artifacts": [
+                        {
+                            "artifact_id": "source",
+                            "document_id": "TEST-FY2024",
+                            "role": "primary",
+                            "path": "source.html",
+                            "sha256": digest,
+                            "byte_length": len(raw.encode()),
+                            "encoding": "utf-8",
+                            "acquisition": {
+                                "acquired_at": "2025-01-01T00:00:00Z",
+                                "url": "https://example.org/source",
+                                "media_type": "text/html",
+                            },
+                        }
+                    ],
+                    "selections": [{"selection_id": "sec-evaluation", "artifact_ids": ["source"]}],
+                }
+            ),
+            encoding="utf-8",
+        )
         service = GoldenAdminService(
             session_factory=factory,
             golden_dir=golden_dir,

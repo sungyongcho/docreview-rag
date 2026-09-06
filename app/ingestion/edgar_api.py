@@ -1,11 +1,8 @@
-"""Discover EDGAR 10-K filings and fetch them onto the paths a manifest names.
+"""Discover SEC filings and acquire verified artifacts into the common corpus manifest.
 
-The manifest stays the contract between this module and everything downstream: an
-entry carries the SEC ``url`` and the repository-relative ``file`` the parser will
-later read. Fetching only makes the working tree agree with what the manifest says,
-which is what lets raw filings stay untracked. Discovery is the other half — it
-writes entries for filings the manifest does not name yet, in exactly the shape the
-committed corpus already uses, and never rewrites an entry that is already there.
+SEC HTTP rows become normalized document references before acquisition. Complete
+source bytes are published atomically and identified by content hash; one named
+selection records exactly the acquired artifacts requested by this operation.
 
 Two things separate a stored document from a stored response. SEC requires a
 declared contact in ``User-Agent`` and throttles clients that omit one, so the
@@ -19,13 +16,29 @@ import asyncio
 from collections.abc import AsyncIterator, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Final
 
 import httpx
 
-from app.ingestion.edgar import doc_id, edgar_sort_key
+from app.ingestion.acquisition import (
+    AcquiredFiling,
+    current_primary,
+    merge_acquired,
+    publish_bytes,
+    read_catalog,
+    selection_identity,
+)
+from app.ingestion.manifest import (
+    Acquisition,
+    DocumentReference,
+    Manifest,
+    SecMetadata,
+    SourceArtifact,
+)
 from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
 
 DEFAULT_MANIFEST: Final[Path] = Path("data/corpus/manifest.json")
@@ -66,7 +79,7 @@ PARTIAL_SUFFIX: Final[str] = ".part"
 
 # Opens the display for one entry's download. The library calls it and passes the
 # hook on; only the command knows that the hook is drawn as a bar.
-ProgressFactory = Callable[[Mapping[str, Any]], AbstractContextManager[ByteProgress | None]]
+ProgressFactory = Callable[[DocumentReference], AbstractContextManager[ByteProgress | None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,9 +87,11 @@ class EdgarAcquisitionResult:
     """Observable files and manifest growth from one acquisition run."""
 
     manifest_entries: int
-    added: tuple[dict[str, Any], ...]
+    added: tuple[DocumentReference, ...]
     fetched: tuple[tuple[Path, int], ...]
     dry_run: bool = False
+    manifest: str = "manifest.json"
+    selection_id: str = ""
 
 
 class EdgarApiError(RuntimeError):
@@ -139,107 +154,51 @@ def parse_years(text: str) -> range:
 # --- manifest ---
 
 
-def read_manifest(path: Path) -> list[dict[str, Any]]:
-    """Return the manifest entries needed to fetch, checking only what fetching needs.
-
-    Ingestion validates a manifest through ``load_seed_batch``, which parses each
-    filing and therefore requires the very files this command has not downloaded yet.
-    So the check here is deliberately weaker: a list of entries that each name a URL
-    and a destination.
-
-    Raises
-    ------
-    ValueError
-        If the file is missing, is not UTF-8 JSON, or holds an entry without a
-        nonblank ``url`` and ``file``.
-    """
-    if not path.is_file():
-        raise ValueError(f"manifest was not found: {path}")
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except UnicodeDecodeError:
-        raise ValueError(f"manifest must be UTF-8 text: {path}") from None
-    except json.JSONDecodeError as error:
-        raise ValueError(
-            f"manifest is not valid JSON at line {error.lineno} column {error.colno}: {path}"
-        ) from None
-    if not isinstance(payload, list):
-        raise ValueError(f"manifest must hold a list of entries: {path}")
-    for index, entry in enumerate(payload):
-        if not isinstance(entry, Mapping):
-            raise ValueError(f"manifest entry {index} is not an object")
-        for key in ("url", "file"):
-            value = entry.get(key)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"manifest entry {index} has no nonblank {key!r}")
-    return list(payload)
+def read_manifest(path: Path) -> Manifest:
+    """Read the shared typed corpus catalog."""
+    return read_catalog(path)
 
 
-def write_manifest(path: Path, entries: Sequence[Mapping[str, Any]]) -> None:
-    """Write the manifest back with the same shape and indentation it is kept in."""
+def write_manifest(path: Path, manifest: Manifest) -> None:
+    """Publish the shared catalog atomically."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps([dict(entry) for entry in entries], indent=2) + "\n"
-    path.write_text(payload, encoding="utf-8")
+    manifest.write(path)
 
 
 def merge_entries(
-    existing: Sequence[Mapping[str, Any]], discovered: Sequence[Mapping[str, Any]]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Return the manifest with new filings appended, and the filings that were new.
-
-    Existing entries keep their identity and their position: a corpus that has been
-    measured against should not shuffle because someone widened it, and a diff that
-    shows only additions is one a reader can check. New entries land after them,
-    ordered by the registry's own key.
-
-    A filing is new when neither its accession nor its ``doc_id`` is already present.
-    The second test matters because ``doc_id`` is the database key — two filings that
-    report the same fiscal year would collapse into one row on ingest.
-    """
-    merged = [dict(entry) for entry in existing]
-    aliases_by_ticker = {
-        str(entry.get("ticker", "")): list(entry["aliases"])
-        for entry in merged
-        if isinstance(entry.get("aliases"), list)
-    }
-    accessions = {str(entry.get("accession", "")) for entry in merged}
-    documents = {doc_id(entry) for entry in merged}
-
-    added: list[dict[str, Any]] = []
-    for entry in sorted((dict(item) for item in discovered), key=edgar_sort_key):
-        ticker = str(entry.get("ticker", ""))
-        entry["aliases"] = aliases_by_ticker.get(
-            ticker,
-            list(entry.get("aliases") or [ticker]),
-        )
-        if str(entry["accession"]) in accessions or doc_id(entry) in documents:
+    existing: Sequence[DocumentReference], discovered: Sequence[DocumentReference]
+) -> tuple[list[DocumentReference], list[DocumentReference]]:
+    """Merge exact filing identities, preserving established document IDs and aliases."""
+    merged = list(existing)
+    identities = {(document.registry, document.filing_id) for document in merged}
+    added: list[DocumentReference] = []
+    for document in sorted(discovered, key=lambda document: document.document_id):
+        identity = (document.registry, document.filing_id)
+        if identity in identities:
             continue
-        accessions.add(str(entry["accession"]))
-        documents.add(doc_id(entry))
-        added.append(entry)
-    return merged + added, added
+        identities.add(identity)
+        merged.append(document)
+        added.append(document)
+    return merged, added
 
 
 def pending(
-    entries: Sequence[Mapping[str, Any]],
+    entries: Sequence[DocumentReference],
     *,
+    manifest: Manifest,
+    corpus_root: Path,
     force: bool = False,
     tickers: Collection[str] = (),
-) -> list[dict[str, Any]]:
-    """Return the entries still to fetch, in manifest order.
-
-    An entry already on disk is skipped unless ``force`` is set, which is what makes
-    the command safe to re-run after an interrupted download.
-    """
+) -> list[DocumentReference]:
+    """Return selected filings lacking a verified acquired artifact."""
     wanted = {ticker.upper() for ticker in tickers}
-    selected = []
-    for entry in entries:
-        if wanted and str(entry.get("ticker", "")).upper() not in wanted:
-            continue
-        if not force and Path(entry["file"]).exists():
-            continue
-        selected.append(dict(entry))
-    return selected
+    return [
+        document
+        for document in entries
+        if document.registry == "sec"
+        and (not wanted or document.issuer.upper() in wanted)
+        and (force or current_primary(manifest, document.document_id, corpus_root) is None)
+    ]
 
 
 # --- transport ---
@@ -447,7 +406,9 @@ async def fetch_filing_rows(
     """
     url = SUBMISSIONS_URL.format(cik=cik)
     payload = await fetch_json(client, url, user_agent=user_agent)
-    filings = payload.get("filings") if isinstance(payload, Mapping) else None
+    if not isinstance(payload, Mapping):
+        raise EdgarApiError(url, "submissions carry no filings")
+    filings = payload.get("filings")
     if not isinstance(filings, Mapping):
         raise EdgarApiError(url, "submissions carry no filings")
 
@@ -477,30 +438,34 @@ async def fetch_filing_rows(
     return rows
 
 
-def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> dict[str, Any]:
-    """Build one manifest entry in the shape the committed corpus already uses."""
+def manifest_entry(ticker: str, cik: int, row: Mapping[str, str]) -> DocumentReference:
+    """Normalize an SEC discovery row into the common filing identity."""
     accession = row["accessionNumber"]
     company_name = row.get("companyName", "").strip()
-    return {
-        "ticker": ticker,
-        "aliases": [ticker, company_name]
-        if company_name and company_name.casefold() != ticker.casefold()
-        else [ticker],
-        "cik": cik,
-        "accession": accession,
-        "filing_date": row["filingDate"],
-        "report_date": row["reportDate"],
-        "primary_doc": row["primaryDocument"],
-        "file": str(CORPUS_ROOT / ticker / f"{row['filingDate']}_{accession}.html"),
-        "url": ARCHIVE_URL.format(
+    return DocumentReference(
+        document_id=f"sec-{accession}",
+        registry="sec",
+        language="en",
+        issuer=ticker,
+        issuer_id=f"{cik:010d}",
+        aliases=tuple(dict.fromkeys(value for value in (ticker, company_name) if value)),
+        filing_id=accession,
+        fiscal_year=int(row["reportDate"][:4]),
+        form=ANNUAL_REPORT_FORM,
+        filing_date=date.fromisoformat(row["filingDate"]),
+        report_period=date.fromisoformat(row["reportDate"]),
+        source_url=ARCHIVE_URL.format(
             cik=cik, accession=accession.replace("-", ""), document=row["primaryDocument"]
         ),
-    }
+        sec=SecMetadata(
+            cik=f"{cik:010d}", accession=accession, primary_document=row["primaryDocument"]
+        ),
+    )
 
 
 def annual_reports(
     rows: Sequence[Mapping[str, str]], *, ticker: str, cik: int, years: Collection[int]
-) -> list[dict[str, Any]]:
+) -> list[DocumentReference]:
     """Return manifest entries for the 10-K rows whose fiscal year is in range."""
     entries = []
     for row in rows:
@@ -522,10 +487,10 @@ async def discover(
     tickers: Sequence[str],
     years: Collection[int],
     user_agent: str,
-) -> list[dict[str, Any]]:
+) -> list[DocumentReference]:
     """Return manifest entries for every requested issuer's 10-K filings in range."""
     ciks = await resolve_ciks(client, tickers, user_agent=user_agent)
-    entries: list[dict[str, Any]] = []
+    entries: list[DocumentReference] = []
     for position, (ticker, cik) in enumerate(ciks.items()):
         if position:
             await asyncio.sleep(REQUEST_INTERVAL_SECONDS)
@@ -537,61 +502,58 @@ async def discover(
 # --- fetching ---
 
 
-def store_document(path: Path, body: bytes) -> None:
-    """Write one filing to its manifest path, never leaving a partial file behind.
-
-    The bytes land beside the target first and are renamed into place, so an
-    interrupted run leaves the destination either absent or complete — never a
-    truncated file that the next run would skip as already fetched.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(path.name + PARTIAL_SUFFIX)
-    try:
-        partial.write_bytes(body)
-        partial.replace(path)
-    finally:
-        partial.unlink(missing_ok=True)
+def store_document(corpus_root: Path, relative_path: str, body: bytes) -> Path:
+    """Atomically store a confined source artifact."""
+    return publish_bytes(corpus_root, relative_path, body)
 
 
-def _no_progress(entry: Mapping[str, Any]) -> AbstractContextManager[ByteProgress | None]:
-    """Report nothing for one entry, for callers that only want the documents."""
+def _no_progress(document: DocumentReference) -> AbstractContextManager[ByteProgress | None]:
+    """Provide a no-op byte progress scope."""
     return nullcontext(None)
 
 
 async def download_pending(
     client: httpx.AsyncClient,
-    entries: Sequence[Mapping[str, Any]],
+    entries: Sequence[DocumentReference],
     *,
+    corpus_root: Path,
     user_agent: str,
     progress: ProgressFactory | None = None,
-) -> AsyncIterator[tuple[Path, int]]:
-    """Fetch and store each entry, yielding what landed as it lands.
-
-    Results are yielded rather than printed so the pacing and the reporting stay in
-    different places: this loop owns the interval SEC asks for, the caller owns the
-    display it opens through ``progress``.
-    """
+) -> AsyncIterator[AcquiredFiling]:
+    """Download verified UTF-8 primary artifacts with immutable content-addressed paths."""
     open_progress = progress or _no_progress
-    for index, entry in enumerate(entries):
+    for index, document in enumerate(entries):
         if index:
             await asyncio.sleep(REQUEST_INTERVAL_SECONDS)
-        with open_progress(entry) as on_progress:
+        with open_progress(document) as on_progress:
             body = await fetch_document(
-                client, entry["url"], user_agent=user_agent, on_progress=on_progress
+                client, document.source_url, user_agent=user_agent, on_progress=on_progress
             )
-        path = Path(entry["file"])
-        store_document(path, body)
-        yield path, len(body)
+        body.decode("utf-8", errors="strict")
+        digest = hashlib.sha256(body).hexdigest()
+        path = f"sec/{document.filing_id}/{digest}.html"
+        artifact = SourceArtifact(
+            artifact_id=f"{document.document_id}:primary:{digest}",
+            document_id=document.document_id,
+            role="primary",
+            path=path,
+            sha256=digest,
+            byte_length=len(body),
+            encoding="utf-8",
+            acquisition=Acquisition(
+                acquired_at=datetime.now(UTC),
+                url=document.source_url,
+                media_type="text/html",
+                original_encoding="utf-8",
+            ),
+        )
+        store_document(corpus_root, path, body)
+        yield AcquiredFiling(document, (artifact,))
 
 
-def _entry_label(entry: Mapping[str, Any]) -> str:
-    """Name one EDGAR entry for terminal and administrative progress."""
-    document = entry.get("primary_doc") or Path(entry["file"]).name
-    try:
-        identity = doc_id(dict(entry))
-    except KeyError:
-        identity = str(entry.get("ticker") or Path(entry["file"]).stem)
-    return f"{identity} · {document}"
+def _entry_label(document: DocumentReference) -> str:
+    """Name one typed filing for terminal and administrative progress."""
+    return f"{document.issuer} FY{document.fiscal_year} · {document.filing_id}"
 
 
 async def acquire_edgar(
@@ -605,73 +567,58 @@ async def acquire_edgar(
     on_progress: OperationProgressCallback | None = None,
     progress_factory: ProgressFactory | None = None,
 ) -> EdgarAcquisitionResult:
-    """Discover and download missing EDGAR filings without parsing or ingesting them."""
+    """Acquire explicit SEC filing scope into the shared manifest and named selection."""
     declared = require_user_agent(user_agent)
-    entries = read_manifest(manifest_path)
-    added: list[dict[str, Any]] = []
-
+    catalog = read_manifest(manifest_path)
+    documents = list(catalog.documents)
+    added: list[DocumentReference] = []
+    wanted = tuple(sorted({ticker.upper() for ticker in tickers})) or tuple(
+        sorted({document.issuer for document in documents if document.registry == "sec"})
+    )
     if years is not None:
-        wanted = tuple(tickers) or tuple(
-            dict.fromkeys(str(entry["ticker"]) for entry in entries if entry.get("ticker"))
-        )
         if not wanted:
             raise ValueError("--years needs --ticker when the manifest names no issuer")
         if on_progress is not None:
             on_progress(OperationProgress("discover", 0, len(wanted), "Discovering EDGAR filings"))
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            discovered = await discover(
-                client,
-                tickers=wanted,
-                years=years,
-                user_agent=declared,
-            )
-        entries, added = merge_entries(entries, discovered)
-        if on_progress is not None:
-            on_progress(
-                OperationProgress(
-                    "discover",
-                    len(wanted),
-                    len(wanted),
-                    f"Discovered {len(added)} new filing(s)",
-                )
-            )
-        if dry_run:
-            return EdgarAcquisitionResult(len(entries), tuple(added), (), dry_run=True)
-        if added:
-            write_manifest(manifest_path, entries)
-
-    targets = pending(entries, force=force, tickers=tickers)
-    if not targets:
-        if on_progress is not None:
-            on_progress(OperationProgress("download", 0, 0, "Every selected filing is on disk"))
-        return EdgarAcquisitionResult(len(entries), tuple(added), ())
-
+            discovered = await discover(client, tickers=wanted, years=years, user_agent=declared)
+        documents, added = merge_entries(documents, discovered)
+    selected = [
+        document
+        for document in documents
+        if document.registry == "sec"
+        and (not wanted or document.issuer in wanted)
+        and (years is None or document.fiscal_year in years)
+    ]
+    selection_id = selection_identity("sec", wanted, tuple(years or ()))
+    if dry_run:
+        return EdgarAcquisitionResult(
+            len(documents), tuple(added), (), True, selection_id=selection_id
+        )
+    if not selected:
+        raise ValueError("acquisition scope contains no SEC filings")
+    targets = pending(selected, manifest=catalog, corpus_root=manifest_path.parent, force=force)
     fetched: list[tuple[Path, int]] = []
-    completed = 0
 
     def administrative_progress(
-        entry: Mapping[str, Any],
+        document: DocumentReference,
     ) -> AbstractContextManager[ByteProgress | None]:
-        """Bridge byte callbacks onto the shared operation progress shape."""
+        """Bridge source byte progress without exposing transport details to callers."""
         if progress_factory is not None:
-            return progress_factory(entry)
-        if on_progress is None:
+            return progress_factory(document)
+        publish = on_progress
+        if publish is None:
             return nullcontext(None)
 
         @contextmanager
         def bridge() -> Iterator[ByteProgress]:
-            """Yield a byte callback that publishes administrative progress."""
+            """Yield a callback scoped to this filing download."""
 
             def report(read: int, total: int | None) -> None:
-                """Publish byte progress for the current filing."""
-                on_progress(
+                """Publish bounded byte progress."""
+                publish(
                     OperationProgress(
-                        "download",
-                        completed,
-                        len(targets),
-                        _entry_label(entry),
-                        read,
-                        total,
+                        "download", len(fetched), len(targets), _entry_label(document), read, total
                     )
                 )
 
@@ -680,25 +627,43 @@ async def acquire_edgar(
         return bridge()
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
-        downloads = download_pending(
+        async for acquired in download_pending(
             client,
             targets,
+            corpus_root=manifest_path.parent,
             user_agent=declared,
             progress=administrative_progress,
-        )
-        async for path, size in downloads:
-            fetched.append((path, size))
-            completed += 1
+        ):
+            catalog = merge_acquired(
+                catalog,
+                [acquired],
+                selection_id=selection_id,
+                selected_document_ids=[document.document_id for document in selected],
+                corpus_root=manifest_path.parent,
+            )
+            write_manifest(manifest_path, catalog)
+            fetched.append(
+                (manifest_path.parent / acquired.primary.path, acquired.primary.byte_length)
+            )
             if on_progress is not None:
                 on_progress(
                     OperationProgress(
-                        "download",
-                        completed,
-                        len(targets),
-                        f"Stored {path}",
+                        "download", len(fetched), len(targets), _entry_label(acquired.document)
                     )
                 )
-    return EdgarAcquisitionResult(len(entries), tuple(added), tuple(fetched))
+    catalog = merge_acquired(
+        catalog,
+        [],
+        selection_id=selection_id,
+        selected_document_ids=[document.document_id for document in selected],
+        corpus_root=manifest_path.parent,
+    )
+    write_manifest(manifest_path, catalog)
+    if not targets and on_progress is not None:
+        on_progress(OperationProgress("download", 0, 0, "Every selected filing is valid"))
+    return EdgarAcquisitionResult(
+        len(catalog.documents), tuple(added), tuple(fetched), selection_id=selection_id
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
@@ -722,9 +687,9 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
         if years is not None:
             wanted = tickers or tuple(
                 dict.fromkeys(
-                    str(entry["ticker"])
-                    for entry in read_manifest(manifest_path)
-                    if entry.get("ticker")
+                    entry.issuer
+                    for entry in read_manifest(manifest_path).documents
+                    if entry.registry == "sec"
                 )
             )
             if not wanted:
@@ -734,7 +699,7 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
                 f"in {years.start}-{years.stop - 1}"
             )
 
-        def open_bar(entry: Mapping[str, Any]) -> AbstractContextManager[ByteProgress]:
+        def open_bar(entry: DocumentReference) -> AbstractContextManager[ByteProgress]:
             """Open a byte progress bar for one manifest entry."""
             return byte_bar(_entry_label(entry))
 
@@ -751,7 +716,7 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
         except ValueError as error:
             raise SystemExit(str(error)) from None
         for entry in result.added:
-            print(f"  + {doc_id(entry)}  {entry['accession']}  {entry['url']}")
+            print(f"  + {entry.document_id}  {entry.filing_id}  {entry.source_url}")
         if years is not None:
             print(f"{len(result.added)} new filing(s), {result.manifest_entries} in the manifest")
         if result.dry_run:

@@ -195,6 +195,7 @@ def load_candidate_cases(
     *,
     golden_cases: Sequence[GoldenCase],
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    selection_id: str = "sec-evaluation",
 ) -> list[CandidateCase]:
     """Load generated candidates through every mechanical intake gate.
 
@@ -206,6 +207,8 @@ def load_candidate_cases(
         Committed cases used for collision checks.
     manifest_path : str | Path
         Corpus manifest used to rebind every positive answer span.
+    selection_id : str
+        Named processing selection; defaults to the committed SEC evaluation suite.
 
     Returns
     -------
@@ -235,7 +238,7 @@ def load_candidate_cases(
     _validate_unique_candidates(candidates)
     _validate_disjoint_from_golden(candidates, golden_cases)
     try:
-        validate_golden_sources(candidates, manifest_path)
+        validate_golden_sources(candidates, manifest_path, selection_id=selection_id)
     except GoldenDataError as exc:
         raise CurationError(str(exc)) from exc
     return candidates
@@ -415,6 +418,7 @@ def promote_approved(
     golden_cases: Sequence[GoldenCase],
     *,
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    selection_id: str = "sec-evaluation",
     golden_prefix: str = DEFAULT_GOLDEN_ID_PREFIX,
 ) -> tuple[GoldenCase, ...]:
     """Mint new golden ids for explicitly approved candidates.
@@ -429,6 +433,8 @@ def promote_approved(
         Committed suite that reserves questions, spans, and existing ids.
     manifest_path : str | Path
         Corpus manifest used to rebind approved positive spans.
+    selection_id : str
+        Named processing selection; defaults to the committed SEC evaluation suite.
     golden_prefix : str
         Id namespace the promoted cases join. It must be the prefix of the suite
         in ``golden_cases``, because minting one suite's prefix into another
@@ -463,7 +469,7 @@ def promote_approved(
         return ()
 
     try:
-        validate_golden_sources(approved, manifest_path)
+        validate_golden_sources(approved, manifest_path, selection_id=selection_id)
     except GoldenDataError as exc:
         raise CurationError(str(exc)) from exc
     number = _next_golden_number(golden_cases, golden_prefix)

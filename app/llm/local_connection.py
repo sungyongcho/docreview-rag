@@ -11,6 +11,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
+from pydantic import TypeAdapter
 
 from app.llm.local_diagnostics import remediation_ids
 from app.llm.local_inventory import LocalModelInventory
@@ -87,8 +88,8 @@ class LocalConnectionManager:
         self.enabled = enabled
         self.path = path
         self.initial_base_url = initial_base_url or DEFAULT_LOCAL_BASE_URL
-        self.initial_protocol = initial_protocol
-        self.initial_source = initial_source
+        self.initial_protocol: LocalProtocol = initial_protocol
+        self.initial_source: ConnectionSource = initial_source
         self._api_key = api_key
         self._transport = transport
         self._lock = asyncio.Lock()
@@ -211,7 +212,10 @@ class LocalConnectionManager:
             )
             return LocalConnection(None, self.initial_protocol, "disabled", None)
         if data["version"] == 2 and state == "connected":
-            server = self._server(data.get("selected_server_id"))
+            selected_id = data.get("selected_server_id")
+            if not isinstance(selected_id, str):
+                raise ValueError("invalid selected local server")
+            server = self._server(selected_id)
             self._selected_server_id = server.id
             return self._connection(
                 server.base_url,
@@ -220,9 +224,9 @@ class LocalConnectionManager:
             )
         if state != "connected" or not isinstance(data.get("base_url"), str):
             raise ValueError("invalid local connection settings")
-        protocol = data.get("protocol", "auto")
-        if protocol not in {"auto", "ollama", "openai_responses"}:
-            raise ValueError("invalid local connection protocol")
+        protocol = TypeAdapter(LocalProtocol).validate_python(
+            data.get("protocol", "auto"), strict=True
+        )
         normalized = validate_base_url(data["base_url"])
         if normalized == self.initial_base_url and protocol == self.initial_protocol:
             self._selected_server_id = "default"

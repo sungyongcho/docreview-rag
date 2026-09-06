@@ -1,12 +1,13 @@
 """Golden suite metadata and serialized evaluation queue behavior."""
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 
 from app.api.admin_schemas import EvaluationRunRequest
 from app.config import Settings
-from app.corpus_admin import AdminCommand, RuntimeCorpusAdminService
+from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
 import app.evals.admin as admin_module
 from app.evals.admin import EvaluationAdminService
 from app.operator.jobs import JobExecutionCoordinator
@@ -86,7 +87,7 @@ def test_evaluation_queue_runs_one_job_to_completion(tmp_path: Path, monkeypatch
 
 
 def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, monkeypatch) -> None:
-    """Bind isolated DART runs to their own manifest and explicit BM25 values."""
+    """Bind isolated DART runs to their exact selection and explicit BM25 values."""
 
     async def scenario() -> None:
         """Capture one matrix invocation and verify its explicit parameters."""
@@ -112,7 +113,8 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
         await service._matrix(request)
 
         assert captured is not None
-        assert captured.manifest_name == "dart-manifest.json"
+        assert captured.manifest_name == "manifest.json"
+        assert captured.selection_id == "dart-evaluation"
         assert captured.bm25_k1 == 1.5
         assert captured.bm25_b == 0.6
 
@@ -128,7 +130,55 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
         """Resolve one revision for quick mode and materialize it for matrix mode."""
         corpus_dir = tmp_path / "corpus"
         corpus_dir.mkdir()
-        (corpus_dir / "manifest.json").write_text("[]", encoding="utf-8")
+        raw = "<p>Source.</p>"
+        digest = hashlib.sha256(raw.encode()).hexdigest()
+        (corpus_dir / "source.html").write_text(raw)
+        manifest = corpus_dir / "manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "corpus": {"corpus_id": "test", "name": "Test"},
+                    "documents": [
+                        {
+                            "document_id": "TEST-FY2024",
+                            "registry": "sec",
+                            "language": "en",
+                            "issuer": "TEST",
+                            "issuer_id": "0000000001",
+                            "filing_id": "0000000001-24-000001",
+                            "fiscal_year": 2024,
+                            "form": "10-K",
+                            "filing_date": "2025-01-01",
+                            "report_period": "2024-12-31",
+                            "source_url": "https://example.org/source",
+                            "sec": {
+                                "cik": "0000000001",
+                                "accession": "0000000001-24-000001",
+                                "primary_document": "source.html",
+                            },
+                        }
+                    ],
+                    "artifacts": [
+                        {
+                            "artifact_id": "source",
+                            "document_id": "TEST-FY2024",
+                            "role": "primary",
+                            "path": "source.html",
+                            "sha256": digest,
+                            "byte_length": len(raw.encode()),
+                            "encoding": "utf-8",
+                            "acquisition": {
+                                "acquired_at": "2025-01-01T00:00:00Z",
+                                "url": "https://example.org/source",
+                                "media_type": "text/html",
+                            },
+                        }
+                    ],
+                    "selections": [{"selection_id": "sec-evaluation", "artifact_ids": ["source"]}],
+                }
+            ),
+            encoding="utf-8",
+        )
         payload = [_absent_case("Revision question?")]
         service = EvaluationAdminService(
             settings=Settings(corpus_dir=corpus_dir),
@@ -214,13 +264,13 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
         gate = asyncio.Event()
         events: list[str] = []
 
-        async def corpus_runner(command, publish) -> str:
+        async def corpus_runner(command, publish) -> OperationOutcome:
             """Hold the shared lock while one corpus job is active."""
             del command, publish
             events.append("corpus-start")
             await gate.wait()
             events.append("corpus-finish")
-            return "done"
+            return OperationOutcome("done")
 
         corpus = RuntimeCorpusAdminService(
             settings=Settings(corpus_dir=tmp_path),

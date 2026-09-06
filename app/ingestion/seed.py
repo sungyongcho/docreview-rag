@@ -2,26 +2,52 @@
 
 from __future__ import annotations
 
-import argparse
-import asyncio
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import asdict, dataclass, replace
+from functools import lru_cache
+import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import case, delete
+from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db.models import Chunk as ChunkModel, Document
-from app.ingestion.chunk import Chunk, ChunkConfig, chunk_filing, compose_index_text
+from app.db.models import (
+    Chunk as ChunkModel,
+    Corpus,
+    Document,
+    DocumentParse,
+    ParsedStructure,
+    ProcessingSelection,
+    SelectionArtifact,
+    SourceArtifact as SourceArtifactModel,
+)
+from app.ingestion.chunk import (
+    Chunk,
+    ChunkConfig,
+    ChunkKind,
+    TableFragment,
+    chunk_filing,
+    compose_index_text,
+)
+from app.ingestion.manifest import (
+    DartMetadata,
+    DocumentReference,
+    FilingSource,
+    Manifest,
+    SecMetadata,
+)
 from app.ingestion.parser import ParsedFiling
 from app.ingestion.progress import OperationProgress, OperationProgressCallback
-from app.ingestion.registry import REGISTRIES, registry_for, registry_name, resolve_registry
+from app.ingestion.registry import REGISTRIES, registry_for
 from app.retrieval.korean import lexical_plan
+
+if TYPE_CHECKING:
+    from app.retrieval.embeddings import EmbeddingProvider
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
 # names rather than to this module. There is no default count: the corpus is widened
@@ -38,16 +64,12 @@ PARSE_STATUSES = frozenset({"parsed", "needs_profile_update"})
 ITEM_STATUSES = frozenset({"parsed", "empty_disclosure", "incorporated_by_reference"})
 
 # One manifest entry in, one parsed filing and its segmentation profile out.
-type FilingParser = Callable[[dict[str, Any]], tuple[ParsedFiling, dict[str, Any]]]
+type FilingParser = Callable[[FilingSource], tuple[ParsedFiling, dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
 class DocumentRecord:
-    """Preserve validated immutable values for one ``documents`` row.
-
-    Construction rejects missing filing metadata, invalid item-index entries, and
-    source identities that cannot safely own persisted chunk provenance.
-    """
+    """Persist filing identity only, independently of every acquired source and parse."""
 
     doc_id: str
     registry: str
@@ -60,54 +82,18 @@ class DocumentRecord:
     report_period: str
     filing_id: str
     source_url: str
-    parse_status: str
-    item_index: tuple[dict[str, Any], ...]
-    source_length: int
-    source_sha256: str
+    aliases: tuple[str, ...]
+    sec: SecMetadata | None
+    dart: DartMetadata | None
 
     def __post_init__(self) -> None:
-        """Reject incomplete identity, invalid statuses, and unsafe source metadata."""
-        required = {
-            "doc_id": self.doc_id,
-            "registry": self.registry,
-            "language": self.language,
-            "issuer": self.issuer,
-            "issuer_id": self.issuer_id,
-            "form": self.form,
-            "filing_date": self.filing_date,
-            "report_period": self.report_period,
-            "filing_id": self.filing_id,
-            "source_url": self.source_url,
-        }
-        missing = [name for name, value in required.items() if not value]
-        if missing:
-            owner = self.doc_id or "<unknown>"
-            raise ValueError(f"{owner} is missing metadata: {', '.join(missing)}")
-        if self.fiscal_year <= 0:
-            raise ValueError(f"{self.doc_id} has an invalid fiscal year")
-        if self.parse_status not in PARSE_STATUSES:
-            raise ValueError(f"{self.doc_id} has an invalid parse status")
-        if self.language not in LANGUAGES:
-            raise ValueError(f"{self.doc_id} has an unsupported language: {self.language!r}")
-        for position, entry in enumerate(self.item_index):
-            if not isinstance(entry, dict):
-                raise ValueError(f"{self.doc_id} item index {position} is not an object")
-            item = entry.get("item")
-            status = entry.get("status")
-            if not isinstance(item, str) or not item:
-                raise ValueError(f"{self.doc_id} item index {position} has no item")
-            if status not in ITEM_STATUSES:
-                raise ValueError(f"{self.doc_id} item index {position} has an invalid status")
-        try:
-            json.dumps(self.item_index, sort_keys=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{self.doc_id} has a non-JSON item index") from exc
-        if self.source_length <= 0:
-            raise ValueError(f"{self.doc_id} has no canonical source length")
-        _require_sha256(self.source_sha256, owner=self.doc_id)
+        """Validate the one common identity contract before entering a transaction."""
+        payload = self.values()
+        payload["document_id"] = payload.pop("doc_id")
+        DocumentReference.model_validate(payload)
 
     def values(self) -> dict[str, Any]:
-        """Return SQL values, converting the immutable item index for JSONB binding."""
+        """Serialize common identity and source-specific filing metadata to SQL values."""
         return {
             "doc_id": self.doc_id,
             "registry": self.registry,
@@ -120,10 +106,9 @@ class DocumentRecord:
             "report_period": self.report_period,
             "filing_id": self.filing_id,
             "source_url": self.source_url,
-            "parse_status": self.parse_status,
-            "item_index": list(self.item_index),
-            "source_length": self.source_length,
-            "source_sha256": self.source_sha256,
+            "aliases": list(self.aliases),
+            "sec": self.sec.model_dump(mode="json") if self.sec is not None else None,
+            "dart": self.dart.model_dump(mode="json") if self.dart is not None else None,
         }
 
 
@@ -147,7 +132,10 @@ class ChunkRecord:
     end_char: int
     source_sha256: str
     citation: str
+    structure_id: str
     lexical_text: str | None = None
+    table_fragment: TableFragment | None = None
+    text_fragment: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         """Reject invalid content, index text, source spans, and citations."""
@@ -184,9 +172,32 @@ class ChunkRecord:
         if self.lexical_text is not None and not self.lexical_text.strip():
             raise ValueError(f"{self.doc_id} chunk {self.ordinal}: lexical_text is blank")
 
+    @property
+    def stable_key(self) -> str:
+        """Use the structural chunk identity independently of persistence order."""
+        return Chunk(
+            doc_id=self.doc_id,
+            item=self.item,
+            kind=cast(ChunkKind, self.kind),
+            ordinal=self.ordinal,
+            body=self.body,
+            context_header=self.context_header,
+            citation=self.citation,
+            start_char=self.start_char,
+            end_char=self.end_char,
+            source_sha256=self.source_sha256,
+            table_fragment=self.table_fragment,
+            text_fragment=self.text_fragment,
+        ).stable_key
+
     def values(self) -> dict[str, Any]:
         """Return SQL values without an embedding payload."""
         return {
+            "stable_key": self.stable_key,
+            "structure_id": self.structure_id,
+            "index_text_sha256": hashlib.sha256(self.index_text.encode("utf-8")).hexdigest(),
+            "table_fragment": asdict(self.table_fragment) if self.table_fragment else None,
+            "text_fragment": list(self.text_fragment) if self.text_fragment else None,
             "doc_id": self.doc_id,
             "language": self.language,
             "item": self.item,
@@ -213,26 +224,38 @@ class SeedBatch:
 
     documents: tuple[DocumentRecord, ...]
     chunks: tuple[ChunkRecord, ...]
+    filings: tuple[ParsedFiling, ...]
+    selection_id: str | None = None
 
     def __post_init__(self) -> None:
         """Reject unordered, disconnected, or source-inconsistent records."""
         doc_ids = [record.doc_id for record in self.documents]
+        if sorted(filing.source.document.document_id for filing in self.filings) != sorted(doc_ids):
+            raise ValueError("seed batch requires a source parse for every document")
         if len(doc_ids) != len(set(doc_ids)):
             raise ValueError("seed batch contains duplicate document ids")
         if doc_ids != sorted(doc_ids):
             raise ValueError("seed batch documents must be sorted by doc_id")
 
         documents_by_id = {record.doc_id: record for record in self.documents}
+        filings_by_id = {filing.source.document.document_id: filing for filing in self.filings}
+        structures = {}
+        for doc_id, filing in filings_by_id.items():
+            if document_record(filing) != documents_by_id[doc_id]:
+                raise ValueError(f"document identity differs from selected filing: {doc_id}")
+            structures[doc_id] = structure_values(filing)
         known_docs = set(documents_by_id)
         by_doc: dict[str, list[int]] = {doc_id: [] for doc_id in doc_ids}
         previous_key: tuple[str, int] | None = None
         for record in self.chunks:
             if record.doc_id not in known_docs:
                 raise ValueError(f"chunk references an unknown document: {record.doc_id}")
-            document = documents_by_id[record.doc_id]
-            if record.source_sha256 != document.source_sha256:
+            filing = filings_by_id[record.doc_id]
+            if record.structure_id != structures[record.doc_id]["structure_id"]:
+                raise ValueError(f"chunk references a different source parse: {record.doc_id}")
+            if record.source_sha256 != filing.source_sha256:
                 raise ValueError(f"chunk source SHA-256 differs from document: {record.doc_id}")
-            if record.end_char > document.source_length:
+            if record.end_char > filing.source_length:
                 raise ValueError(f"chunk source span exceeds document length: {record.doc_id}")
             key = (record.doc_id, record.ordinal)
             if previous_key is not None and key <= previous_key:
@@ -260,41 +283,109 @@ def _require_sha256(value: str, *, owner: str) -> None:
 
 
 def registry_chunker(filing: ParsedFiling) -> list[Chunk]:
-    """Chunk one filing at its registry's measured chunk target.
+    """Chunk every registry with the common complete-input token budget."""
+    return chunk_filing(filing, ChunkConfig())
 
-    Each corpus carries its own profile (EDGAR 1200, DART 600), so the default
-    seeding path must not flatten every registry onto one constant; a caller
-    measuring a different target still injects its own chunker.
-    """
-    target = registry_for(filing.registry).chunk_target
-    return chunk_filing(filing, ChunkConfig(target_text_chars=target))
+
+def embedding_chunk_config(
+    provider: EmbeddingProvider, *, target_tokens: int = 2_048
+) -> ChunkConfig:
+    """Plan complete inputs using the selected embedding model's actual tokenizer."""
+    maximum = min(8_192, provider.max_input_tokens)
+    return ChunkConfig(
+        target_tokens=min(target_tokens, maximum),
+        max_tokens=maximum,
+        model=provider.identity.model,
+        token_counter=provider.count_input_tokens,
+    )
+
+
+@lru_cache(maxsize=2)
+def _parser_identity(registry: str) -> str:
+    """Fingerprint the source parser and its structural processing dependencies."""
+    names = ["parser.py", "tables.py", "edgar.py" if registry == "sec" else "dart.py"]
+    if registry == "sec":
+        names.append("xref.py")
+    return hashlib.sha256(
+        b"".join(Path(__file__).with_name(name).read_bytes() for name in names)
+    ).hexdigest()
+
+
+def structure_values(filing: ParsedFiling) -> dict[str, Any]:
+    """Capture source-anchored parsed structures independently of retrieval chunks."""
+    document_id = filing.source.document.document_id
+    if filing.source_length <= 0:
+        raise ValueError(f"{document_id} has no canonical source length")
+    _require_sha256(filing.source_sha256, owner=document_id)
+    if filing.parse_status not in PARSE_STATUSES:
+        raise ValueError(f"{document_id} has an invalid parse status")
+    if not isinstance(filing.item_index, list):
+        raise ValueError(f"{document_id} item index must be a list")
+    for position, entry in enumerate(filing.item_index):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{document_id} item index {position} is not an object")
+        if not isinstance(entry.get("item"), str) or not entry["item"]:
+            raise ValueError(f"{document_id} item index {position} has no item")
+        if entry.get("status") not in ITEM_STATUSES:
+            raise ValueError(f"{document_id} item index {position} has an invalid status")
+    try:
+        item_index = json.loads(json.dumps(filing.item_index, sort_keys=True))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{document_id} has a non-JSON item index") from error
+    payload = {
+        "sections": [asdict(section) for section in filing.sections],
+        "warnings": filing.warnings,
+        "profile_used": filing.profile_used,
+        "segment_type": filing.segment_type,
+    }
+    identity = _parser_identity(filing.source.document.registry)
+    source = filing.source
+    serialized = json.dumps(
+        [
+            source.corpus.corpus_id,
+            source.artifact.artifact_id,
+            source.artifact.sha256,
+            filing.source_sha256,
+            identity,
+            filing.parse_status,
+            item_index,
+            payload,
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return {
+        "structure_id": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+        "corpus_id": source.corpus.corpus_id,
+        "artifact_id": source.artifact.artifact_id,
+        "artifact_sha256": source.artifact.sha256,
+        "parser_identity": identity,
+        "source_sha256": filing.source_sha256,
+        "source_length": filing.source_length,
+        "structure": payload,
+        "parse_status": filing.parse_status,
+        "item_index": item_index,
+    }
 
 
 def document_record(filing: ParsedFiling) -> DocumentRecord:
-    """Build an immutable document record from registry-neutral filing identity.
-
-    The mutable item index is copied through JSON before validation.
-    """
-    try:
-        item_index = tuple(json.loads(json.dumps(filing.item_index, sort_keys=True)))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{filing.doc_id} has a non-JSON item index") from exc
+    """Derive filing identity exclusively from its typed selected source document."""
+    document = filing.source.document
     return DocumentRecord(
-        doc_id=filing.doc_id,
-        registry=filing.registry,
-        language=registry_for(filing.registry).language,
-        issuer=filing.issuer,
-        issuer_id=filing.issuer_id,
-        fiscal_year=filing.fiscal_year,
-        form=filing.form,
-        filing_date=filing.filing_date,
-        report_period=filing.report_period,
-        filing_id=filing.filing_id,
-        source_url=filing.source_url,
-        parse_status=filing.parse_status,
-        item_index=item_index,
-        source_length=filing.source_length,
-        source_sha256=filing.source_sha256,
+        doc_id=document.document_id,
+        registry=document.registry,
+        language=document.language,
+        issuer=document.issuer,
+        issuer_id=document.issuer_id,
+        fiscal_year=document.fiscal_year,
+        form=document.form,
+        filing_date=document.filing_date.isoformat(),
+        report_period=document.report_period.isoformat(),
+        filing_id=document.filing_id,
+        source_url=document.source_url,
+        aliases=document.aliases,
+        sec=document.sec,
+        dart=document.dart,
     )
 
 
@@ -303,25 +394,25 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
 
     Input order is preserved and ordinals must be dense.
     """
+    document_id = filing.source.document.document_id
     records: list[ChunkRecord] = []
-    language = registry_for(filing.registry).language
+    structure_id = structure_values(filing)["structure_id"]
+    language = registry_for(filing.source.document.registry).language
     for expected_ordinal, chunk in enumerate(chunks):
-        if chunk.doc_id != filing.doc_id:
+        if chunk.doc_id != document_id:
             raise ValueError(
-                f"chunk document mismatch: expected {filing.doc_id}, found {chunk.doc_id}"
+                f"chunk document mismatch: expected {document_id}, found {chunk.doc_id}"
             )
         if chunk.ordinal != expected_ordinal:
-            raise ValueError(f"chunk ordinals must be dense for {filing.doc_id}")
+            raise ValueError(f"chunk ordinals must be dense for {document_id}")
         if chunk.kind not in {"text", "table"}:
             raise ValueError(f"unsupported chunk kind: {chunk.kind}")
         if not chunk.body:
-            raise ValueError(f"{filing.doc_id} chunk {chunk.ordinal} has an empty body")
+            raise ValueError(f"{document_id} chunk {chunk.ordinal} has an empty body")
         if not 0 <= chunk.start_char < chunk.end_char <= filing.source_length:
-            raise ValueError(f"{filing.doc_id} chunk {chunk.ordinal} has an invalid source span")
+            raise ValueError(f"{document_id} chunk {chunk.ordinal} has an invalid source span")
         if chunk.source_sha256 != filing.source_sha256:
-            raise ValueError(
-                f"{filing.doc_id} chunk {chunk.ordinal} has a different source SHA-256"
-            )
+            raise ValueError(f"{document_id} chunk {chunk.ordinal} has a different source SHA-256")
 
         records.append(
             ChunkRecord(
@@ -342,6 +433,9 @@ def chunk_records(filing: ParsedFiling, chunks: Sequence[Chunk]) -> tuple[ChunkR
                 end_char=chunk.end_char,
                 source_sha256=chunk.source_sha256,
                 citation=chunk.citation,
+                structure_id=structure_id,
+                table_fragment=chunk.table_fragment,
+                text_fragment=chunk.text_fragment,
             )
         )
     return tuple(records)
@@ -355,32 +449,26 @@ def filing_records(
     return document, chunk_records(filing, chunks)
 
 
-def load_manifest(path: Path) -> list[dict[str, Any]]:
-    """Load a UTF-8 JSON manifest and require a list of objects."""
-    entries = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
-        raise ValueError("manifest must contain a JSON list of objects")
-    return entries
+def load_manifest(path: Path, *, selection_id: str) -> tuple[FilingSource, ...]:
+    """Resolve exactly one selection from a validated common corpus manifest."""
+    return Manifest.read(path).selected_sources(selection_id, path.parent)
 
 
 def _ordered_manifest_entries(
-    entries: Iterable[Mapping[str, Any]], expected_documents: int | None
-) -> list[dict[str, Any]]:
-    """Copy, count, and deterministically order manifest entries.
-
-    Each registry orders its own entries by its own keys, and the registry name leads
-    the sort so a manifest holding one registry keeps the order it has today while a
-    mixed manifest is still totally ordered.
-    """
-    ordered = [dict(entry) for entry in entries]
+    entries: Iterable[FilingSource], expected_documents: int | None
+) -> list[FilingSource]:
+    """Validate and order exact selected filing sources before parsing."""
+    ordered = list(entries)
     if expected_documents is not None and len(ordered) != expected_documents:
-        raise ValueError(f"expected {expected_documents} manifest documents, found {len(ordered)}")
-    ordered.sort(key=lambda entry: (registry_name(entry), *resolve_registry(entry).sort_key(entry)))
-    return ordered
+        raise ValueError(f"expected {expected_documents} selected documents, found {len(ordered)}")
+    identities = [entry.document.document_id for entry in ordered]
+    if len(set(identities)) != len(identities):
+        raise ValueError("selected documents must be unique")
+    return sorted(ordered, key=lambda entry: (entry.document.registry, entry.document.document_id))
 
 
 def parse_seed_filings(
-    entries: Iterable[Mapping[str, Any]],
+    entries: Iterable[FilingSource],
     *,
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
@@ -394,10 +482,14 @@ def parse_seed_filings(
     ordered = _ordered_manifest_entries(entries, expected_documents)
     filings: list[ParsedFiling] = []
     for position, entry in enumerate(ordered, start=1):
-        filing, _profile = (parser or resolve_registry(entry).parse)(entry)
+        filing, _profile = (parser or registry_for(entry.document.registry).parse)(entry)
         filings.append(filing)
         if on_progress is not None:
-            on_progress(OperationProgress("parse", position, len(ordered), filing.doc_id))
+            on_progress(
+                OperationProgress(
+                    "parse", position, len(ordered), filing.source.document.document_id
+                )
+            )
     return tuple(filings)
 
 
@@ -416,15 +508,19 @@ def build_seed_batch_from_filings(
         documents.append(document)
         chunks.extend(filing_chunks)
         if on_progress is not None:
-            on_progress(OperationProgress("chunk", position, len(ordered), filing.doc_id))
+            on_progress(
+                OperationProgress(
+                    "chunk", position, len(ordered), filing.source.document.document_id
+                )
+            )
 
     documents.sort(key=lambda record: record.doc_id)
     chunks.sort(key=lambda record: (record.doc_id, record.ordinal))
-    return SeedBatch(tuple(documents), tuple(chunks))
+    return SeedBatch(tuple(documents), tuple(chunks), tuple(ordered))
 
 
 def build_seed_batch(
-    entries: Iterable[Mapping[str, Any]],
+    entries: Iterable[FilingSource],
     *,
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
@@ -438,22 +534,30 @@ def build_seed_batch(
     ordered = _ordered_manifest_entries(entries, expected_documents)
     documents: list[DocumentRecord] = []
     chunks: list[ChunkRecord] = []
+    filings: list[ParsedFiling] = []
     for position, entry in enumerate(ordered, start=1):
-        filing, _profile = (parser or resolve_registry(entry).parse)(entry)
+        filing, _profile = (parser or registry_for(entry.document.registry).parse)(entry)
+        filings.append(filing)
         document, filing_chunks = filing_records(filing, chunker(filing))
         documents.append(document)
         chunks.extend(filing_chunks)
         if on_progress is not None:
-            on_progress(OperationProgress("prepare", position, len(ordered), filing.doc_id))
+            on_progress(
+                OperationProgress(
+                    "prepare", position, len(ordered), filing.source.document.document_id
+                )
+            )
 
     documents.sort(key=lambda record: record.doc_id)
     chunks.sort(key=lambda record: (record.doc_id, record.ordinal))
-    return SeedBatch(tuple(documents), tuple(chunks))
+    return SeedBatch(tuple(documents), tuple(chunks), tuple(filings))
 
 
 def prepare_seed_batch(
     manifest_path: Path | None = None,
     *,
+    selection_id: str,
+    embedding_provider: EmbeddingProvider | None = None,
     manifest_name: str = DEFAULT_MANIFEST_NAME,
     expected_documents: int | None = None,
     parser: FilingParser | None = None,
@@ -467,12 +571,25 @@ def prepare_seed_batch(
     so a caller measuring a different chunk target does not lose registry dispatch.
     """
     path = manifest_path or get_settings().corpus_dir / manifest_name
-    return build_seed_batch(
-        load_manifest(path),
-        expected_documents=expected_documents,
-        parser=parser,
-        chunker=chunker,
-        on_progress=on_progress,
+    if embedding_provider is not None:
+        if chunker is not registry_chunker:
+            raise ValueError("choose either an embedding provider or an explicit chunker")
+        config = embedding_chunk_config(embedding_provider)
+
+        def configured_chunker(filing: ParsedFiling) -> list[Chunk]:
+            """Use the model budget resolved once for this processing selection."""
+            return chunk_filing(filing, config)
+
+        chunker = configured_chunker
+    return replace(
+        build_seed_batch(
+            load_manifest(path, selection_id=selection_id),
+            expected_documents=expected_documents,
+            parser=parser,
+            chunker=chunker,
+            on_progress=on_progress,
+        ),
+        selection_id=selection_id,
     )
 
 
@@ -492,6 +609,8 @@ class ManifestError(Exception):
 def load_seed_batch(
     manifest_path: Path,
     *,
+    selection_id: str,
+    embedding_provider: EmbeddingProvider | None = None,
     expected_documents: int | None = None,
     on_progress: OperationProgressCallback | None = None,
 ) -> SeedBatch:
@@ -523,6 +642,8 @@ def load_seed_batch(
     try:
         return prepare_seed_batch(
             manifest_path,
+            selection_id=selection_id,
+            embedding_provider=embedding_provider,
             expected_documents=expected_documents,
             on_progress=on_progress,
         )
@@ -564,16 +685,15 @@ def document_upsert_statement(records: Sequence[DocumentRecord]) -> Insert:
             "report_period": excluded.report_period,
             "filing_id": excluded.filing_id,
             "source_url": excluded.source_url,
-            "parse_status": excluded.parse_status,
-            "item_index": excluded.item_index,
-            "source_length": excluded.source_length,
-            "source_sha256": excluded.source_sha256,
+            "aliases": excluded.aliases,
+            "sec": excluded.sec,
+            "dart": excluded.dart,
         },
     )
 
 
 def chunk_upsert_statement(records: Sequence[ChunkRecord]) -> Insert:
-    """Build a nonempty chunk upsert keyed by document and ordinal.
+    """Build a nonempty chunk upsert keyed by stable source and content identity.
 
     Preserve embeddings only when indexed text is unchanged.
     """
@@ -582,8 +702,10 @@ def chunk_upsert_statement(records: Sequence[ChunkRecord]) -> Insert:
     statement = insert(ChunkModel).values([record.values() for record in records])
     excluded = statement.excluded
     return statement.on_conflict_do_update(
-        index_elements=[ChunkModel.doc_id, ChunkModel.ordinal],
+        index_elements=[ChunkModel.stable_key],
         set_={
+            "structure_id": excluded.structure_id,
+            "ordinal": excluded.ordinal,
             "language": excluded.language,
             "lexical_text": excluded.lexical_text,
             "item": excluded.item,
@@ -595,22 +717,6 @@ def chunk_upsert_statement(records: Sequence[ChunkRecord]) -> Insert:
             "end_char": excluded.end_char,
             "source_sha256": excluded.source_sha256,
             "citation": excluded.citation,
-            "embedding": case(
-                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding),
-                else_=None,
-            ),
-            "embedding_provider": case(
-                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding_provider),
-                else_=None,
-            ),
-            "embedding_model": case(
-                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding_model),
-                else_=None,
-            ),
-            "embedding_dimensions": case(
-                (ChunkModel.index_text == excluded.index_text, ChunkModel.embedding_dimensions),
-                else_=None,
-            ),
         },
     )
 
@@ -621,6 +727,57 @@ def _batches(records: Sequence[ChunkRecord], size: int) -> Iterable[Sequence[Chu
         raise ValueError("chunk batch size must be positive")
     for start in range(0, len(records), size):
         yield records[start : start + size]
+
+
+async def _persist_sources(session: AsyncSession, batch: SeedBatch) -> None:
+    """Persist source and parse references inside the caller's atomic seed transaction."""
+    corpora = {filing.source.corpus.corpus_id: filing.source.corpus for filing in batch.filings}
+    for corpus in corpora.values():
+        await session.execute(insert(Corpus).values(**corpus.model_dump()).on_conflict_do_nothing())
+    for filing in batch.filings:
+        source = filing.source
+        artifact = source.artifact.model_dump(mode="json")
+        artifact["doc_id"] = artifact.pop("document_id")
+        await session.execute(
+            insert(SourceArtifactModel)
+            .values(corpus_id=source.corpus.corpus_id, **artifact)
+            .on_conflict_do_nothing()
+        )
+        structure = structure_values(filing)
+        await session.execute(insert(ParsedStructure).values(**structure).on_conflict_do_nothing())
+        pointer = insert(DocumentParse).values(
+            doc_id=source.document.document_id, structure_id=structure["structure_id"]
+        )
+        await session.execute(
+            pointer.on_conflict_do_update(
+                index_elements=[DocumentParse.doc_id],
+                set_={"structure_id": pointer.excluded.structure_id},
+            )
+        )
+    if batch.selection_id is not None:
+        for corpus_id in corpora:
+            await session.execute(
+                insert(ProcessingSelection)
+                .values(corpus_id=corpus_id, selection_id=batch.selection_id)
+                .on_conflict_do_nothing()
+            )
+            await session.execute(
+                delete(SelectionArtifact).where(
+                    SelectionArtifact.corpus_id == corpus_id,
+                    SelectionArtifact.selection_id == batch.selection_id,
+                )
+            )
+            members = [
+                {
+                    "corpus_id": corpus_id,
+                    "selection_id": batch.selection_id,
+                    "artifact_id": filing.source.artifact.artifact_id,
+                }
+                for filing in batch.filings
+                if filing.source.corpus.corpus_id == corpus_id
+            ]
+            if members:
+                await session.execute(insert(SelectionArtifact).values(members))
 
 
 async def persist_seed_batch(
@@ -639,15 +796,16 @@ async def persist_seed_batch(
     if chunk_batch_size <= 0:
         raise ValueError("chunk batch size must be positive")
 
-    chunk_counts = dict.fromkeys((record.doc_id for record in batch.documents), 0)
+    chunk_keys: dict[str, list[str]] = {record.doc_id: [] for record in batch.documents}
     for record in batch.chunks:
-        chunk_counts[record.doc_id] += 1
+        chunk_keys[record.doc_id].append(record.stable_key)
 
     async with session.begin():
         if on_progress is not None:
             on_progress(OperationProgress("documents", 0, 1, "Upserting documents"))
         if batch.documents:
             await session.execute(document_upsert_statement(batch.documents))
+            await _persist_sources(session, batch)
         if on_progress is not None:
             on_progress(OperationProgress("documents", 1, 1, f"{len(batch.documents)} documents"))
         chunk_batch_total = (len(batch.chunks) + chunk_batch_size - 1) // chunk_batch_size
@@ -665,15 +823,15 @@ async def persist_seed_batch(
                         f"{min(position * chunk_batch_size, len(batch.chunks))} chunks",
                     )
                 )
-        for position, (doc_id, count) in enumerate(chunk_counts.items(), start=1):
+        for position, (doc_id, keys) in enumerate(chunk_keys.items(), start=1):
             await session.execute(
                 delete(ChunkModel).where(
                     ChunkModel.doc_id == doc_id,
-                    ChunkModel.ordinal >= count,
+                    ChunkModel.stable_key.not_in(keys),
                 )
             )
             if on_progress is not None:
-                on_progress(OperationProgress("cleanup", position, len(chunk_counts), doc_id))
+                on_progress(OperationProgress("cleanup", position, len(chunk_keys), doc_id))
 
     return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
 
@@ -688,12 +846,11 @@ async def persist_seed_batch_with_stats(
     """Persist one corpus batch, then rebuild its invalidated BM25 statistics."""
     from app.retrieval.bm25 import backfill_term_stats
 
-    persist_options = {"on_progress": on_progress} if on_progress is not None else {}
     result = await persist_seed_batch(
         session,
         batch,
         chunk_batch_size=chunk_batch_size,
-        **persist_options,
+        on_progress=on_progress,
     )
     if on_progress is not None:
         on_progress(OperationProgress("bm25", 0, 1, "Rebuilding term statistics"))
@@ -701,114 +858,3 @@ async def persist_seed_batch_with_stats(
     if on_progress is not None:
         on_progress(OperationProgress("bm25", 1, 1, "Term statistics rebuilt"))
     return result
-
-
-async def seed_corpus(
-    session: AsyncSession,
-    manifest_path: Path | None = None,
-    *,
-    expected_documents: int | None = None,
-    chunk_batch_size: int = DEFAULT_CHUNK_BATCH_SIZE,
-    on_progress: OperationProgressCallback | None = None,
-) -> SeedResult:
-    """Prepare and persist the corpus, then rebuild BM25 statistics.
-
-    Database writes remain on the caller's event loop. Corpus persistence and
-    statistic rebuild each own a separate transaction.
-    """
-    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
-    batch = await asyncio.to_thread(
-        prepare_seed_batch,
-        manifest_path,
-        expected_documents=expected_documents,
-        **progress_options,
-    )
-    return await persist_seed_batch_with_stats(
-        session,
-        batch,
-        chunk_batch_size=chunk_batch_size,
-        **progress_options,
-    )
-
-
-async def _run_cli(
-    args: argparse.Namespace,
-    *,
-    on_progress: OperationProgressCallback | None = None,
-) -> None:
-    """Execute optional schema creation and one seed-plus-statistics operation."""
-    from app.db.bootstrap import bootstrap_schema
-    from app.db.models import Base
-    from app.db.session import Session, engine
-
-    progress_options = {"on_progress": on_progress} if on_progress is not None else {}
-    batch = prepare_seed_batch(
-        args.manifest,
-        expected_documents=args.expected_documents,
-        **progress_options,
-    )
-    if args.recreate_schema:
-        # The project migrates by rebuild: drop every model table, then let the
-        # bootstrap below recreate the current schema. Re-seeding restores all
-        # derived state (chunks, statistics, embeddings are recomputed).
-        if on_progress is not None:
-            on_progress(OperationProgress("schema", 0, 2, "Dropping model tables"))
-        async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.drop_all)
-        if on_progress is not None:
-            on_progress(OperationProgress("schema", 1, 2, "Creating current schema"))
-    if args.create_schema or args.recreate_schema:
-        await bootstrap_schema(engine)
-        if on_progress is not None:
-            on_progress(OperationProgress("schema", 2, 2, "Schema ready"))
-    async with Session() as session:
-        result = await persist_seed_batch_with_stats(
-            session,
-            batch,
-            chunk_batch_size=args.chunk_batch_size,
-            **progress_options,
-        )
-    print(f"Committed {result.documents} documents and {result.chunks} chunks.")
-
-
-def main() -> None:
-    """Run optional schema bootstrap, corpus persistence, and statistics rebuild."""
-    from app.ingestion.progress import operation_bar
-
-    def _arguments() -> argparse.Namespace:
-        """Parse seed CLI arguments."""
-        parser = argparse.ArgumentParser(description="Upsert parsed filing chunks into PostgreSQL.")
-        parser.add_argument("--manifest", type=Path, help="Path to the corpus manifest JSON file.")
-        parser.add_argument(
-            "--expected-documents",
-            type=int,
-            default=None,
-            help="Fail unless the manifest has exactly this many documents.",
-        )
-        parser.add_argument(
-            "--chunk-batch-size",
-            type=int,
-            default=DEFAULT_CHUNK_BATCH_SIZE,
-            help="Number of chunk rows per PostgreSQL upsert statement.",
-        )
-        parser.add_argument(
-            "--create-schema",
-            action="store_true",
-            help="Create missing tables before seeding; this does not migrate existing tables.",
-        )
-        parser.add_argument(
-            "--recreate-schema",
-            action="store_true",
-            help=(
-                "DESTRUCTIVE: drop every model table and recreate the current schema "
-                "before seeding. This is the upgrade path after a schema change."
-            ),
-        )
-        return parser.parse_args()
-
-    with operation_bar("Ingest") as progress:
-        asyncio.run(_run_cli(_arguments(), on_progress=progress))
-
-
-if __name__ == "__main__":
-    main()

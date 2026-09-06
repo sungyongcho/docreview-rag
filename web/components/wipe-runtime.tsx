@@ -188,6 +188,8 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
     <details ref={disclosure}><summary><AlertTriangle size={16} aria-hidden="true" /><span>{t("Reset runtime data")}</span><ChevronDown className="wipe-disclosure-arrow" size={16} aria-hidden="true" /></summary>
       <div className="wipe-disclosure-body">
         <p>{t("Start over by clearing this local runtime. Source files and credentials are preserved.")}</p>
+        <p>{t("After reset, download SEC/DART filings again, ingest them, generate embeddings, rebuild BM25, and configure your answer model in Build.")}</p>
+        <p>{t("For a terminal reset followed by a full rebuild and restart, run rag-fresh-start. Run rag-help for the equivalent corpus commands.")}</p>
         <button className="button danger-button" type="button" disabled={!canPreview || busy || checking} onClick={() => void inspect()}>{t("Wipe everything")}</button>
         {!connected && <p>{t("Start the development stack with rag-dev to enable Local Operations.")}</p>}
         {connected && <>
@@ -196,6 +198,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
           {!checking && !canPreview && !error && <p>{capability?.reason || t("Runtime reset is unavailable.")}</p>}
           {!open && error && <p role="alert" className="notice error">{error}</p>}
           {!open && !checking && diagnosis && <ResetDiagnosis diagnosis={diagnosis} />}
+          <button type="button" className="button" disabled={busy || checking} onClick={() => { setOpen(true); recheck(); }}>{t("View reset status")}</button>
           <button type="button" className="button" disabled={busy || checking} onClick={recheck}>{t("Check reset availability")}</button>
         </>}
       </div>

@@ -7,12 +7,14 @@ from app.db.models import (
     LEXICAL_TEXT_CHECK_SQL,
     BM25CorpusStat,
     Chunk,
+    ChunkEmbedding,
     Document,
     EvalResult,
     EvaluationSnapshot,
     GoldenRevision,
     LexemeStat,
     OperatorJob,
+    ParsedStructure,
     Run,
     SnapshotBM25CorpusStat,
     SnapshotChunk,
@@ -40,17 +42,16 @@ def test_document_schema_persists_snapshot_and_filing_metadata():
         "report_period",
         "filing_id",
         "source_url",
-        "parse_status",
-        "item_index",
-        "source_length",
-        "source_sha256",
+        "aliases",
+        "sec",
+        "dart",
     }
     assert columns.doc_id.primary_key
-    assert not columns.source_length.nullable
-    assert not columns.source_sha256.nullable
-    assert not columns.parse_status.nullable
+    assert not ParsedStructure.__table__.c.source_length.nullable
+    assert not ParsedStructure.__table__.c.source_sha256.nullable
+    assert not ParsedStructure.__table__.c.parse_status.nullable
     assert not columns.language.nullable
-    assert not columns.item_index.nullable
+    assert not ParsedStructure.__table__.c.item_index.nullable
     document_table = Document.__table__
     assert isinstance(document_table, Table)
     checks = {
@@ -59,9 +60,8 @@ def test_document_schema_persists_snapshot_and_filing_metadata():
         if isinstance(constraint, CheckConstraint)
     }
     assert {
-        "ck_documents_source_length_positive",
-        "ck_documents_source_sha256_format",
-        "ck_documents_parse_status",
+        "ck_documents_registry_metadata",
+        "ck_documents_language_format",
     } <= checks
 
 
@@ -80,13 +80,15 @@ def test_chunk_schema_preserves_evidence_context_and_source_coordinates():
         "end_char",
         "source_sha256",
         "citation",
-        "embedding",
+        "stable_key",
+        "index_text_sha256",
+        "structure_id",
         "content_tsv",
     }
     assert required <= set(columns.keys())
-    assert "content" in Chunk.__mapper__.attrs
-    assert Chunk.__mapper__.attrs.content.name == "index_text"
-    assert columns.embedding.nullable
+    assert "content" not in Chunk.__mapper__.attrs
+    assert "embedding" not in columns
+    assert not ChunkEmbedding.__table__.c.embedding.nullable
 
 
 def test_search_vector_is_computed_per_corpus_language():
@@ -112,7 +114,8 @@ def test_chunk_identity_and_validation_constraints_are_declared():
     checks = {
         constraint.name for constraint in constraints if isinstance(constraint, CheckConstraint)
     }
-    assert ("doc_id", "ordinal") in unique_columns
+    assert ("stable_key",) in unique_columns
+    assert ("doc_id", "ordinal") not in unique_columns
     assert {
         "ck_chunks_ordinal_nonnegative",
         "ck_chunks_kind",

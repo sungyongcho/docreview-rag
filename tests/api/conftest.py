@@ -6,9 +6,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.app import create_api_app
+from app.api.review_profile import resolve_retrieval_profile
+from app.api.schemas import EvidenceHit, RetrieveResponse
 from app.ingestion.seed import SeedResult
 from app.observability.types import StepTrace, build_run_report
-from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.retrieval.types import ChunkHit
 from app.workflow.types import EvidenceCitation, ProviderFailure, WorkflowReport
 
@@ -154,13 +155,16 @@ class FakeApiServices:
         if self.retrieve_error is not None:
             raise self.retrieve_error
         hits = tuple(self.hits)
-        return RetrievalResult(
-            hits=hits,
+        return RetrieveResponse(
+            query=request.query,
+            results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in hits),
+            candidates=(),
+            candidate_token="test-candidate",
+            candidate_expires_at=2_000_000_000,
             score_stage="rrf",
-            component_rankings=ComponentRankings(
-                vector=tuple(hit.chunk_id for hit in hits),
-                lexical=(),
-            ),
+            component_rankings={"vector": [hit.chunk_id for hit in hits], "lexical": []},
+            resolved_profile=resolve_retrieval_profile(request.session_profile),
+            resolved_scope=None,
         )
 
     async def list_documents(self):

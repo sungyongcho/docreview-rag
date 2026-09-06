@@ -11,7 +11,7 @@ from starlette.requests import ClientDisconnect
 from app.api.deps import ApiServices
 from app.api.errors import ApiProblemError
 from app.api.routes import stream as stream_module
-from app.api.schemas import ReviewRequest
+from app.api.schemas import RetrieveResponse, ReviewRequest
 from app.observability.types import build_run_report
 from app.workflow.types import NodeError
 
@@ -57,20 +57,23 @@ def test_stream_emits_node_events_then_the_terminal_run(client_factory, services
         events = sse_events(response)
 
     kinds = [kind for kind, _ in events]
-    assert kinds == ["node", "node", "node", "node", "report", "done"]
+    assert kinds == ["candidates", "node", "node", "node", "node", "report", "done"]
+    candidates = RetrieveResponse.model_validate_json(json.dumps(events[0][1]))
+    assert candidates.candidate_token == "test-candidate"
+    assert candidates.component_rankings == {"vector": [], "lexical": []}
     assert [payload["node"] for kind, payload in events if kind == "node"] == [
         "retrieve",
         "grade",
         "check",
         "report",
     ]
-    assert events[1][1] == {
+    assert events[2][1] == {
         "node": "grade",
         "evidence_count": 1,
         "relevant_count": 1,
         "step_count": 1,
     }
-    report = events[4][1]
+    report = events[5][1]
     assert report["status"] == "ok"
     assert report["run_id"] == successful_run.run_id
     assert services.last_review_request.query == "How much did revenue increase?"
@@ -88,8 +91,8 @@ def test_stream_reports_a_failed_run_as_its_terminal_event(client_factory, servi
         events = sse_events(response)
 
     kinds = [kind for kind, _ in events]
-    assert kinds == ["node", "report", "done"]
-    assert events[1][1]["status"] == "budget_exceeded"
+    assert kinds == ["candidates", "node", "report", "done"]
+    assert events[2][1]["status"] == "budget_exceeded"
 
 
 def test_stream_converts_an_unexpected_failure_into_a_typed_error_event(client_factory, services):
@@ -102,8 +105,8 @@ def test_stream_converts_an_unexpected_failure_into_a_typed_error_event(client_f
         assert response.status_code == 200
         events = sse_events(response)
 
-    assert [kind for kind, _ in events] == ["error", "done"]
-    assert events[0][1] == {
+    assert [kind for kind, _ in events] == ["candidates", "error", "done"]
+    assert events[1][1] == {
         "error": {
             "code": "internal_error",
             "message": "The request could not be completed.",
@@ -135,7 +138,8 @@ def test_stream_preserves_typed_service_errors_and_redacts_terminal_reports(
     ) as response:
         error_events = sse_events(response)
 
-    assert error_events[0] == (
+    assert [kind for kind, _ in error_events] == ["candidates", "error", "done"]
+    assert error_events[1] == (
         "error",
         {
             "error": {
@@ -250,18 +254,25 @@ def test_stream_emits_actual_stage_transitions_without_changing_node_contract(
         headers={"X-DocReview-Telemetry": "stages"},
     ) as response:
         events = sse_events(response)
-    assert [kind for kind, _ in events] == ["stage", "node", "stage", "report", "done"]
-    assert events[0][1]["phase"] == "start" and events[0][1]["elapsed_ms"] is None
-    assert events[2][1]["status"] == "completed" and events[2][1]["elapsed_ms"] >= 0
-    execution = events[3][1]["execution"]
+    assert [kind for kind, _ in events] == [
+        "candidates",
+        "stage",
+        "node",
+        "stage",
+        "report",
+        "done",
+    ]
+    assert events[1][1]["phase"] == "start" and events[1][1]["elapsed_ms"] is None
+    assert events[3][1]["status"] == "completed" and events[3][1]["elapsed_ms"] >= 0
+    execution = events[4][1]["execution"]
     assert execution["stages"][0]["node"] == "grade"
-    assert execution["total_elapsed_ms"] >= events[2][1]["total_elapsed_ms"]
+    assert execution["total_elapsed_ms"] >= events[3][1]["total_elapsed_ms"]
 
 
-def test_stream_omits_new_events_without_explicit_telemetry_header(
+def test_stream_omits_stage_events_without_explicit_telemetry_header(
     client_factory, services, successful_run
 ):
-    """Old clients retain their event vocabulary while reports keep measured data."""
+    """Omit stage events while retaining candidates and measured report data."""
     from app.observability.stages import stage, stage_metadata
 
     async def review(request, on_node=None):
@@ -275,5 +286,5 @@ def test_stream_omits_new_events_without_explicit_telemetry_header(
         "POST", "/review/stream", json={"query": "Revenue?"}
     ) as response:
         events = sse_events(response)
-    assert [kind for kind, _ in events] == ["node", "report", "done"]
-    assert events[1][1]["execution"]["stages"][0]["node"] == "grade"
+    assert [kind for kind, _ in events] == ["candidates", "node", "report", "done"]
+    assert events[2][1]["execution"]["stages"][0]["node"] == "grade"

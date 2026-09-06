@@ -110,18 +110,18 @@ Search an existing company by code or name and select it, or type a new ticker a
 accepts six-digit stock codes. Fiscal years become removable chips; you can enter a single year or
 an ascending range such as `2023-2025`. For this exercise, keep only NVDA and 2024.
 
-Run **Download missing filings**, inspect the task in Jobs, wait for `succeeded`, and refresh Pipeline.
+Run **Download missing filings**, inspect the task in Jobs, and wait for `succeeded`.
+Preparation status updates automatically when the job finishes.
 A real SEC contact in `.env` is required.
 
-**Scope:** the web action uses the main `manifest.json`. Fiscal years control discovery; existing NVDA entries
-for other years may also be downloaded if their source files are missing. Do not interpret `2024` as a one-file
-limit. For exactly one filing, use the [one-filing CLI example](cli.md#prepare-one-nvidia-filing) and check its
-result here instead.
+**Scope:** source, company, and fiscal-year inputs define the acquisition scope inside the common
+`manifest.json`. The result reports a `selection_id` for the acquired sources. Use that exact selection
+for the next stages. The [one-filing CLI example](cli.md#prepare-one-nvidia-filing) uses the same workflow.
 
 **Screen check:** job success, downloaded filing count, and source readiness. The global Filings stage can
 remain incomplete when other companies in the main manifest have missing sources.
 
-**Completion:** every source named by the manifest you will ingest must exist. CLI acquisition performs the
+**Completion:** every source in the processing selection you will ingest must exist. CLI acquisition performs the
 same source-preparation step; database storage happens next.
 
 <!-- capture:04-sec-inputs -->
@@ -134,19 +134,16 @@ same source-preparation step; database storage happens next.
 
 **Purpose:** parse the downloaded report, create citable chunks, and persist them.
 
-**Before starting:** verify development services and schema. The main manifest contains companies besides
-NVIDIA; do not ingest that entire manifest after downloading only NVDA.
+**Before starting:** verify development services and schema, then read the acquisition result's
+`selection_id`. Reuse it with `manifest.json`; no copied catalog or extraction script is needed.
+The [one-filing CLI procedure](cli.md#prepare-one-nvidia-filing) accepts the same selection.
 
-Use the short [one-filing manifest preparation](cli.md#prepare-one-nvidia-filing) to create
-`tutorial-manifest.json`. The Python block only extracts a list; it does not download or ingest anything.
-Skip its download command when you already acquired the file in the web UI.
-
-**On screen:** refresh Pipeline and select Parse & chunk. In its expanded Change… area, check the source and document
-counts beside `tutorial-manifest.json`, then click **Ingest on that row**. Do not use Ingest all manifests for
-this one-filing exercise. Wait for job success, then open Documents.
+**On screen:** select Parse & chunk, choose `manifest.json` and the returned selection, and check its
+source and document counts before **Ingest**. Preparation status updates automatically after the job
+finishes. Wait for success, then open Documents.
 
 **Screen check:** `NVDA-FY2024` and a positive chunk count. The operation's document count refers to its
-manifest; existing documents remain in the database.
+selection; existing documents remain in the database.
 
 **Completion:** proceed to embedding. Ingestion also recalculates BM25, but it does not fill OpenAI vectors.
 The `app.cli ingest --manifest …` command performs this storage step too; do not repeat a completed CLI ingest.
@@ -169,12 +166,13 @@ The `app.cli ingest --manifest …` command performs this storage step too; do n
 
 **Paid operation:** configure `EMBEDDING_PROVIDER=openai` and a valid development key. The current model
 is `text-embedding-3-large` at 384 dimensions. Inspect provider and pending counts before running.
-Backfill processes missing or mismatched embeddings **throughout the DB**, not just the selected filing.
+Check `manifest.json` and the explicit selection before backfilling its missing or mismatched embeddings.
 Reuse current embeddings instead of running backfill twice.
 
-**On screen:** select Embeddings and run **Backfill embeddings**. Wait for Jobs to succeed, then refresh
-and verify zero pending embeddings. Next inspect Lexical index (BM25). Reuse ready statistics; only run
-**Rebuild BM25** if they are missing or invalidated. BM25 rebuilding does not call OpenAI.
+**On screen:** select Embeddings and run **Backfill embeddings** for that selection. Wait for Jobs to
+succeed and verify the automatically updated pending count for the selected sources. Next inspect
+Lexical index (BM25). Reuse ready statistics; only run **Rebuild BM25** if they are missing or
+invalidated. Its completion also updates preparation status automatically. BM25 rebuilding does not call OpenAI.
 
 **Screen check:** current provider, ready embedding count, pending zero, and BM25 ready. These are readiness
 checks, not proof that an evaluation has been completed.
@@ -186,7 +184,7 @@ also backfills but then performs a query; the web backfill button only prepares 
 
 ![The actual development index reports deterministic embeddings and zero pending chunks.](../assets/06-embeddings.en.jpg)
 
-*The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The database-wide cost notice and explicit backfill action remain visible.*
+*The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The recorded cost notice and explicit backfill action remain visible.*
 
 <!-- capture:07-bm25 -->
 
@@ -311,8 +309,9 @@ Restore defaults uses startup settings. See [connection cleanup](cli.md#reset-lo
 
 Set a real `DART_API_KEY` and run `rag-dev up -d` to apply it. Reuse existing data when ready.
 Select Filings and use its Change… inputs to select DART, stock code `005930`, and fiscal year `2024`. Download missing filings,
-wait for success, and refresh. In Parse & chunk, inspect the `dart-manifest.json` row before clicking Ingest.
-That row processes the entire manifest, including existing entries.
+wait for success, and read the returned `selection_id`. Preparation status updates automatically.
+In Parse & chunk, choose the common `manifest.json` and that selection before clicking Ingest.
+Only the selected sources are processed; other catalog entries remain available.
 
 **Screen check and completion:** verify the Samsung FY2024 document, fill pending embeddings if needed
 (a paid action), and confirm BM25. Ask a question naming the company and year and check its citations.

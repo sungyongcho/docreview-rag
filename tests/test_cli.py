@@ -138,7 +138,7 @@ def test_provider_override_revalidates_the_openai_key_guard(monkeypatch, tmp_pat
         monkeypatch.delenv(name, raising=False)
     base = Settings(_env_file=None)
 
-    with pytest.raises(ValidationError, match="OPENAI_API_KEY is required"):
+    with pytest.raises(ValidationError, match="MODE-selected OpenAI key slot is required"):
         cli._provider_settings(base, "openai")
 
 
@@ -160,153 +160,58 @@ def test_zero_k_is_a_typed_invalid_input_exit(capsys):
     assert payload["error"]["code"] == "invalid_k"
 
 
-def test_missing_manifest_fails_before_database_access(tmp_path, capsys):
-    """Fail on an absent manifest before any database access."""
-    missing = tmp_path / "missing.json"
-
-    exit_code = cli.main(["ingest", "--manifest", str(missing)])
-
-    payload = error_payload(capsys)
-    assert exit_code == cli.ExitCode.INVALID_FILE
-    assert payload["error"] == {
-        "code": "manifest_not_found",
-        "message": f"Manifest file was not found: {missing}",
-    }
+def test_ingest_requires_explicit_selection():
+    """Reject unscoped ingestion before contacting the application."""
+    with pytest.raises(cli.CliError):
+        cli.arguments(["ingest", "--manifest", "manifest.json"])
 
 
-def test_broken_manifest_json_fails_before_database_access(tmp_path, capsys):
-    """Fail on unparseable manifest JSON before any database access."""
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text('[{"ticker": "NVDA"}', encoding="utf-8")
-
-    exit_code = cli.main(["ingest", "--manifest", str(manifest)])
-
-    payload = error_payload(capsys)
-    assert exit_code == cli.ExitCode.INVALID_FILE
-    assert payload["error"]["code"] == "invalid_manifest_json"
-    assert "line 1 column" in payload["error"]["message"]
+@pytest.mark.parametrize("flag", ["--create-schema", "--recreate-schema"])
+def test_ingest_cannot_reset_or_bootstrap_the_database(flag):
+    """Keep first-run setup and destructive reset outside ingestion jobs."""
+    with pytest.raises(cli.CliError):
+        cli.arguments(["ingest", "--manifest", "manifest.json", "--selection", "tutorial", flag])
 
 
-def test_recreate_schema_is_an_explicit_destructive_ingest_option():
-    """Expose rebuilding separately from non-destructive missing-table creation."""
-    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--recreate-schema"])
+def test_ingest_submits_the_shared_job_contract(monkeypatch):
+    """Return the exact application job state rather than run a second ingestion path."""
+    from dataclasses import asdict
 
-    assert args.recreate_schema is True
-    assert args.create_schema is False
+    from fastapi.encoders import jsonable_encoder
+    import httpx
 
+    from app.corpus_admin import AdminCommand, AdminJob
 
-def test_schema_creation_and_recreation_are_mutually_exclusive():
-    """Reject an ambiguous ingest request before opening the database."""
-    with pytest.raises(cli.CliError, match="not allowed with argument"):
-        cli.arguments(
-            [
-                "ingest",
-                "--manifest",
-                "manifest.json",
-                "--create-schema",
-                "--recreate-schema",
-            ]
-        )
+    job = AdminJob(
+        "cli-job",
+        AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="tutorial"),
+        "queued",
+        "queued",
+        0,
+        None,
+        "Queued",
+    )
+    calls = []
 
+    def handle(request):
+        """Capture a typed local application request without a network call."""
+        calls.append(json.loads(request.content))
+        assert request.headers["origin"] == "http://127.0.0.1:8000"
+        return httpx.Response(200, json=jsonable_encoder(asdict(job)))
 
-def test_create_schema_reports_drift_before_parsing_the_corpus(monkeypatch):
-    """Fail a stale database preflight without spending time parsing every filing."""
-    import app.db.bootstrap as bootstrap
-    import app.ingestion.seed as seed
-
-    parsed = False
-
-    async def drift(_engine):
-        """Raise the compatibility failure returned by the live bootstrap."""
-        raise bootstrap.SchemaDriftError("stale schema")
-
-    def load(*_args, **_kwargs):
-        """Record an invalid late parse if schema preflight did not stop the command."""
-        nonlocal parsed
-        parsed = True
-        raise AssertionError("corpus parsing must not start")
-
-    monkeypatch.setattr(bootstrap, "bootstrap_schema", drift)
-    monkeypatch.setattr(seed, "load_seed_batch", load)
-    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--create-schema"])
-
-    with pytest.raises(cli.CliError, match="stale schema") as excinfo:
-        asyncio.run(cli._ingest(args))
-
-    assert excinfo.value.code == "schema_drift"
-    assert parsed is False
-
-
-def test_recreate_schema_drops_then_bootstraps_before_persisting(monkeypatch):
-    """Keep the destructive rebuild ordered behind parsing and ahead of writes."""
-    import app.db.bootstrap as bootstrap
-    import app.db.session as db_session
-    import app.ingestion.seed as seed
-
-    events = []
-    batch = object()
-    session = object()
-
-    class Connection:
-        """Record the metadata operation executed inside the rebuild transaction."""
-
-        async def run_sync(self, operation):
-            """Record the metadata operation executed by the transaction."""
-            events.append(operation.__name__)
-
-    class Begin:
-        """Yield the recording connection as an async engine transaction."""
-
-        async def __aenter__(self):
-            return Connection()
-
-        async def __aexit__(self, _exc_type, _exc, _traceback):
-            return None
-
-    class Engine:
-        """Open the one recording rebuild transaction."""
-
-        def begin(self):
-            """Return the recording rebuild transaction."""
-            return Begin()
-
-    class SessionContext:
-        """Yield the recording persistence session."""
-
-        async def __aenter__(self):
-            return session
-
-        async def __aexit__(self, _exc_type, _exc, _traceback):
-            return None
-
-    def load(*_args, **_kwargs):
-        """Return a validated batch before any destructive operation."""
-        events.append("parse")
-        return batch
-
-    async def create(_engine):
-        """Record current-schema bootstrap after the drop."""
-        events.append("bootstrap")
-
-    async def persist(received_session, received_batch, **_kwargs):
-        """Record persistence after the rebuilt schema exists."""
-        assert received_session is session
-        assert received_batch is batch
-        events.append("persist")
-        return seed.SeedResult(documents=1, chunks=2)
-
-    engine = Engine()
-    monkeypatch.setattr(bootstrap, "bootstrap_schema", create)
-    monkeypatch.setattr(db_session, "engine", engine)
-    monkeypatch.setattr(db_session, "Session", SessionContext)
-    monkeypatch.setattr(seed, "load_seed_batch", load)
-    monkeypatch.setattr(seed, "persist_seed_batch_with_stats", persist)
-    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--recreate-schema"])
-
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        cli.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handle), **kwargs),
+    )
+    args = cli.arguments(["ingest", "--manifest", "manifest.json", "--selection", "tutorial"])
     result = asyncio.run(cli._ingest(args))
-
-    assert result["documents"] == 1
-    assert events == ["parse", "drop_all", "bootstrap", "persist"]
+    assert result["job_id"] == "cli-job"
+    assert result["status"] == "queued"
+    assert calls[0]["kind"] == "ingest_manifest"
+    assert calls[0]["manifest"] == "manifest.json"
+    assert calls[0]["selection_id"] == "tutorial"
 
 
 def test_provider_unavailability_has_a_stable_nonsecret_exit(monkeypatch, capsys):

@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, LexicalRanker
 from app.evals import arms
 from app.evals.arms import RetrievalStrategy, make_retriever, resolve_bm25_parameters
-from app.retrieval.embeddings import EmbeddingProvider
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 
 
-class _Provider(EmbeddingProvider):
+class _Provider(DeterministicEmbeddingProvider):
     """Embedding provider stub that records the queries it is asked to embed."""
 
     dimensions = 384
@@ -41,9 +41,10 @@ def test_every_retrieval_strategy_receives_the_same_normalized_query(monkeypatch
         queries.append(query)
         return []
 
-    async def vector_search(_session, _vector, *, k, filters):
+    async def vector_search(_session, _vector, *, k, filters, identity):
         assert k == 1
         assert filters is None
+        assert identity == provider.identity
         return []
 
     async def retrieve(_session, query, **_kwargs):

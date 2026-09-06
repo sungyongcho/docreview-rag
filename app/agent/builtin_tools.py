@@ -11,7 +11,7 @@ from app.agent.registry import ToolRegistry
 from app.agent.tools import Tool, ToolError
 from app.agent.types import AgentCitation
 from app.db.models import Chunk
-from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
+from app.retrieval.embeddings import EmbeddingIdentity, EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.service import retrieve
 from app.retrieval.types import ChunkHit, RetrievalFilters
@@ -37,6 +37,20 @@ class _QueryEmbeddingCache(EmbeddingProvider):
         self.dimensions = inner.dimensions
         self._inner = inner
         self._vectors: dict[str, list[float]] = {}
+
+    @property
+    def identity(self) -> EmbeddingIdentity:
+        """Retain the wrapped provider's exact vector configuration."""
+        return self._inner.identity
+
+    @property
+    def max_input_tokens(self) -> int:
+        """Retain the wrapped model's complete input limit."""
+        return self._inner.max_input_tokens
+
+    def count_input_tokens(self, text: str) -> int:
+        """Count with the wrapped model's tokenizer without changing its input."""
+        return self._inner.count_input_tokens(text)
 
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         """Delegate batch embedding unchanged; only queries repeat here."""

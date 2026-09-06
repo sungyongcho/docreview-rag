@@ -1,14 +1,13 @@
 """Shared ingestion fixtures for parser and downstream corpus tests."""
 
 from importlib import import_module
-import json
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
 import pytest
 
-from app.ingestion.edgar import doc_id
+from app.ingestion.manifest import FilingSource, Manifest
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,25 +31,29 @@ def xref_module() -> ModuleType:
 
 
 @pytest.fixture(scope="session")
-def manifest() -> list[dict]:
+def manifest() -> tuple[FilingSource, ...]:
     """Load the corpus manifest when corpus regression tests are available."""
     path = _REPOSITORY_ROOT / "data/corpus/manifest.json"
     if not path.exists():
         pytest.skip("data/corpus/manifest.json is required for corpus regression tests")
-    return json.loads(path.read_text())
+    catalog = Manifest.read(path)
+    return tuple(
+        source
+        for source in catalog.selected_sources("sec-regression", path.parent)
+        if source.document.registry == "sec"
+    )
 
 
 @pytest.fixture(scope="session")
-def blocks_by_doc(parser_module: ModuleType, manifest: list[dict]) -> dict[str, tuple]:
+def blocks_by_doc(
+    parser_module: ModuleType, manifest: tuple[FilingSource, ...]
+) -> dict[str, tuple]:
     """Parse each corpus file into reusable soup, block, and raw-source values."""
     out = {}
     for entry in manifest:
-        path = _REPOSITORY_ROOT / entry["file"]
-        if not path.exists():
-            pytest.skip(f"corpus file is missing: {entry['file']}")
-        raw = parser_module.read_source(path)
+        raw = entry.read()
         soup = parser_module.normalize(raw)
-        out[doc_id(entry)] = (soup, parser_module.leaf_blocks(soup), raw)
+        out[entry.document.document_id] = (soup, parser_module.leaf_blocks(soup), raw)
     return out
 
 
@@ -70,26 +73,26 @@ def isolated_profiles(edgar_module: ModuleType, tmp_path: Path):
 @pytest.fixture(scope="session")
 def parsed(
     edgar_module: ModuleType,
-    manifest: list[dict],
+    manifest: tuple[FilingSource, ...],
     profiles_dir: Path,
 ) -> dict:
     """Parse every corpus document while learning profiles from a clean directory."""
     with patch.object(edgar_module, "PROFILES", profiles_dir):
         out = {}
-        for entry in sorted(manifest, key=lambda item: (item["ticker"], item["report_date"])):
+        for entry in sorted(manifest, key=lambda item: item.document.document_id):
             result, _profile = edgar_module.parse_filing(entry)
-            out[doc_id(entry)] = result
+            out[entry.document.document_id] = result
         return out
 
 
 @pytest.fixture(scope="session")
 def corpus(manifest, parsed, parser_module) -> dict[str, tuple]:
     """Pair parsed filings with the exact canonical source text they cite."""
-    entries = {doc_id(entry): entry for entry in manifest}
+    entries = {entry.document.document_id: entry for entry in manifest}
     return {
         document: (
             filing,
-            parser_module.read_source(_REPOSITORY_ROOT / entries[document]["file"]),
+            entries[document].read(),
         )
         for document, filing in parsed.items()
     }

@@ -119,7 +119,7 @@ def test_query_budget_rejects_a_hit_count_that_is_not_a_positive_integer(k):
 def test_indexing_budget_keeps_configuration_and_provider_provenance():
     """Derive the standalone duration and keep the arm's configuration provenance."""
     result = assess_indexing_budget(
-        target_text_chars=500,
+        target_tokens=500,
         document_count=20,
         chunk_count=10_000,
         embedding_provider="deterministic",
@@ -129,7 +129,7 @@ def test_indexing_budget_keeps_configuration_and_provider_provenance():
 
     assert result.passed
     assert result.embedding_provider == "deterministic"
-    assert result.target_text_chars == 500
+    assert result.target_tokens == 500
     assert result.target_phase_seconds == 284.0
     assert result.derived_standalone_seconds == 299.5
 
@@ -169,7 +169,7 @@ def _arms():
     """Build two indexed arms that share one preparation phase."""
     return (
         assess_indexing_budget(
-            target_text_chars=500,
+            target_tokens=500,
             document_count=20,
             chunk_count=12_984,
             embedding_provider="deterministic",
@@ -177,7 +177,7 @@ def _arms():
             shared_preparation_seconds=15.0,
         ),
         assess_indexing_budget(
-            target_text_chars=1_200,
+            target_tokens=1_200,
             document_count=20,
             chunk_count=9_172,
             embedding_provider="deterministic",
@@ -217,7 +217,7 @@ def test_budget_artifact_records_the_arm_the_query_budget_ran_on():
         indexing=_arms(),
         query_budget=query_budget,
         query_budget_arm=QueryBudgetArm(
-            target_text_chars=1_200,
+            target_tokens=1_200,
             strategy="hybrid",
             lexical_ranker="bm25",
             bm25=(1.2, 0.75, "lucene"),
@@ -230,7 +230,7 @@ def test_budget_artifact_records_the_arm_the_query_budget_ran_on():
     assert payload["schema_version"] == BUDGET_ARTIFACT_SCHEMA_VERSION
     assert payload["recorded_at"] == "2026-08-12T15:00:00Z"
     assert payload["query_budget"]["arm"] == {
-        "target_text_chars": 1_200,
+        "target_tokens": 1_200,
         "strategy": "hybrid",
         "lexical_ranker": "bm25",
         "bm25": {"k1": 1.2, "b": 0.75, "idf": "lucene"},
@@ -246,7 +246,7 @@ def test_budget_artifact_records_the_arm_the_query_budget_ran_on():
 def test_a_vector_budget_arm_records_no_lexical_provenance():
     """Leave both ranker and BM25 provenance unset for a lane that runs no lexical query."""
     arm = QueryBudgetArm(
-        target_text_chars=500,
+        target_tokens=500,
         strategy="vector",
         lexical_ranker=None,
         bm25=None,
@@ -272,7 +272,7 @@ def test_budgets_pass_only_when_every_measured_limit_holds():
         measure_query_budget(["q"], retriever, query_count=4, clock=_stepping_clock(1_000_000_000))
     )
     over_budget = assess_indexing_budget(
-        target_text_chars=500,
+        target_tokens=500,
         document_count=20,
         chunk_count=10,
         embedding_provider="deterministic",

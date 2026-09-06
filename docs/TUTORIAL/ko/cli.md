@@ -82,7 +82,6 @@ if [ ! -f .env ]; then cp .env.example .env; fi
 
 ```dotenv
 SEC_USER_AGENT=Your Real Name your-real-contact@example.com
-OPENAI_API_KEY=
 OPENAI_API_KEY_LOCAL=<실제 개발용 OpenAI API 키로 교체>
 OPENAI_API_KEY_PROD=
 DART_API_KEY=
@@ -92,8 +91,8 @@ EMBEDDING_MODEL=text-embedding-3-large
 
 SEC 연락처도 본인의 실제 이름과 연락 가능한 이메일로 바꿉니다. `.env.example`에 들어 있는
 DART·prod 키의 placeholder를 그대로 남겨 두지 않습니다. 셸에 별도로 설정한 키가 있다면
-그 값도 확인하되 출력하지 않습니다. `OPENAI_API_KEY`가 유효하면 모드별 슬롯보다 우선하므로,
-개발용 슬롯을 쓰려면 공통 키를 비워 둡니다. `MODE`는 `.env`에 추가하지 않습니다.
+그 값도 확인하되 출력하지 않습니다. DEV는 `OPENAI_API_KEY_LOCAL`, 운영은
+`OPENAI_API_KEY_PROD`만 읽습니다. `MODE`는 `.env`에 추가하지 않습니다.
 Python CLI는 아래에서 `MODE=dev`를 지정하고 `rag-dev`는 자동으로 dev를 선택합니다.
 
 현재 저장소의 모델 정책은 embedding `text-embedding-3-large`·384차원,
@@ -119,42 +118,11 @@ Compose가 내부 서비스 이름 `db`로 지정합니다.
 
 ## 초기 schema 준비
 
-설치·설정이 아직 안 됐다면 먼저 아래 [설치와 초기 설정](#설치와-초기-설정)을 완료합니다.
-이 절은 빈 DB에 테이블을 만들어 **웹에서 첫 DB 적재를 실행할 준비**를 합니다.
-문서를 DB 적재하거나 embedding을 생성하지 않습니다.
-
 ```bash
-rag-dev up -d db
-rag-dev ps db
-rag-dev exec -T db psql -U filing -d filing -c '\dt'
+rag-quickstart
 ```
 
-이미 현재 schema와 데이터가 있다면 재사용합니다. 빈 DB에서는 다음 코드로 현재 테이블과
-검색에 필요한 DB 객체를 생성합니다. 기존 모델 테이블을 삭제하거나 재생성하지 않습니다.
-`schema_drift`가 나오면 아래 진단 절을 읽고, 삭제로 해결하려 하지 않습니다.
-
-```bash
-MODE=dev uv run python - <<'PY'
-import asyncio
-from app.db.bootstrap import bootstrap_schema
-from app.db.session import engine
-
-async def prepare():
-    """Create missing schema objects and release the database connection."""
-    try:
-        await bootstrap_schema(engine)
-    finally:
-        await engine.dispose()
-
-asyncio.run(prepare())
-print("Schema ready")
-PY
-rag-dev exec -T db psql -U filing -d filing -c 'SELECT count(*) AS documents FROM documents;'
-```
-
-새 DB라면 문서는 0건입니다. 서비스 실행 후
-[웹에서 원문 수집·DB 적재](walkthrough.md#3-nvidia-원문-수집하기)를 이어갑니다.
-이 초기화 코드는 유료 모델을 호출하지 않습니다.
+Python 환경과 설정을 확인하고, 비어 있는 데이터베이스에 스키마를 준비한 뒤 개발 서비스를 시작합니다. 호환되는 기존 데이터는 보존합니다. 스키마가 맞지 않으면 중단하므로 기존 DB를 유지하고 비어 있는 별도 DB나 호환 DB를 선택하세요. 설치 오류를 복구하기 위해 초기화를 실행하지 않습니다.
 
 ## dev와 prod 미리보기
 
@@ -208,8 +176,7 @@ prod에서는 로컬 LLM과 개발용 변경 작업이 차단됩니다. 기존 d
 API 클라이언트는 리뷰 스트림 요청에 `X-DocReview-Telemetry: stages` 헤더를 보내 단계 시작·종료
 이벤트를 받을 수 있습니다. 이 stage SSE 이벤트는 기존 이벤트에 추가되며, 헤더를 생략한
 클라이언트의 기본 스트림은 그대로입니다. 화면은 실제 이벤트로 실행 진행과 성능을 표시하고,
-누락된 시간값을 추정해 채우지 않습니다. 선택적 실행 메타데이터는 기존 JSON payload에 저장하므로
-이 필드 추가를 위한 schema migration은 필요하지 않습니다.
+누락된 시간값을 추정해 채우지 않습니다. 선택적 실행 메타데이터는 기존 JSON payload에 저장합니다.
 
 ## 상태와 로그 확인
 
@@ -259,88 +226,54 @@ rag-ollama-check --web-url http://localhost:18080
 
 ## NVIDIA 한 건만 준비하기
 
-웹 첫 실습에서 사용할 **한 건짜리 manifest를 만드는 코드**입니다. 기본 manifest는 보존하고
-FY2024 항목만 추출합니다. 기존 실습 manifest는 덮어쓰지 않고 대상이 같은지만 확인합니다.
-이 코드만 실행하면 원문 다운로드·DB DB 적재·유료 호출은 발생하지 않습니다.
-
 ```bash
-uv run python - <<'PY'
-import json
-from pathlib import Path
-
-source = Path("data/corpus/manifest.json")
-target = Path("data/corpus/tutorial-manifest.json")
-accession = "0001045810-24-000029"
-entries = [row for row in json.loads(source.read_text())
-           if row["ticker"] == "NVDA" and row["accession"] == accession]
-assert len(entries) == 1, "NVIDIA FY2024 must exist exactly once"
-if target.exists():
-    saved = json.loads(target.read_text())
-    assert len(saved) == 1 and saved[0]["accession"] == accession, "Inspect existing tutorial manifest"
-else:
-    target.write_text(json.dumps(entries, ensure_ascii=False, indent=2) + "\n")
-print(target)
-print(entries[0]["file"], "present:", Path(entries[0]["file"]).is_file())
-PY
+rag-corpus acquire_edgar --identifier NVDA --year 2024
+rag-corpus status
+rag-corpus ingest_manifest --manifest manifest.json --selection sec-08b5f645cc174083 --expected-documents 1
+rag-corpus status
 ```
 
-**원문을 아직 받지 않았을 때만** 다운로드합니다. 실제 SEC 연락처가 필요합니다.
-기존 원문은 재사용하며 `--force`는 필요하지 않습니다.
-
-```bash
-MODE=dev uv run python -m app.ingestion.edgar_api --manifest data/corpus/tutorial-manifest.json
-test -s data/corpus/NVDA/2024-02-21_0001045810-24-000029.html && echo 'NVIDIA source ready'
-```
-
-웹에서 원문을 받았다면 위 다운로드는 생략하고
-[선택한 매니페스트 DB 적재](walkthrough.md#4-원문을-문서와-청크로-저장하기)로 돌아갑니다.
+각 작업이 성공한 뒤 다음 명령을 실행합니다. 수집 결과는 공통 manifest 안의 정확한 처리 선택을 알려줍니다. 문서 목록을 추출하거나 manifest를 복사하지 않습니다.
 
 ## Python CLI 참고
 
-화면 대신 터미널에서 처리할 때 사용하는 명령입니다. 같은 작업을 웹과 CLI에서 중복 실행하지 않습니다.
-
 ### DB 적재
 
+Python CLI도 웹과 같은 서버 작업을 요청합니다.
+
 ```bash
-MODE=dev uv run python -m app.cli ingest \
-  --manifest data/corpus/tutorial-manifest.json --expected-documents 1 --create-schema
+uv run python -m app.cli ingest --manifest manifest.json --selection SELECTION_ID
 ```
 
-선택한 manifest를 파싱·청킹해 upsert하고 BM25를 재계산합니다. `--create-schema`는 없는 객체를
-만들며 기존 테이블을 변경·삭제하지 않습니다. 정상 결과는 `status: ok`, 문서 수 1, 0보다 큰 청크 수입니다.
+수집 결과의 선택 ID를 사용합니다. 개발 주소가 기본값과 다르면 `--api-url`로 지정합니다. 스키마 준비는 `rag-quickstart`, 전체 초기화는 `rag-fresh-start`의 역할입니다.
 
 ### Embedding과 검색
 
-**OpenAI 유료 호출:** DB 전체의 누락·불일치 embedding을 처리한 뒤 질문도 embedding합니다.
-`--doc-id`는 검색 결과 필터이며 backfill을 한 문서로 제한하지 않습니다.
-
 ```bash
-MODE=dev uv run python -m app.cli retrieve \
-  --query "What drove NVIDIA data center revenue growth in fiscal 2024?" \
-  --doc-id NVDA-FY2024 --provider openai --embed-missing -k 5
+rag-corpus backfill_embeddings --manifest manifest.json --selection SELECTION_ID
+rag-corpus status
+rag-corpus rebuild_bm25
+rag-corpus status
+uv run python -m app.cli retrieve --query 'NVIDIA revenue' --issuer NVDA --fiscal-year 2024
 ```
 
-이미 현재 OpenAI embedding이 준비됐다면 `--embed-missing`을 빼고 검색만 합니다.
-검색만 해도 질의 embedding 비용이 발생합니다. 이 명령은 답변 생성이 아니라 근거 검색입니다.
+임베딩 생성에는 공급자 사용료가 발생할 수 있습니다. 검색 명령은 근거를 확인하며 답변 요청을 보내지 않습니다. [검색](retrieval.md)을 확인한 뒤 [첫 답변 안내](answers.md)로 이어가세요.
 
 ### DART 수집
 
-실제 `DART_API_KEY`가 필요합니다. 기존 manifest가 있으면 DB 적재 전에 전체 항목의 원문을 확인합니다.
-
 ```bash
-MODE=dev uv run python -m app.ingestion.dart_api --stock-codes 005930 --fiscal-year 2024
-MODE=dev uv run python -m app.cli ingest --manifest data/corpus/dart-manifest.json
+rag-corpus acquire_dart --identifier 005930 --year 2024
+rag-corpus status
 ```
 
-수집·DB 적재 후 embedding은 별도로 준비합니다. 문서가 추가됐는지는 데이터 준비 → 문서에서 확인합니다.
+반환된 선택 ID로 DB 적재를 요청합니다. SEC와 DART는 같은 `manifest.json`을 사용합니다.
 
 ### 옵션 도움말
 
 ```bash
+rag-corpus --help
 uv run python -m app.cli ingest --help
 uv run python -m app.cli retrieve --help
-uv run python -m app.ingestion.edgar_api --help
-uv run python -m app.ingestion.dart_api --help
 ```
 
 ## 종료와 선택적 데이터 삭제
@@ -423,10 +356,6 @@ rag-dev exec -T db psql -U filing -d filing -c '\dt'
 embedding 재생성은 다시 유료입니다. 웹 재시작 후 DB 문서와 과거 job/eval 기록 상태를 확인합니다.
 브라우저의 예전 대화는 남지만 삭제된 DB 근거·run을 더 이상 조회하지 못할 수 있습니다.
 
-`--recreate-schema`는 현재 연결한 DB의 **모델 테이블을 drop 후 재생성하고 DB 적재**하는
-별도 파괴적 옵션입니다. Compose 볼륨 삭제와 같지 않고, 빈 DB 초기화용 `--create-schema`와도
-다릅니다. 이 가이드에서는 실행할 필요가 없습니다.
-
 **완료 조건:** 빈 DB 또는 재DB 적재 후 의도한 상태가 확인되면 종료합니다.
 
 ### 다운로드 원문만 삭제
@@ -492,20 +421,20 @@ rag-dev up -d
 ```bash
 rag-dev ps
 rag-dev logs --tail=80 app
-MODE=dev uv run python -m app.db.migrate --plan
+rag-corpus readiness
 ```
 
 **웹에서 확인:** 웹이 열리면 시스템 → 시스템 상태의 연결 상태, 데이터 준비 → 작업의 실패 작업,
 질문 결과의 실행 트레이스에서 해당 오류를 확인합니다. 웹 자체가 열리지 않을 때는 CLI 로그부터 확인합니다.
 
-migration plan은 schema 문제일 때 읽는 진단입니다. 다른 연결 문제를 해결하는 명령은 아닙니다.
+스키마 비호환 진단이 나오면 기존 데이터를 변경하지 않고 시작을 중단합니다. 기존 DB를 보존한 상태로 연결 대상과 진단을 확인합니다.
 
 | 증상·위치 | 원인 확인 | 조치와 다음 조건 |
 |---|---|---|
 | 웹 연결 실패 | web 시작 로그, APP_PORT, 기존 포트 점유 | `rag-dev logs --tail=80 web` 확인 후 올바른 주소로 접속 |
 | 웹은 열리지만 API·DB 실패 | 시스템 상태, `rag-dev ps`, DB health | 해당 서비스 연결을 복구하고 새로고침; healthy와 schema 확인 |
-| `schema_drift` | 기존 DB와 현재 모델 차이 | `--plan`을 읽고 백업 후 해당 보존형 migration만 `MODE=dev uv run python -m app.db.migrate --apply`; compatible 확인 후 재시도 |
-| embedding 누락·stale | 데이터 준비의 provider·pending·모델 정체성 | OpenAI 설정과 키를 확인하고 필요한 누락 임베딩 생성 실행; 유료이며 DB 전체 범위 확인 |
+| `schema_drift` | 현재 구조와 기존 DB가 다름 | 기존 DB를 보존하고 비어 있는 별도 DB나 호환 DB를 선택 |
+| embedding 누락·stale | 데이터 준비의 provider·pending·모델 정체성 | OpenAI 설정과 키를 확인하고 필요한 누락 임베딩 생성 실행; 유료이므로 manifest와 명시적 선택 범위 확인 |
 | BM25 미준비 | DB 적재 뒤 통계 누락·무효화 | Rebuild BM25 후 succeeded와 ready 확인 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |

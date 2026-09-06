@@ -5,7 +5,8 @@ import { Segmented } from "@/components/segmented";
 import { TokenSelect, type TokenOption } from "@/components/token-select";
 import { companyLabel } from "@/lib/company-labels";
 import { useI18n } from "@/lib/i18n";
-import type { AdminDocument } from "@/lib/types";
+import type { CorpusDocument } from "@/lib/types";
+import "./acquisition-fields.css";
 
 interface Acquisition {
   registry: "sec" | "dart";
@@ -17,7 +18,7 @@ interface Props {
   acquisition: Acquisition;
   onChange: (next: Acquisition) => void;
   disabled?: boolean;
-  documents?: AdminDocument[];
+  documents?: CorpusDocument[];
   onValidityChange?: (valid: boolean) => void;
 }
 

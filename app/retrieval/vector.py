@@ -3,12 +3,13 @@
 from collections.abc import Sequence
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DIM, Chunk, SnapshotChunk
+from app.db.models import DIM, Chunk, ChunkEmbedding, SnapshotChunk
 from app.retrieval._sql import apply_filters, hit_columns, hit_order_by
-from app.retrieval.embeddings import EmbeddingIdentity
+from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
 from app.retrieval.types import ChunkHit, RetrievalFilters, finite_float
 
 
@@ -53,7 +54,7 @@ def vector_search_statement(
     *,
     k: int,
     filters: RetrievalFilters | None = None,
-    identity: EmbeddingIdentity | None = None,
+    identity: EmbeddingIdentity,
 ) -> Select[Any]:
     """Build the exact cosine query used by runtime and SQL contract tests.
 
@@ -82,18 +83,21 @@ def vector_search_statement(
     """
     if k <= 0:
         raise ValueError("vector search k must be positive")
-    vector = validate_query_vector(query_vector)
+    vector = validate_query_vector(query_vector, dimensions=identity.dimensions)
     restrictions = filters or RetrievalFilters()
     source = Chunk if restrictions.snapshot_id is None else SnapshotChunk
-    embedding = source.embedding
-    distance = embedding.cosine_distance(vector).label("distance")
+    embedding = ChunkEmbedding.embedding if source is Chunk else SnapshotChunk.embedding
+    distance = embedding.cast(Vector(identity.dimensions)).cosine_distance(vector).label("distance")
     statement = select(*hit_columns(distance, source)).select_from(source)
-    statement = statement.where(source.embedding.is_not(None))
-    if identity is not None:
+    if source is Chunk:
+        statement = statement.join(ChunkEmbedding, matching_embedding(identity))
+    else:
         statement = statement.where(
-            source.embedding_provider == identity.provider,
-            source.embedding_model == identity.model,
-            source.embedding_dimensions == identity.dimensions,
+            SnapshotChunk.embedding_provider == identity.provider,
+            SnapshotChunk.embedding_model == identity.model,
+            SnapshotChunk.embedding_dimensions == identity.dimensions,
+            SnapshotChunk.embedding_tokenizer == identity.tokenizer,
+            SnapshotChunk.embedding.is_not(None),
         )
     statement = apply_filters(statement, restrictions, source)
     return statement.order_by(*hit_order_by(distance.asc(), source)).limit(k)
@@ -105,7 +109,7 @@ async def vector_search(
     *,
     k: int = 5,
     filters: RetrievalFilters | None = None,
-    identity: EmbeddingIdentity | None = None,
+    identity: EmbeddingIdentity,
 ) -> list[ChunkHit]:
     """Return complete chunk evidence ordered by exact cosine similarity.
 

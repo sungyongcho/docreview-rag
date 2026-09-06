@@ -2,11 +2,14 @@
 
 from contextlib import contextmanager
 import gzip
+import hashlib
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 
+import app.ingestion.acquisition as acquisition
 import app.ingestion.edgar_api as edgar_api
 from app.ingestion.edgar_api import (
     EdgarApiError,
@@ -24,7 +27,8 @@ from app.ingestion.edgar_api import (
     store_document,
     submission_rows,
 )
-from tests.ingestion.support import client_returning, run
+from app.ingestion.manifest import CorpusIdentity, Manifest
+from tests.ingestion.support import client_returning, filing_document, filing_source, run
 
 USER_AGENT = "Jane Doe jane@example.com"
 URL = "https://www.sec.gov/Archives/edgar/data/1/one.htm"
@@ -36,30 +40,38 @@ def fetch(handler):
     return run(fetch_document(client_returning(handler), URL, user_agent=USER_AGENT))
 
 
-def entry(ticker: str, name: str) -> dict[str, str]:
-    """Build one minimal EDGAR manifest entry."""
-    return {
-        "ticker": ticker,
-        "url": f"https://www.sec.gov/Archives/edgar/data/1/{name}.htm",
-        "file": f"data/corpus/{ticker}/{name}.html",
-    }
+def entry(ticker: str, name: str):
+    """Build valid shared document metadata for one mocked download."""
+    suffix = int(hashlib.sha256(f"{ticker}:{name}".encode()).hexdigest()[:8], 16) % 1_000_000
+    return filing_document(
+        issuer=ticker, filing_id=f"0001045810-24-{suffix:06d}", document_id=f"{ticker}-{name}"
+    ).model_copy(update={"source_url": f"https://www.sec.gov/Archives/edgar/data/1/{name}.htm"})
 
 
-def write_manifest(tmp_path, payload) -> object:
-    """Write a manifest payload and return its path."""
+def write_manifest(tmp_path, documents):
+    """Write a typed catalog containing the requested test documents."""
     path = tmp_path / "manifest.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    Manifest(
+        corpus=CorpusIdentity(corpus_id="test", name="Test"), documents=tuple(documents)
+    ).write(path)
     return path
 
 
 async def collect(client, entries):
     """Collect every pending download from the asynchronous iterator."""
-    return [item async for item in download_pending(client, entries, user_agent=USER_AGENT)]
+    return [
+        item
+        async for item in download_pending(
+            client, entries, user_agent=USER_AGENT, corpus_root=Path.cwd()
+        )
+    ]
 
 
 async def collect_with(client, entries, *, progress):
     """Collect pending downloads while injecting a progress factory."""
-    downloads = download_pending(client, entries, user_agent=USER_AGENT, progress=progress)
+    downloads = download_pending(
+        client, entries, user_agent=USER_AGENT, progress=progress, corpus_root=Path.cwd()
+    )
     return [item async for item in downloads]
 
 
@@ -87,64 +99,71 @@ def test_user_agent_is_returned_stripped():
 # --- manifest reading ---
 
 
-def test_manifest_not_found_names_the_path(tmp_path):
-    """A missing manifest names the path that was looked for."""
-    with pytest.raises(ValueError, match="manifest was not found"):
-        read_manifest(tmp_path / "absent.json")
+def test_missing_canonical_manifest_starts_a_new_corpus(tmp_path):
+    """Allow first acquisition while refusing an alternate catalog filename."""
+    assert read_manifest(tmp_path / "manifest.json").documents == ()
+    with pytest.raises(ValueError, match="canonical manifest.json"):
+        read_manifest(tmp_path / "other.json")
 
 
 def test_broken_manifest_json_names_the_position(tmp_path):
-    """Broken JSON reports where parsing stopped."""
+    """Keep common-validator JSON location evidence."""
     path = tmp_path / "manifest.json"
-    path.write_text("[{", encoding="utf-8")
-    with pytest.raises(ValueError, match="not valid JSON at line 1"):
+    path.write_text("[{")
+    with pytest.raises(ValueError, match="line 1"):
         read_manifest(path)
 
 
-def test_manifest_must_hold_a_list(tmp_path):
-    """A manifest is a list of entries, not a single object."""
-    with pytest.raises(ValueError, match="list of entries"):
-        read_manifest(write_manifest(tmp_path, {"url": "u", "file": "f"}))
+def test_manifest_refuses_legacy_lists(tmp_path):
+    """Never accept the removed registry-specific list format."""
+    path = tmp_path / "manifest.json"
+    path.write_text("[]")
+    with pytest.raises(ValueError, match="object"):
+        read_manifest(path)
 
 
-@pytest.mark.parametrize("missing", ["url", "file"])
-def test_entry_without_a_fetchable_field_is_rejected(tmp_path, missing):
-    """Both fields are required: one names the source, the other the destination."""
-    broken = entry("NVDA", "one")
-    broken[missing] = "  "
-    with pytest.raises(ValueError, match=f"entry 0 has no nonblank '{missing}'"):
-        read_manifest(write_manifest(tmp_path, [broken]))
+@pytest.mark.parametrize("missing", ["source_url", "filing_id"])
+def test_document_without_required_identity_is_rejected(tmp_path, missing):
+    """Validate common filing fields before starting network work."""
+    path = write_manifest(tmp_path, [entry("NVDA", "one")])
+    payload = json.loads(path.read_text())
+    del payload["documents"][0][missing]
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=missing):
+        read_manifest(path)
 
 
 def test_valid_manifest_is_returned_in_order(tmp_path):
-    """Entries keep manifest order, which is fetch order."""
-    payload = [entry("NVDA", "one"), entry("AMD", "two")]
-    assert [item["file"] for item in read_manifest(write_manifest(tmp_path, payload))] == [
-        "data/corpus/NVDA/one.html",
-        "data/corpus/AMD/two.html",
-    ]
+    """Preserve common document order through serialization."""
+    documents = [entry("NVDA", "one"), entry("AMD", "two")]
+    assert list(read_manifest(write_manifest(tmp_path, documents)).documents) == documents
 
 
 # --- selection ---
 
 
-def test_documents_already_on_disk_are_skipped(tmp_path, monkeypatch):
-    """Re-running after an interrupted download fetches only what is still missing."""
-    monkeypatch.chdir(tmp_path)
-    entries = [entry("NVDA", "one"), entry("AMD", "two")]
-    present = tmp_path / entries[0]["file"]
-    present.parent.mkdir(parents=True)
-    present.write_bytes(FILING)
+def test_documents_already_on_disk_are_skipped(tmp_path):
+    """Only verified manifest artifact bytes qualify as already acquired."""
+    documents = [entry("NVDA", "one"), entry("AMD", "two")]
+    path = tmp_path / "source.html"
+    path.write_bytes(FILING)
+    source = filing_source(path, document=documents[0])
+    catalog = Manifest(
+        corpus=source.corpus, documents=tuple(documents), artifacts=(source.artifact,)
+    )
+    assert pending(documents, manifest=catalog, corpus_root=tmp_path) == [documents[1]]
+    assert pending(documents, manifest=catalog, corpus_root=tmp_path, force=True) == documents
+    path.write_bytes(b"tampered")
+    assert pending(documents, manifest=catalog, corpus_root=tmp_path) == documents
 
-    assert [item["file"] for item in pending(entries)] == ["data/corpus/AMD/two.html"]
-    assert len(pending(entries, force=True)) == 2
 
-
-def test_ticker_filter_is_case_insensitive(tmp_path, monkeypatch):
-    """A ticker is selected however the caller cased it."""
-    monkeypatch.chdir(tmp_path)
-    entries = [entry("NVDA", "one"), entry("AMD", "two")]
-    assert [item["ticker"] for item in pending(entries, tickers=["amd"])] == ["AMD"]
+def test_ticker_filter_is_case_insensitive(tmp_path):
+    """Normalize requested ticker spelling without changing document identity."""
+    documents = [entry("NVDA", "one"), entry("AMD", "two")]
+    catalog = read_manifest(tmp_path / "manifest.json")
+    assert pending(documents, manifest=catalog, corpus_root=tmp_path, tickers=["amd"]) == [
+        documents[1]
+    ]
 
 
 # --- transport ---
@@ -254,27 +273,26 @@ def test_oversized_body_is_refused(monkeypatch):
 def test_store_creates_the_issuer_directory_and_leaves_no_partial(tmp_path):
     """The issuer directory is created and the staging file does not survive the write."""
     target = tmp_path / "NVDA" / "one.html"
-    store_document(target, FILING)
+    store_document(tmp_path, "NVDA/one.html", FILING)
 
     assert target.read_bytes() == FILING
     assert list(target.parent.iterdir()) == [target]
 
 
 def test_failed_write_leaves_no_partial_file(tmp_path, monkeypatch):
-    """An interrupted write must not leave bytes the next run would skip as complete."""
-    target = tmp_path / "NVDA" / "one.html"
+    """A failed atomic publication preserves prior bytes and removes temporary files."""
+    target = tmp_path / "NVDA/one.html"
+    store_document(tmp_path, "NVDA/one.html", b"previous")
 
-    def explode(self, data):
-        """Leave a touched target and simulate a failed write."""
-        self.parent.joinpath(self.name).touch()
+    def explode(*args):
+        """Fail the final atomic publication."""
         raise OSError("disk full")
 
-    monkeypatch.setattr(edgar_api.Path, "write_bytes", explode)
+    monkeypatch.setattr(acquisition.os, "replace", explode)
     with pytest.raises(OSError, match="disk full"):
-        store_document(target, FILING)
-
-    assert not target.exists()
-    assert list(target.parent.iterdir()) == []
+        store_document(tmp_path, "NVDA/one.html", FILING)
+    assert target.read_bytes() == b"previous"
+    assert list(target.parent.iterdir()) == [target]
 
 
 # --- the loop ---
@@ -298,8 +316,8 @@ def test_download_stores_every_entry_and_paces_the_requests(tmp_path, monkeypatc
     entries = [entry("NVDA", "one"), entry("AMD", "two")]
     stored = run(collect(client_returning(handler), entries))
 
-    assert [str(path) for path, _ in stored] == [item["file"] for item in entries]
-    assert all(size == len(FILING) for _, size in stored)
+    assert [filing.document for filing in stored] == entries
+    assert all(filing.primary.read_bytes(tmp_path) == FILING for filing in stored)
     assert waits == [edgar_api.REQUEST_INTERVAL_SECONDS]
 
 
@@ -318,8 +336,8 @@ def test_a_failed_document_keeps_the_documents_already_fetched(tmp_path, monkeyp
     with pytest.raises(EdgarApiError, match="http 500"):
         run(collect(client_returning(handler), entries))
 
-    assert (tmp_path / entries[0]["file"]).read_bytes() == FILING
-    assert not (tmp_path / entries[1]["file"]).exists()
+    assert len(list(tmp_path.rglob("*.html"))) == 1
+    assert next(tmp_path.rglob("*.html")).read_bytes() == FILING
 
 
 def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_path, monkeypatch):
@@ -350,7 +368,11 @@ def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_p
 
     assert result.manifest_entries == 1
     assert len(result.fetched) == 1
-    assert (tmp_path / "data/corpus/NVDA/one.html").read_bytes() == FILING
+    assert result.manifest == "manifest.json"
+    assert (
+        read_manifest(manifest).selected_sources(result.selection_id, tmp_path)[0].read()
+        == FILING.decode()
+    )
     assert updates[-1].current == updates[-1].total == 1
 
 
@@ -437,7 +459,7 @@ def test_discovered_filings_preserve_company_names_without_an_extra_request():
 
     rows = run(fetch_filing_rows(client_returning(handler), 1045810, user_agent=USER_AGENT))
     entries = annual_reports(rows, ticker="NVDA", cik=1045810, years=[2024])
-    assert entries[0]["aliases"] == ["NVDA", "NVIDIA Corporation"]
+    assert entries[0].aliases == ("NVDA", "NVIDIA Corporation")
     assert len(requests) == 1
 
 
@@ -477,53 +499,42 @@ def test_only_unamended_annual_reports_inside_the_range_are_selected():
     entries = annual_reports(
         submission_rows(columns), ticker="NVDA", cik=1045810, years=range(2024, 2025)
     )
-    assert [item["accession"] for item in entries] == [TEN_K[1]]
+    assert [item.filing_id for item in entries] == [TEN_K[1]]
 
 
-def test_discovered_entry_matches_the_committed_manifest_shape():
-    """A generated entry is indistinguishable from one already in the corpus."""
-    columns = submissions_payload([TEN_K])["filings"]["recent"]
+def test_discovered_entry_uses_common_normalized_metadata():
+    """Normalize SEC dates and padded identifiers without storing a source path early."""
     built = annual_reports(
-        submission_rows(columns), ticker="NVDA", cik=1045810, years=range(2024, 2025)
+        submission_rows(submissions_payload([TEN_K])["filings"]["recent"]),
+        ticker="NVDA",
+        cik=1045810,
+        years=(2024,),
     )[0]
-    assert built == {
-        "ticker": "NVDA",
-        "aliases": ["NVDA"],
-        "cik": 1045810,
-        "accession": "0001045810-24-000029",
-        "filing_date": "2024-02-21",
-        "report_date": "2024-01-28",
-        "primary_doc": "nvda-20240128.htm",
-        "file": "data/corpus/NVDA/2024-02-21_0001045810-24-000029.html",
-        "url": (
-            "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm"
-        ),
-    }
+    assert built.registry == "sec" and built.language == "en"
+    assert built.issuer_id == "0001045810"
+    assert built.filing_id == TEN_K[1]
+    assert built.fiscal_year == 2024
+    assert built.sec.primary_document == "nvda-20240128.htm"
+    assert not hasattr(built, "file")
 
 
 # --- merging ---
 
 
-def manifest_item(ticker: str, year: str, accession: str) -> dict[str, object]:
-    """Build a manifest entry with the fields merging and ordering read."""
-    return {
-        "ticker": ticker,
-        "accession": accession,
-        "report_date": f"{year}-01-28",
-        "file": f"data/corpus/{ticker}/{year}_{accession}.html",
-        "url": f"https://www.sec.gov/Archives/edgar/data/1/{accession}.htm",
-    }
+def manifest_item(ticker: str, year: str, accession: str):
+    """Create distinct valid filing identities for catalog merge checks."""
+    document = entry(ticker, accession)
+    return document.model_copy(update={"fiscal_year": int(year)})
 
 
 def test_existing_entries_keep_their_order_and_new_ones_follow():
-    """A widened corpus must not reshuffle the entries it was measured against."""
+    """Preserve existing identities and append deterministic newly discovered filings."""
     existing = [manifest_item("NVDA", "2024", "a"), manifest_item("AMD", "2023", "b")]
     discovered = [manifest_item("NVDA", "2020", "d"), manifest_item("AMD", "2019", "c")]
-
     merged, added = merge_entries(existing, discovered)
-
-    assert [item["accession"] for item in merged] == ["a", "b", "c", "d"]
-    assert [item["accession"] for item in added] == ["c", "d"]
+    assert merged[:2] == existing
+    assert added == sorted(discovered, key=lambda document: document.document_id)
+    assert merged[2:] == added
 
 
 def test_a_filing_already_in_the_manifest_is_not_added_twice():
@@ -534,20 +545,20 @@ def test_a_filing_already_in_the_manifest_is_not_added_twice():
     assert len(merged) == 1
 
 
-def test_a_second_filing_for_one_fiscal_year_is_refused():
-    """doc_id is the database key, so two filings for one year would collapse to one row."""
+def test_distinct_filings_for_one_fiscal_year_keep_distinct_identities():
+    """Do not collapse different SEC accessions into an issuer-year database key."""
     existing = [manifest_item("NVDA", "2024", "a")]
     merged, added = merge_entries(existing, [manifest_item("NVDA", "2024", "other")])
-    assert added == []
-    assert len(merged) == 1
+    assert len(merged) == 2 and len(added) == 1
+    assert merged[0].document_id != merged[1].document_id
 
 
 def test_manifest_round_trips_through_the_writer(tmp_path):
-    """What the writer emits is what the reader accepts."""
-    path = tmp_path / "manifest.json"
-    entries = [manifest_item("NVDA", "2024", "a")]
-    edgar_api.write_manifest(path, entries)
-    assert read_manifest(path) == entries
+    """Publish and read the exact common contract."""
+    path = write_manifest(tmp_path, [entry("NVDA", "one")])
+    catalog = read_manifest(path)
+    edgar_api.write_manifest(path, catalog)
+    assert read_manifest(path) == catalog
 
 
 # --- progress plumbing ---
@@ -563,7 +574,7 @@ def test_each_download_opens_and_closes_its_own_progress(tmp_path, monkeypatch):
     @contextmanager
     def factory(item):
         """Record the entry and expose its byte-progress hook."""
-        opened.append(item["file"])
+        opened.append(item.document_id)
         yield lambda read, total: seen.append((read, total))
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -574,7 +585,7 @@ def test_each_download_opens_and_closes_its_own_progress(tmp_path, monkeypatch):
     stored = run(collect_with(client_returning(handler), entries, progress=factory))
 
     assert len(stored) == 2
-    assert opened == [item["file"] for item in entries]
+    assert opened == [item.document_id for item in entries]
     assert seen[0] == (0, len(FILING))
     assert (len(FILING), len(FILING)) in seen
 
@@ -621,3 +632,37 @@ def test_an_uncompressed_response_keeps_its_declared_total():
         )
     )
     assert seen == [(0, len(FILING)), (len(FILING), len(FILING))]
+
+
+def test_year_scope_does_not_download_other_catalog_years(tmp_path, monkeypatch):
+    """A fresh clone requests only the selected fiscal year even when its catalog is broad."""
+    monkeypatch.chdir(tmp_path)
+    current = entry("NVDA", "current")
+    old = entry("NVDA", "old").model_copy(update={"fiscal_year": 2023})
+    manifest = write_manifest(tmp_path, [current, old])
+    requested = []
+
+    async def discover(*args, **kwargs):
+        """Keep the already-listed selected filing without making discovery requests."""
+        return [current]
+
+    def handler(request):
+        """Serve a filing and retain the actual requested URL."""
+        requested.append(str(request.url))
+        return httpx.Response(200, content=FILING)
+
+    original = httpx.AsyncClient
+    monkeypatch.setattr(edgar_api, "discover", discover)
+    monkeypatch.setattr(
+        edgar_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: original(transport=httpx.MockTransport(handler)),
+    )
+    result = run(acquire_edgar(manifest, tickers=("NVDA",), years=(2024,), user_agent=USER_AGENT))
+    assert len(result.fetched) == 1
+    assert requested == [current.source_url]
+    catalog = read_manifest(manifest)
+    assert list(catalog.documents) == [current, old]
+    assert [
+        source.document for source in catalog.selected_sources(result.selection_id, tmp_path)
+    ] == [current]

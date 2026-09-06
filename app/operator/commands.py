@@ -108,28 +108,6 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 "verify",
             ),
             OperatorCommand(
-                "db-migrate-plan",
-                "Plan DB migration",
-                "Inspect pending data-preserving schema migrations without changing the database.",
-                (".venv/bin/python", "-m", "app.db.migrate", "--plan"),
-                Path("."),
-                120,
-                "inspect",
-            ),
-            OperatorCommand(
-                "db-migrate-apply",
-                "Apply DB migration",
-                "Apply pending additive migrations while preserving corpus and run rows.",
-                (".venv/bin/python", "-m", "app.db.migrate", "--apply"),
-                Path("."),
-                300,
-                "service",
-                (
-                    "Add the pending usage-accounting columns and constraints to the local "
-                    "database. Existing rows are preserved."
-                ),
-            ),
-            OperatorCommand(
                 "db-start",
                 "Start PostgreSQL",
                 "Start the local pgvector service and retain its existing volume.",

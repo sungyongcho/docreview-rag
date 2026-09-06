@@ -9,28 +9,27 @@ indicator is not proof that either index matches the current corpus.
 
 ## 5. Parse and create chunks {#step-5}
 
-- **Goal:** store a chosen manifest's reports as searchable, traceable chunks.
+- **Goal:** store the explicitly selected reports as searchable, traceable chunks.
 - **Prerequisites:** compatible DB/schema and every required source file from [acquisition](acquisition.md#step-4).
 - **Screen:** Build → Pipeline → Parse & chunk → Change….
-- **Inputs:** select the manifest row whose source and document counts match the intended scope.
-  For the one-filing exercise, prepare `tutorial-manifest.json` using the
-  [CLI example](cli.md#prepare-one-nvidia-filing); its extraction block does not download or ingest.
-- **Primary action:** **Ingest** on that manifest's row.
+- **Inputs:** select the processing selection whose source and document counts match the intended scope.
+  Use the selection ID returned by acquisition; see the [CLI example](cli.md#prepare-one-nvidia-filing).
+- **Primary action:** **Ingest** on that selection's row.
 - **Visible result:** a job records progress and document/chunk counts; Documents shows the ingested report.
 - **Completion:** the job succeeds, the expected document identity is present, and its chunk count is positive.
 - **Recovery:** inspect missing-file or schema errors in Jobs. Correct that prerequisite before retrying;
   do not erase the database to resolve an unknown cause. See [troubleshooting](troubleshooting.md).
 - **Next:** [prepare embeddings](#step-6), or skip it when the current embedding identity is already ready.
 
-An Ingest row processes its whole manifest, including existing entries. Do not use **Ingest all manifests**
-for a one-report exercise. The operation upserts documents and recomputes BM25; it does not fill missing
+Each Ingest action processes only its explicit selection. The common catalog remains intact.
+The operation stores source-linked structures and chunks and recomputes BM25; it does not fill missing
 provider embeddings. Work already completed by CLI against this same DB should be reused.
 
 <!-- capture:05-manifest-ingest -->
 
-![Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts.](../assets/05-manifest-ingest.en.jpg)
+![Parse & chunk lists common-manifest selections with source and ingestion counts.](../assets/05-manifest-ingest.en.jpg)
 
-*Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts. Each row has its own Ingest action; no ingestion was started.*
+*Parse & chunk lists common-manifest selections with source and ingestion counts. Each selection has its own Ingest action.*
 
 ## 6. Prepare embeddings {#step-6}
 

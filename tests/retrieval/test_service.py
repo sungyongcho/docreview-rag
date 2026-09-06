@@ -163,9 +163,7 @@ def test_service_reranks_with_original_query_and_labels_the_score_stage(monkeypa
         ({"bm25_b": math.nan}, "finite number"),
     ],
 )
-def test_service_rejects_invalid_requests_before_provider_or_hybrid_search(
-    monkeypatch, changes, message
-):
+def test_service_rejects_invalid_requests_before_provider_or_search(monkeypatch, changes, message):
     """Validate service-owned inputs before building a provider or searching."""
 
     def build_provider():
@@ -173,11 +171,12 @@ def test_service_rejects_invalid_requests_before_provider_or_hybrid_search(
         raise AssertionError("invalid input must not build the provider")
 
     async def search(*_args, **_kwargs):
-        """Exercise search behavior."""
-        raise AssertionError("invalid input must not reach hybrid search")
+        """Reject any attempt to reach a real retrieval component."""
+        raise AssertionError("invalid input must not reach a retrieval component")
 
     monkeypatch.setattr(service, "get_embedding_provider", build_provider)
-    monkeypatch.setattr(service, "hybrid_search", search)
+    monkeypatch.setattr(service, "vector_search", search)
+    monkeypatch.setattr(service, "lexical_search", search)
     arguments = {"query": "query", "k": 2} | changes
 
     with pytest.raises(ValueError, match=message):
@@ -221,26 +220,29 @@ def test_service_rejects_a_shallow_candidate_pool_with_a_reranker(monkeypatch):
         )
 
 
-def test_service_builds_and_validates_default_provider_before_hybrid_search(monkeypatch):
-    """Build and dimension-check the default provider before composing retrieval."""
+def test_service_forwards_default_provider_width_and_identity(monkeypatch):
+    """Forward the provider's actual vector width and identity to the search boundary."""
+    provider = DeterministicEmbeddingProvider(dimensions=32)
     calls = []
 
     def build_provider():
-        """Exercise build provider behavior."""
+        """Return a configured alternate-width provider without database access."""
         calls.append("provider")
-        return DeterministicEmbeddingProvider(dimensions=32)
+        return provider
 
-    async def search(*_args, **_kwargs):
-        """Exercise search behavior."""
-        raise AssertionError("an invalid provider must not reach hybrid search")
+    async def search(_session, query_vector, *, identity, **_kwargs):
+        """Verify forwarding with an injected unit-test search implementation."""
+        calls.append("vector")
+        assert len(query_vector) == 32
+        assert identity == provider.identity
+        assert identity.dimensions == 32
+        return []
 
     monkeypatch.setattr(service, "get_embedding_provider", build_provider)
-    monkeypatch.setattr(service, "hybrid_search", search)
-
-    with pytest.raises(ValueError, match="database dimension 384"):
-        asyncio.run(service.retrieve(cast(AsyncSession, object()), "query"))
-
-    assert calls == ["provider"]
+    monkeypatch.setattr(service, "vector_search", search)
+    result = asyncio.run(service.retrieve(cast(AsyncSession, object()), "query", strategy="vector"))
+    assert not result.hits
+    assert calls == ["provider", "vector"]
 
 
 def test_application_settings_freeze_the_database_dimension_at_384():
@@ -287,6 +289,7 @@ def test_cli_acceptance_arguments_and_payload_keep_component_scores_private():
         ]
     )
     result = service.RetrievalResult(
+        candidates=(hit(1, 1 / 61),),
         hits=(hit(1, 1 / 61),),
         score_stage="rrf",
         component_rankings=service.ComponentRankings(vector=(1, 2), lexical=(1,)),
@@ -465,6 +468,7 @@ def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
         """Exercise retrieve behavior."""
         seen.update(kwargs)
         return service.RetrievalResult(
+            candidates=(hit(1, 1 / 61),),
             hits=(hit(1, 1 / 61),),
             score_stage="rrf",
             component_rankings=service.ComponentRankings(vector=(1,), lexical=()),

@@ -83,11 +83,9 @@ def test_failed_bootstrap_profile_is_not_saved(
     """Leave a newly learned profile on disk only after successful validation."""
     source = tmp_path / "unstructured.html"
     source.write_text("<html><body><p>Unstructured filing body</p></body></html>")
-    entry = {
-        "ticker": "TEST",
-        "report_date": "2024-12-31",
-        "file": str(source),
-    }
+    from tests.ingestion.support import filing_document, filing_source
+
+    entry = filing_source(source, document=filing_document(issuer="TEST"))
 
     result, profile = edgar_module.parse_filing(entry)
 

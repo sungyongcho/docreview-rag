@@ -6,10 +6,11 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from enum import IntEnum
 import json
-from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, Literal, TextIO
+from urllib.parse import urlsplit
 
+import httpx
 from openai import OpenAIError
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -94,36 +95,15 @@ def _add_retrieve_parser(subparsers: Subparsers) -> None:
 
 
 def _add_ingest_parser(subparsers: Subparsers) -> None:
-    """Declare the ingest command over one local corpus manifest."""
-    parser = subparsers.add_parser("ingest", help="Upsert one local corpus manifest.")
+    """Declare ingestion through the shared application job API."""
+    parser = subparsers.add_parser("ingest", help="Queue one selected corpus ingestion job.")
+    parser.add_argument("--manifest", required=True, help="Corpus-relative manifest name.")
+    parser.add_argument("--selection", required=True, help="Explicit processing selection ID.")
+    parser.add_argument("--expected-documents", type=int, default=None)
     parser.add_argument(
-        "--manifest",
-        type=Path,
-        required=True,
-        help="Path to the corpus manifest JSON file.",
-    )
-    parser.add_argument(
-        "--expected-documents",
-        type=int,
-        default=None,
-        help="Fail unless the manifest contains exactly this many documents.",
-    )
-    parser.add_argument(
-        "--chunk-batch-size",
-        type=int,
-        default=500,
-        help="Number of chunk rows per PostgreSQL upsert statement.",
-    )
-    schema = parser.add_mutually_exclusive_group()
-    schema.add_argument(
-        "--create-schema",
-        action="store_true",
-        help="Create missing tables before ingestion; existing tables are not migrated.",
-    )
-    schema.add_argument(
-        "--recreate-schema",
-        action="store_true",
-        help="DESTRUCTIVE: drop model tables and rebuild the current schema before ingestion.",
+        "--api-url",
+        default="http://127.0.0.1:8000/docreview-rag-agent/api/admin",
+        help="Development administrator API base URL.",
     )
 
 
@@ -194,27 +174,6 @@ def _validate_arguments(args: argparse.Namespace) -> None:
                 "expected-documents must be positive",
                 ExitCode.INVALID_INPUT,
             )
-        if args.chunk_batch_size <= 0:
-            raise CliError(
-                "invalid_chunk_batch_size",
-                "chunk-batch-size must be positive",
-                ExitCode.INVALID_INPUT,
-            )
-    elif args.command == "serve":
-        if not args.host.strip():
-            raise CliError("invalid_host", "host must not be blank", ExitCode.INVALID_INPUT)
-        if not 1 <= args.port <= 65_535:
-            raise CliError(
-                "invalid_port",
-                "port must be between 1 and 65535",
-                ExitCode.INVALID_INPUT,
-            )
-        if args.workers <= 0:
-            raise CliError(
-                "invalid_workers",
-                "workers must be positive",
-                ExitCode.INVALID_INPUT,
-            )
 
 
 def _provider_settings(settings: Settings, provider: ProviderName | None) -> Settings:
@@ -255,6 +214,7 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
     from app.ingestion.progress import OperationProgress, operation_bar
     from app.retrieval.embeddings import (
         EmbeddingBackfillResult,
+        OpenAIEmbeddingProvider,
         embed_missing_chunks,
         get_embedding_provider,
     )
@@ -313,7 +273,7 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
                 "input_tokens": provider.usage.input_tokens,
                 "estimated_cost_usd": format(provider.usage.estimated_cost_usd, "f"),
             }
-            if hasattr(provider, "usage")
+            if isinstance(provider, OpenAIEmbeddingProvider)
             else None
         ),
         "hits": [_evidence_payload(hit) for hit in result.hits],
@@ -322,67 +282,44 @@ async def _retrieve(args: argparse.Namespace) -> dict[str, object]:
 
 
 async def _ingest(args: argparse.Namespace) -> dict[str, object]:
-    """Upsert one manifest and rebuild the BM25 statistics its writes invalidated."""
-    from app.db.bootstrap import SchemaDriftError, bootstrap_schema
-    from app.db.models import Base
-    from app.db.session import Session, engine
-    from app.ingestion.progress import OperationProgress, operation_bar
-    from app.ingestion.seed import ManifestError, load_seed_batch, persist_seed_batch_with_stats
+    """Submit the same typed ingestion job used by the development web client."""
+    from app.api.admin_schemas import CorpusJobResource, CorpusOperationRequest
 
-    with operation_bar("Ingest") as progress:
-        if args.create_schema:
-            try:
-                progress(OperationProgress("schema", 0, 1, "Checking current schema"))
-                await bootstrap_schema(engine)
-                progress(OperationProgress("schema", 1, 1, "Schema ready"))
-            except SchemaDriftError as error:
-                raise CliError("schema_drift", str(error), ExitCode.UNAVAILABLE) from error
-
-        try:
-            batch = load_seed_batch(
-                args.manifest,
-                expected_documents=args.expected_documents,
-                on_progress=progress,
+    request = CorpusOperationRequest(
+        kind="ingest_manifest",
+        manifest=args.manifest,
+        selection_id=args.selection,
+        expected_documents=args.expected_documents,
+    )
+    parsed = urlsplit(args.api_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    try:
+        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+            response = await client.post(
+                args.api_url.rstrip("/") + "/corpus/jobs/",
+                json=request.model_dump(mode="json"),
+                headers={"Origin": origin},
             )
-        except ManifestError as error:
-            raise CliError(error.code, error.message, ExitCode.INVALID_FILE) from error
-
-        try:
-            if args.recreate_schema:
-                progress(OperationProgress("schema", 0, 2, "Dropping model tables"))
-                async with engine.begin() as connection:
-                    await connection.run_sync(Base.metadata.drop_all)
-                progress(OperationProgress("schema", 1, 2, "Creating current schema"))
-                await bootstrap_schema(engine)
-                progress(OperationProgress("schema", 2, 2, "Schema ready"))
-        except SchemaDriftError as error:
-            raise CliError("schema_drift", str(error), ExitCode.UNAVAILABLE) from error
-
-        async with Session() as session:
-            result = await persist_seed_batch_with_stats(
-                session,
-                batch,
-                chunk_batch_size=args.chunk_batch_size,
-                on_progress=progress,
-            )
-    return {
-        "status": "ok",
-        "command": "ingest",
-        "manifest": str(args.manifest),
-        "documents": result.documents,
-        "chunks": result.chunks,
-    }
+            response.raise_for_status()
+            job = CorpusJobResource.model_validate_json(response.content)
+    except (httpx.HTTPError, ValidationError) as error:
+        raise CliError(
+            "ingestion_job_unavailable",
+            "Check the development Jobs panel before retrying; the request may have been accepted.",
+            ExitCode.UNAVAILABLE,
+        ) from error
+    return job.model_dump(mode="json")
 
 
 async def _run_data_command(args: argparse.Namespace) -> dict[str, object]:
     """Dispatch to the command that needs a database session, then release the pool."""
+    if args.command == "ingest":
+        return await _ingest(args)
     from app.db.session import engine
 
     try:
         if args.command == "retrieve":
             return await _retrieve(args)
-        if args.command == "ingest":
-            return await _ingest(args)
         raise AssertionError(f"unsupported data command: {args.command}")
     finally:
         await engine.dispose()

@@ -2,7 +2,7 @@
 
 Network access, archive selection, and decoding live together because they form one
 boundary: getting a registry's original document onto disk in the exact form
-``read_source`` will later decode and ``source_digest`` will later hash. The parser
+the selected artifact will later decode and ``source_digest`` will later hash. The parser
 starts from that file and never reaches back through this module.
 
 The credential is always supplied by the caller and always travels as a query
@@ -19,7 +19,7 @@ import codecs
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import hashlib
 import io
 import json
@@ -31,6 +31,21 @@ import zipfile
 
 import httpx
 
+from app.ingestion.acquisition import (
+    AcquiredFiling,
+    current_primary,
+    merge_acquired,
+    publish_bytes,
+    read_catalog,
+    selection_identity,
+)
+from app.ingestion.manifest import (
+    Acquisition,
+    DartMetadata,
+    DocumentReference,
+    Manifest,
+    SourceArtifact,
+)
 from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
 
 DART_BASE: Final[str] = "https://opendart.fss.or.kr/api"
@@ -48,7 +63,7 @@ RETRY_BACKOFF_SECONDS: Final[float] = 1.0
 OK_STATUS: Final[str] = "000"
 NO_DATA_STATUS: Final[str] = "013"
 
-DEFAULT_MANIFEST_NAME: Final[str] = "dart-manifest.json"
+DEFAULT_MANIFEST_NAME: Final[str] = "manifest.json"
 
 ByteProgressFactory = Callable[[str], AbstractContextManager[ByteProgress | None]]
 
@@ -139,9 +154,11 @@ class DocumentArchive:
 class DartAcquisitionResult:
     """Observable manifest and source-file outcome from one DART run."""
 
-    archived: tuple[dict[str, Any], ...]
-    added: tuple[dict[str, Any], ...]
+    archived: tuple[AcquiredFiling, ...]
+    added: tuple[DocumentReference, ...]
     manifest_entries: int
+    manifest: str = "manifest.json"
+    selection_id: str = ""
 
 
 def _declared_length(response: httpx.Response) -> int | None:
@@ -581,226 +598,135 @@ def archive_document(
     fiscal_year: int,
     corpus_dir: Path,
     fetched_at: datetime | None = None,
-) -> dict[str, Any]:
-    """Write one canonical UTF-8 source and return its registry-neutral manifest entry.
-
-    Parameters
-    ----------
-    document : DocumentArchive
-        Archive as served, already hashed.
-    report : AnnualReport
-        The selected disclosure row.
-    issuer : CorpCode
-        Issuer identity, whose stock code becomes the neutral ``issuer`` symbol.
-    fiscal_year : int
-        Year the report covers.
-    corpus_dir : Path
-        Corpus root; the source lands under ``dart/{stock_code}/{rcept_no}.xml``.
-    fetched_at : datetime | None
-        Timezone-aware retrieval moment recorded in the entry.
-
-    Returns
-    -------
-    dict[str, Any]
-        Manifest entry whose ``source_length`` and ``source_sha256`` describe the file
-        on disk, so a re-transcoded or truncated archive is caught before parsing.
-
-    Raises
-    ------
-    DartArchiveError
-        If the archive is unreadable, the report member is missing, or the member
-        cannot be decoded without loss.
-
-    Notes
-    -----
-    The digest is recomputed by reading the written file back rather than taken from
-    the in-memory string. That is the only construction guaranteed to equal what the
-    golden loader recomputes later through the same reader.
-    """
-    from app.ingestion.parser import read_source, source_digest
-
+    document_reference: DocumentReference | None = None,
+) -> AcquiredFiling:
+    """Publish original archive and canonical UTF-8 source with complete acquisition lineage."""
+    if document.rcept_no != report.rcept_no or issuer.corp_code != report.corp_code:
+        raise DartArchiveError("archive and selected report identities disagree")
+    if hashlib.sha256(document.zip_bytes).hexdigest() != document.archive_sha256:
+        raise DartArchiveError("archive bytes disagree with their recorded digest")
     try:
         with zipfile.ZipFile(io.BytesIO(document.zip_bytes)) as bundle:
             member = select_primary_member(bundle, rcept_no=document.rcept_no)
             raw = bundle.read(member)
     except zipfile.BadZipFile:
         raise DartArchiveError("document archive is not a readable ZIP") from None
-
     decoded, encoding = decode_source(raw)
     source, exotic = canonicalize(decoded)
-
-    path = corpus_dir / "dart" / issuer.stock_code / f"{document.rcept_no}.xml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(source.encode("utf-8"))
-
-    stored = read_source(path)
+    payload = source.encode("utf-8")
+    digest = hashlib.sha256(payload).hexdigest()
+    metadata = document_reference or DocumentReference(
+        document_id=f"dart-{document.rcept_no}",
+        registry="dart",
+        language="ko",
+        issuer=issuer.stock_code,
+        issuer_id=issuer.corp_code,
+        aliases=(issuer.corp_name, issuer.stock_code),
+        filing_id=document.rcept_no,
+        form=ANNUAL_REPORT_FORM,
+        fiscal_year=fiscal_year,
+        filing_date=date.fromisoformat(report.rcept_dt),
+        report_period=date(fiscal_year, 12, 31),
+        source_url=f"{DART_VIEWER}{document.rcept_no}",
+        dart=DartMetadata(
+            corp_code=issuer.corp_code,
+            receipt_number=document.rcept_no,
+            report_code="11011",
+            report_name=report.report_nm,
+        ),
+    )
+    if metadata.registry != "dart" or metadata.filing_id != document.rcept_no:
+        raise ValueError("archive identity disagrees with selected DART filing")
     moment = fetched_at or datetime.now(UTC)
-    return {
-        "registry": "dart",
-        "issuer": issuer.stock_code,
-        "aliases": [issuer.corp_name, issuer.stock_code],
-        "issuer_id": issuer.corp_code,
-        "filing_id": document.rcept_no,
-        "form": ANNUAL_REPORT_FORM,
-        "language": "ko",
-        "filing_date": f"{report.rcept_dt[:4]}-{report.rcept_dt[4:6]}-{report.rcept_dt[6:8]}",
-        "report_period": f"{fiscal_year}-12-31",
-        "fiscal_year": fiscal_year,
-        "file": str(path),
-        "url": f"{DART_VIEWER}{document.rcept_no}",
-        "source_length": len(stored),
-        "source_sha256": source_digest(stored),
-        "source_encoding": encoding,
-        "archive_sha256": document.archive_sha256,
-        "archive_member": member,
-        "exotic_separators": exotic,
-        "corp_name": issuer.corp_name,
-        "report_nm": report.report_nm,
-        "fetched_at": moment.isoformat().replace("+00:00", "Z"),
-    }
+    archive = SourceArtifact(
+        artifact_id=f"{metadata.document_id}:archive:{document.archive_sha256}",
+        document_id=metadata.document_id,
+        role="archive",
+        path=f"dart/{document.rcept_no}/{document.archive_sha256}.zip",
+        sha256=document.archive_sha256,
+        byte_length=len(document.zip_bytes),
+        encoding=None,
+        acquisition=Acquisition(
+            acquired_at=moment,
+            url=f"{DART_BASE}/document.xml?rcept_no={document.rcept_no}",
+            media_type="application/zip",
+        ),
+    )
+    primary = SourceArtifact(
+        artifact_id=f"{metadata.document_id}:primary:{digest}",
+        document_id=metadata.document_id,
+        role="primary",
+        path=f"dart/{document.rcept_no}/{digest}.xml",
+        sha256=digest,
+        byte_length=len(payload),
+        encoding="utf-8",
+        acquisition=Acquisition(
+            acquired_at=moment,
+            url=f"{DART_BASE}/document.xml?rcept_no={document.rcept_no}",
+            media_type="application/xml",
+            archive_sha256=document.archive_sha256,
+            archive_member=member,
+            original_encoding=encoding,
+            normalized_separator_count=exotic,
+        ),
+    )
+    publish_bytes(corpus_dir, archive.path, document.zip_bytes)
+    publish_bytes(corpus_dir, primary.path, payload)
+    return AcquiredFiling(metadata, (archive, primary))
 
 
-def read_manifest(path: Path) -> list[dict[str, Any]]:
-    """Return the filings the DART manifest already records, empty on a first run.
-
-    A missing manifest is not a failure: creating it is this command's job. Only the
-    two fields merging reads are checked; the parser validates the rest of an entry
-    when it reads the filing itself.
-
-    Raises
-    ------
-    ValueError
-        If the file is not UTF-8 JSON, is not a list, or holds an entry without a
-        nonblank ``filing_id`` and ``file``.
-    """
-    if not path.is_file():
-        return []
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except UnicodeDecodeError:
-        raise ValueError(f"manifest must be UTF-8 text: {path}") from None
-    except json.JSONDecodeError as error:
-        raise ValueError(
-            f"manifest is not valid JSON at line {error.lineno} column {error.colno}: {path}"
-        ) from None
-    if not isinstance(payload, list):
-        raise ValueError(f"manifest must hold a list of entries: {path}")
-    for index, entry in enumerate(payload):
-        if not isinstance(entry, Mapping):
-            raise ValueError(f"manifest entry {index} is not an object")
-        for key in ("filing_id", "file"):
-            value = entry.get(key)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"manifest entry {index} has no nonblank {key!r}")
-    return [dict(entry) for entry in payload]
+def read_manifest(path: Path) -> Manifest:
+    """Read only the common corpus manifest."""
+    return read_catalog(path)
 
 
-def write_manifest(path: Path, entries: Sequence[Mapping[str, Any]]) -> None:
-    """Write the DART manifest, keeping Korean issuer and report names readable."""
+def write_manifest(path: Path, manifest: Manifest) -> None:
+    """Atomically publish the validated common corpus manifest."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps([dict(entry) for entry in entries], ensure_ascii=False, indent=2)
-    path.write_text(payload + "\n", encoding="utf-8")
-
-
-def _manifest_source_is_current(entry: Mapping[str, Any], *, corpus_dir: Path) -> bool:
-    """Return whether one manifest entry still describes its source file exactly."""
-    raw_file = entry.get("file")
-    expected_length = entry.get("source_length")
-    expected_digest = entry.get("source_sha256")
-    if (
-        not isinstance(raw_file, str)
-        or not raw_file.strip()
-        or not isinstance(expected_length, int)
-        or isinstance(expected_length, bool)
-        or expected_length < 0
-        or not isinstance(expected_digest, str)
-        or re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None
-    ):
-        return False
-
-    root = corpus_dir.resolve()
-    recorded = Path(raw_file)
-    candidates = (recorded,) if recorded.is_absolute() else (recorded, corpus_dir / recorded)
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        try:
-            resolved.relative_to(root)
-        except ValueError:
-            continue
-        if not resolved.is_file():
-            continue
-        try:
-            source = resolved.read_bytes().decode("utf-8")
-        except OSError, UnicodeDecodeError:
-            return False
-        actual_digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
-        return len(source) == expected_length and actual_digest == expected_digest
-    return False
+    manifest.write(path)
 
 
 def pending_dart_targets(
-    existing: Sequence[Mapping[str, Any]],
+    existing: Manifest,
     *,
     stock_codes: Sequence[str],
     fiscal_years: Sequence[int],
     corpus_dir: Path,
 ) -> list[tuple[str, int]]:
-    """Return requested issuer-years absent from disk or inconsistent with the manifest."""
+    """Find requested issuer-years lacking a verified acquired primary source."""
     valid = {
-        (entry.get("issuer"), entry.get("fiscal_year"))
-        for entry in existing
-        if _manifest_source_is_current(entry, corpus_dir=corpus_dir)
+        (document.issuer, document.fiscal_year)
+        for document in existing.documents
+        if document.registry == "dart"
+        and current_primary(existing, document.document_id, corpus_dir) is not None
     }
     return [
         (stock_code, fiscal_year)
-        for stock_code in stock_codes
-        for fiscal_year in fiscal_years
+        for stock_code in dict.fromkeys(stock_codes)
+        for fiscal_year in dict.fromkeys(fiscal_years)
         if (stock_code, fiscal_year) not in valid
     ]
 
 
-def merge_manifest(
-    existing: Sequence[Mapping[str, Any]], archived: Sequence[Mapping[str, Any]]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Return the manifest with this run's filings folded in, and which ones were new.
-
-    This replaces writing the file wholesale, which erased the previous run: asking
-    for a second fiscal year used to cost you the first. Entries keep their position,
-    and a filing that was already recorded is replaced rather than duplicated —
-    ``archive_document`` has just rewritten its bytes, so the recorded digests have to
-    be the ones on disk now.
-
-    The identity is the document ID rather than the receipt number, because that is
-    what the database keys on: two receipts for one issuer-year are one row.
-    """
-    # Imported here, like the parser in ``archive_document``: reading a filing's
-    # identity is a downstream concern, and this module stays a network boundary.
-    from app.ingestion.dart import dart_doc_id
-
-    merged = [dict(entry) for entry in existing]
-    aliases_by_issuer = {
-        str(entry.get("issuer", "")): list(entry["aliases"])
-        for entry in merged
-        if isinstance(entry.get("aliases"), list)
-    }
-    position = {dart_doc_id(entry): index for index, entry in enumerate(merged)}
-
-    added: list[dict[str, Any]] = []
-    for raw_entry in archived:
-        entry = dict(raw_entry)
-        issuer = str(entry.get("issuer", ""))
-        entry["aliases"] = aliases_by_issuer.get(
-            issuer,
-            list(entry.get("aliases") or [issuer]),
-        )
-        document = dart_doc_id(entry)
-        if document in position:
-            merged[position[document]] = entry
+def _known_issuers(manifest: Manifest, stock_codes: Sequence[str]) -> dict[str, CorpCode]:
+    """Reuse only unanimous typed issuer IDs; a stock code is not an official-name claim."""
+    wanted = set(stock_codes)
+    candidates: dict[str, set[str | None]] = {}
+    for document in manifest.documents:
+        if document.registry != "dart" or document.issuer not in wanted:
             continue
-        position[document] = len(merged)
-        merged.append(entry)
-        added.append(entry)
-    return merged, added
+        code = (
+            document.dart.corp_code
+            if document.dart is not None and document.issuer_id == document.dart.corp_code
+            else None
+        )
+        candidates.setdefault(document.issuer, set()).add(code)
+    known: dict[str, CorpCode] = {}
+    for stock_code, codes in candidates.items():
+        if len(codes) == 1 and (code := next(iter(codes))) is not None:
+            # The live annual-report row supplies its current source-provided name.
+            known[stock_code] = CorpCode(code, stock_code, stock_code)
+    return known
 
 
 async def acquire_dart(
@@ -815,6 +741,9 @@ async def acquire_dart(
     """Download and archive requested DART filings without parsing or ingesting them."""
     manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
     existing = read_manifest(manifest_path)
+    if not stock_codes or not fiscal_years:
+        raise ValueError("DART acquisition requires explicit issuers and fiscal years")
+    selection_id = selection_identity("dart", stock_codes, fiscal_years)
     targets = pending_dart_targets(
         existing,
         stock_codes=stock_codes,
@@ -824,10 +753,26 @@ async def acquire_dart(
     if not targets:
         if on_progress is not None:
             on_progress(OperationProgress("download", 0, 0, "Every requested filing is valid"))
-        return DartAcquisitionResult((), (), len(existing))
+        selected = [
+            document.document_id
+            for document in existing.documents
+            if document.registry == "dart"
+            and document.issuer in stock_codes
+            and document.fiscal_year in fiscal_years
+        ]
+        existing = merge_acquired(
+            existing,
+            [],
+            selection_id=selection_id,
+            selected_document_ids=selected,
+            corpus_root=corpus_dir,
+        )
+        write_manifest(manifest_path, existing)
+        return DartAcquisitionResult((), (), len(existing.documents), selection_id=selection_id)
     if not api_key.strip():
         raise ValueError("DART_API_KEY is not configured; add it to .env")
-    archived: list[dict[str, Any]] = []
+    archived: list[AcquiredFiling] = []
+    prior_ids = {document.document_id for document in existing.documents}
 
     def byte_progress(
         label: str,
@@ -839,7 +784,8 @@ async def acquire_dart(
         """Bridge one byte stream onto terminal or administrative progress."""
         if progress_factory is not None:
             return progress_factory(label)
-        if on_progress is None:
+        publish = on_progress
+        if publish is None:
             return nullcontext(None)
 
         @contextmanager
@@ -848,7 +794,7 @@ async def acquire_dart(
 
             def report(read: int, length: int | None) -> None:
                 """Publish byte progress for the current DART response."""
-                on_progress(
+                publish(
                     OperationProgress(
                         stage,
                         current,
@@ -863,20 +809,21 @@ async def acquire_dart(
 
         return bridge()
 
+    pending_stock_codes = tuple(dict.fromkeys(stock_code for stock_code, _ in targets))
+    issuers = _known_issuers(existing, pending_stock_codes)
+    unknown = tuple(stock_code for stock_code in pending_stock_codes if stock_code not in issuers)
     async with httpx.AsyncClient(follow_redirects=True) as client:
-        with byte_progress(
-            "corp codes",
-            stage="issuer_index",
-            current=0,
-            total=None,
-        ) as progress:
-            bundle = await fetch_corp_code_archive(
-                client,
-                api_key=api_key,
-                on_progress=progress,
-            )
-        pending_stock_codes = tuple(dict.fromkeys(stock_code for stock_code, _ in targets))
-        issuers = parse_corp_codes(bundle, stock_codes=pending_stock_codes)
+        if unknown:
+            with byte_progress(
+                "corp codes",
+                stage="issuer_index",
+                current=0,
+                total=None,
+            ) as progress:
+                bundle = await fetch_corp_code_archive(
+                    client, api_key=api_key, on_progress=progress
+                )
+            issuers.update(parse_corp_codes(bundle, stock_codes=unknown))
 
         for index, (stock_code, fiscal_year) in enumerate(targets):
             issuer = issuers[stock_code]
@@ -890,6 +837,9 @@ async def acquire_dart(
                 filing_year=fiscal_year + 1,
             )
             report = select_annual_report(rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year)
+            if report.corp_name:
+                issuer = CorpCode(issuer.corp_code, report.corp_name, stock_code)
+                label = f"{issuer.corp_name} FY{fiscal_year}"
             with byte_progress(
                 label,
                 stage="download",
@@ -908,14 +858,40 @@ async def acquire_dart(
                 issuer,
                 fiscal_year=fiscal_year,
                 corpus_dir=corpus_dir,
+                document_reference=next(
+                    (
+                        known
+                        for known in existing.documents
+                        if known.registry == "dart" and known.filing_id == document.rcept_no
+                    ),
+                    None,
+                ),
             )
             archived.append(entry)
+            selected = [
+                known.document_id
+                for known in (*existing.documents, entry.document)
+                if known.registry == "dart"
+                and known.issuer in stock_codes
+                and known.fiscal_year in fiscal_years
+            ]
+            existing = merge_acquired(
+                existing,
+                [entry],
+                selection_id=selection_id,
+                selected_document_ids=selected,
+                corpus_root=corpus_dir,
+            )
+            write_manifest(manifest_path, existing)
             if on_progress is not None:
                 on_progress(OperationProgress("download", index + 1, len(targets), label))
 
-    merged, added = merge_manifest(existing, archived)
-    write_manifest(manifest_path, merged)
-    return DartAcquisitionResult(tuple(archived), tuple(added), len(merged))
+    added = tuple(
+        entry.document for entry in archived if entry.document.document_id not in prior_ids
+    )
+    return DartAcquisitionResult(
+        tuple(archived), added, len(existing.documents), selection_id=selection_id
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
@@ -954,9 +930,11 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
             return
         with overall_bar(len(result.archived), unit="filing", description="DART") as overall:
             for entry in result.archived:
-                label = f"{entry['issuer']} FY{entry['fiscal_year']}"
+                label = f"{entry.document.issuer} FY{entry.document.fiscal_year}"
                 overall.advance(label)
-                overall.write(f"{label}: {entry['file']} ({entry['source_length']:,} chars)")
+                overall.write(
+                    f"{label}: {entry.primary.path} ({entry.primary.byte_length:,} bytes)"
+                )
         print(
             f"wrote {manifest_path}: {len(result.added)} new, "
             f"{result.manifest_entries} filing(s) recorded"

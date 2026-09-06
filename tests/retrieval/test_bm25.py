@@ -1,26 +1,39 @@
 """PostgreSQL BM25 ranking and statistic-rebuild tests."""
 
 import asyncio
+from dataclasses import asdict
+import hashlib
 import inspect
 import json
 import math
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import cast
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import MetaData, text as sql
+from sqlalchemy import insert, select, text as sql, update
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings, get_settings
 from app.db.bootstrap import ensure_bm25_stats_invalidation
-from app.db.models import Base
+from app.db.models import Base, Chunk as ChunkModel, ChunkEmbedding
+from app.ingestion.chunk import Chunk
+from app.ingestion.parser import Block, ParsedFiling, Section
+from app.ingestion.seed import (
+    SeedBatch,
+    _persist_sources,
+    document_upsert_statement,
+    filing_records,
+)
 import app.retrieval as public
 from app.retrieval import __main__ as cli, bm25, service
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
+from tests.ingestion.support import filing_document, filing_source
 from tests.live_postgres import live_postgres_unavailable
 from tests.retrieval.support import hit_values, normalized_sql
 
@@ -505,97 +518,109 @@ def test_cli_defaults_leave_every_ranker_override_unset():
 # --------------------------------------------------------------------------
 
 
-async def _load_fixture_corpus(connection) -> None:
-    """Materialize the committed fixture as real rows in temporary tables.
+async def _load_fixture_corpus(connection, source_root: Path, schema: str) -> None:
+    """Load the exact oracle tokens using the complete normalized production schema.
 
-    ``index_text`` is the token list itself, with an empty context header so the
-    ``ChunkHit`` identity ``index_text == body`` holds. Every fixture token is already an
-    English snowball stem, so PostgreSQL's generated ``content_tsv`` reproduces the
-    fixture's term frequencies and document lengths exactly, and the oracle and the
-    database are then describing the same corpus rather than two similar ones.
+    Empty context headers preserve the oracle term frequencies. The two filing
+    sources contain those exact tokens, with real byte hashes, source spans, parsed
+    structures, and document-parse pointers. Fixed chunk IDs retain the existing
+    fixture-to-oracle mapping independently of document insertion order.
     """
     await connection.execute(sql("CREATE EXTENSION IF NOT EXISTS vector"))
-    temporary_metadata = MetaData()
-    for table_name in (
-        "documents",
-        "chunks",
-        "chunk_terms",
-        "chunk_lengths",
-        "lexeme_stats",
-        "bm25_corpus_stats",
-    ):
-        Base.metadata.tables[table_name].to_metadata(temporary_metadata, schema="pg_temp")
-    await connection.run_sync(
-        lambda sync_connection: temporary_metadata.create_all(sync_connection, checkfirst=False)
-    )
-    await ensure_bm25_stats_invalidation(connection, schema="pg_temp")
-
-    documents = temporary_metadata.tables["pg_temp.documents"]
-    chunks = temporary_metadata.tables["pg_temp.chunks"]
-    await connection.execute(
-        documents.insert(),
-        [
-            {
-                "doc_id": f"{issuer}-FY2024",
-                "registry": "sec",
-                "language": "en",
-                "issuer": issuer,
-                "issuer_id": issuer_id,
-                "fiscal_year": 2024,
-                "form": "10-K",
-                "filing_date": "2024-02-21",
-                "report_period": "2024-01-28",
-                "filing_id": f"{issuer}-2024",
-                "source_url": f"https://example.test/{issuer}",
-                "parse_status": "parsed",
-                "item_index": [],
-                "source_length": 10_000,
-                "source_sha256": digest,
-            }
-            for issuer, issuer_id, digest in (
-                ("NVDA", "1045810", "a" * 64),
-                ("AMD", "2488", "b" * 64),
+    await connection.run_sync(lambda sync: Base.metadata.create_all(sync, checkfirst=False))
+    await ensure_bm25_stats_invalidation(connection, schema=schema)
+    await connection.commit()
+    documents = []
+    records = []
+    filings = []
+    chunk_ids = {}
+    for issuer, positions in (("NVDA", range(3)), ("AMD", range(3, 5))):
+        bodies = [" ".join(FIXTURE["documents"][position]["tokens"]) for position in positions]
+        raw = "\n".join(bodies)
+        path = source_root / f"{issuer}.html"
+        path.write_text(raw, encoding="utf-8")
+        metadata = filing_document(
+            issuer=issuer,
+            filing_id=("0001045810-24-000001" if issuer == "NVDA" else "0001045810-24-000002"),
+        )
+        source = filing_source(path, document=metadata)
+        digest = hashlib.sha256(raw.encode()).hexdigest()
+        blocks = []
+        units = []
+        offset = 0
+        item = "7" if issuer == "NVDA" else "7A"
+        for ordinal, (position, body) in enumerate(zip(positions, bodies, strict=True)):
+            end = offset + len(body)
+            blocks.append(Block("paragraph", body, source_pos=offset, end_pos=end))
+            unit = Chunk(
+                metadata.document_id,
+                item,
+                "text",
+                ordinal,
+                body,
+                "",
+                FIXTURE["documents"][position]["id"],
+                offset,
+                end,
+                digest,
             )
-        ],
+            units.append(unit)
+            chunk_ids[unit.stable_key] = position + 1
+            offset = end + 1
+        filing = ParsedFiling(
+            source=source,
+            source_length=len(raw),
+            source_sha256=digest,
+            sections=[Section("II", item, "", "", blocks)],
+        )
+        document, chunk_records = filing_records(filing, units)
+        documents.append(document)
+        records.extend(chunk_records)
+        filings.append(filing)
+    batch = SeedBatch(
+        tuple(sorted(documents, key=lambda document: document.doc_id)),
+        tuple(sorted(records, key=lambda record: (record.doc_id, record.ordinal))),
+        tuple(filings),
     )
     provider = DeterministicEmbeddingProvider()
-    vectors = await provider.embed_documents(
-        [" ".join(document["tokens"]) for document in FIXTURE["documents"]]
-    )
-    chunk_rows = []
-    for ordinal, document in enumerate(FIXTURE["documents"]):
-        chunk_id = ordinal + 1
-        start_char = chunk_id * 100
-        index_text = " ".join(document["tokens"])
-        chunk_rows.append(
-            {
-                "id": chunk_id,
-                "doc_id": "NVDA-FY2024" if chunk_id <= 3 else "AMD-FY2024",
-                "language": "en",
-                "item": "7" if chunk_id <= 3 else "7A",
-                "kind": "text",
-                "ordinal": ordinal,
-                "body": index_text,
-                "context_header": "",
-                "index_text": index_text,
-                "start_char": start_char,
-                "end_char": start_char + len(document["text"]),
-                "source_sha256": f"{chunk_id:064d}",
-                "citation": document["id"],
-                "embedding": vectors[ordinal],
-            },
-        )
-    await connection.execute(chunks.insert(), chunk_rows)
-    await connection.commit()
+    async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+        async with session.begin():
+            await session.execute(document_upsert_statement(batch.documents))
+            await _persist_sources(session, batch)
+            await session.execute(
+                insert(ChunkModel),
+                [
+                    {"id": chunk_ids[record.stable_key], **record.values()}
+                    for record in batch.chunks
+                ],
+            )
+            vectors = await provider.embed_documents([record.index_text for record in batch.chunks])
+            await session.execute(
+                insert(ChunkEmbedding),
+                [
+                    {
+                        "chunk_id": chunk_ids[record.stable_key],
+                        "input_sha256": record.values()["index_text_sha256"],
+                        "provider": provider.identity.provider,
+                        "model": provider.identity.model,
+                        "dimensions": provider.identity.dimensions,
+                        "tokenizer": provider.identity.tokenizer,
+                        "embedding": vector,
+                    }
+                    for record, vector in zip(batch.chunks, vectors, strict=True)
+                ],
+            )
 
 
 def run_live(database_url, body) -> tuple[bool, str]:
-    """Run ``body(session, connection)`` against a throwaway fixture corpus."""
+    """Run the oracle checks in a disposable complete-schema namespace."""
 
     async def main() -> tuple[bool, str]:
-        """Create, exercise, and dispose the live database resources."""
+        """Create, exercise, and clean up only this test's schema and local sources."""
         engine = create_async_engine(database_url, poolclass=NullPool)
         connection = None
+        schema = "bm25_fixture_" + uuid4().hex
+        created = False
         try:
             try:
                 async with asyncio.timeout(5):
@@ -603,16 +628,21 @@ def run_live(database_url, body) -> tuple[bool, str]:
                     await connection.execute(sql("SELECT 1"))
             except Exception as exc:
                 return False, str(exc)
-
-            await _load_fixture_corpus(connection)
-            session = AsyncSession(bind=connection, expire_on_commit=False)
-            try:
-                await body(session, connection)
-            finally:
-                await session.close()
+            await connection.execute(sql(f"CREATE SCHEMA {schema}"))
+            created = True
+            await connection.execute(sql(f"SET search_path TO {schema}, public"))
+            with TemporaryDirectory(prefix="docreview-bm25-source-") as directory:
+                await _load_fixture_corpus(connection, Path(directory), schema)
+                async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                    await body(session, connection)
             return True, ""
         finally:
             if connection is not None:
+                await connection.rollback()
+                if created:
+                    await connection.execute(sql("SET search_path TO public"))
+                    await connection.execute(sql(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+                    await connection.commit()
                 await connection.close()
             await engine.dispose()
 
@@ -738,23 +768,39 @@ def test_live_chunk_writes_invalidate_statistics_and_search_fails(database_url):
 
     async def body(session, _connection):
         """Exercise each live write path and assert fail-closed search."""
+        original = (
+            await session.execute(select(ChunkModel).where(ChunkModel.id == 1))
+        ).scalar_one()
+
+        def changed_values(context: str, ordinal: int) -> dict:
+            """Keep the source body/span while changing indexed contextual text."""
+            unit = Chunk(
+                original.doc_id,
+                original.item,
+                original.kind,
+                ordinal,
+                original.body,
+                context,
+                original.citation,
+                original.start_char,
+                original.end_char,
+                original.source_sha256,
+            )
+            return {
+                **asdict(unit),
+                "stable_key": unit.stable_key,
+                "structure_id": original.structure_id,
+                "language": original.language,
+                "index_text": unit.content,
+                "index_text_sha256": hashlib.sha256(unit.content.encode()).hexdigest(),
+            }
+
         writes = (
-            sql("UPDATE chunks SET index_text = index_text || ' changed' WHERE id = 1"),
-            sql(
-                """
-                INSERT INTO chunks (
-                    id, doc_id, language, item, kind, ordinal, body, context_header,
-                    index_text, start_char, end_char, source_sha256, citation, embedding
-                )
-                SELECT
-                    99, doc_id, language, item, kind, 99, body, context_header,
-                    index_text || ' inserted', 9900, 9900 + length(body),
-                    repeat('9', 64), 'inserted', embedding
-                FROM chunks WHERE id = 1
-                """
-            ),
+            update(ChunkModel).where(ChunkModel.id == 1).values(**changed_values("changed", 0)),
+            insert(ChunkModel).values(id=99, **changed_values("inserted", 99)),
             sql("DELETE FROM chunks WHERE id = 99"),
         )
+        await session.rollback()
 
         for statement in writes:
             await bm25.backfill_term_stats(session)

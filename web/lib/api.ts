@@ -1,6 +1,9 @@
+import { DEFAULT_SESSION_PROFILE } from "./types";
 import { presentationFetch } from "./production-preview";
 import type {
   EvaluationComparison,
+  CorpusSnapshot,
+  CorpusOperationRequest,
   EvaluationJob,
   EvaluationRequest,
   EvaluationResultDetail,
@@ -74,13 +77,6 @@ export async function retrieveEvidence(query: string, sessionProfile: ReviewSess
   });
 }
 
-export async function reviewQuestion(query: string, k = 5): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/review", {
-    method: "POST",
-    body: JSON.stringify({ query, k, filters: {} }),
-  });
-}
-
 export interface ReviewProgress {
   node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
   evidence_count: number;
@@ -124,7 +120,7 @@ export async function streamReview(
         pinned_chunk_ids: evidenceSelection.pinned,
         excluded_chunk_ids: evidenceSelection.excluded,
       } : null,
-      conversation_history: history.slice(-sessionProfile.prompt_policy.history_turns),
+      conversation_history: history.slice(-(sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns)),
     }),
     signal,
   });
@@ -325,11 +321,11 @@ export function getEvaluationResult(resultId: number): Promise<EvaluationResultD
   return request<EvaluationResultDetail>(`/admin/evaluations/results/${resultId}`);
 }
 
-export function getCorpusSnapshot(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/admin/corpus");
+export function getCorpusSnapshot(): Promise<CorpusSnapshot> {
+  return request<CorpusSnapshot>("/admin/corpus");
 }
 
-export function queueCorpusOperation(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+export function queueCorpusOperation(body: CorpusOperationRequest): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>("/admin/corpus/jobs", {
     method: "POST",
     body: JSON.stringify(body),

@@ -8,7 +8,7 @@ import { ChevronRight, SlidersHorizontal } from "lucide-react";
 import { Segmented } from "@/components/segmented";
 import { RequestPreview, presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionProfile } from "@/lib/types";
+import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
 import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
 
 export interface ComposerToolbarProps {
@@ -16,8 +16,8 @@ export interface ComposerToolbarProps {
   query?: string;
   settingsOpen?: boolean;
   settingsTriggerRef?: Ref<HTMLButtonElement>;
-  profile: ReviewSessionProfile;
-  onChange: (update: Partial<ReviewSessionProfile>) => void;
+  profile: ReviewSessionDraft;
+  onChange: (update: Partial<ReviewSessionDraft>) => void;
   /** `capabilities.can_change_custom_retrieval`; a public build choosing Custom calls `onLocked` instead. */
   canUseCustom: boolean;
   onLocked: () => void;
@@ -97,7 +97,7 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
 }
 
 /** Number of active session filters shown on the Filters chip. */
-export function filterCount(profile: ReviewSessionProfile): number {
+export function filterCount(profile: ReviewSessionDraft): number {
   return profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
@@ -112,7 +112,7 @@ export interface ComposerBannerModel {
 export interface ComposerBannerInput {
   readiness: Readiness | null;
   live: boolean;
-  profile: ReviewSessionProfile;
+  profile: ReviewSessionDraft;
   /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error, else null. */
   resetAt: string | null;
 }

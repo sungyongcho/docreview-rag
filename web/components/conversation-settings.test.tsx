@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE, type DocumentFacets, type ReviewSessionProfile } from "@/lib/types";
+import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE, type DocumentFacets, type ReviewSessionDraft } from "@/lib/types";
 import { I18nProvider } from "@/lib/i18n";
 import { ConversationSettings } from "./conversation-settings";
 import { RetainedPanel } from "./retained-panel";
@@ -56,7 +56,7 @@ it("keeps allowed filters but hides developer controls in public mode", async ()
 });
 
 /** Keep the real patch merge semantics used by the conversation owner. */
-function FilterHarness({ profile = DEFAULT_SESSION_PROFILE, onPatch = vi.fn(), onValidityChange }: { profile?: ReviewSessionProfile; onPatch?: (patch: Partial<ReviewSessionProfile>) => void; onValidityChange?: (valid: boolean) => void }) {
+function FilterHarness({ profile = DEFAULT_SESSION_PROFILE, onPatch = vi.fn(), onValidityChange }: { profile?: ReviewSessionDraft; onPatch?: (patch: Partial<ReviewSessionDraft>) => void; onValidityChange?: (valid: boolean) => void }) {
   const [current, setCurrent] = useState(profile);
   return <ConversationSettings tab="filters" editable profile={current} onChange={(patch) => { onPatch(patch); setCurrent((value) => ({ ...value, ...patch })); }} onTabChange={vi.fn()} onClose={vi.fn()} onValidityChange={onValidityChange} />;
 }

@@ -12,6 +12,7 @@ def test_ingest_route_completes_synchronously(client_factory, services):
         "/ingest",
         json={
             "manifest_path": "data/corpus/manifest.json",
+            "selection_id": "sec-evaluation",
             "expected_documents": 2,
             "chunk_batch_size": 100,
         },
@@ -19,6 +20,7 @@ def test_ingest_route_completes_synchronously(client_factory, services):
 
     assert response.status_code == 200
     assert response.json() == {"documents": 2, "chunks": 24}
+    assert services.last_ingest_request.selection_id == "sec-evaluation"
     assert services.last_ingest_request.manifest_path == "data/corpus/manifest.json"
 
 
@@ -28,7 +30,7 @@ def test_missing_manifest_is_a_typed_client_error(client_factory, services):
 
     response = client_factory(services).post(
         "/ingest",
-        json={"manifest_path": "missing.json"},
+        json={"manifest_path": "missing.json", "selection_id": "sec-evaluation"},
     )
 
     assert response.status_code == 400
@@ -69,10 +71,19 @@ def test_review_budget_exhaustion_is_a_structured_429(
 
     response = client_factory(services).post(
         "/review",
-        json={"query": "Revenue?", "budget": {"max_iterations": 0}},
+        json={
+            "query": "Revenue?",
+            "session_profile": {
+                "prompt_policy": {"workflow_budget": {"max_iterations": 0}},
+            },
+        },
     )
 
     assert response.status_code == 429
+    assert (
+        services.last_review_request.session_profile.prompt_policy.workflow_budget.max_iterations
+        == 0
+    )
     assert response.json()["failure"] == {
         "code": "budget_exceeded",
         "resource": "iterations",

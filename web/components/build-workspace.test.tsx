@@ -2,8 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
-import type { Readiness } from "@/lib/types";
+import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
 
@@ -92,7 +92,7 @@ describe("Build workspace", () => {
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    expect(screen.getByRole("button", { name: "Ingest all manifests" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ingest selected sources" })).toBeDisabled();
   });
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
@@ -231,10 +231,13 @@ describe("Build workspace", () => {
           documents: 29, chunks: 21927, embedded_chunks: 21927, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
-        manifests: [
-          { name: "manifest.json", registry: "sec", documents: 21, valid: true, sources_present: 21 },
-          { name: "dart-manifest.json", registry: "dart", documents: 9, valid: true, sources_present: 9 },
-        ],
+        manifests: [{
+          name: "manifest.json", corpus_id: "test", registries: ["sec", "dart"], documents: 30, valid: true, sources_present: 30,
+          selections: [
+            { selection_id: "sec-evaluation", document_ids: Array.from({ length: 21 }, (_, i) => `sec-${i}`), artifact_ids: Array.from({ length: 21 }, (_, i) => `sec-source-${i}`), sources_present: 21 },
+            { selection_id: "dart-evaluation", document_ids: Array.from({ length: 9 }, (_, i) => `dart-${i}`), artifact_ids: Array.from({ length: 9 }, (_, i) => `dart-source-${i}`), sources_present: 9 },
+          ],
+        }],
         documents: [],
       };
       else if (url.endsWith("/admin/documents/facets")) payload = {
@@ -249,13 +252,17 @@ describe("Build workspace", () => {
     render(<Harness live readiness={READY_RUNTIME} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    expect(await screen.findByText("1 listed filing not ingested yet (SEC)")).toBeInTheDocument();
+    expect(await screen.findByText("29 documents")).toBeInTheDocument();
+    expect(screen.getByText("21,927 chunks")).toBeInTheDocument();
     expect(screen.getByText("Corpus ready")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
     expect(screen.getByText("30 / 30 filings on disk")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    const ingestButtons = screen.getAllByRole("button", { name: "Ingest all manifests" });
+    const ingestButtons = screen.getAllByRole("button", { name: "Ingest selected sources" });
     for (const button of ingestButtons) expect(button).toBeEnabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /sec-evaluation/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /dart-evaluation/ }));
+    expect(screen.getByText("Selected documents: 30")).toBeInTheDocument();
     fireEvent.click(ingestButtons[0]);
 
     await waitFor(() => {
@@ -266,8 +273,8 @@ describe("Build workspace", () => {
       .filter(([value, init]) => String(value).endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST")
       .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
     expect(bodies).toEqual([
-      { kind: "ingest_manifest", manifest: "manifest.json" },
-      { kind: "ingest_manifest", manifest: "dart-manifest.json" },
+      { kind: "ingest_manifest", manifest: "manifest.json", selection_id: "sec-evaluation", identifiers: [], years: [] },
+      { kind: "ingest_manifest", manifest: "manifest.json", selection_id: "dart-evaluation", identifiers: [], years: [] },
     ]);
   });
 
@@ -338,7 +345,7 @@ describe("Build workspace", () => {
           documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
-        manifests: [{ name: "manifest.json", registry: "sec", documents: 21, valid: true, sources_present: 21 }],
+        manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
         documents: [],
       };
       else if (url.endsWith("/admin/documents/facets")) payload = { ...EMPTY_DOCUMENT_FACETS_FIXTURE, registries: [{ value: "sec", count: 21 }, { value: "dart", count: 9 }] };
@@ -360,7 +367,77 @@ describe("Build workspace", () => {
       const body = JSON.parse(String((posted?.[1] as RequestInit).body)) as Record<string, unknown>;
       expect(body.mode).toBe("quick");
       expect(body.golden_revision_id).toBeNull();
-      expect(Array.isArray(body.target_text_chars) && (body.target_text_chars as number[]).length > 0).toBe(true);
+      expect(Array.isArray(body.target_tokens) && (body.target_tokens as number[]).length > 0).toBe(true);
     });
   });
+});
+
+
+describe("preparation refresh after corpus jobs", () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+  it.each(["succeeded", "failed", "cancelled", "interrupted"] as const)("refreshes once for %s and ignores repeated polls", async (status: OperatorJobStatus) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
+      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+      return jsonResponse([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const job: OperatorJob = { job_id: "corpus-terminal", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 0, total: 1, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-01-01", started_at: "2026-01-01", finished_at: null, updated_at: "2026-01-01" };
+    const board = (row: OperatorJob) => ({ jobs: [row], active_count: row.status === "running" ? 1 : 0, queued_count: 0 });
+    const { rerender } = render(<Harness live jobBoard={board(job)} />);
+    const corpusCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/corpus")).length;
+    await waitFor(() => expect(corpusCalls()).toBe(1));
+    const terminal = { ...job, status };
+    rerender(<Harness live jobBoard={board(terminal)} />);
+    await waitFor(() => expect(corpusCalls()).toBe(2));
+    rerender(<Harness live jobBoard={board({ ...terminal })} />);
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/evaluations/runs")).length).toBeGreaterThan(0));
+    expect(corpusCalls()).toBe(2);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/documents/facets"))).toHaveLength(2);
+  });
+
+  it("counts overlapping selected document identities once", async () => {
+    const manifest = CANNED_CORPUS.manifests[0];
+    const selection = manifest.selections[0];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
+      if (String(input).endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+      return jsonResponse([]);
+    }));
+    render(<Harness live />);
+    fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /sec-evaluation/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /overlap/ }));
+    expect(screen.getByText("Selected documents: 20")).toBeInTheDocument();
+  });
+});
+
+
+it("queues the committed acquisition after editing focused token fields", async () => {
+  const onRefreshJobs = vi.fn();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Harness live ready={false} onRefreshJobs={onRefreshJobs} />);
+  await screen.findByText("0 / 22 filings on disk");
+  fireEvent.click(screen.getByRole("button", { name: "Remove AMD" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove 2023" }));
+  const years = screen.getByRole("textbox", { name: "Fiscal years" });
+  const download = screen.getByRole("button", { name: "Download missing filings" });
+  fireEvent.focus(years);
+  fireEvent.mouseDown(download);
+  fireEvent.blur(years, { relatedTarget: download });
+  fireEvent.mouseUp(download);
+  fireEvent.click(download);
+  await waitFor(() => expect(onRefreshJobs).toHaveBeenCalledTimes(1));
+  const submitted = fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/corpus/jobs") && init?.method === "POST");
+  expect(submitted).toHaveLength(1);
+  expect(JSON.parse(String(submitted[0][1]?.body))).toEqual({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
+  cleanup(); vi.unstubAllGlobals();
 });

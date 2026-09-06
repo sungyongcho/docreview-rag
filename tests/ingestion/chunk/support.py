@@ -1,12 +1,14 @@
 """Source round-trip helpers shared by chunk tests."""
 
 from collections import Counter
+from pathlib import Path
 import re
 
 from bs4 import BeautifulSoup
 
 from app.ingestion.parser import Block, ParsedFiling, Section
 from app.retrieval.language import HANGUL_RANGES
+from tests.ingestion.support import filing_source
 
 # The Hangul ranges come from the retrieval boundary that already declares all three
 # forms Korean text arrives in, so widening one place widens both.
@@ -29,16 +31,7 @@ TOKEN = re.compile(
 def build_filing(blocks: list[Block]) -> ParsedFiling:
     """Build a source-identified filing for chunk unit tests."""
     filing = ParsedFiling(
-        doc_id="NVDA-FY2024",
-        registry="sec",
-        issuer="NVDA",
-        issuer_id="1045810",
-        filing_id="x",
-        form="10-K",
-        filing_date="2024-02-21",
-        report_period="2024-01-28",
-        fiscal_year=2024,
-        source_url="https://example.test",
+        source=filing_source(Path(__file__)),
         source_length=1_000,
         source_sha256="a" * 64,
     )

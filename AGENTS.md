@@ -25,6 +25,12 @@ Restore `core.hooksPath=.githooks` in each fresh clone. Tags identify releases; 
 
 The coding, test placement, docstring, foreign-work protection, focused verification, English commit-message, and runtime guidance below remain applicable. Report checks as passed, failed, not run, or blocked; never claim mock checks establish live PostgreSQL behavior.
 
+## Screenshot verification
+
+- Capture documentation and UI verification screenshots in light mode by default.
+- Capture both Korean and English versions of every documented UI state unless the user explicitly requests a narrower set.
+- Use actual application states and matching captions; never fabricate successful results or expose credentials in screenshots.
+
 ## Historical assembly reference
 
 The former `assemble`, `zero`, and `new` branch roles, import loop, checkpoint tables, module-completion review gates, and automatic checkpoint stamping describe the completed assembly process only. Sections 1, 2, 4, 4-1, and 9 below are historical, not the current branch workflow. The former user-only commit rule is superseded by the approved `commit-it` workflow above. Do not apply assembly-only requirements to ordinary product changes.

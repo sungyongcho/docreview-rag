@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 import math
 from types import MappingProxyType
-from typing import Annotated, Final, Literal, Self
+from typing import Annotated, Final, Literal, Self, TypedDict
 
 from pydantic import Field, JsonValue, StrictFloat, StrictInt, StrictStr
 from pydantic.functional_validators import field_validator, model_validator
@@ -174,11 +174,24 @@ class BudgetLimitFailure(StrictSchema):
         return self
 
 
+class DerivedTotals(TypedDict):
+    """Keep cumulative integer counters distinct from exact decimal cost."""
+
+    iterations: int
+    total_requests: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cached_input_tokens: int
+    total_cache_write_input_tokens: int
+    total_reasoning_tokens: int
+    total_estimated_cost_usd: Decimal
+
+
 def derived_totals(
     *,
     node_path: tuple[WorkflowNode, ...] | list[WorkflowNode],
     steps: tuple[StepTrace, ...] | list[StepTrace],
-) -> dict[str, int | Decimal]:
+) -> DerivedTotals:
     """Return the cumulative counters implied by the entered nodes and raw traces.
 
     The keys are ``RunReport`` field names, so this is the single definition both the

@@ -75,11 +75,15 @@ it("links to both guides in the same tab without changing the current conversati
   const onClear = vi.fn();
   render(<SettingsModal open profile={DEFAULT_SESSION_PROFILE} capabilities={DEV} onChange={onChange} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={onClear} />);
   fireEvent.click(screen.getByRole("button", { name: "Data & help" }));
+  expect(screen.getByRole("link", { name: "User guide" })).not.toBeVisible();
+  fireEvent.click(screen.getByText("Guides & development", { exact: true }));
   const link = screen.getByRole("link", { name: "User guide" });
   expect(link).toHaveAttribute("href", "/docreview-rag-agent/docs/en/");
   expect(link).not.toHaveAttribute("target");
   expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/development/");
   fireEvent.click(screen.getByRole("button", { name: "About" }));
+  expect(screen.getByRole("link", { name: "Development log" })).not.toBeVisible();
+  fireEvent.click(screen.getByText("Guides & development", { exact: true }));
   expect(screen.getByRole("link", { name: "Development log" })).not.toHaveAttribute("target");
   expect(onChange).not.toHaveBeenCalled();
   expect(onClear).not.toHaveBeenCalled();

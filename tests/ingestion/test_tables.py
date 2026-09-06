@@ -345,3 +345,34 @@ def test_triangle_negative_reads_as_a_value_not_a_label() -> None:
     header, body = split_header([["구 분", "제56기"], ["순손실", "△1,234"], ["매출", "5,678"]])
     assert header == [["구 분", "제56기"]]
     assert ["순손실", "△1,234"] in body
+
+
+def test_date_and_unit_caption_tables_preserve_all_annotation_text():
+    """Recognize explicit mixed annotations, including date and unit on separate rows."""
+    from app.ingestion.tables import structured_table
+
+    html = (
+        "<table><tr><td>(기준일 : 2024년 12월 31일 )</td></tr>"
+        "<tr><td>(단위 : 백만원)</td></tr></table>"
+    )
+    table = structured_table(html)
+    assert table.rows == table.headers == ()
+    assert table.captions == ("(기준일 : 2024년 12월 31일 )", "(단위 : 백만원)")
+    assert {(cell.row, cell.column, cell.text) for cell in table.caption_cells} == {
+        (0, 0, "(기준일 : 2024년 12월 31일 )"),
+        (1, 0, "(단위 : 백만원)"),
+    }
+
+
+def test_numeric_tables_are_not_reclassified_as_caption_blocks():
+    """A unit or date label next to a value remains data rather than pending context."""
+    from app.ingestion.tables import structured_table
+
+    html = (
+        "<table><tr><td>(기준일 : 2024년 12월 31일 )</td><td>123</td></tr>"
+        "<tr><td>(단위 : 백만원)</td><td>456</td></tr></table>"
+    )
+    table = structured_table(html)
+    assert table.captions == table.caption_cells == ()
+    assert "123" in table.render() and "456" in table.render()
+    assert "(단위 : 백만원)" in table.render()

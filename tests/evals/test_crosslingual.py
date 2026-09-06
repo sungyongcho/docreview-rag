@@ -15,7 +15,7 @@ from app.evals.bilingual import BilingualSuite
 import app.evals.crosslingual as crosslingual
 from app.evals.crosslingual import (
     CROSSLINGUAL_SUITE,
-    CROSSLINGUAL_TARGET_TEXT_CHARS,
+    CROSSLINGUAL_TARGET_TOKENS,
     CrosslingualArm,
     ProviderChoice,
     TranslationLog,
@@ -174,7 +174,7 @@ def test_arm_config_carries_everything_a_baseline_must_separate_on():
     assert payload["query"] == {"language": "en", "handling": "direct", "translator": None}
     # The English-trained cross-encoder stays off in every arm, and the artifact says so.
     assert payload["retrieval"]["reranker"] is None
-    assert payload["chunking"]["target_text_chars"] == CROSSLINGUAL_TARGET_TEXT_CHARS
+    assert payload["chunking"]["target_tokens"] == CROSSLINGUAL_TARGET_TOKENS
     assert payload["measurement"]["populated_corpus_embeddings_modified"] is False
     assert payload["measurement"]["paid_api_calls"] is False
     assert json.loads(json.dumps(payload)) == payload
@@ -538,7 +538,7 @@ def test_the_translation_boundary_resolves_its_deferred_sdk_import():
     # boundary here is what makes a moved or renamed SDK symbol fail a test rather
     # than every invocation of the command.
     provider, budget = crosslingual.translation_boundary(
-        "gpt-5.6-luna", Settings(openai_api_key=SecretStr("sk-not-a-real-key"))
+        "gpt-5.6-luna", Settings(openai_api_key_dev=SecretStr("sk-not-a-real-key"))
     )
     try:
         assert provider.model_name == "gpt-5.6-luna"
@@ -573,16 +573,25 @@ def test_the_gate_is_refused_before_a_corpus_when_the_matrix_cannot_be_gated():
     """Decide gate feasibility from the requested axes alone."""
     # --handling defaults to direct, so plain --gate can never be judged; refusing it
     # only after indexing would spend the whole matrix on a run destined to fail.
-    assert crosslingual.gateable_matrix(build_arms(arguments([]), "token-hash-384")) is False
     assert (
         crosslingual.gateable_matrix(
-            build_arms(arguments(["--handling", "routed", "--languages", "en"]), "token-hash-384")
+            build_arms(arguments([]), "token-hash-384", target_tokens=2048)
         )
         is False
     )
     assert (
         crosslingual.gateable_matrix(
-            build_arms(arguments(["--handling", "routed"]), "token-hash-384")
+            build_arms(
+                arguments(["--handling", "routed", "--languages", "en"]),
+                "token-hash-384",
+                target_tokens=2048,
+            )
+        )
+        is False
+    )
+    assert (
+        crosslingual.gateable_matrix(
+            build_arms(arguments(["--handling", "routed"]), "token-hash-384", target_tokens=2048)
         )
         is True
     )
@@ -610,7 +619,7 @@ def test_build_arms_gives_a_bm25_matrix_the_parameters_its_binder_demands():
     settings = Settings(bm25_k1=1.5, bm25_b=0.5, bm25_idf="robertson")
     args = arguments(["--strategies", "vector", "hybrid", "--lexical-ranker", "bm25"])
 
-    built = build_arms(args, "token-hash-384", settings=settings)
+    built = build_arms(args, "token-hash-384", target_tokens=2048, settings=settings)
     by_strategy = {arm.strategy: arm for arm in built}
 
     assert by_strategy["hybrid"].to_config()["retrieval"]["bm25"] == {
@@ -622,7 +631,12 @@ def test_build_arms_gives_a_bm25_matrix_the_parameters_its_binder_demands():
     assert by_strategy["vector"].bm25_k1 is None
     assert "bm25" not in by_strategy["vector"].to_config()["retrieval"]
 
-    default = build_arms(arguments(["--strategies", "hybrid"]), "token-hash-384", settings=settings)
+    default = build_arms(
+        arguments(["--strategies", "hybrid"]),
+        "token-hash-384",
+        target_tokens=2048,
+        settings=settings,
+    )
     assert "bm25" not in default[0].to_config()["retrieval"]
 
 
@@ -644,7 +658,7 @@ def test_build_arms_crosses_handling_only_with_the_hybrid_strategy():
         ]
     )
 
-    arms = build_arms(args, "token-hash-384")
+    arms = build_arms(args, "token-hash-384", target_tokens=2048)
 
     assert [built.name for built in arms] == [
         "xling-deterministic-lexical-ts-rank-cd-en",
@@ -656,7 +670,7 @@ def test_build_arms_crosses_handling_only_with_the_hybrid_strategy():
         "xling-deterministic-hybrid-ts-rank-cd-routed-en",
         "xling-deterministic-hybrid-ts-rank-cd-routed-ko",
     ]
-    assert all(built.target_text_chars == CROSSLINGUAL_TARGET_TEXT_CHARS for built in arms)
+    assert all(built.target_tokens == CROSSLINGUAL_TARGET_TOKENS for built in arms)
     assert all(built.to_config()["retrieval"]["reranker"] is None for built in arms)
 
 
@@ -699,21 +713,26 @@ def test_parity_groups_never_collapse_across_corpora():
 
 
 def test_corpus_argument_resolves_suite_goldens_and_chunk_target():
-    """--corpus dart binds the DART suite, goldens, manifest, and 600-char target."""
+    """--corpus dart binds the DART suite, goldens, manifest, and shared token target."""
     args = crosslingual.arguments(["--corpus", "dart"])
 
+    assert crosslingual.CORPUS_PROFILES["dart"].manifest_name == "manifest.json"
+    assert crosslingual.CORPUS_PROFILES["dart"].selection_id == "dart-evaluation"
+    assert crosslingual.CORPUS_PROFILES["edgar"].selection_id == "sec-evaluation"
     assert args.suite == crosslingual.DART_CROSSLINGUAL_SUITE
     assert args.golden.name == "dart_retrieval.json"
     assert args.ko_golden.name == "dart_retrieval_ko.json"
-    built = crosslingual.build_arms(args, "token-hash-384", settings=Settings())
+    built = crosslingual.build_arms(args, "token-hash-384", target_tokens=2048, settings=Settings())
     assert {arm.corpus_registry for arm in built} == {"dart"}
-    assert {arm.target_text_chars for arm in built} == {600}
+    assert {arm.target_tokens for arm in built} == {2048}
 
     edgar_args = crosslingual.arguments([])
     assert edgar_args.suite == crosslingual.CROSSLINGUAL_SUITE
     assert edgar_args.golden.name == "retrieval.json"
-    edgar_built = crosslingual.build_arms(edgar_args, "token-hash-384", settings=Settings())
-    assert {arm.target_text_chars for arm in edgar_built} == {1200}
+    edgar_built = crosslingual.build_arms(
+        edgar_args, "token-hash-384", target_tokens=2048, settings=Settings()
+    )
+    assert {arm.target_tokens for arm in edgar_built} == {2048}
 
 
 def test_every_arm_pins_its_corpus_language_filter(monkeypatch):
@@ -760,3 +779,9 @@ def test_gate_reports_and_optionally_fails_missing_baselines():
     assert tolerated["regression_first_runs"] == [first_run[0][0].name]
     assert tolerated["passed"] is True
     assert required["passed"] is False
+
+
+def test_crosslingual_metadata_records_the_effective_model_target():
+    """Report the actual planned size when a model constrains the corpus default."""
+    built = build_arms(arguments([]), "small-model", target_tokens=16)
+    assert {arm.target_tokens for arm in built} == {16}

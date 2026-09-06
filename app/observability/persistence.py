@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 import re
-from typing import cast
+from typing import cast, overload
 
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,6 +87,16 @@ def redact_sensitive_text(text: str, *, secret_values: Iterable[str] = ()) -> st
         If an explicit secret is empty or non-string.
     """
     return _redact_sensitive_text(text, secrets=_compiled_secrets(secret_values))
+
+
+@overload
+def sanitize_json(
+    value: dict[str, JsonValue], *, secret_values: Iterable[str] = ()
+) -> dict[str, JsonValue]: ...
+
+
+@overload
+def sanitize_json(value: JsonValue, *, secret_values: Iterable[str] = ()) -> JsonValue: ...
 
 
 def sanitize_json(value: JsonValue, *, secret_values: Iterable[str] = ()) -> JsonValue:
@@ -174,7 +184,7 @@ def report_to_records(
     """
     secrets = _compiled_secrets(secret_values)
     context = dict(report.request_context or {})
-    timing_metadata = {
+    timing_metadata: dict[str, JsonValue] = {
         str(trace.step): [
             timing.model_dump(mode="json", exclude_none=True) for timing in trace.local_timings
         ]

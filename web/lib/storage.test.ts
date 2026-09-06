@@ -70,7 +70,7 @@ it("restores old conversation profiles without a model and remembers new selecti
   window.localStorage.clear();
   const { local_model: _removed, ...oldProfile } = DEFAULT_SESSION_PROFILE;
   const conversation = { ...newConversation(), profile: { ...oldProfile, engine: "local" as const } };
-  saveConversations([conversation]);
+  window.localStorage.setItem("docreview:conversations:v2", JSON.stringify([conversation]));
   expect(loadConversations()[0].profile?.local_model).toBeNull();
   saveConversations([{ ...conversation, profile: { ...conversation.profile, local_model: "chosen" } }]);
   expect(loadConversations()[0].profile?.local_model).toBe("chosen");

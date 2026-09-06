@@ -66,7 +66,7 @@ docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 - `DOCREVIEW_MODE=runtime`
 - `DOCREVIEW_ADMIN_MODE=live`
 - deterministic embedding
-- `.env`에 `OPENAI_API_KEY`, 또는 `MODE`에 맞는 `OPENAI_API_KEY_LOCAL`(dev)·
+- `.env`에 `MODE`에 맞는 `OPENAI_API_KEY_LOCAL`(dev)·
   `OPENAI_API_KEY_PROD`(prod) 슬롯이 있을 때만 LLM review 활성화
 - `./data`를 `/app/data`에 bind mount해 corpus와 eval artifact 보존
 - loopback live operator는 공개 서비스용 IP rate limit과 일일 비용 상한을 적용하지 않음
@@ -88,7 +88,7 @@ Next 개발 URL:
 http://127.0.0.1:3000/docreview-rag-agent/
 ```
 
-로컬 Compose는 root `.env`의 `OPENAI_API_KEY`, `OPENAI_API_KEY_LOCAL`,
+로컬 Compose는 root `.env`의 `OPENAI_API_KEY_LOCAL`,
 `OPENAI_API_KEY_PROD`, `MODE`, `DART_API_KEY`, `SEC_USER_AGENT`와 선택적
 `EMBEDDING_PROVIDER`를 app에 전달합니다. 로컬 모델 키(`LOCAL_LLM_*`)는 dev overlay
 에서만 전달되며 `MODE=prod`에서는 값이 있어도 엔진이 켜지지 않습니다. `.env`가 있으면 application settings도

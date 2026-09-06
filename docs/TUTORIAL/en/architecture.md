@@ -1,63 +1,47 @@
-# How the workflows connect
+# Architecture
 
-DocReview RAG v2 connects SEC and DART acquisition, citable document processing, retrieval, evidence review, and retrieval evaluation. The earlier interface is the v1.4 beta baseline; this guide describes v2. Product version terminology does not change stored dataset IDs, API fields, or repository URLs.
+DocReview prepares SEC and DART filings through one source-preserving pipeline. The [Quick Start](quickstart.md) prepares its first two reports; [retrieval testing](retrieval.md) checks the evidence before the [first answer](answers.md).
 
-Use this map to find the layer responsible for a behavior. Start with the workflow document linked beside each area before reading implementation details.
+## Common corpus contract {#contracts}
 
-<!-- capture:23-creator-about -->
+`schemas/manifest.schema.json` is generated from the Python `Manifest` contract. A corpus has four separate collections:
 
-![About uses the shared DocReview RAG v2 branding and creator attribution.](../assets/23-creator-about.en.jpg)
+- **Corpus identity:** a stable identifier and display name, independent of its local directory.
+- **Document references:** shared filing identity, dates, language, issuer aliases, and explicit SEC or DART metadata.
+- **Source artifacts:** corpus-relative paths, exact byte hashes, encoding, and acquisition provenance. DART archive and canonical text are distinct artifacts.
+- **Processing selections:** named sets of exact primary artifacts. A selection does not duplicate the document catalog.
 
-*About uses the shared DocReview RAG v2 branding and creator attribution. Product identity and current environment remain explicit.*
+Reading an artifact checks its confined path and exact bytes before decoding. An unknown acquisition timestamp is recorded as unknown rather than inferred from a file modification time.
 
-## From filing to evidence and evaluation {#flow}
+## Shared processing {#processing}
 
-1. **Acquire source files.** SEC and DART acquisition write source files and manifest metadata. Company names are display metadata; stable issuer codes remain request identifiers.
-2. **Parse and chunk.** The ingestion path interprets the filing and stores documents and source-linked chunks. A chunk keeps the document identity, source hash, and character span needed to check a citation.
-3. **Prepare search paths.** Embeddings support vector search; BM25 statistics support lexical search. These are parallel preparation paths. Hybrid retrieval combines rankings and can rerank candidates according to the effective profile.
-4. **Retrieve and review.** A review resolves question intent and filing scope, retrieves evidence, evaluates relevance, checks the answer and citations, and produces a result or structured failure. An evidence-only path can return candidates without a generated answer.
-5. **Evaluate retrieval independently.** A golden dataset supplies known evidence spans. Evaluation records ranks and aggregate metrics against a specified search configuration. It needs suitable source data and an index, not a previously generated answer.
-6. **Preserve a result and search data.** A matching quick evaluation can be saved as a snapshot. Publication separately determines what visitors can read.
+Both adapters return the same source-linked filing structure. Common processing retains headings, paragraphs, tables, cells, row/column spans, and units. Small tables remain intact. Larger tables become row groups with repeated headers and units; oversized rows split at cells and oversized narrative cells split at sentences.
 
-## Implementation map {#implementation}
+The target is 2,048 tokens over **context plus body**. The hard maximum is 8,192 tokens and the default character bound is 12,000, matching the default evidence budget. A model with a smaller input window uses its own tokenizer and tighter maximum. Content that cannot fit at a valid boundary raises an explicit error.
 
-| Area | Main source locations | Workflow guide |
-|---|---|---|
-| Workspace navigation and retained state | `web/components/service-shell.tsx`, `retained-panel.tsx` | [Settings and return navigation](settings.md#filters) |
-| Acquisition, parsing, and chunks | `app/ingestion/edgar_api.py`, `dart_api.py`, `parser.py`, `chunk.py` | [Acquisition](acquisition.md), [Indexing](indexing.md) |
-| Search and scoped filtering | `app/retrieval/service.py`, `hybrid.py`, `lexical.py`, `vector.py`, `scope.py` | [Retrieval](retrieval.md) |
-| Evidence-review workflow | `app/workflow/runner.py`, `gate.py`, `nodes.py` | [Answers](answers.md) |
-| HTTP resources and streaming | `app/api/routes/`, especially `admin.py`, `stream.py`, `public_documents.py` | [Runtime](runtime.md) |
-| Golden suites and experiments | `app/evals/admin.py`, `app/evals/snapshots.py` | [Evaluation](evaluation.md), [Snapshots](snapshots.md) |
-| Run budgets and trace persistence | `app/observability/budget.py`, `stages.py`, `persistence.py` | [Execution measurements](runtime.md#timings) |
-| Browser preferences and per-conversation profiles | `web/lib/storage.ts`, `web/lib/types.ts` | [Settings](settings.md) |
+Each fragment retains its actual enclosing source span, original header cells, and the separate source spans of associated captions. Normalized cell-text intervals are not presented as HTML character offsets. Fragments remain independent retrieval units.
 
-The browser sends the selected profile and keeps that submitted configuration separate from the next request's controls. Server-resolved scope and execution metadata travel back with the run. The UI displays recorded evidence; it does not establish a routing decision or timing by guessing locally.
+## Storage and identity {#storage}
 
-## Storage, permissions, and public boundaries {#boundaries}
-
-> [!DEV]
-> Writing corpus data, editing datasets, and changing server or publication settings are DEV operations. The architecture and shared manual remain readable in both environments.
-
-Source files and manifests, PostgreSQL documents/chunks, evaluation artifacts, and browser conversations are different stores. Downloading is not ingestion. Saving a browser conversation is not saving a search snapshot. Clearing browser conversations does not remove server documents.
-
-| Resource | Boundary |
+| Entity | Responsibility |
 |---|---|
-| `/admin/*` | Development/operator capabilities protect corpus mutation, evaluation, editing, and local connections. |
-| `/public/documents` | Lists documents eligible through ready, published snapshot membership and source identity. |
-| `/public/documents/facets` | Supplies choices and counts from that public catalog; optional `registry=sec` or `registry=dart` narrows the scope. |
-| `/public/documents/{doc_id}` | Applies the same public boundary to document details and chunk previews. |
-| `/snapshots` and `/snapshots/compare` | Expose published ready snapshots and compare existing artifacts. |
-| `/runs/{run_id}` and `/runs/{run_id}/traces` | Read an identified persisted run and its traces; there is no run-list resource. |
+| Corpus and processing selections | Define which source artifacts an operation processes |
+| Document | Store normalized filing identity |
+| Source artifact | Identify acquired bytes and their origin |
+| Parsed structure and current-parse reference | Retain structural output separately from filing identity |
+| Chunk | Store source-linked evidence, context, fragment metadata, and stable identity |
+| Embedding | Bind a vector to exact indexed text, provider, model, dimensions, and tokenizer |
+| Lexical statistics | Support PostgreSQL lexical retrieval and BM25 |
+| Job | Record queue, progress, cancellation, retry, and interruption |
+| Evaluation and snapshot | Record measured results and immutable index evidence |
+| Run and trace | Explain answer execution, usage, and failures |
 
-Public rendering must not reveal unpublished totals, local paths, credentials, or administrator actions. Company names follow the same document visibility rules. The local operator that manages runtime reset is separate from the main API service; its permissions and lifecycle must be checked independently.
+A display ordinal is not a chunk identity. Reordering unchanged chunks preserves their database identities and reusable vectors. Embedding writes verify the current input again after the provider returns.
 
-## Compatibility and deployment {#compatibility}
+Snapshots compare the exact evaluated index fingerprint and read all copied state in one repeatable-read transaction. Later live-index changes do not change a saved snapshot.
 
-Issuer names and execution telemetry are additive metadata. Missing company names fall back to stable identifiers, and legacy runs can remain readable without timing or routing fields. `_v2_astra` suite IDs retain their exact values. The optional registry facet parameter keeps the existing combined-catalog default.
+## CLI, web, and execution {#execution}
 
-Stage telemetry is opt-in through `X-DocReview-Telemetry: stages`. Clients without the header keep the default stream sequence. Existing JSON persistence stores optional execution metadata without requiring a new field solely to fill a UI card.
+CLI and web submit the same preparation jobs. API schemas generate the web's wire types. Jobs use `queued`, `running`, `succeeded`, `failed`, `cancelled`, and `interrupted`; preparation state refreshes after a job reaches a terminal state.
 
-The development stack serves the application and live documentation through port 8000 by default, with source mounts and reload behavior. Static production images contain the built application and localized docs instead. `MODE`, backend permissions, and the public/private web build are related but different settings; use [Environment setup](environment.md) and [CLI reference](cli.md) for the supported startup paths.
-
-For a concrete failure, follow [Troubleshooting](troubleshooting.md) from symptom to evidence before changing another layer.
+DEV reads only `OPENAI_API_KEY_LOCAL`; production reads only `OPENAI_API_KEY_PROD`. Browser conversations, acquired source files, and server-side indexes are separate stores. Normal setup preserves compatible data; [destructive reset](cli.md#shutdown-and-selective-cleanup) is a separate operation.

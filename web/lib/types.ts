@@ -1,19 +1,10 @@
+import type { components } from "./api-generated";
+
 export type Strategy = "vector" | "lexical" | "hybrid";
 export type LexicalRanker = "ts_rank_cd" | "bm25";
 export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
-export interface RetrievalProfile {
-  strategy: Strategy;
-  k: number;
-  candidate_k: number;
-  rrf_k: number;
-  lexical_ranker: LexicalRanker | null;
-  bm25_k1: number;
-  bm25_b: number;
-  bm25_idf: "lucene" | "robertson";
-  route_by_language: boolean;
-  reranker: "cross_encoder" | null;
-}
+export type RetrievalProfile = components["schemas"]["RetrievalProfile"];
 
 export type ReviewEngine = "openai" | "local";
 export type CorpusScope = "auto" | "sec" | "dart";
@@ -35,44 +26,15 @@ export interface WorkflowBudget {
   max_wall_clock_s: number;
 }
 
-export interface PromptPolicy {
-  additional_instructions: string;
-  history_turns: number;
-  max_context_chars: number;
-  evidence_overfetch: number;
-  max_hits_per_document: number;
-  workflow_budget: WorkflowBudget;
-}
+export type PromptPolicy = components["schemas"]["PromptPolicy"];
 
-export interface ReviewSessionProfile {
-  engine: ReviewEngine;
-  local_model?: string | null;
-  corpus_scope: CorpusScope;
-  issuers: string[];
-  languages: Array<"en" | "ko">;
-  fiscal_years: number[];
-  forms: string[];
-  sections: Array<string | null>;
-  retrieval_preset: RetrievalPreset;
-  custom_retrieval: RetrievalProfile | null;
-  applied_from_evaluation?: string | null;
-  snapshot_id: number | null;
-  prompt_policy: PromptPolicy;
-}
+export type ReviewSessionProfile = components["schemas"]["ReviewSessionProfile"];
+/** Fully initialized form state; wire requests may omit fields with server defaults. */
+export type ReviewSessionDraft = Required<Omit<ReviewSessionProfile, "prompt_policy">> & {
+  prompt_policy: Required<PromptPolicy>;
+};
 
-export interface EvidenceHit {
-  chunk_id: number;
-  doc_id: string;
-  item: string | null;
-  kind: "text" | "table";
-  citation: string;
-  start_char: number;
-  end_char: number;
-  source_sha256: string;
-  body: string;
-  context_header: string;
-  score: number;
-}
+export type EvidenceHit = components["schemas"]["EvidenceHit"];
 
 export type ReviewEventNode = "waiting" | "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report" | "candidates";
 /** Actual scope resolved by the server; absent on older conversation records. */
@@ -174,16 +136,7 @@ export interface Readiness {
   };
 }
 
-export interface UsageModel {
-  model_name: string;
-  requests: number;
-  input_tokens: number;
-  cached_input_tokens: number;
-  cache_write_input_tokens: number;
-  output_tokens: number;
-  reasoning_tokens: number;
-  estimated_cost_usd: string;
-}
+export type UsageModel = components["schemas"]["UsageModelResource"];
 
 export interface ProviderUsage {
   runs: number;
@@ -204,69 +157,16 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
-  profile: ReviewSessionProfile | null;
+  profile: ReviewSessionDraft | null;
 }
 
-export interface GoldenSuite {
-  suite_id: SuiteId;
-  label: string;
-  registry: "sec" | "dart";
-  question_language: "en" | "ko" | "mixed";
-  corpus_language: "en" | "ko";
-  case_count: number;
-  scored_positive_cases: number;
-  absent_cases: number;
-  curation_status: "agent-curated";
-  approval_status: "pending-author-approval";
-  human_verified: false;
-  golden_sha256: string;
-  source_ready: boolean;
-  source_error: string | null;
-}
+export type GoldenSuite = components["schemas"]["GoldenSuiteResource"];
 
-export interface EvaluationRequest {
-  suite_id: SuiteId;
-  golden_revision_id: number | null;
-  mode: "quick" | "matrix";
-  profile: RetrievalProfile;
-  target_text_chars: number[];
-  strategies: Strategy[];
-  lexical_rankers: LexicalRanker[];
-}
+export type EvaluationRequest = components["schemas"]["EvaluationRunRequest"] & Required<Pick<components["schemas"]["EvaluationRunRequest"], "profile">>;
 
-export interface EvaluationJob {
-  job_id: string;
-  request: EvaluationRequest;
-  status: "queued" | "running" | "succeeded" | "failed";
-  stage: string;
-  message: string;
-  current: number;
-  total: number | null;
-  result_id: number | null;
-  result_ids: number[];
-  baseline_id: number | null;
-  artifact_paths: string[];
-  created_at: string;
-  started_at: string | null;
-  finished_at: string | null;
-}
+export type EvaluationJob = components["schemas"]["EvaluationJobResource"];
 
-export interface EvaluationComparison {
-  baseline_id: number;
-  candidate_id: number;
-  suite: string;
-  metrics: Array<{ name: string; baseline: number; candidate: number; delta: number }>;
-  cases: Array<{
-    case_id: string;
-    question: string;
-    baseline_rank: number | null;
-    candidate_rank: number | null;
-    transition: "stable_hit" | "stable_miss" | "miss_to_hit" | "hit_to_miss";
-    rank_delta: number | null;
-    baseline_citations: string[];
-    candidate_citations: string[];
-  }>;
-}
+export type EvaluationComparison = components["schemas"]["EvaluationComparisonResponse"];
 
 export interface PublishedSnapshot {
   snapshot_id: number;
@@ -287,52 +187,19 @@ export interface PublishedSnapshot {
   created_at: string;
 }
 
-export interface GoldenRevision {
-  revision_id: number;
-  suite_id: SuiteId;
-  version: number;
-  status: "draft" | "validated" | "published";
-  payload: Array<Record<string, unknown>>;
-  sha256: string;
-  parent_id: number | null;
-  created_at: string;
-  updated_at: string;
-}
+export type GoldenRevision = components["schemas"]["GoldenRevisionResource"];
 
-export interface GoldenCanonical {
-  suite_id: SuiteId;
-  filename: string;
-  payload: Array<Record<string, unknown>>;
-  sha256: string;
-}
+export type GoldenCanonical = components["schemas"]["GoldenCanonicalResource"];
 
-export interface SnapshotComparison {
-  baseline_id: number;
-  candidate_id: number;
-  directly_comparable: boolean;
-  warning: string | null;
-  metrics: Array<{ name: string; baseline: number; candidate: number; delta: number | null }>;
-  common_case_count: number;
-  cases: Array<{
-    case_id: string;
-    baseline_question: string;
-    candidate_question: string;
-    baseline_rank: number | null;
-    candidate_rank: number | null;
-    transition: "stable_hit" | "stable_miss" | "miss_to_hit" | "hit_to_miss";
-    rank_delta: number | null;
-  }>;
-}
+export type SnapshotComparison = components["schemas"]["SnapshotComparisonResponse"];
 
 /** One selectable corpus manifest as reported by `/admin/corpus`. */
-export interface ManifestSummary {
-  name: string;
-  registry: string | null;
-  documents: number | null;
-  valid: boolean;
-  /** Listed entries whose source file exists on disk; `null` for an invalid manifest. */
-  sources_present: number | null;
-}
+export type ManifestSummary = components["schemas"]["ManifestResource"];
+export type ProcessingSelection = components["schemas"]["ProcessingSelectionResource"];
+export type CorpusDocument = components["schemas"]["CorpusDocumentResource"];
+export type CorpusSnapshot = components["schemas"]["CorpusSnapshotResource"];
+export type CorpusOperationRequest = components["schemas"]["CorpusOperationRequest"];
+
 
 /** Field subset shared by `/ready`.corpus and `/admin/corpus`.status. */
 export interface CorpusCounts {
@@ -350,128 +217,24 @@ export interface CorpusCounts {
 
 export type DocumentEmbeddingStatus = "complete" | "partial" | "missing";
 
-export interface AdminDocument {
-  doc_id: string;
-  registry: string;
-  language: string;
-  issuer: string;
-  issuer_name?: string | null;
-  issuer_id: string;
-  fiscal_year: number;
-  form: string;
-  filing_date: string;
-  report_period: string;
-  filing_id: string;
-  source_url: string;
-  parse_status: string;
-  source_length: number;
-  source_sha256: string;
-  chunk_count: number;
-  embedded_chunks: number;
-  text_chunks: number;
-  table_chunks: number;
-  embedding_status: DocumentEmbeddingStatus;
-  snapshot_count: number;
-}
+export type AdminDocument = components["schemas"]["AdminDocumentResource"];
 
-export interface DocumentFacetValue {
-  value: string;
-  count: number;
-  label: string | null;
-}
+export type DocumentFacetValue = components["schemas"]["DocumentFacetValue"];
 
-export interface DocumentFacets {
-  registries: DocumentFacetValue[];
-  issuers: DocumentFacetValue[];
-  years: DocumentFacetValue[];
-  languages: DocumentFacetValue[];
-  forms: DocumentFacetValue[];
-  parse_statuses: DocumentFacetValue[];
-  embedding_statuses: DocumentFacetValue[];
-  snapshots: DocumentFacetValue[];
-}
+export type DocumentFacets = components["schemas"]["DocumentFacetsResponse"];
 
-export interface DocumentDetail {
-  document: Omit<AdminDocument, "embedded_chunks" | "text_chunks" | "table_chunks" | "embedding_status" | "snapshot_count">;
-  chunks: Array<{
-    chunk_id: number;
-    ordinal: number;
-    citation: string;
-    span: string;
-    source_sha256: string;
-    body: string;
-  }>;
-  text_chunks: number;
-  table_chunks: number;
-  embedded_chunks: number;
-  item_counts: Array<{ item: string; count: number }>;
-  embedding_identities: Array<{
-    provider: string;
-    model: string;
-    dimensions: number;
-    count: number;
-  }>;
-  snapshot_memberships: Array<{
-    snapshot_id: number;
-    label: string;
-    status: "ready" | "archived";
-    public: boolean;
-    created_at: string;
-  }>;
-}
+export type DocumentDetail = components["schemas"]["DocumentDetailResponse"];
 
-export interface AdminDocumentPage {
-  documents: AdminDocument[];
-  total: number;
-  next_cursor: string | null;
-}
+export type AdminDocumentPage = components["schemas"]["DocumentInventoryResponse"];
 
 export type OperatorJobStatus = "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
 
-export interface OperatorJob {
-  job_id: string;
-  domain: "corpus" | "evaluation";
-  kind: string;
-  request: Record<string, unknown>;
-  status: OperatorJobStatus;
-  stage: string;
-  current: number;
-  total: number | null;
-  detail_current: number | null;
-  detail_total: number | null;
-  message: string;
-  error_code: string | null;
-  result_refs: Record<string, unknown>;
-  queue_position: number | null;
-  can_cancel: boolean;
-  can_retry: boolean;
-  created_at: string;
-  started_at: string | null;
-  finished_at: string | null;
-  updated_at: string;
-}
+export type OperatorJob = components["schemas"]["OperatorJobResource"];
 
-export interface OperatorJobBoard {
-  jobs: OperatorJob[];
-  active_count: number;
-  queued_count: number;
-}
+export type OperatorJobBoard = components["schemas"]["OperatorJobsResponse"];
 
 
-export interface EvaluationResultDetail {
-  result_id: number;
-  suite: string;
-  config: Record<string, unknown>;
-  metrics: Record<string, number>;
-  cases: Array<{
-    case_id: string;
-    question: string;
-    first_relevant_rank: number | null;
-    citations: string[];
-  }>;
-  raw_artifact_path: string;
-  created_at: string;
-}
+export type EvaluationResultDetail = components["schemas"]["EvaluationResultDetailResponse"];
 
 export const DEFAULT_PROFILE: RetrievalProfile = {
   strategy: "hybrid",
@@ -495,10 +258,13 @@ export const DEFAULT_EXPERIMENT_DEFAULTS: ExperimentDefaults = {
   retrieval_preset: "balanced",
 };
 
-export const DEFAULT_SESSION_PROFILE: ReviewSessionProfile = {
+export const DEFAULT_SESSION_PROFILE: ReviewSessionDraft = {
   engine: "openai",
   local_model: null,
   corpus_scope: "auto",
+  doc_ids: [],
+  registries: [],
+  kinds: [],
   issuers: [],
   languages: [],
   fiscal_years: [],

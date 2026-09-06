@@ -106,7 +106,7 @@ class IndexingBudgetMeasurement:
     the resulting total against one inclusive budget boundary.
     """
 
-    target_text_chars: int
+    target_tokens: int
     document_count: int
     chunk_count: int
     embedding_provider: str
@@ -125,7 +125,7 @@ class QueryBudgetArm:
     indexed arms it sits beside.
     """
 
-    target_text_chars: int
+    target_tokens: int
     strategy: RetrievalStrategy
     lexical_ranker: LexicalRanker | None
     bm25: BM25Parameters | None
@@ -140,7 +140,7 @@ class QueryBudgetArm:
             k1, b, idf = self.bm25
             bm25 = {"k1": k1, "b": b, "idf": idf}
         return {
-            "target_text_chars": self.target_text_chars,
+            "target_tokens": self.target_tokens,
             "strategy": self.strategy,
             "lexical_ranker": self.lexical_ranker,
             "bm25": bm25,
@@ -267,7 +267,7 @@ async def measure_query_budget(
 
 def assess_indexing_budget(
     *,
-    target_text_chars: int,
+    target_tokens: int,
     document_count: int,
     chunk_count: int,
     embedding_provider: str,
@@ -279,8 +279,8 @@ def assess_indexing_budget(
 
     Parameters
     ----------
-    target_text_chars : int
-        Positive chunk-size target identifying the corpus arm.
+    target_tokens : int
+        Positive token-count target identifying the corpus arm.
     document_count : int
         Positive number of documents indexed for the arm.
     chunk_count : int
@@ -309,8 +309,8 @@ def assess_indexing_budget(
     The standalone duration is the sum of shared preparation and the target phase, so
     the shared phase is charged to every arm without being re-executed.
     """
-    if target_text_chars <= 0 or document_count <= 0 or chunk_count <= 0:
-        raise ValueError("indexing counts and target_text_chars must be positive")
+    if target_tokens <= 0 or document_count <= 0 or chunk_count <= 0:
+        raise ValueError("indexing counts and target_tokens must be positive")
     if not embedding_provider.strip():
         raise ValueError("embedding_provider must be nonblank")
     if not math.isfinite(target_phase_seconds) or target_phase_seconds < 0:
@@ -321,7 +321,7 @@ def assess_indexing_budget(
         raise ValueError("budget_seconds must be finite and positive")
     derived_standalone_seconds = shared_preparation_seconds + target_phase_seconds
     return IndexingBudgetMeasurement(
-        target_text_chars=target_text_chars,
+        target_tokens=target_tokens,
         document_count=document_count,
         chunk_count=chunk_count,
         embedding_provider=embedding_provider,

@@ -110,10 +110,11 @@ def load_bilingual_suites(
     ko_path: str | Path = KO_GOLDEN_PATH,
     *,
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
+    selection_id: str = "sec-evaluation",
 ) -> BilingualSuite:
     """Load source-validated English and Korean suites and bind them as twins."""
-    en_cases = load_golden_cases(en_path, manifest_path=manifest_path)
-    ko_cases = load_golden_cases(ko_path, manifest_path=manifest_path)
+    en_cases = load_golden_cases(en_path, manifest_path=manifest_path, selection_id=selection_id)
+    ko_cases = load_golden_cases(ko_path, manifest_path=manifest_path, selection_id=selection_id)
     pairs = validate_twin_cases(en_cases, ko_cases)
     return BilingualSuite(
         en=tuple(english for english, _ in pairs),

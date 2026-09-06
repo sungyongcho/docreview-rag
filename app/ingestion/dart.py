@@ -12,13 +12,13 @@ which makes detection exact and leaves no profile to learn.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import re
 from typing import Any, Final
 import unicodedata
 
 from bs4 import Tag
 
+from app.ingestion.manifest import FilingSource
 from app.ingestion.parser import (
     HEADING_TAGS,
     REPORTED_TITLE_MAX,
@@ -29,7 +29,6 @@ from app.ingestion.parser import (
     leaf_blocks,
     line_offsets,
     normalize,
-    read_source,
     source_digest,
 )
 
@@ -201,15 +200,14 @@ def _coverage(sections: list[Section], total_chars: int) -> float:
     return covered / total_chars
 
 
-def parse_dart_filing(entry: dict[str, Any]) -> tuple[ParsedFiling, dict[str, Any]]:
+def parse_dart_filing(source: FilingSource) -> tuple[ParsedFiling, dict[str, Any]]:
     """Parse one archived DART annual report named by a manifest entry.
 
     Parameters
     ----------
-    entry : dict[str, Any]
-        Registry-neutral manifest entry written by the DART downloader. Its
-        ``source_length`` and ``source_sha256`` are checked against the file so a
-        re-transcoded or truncated archive is caught before any span is produced.
+    source : FilingSource
+        Selected source whose acquired byte length, digest, and encoding are verified
+        before any source span is produced.
 
     Returns
     -------
@@ -225,16 +223,13 @@ def parse_dart_filing(entry: dict[str, Any]) -> tuple[ParsedFiling, dict[str, An
         source no longer matches the digest or length the manifest recorded, or no
         numbered division is present.
     """
-    registry = str(entry.get("registry", ""))
-    if registry != "dart":
-        raise DartParseError(f"manifest entry is not a DART filing: registry={registry!r}")
-
+    metadata = source.document
+    if metadata.registry != "dart":
+        raise DartParseError("DART parsing requires a selected DART source")
     try:
-        raw = read_source(entry["file"])
-    except UnicodeDecodeError:
-        raise DartParseError(f"{entry['file']} is not UTF-8; re-run the archive step") from None
-
-    _verify_source_identity(entry, raw)
+        raw = source.read()
+    except (UnicodeDecodeError, ValueError) as error:
+        raise DartParseError(f"Invalid DART source {source.artifact.path}: {error}") from error
 
     soup = normalize(raw)
     elements = leaf_blocks(soup, DART_LEAF_TAGS)
@@ -246,16 +241,7 @@ def parse_dart_filing(entry: dict[str, Any]) -> tuple[ParsedFiling, dict[str, An
         warnings.append(f"section coverage {coverage:.1%} is below {COVERAGE_FLOOR:.0%}")
 
     filing = ParsedFiling(
-        doc_id=dart_doc_id(entry),
-        registry="dart",
-        issuer=str(entry["issuer"]),
-        issuer_id=str(entry["issuer_id"]),
-        filing_id=str(entry["filing_id"]),
-        form=str(entry["form"]),
-        filing_date=str(entry["filing_date"]),
-        report_period=str(entry["report_period"]),
-        fiscal_year=int(entry["fiscal_year"]),
-        source_url=str(entry["url"]),
+        source=source,
         source_length=len(raw),
         source_sha256=source_digest(raw),
         sections=sections,
@@ -267,42 +253,6 @@ def parse_dart_filing(entry: dict[str, Any]) -> tuple[ParsedFiling, dict[str, An
         n_chars=total_chars,
     )
     return filing, {"segmentation": {"kind": "dart_section_1", "parts": list(DART_PARTS)}}
-
-
-def _verify_source_identity(entry: Mapping[str, Any], raw: str) -> None:
-    """Reject a source that drifted from the identity the manifest recorded.
-
-    Raises
-    ------
-    DartParseError
-        If the file's length or digest disagrees with the manifest entry.
-    """
-    expected_length = entry.get("source_length")
-    if isinstance(expected_length, int) and expected_length != len(raw):
-        raise DartParseError(
-            f"{entry['file']} is {len(raw)} chars, manifest records {expected_length}"
-        )
-    expected_digest = entry.get("source_sha256")
-    if (
-        isinstance(expected_digest, str)
-        and expected_digest
-        and expected_digest != source_digest(raw)
-    ):
-        raise DartParseError(f"{entry['file']} does not match the manifest source digest")
-
-
-def dart_doc_id(entry: Mapping[str, Any]) -> str:
-    """Return the document ID derived from a DART manifest entry.
-
-    The ``"{issuer}-FY{year}"`` shape is the shared contract; reading it out of the
-    stock code and fiscal year is DART-specific.
-    """
-    return f"{entry['issuer']}-FY{entry['fiscal_year']}"
-
-
-def dart_sort_key(entry: Mapping[str, Any]) -> tuple[str, ...]:
-    """Order DART entries by issuer stock code, then receipt number."""
-    return (str(entry.get("issuer", "")), str(entry.get("filing_id", "")))
 
 
 def dart_section_label(item: str) -> str:
