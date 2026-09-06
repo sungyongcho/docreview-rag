@@ -18,6 +18,7 @@ from app.corpus_admin import (
 )
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
+from app.retrieval.bm25 import TermStatCounts
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
     EmbeddingBackfillResult,
@@ -214,6 +215,7 @@ def test_running_backfill_cancels_at_the_next_batch_boundary(tmp_path: Path) -> 
         assert cancelled.status == "cancelled"
         assert board.history[0].status == "cancelled"
         assert board.history[0].message == "Cancelled by operator."
+        assert (board.history[0].current, board.history[0].total) == (1, 2)
 
     asyncio.run(scenario())
 
@@ -387,6 +389,76 @@ class _LedgerStore(JobStore):
         """Nothing is stale in a fresh in-memory ledger."""
         del domain
         return ()
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
+def test_bm25_job_reports_completion_only_after_rebuild(tmp_path: Path, monkeypatch, fails) -> None:
+    """Persist complete progress only after the actual BM25 operation succeeds."""
+    events = []
+
+    class FakeSession:
+        """Replace the database session without replacing the operation dispatcher."""
+
+        async def __aenter__(self):
+            """Return the fake session."""
+            return self
+
+        async def __aexit__(self, *args):
+            """Propagate rebuild errors."""
+            return False
+
+    async def fake_bootstrap(engine):
+        """Avoid schema changes in this progress regression."""
+        del engine
+
+    async def fake_writable(self):
+        """Allow the isolated operation through its schema gate."""
+        del self
+
+    async def fake_rebuild(session):
+        """Require an opening tick before completing or failing the rebuild."""
+        assert isinstance(session, FakeSession)
+        assert [(event.current, event.total) for event in events] == [(0, 1)]
+        if fails:
+            raise RuntimeError("BM25 rebuild failed")
+        return TermStatCounts(terms=4, chunks=2, lexemes=3)
+
+    original_publish = RuntimeCorpusAdminService._publish
+
+    def record_publish(self, job_id, progress):
+        """Observe real progress publication while retaining service behavior."""
+        events.append(progress)
+        original_publish(self, job_id, progress)
+
+    monkeypatch.setattr(corpus_admin, "bootstrap_schema", fake_bootstrap)
+    monkeypatch.setattr(corpus_admin, "backfill_term_stats", fake_rebuild)
+    monkeypatch.setattr(RuntimeCorpusAdminService, "_assert_writable_schema", fake_writable)
+    monkeypatch.setattr(RuntimeCorpusAdminService, "_publish", record_publish)
+
+    async def scenario():
+        """Run the real queued operation and inspect its terminal ledger record."""
+        store = _LedgerStore()
+        service = RuntimeCorpusAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            session_factory=FakeSession,
+            job_store=store,
+        )
+        job = await service.enqueue(AdminCommand("rebuild_bm25"))
+        await service._queue.join()
+        finished = (await service.jobs()).history[0]
+        expected_status = "failed" if fails else "succeeded"
+        expected_current = 0 if fails else 1
+        assert finished.status == store.rows[job.job_id].status == expected_status
+        assert (finished.current, finished.total) == (expected_current, 1)
+        assert (store.rows[job.job_id].current, store.rows[job.job_id].total) == (
+            expected_current,
+            1,
+        )
+        assert [(event.current, event.total) for event in events] == (
+            [(0, 1)] if fails else [(0, 1), (1, 1)]
+        )
+
+    asyncio.run(scenario())
 
 
 def test_worker_survives_ledger_failures_and_lands_the_terminal_state(tmp_path: Path) -> None:
