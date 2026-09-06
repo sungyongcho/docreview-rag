@@ -24,6 +24,7 @@ build/
 dist/
 web/node_modules/
 web/.next/
+web/next-env.d.ts
 web/out/
 web/*.tsbuildinfo
 deploy/firebase/public/
