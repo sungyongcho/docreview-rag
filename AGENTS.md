@@ -161,6 +161,22 @@ work; intake alone does not start implementation or create a background service.
   them. Fetch before integration, preserve active workers' checkouts and dirty work,
   and sync the correct integration checkout. No idle polling or unassigned backlog work.
 
+### Long-lived tracker pull requests
+
+`ideas.md` (issue #29) and `docs/DEVELOPMENT_STORY_OUTLINE.md` (issue #30) are maintained
+through dedicated living pull requests: #37 on `docs/29-project-ideas` and #38 on
+`docs/30-development-log`. Content the user supplies for either file is committed on its
+branch and pushed to its pull request; the umbrella issues keep links and decisions, not
+the content itself.
+
+- Never merge these pull requests without an explicit user instruction. They stay open
+  and accumulate commits until the user requests a merge before a release. A general
+  "check and merge the PRs" request does not include them.
+- Keep each branch limited to its own file. Product code, tutorials and evidence use
+  their own issue-linked branches.
+- Keep both pull requests in draft state. Update a branch from `main` only when needed
+  to keep it mergeable, and preserve the user's authored wording in both files.
+
 ## Dependabot management across this repository
 
 The user authorizes agents to manage genuine Dependabot PRs through `gh` before and
