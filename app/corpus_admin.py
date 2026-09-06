@@ -1132,6 +1132,7 @@ class RuntimeCorpusAdminService:
         publish(OperationProgress("bm25", 0, 1, "Rebuilding BM25 statistics"))
         async with self._session_factory() as session:
             result = await backfill_term_stats(session)
+        publish(OperationProgress("bm25", 1, 1, "BM25 statistics rebuilt"))
         return f"Rebuilt BM25 statistics for {result.chunks} chunk(s)"
 
     async def _execute_job(self, queued: AdminJob) -> None:
