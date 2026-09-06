@@ -10,6 +10,7 @@
   --accent-text: light-dark(#ffffff, #11110f);
   --good: #30a46c;
   --bad: #d14343;
+  --blocked: light-dark(#9f2438, #ff9cab);
   --sidebar: light-dark(#eeeeE8, #151513);
 }
 
@@ -527,7 +528,8 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 .stage-status.action { color: var(--warn); }
 .stage-status.running, .stage-status.queued { color: var(--accent); background: var(--surface-2); }
 .stage-status.failed { color: var(--bad); }
-.stage-status.blocked, .stage-status.readonly, .stage-status.unknown { color: var(--muted); }
+.stage-status.blocked { color: var(--blocked); }
+.stage-status.readonly, .stage-status.unknown { color: var(--muted); }
 .stage-description { margin: 0; line-height: 1.5; }
 .stage-numbers { margin: 0; color: var(--muted); font-size: 13px; }
 .stage-summary { margin: 0; font-size: 13px; }

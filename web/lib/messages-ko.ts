@@ -1,4 +1,7 @@
 export const KO: Record<string, string> = {
+  "Schema technical details": "스키마 기술 상세",
+  "Database setup required": "DB 설정 필요",
+  "Resolve database setup before continuing.": "계속하기 전에 DB 설정 문제를 해결하세요.",
   "Open setup diagnosis": "설정 진단 열기",
   "Open preparation step": "준비 단계 열기",
   "Corpus not ready. Inspect the earliest verified prerequisite.": "코퍼스가 준비되지 않았습니다. 확인된 가장 앞선 선행조건을 점검하세요.",

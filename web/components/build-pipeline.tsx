@@ -185,14 +185,14 @@ export function BuildPipeline(props: BuildPipelineProps) {
       </section>
       <section id="pipeline-execution" className="pipeline-execution" aria-label={t("Selected step execution")}>
         <header><span>{t("Selected step")}</span><h2>{selected.order}. {t(selected.title)}</h2><button type="button" className="button ghost" onClick={props.onOpenJobs}>{t("Open Jobs")}</button></header>
-        <p className="helper">{selected.blockedBy ? t("Required first: {p0}", { p0: t(selected.blockedBy) }) : t("Review the inputs before starting. Selecting a step does not execute it.")}</p>
+        <p className="helper">{selected.blockedBy ? t("Required first: {p0}", { p0: t(pipeline.stages.find((item) => item.id === selected.blockedBy)?.title ?? selected.blockedBy) }) : t("Review the inputs before starting. Selecting a step does not execute it.")}</p>
         {selected.id === "embeddings" && <p className="notice">{t("OpenAI embedding may incur cost for all pending chunks in the database. Check the provider and counts before running.")}</p>}
       <ol className="stage-list" role="list" data-tour="stage-list">
         {[selected].map((stage) => (
           <StageCard
             key={stage.id}
             stage={stage}
-            recovery={props.live && !pipeline.readOnly ? <TerminalHandoff diagnosis={diagnosis} steps={diagnosis.terminalSteps} blocking={diagnosis.state === "blocked"} onNavigate={diagnosis.returnTo !== selected.id ? navigatePreparation : undefined} onRefresh={props.onRefresh} /> : null}
+            recovery={props.live && !pipeline.readOnly ? <TerminalHandoff diagnosis={diagnosis} technicalDetail={props.schemaStatus === "drifted" && selected.id !== "filings" && selected.id !== "answer_model" ? props.schemaMessage : null} steps={diagnosis.terminalSteps} blocking={diagnosis.state === "blocked"} onNavigate={diagnosis.returnTo !== selected.id ? navigatePreparation : undefined} onRefresh={props.onRefresh} /> : null}
             isNext={pipeline.next?.id === stage.id}
             readOnly={pipeline.readOnly}
             handler={handler}
@@ -266,7 +266,7 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
   } else if (schemaStatus === "empty") {
     problems.push({ reason: "The local database needs its initial schema.", fix: "uv run python -m scripts.schema_status prepare", commands: [] });
   } else if (schemaStatus === "drifted") {
-    problems.push({ reason: schemaMessage || `Schema ${schemaStatus}.`, guidance: "Preserve this database. Create a separate recovery checkout with its own ports and volume, then open the printed URL and re-check the blocked step.", fix: `uv run python -m scripts.schema_status recover --return-stage ${returnStage}`, commands: [] });
+    problems.push({ reason: "Database schema is incompatible", guidance: "Preserve this database. Create a separate recovery checkout with its own ports and volume, then open the printed URL and re-check the blocked step.", fix: `uv run python -m scripts.schema_status recover --return-stage ${returnStage}`, commands: [] });
   }
   if (schemaStatus === "unavailable") { problems.push({ reason: schemaMessage || "Database schema is unavailable", fix: "uv run python -m scripts.schema_status check", commands: [] }); }
   if (writable === false) {
