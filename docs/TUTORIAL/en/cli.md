@@ -419,3 +419,70 @@ projects, code, and DB data are preserved. The sourced command can also remove u
 the current shell. A separately executed script cannot modify its parent shell, so follow its instructions.
 Keep the backup path and verify a new terminal does not auto-load the registration. To restore it, follow
 [registration instructions](#register-commands-and-open-help).
+
+
+## Ordinary and extreme runtime reset
+
+`rag-fresh-start` requires a running DEV stack and exact interactive confirmation.
+It uses the same reset preview/status as the web UI. A structured rejection prints a
+known safe code and recovery action; arbitrary server text and credentials are not
+printed. For permission failures, inspect Reset diagnosis and ask the file owner to
+grant the required access. For active jobs, wait or cancel in Jobs. An unknown code,
+timeout or malformed response is not proof that execution failed: use **View reset
+status** before resubmitting. The CLI never automatically retries deletion.
+
+Ordinary success reports verified database/file deletion, then reports build and
+startup separately. Code, Git, `.env`, keys, tracked corpus sources, unrelated files
+and host Ollama remain. Browser data remains until cleared through the reset UI.
+`rag-corpus readiness` checks readiness after startup; a successful Docker start is
+not a ready data pipeline. Download/ingest the filings and rebuild indexes afterward.
+Partial deletion or build/start failure never reports full recovery.
+
+```bash
+rag-fresh-start --help
+rag-fresh-start --extreme
+```
+
+Extreme mode shows the exact deletion inventory before two independent gates:
+confirm that `.env`, conversations and custom corpus have been backed up, then type
+`EXTREME <checkout-name>` to accept irreversible deletion. Enter, No, EOF, or
+noninteractive input cannot authorize deletion. A changed or expired preview stops
+execution. No backup is created and the application cannot restore deleted data.
+
+The explicit fresh-clone **runtime-content** boundary is:
+
+- Remove untracked files under `data/corpus` (including custom PDFs/JSON),
+  `data/eval_runs`, `data/local-settings`, `build`, `dist`, `web/.next`, `web/out`,
+  `web/.tutorial`, `web/public/tutorial-assets`, `.pytest_cache`, and `.ruff_cache`;
+  remove untracked root `.env*` files. Empty directories may remain.
+- Remove only verified checkout-owned `db`, `app`, `web` containers and local
+  `pg_data`, `web_next`, `web_node_modules` Compose volumes. Shared/external volumes,
+  unexpected containers and symbolic links block the operation.
+- Preserve tracked files and local edits, Git history, host `.venv`/`node_modules`,
+  unrelated untracked/ignored files, other Docker projects, host Ollama, external
+  credentials, and the reset audit record. This is not `git clean` or a host reset.
+
+After both terminal gates, close other DocReview tabs and open the printed
+`/reset-local/#<operation-id>` URL in the browser holding the conversations.
+The page clears and checks this origin's DocReview local/session storage, then sends
+an authenticated acknowledgement for that operation. Only then can local deletion
+proceed. The CLI reports browser deletion only with that acknowledgement, scoped to
+that browser and origin; other profiles, devices, ports and localhost/127.0.0.1
+origins are separate. Do not reopen old tabs that could save in-memory conversations.
+If acknowledgement times out, local deletion does not start; browser deletion may
+already have occurred, so inspect status before another attempt.
+
+After verified extreme success, services stay stopped. Run `rag-quickstart`, fill the
+new `.env` locally, and follow Quick Start to prepare data again. On partial failure,
+review completed stages; no automatic restart or deletion retry occurs.
+
+### SCREENSHOT NEEDED
+<!-- Feature: extreme CLI browser acknowledgement. State: matching waiting operation on reset-local, then acknowledged deletion. Capture en and ko in light mode using disposable data only; no credentials. -->
+The browser acknowledgement page has no new screenshot evidence yet.
+
+
+Use `rag-fresh-start --status` to read the last reset even when extreme deletion
+removed `.env` or stopped the web container. This command uses the existing local
+operator connection and never resubmits deletion. After updating the code, restart
+the local operator with `rag-dev down` followed by `rag-dev up -d` before using the
+new reset options; these commands preserve data volumes.

@@ -53,11 +53,24 @@ class StartJobRequest(StrictOperatorModel):
     command_id: str
 
 
+class WipePreviewRequest(StrictOperatorModel):
+    """Select the explicit reset mode; ordinary browser requests remain unchanged."""
+
+    extreme: bool = False
+
+
+class BrowserClearedRequest(StrictOperatorModel):
+    """Identify the exact reset acknowledged by the browser after storage deletion."""
+
+    operation_id: str
+
+
 class WipeStartRequest(StrictOperatorModel):
     """Bind destructive execution to one verified preview and exact confirmation."""
 
     token: str
     confirmation: str
+    backup_confirmed: bool = False
 
 
 class JobResource(StrictOperatorModel):
@@ -311,10 +324,12 @@ def create_operator_app(
             return wipe_failure(error)
 
     @application.post("/wipe/preview", response_model=None)
-    async def wipe_preview(_authorized: None = Depends(authorize)) -> dict | JSONResponse:
+    async def wipe_preview(
+        body: WipePreviewRequest | None = None, _authorized: None = Depends(authorize)
+    ) -> dict | JSONResponse:
         """Inspect a local-only reset without changing runtime data."""
         try:
-            return await wipe.preview()
+            return await wipe.preview(extreme=bool(body and body.extreme))
         except (WipeError, ValueError, OSError, KeyError, TypeError, IndexError) as error:
             return wipe_failure(error)
 
@@ -324,8 +339,20 @@ def create_operator_app(
     ) -> dict | JSONResponse:
         """Start the exact confirmed reset while keeping its operator UI available."""
         try:
-            return await wipe.start(body.token, body.confirmation)
+            return await wipe.start(
+                body.token, body.confirmation, backup_confirmed=body.backup_confirmed
+            )
         except (WipeError, ValueError, OSError, KeyError, TypeError, IndexError) as error:
+            return wipe_failure(error)
+
+    @application.post("/wipe/browser-cleared", response_model=None)
+    async def browser_cleared(
+        body: BrowserClearedRequest, request: Request, _authorized: None = Depends(authorize)
+    ) -> dict | JSONResponse:
+        """Record a same-operation browser acknowledgement through existing local auth."""
+        try:
+            return wipe.acknowledge_browser(body.operation_id, request.headers["origin"])
+        except WipeError as error:
             return wipe_failure(error)
 
     @application.get("/wipe")

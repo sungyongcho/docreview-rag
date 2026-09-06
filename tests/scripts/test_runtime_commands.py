@@ -29,7 +29,12 @@ class FakeClient:
             }
         if path == "/wipe" and body is not None:
             return {"id": "reset-1", "status": "running", "stage": "database_volume"}
-        return {"id": "reset-1", "status": self.status}
+        return {
+            "id": "reset-1",
+            "status": self.status,
+            "completed": ["database_removed", "runtime_files_removed"],
+            "removed_files": 0,
+        }
 
 
 @pytest.fixture
@@ -200,3 +205,142 @@ def test_status_reads_the_unified_job_board(monkeypatch, tmp_path, capsys):
     assert commands.corpus(argparse.Namespace(kind="status"), tmp_path) == 0
     assert paths == ["/jobs/"]
     assert '"jobs"' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"diagnosis":{"code":"active_jobs","details":{"secret":"private-secret"},"remediation":["private-secret"]}}',
+        b'{"diagnosis":{"code":"private-secret"},"detail":"private-secret"}',
+        b"not-json private-secret",
+    ],
+)
+def test_rejection_uses_only_allowlisted_diagnostics(monkeypatch, payload):
+    """Do not echo response text, unknown codes, or remediation strings from HTTP errors."""
+    from io import BytesIO
+    from urllib.error import HTTPError
+
+    client = commands.LocalClient("http://127.0.0.1", "http://127.0.0.1")
+    calls = []
+
+    def reject(request, timeout):
+        """Return one rejection containing deliberately sensitive arbitrary fields."""
+        calls.append(request)
+        raise HTTPError(request.full_url, 409, "private-secret", {}, BytesIO(payload))
+
+    monkeypatch.setattr(client.opener, "open", reject)
+    with pytest.raises(commands.RuntimeCommandError) as error:
+        client.request("/wipe/preview", {})
+    assert "private-secret" not in str(error.value)
+    assert "no reset was submitted" in str(error.value)
+    assert (
+        "Active jobs" in str(error.value)
+        if b"active_jobs" in payload
+        else "Cause unavailable" in str(error.value)
+    )
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("answers", [[""], ["no"], ["yes", ""], ["yes", "no"]])
+def test_extreme_confirmation_cancellation_never_submits(reset, tmp_path, monkeypatch, answers):
+    """Either default-No gate cancels before any wipe request or build."""
+    client, builds = reset
+    replies = iter(answers)
+    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
+    assert commands.fresh_start(tmp_path, extreme=True) == 0
+    assert client.calls == [("/wipe/preview", {"extreme": True})]
+    assert not builds
+
+
+def test_extreme_completion_requires_browser_evidence(reset, tmp_path, monkeypatch):
+    """Never claim browser deletion merely because the server returned succeeded."""
+    client, builds = reset
+    client.origin = "http://127.0.0.1:8000"
+    replies = iter(["yes", "WIPE test"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
+    with pytest.raises(commands.RuntimeCommandError, match="unverified"):
+        commands.fresh_start(tmp_path, extreme=True)
+    assert not builds
+
+
+def test_extreme_success_reports_scope_without_restart(reset, tmp_path, monkeypatch, capsys):
+    """Browser acknowledgement and completed deletion are required before reporting success."""
+    client, builds = reset
+    client.origin = "http://127.0.0.1:8000"
+    original = client.request
+
+    def request(path, body=None):
+        """Supply verified completion of the exact operation."""
+        result = original(path, body)
+        if path == "/wipe" and body is None:
+            result.update(browser_cleared=True, browser_origin=client.origin)
+            result["completed"].append("extreme_complete")
+        return result
+
+    monkeypatch.setattr(client, "request", request)
+    replies = iter(["yes", "WIPE test"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
+    assert commands.fresh_start(tmp_path, extreme=True) == 0
+    assert not builds
+    assert client.calls[1][1]["backup_confirmed"] is True
+    assert "Browser DocReview data deleted and acknowledged" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("gate", [1, 2])
+def test_extreme_eof_before_both_gates_never_submits(reset, tmp_path, monkeypatch, gate):
+    """EOF at either gate leaves deletion unsubmitted."""
+    client, builds = reset
+    count = 0
+
+    def answer(prompt):
+        """End interactive input at the selected confirmation boundary."""
+        nonlocal count
+        count += 1
+        if count == gate:
+            raise EOFError
+        return "yes"
+
+    monkeypatch.setattr("builtins.input", answer)
+    with pytest.raises(EOFError):
+        commands.fresh_start(tmp_path, extreme=True)
+    assert client.calls == [("/wipe/preview", {"extreme": True})]
+    assert not builds
+
+
+def test_extreme_plain_warning_and_noninteractive_guard(reset, tmp_path, monkeypatch, capsys):
+    """Plain output retains the irreversible warning and cannot authorize deletion."""
+    client, builds = reset
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setattr(commands.sys.stdin, "isatty", lambda: False)
+    with pytest.raises(commands.RuntimeCommandError, match="interactively"):
+        commands.fresh_start(tmp_path, extreme=True)
+    output = capsys.readouterr().out
+    assert "EXTREME RESET: NO BACKUP. IRREVERSIBLE DELETION." in output
+    assert "\033[" not in output
+    assert not client.calls and not builds
+
+
+def test_status_is_read_only_without_configuration(reset, tmp_path, capsys):
+    """A removed .env does not prevent status inspection or cause a reset submission."""
+    client, builds = reset
+    assert commands.reset_status(tmp_path) == 0
+    assert client.calls == [("/wipe", None)]
+    assert not builds
+    assert "Reset status: succeeded" in capsys.readouterr().out
+
+
+def test_operator_connection_uses_recorded_origin_without_env(tmp_path, monkeypatch):
+    """Use verified launch origin after custom-port .env configuration has been deleted."""
+    from scripts.local_operator import LocalOperator
+
+    operator = LocalOperator(tmp_path)
+    state = {"port": 39123, "origin": "http://127.0.0.1:39124", "token": "private-token"}
+    monkeypatch.setattr(operator, "_read", lambda: state)
+    monkeypatch.setattr(operator, "_owned", lambda value: True)
+    monkeypatch.setattr(operator, "_reachable", lambda value: True)
+    assert operator.client_connection() == (
+        "http://127.0.0.1:39123",
+        state["origin"],
+        state["token"],
+    )
+    assert not (tmp_path / ".env").exists()

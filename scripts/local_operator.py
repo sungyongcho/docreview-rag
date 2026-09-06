@@ -125,6 +125,14 @@ class LocalOperator:
                 return self._public_environment(state)
             return {"NEXT_PUBLIC_OPERATOR_BASE_URL": "", "NEXT_PUBLIC_OPERATOR_TOKEN": ""}
 
+    def client_connection(self) -> tuple[str, str, str]:
+        """Return verified live connection data even after an extreme reset removes .env."""
+        with self._locked():
+            state = self._read()
+            if not state or not self._owned(state) or not self._reachable(state):
+                raise OperatorLifecycleError("Start the development stack first: rag-dev up -d")
+            return (f"http://127.0.0.1:{state['port']}", state["origin"], state["token"])
+
     def _stop(self, state: dict[str, Any]) -> None:
         """Gracefully stop only the identified service, retaining state on timeout."""
         if self._owned(state):

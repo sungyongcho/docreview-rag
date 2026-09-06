@@ -290,6 +290,11 @@ rag-help() {
         '  rag-dev up --build -d         Rebuild and start development services' \
         '  rag-fresh-start              Reset project data, rebuild, and restart from scratch' \
         '  rag-fresh-start --help       Show reset requirements and warnings' \
+        '  rag-fresh-start --status     Read reset evidence without resubmitting deletion' \
+        '  rag-fresh-start --extreme    Delete previewed config/data/caches; two confirmations' \
+        '  Extreme: acknowledge browser deletion at the printed URL; no automatic restart' \
+        '  Ordinary: preserves .env/code/Ollama; reports deletion separately from startup' \
+        '  Rejected/uncertain reset: inspect View reset status before any resubmission' \
         '  rag-help                     Show this help' \
         ''
     _docreview_line '1;31' 'WARNING: rag-fresh-start permanently deletes the project database,'
