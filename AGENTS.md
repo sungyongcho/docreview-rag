@@ -1,4 +1,35 @@
-# AGENTS.md — 재조립 루프 운용 규칙
+# AGENTS.md — Product Development Workflow
+
+## Current branch and release policy
+
+- `main` is the stable v2 product branch, the GitHub default, and the default local checkout.
+- `v1` is a frozen legacy archive with one parentless commit. Never modify it or merge it into `main`.
+- `v2.0.0` identifies product commit `61cb17b49b0b6bf0745b6fb7cfdd16b67d101731`.
+- Use short-lived `v2/<type>/<issue-number>-<description>` branches. Omit the issue number when unavailable. Never create a permanent `v2` branch: it conflicts with `v2/...` refs.
+- Keep only `main` and `v1` as canonical local branches at rest, tracking their remote counterparts.
+
+## GitHub Flow
+
+1. Preserve unrelated staged, unstaged, untracked, and ignored work. Do not stash, reset, overwrite, or stage it without explicit authorization.
+2. Start from a clean, updated `main`: `git switch main` followed by `git pull --ff-only origin main`. Stop on divergence or conflicting local work.
+3. Create the scoped branch with `git switch -c v2/<type>/<issue-number>-<description>`.
+4. Make the smallest coherent change and run focused behavioral checks plus the applicable static checks below. Review the complete diff and run `git diff --check`.
+5. Prepare exact staging paths and complete English Conventional Commit messages. Use the `commit-it` preview and obtain approval before staging, committing, and pushing. Stage explicit paths with `git add -- <paths>`; never absorb unrelated work.
+6. Open a focused pull request against `main`, recording the outcome and actual verification. Obtain explicit authorization for external writes and merges unless the exact action is already approved.
+7. Squash-merge the reviewed pull request. Preserve the existing product history; do not force-push or rewrite it.
+8. Update local `main` with a fast-forward pull, verify the merged result, and delete the completed development branch locally and remotely with explicit deletion authorization. A squash merge does not preserve the development commit as an ancestor; verify the PR merge and final tree before removing its local ref.
+
+Restore `core.hooksPath=.githooks` in each fresh clone. Tags identify releases; application deployment and GitHub Pages are separate operations requiring their own scope and authorization.
+
+## Applicable engineering requirements
+
+The coding, test placement, docstring, foreign-work protection, focused verification, English commit-message, and runtime guidance below remain applicable. Report checks as passed, failed, not run, or blocked; never claim mock checks establish live PostgreSQL behavior.
+
+## Historical assembly reference
+
+The former `assemble`, `zero`, and `new` branch roles, import loop, checkpoint tables, module-completion review gates, and automatic checkpoint stamping describe the completed assembly process only. Sections 1, 2, 4, 4-1, and 9 below are historical, not the current branch workflow. The former user-only commit rule is superseded by the approved `commit-it` workflow above. Do not apply assembly-only requirements to ordinary product changes.
+
+### Archived assembly operating agreement
 
 이 파일은 `assemble` 브랜치에서 반복하는 **이식 루프**의 규칙만 담는다.
 브랜치 역할·판단 우선순위·docstring 규격·테스트 배치 규격 같은 전체 계약은
@@ -116,7 +147,7 @@ M5는 `M5.1, M5.4` → `M5.3` → `M5.2` 세 덩이인데, 라우트만 있고 �
 
 - 타입 검사: 이 환경에 `pyright`/`basedpyright` 바이너리가 없다. 매번 "미실행"으로 명시.
 - live PostgreSQL: 내려가 있으면 skip으로 빠진다. 스키마·SQL을 건드린 덩이는 반드시
-  `docker compose up -d db` 후 `-m live_postgres --require-live-postgres`를 돌린다.
+  `docker compose --project-directory . -f docker/docker-compose.yml up -d db` 후 `-m live_postgres --require-live-postgres`를 돌린다.
 - SQL·pgvector 동작을 mock 테스트만으로 "검증 완료"라고 하지 않는다.
 
 ## 7. 커밋 산출 형식
@@ -184,15 +215,15 @@ git config core.hooksPath .githooks
 
 ## 10. 로컬 스택
 
-Compose는 base 하나에 overlay 둘이다. `docker-compose.yml`이 `db`와 `app`,
-`docker-compose.dev.yml`이 개발 전용(로컬 모델 엔진, `local-llm` profile의 `ollama`),
-`docker-compose.prod.yml`이 방문자가 보는 화면의 재현이다. `.env`의 `COMPOSE_FILE`이
-dev overlay를 기본으로 잡으므로 평소에는 명령이 바뀌지 않는다.
+`docker/docker-compose.yml`이 `db`·`app`·`web`과 소스 마운트·자동 reload를 갖춘 기본 개발 스택이다.
+`docker/docker-compose.dev.yml`은 같은 base를 상속해 dev 권한을 명시하고,
+`docker/docker-compose.prod.yml`은 기존 DB·앱 설정을 상속하면서 개발 웹·소스 마운트·reload·로컬
+모델 연결을 제거해 방문자가 보게 될 화면을 재현한다. `.env`로 Compose 파일을 고르지 않는다.
 
 ```bash
-docker compose up -d db                      # DB만
-docker compose up --build -d app             # 전체 (dev)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d app
+docker compose --project-directory . -f docker/docker-compose.yml up -d db                      # DB만
+docker compose --project-directory . -f docker/docker-compose.yml up --build -d app web         # 전체 (dev)
+docker compose --project-directory . -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up --build -d app
 ```
 
 prod 미리보기에 `--build`가 필요한 이유는 웹 번들 성격이 `NEXT_PUBLIC_ADMIN_MODE`
@@ -227,8 +258,8 @@ run 전체(분류·라우팅·grade·check와 스키마 실패 재시도)에 누
 모델은 이 120초를 거의 항상 넘긴다.
 
 고치는 자리가 둘로 나뉘어 있다는 사실이 함정이다. wall clock·반복·토큰 한도는
-**Settings › Run limits**, 근거 크기(`max_context_chars`, overfetch, 문서당 hit 수)는
-**Prompt & evidence**다. 화면의 Run trace가 실패한 run의 필드를 그대로 펼치고 해당
+**대화창 RAG settings › Run limits**, 근거 크기(`max_context_chars`, overfetch, 문서당 hit 수)는
+**대화창 RAG settings › Evidence**다. 화면의 Run trace가 실패한 run의 필드를 그대로 펼치고 해당
 설정을 여는 버튼을 함께 낸다.
 
 job 상태는 여섯 개다. queued·running은 살아 있고, succeeded·failed·cancelled는 종료,
