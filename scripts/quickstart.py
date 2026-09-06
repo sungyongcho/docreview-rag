@@ -18,7 +18,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.db.bootstrap import bootstrap_schema, ensure_schema_compatibility
+from app.db.bootstrap import SchemaDriftError, bootstrap_schema, ensure_schema_compatibility
 from app.db.models import Base
 from scripts.local_env import load_local_environment
 from scripts.local_stack import compose_command, compose_environment, run
@@ -69,7 +69,13 @@ def validate_configuration(root: Path) -> dict[str, str]:
             missing.append(f"{key}={expected}")
     if missing:
         raise ValueError(
-            "Complete these settings without sharing their values: " + ", ".join(missing)
+            "Configuration blocked. Edit "
+            + str(path)
+            + " locally: "
+            + ", ".join(missing)
+            + ". Shell environment overrides .env; correct or unset conflicting exports. "
+            "Then rerun rag-quickstart (or bash scripts/quickstart.sh). "
+            "No services were started by this invocation; existing services were left unchanged."
         )
     return load_local_environment(path, mode="dev")
 
@@ -126,41 +132,96 @@ def wait_ready(origin: str, *, timeout: float = 180) -> None:
     )
 
 
+def report_services(root: Path, environment: dict[str, str]) -> None:
+    """Report only this project's service state, without exposing container configuration."""
+    output = subprocess.check_output(
+        compose_command(root, "dev", ["ps", "--all", "--format", "json"]),
+        cwd=root,
+        env=environment,
+        text=True,
+    ).strip()
+    rows = (
+        json.loads(output)
+        if output.startswith("[")
+        else [json.loads(line) for line in output.splitlines() if line.strip()]
+    )
+    services = {row["Service"]: row for row in rows}
+    for name in ("db", "app", "web"):
+        row = services.get(name)
+        if row is None:
+            status = "stopped (not created)"
+        else:
+            state, health = row.get("State", "unknown"), row.get("Health", "")
+            if state == "running":
+                status = {
+                    "healthy": "already running / healthy",
+                    "starting": "starting (health check pending)",
+                    "unhealthy": "unhealthy; inspect rag-dev logs --tail 50 " + name,
+                }.get(health, "running (no health check; server readiness not yet confirmed)")
+            elif state in {"exited", "dead", "created"}:
+                status = "stopped (" + state + ")"
+            else:
+                status = state
+        print(f"  {name}: {status}", flush=True)
+
+
 def quickstart(root: Path) -> int:
     """Prepare only this Compose project's database and then its development services."""
+    print("[1/5] Checking Docker Compose prerequisites.", flush=True)
     version = subprocess.check_output(
         ["docker", "compose", "version", "--short"], text=True
     ).strip()
     match = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version)
     if not match or tuple(map(int, match.groups())) < (2, 24, 4):
         raise ValueError("Docker Compose 2.24.4 or newer is required.")
+    print("[2/5] Checking local configuration (credentials are never displayed).", flush=True)
     bindings = validate_configuration(root)
     environment = compose_environment("dev", bindings)
+    print("[3/5] Current project services; ensuring the database is healthy.", flush=True)
+    report_services(root, environment)
     subprocess.run(
-        compose_command(root, "dev", ["up", "-d", "--wait", "db"]),
+        compose_command(root, "dev", ["up", "-d", "--wait", "--wait-timeout", "120", "db"]),
         cwd=root,
         env=environment,
         check=True,
     )
     # This URL is derived from this project's published DB port, never an external DATABASE_URL.
     url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{bindings['DB_PORT']}/filing"
-    created = asyncio.run(prepare_schema(url))
+    print("[4/5] Checking schema; only an empty database will be initialized.", flush=True)
+    try:
+        created = asyncio.run(prepare_schema(url))
+    except (SchemaDriftError, ValueError) as error:
+        raise RuntimeError(
+            "Schema preparation blocked: "
+            + str(error)
+            + ". Existing data was preserved. Run .venv/bin/python -m scripts.schema_status check "
+            "from this checkout. Do not reset data or change DATABASE_URL: this command uses "
+            "the local Compose DB_PORT. Target-selection recovery is tracked in #25. "
+            "After resolving compatibility, rerun rag-quickstart."
+        ) from None
     print(
         "Empty database schema created."
         if created
         else "Existing compatible schema and data preserved."
     )
+    print("[5/5] Building/starting DEV services, then verifying server readiness.", flush=True)
     result = run("dev", ["up", "--build", "-d"], root=root)
     if result:
+        print(
+            "Service startup failed; readiness was not confirmed. Run rag-dev ps -a and "
+            "rag-dev logs --tail 50, then rerun rag-quickstart. No database was reset."
+        )
         return result
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
+    report_services(root, environment)
     wait_ready(origin)
     print(f"Service ready: {origin}/docreview-rag-agent/")
     print(f"Quick Start: {origin}/docreview-rag-agent/docs/en/quickstart/")
     print(f"한국어: {origin}/docreview-rag-agent/docs/ko/quickstart/")
     print(
         "Service preparation is complete. Data preparation is a separate next step: "
-        "follow Quick Start."
+        "open Quick Start, choose CLI or Web, and start at step 1: verify the empty environment. "
+        "Then acquire the NVIDIA FY2024 and Samsung FY2024 reports as documented."
     )
     print("No filings were downloaded and no embedding or answer requests were made.")
     return 0
