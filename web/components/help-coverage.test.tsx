@@ -40,6 +40,7 @@ const HIT = {
   chunk_id: 41, doc_id: "NVDA-FY2024", item: "7", kind: "text", citation: "NVDA FY2024 · Item 7",
   start_char: 120, end_char: 480, source_sha256: "0".repeat(64),
   body: "Data Center revenue grew on Hopper demand.", context_header: "Item 7", score: 0.91,
+  section_title: "Management's Discussion and Analysis",
 };
 
 /** Ids of the topics that must be on the screen whenever it renders, plus the ids the DOM currently carries. */

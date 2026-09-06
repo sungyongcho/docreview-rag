@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
-from app.ingestion.dart import dart_section_label, parse_dart_filing
-from app.ingestion.edgar import edgar_section_label, parse_filing
+from app.ingestion.dart import dart_section_label, dart_section_title, parse_dart_filing
+from app.ingestion.edgar import edgar_section_label, edgar_section_title, parse_filing
 from app.ingestion.manifest import FilingSource
 from app.ingestion.parser import ParsedFiling
 
@@ -16,14 +16,15 @@ class Registry:
     """The readers one publishing registry supplies for its own manifest entries.
 
     Each adapter receives the same verified ``FilingSource`` contract. Only source
-    markup parsing and citation labels vary by publishing registry; document identity,
-    source decoding, selections, and processing budgets are shared.
+    markup parsing, citation labels, and section titles vary by publishing registry;
+    document identity, source decoding, selections, and processing budgets are shared.
     """
 
     name: str
     language: str
     parse: Callable[[FilingSource], tuple[ParsedFiling, dict[str, Any]]]
     section_label: Callable[[str], str]
+    section_title: Callable[[str], str | None]
 
 
 EDGAR: Final[Registry] = Registry(
@@ -31,6 +32,7 @@ EDGAR: Final[Registry] = Registry(
     language="en",
     parse=parse_filing,
     section_label=edgar_section_label,
+    section_title=edgar_section_title,
 )
 
 DART: Final[Registry] = Registry(
@@ -38,6 +40,7 @@ DART: Final[Registry] = Registry(
     language="ko",
     parse=parse_dart_filing,
     section_label=dart_section_label,
+    section_title=dart_section_title,
 )
 
 REGISTRIES: Final[Mapping[str, Registry]] = MappingProxyType(
@@ -70,6 +73,26 @@ def section_label(registry_name_: str, item: str) -> str:
     """
     registry = REGISTRIES.get(registry_name_)
     return registry.section_label(item) if registry is not None else item
+
+
+def section_title(item: str | None, registry_name_: str | None = None) -> str | None:
+    """Return the registry's own title for a section code, or ``None`` when it has none.
+
+    A caller that knows the publishing registry consults only that adapter, so a DART
+    numeral never borrows an EDGAR title. Without a known registry every adapter is tried
+    in registration order; the code spaces are disjoint (EDGAR codes start with a digit,
+    DART codes are Roman numerals), so the first match is the only possible match.
+    """
+    if not item:
+        return None
+    registry = REGISTRIES.get(registry_name_) if registry_name_ is not None else None
+    if registry is not None:
+        return registry.section_title(item)
+    for candidate in REGISTRIES.values():
+        title = candidate.section_title(item)
+        if title:
+            return title
+    return None
 
 
 def resolve_registry(source: FilingSource) -> Registry:

@@ -37,6 +37,7 @@ def test_retrieve_route_returns_complete_evidence_identity(
         "chunk_id": 7,
         "doc_id": "ACME-FY2024",
         "item": "7",
+        "section_title": "Management's Discussion and Analysis",
         "kind": "text",
         "citation": "ACME FY2024 - Item 7",
         "start_char": 100,

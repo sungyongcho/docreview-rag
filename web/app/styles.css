@@ -80,7 +80,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .markdown-table-wrap th { background: var(--surface-2); font-size: 12px; font-weight: 600; }
 .markdown-table-wrap tr:last-child td { border-bottom: 0; }
 .markdown-image-omitted { color: var(--muted); font-size: 12px; }
-.evidence { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); overflow: hidden; }
+.evidence { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); overflow: clip; }
 .evidence summary { padding: 11px 13px; cursor: pointer; font-size: 13px; font-weight: 550; }
 .evidence-hit { padding: 13px; border-top: 1px solid var(--border); }
 .evidence-hit strong { display: block; font-size: 13px; }

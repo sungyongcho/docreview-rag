@@ -388,7 +388,7 @@ const REVIEW: HelpTopic[] = [
     id: "review.evidence", availableInPreview: false,
     title: "Evidence, pins and exclusions",
     body: [
-      "Each answer lists the candidate chunks it was checked against, with the citation, document id and character span.",
+      "Each answer lists its candidate chunks as collapsed cards titled by filing section, with the document id, a table badge and the character span; pinned cards start open and ten cards show per page.",
       "Pin chunks that must be cited and exclude chunks that mislead, then Use selected evidence re-runs the citation check on that selection using the candidate token from the first pass.",
     ],
     seeAlso: ["measure.playground.candidate_k"],

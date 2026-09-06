@@ -255,9 +255,14 @@ def parse_dart_filing(source: FilingSource) -> tuple[ParsedFiling, dict[str, Any
     return filing, {"segmentation": {"kind": "dart_section_1", "parts": list(DART_PARTS)}}
 
 
+def dart_section_title(item: str) -> str | None:
+    """Return the division name for a Roman-numeral part code, or ``None`` when unknown."""
+    return DART_PARTS.get(item)
+
+
 def dart_section_label(item: str) -> str:
     """Return the numeral with its division name, as the filing's own table of contents
     spells it, so a bare citation stays meaningful without the context header.
     """
-    title = DART_PARTS.get(item)
+    title = dart_section_title(item)
     return f"{item}. {title}" if title else item

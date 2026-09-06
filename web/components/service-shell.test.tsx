@@ -79,7 +79,7 @@ function seedAnsweredConversation() {
         id: "a", role: "assistant", text: "Data center revenue grew on Hopper demand.", evidenceLabel: "Cited evidence", citations: 1,
         evidence: [{
           chunk_id: 1, doc_id: "NVDA-FY2024-10K", item: "Item 7", kind: "text", citation: "[NVDA FY2024 §7 c1]", start_char: 0, end_char: 120,
-          source_sha256: "abc", body: "Data Center revenue was up 217%.", context_header: "Item 7", score: 0.9,
+          source_sha256: "abc", body: "Data Center revenue was up 217%.", context_header: "Item 7", score: 0.9, section_title: "Management's Discussion and Analysis",
         }],
       },
     ],
@@ -133,7 +133,7 @@ it("keeps restored development settings intact in prod, blocks both review paths
   vi.stubEnv("NEXT_PUBLIC_OPERATOR_TOKEN", "test-token");
   const original = { ...DEFAULT_SESSION_PROFILE, engine: "local" as const, local_model: "saved-model", prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, additional_instructions: "Saved experiment" } };
   saveDefaultProfile(original);
-  saveConversations([{ id: "saved-dev", title: "Saved dev review", createdAt: "2026-09-04", updatedAt: "2026-09-04", profile: original, messages: [{ id: "evidence", role: "assistant", text: "Prior evidence", question: "Saved question", candidateToken: "saved-token", pinnedChunkIds: [1], evidence: [{ chunk_id: 1, doc_id: "doc", item: "7", kind: "text", citation: "c1", start_char: 0, end_char: 1, source_sha256: "abc", body: "Evidence", context_header: "7", score: 1 }] }] }]);
+  saveConversations([{ id: "saved-dev", title: "Saved dev review", createdAt: "2026-09-04", updatedAt: "2026-09-04", profile: original, messages: [{ id: "evidence", role: "assistant", text: "Prior evidence", question: "Saved question", candidateToken: "saved-token", pinnedChunkIds: [1], evidence: [{ chunk_id: 1, doc_id: "doc", item: "7", kind: "text", citation: "c1", start_char: 0, end_char: 1, source_sha256: "abc", body: "Evidence", context_header: "7", score: 1, section_title: null }] }] }]);
   const fetchMock = stubPublicApi();
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");
@@ -486,8 +486,8 @@ describe("service shell", () => {
       else if (url.endsWith("/retrieve")) payload = {
         results: [],
         candidates: [
-          { chunk_id: 1, doc_id: "NVDA-FY2025", item: "7", kind: "text", citation: "NVDA FY2025 Item 7", start_char: 0, end_char: 120, source_sha256: "a", body: "Data center revenue grew.", context_header: "Item 7", score: 0.9 },
-          { chunk_id: 2, doc_id: "NVDA-FY2025", item: "7", kind: "table", citation: "NVDA FY2025 Item 7 table", start_char: 120, end_char: 240, source_sha256: "a", body: "Revenue by segment.", context_header: "Item 7", score: 0.8 },
+          { chunk_id: 1, doc_id: "NVDA-FY2025", item: "7", kind: "text", citation: "NVDA FY2025 Item 7", start_char: 0, end_char: 120, source_sha256: "a", body: "Data center revenue grew.", context_header: "Item 7", score: 0.9, section_title: "Management's Discussion and Analysis" },
+          { chunk_id: 2, doc_id: "NVDA-FY2025", item: "7", kind: "table", citation: "NVDA FY2025 Item 7 table", start_char: 120, end_char: 240, source_sha256: "a", body: "Revenue by segment.", context_header: "Item 7", score: 0.8, section_title: null },
         ],
         candidate_token: null,
         candidate_expires_at: 0,

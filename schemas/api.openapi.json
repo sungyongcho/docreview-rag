@@ -2393,6 +2393,17 @@
             "title": "Score Stage",
             "type": "string"
           },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Title"
+          },
           "source_sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Source Sha256",
@@ -2408,6 +2419,7 @@
           "chunk_id",
           "doc_id",
           "item",
+          "section_title",
           "kind",
           "citation",
           "start_char",
@@ -2527,6 +2539,17 @@
             "title": "Score",
             "type": "number"
           },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Title"
+          },
           "source_sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Source Sha256",
@@ -2542,6 +2565,7 @@
           "chunk_id",
           "doc_id",
           "item",
+          "section_title",
           "kind",
           "citation",
           "start_char",

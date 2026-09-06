@@ -11,6 +11,7 @@ from app.ingestion.dart import (
     DART_PARTS,
     DartParseError,
     dart_section_label,
+    dart_section_title,
     parse_dart_filing,
     part_numeral,
     segment,
@@ -79,6 +80,12 @@ def test_dart_section_label_spells_numeral_and_division_name():
     assert dart_section_label("I") == "I. 회사의 개요"
     assert dart_section_label("III") == "III. 재무에 관한 사항"
     assert dart_section_label("Z") == "Z"
+
+
+def test_dart_section_title_returns_only_the_division_name():
+    assert dart_section_title("II") == "사업의 내용"
+    assert dart_section_title("XII") == "상세표"
+    assert dart_section_title("Z") is None
 
 
 # --- segmentation ---
