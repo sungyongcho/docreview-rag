@@ -106,6 +106,14 @@ rag-quickstart
 
 Quick Start bootstraps Python, validates configuration, prepares an empty schema, and starts development services. It preserves existing compatible data. If the schema is incompatible, it stops; keep that database intact and choose an empty isolated or compatible database. Do not use a reset as installation recovery.
 
+The image startup gate also runs for `rag-dev up --build -d` and prod/deploy Compose:
+empty DB → initialize from ORM; compatible DB → preserve and start; drifted DB →
+block API startup and print recovery commands. No automatic reset or migration occurs.
+For an already-running app, document catalog requests check schema before querying;
+missing tables/columns return a typed 503 instead of repeated invalid SQL.
+Use `rag-dev logs --tail 80 app` when the gate blocks startup. `Check schema` and restart
+alone never repair drift. Additive migrations remain deferred. In-place recreation is an explicit local DEV option below.
+
 ## Development and local prod preview
 
 ```bash
@@ -534,3 +542,37 @@ a job; refresh at the destination reads current state.
 ### SCREENSHOT NEEDED
 <!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
 New screenshot evidence is pending; existing images are unchanged.
+
+
+## Explicit local database recreation
+
+`rag-up` is a shortcut for `rag-dev up --build -d`; it uses the Python environment
+prepared by `rag-quickstart` or `uv sync --locked`. Its automatic startup prepares
+only an empty DB; it never discards existing data. For first-time setup or users who
+understand the consequences, the preparation notice also offers this dangerous option:
+
+```bash
+uv run python -m scripts.schema_status recreate
+```
+
+This deletes ORM-owned tables and all their rows in the verified local DEV database,
+then recreates the schema from the current models. Review the exact target and table
+counts and type `RECREATE <checkout-name>` only if you accept irreversible data loss.
+Enter, wrong text, EOF and noninteractive input do not authorize it; previews expire
+after five minutes. The app is stopped only after confirmation. Other DB clients must
+be closed; shared Docker volumes and nonlocal targets are refused.
+
+Code, `.env`, downloaded filings, evaluation exports, the DB volume, unrelated tables
+and host Ollama stay. No backup is made. Unknown foreign-key dependencies cause the
+transaction to roll back rather than using cascading deletion. On failure, the API may
+remain stopped; inspect schema state before another attempt. On verified success,
+run `rag-up`, re-check Build, then explicitly repeat parsing, embeddings and BM25.
+Embedding work may cost money and is never started by recreation.
+
+The DB warning modal keeps raw errors in a closed terminal-style box under
+**Please review the error**. Expand it to inspect the original message; existing
+status/navigation/dismiss buttons retain their behavior.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=en; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->

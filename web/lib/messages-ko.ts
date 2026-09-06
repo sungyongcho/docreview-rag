@@ -1,4 +1,7 @@
 export const KO: Record<string, string> = {
+  "For first-time setup or users who understand the consequences. This may be dangerous: existing database contents will be deleted.": "처음 프로젝트를 사용하거나, 작업의 영향을 이해하는 사용자용입니다. 위험할 수 있습니다. 기존 DB 데이터가 삭제됩니다.",
+  "Review the table counts and type the exact RECREATE confirmation only if you accept data loss. Files stay; run rag-up and re-check this step afterward.": "테이블별 행 수를 확인하고 데이터 손실에 동의할 때만 정확한 RECREATE 확인 문구를 입력하세요. 파일은 보존됩니다. 이후 rag-up을 실행하고 이 단계를 다시 확인하세요.",
+  "Please review the error": "에러를 확인해주세요",
   "Schema technical details": "스키마 기술 상세",
   "Database setup required": "DB 설정 필요",
   "Resolve database setup before continuing.": "계속하기 전에 DB 설정 문제를 해결하세요.",

@@ -14,12 +14,10 @@ from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
 
 from dotenv import dotenv_values
-from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.db.bootstrap import SchemaDriftError, bootstrap_schema, ensure_schema_compatibility
-from app.db.models import Base
+from app.db.bootstrap import SchemaDriftError, prepare_empty_schema
 from scripts.local_env import load_local_environment
 from scripts.local_stack import compose_command, compose_environment, run
 
@@ -84,19 +82,7 @@ async def prepare_schema(url: str) -> bool:
     """Bootstrap an empty database, or only inspect an existing compatible schema."""
     engine = create_async_engine(url, echo=False)
     try:
-        async with engine.connect() as connection:
-            tables = set(await connection.run_sync(lambda sync: inspect(sync).get_table_names()))
-            if tables:
-                await ensure_schema_compatibility(connection)
-                missing = set(Base.metadata.tables) - tables
-                if missing:
-                    raise ValueError(
-                        "Existing schema is incomplete; preserve this database "
-                        "and inspect the missing tables: " + ", ".join(sorted(missing))
-                    )
-                return False
-        await bootstrap_schema(engine)
-        return True
+        return await prepare_empty_schema(engine)
     finally:
         await engine.dispose()
 
@@ -195,8 +181,9 @@ def quickstart(root: Path) -> int:
             "Schema preparation blocked: "
             + str(error)
             + ". Existing data was preserved. Run .venv/bin/python -m scripts.schema_status check "
-            "from this checkout. Do not reset data or change DATABASE_URL: this command uses "
-            "the local Compose DB_PORT. Target-selection recovery is tracked in #25. "
+            "from this checkout. Do not change DATABASE_URL: this command uses "
+            "the local Compose DB_PORT. Use scripts.schema_status recover to preserve data, "
+            "or explicitly review scripts.schema_status recreate to discard local DB contents. "
             "After resolving compatibility, rerun rag-quickstart."
         ) from None
     print(

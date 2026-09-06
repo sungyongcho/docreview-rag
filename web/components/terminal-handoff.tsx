@@ -39,7 +39,7 @@ export function TerminalHandoff({ steps, onRefresh, blocking = true, diagnosis, 
     {steps.length > 0 && <details open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>{t("Terminal instructions")}</summary>
       <p className="helper">{t("Run the command in this checkout, return to this step, then check the updated status.")}</p>
-      {steps.map((step) => <div className="terminal-handoff-step" key={step.command}>
+      {steps.map((step) => <div className={`terminal-handoff-step${step.danger ? " is-danger" : ""}`} key={step.command}>
         <p>{t(step.reason)}</p>
         <div className="terminal-command"><pre><code>{step.command}</code></pre><button className="button ghost" type="button" onClick={() => void copy(step.command)}>{t("Copy command")}</button></div>
         <p className="helper">{t(step.expected)}</p>

@@ -173,3 +173,42 @@ def test_mode_and_frontend_routing_ignore_stale_shell_flags(name, mode, admin, w
     assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
     assert web["ports"][0]["published"] == "19000"
     assert not app.get("ports")
+
+
+def test_compose_modes_inherit_the_image_schema_gate() -> None:
+    """Dev, preview and deployment must not bypass the image's initialization entrypoint."""
+    dockerfile = (ROOT / "docker/Dockerfile").read_text()
+    assert 'ENTRYPOINT ["/app/.venv/bin/python", "-m", "app.db.startup"]' in dockerfile
+    for name in ("docker-compose.dev.yml", "docker-compose.prod.yml"):
+        app = compose(name)["services"]["app"]
+        assert app.get("entrypoint") is None
+        assert app["depends_on"]["db"]["condition"] == "service_healthy"
+        assert app["environment"]["DOCREVIEW_MODE"] == "runtime"
+    deployed = json.loads(
+        subprocess.check_output(
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                os.devnull,
+                "-f",
+                str(ROOT / "deploy/gcp/docker-compose.deploy.yml"),
+                "config",
+                "--format",
+                "json",
+            ],
+            env={
+                "PATH": os.environ["PATH"],
+                "DOCREVIEW_IMAGE": "example.invalid/test:fixture",
+                "POSTGRES_PASSWORD": "unused-fixture",
+                "OPENAI_API_KEY_PROD": "unused-fixture",
+                "DOCREVIEW_ORIGIN_HOST": "localhost",
+                "POSTGRES_PASSWORD_FILE": os.devnull,
+            },
+            text=True,
+        )
+    )
+    app = deployed["services"]["app"]
+    assert app.get("entrypoint") is None
+    assert app["depends_on"]["db"]["condition"] == "service_healthy"
+    assert app["environment"]["DOCREVIEW_MODE"] == "runtime"

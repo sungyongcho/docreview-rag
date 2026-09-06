@@ -39,3 +39,20 @@ def test_job_board_reads_history_without_revalidating_ingestion_arguments():
     assert board.jobs[0].request == {"manifest": "manifest.json"}
     assert board.jobs[0].message == job.message
     assert board.jobs[0].can_retry is False
+
+
+def test_document_detail_checks_schema_before_serializing():
+    """Do not disguise incompatible document storage as an ordinary missing document."""
+    import pytest
+
+    from app.api.errors import ApiProblemError, unavailable
+
+    service = object.__new__(RuntimeAdminApiServices)
+    service._documents = SimpleNamespace(
+        ensure_ready=AsyncMock(side_effect=unavailable("schema_not_ready", "drifted"))
+    )
+    service._corpus = SimpleNamespace(document_detail=AsyncMock())
+    with pytest.raises(ApiProblemError) as error:
+        asyncio.run(service.document_detail("test"))
+    assert error.value.error.code == "schema_not_ready"
+    service._corpus.document_detail.assert_not_called()

@@ -123,6 +123,8 @@ rag-quickstart
 
 Python 환경과 설정을 확인하고, 비어 있는 데이터베이스에 스키마를 준비한 뒤 개발 서비스를 시작합니다. 호환되는 기존 데이터는 보존합니다. 스키마가 맞지 않으면 중단하므로 기존 DB를 유지하고 비어 있는 별도 DB나 호환 DB를 선택하세요. 설치 오류를 복구하기 위해 초기화를 실행하지 않습니다.
 
+`rag-dev up --build -d`와 prod·배포 Compose에도 이미지 시작 게이트가 적용됩니다. 빈 DB는 ORM으로 초기화하고, 호환 DB는 보존 후 시작하며, 불일치 DB는 API 실행을 차단하고 복구 명령을 출력합니다. 자동 삭제나 마이그레이션은 하지 않습니다. 이미 실행 중인 앱의 문서 목록·필터·상세 조회도 스키마 확인 후 쿼리하므로 누락된 테이블·컬럼은 잘못된 SQL 대신 구조화된 503 오류를 반환합니다. 시작이 차단되면 `rag-dev logs --tail 80 app`을 확인하세요. 확인·재시작만으로 드리프트를 고치지 않습니다. 추가형 마이그레이션은 보류하며 DB만 재생성하는 로컬 DEV 명령은 아래의 명시적 선택입니다.
+
 ## dev와 prod 미리보기
 
 ```bash
@@ -531,3 +533,22 @@ uv run python -m scripts.schema_status recover --return-stage index
 ### SCREENSHOT NEEDED
 <!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
 새 스크린샷 증거는 아직 없으며 기존 이미지는 유지합니다.
+
+
+## 명시적 로컬 DB 재생성
+
+`rag-up`은 `rag-dev up --build -d`의 단축 명령이며 `rag-quickstart` 또는 `uv sync --locked`로 준비한 Python 환경을 사용합니다. 자동 시작은 빈 DB만 준비하며 기존 데이터를 버리지 않습니다. 준비 안내에는 처음 프로젝트를 사용하거나 작업의 영향을 이해하는 사용자에게 다음 위험한 선택도 제공합니다.
+
+```bash
+uv run python -m scripts.schema_status recreate
+```
+
+확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 대상과 테이블별 행 수를 확인하고, 복구할 수 없는 데이터 손실에 동의할 때만 `RECREATE <체크아웃 이름>`을 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
+
+코드·`.env`·다운로드한 원문·평가 내보내기 파일·DB 볼륨·무관한 테이블·호스트 Ollama는 보존합니다. 백업은 만들지 않습니다. 알 수 없는 외래키 의존성이 있으면 연쇄 삭제 대신 트랜잭션을 롤백합니다. 실패 후 API는 중지된 상태일 수 있으므로 재시도 전에 스키마를 확인하세요. 성공 후 `rag-up`으로 시작하고 Build를 다시 확인한 뒤 파싱·임베딩·BM25를 명시적으로 다시 준비합니다. 유료 임베딩은 재생성 명령이 실행하지 않습니다.
+
+DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접힌 터미널 형태 박스에 표시됩니다. 펼쳐서 원문을 확인할 수 있고 기존 상태·이동·닫기 버튼 동작은 유지합니다.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=ko; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->

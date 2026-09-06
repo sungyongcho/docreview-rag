@@ -8,13 +8,20 @@ Build shows database schema status separately from source storage permissions. A
 uv run python -m scripts.schema_status check
 ```
 
-For an empty local database only, prepare its schema and check again:
+Normal Compose startup now prepares an empty database automatically after DB health succeeds.
+The image entrypoint inspects an existing database without schema changes and refuses to launch
+the API on drift. This applies to dev, prod preview and the deployment Compose using this image.
+The web container may still open while the API is blocked; inspect `rag-dev logs --tail 80 app`
+for the schema diagnosis and local `check`/`recover` commands. Database-free canned images skip
+the gate. Source acquisition and indexing remain separate prerequisites.
+
+If you started only the DB, you can still prepare an empty local database manually:
 
 ```bash
 uv run python -m scripts.schema_status prepare
 ```
 
-Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing; do not use destructive reset as installation recovery. Service and actual storage-permission blockers display their own terminal command and expected result.
+Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing. If you deliberately choose to discard the local DEV database, use the separately confirmed `scripts.schema_status recreate` path in the CLI guide; it is never automatic. Service and actual storage-permission blockers display their own terminal command and expected result.
 
 An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
 

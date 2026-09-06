@@ -357,6 +357,9 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 .health-modal { position: relative; width: min(440px, calc(100% - 32px)); border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 24px; box-shadow: 0 28px 90px rgba(0,0,0,.46); }
 .health-modal h2 { margin: 8px 0; font-size: 22px; font-weight: 580; }
 .health-modal > p:not(.eyebrow) { margin: 0; color: var(--muted); line-height: 1.55; }
+.health-error-details { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.health-error-details summary { cursor: pointer; padding: 12px; color: var(--text); font-weight: 550; }
+.health-error-details pre { margin: 0; padding: 12px; border-top: 1px solid var(--border); max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .health-modal-icon { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 16px; border-radius: 50%; background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); }
 .health-modal-icon svg { width: 24px; }
 .health-modal-x { position: absolute; top: 12px; right: 12px; }
