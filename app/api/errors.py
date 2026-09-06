@@ -26,12 +26,13 @@ class ApiProblemError(Exception):
         code: str,
         message: str,
         details: Sequence[ValidationIssue] = (),
+        path_decision: dict | None = None,
     ) -> None:
         super().__init__(message)
         if not 400 <= status_code <= 599:
             raise ValueError("API problem status must be between 400 and 599")
         self.status_code = status_code
-        self.error = ApiError(code=code, message=message, details=tuple(details))
+        self.error = ApiError(code=code, message=message, details=tuple(details), path_decision=path_decision)
 
 
 def bad_request(code: str, message: str) -> ApiProblemError:
