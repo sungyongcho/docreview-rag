@@ -112,3 +112,16 @@ Saved conversations and their profiles remain in that browser. In-page workspace
 *Data & help separates browser conversations and preference resets from server documents and job history. No cleanup or reset action was executed.*
 
 **Production preview** does not switch the running backend to production or submit a review. Its header identifies the DEV backend and read-only scope. Use **Exit preview** to resume your retained DEV workspace. A preview of the interface does not create execution timings or prove the production image’s permissions; inspect real run records and the final image separately. See [environment boundaries](environment.md#environment-boundaries).
+
+## Recorded provider usage
+
+Open **System → Usage** in DEV to inspect recorded review calls and embedding backfills. Groups identify the provider, local/external execution and the credential slot name; no credential value is exposed. Each group contains model/role rows and request, token and cost subtotals. Header totals sum the same rows. The latest review-run footer stays available. Historical traces are classified from their recorded API URL; their credential slot remains **unknown** instead of being guessed from the current configuration.
+
+New review records include gate and routing calls as well as answer, grading and checking. The recorder uses complete per-call evidence when available and falls back to older trace records without counting the same call twice. OpenAI embedding backfills record the actual response token count and the pinned estimated price for every API batch before vector validation/storage. A later failed or cancelled job retains earlier usage. The direct CLI backfill path also records terminal, archived `embedding_usage` ledger entries; these entries are accounting evidence and cannot be executed or retried. Archiving history preserves usage, while explicitly deleting its ledger removes that accounting evidence.
+
+Local embedding token counts are tokenizer estimates, shown separately from provider-reported input; local API cost is zero. A response without token or cost evidence is explicitly marked **Not reported** or **Incomplete estimate**, never presented as free external usage. Numeric totals exclude unavailable amounts. Counts represent observed SDK requests; hidden SDK/network retries and query-only embeddings outside a backfill are not reconstructed. This is local accounting, not a provider billing statement. No model call is started by opening the page.
+
+After an explicitly requested backfill, revisit Usage and find its embedding model, provider/slot and role. If persistence fails after a provider response, the job fails instead of silently claiming complete accounting; inspect that error before retrying because a repeated call may cost money. Usage metadata lives in the existing Run request-context and OperatorJob result JSONB fields, so this feature requires no schema reset or new ORM columns.
+
+### SCREENSHOT NEEDED
+<!-- Feature: provider and credential usage groups with review/embedding roles, reported versus estimated inputs, local zero cost and incomplete external estimates; locale=en; theme=light; preserve all existing screenshot assets. -->

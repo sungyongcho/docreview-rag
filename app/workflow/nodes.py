@@ -277,6 +277,7 @@ def _provider_failure[OutputT: BaseModel](
         status=result.status,
         attempts=refusal.attempts,
         details=details,
+        budget=refusal if isinstance(refusal, BudgetExceeded) else None,
     )
 
 

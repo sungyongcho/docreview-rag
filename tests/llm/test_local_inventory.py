@@ -157,3 +157,36 @@ def test_malformed_inventory_fails_closed(payload) -> None:
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload)),
     )
     assert asyncio.run(inventory.snapshot()).reason == "unreachable"
+
+
+@pytest.mark.parametrize("vram,expected", [(0, "cpu"), (50, "mixed"), (100, "gpu")])
+def test_placement_reads_reported_memory_without_inference(vram, expected):
+    """Only GET /api/ps is allowed, and no missing value is interpreted as zero."""
+
+    def respond(request):
+        """Expose one loaded model without accepting any mutation or inference."""
+        assert request.method == "GET" and request.url.path == "/api/ps"
+        return httpx.Response(
+            200, json={"models": [{"name": "answer:latest", "size": 100, "size_vram": vram}]}
+        )
+
+    inventory = LocalModelInventory(
+        base_url="http://host:11434", transport=httpx.MockTransport(respond)
+    )
+    assert asyncio.run(inventory.placement("answer"))["placement"] == expected
+
+
+@pytest.mark.parametrize(
+    "models,reason",
+    [
+        ([], "model_not_loaded"),
+        ([{"name": "answer", "size": 100}], "ollama_memory_fields_unavailable"),
+    ],
+)
+def test_placement_explains_missing_evidence(models, reason):
+    """An unloaded model and missing memory telemetry remain distinct outcomes."""
+    inventory = LocalModelInventory(
+        base_url="http://host:11434",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"models": models})),
+    )
+    assert asyncio.run(inventory.placement("answer")) == {"reason": reason}

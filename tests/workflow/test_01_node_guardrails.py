@@ -353,3 +353,17 @@ def test_workflow_request_rejects_blank_queries_and_scalar_coercion():
             k="5",
             provider_budget=_provider_budget(),
         )
+
+
+def test_provider_budget_failure_keeps_numeric_evidence():
+    """Provider refusal preserves exact consumed/limit values beyond its prose details."""
+    from app.llm.schemas import BudgetExceeded, ProviderResult
+    from tests.workflow.support import metadata
+
+    refusal = BudgetExceeded(which="input_tokens", used=2521, limit=2500, attempts=1)
+    result = ProviderResult(
+        status="budget_exceeded", parsed=None, refusal=refusal, metadata=metadata()
+    )
+    state = grade_node(_state(), result)
+    assert state.failure.budget == refusal
+    assert state.failure.model_dump(mode="json")["budget"]["limit"] == 2500

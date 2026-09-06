@@ -40,6 +40,7 @@ class SnapshotCandidate(StrictEvidenceModel):
 
     chunk_id: Annotated[StrictInt, Field(gt=0)]
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    score: float | None = None
 
 
 class CandidateSnapshot(StrictEvidenceModel):
@@ -52,6 +53,7 @@ class CandidateSnapshot(StrictEvidenceModel):
     profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     filters_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     candidates: tuple[SnapshotCandidate, ...]
+    routing_queries: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> Self:
@@ -141,6 +143,7 @@ class CandidateSnapshotCodec:
         profile: ResolvedRetrievalProfile,
         filters: RetrievalFilters,
         candidates: Sequence[ChunkHit],
+        routing_queries: dict[str, str] | None = None,
     ) -> tuple[str, CandidateSnapshot]:
         """Return an opaque token and its non-secret validated payload."""
         issued_at = int(self._clock())
@@ -150,8 +153,11 @@ class CandidateSnapshotCodec:
             query_sha256=_sha256(query),
             profile_sha256=_sha256(profile.model_dump(mode="json")),
             filters_sha256=_sha256(filters.model_dump(mode="json")),
+            routing_queries=routing_queries,
             candidates=tuple(
-                SnapshotCandidate(chunk_id=hit.chunk_id, source_sha256=hit.source_sha256)
+                SnapshotCandidate(
+                    chunk_id=hit.chunk_id, source_sha256=hit.source_sha256, score=hit.score
+                )
                 for hit in candidates
             ),
         )

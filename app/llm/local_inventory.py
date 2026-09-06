@@ -122,6 +122,44 @@ class LocalModelInventory:
             self._expires_at = monotonic() + CACHE_TTL_S
             return self._cached
 
+    async def placement(self, model_name: str) -> dict[str, Any]:
+        """Read post-run Ollama placement without loading or changing a model."""
+        if self.protocol != "ollama":
+            return {"reason": "provider_does_not_report_placement"}
+        headers = {"authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        try:
+            async with asyncio.timeout(PROBE_TIMEOUT_S):
+                async with httpx.AsyncClient(
+                    timeout=PROBE_TIMEOUT_S, headers=headers, transport=self._transport
+                ) as client:
+                    response = await client.get(f"{self.base_url}/api/ps")
+                    response.raise_for_status()
+                    rows = _models(response.json(), "models", "name")
+            row = next(
+                (
+                    item
+                    for item in rows
+                    if item["name"] == model_name or item["name"] == model_name + ":latest"
+                ),
+                None,
+            )
+            if row is None:
+                return {"reason": "model_not_loaded"}
+            size, vram = row.get("size"), row.get("size_vram")
+            if type(size) is not int or size <= 0 or type(vram) is not int or vram < 0:
+                return {"reason": "ollama_memory_fields_unavailable"}
+            return {
+                "source": "ollama_api_ps",
+                "model": row["name"],
+                "size_bytes": size,
+                "vram_bytes": vram,
+                "placement": "cpu" if vram == 0 else "gpu" if vram >= size else "mixed",
+                "checked_at": datetime.now(UTC).isoformat(),
+                "reason": None,
+            }
+        except httpx.HTTPError, ValueError, TimeoutError:
+            return {"reason": "ollama_placement_unavailable"}
+
     async def _fetch(self) -> tuple[LocalModelInfo, ...]:
         """Fetch native Ollama metadata or the existing OpenAI-compatible inventory."""
         headers = {"authorization": f"Bearer {self.api_key}"} if self.api_key else {}

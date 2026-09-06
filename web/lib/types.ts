@@ -138,18 +138,7 @@ export interface Readiness {
 
 export type UsageModel = components["schemas"]["UsageModelResource"];
 
-export interface ProviderUsage {
-  runs: number;
-  requests: number;
-  input_tokens: number;
-  cached_input_tokens: number;
-  cache_write_input_tokens: number;
-  output_tokens: number;
-  reasoning_tokens: number;
-  estimated_cost_usd: string;
-  latest_run_at: string | null;
-  models: UsageModel[];
-}
+export type ProviderUsage = components["schemas"]["UsageResponse"];
 
 export interface Conversation {
   id: string;

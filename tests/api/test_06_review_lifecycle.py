@@ -25,7 +25,7 @@ from app.observability.types import build_run_report
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.scope import ManifestScopeIndex
 from app.retrieval.service import ComponentRankings, RetrievalResult
-from app.workflow.types import NodeError
+from app.workflow.types import NodeError, initial_state
 from tests.ingestion.seed.support import sample_batch
 from tests.ingestion.support import filing_document
 
@@ -117,6 +117,16 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         result = await retriever(request.query, request.k, request.filters)
         assert sessions[-1].transaction_open is False
         workflow_calls.append((request, provider, result))
+        if on_node is not None:
+            await on_node(
+                "retrieve",
+                initial_state(request).model_copy(
+                    update={
+                        "retrieved_hits": result.hits,
+                        "evidence": result.hits,
+                    }
+                ),
+            )
         return successful_run.model_copy(update={"run_id": request.run_id})
 
     async def run_persister(session, run, traces):
@@ -162,6 +172,9 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
     assert retrieved.json()["results"][0]["chunk_id"] == hit.chunk_id
     assert reviewed.status_code == 200
     assert reviewed.json()["run_id"] == "run-integration"
+    execution = reviewed.json()["execution"]
+    assert execution["effective_settings"]["effective_provider_budget"]["max_input_tokens"] == 1000
+    assert execution["stage_results"][0]["candidates"][0]["chunk_id"] == hit.chunk_id
     assert [call[1] for call in retrieval_calls] == ["Revenue?", "Revenue?"]
     assert all(isinstance(call[2], DeterministicEmbeddingProvider) for call in retrieval_calls)
     # The configured ranking plan reaches every retrieval, HTTP and workflow alike.

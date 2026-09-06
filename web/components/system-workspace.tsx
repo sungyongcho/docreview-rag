@@ -46,6 +46,10 @@ const EMPTY_USAGE: ProviderUsage = {
   estimated_cost_usd: "0",
   latest_run_at: null,
   models: [],
+  providers: [],
+  estimated_input_tokens: 0,
+  unreported_input_requests: 0,
+  unreported_cost_requests: 0,
 };
 
 /** A complete `EvaluationRequest` the operator can edit before posting it raw. */
@@ -134,6 +138,8 @@ function ApiInspector({ ready }: { ready: boolean }) {
   );
 }
 
+const USAGE_ROLE_LABELS: Record<string, string> = { gate: "Classification", route: "Routing", retrieve: "Retrieval", chat: "Answer", grade: "Grading", check: "Checking", report: "Answer", embedding: "Embedding" };
+
 function UsagePanel() {
   const { t, locale } = useI18n();
   const [usage, setUsage] = useState<ProviderUsage>(EMPTY_USAGE);
@@ -153,16 +159,23 @@ function UsagePanel() {
       <div className="metric-grid">
         <Metric icon={<Activity />} label={t("Runs")} value={usage.runs.toLocaleString(locale)} />
         <Metric icon={<Braces />} label={t("Requests")} value={usage.requests.toLocaleString(locale)} />
-        <Metric icon={<Database />} label={t("Input tokens")} value={usage.input_tokens.toLocaleString(locale)} />
+        <Metric icon={<Database />} label={t("Reported input")} value={usage.input_tokens.toLocaleString(locale)} />
         <Metric icon={<Beaker />} label={t("Estimated cost")} value={`$${usage.estimated_cost_usd}`} />
       </div>
       <section className="surface table-wrap usage-table">
         <h2>{t("Recorded model usage")}</h2>
-        <p className="helper">{t("Local application traces only. This does not query OpenAI account billing.")}</p>
-        <table><thead><tr><th>{t("Model")}</th><th>{t("Requests")}</th><th>{t("Input")}</th><th>{t("Cached")}</th><th>{t("Cache write")}</th><th>{t("Output")}</th><th>{t("Reasoning")}</th><th>{t("Estimated USD")}</th></tr></thead><tbody>
-          {usage.models.map((model) => <tr key={model.model_name}><td>{model.model_name}</td><td>{model.requests.toLocaleString(locale)}</td><td>{model.input_tokens.toLocaleString(locale)}</td><td>{model.cached_input_tokens.toLocaleString(locale)}</td><td>{model.cache_write_input_tokens.toLocaleString(locale)}</td><td>{model.output_tokens.toLocaleString(locale)}</td><td>{model.reasoning_tokens.toLocaleString(locale)}</td><td>${model.estimated_cost_usd}</td></tr>)}
-        </tbody></table>
-        {!usage.models.length && <p className="helper">{t("No persisted provider traces yet.")}</p>}
+        <p className="helper">{t("Recorded review calls and embedding backfills only. This does not query provider account billing.")}</p>
+        <p className="helper">{t("Reported tokens and tokenizer estimates are shown separately. Unknown usage is excluded from numeric totals.")}</p>
+        {(usage.providers?.length ? usage.providers : usage.models.length ? [{ ...usage, provider: "unknown", local: null, credential_slot: "unknown" }] : []).map((group) => (
+          <section key={`${group.provider}:${group.local}:${group.credential_slot}`} aria-label={`${group.provider} · ${group.credential_slot}`}>
+            <h3>{group.provider} · {t(group.local === true ? "Local · free" : group.local === false ? "External API" : "Unknown provider location")} · {group.credential_slot === "unknown" ? t("Unknown credential slot") : group.credential_slot === "none" ? t("No credential") : group.credential_slot}</h3>
+            <table><thead><tr><th>{t("Role")}</th><th>{t("Model")}</th><th>{t("Requests")}</th><th>{t("Reported input")}</th><th>{t("Estimated input")}</th><th>{t("Cached")}</th><th>{t("Cache write")}</th><th>{t("Output")}</th><th>{t("Reasoning")}</th><th>{t("Estimated USD")}</th></tr></thead><tbody>
+              {group.models.map((model, index) => <tr key={`${model.model_name}:${model.role}:${index}`}><td>{t(USAGE_ROLE_LABELS[model.role] || "Unknown role")}</td><td>{model.model_name}</td><td>{model.requests.toLocaleString(locale)}</td><td>{model.input_tokens.toLocaleString(locale)}{(model.unreported_input_requests ?? 0) > 0 && <small> · {t("Not reported: {count}", { count: model.unreported_input_requests })}</small>}</td><td>{(model.estimated_input_tokens ?? 0).toLocaleString(locale)}</td><td>{model.cached_input_tokens.toLocaleString(locale)}</td><td>{model.cache_write_input_tokens.toLocaleString(locale)}</td><td>{model.output_tokens.toLocaleString(locale)}</td><td>{model.reasoning_tokens.toLocaleString(locale)}</td><td>${model.estimated_cost_usd}{(model.unreported_cost_requests ?? 0) > 0 && <small> · {t("Incomplete estimate")}</small>}</td></tr>)}
+            </tbody><tfoot><tr><th colSpan={2}>{t("Provider subtotal")}</th><td>{group.requests.toLocaleString(locale)}</td><td>{group.input_tokens.toLocaleString(locale)}</td><td>{(group.estimated_input_tokens ?? 0).toLocaleString(locale)}</td><td>{group.cached_input_tokens.toLocaleString(locale)}</td><td>{group.cache_write_input_tokens.toLocaleString(locale)}</td><td>{group.output_tokens.toLocaleString(locale)}</td><td>{group.reasoning_tokens.toLocaleString(locale)}</td><td>${group.estimated_cost_usd}</td></tr></tfoot></table>
+            {(group.unreported_cost_requests ?? 0) > 0 && <p className="helper">{t("Cost was not reported for {count} requests; this subtotal is incomplete.", { count: group.unreported_cost_requests })}</p>}
+          </section>
+        ))}
+        {!usage.models.length && <p className="helper">{t("No persisted model usage yet.")}</p>}
         {usage.latest_run_at && <p className="helper">{t("Latest run:")}{" "}{new Date(usage.latest_run_at).toLocaleString(locale)}</p>}
       </section>
     </div>

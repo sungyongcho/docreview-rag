@@ -55,6 +55,7 @@ def test_signed_snapshot_pins_excludes_and_preserves_ranked_fill() -> None:
         profile=profile(),
         filters=RetrievalFilters(),
         candidates=candidates,
+        routing_queries={"ko": "매출 증가"},
     )
     verified = codec.verify(
         token,
@@ -75,6 +76,8 @@ def test_signed_snapshot_pins_excludes_and_preserves_ranked_fill() -> None:
     )
 
     assert snapshot == verified
+    assert verified.routing_queries == {"ko": "매출 증가"}
+    assert verified.candidates[2].score == candidates[2].score
     assert tuple(item.chunk_id for item in selected) == (3, 2)
 
 

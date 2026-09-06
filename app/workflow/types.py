@@ -9,6 +9,7 @@ from pydantic.functional_validators import model_validator
 
 from app.llm.schemas import (
     AnswerDecision,
+    BudgetExceeded,
     NonBlank,
     NonNegativeInt,
     PositiveInt,
@@ -146,6 +147,8 @@ class ProviderFailure(StrictSchema):
     ]
     attempts: Annotated[StrictInt, Field(ge=1, le=2)]
     details: tuple[NonBlank, ...]
+    budget: BudgetExceeded | None = None
+    budget_source: Literal["provider_budget", "run_limits", "both"] | None = None
 
     @model_validator(mode="after")
     def require_details(self) -> Self:

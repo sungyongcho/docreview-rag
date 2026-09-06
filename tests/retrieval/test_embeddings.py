@@ -412,11 +412,23 @@ def test_backfill_batches_missing_chunks_and_reports_stale_updates(monkeypatch):
     provider = embeddings.DeterministicEmbeddingProvider()
     session = cast(AsyncSession, RecordingSession(None))
 
+    usage = []
+
+    async def on_usage(record):
+        """Capture usage at the isolated persistence seam."""
+        usage.append(record)
+
     result = asyncio.run(
         embeddings.embed_missing_chunks(
-            session, provider, on_batch=progress.append, document_ids=("selected-doc",)
+            session,
+            provider,
+            on_batch=progress.append,
+            document_ids=("selected-doc",),
+            on_usage=on_usage,
         )
     )
+    assert [record["estimated_input_tokens"] for record in usage] == [2, 1]
+    assert all(record["input_tokens"] == 0 for record in usage)
 
     assert result == embeddings.EmbeddingBackfillResult(
         selected=3,
@@ -515,3 +527,61 @@ def test_empty_embedding_selection_never_scans_the_database():
     )
     assert result.selected == result.embedded == 0
     assert session.statements == []
+
+
+def test_openai_usage_survives_vector_validation_failure():
+    """An already returned billable response is recorded before rejecting invalid vectors."""
+    from app.observability.usage import observe_embedding_usage
+
+    records = []
+
+    async def scenario():
+        """Capture a fake SDK response with actual usage and invalid indices."""
+
+        async def sink(record):
+            """Retain the request-local usage event."""
+            records.append(record)
+
+        provider = embeddings.OpenAIEmbeddingProvider(
+            client=FakeEmbeddingClient([FakeEmbeddingData(1, [1.0] * 384)]), credential_slot="dev"
+        )
+        with observe_embedding_usage(sink), pytest.raises(ValueError, match="indices"):
+            await provider.embed_documents(["one source"])
+        assert provider.usage.requests == 1
+
+    asyncio.run(scenario())
+    assert len(records) == 1 and records[0]["input_tokens"] == 6
+    assert records[0]["credential_slot"] == "OPENAI_API_KEY_LOCAL"
+    assert records[0]["unreported_cost_requests"] == 0
+
+
+def test_concurrent_embedding_observers_do_not_capture_other_queries():
+    """Shared provider instances still record each async request only in its own sink."""
+    from app.observability.usage import observe_embedding_usage
+
+    captured = {"first": [], "second": []}
+
+    async def scenario():
+        """Interleave two backfill observers and one unobserved query on the same provider."""
+        provider = embeddings.OpenAIEmbeddingProvider(
+            client=FakeEmbeddingClient([FakeEmbeddingData(0, [1.0] * 384)])
+        )
+
+        async def operation(name):
+            """Install one context-local sink before yielding to another task."""
+
+            async def sink(record):
+                """Collect events for the current task only."""
+                captured[name].append(record)
+
+            with observe_embedding_usage(sink):
+                await asyncio.sleep(0)
+                await provider.embed_documents([name])
+
+        await asyncio.gather(
+            operation("first"), operation("second"), provider.embed_query("unobserved query")
+        )
+        assert provider.usage.requests == 3
+
+    asyncio.run(scenario())
+    assert {name: len(records) for name, records in captured.items()} == {"first": 1, "second": 1}

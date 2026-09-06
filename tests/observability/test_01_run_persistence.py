@@ -15,6 +15,7 @@ from app.api.runtime import RuntimeApiServices
 from app.config import get_settings
 from app.db.models import Base
 from app.observability.persistence import REDACTED, persist_run_report
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.live_postgres import live_postgres_unavailable
 from tests.observability.support import run_report, step_trace
 
@@ -44,7 +45,7 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
             return False, str(exc)
 
         temporary_metadata = MetaData()
-        for table_name in ("runs", "traces"):
+        for table_name in ("runs", "traces", "operator_jobs"):
             Base.metadata.tables[table_name].to_metadata(temporary_metadata, schema="pg_temp")
         await connection.run_sync(
             lambda sync_connection: temporary_metadata.create_all(
@@ -127,13 +128,17 @@ async def _exercise_live_postgres(database_url: URL) -> tuple[bool, str]:
                     )
         factory = async_sessionmaker(bind=connection, expire_on_commit=False)
         usage = await RuntimeAdminApiServices(
-            runtime=RuntimeApiServices(session_factory=factory)
+            runtime=RuntimeApiServices(
+                session_factory=factory, embedding_provider=DeterministicEmbeddingProvider()
+            )
         ).usage()
         assert usage.runs == 1
         assert usage.requests == 3
         assert usage.input_tokens == 140
         assert usage.estimated_cost_usd == Decimal("0.0001008")
-        assert [model.model_name for model in usage.models] == ["gpt-4.1-mini"]
+        assert {model.model_name for model in usage.models} == {"gpt-4.1-mini"}
+        assert {model.role for model in usage.models} == {"grade", "check"}
+        assert sum(group.requests for group in usage.providers) == usage.requests
         return True, ""
     finally:
         if connection is not None:
