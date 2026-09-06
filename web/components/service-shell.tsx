@@ -172,8 +172,16 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
   const helpCapabilities = useMemo(() => permissions ? { ...permissions, can_use_operations: Boolean(operationsAvailable), can_configure_local_llm: Boolean(localAllowed), can_change_custom_retrieval: Boolean(adminLive && permissions.can_change_custom_retrieval), can_edit_run_limits: Boolean(adminLive && permissions.can_edit_run_limits) } : null, [permissions, operationsAvailable, localAllowed, adminLive]);
   const initialized = useRef(false);
-  const { notify } = useNotifications();
+  const { notify, dismissNotice } = useNotifications();
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check, sessionActive);
+  const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
+  useEffect(() => {
+    if (sessionActive && runtimeHealth.waiting) {
+      notify(t(workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage."), "info", "health-wait", 0);
+    } else dismissNotice("health-wait");
+    return () => dismissNotice("health-wait");
+  }, [sessionActive, runtimeHealth.waiting, workPending, notify, dismissNotice, t]);
+
 
   useEffect(() => {
     const shouldOpenTour = !publicPreview && browserStorage().getItem(ONBOARDING_KEY) !== "done";

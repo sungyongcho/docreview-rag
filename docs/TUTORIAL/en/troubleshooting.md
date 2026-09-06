@@ -108,3 +108,18 @@ If deletion is truly intended, **Wipe everything** opens **Delete all runtime da
 The reset covers runtime DB records, downloaded filings, generated evaluation artifacts, and saved connections. Code, credentials, `.env`, tutorial assets, and manifest/golden/profile sources are preserved as listed in the preview. Only after server success does **Clear browser data and start again** clear this application's browser state.
 
 On failure or interruption, read completed stages and recovery instructions before another action; some data may already be gone. Release a reset hold only through the documented recovery action after inspecting the recorded state. Normal shutdown and restarting with retained data use [runtime resume](runtime.md#resume), not reset.
+
+
+## Transient status failures
+
+A failed liveness check receives a 20-second grace period, measured from the start
+of the first failing check; confirmation occurs on the next retry. Checks retry every
+3 seconds, with separate 5-second timeouts for health and readiness. During the grace
+window the shell retains its last known state and shows a non-blocking waiting notice.
+A running/queued job is identified in that notice; recovery removes it.
+
+If `/health` succeeds but `/ready` fails, the API is reachable: the shell keeps waiting
+instead of claiming an outage, checks liveness every 3 seconds and retries readiness
+at most once per 10 seconds. Browser offline events trigger an immediate probe rather than assuming a loopback
+API is down; the same grace period applies to actual failures. Routine polling does not change an already healthy `kind` to
+checking or disable Send. No mutation is retried by this mechanism.

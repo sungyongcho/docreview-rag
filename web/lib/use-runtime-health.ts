@@ -15,6 +15,8 @@ export interface RuntimeHealthState {
 
 const HEALTH_INTERVAL_MS = 30_000;
 const HEALTH_TIMEOUT_MS = 5_000;
+export const HEALTH_GRACE_MS = 20_000;
+export const HEALTH_RETRY_MS = 3_000;
 
 function issueKey(state: RuntimeHealthState): string | null {
   if (state.kind === "api_down") return "api_down";
@@ -37,29 +39,45 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
     checkedAt: null,
   });
   const [checking, setChecking] = useState(active);
+  const [waiting, setWaiting] = useState(false);
+  const failureSince = useRef<number | null>(null);
+  const readinessRetryAt = useRef(0);
+  const retryTimer = useRef<number | null>(null);
   const [dismissedIssue, setDismissedIssue] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const activity = useRef(active);
   activity.current = active;
 
-  const check = useCallback(async (force = false) => {
+  const check = useCallback(async (force = false): Promise<void> => {
     if (!activity.current || !mounted.current) return;
     if (controller.current && !force) return;
+    if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
     setChecking(true);
     controller.current?.abort();
     const request = new AbortController();
     controller.current = request;
-    const timeout = window.setTimeout(() => request.abort(), HEALTH_TIMEOUT_MS);
+    const startedAt = Date.now();
+    let live = false;
+    let retry = false;
+    let timeout = window.setTimeout(() => request.abort(), HEALTH_TIMEOUT_MS);
     try {
       const health = await getHealth(request.signal);
       if (health.status !== "ok") throw new Error("API health response was not ok.");
       if (!mounted.current || !activity.current || controller.current !== request) return;
       if (request.signal.aborted) throw new Error("API health check timed out.");
+      live = true;
+      failureSince.current = null;
+      setState(current => current.kind === "api_down" ? { ...current, kind: "checking" } : current);
+      if (!force && Date.now() < readinessRetryAt.current) { retry = true; return; }
+      window.clearTimeout(timeout);
+      timeout = window.setTimeout(() => request.abort(), HEALTH_TIMEOUT_MS);
       const readiness = await (publicPreview ? getProductionPreviewReadiness : getReadiness)(request.signal);
       const healthy = readiness.status === "ready" || readiness.corpus.availability === "not_applicable";
       if (!mounted.current || !activity.current || controller.current !== request) return;
       if (request.signal.aborted) throw new Error("Runtime readiness check timed out.");
+      readinessRetryAt.current = 0;
+      setWaiting(false);
       setState({
         kind: healthy ? "healthy" : readiness.corpus.database_connected === true && readiness.corpus.schema_status === "compatible" ? "preparation_needed" : "db_degraded",
         readiness,
@@ -68,9 +86,14 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
       if (healthy) setDismissedIssue(null);
     } catch {
       if (!mounted.current || !activity.current || controller.current !== request) return;
-      setState((current) => ({
-        kind: "api_down",
-        readiness: unavailableReadiness(current.readiness),
+      retry = true;
+      // A successful cheap liveness probe is evidence against an API outage.
+      if (!live) failureSince.current ??= startedAt;
+      else readinessRetryAt.current = Date.now() + 10_000;
+      const down = !live && Date.now() - failureSince.current! >= HEALTH_GRACE_MS;
+      setWaiting(!down);
+      if (down) setState((current) => ({
+        kind: "api_down", readiness: unavailableReadiness(current.readiness),
         checkedAt: new Date().toISOString(),
       }));
     } finally {
@@ -78,6 +101,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
       if (controller.current === request) {
         controller.current = null;
         if (mounted.current) setChecking(false);
+        if (retry && mounted.current && activity.current) retryTimer.current = window.setTimeout(() => void check(), HEALTH_RETRY_MS);
       }
     }
   }, [publicPreview]);
@@ -95,6 +119,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
     mounted.current = true;
     if (!active) {
       setChecking(false);
+      setWaiting(false);
       return;
     }
     void check();
@@ -105,12 +130,8 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
       if (document.visibilityState === "visible") void check();
     };
     const onOnline = () => void check();
-    const onOffline = () => {
-      controller.current?.abort();
-      controller.current = null;
-      setChecking(false);
-      setState((current) => ({ ...current, readiness: unavailableReadiness(current.readiness), kind: "api_down", checkedAt: new Date().toISOString() }));
-    };
+    // Browser offline does not prove that a loopback API is unreachable.
+    const onOffline = () => void check(true);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
@@ -119,6 +140,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
       controller.current?.abort();
       controller.current = null;
       window.clearInterval(interval);
+      if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
@@ -132,6 +154,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
   return {
     ...state,
     checking,
+    waiting,
     check,
     refreshLocal,
     modalVisible,
