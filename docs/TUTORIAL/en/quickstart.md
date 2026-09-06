@@ -13,10 +13,13 @@ web container; this path does not require their installation on the host.
 ```bash
 git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
+./rag_alias.sh
 source ./rag_alias.sh
 rag-help
 rag-quickstart
 ```
+
+Choose Y to install the helper startup registration; N leaves it unchanged. Then source the file as shown to use the commands immediately without restarting your shell.
 
 The Helper is included in the clone. `source` registers this terminal; see
 [permanent shell registration](cli.md) for an optional startup entry.
