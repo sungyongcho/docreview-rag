@@ -80,7 +80,7 @@ export function finishReviewProgress(state: ReviewProgressState, outcome: "compl
   const stages = Array.isArray(data?.stages) ? data.stages.map(objectRecord).filter((value) => value && ["gate", "route", "retrieve", "chat", "grade", "check", "report"].includes(String(value.node)) && value.phase !== "start" && ["completed", "failed"].includes(String(value.status))) : [];
   if (stages.length) {
     let recorded: ReviewProgressState = { ...state, node: "waiting", observed: [], completedNodes: [], activeNode: null, retries: 0 };
-    for (const stage of stages) recorded = reviewProgressFromEvent({ node: stage!.node as ReviewProgress["node"], phase: "end", status: stage!.status as "completed" | "failed" }, recorded);
+    for (const stage of stages) recorded = reviewProgressFromEvent({ node: stage!.node as ReviewProgress["node"], phase: "end", status: stage!.status as "completed" | "failed", evidence_count: recorded.evidence, relevant_count: recorded.relevant, step_count: recorded.steps }, recorded);
     state = { ...state, node: recorded.node, observed: recorded.observed, completedNodes: recorded.completedNodes, activeNode: null, retries: recorded.retries };
   }
   if (outcome !== "completed") return { ...state, outcome, elapsedMs };
