@@ -1,5 +1,7 @@
 # DocReview
 
+[처음 사용자용 튜토리얼](docs/TUTORIAL.md)
+
 SEC 10-K와 한국 DART 사업보고서를 원문 근거와 함께 검토하는 evidence-first RAG
 서비스입니다. 공시 원문을 파싱하고 PostgreSQL/pgvector에 저장한 뒤 vector·lexical
 검색을 RRF로 융합하며, 답변은 검색된 source span을 인용해야만 `SUPPORTED`로
