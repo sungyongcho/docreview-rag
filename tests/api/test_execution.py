@@ -79,7 +79,7 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
         execution["model_calls"][0]["timing_unavailable_reason"]
         == "provider_does_not_report_timing"
     )
-    from app.observability.persistence import report_to_records, records_to_report
+    from app.observability.persistence import records_to_report, report_to_records
 
     stored, traces = report_to_records(
         successful_run.model_copy(update={"request_context": fields})

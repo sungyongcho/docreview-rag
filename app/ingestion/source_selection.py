@@ -147,7 +147,7 @@ def record_selection(
             artifacts[artifact.artifact_id] = artifact
             found.add(key)
     missing = requested - found
-    if missing:
+    if missing or corpus is None:
         raise ValueError(
             "Download missing sources in Filings: "
             + ", ".join(f"{issuer} FY{year}" for issuer, year in sorted(missing))
