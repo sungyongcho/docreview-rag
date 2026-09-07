@@ -1,0 +1,26 @@
+/* Match the composer's quiet surfaces without dimming readable content. */
+.notice.slow-cpu-notice {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-inline-start: 2px solid color-mix(in srgb, var(--warn) 55%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.slow-cpu-notice p { margin: 0; }
+.slow-cpu-notice .slow-cpu-summary { font-size: 13px; }
+.slow-cpu-notice .slow-cpu-estimate { font-weight: 550; font-variant-numeric: tabular-nums; }
+.slow-cpu-notice .helper { color: var(--muted); font-size: 11px; line-height: 1.55; }
+.slow-cpu-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.slow-cpu-actions .button { min-height: 32px; padding: 5px 10px; font-size: 12px; background: transparent; border-color: var(--border); }
+.slow-cpu-actions .inline-link { min-height: 32px; text-underline-offset: 3px; }
+@media (max-width: 760px) {
+  .notice.slow-cpu-notice { padding: 10px 12px; }
+  .slow-cpu-actions :is(.button, .inline-link) { min-height: 44px; }
+}
