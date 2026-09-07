@@ -241,6 +241,7 @@ class _LocalRequest:
     inventory: LocalModelInventory | None
     provider: LocalLLMProvider | None = None
     model: str | None = None
+    model_digest: str | None = None
 
 
 class RuntimeApiServices(ApiServices):
@@ -946,6 +947,7 @@ class RuntimeApiServices(ApiServices):
             )
         if context is not None:
             context.model = selected
+            context.model_digest = inventory.model_digest(selected)
         return profile.model_copy(update={"local_model": selected})
 
     async def _engine(
@@ -1064,7 +1066,12 @@ class RuntimeApiServices(ApiServices):
         placement = None
         if provider is not None and identity["provider"] == "ollama" and inventory is not None:
             placement = await inventory.placement(provider.model_name)
-            inventory.record_cpu_performance(provider.model_name, placement, calls)
+            inventory.record_cpu_performance(
+                provider.model_name,
+                placement,
+                calls,
+                model_digest=context.model_digest if context is not None else None,
+            )
         return {
             **metadata,
             "provider_identity": identity if provider is not None else None,

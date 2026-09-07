@@ -3,6 +3,8 @@
 import asyncio
 from decimal import Decimal
 
+import pytest
+
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest, RunResponse
 from app.llm.provider import DeterministicLLMProvider
@@ -93,7 +95,13 @@ def test_terminal_contract_preserves_stage_outputs_and_explicit_missing_timing(s
     assert historical["effective_settings"] is None
 
 
-def test_local_execution_publishes_measured_cpu_speed_to_readiness():
+@pytest.mark.parametrize(
+    ("tag_digest", "loaded_digest", "expected_speed"),
+    [("v1", "v1", 10), ("v2", "v1", None), ("v2", "v2", None), ("v1", None, None)],
+)
+def test_local_execution_publishes_measured_cpu_speed_to_readiness(
+    monkeypatch, tag_digest, loaded_digest, expected_speed
+):
     """Terminal context updates the same inventory consumed by the next readiness check."""
     import httpx
 
@@ -102,12 +110,27 @@ def test_local_execution_publishes_measured_cpu_speed_to_readiness():
     from app.llm.local_inventory import LocalModelInventory
     from app.observability.stages import record_stages
 
+    monkeypatch.setattr("app.llm.local_inventory.CACHE_TTL_S", 0)
+    state = {"tag_digest": "v1", "loaded_digest": "v1"}
+
     def respond(request):
         """Allow metadata inspection without invoking a model or database."""
         if request.url.path == "/api/show":
             return httpx.Response(200, json={"capabilities": ["completion"]})
         return httpx.Response(
-            200, json={"models": [{"name": "cpu", "digest": "v1", "size": 100, "size_vram": 0}]}
+            200,
+            json={
+                "models": [
+                    {
+                        "name": "cpu",
+                        "digest": state["tag_digest"]
+                        if request.url.path == "/api/tags"
+                        else state["loaded_digest"],
+                        "size": 100,
+                        "size_vram": 0,
+                    }
+                ]
+            },
         )
 
     inventory = LocalModelInventory(
@@ -129,27 +152,30 @@ def test_local_execution_publishes_measured_cpu_speed_to_readiness():
             provider = LocalLLMProvider(
                 base_url="http://local.test", model_name="cpu", protocol="ollama", client=client
             )
-            with record_stages() as recorder:
-                recorder.model_calls.append(
-                    {
-                        "model": "cpu",
-                        "provider": "ollama",
-                        "local": True,
-                        "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
-                    }
-                )
-                result = await service._execution_context(
-                    provider,
-                    None,
-                    ReviewRequest.model_validate(
-                        {"query": "Revenue?", "session_profile": {"engine": "local"}}
-                    ),
-                )
-            placement = result["local_placement"]
-            assert isinstance(placement, dict) and placement["placement"] == "cpu"
-            assert result["model_calls"] == recorder.model_calls
-            assert (await inventory.snapshot()).public_state()["models"][0]["cpu_performance"][
-                "tokens_per_second"
-            ] == 10
+            request = ReviewRequest.model_validate(
+                {"query": "Revenue?", "session_profile": {"engine": "local"}}
+            )
+            async with service._request_connection(request.session_profile):
+                await service._local_profile(request.session_profile)
+                state.update(tag_digest=tag_digest, loaded_digest=loaded_digest)
+                await inventory.snapshot()
+                with record_stages() as recorder:
+                    recorder.model_calls.append(
+                        {
+                            "model": "cpu",
+                            "provider": "ollama",
+                            "local": True,
+                            "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
+                        }
+                    )
+                    result = await service._execution_context(provider, None, request)
+                placement = result["local_placement"]
+                assert isinstance(placement, dict) and placement["placement"] == "cpu"
+                assert result["model_calls"] == recorder.model_calls
+                sample = (await inventory.snapshot()).models[0].cpu_performance
+                if expected_speed is None:
+                    assert sample is None
+                else:
+                    assert sample is not None and sample.tokens_per_second == expected_speed
 
     asyncio.run(exercise())

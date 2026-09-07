@@ -134,8 +134,17 @@ class LocalModelInventory:
             self._expires_at = monotonic() + CACHE_TTL_S
             return self._cached
 
+    def model_digest(self, model_name: str) -> str | None:
+        """Capture the discovered digest before a run can outlive its model tag."""
+        return next((digest for name, digest in self._details if name == model_name), None)
+
     def record_cpu_performance(
-        self, model_name: str, placement: dict[str, Any], model_calls: object
+        self,
+        model_name: str,
+        placement: dict[str, Any],
+        model_calls: object,
+        *,
+        model_digest: str | None,
     ) -> None:
         """Retain valid generation timing only for the model actually measured on CPU."""
         names = {model_name, model_name + ":latest"}
@@ -145,6 +154,8 @@ class LocalModelInventory:
         self._expires_at = 0.0
         if (
             self.protocol != "ollama"
+            or not model_digest
+            or placement.get("digest") != model_digest
             or placement.get("placement") != "cpu"
             or placement.get("model") not in names
             or not isinstance(model_calls, list)
@@ -185,7 +196,8 @@ class LocalModelInventory:
             return
         measurement = LocalCpuPerformance(speed, datetime.now(UTC).isoformat())
         for key in keys:
-            self._cpu_measurements[key] = (monotonic(), measurement)
+            if key[1] == model_digest:
+                self._cpu_measurements[key] = (monotonic(), measurement)
 
     def _cpu_performance(
         self, model: LocalModelInfo, loaded: dict[str, dict[str, Any]] | None
@@ -197,7 +209,11 @@ class LocalModelInventory:
         if type(row.get("size")) is not int or row["size"] <= 0:
             return None
         for key, (recorded_at, measurement) in self._cpu_measurements.items():
-            if key[0] == model.name and monotonic() - recorded_at < CPU_MEASUREMENT_TTL_S:
+            if (
+                key == (model.name, row.get("digest"))
+                and key in self._details
+                and monotonic() - recorded_at < CPU_MEASUREMENT_TTL_S
+            ):
                 return measurement
         return None
 
@@ -230,6 +246,7 @@ class LocalModelInventory:
             return {
                 "source": "ollama_api_ps",
                 "model": row["name"],
+                "digest": _text(row.get("digest")),
                 "size_bytes": size,
                 "vram_bytes": vram,
                 "placement": "cpu" if vram == 0 else "gpu" if vram >= size else "mixed",
@@ -256,7 +273,7 @@ class LocalModelInventory:
             response = await client.get(f"{self.base_url}/api/tags")
             response.raise_for_status()
             entries = _models(response.json(), "models", "name")
-            current_keys = {(item["name"], str(item.get("digest", ""))) for item in entries}
+            current_keys = {(item["name"], _text(item.get("digest")) or "") for item in entries}
             self._details = {
                 key: value for key, value in self._details.items() if key in current_keys
             }
@@ -293,7 +310,7 @@ class LocalModelInventory:
 
     async def _describe(self, client: httpx.AsyncClient, item: dict[str, Any]) -> LocalModelInfo:
         """Only offer Ollama models whose declared capabilities include completion."""
-        key = (item["name"], str(item.get("digest", "")))
+        key = (item["name"], _text(item.get("digest")) or "")
         if key[1] and key in self._details:
             return self._details[key]
         details = item.get("details", {})

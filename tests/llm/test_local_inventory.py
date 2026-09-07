@@ -195,7 +195,14 @@ def test_placement_explains_missing_evidence(models, reason):
 @pytest.fixture
 def measured_cpu_inventory(monkeypatch):
     """Provide isolated Ollama metadata with controllable hardware, digest and clock."""
-    state = {"now": 0.0, "digest": "d1", "loaded": True, "vram": 0, "size": 100}
+    state = {
+        "now": 0.0,
+        "digest": "d1",
+        "loaded_digest": "d1",
+        "loaded": True,
+        "vram": 0,
+        "size": 100,
+    }
     monkeypatch.setattr(local_inventory, "CACHE_TTL_S", 0)
     monkeypatch.setattr(local_inventory, "monotonic", lambda: state["now"])
 
@@ -206,7 +213,12 @@ def measured_cpu_inventory(monkeypatch):
                 200, json={"models": [{"name": "answer:latest", "digest": state["digest"]}]}
             )
         if request.url.path == "/api/ps":
-            row = {"name": "answer:latest", "size": state["size"], "size_vram": state["vram"]}
+            row = {
+                "name": "answer:latest",
+                "digest": state["loaded_digest"],
+                "size": state["size"],
+                "size_vram": state["vram"],
+            }
             return httpx.Response(200, json={"models": [row] if state["loaded"] else []})
         assert request.url.path == "/api/show"
         return httpx.Response(200, json={"capabilities": ["completion"]})
@@ -245,14 +257,17 @@ def test_cpu_measurement_uses_generation_timings_and_preserves_server_isolation(
         },
     ]
     inventory.record_cpu_performance(
-        "answer", {"placement": "cpu", "model": "answer:latest"}, calls
+        "answer",
+        {"placement": "cpu", "model": "answer:latest", "digest": "d1"},
+        calls,
+        model_digest="d1",
     )
     sample = asyncio.run(inventory.snapshot()).public_state()["models"][0]["cpu_performance"]
     assert sample["tokens_per_second"] == 10
     assert sample["measured_at"]
     other = LocalModelInventory(base_url="http://another.test", transport=inventory._transport)
     assert asyncio.run(other.snapshot()).models[0].cpu_performance is None
-    inventory.record_cpu_performance("answer", {"reason": "unavailable"}, calls)
+    inventory.record_cpu_performance("answer", {"reason": "unavailable"}, calls, model_digest="d1")
     assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
 
 
@@ -266,6 +281,8 @@ def test_cpu_measurement_uses_generation_timings_and_preserves_server_isolation(
         {"size": 0},
         {"loaded": False},
         {"digest": "d2"},
+        {"loaded_digest": "d2"},
+        {"loaded_digest": None},
         {"now": 900.0},
     ],
 )
@@ -276,7 +293,7 @@ def test_cpu_measurement_is_hidden_when_hardware_identity_or_age_changes(
     inventory, state = measured_cpu_inventory
     inventory.record_cpu_performance(
         "answer",
-        {"placement": "cpu", "model": "answer:latest"},
+        {"placement": "cpu", "model": "answer:latest", "digest": "d1"},
         [
             {
                 "provider": "ollama",
@@ -284,6 +301,7 @@ def test_cpu_measurement_is_hidden_when_hardware_identity_or_age_changes(
                 "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
             },
         ],
+        model_digest="d1",
     )
     state.update(change)
     assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
@@ -306,9 +324,54 @@ def test_cpu_measurement_rejects_unusable_generation_counts(measured_cpu_invento
     inventory, _ = measured_cpu_inventory
     inventory.record_cpu_performance(
         "answer",
-        {"placement": "cpu", "model": "answer:latest"},
+        {"placement": "cpu", "model": "answer:latest", "digest": "d1"},
         [
             {"provider": "ollama", "model": "answer", "local_timings": [timing]},
         ],
+        model_digest="d1",
+    )
+    assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
+
+
+@pytest.mark.parametrize("loaded_digest", ["d1", "d2"])
+def test_cpu_measurement_does_not_follow_a_tag_replaced_during_the_run(
+    measured_cpu_inventory, loaded_digest
+):
+    """The run's original digest cannot be reassigned to a replacement by name."""
+    inventory, state = measured_cpu_inventory
+    run_digest = inventory.model_digest("answer:latest")
+    assert run_digest == "d1"
+    state.update(digest="d2", loaded_digest=loaded_digest)
+    asyncio.run(inventory.snapshot())
+    inventory.record_cpu_performance(
+        "answer",
+        asyncio.run(inventory.placement("answer")),
+        [
+            {
+                "provider": "ollama",
+                "model": "answer",
+                "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
+            }
+        ],
+        model_digest=run_digest,
+    )
+    assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
+
+
+@pytest.mark.parametrize("run_digest", [None, "", "d2"])
+def test_cpu_measurement_requires_a_known_matching_run_digest(measured_cpu_inventory, run_digest):
+    """A current matching tags/ps pair does not prove an absent or different run identity."""
+    inventory, _ = measured_cpu_inventory
+    inventory.record_cpu_performance(
+        "answer",
+        asyncio.run(inventory.placement("answer")),
+        [
+            {
+                "provider": "ollama",
+                "model": "answer",
+                "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
+            }
+        ],
+        model_digest=run_digest,
     )
     assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
