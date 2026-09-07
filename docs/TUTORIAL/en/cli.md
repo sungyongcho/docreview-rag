@@ -486,23 +486,55 @@ Keep the backup path and verify a new terminal does not auto-load the registrati
 
 ## Ordinary and extreme runtime reset
 
-`rag-fresh-start` requires a running DEV stack and exact interactive confirmation.
-It uses the same reset preview/status as the web UI. A structured rejection prints a
-known safe code and recovery action; arbitrary server text and credentials are not
-printed. For permission failures, inspect Reset diagnosis and ask the file owner to
-grant the required access. For active jobs, wait or cancel in Jobs. An unknown code,
-timeout or malformed response is not proof that execution failed: use **View reset
-status** before resubmitting. The CLI never automatically retries deletion.
-
-Ordinary success reports verified database/file deletion, then reports build and
-startup separately. Code, Git, `.env`, keys, tracked corpus sources, unrelated files
-and host Ollama remain. Browser data remains until cleared through the reset UI.
-`rag-corpus readiness` checks readiness after startup; a successful Docker start is
-not a ready data pipeline. Download/ingest the filings and rebuild indexes afterward.
-Partial deletion or build/start failure never reports full recovery.
+`rag-fresh-start` is a guided host-side clean start. It checks prerequisites and configuration,
+starts the checkout's DB, previews ORM data and downloaded sources, then requires the exact typed
+phrase before resetting. A running web/operator service is not required for this ordinary path.
+The five numbered ASCII steps contain no color escapes.
 
 ```bash
-rag-fresh-start --help
+rag-fresh-start
+rag-fresh-start --keep-sources
+rag-fresh-start --sample
+```
+
+The default and sample modes require `RECREATE <checkout-name> AND SOURCES`; keeping sources
+requires `RECREATE <checkout-name>`. The preview expires after five minutes and is rechecked before
+execution. Cancellation never starts the application. A verified reset preserves code, `.env`,
+evaluation exports, saved model settings, unrelated tables, the DB volume and host Ollama.
+`--keep-sources` also preserves downloaded files; `--sample` presets NVDA/AMD FY2023–2024 without
+performing downloads. The two options are mutually exclusive.
+
+The host path avoids the broader web reset's `runtime_file_permission` preview. If the host cannot
+read a source, it shows the exact owner `setfacl` command for the denied path and parent. Review
+those paths, have the owner grant access, then choose the single read-only inspection retry.
+The CLI never applies ACLs or automatically retries deletion. A retained source journal or an
+uncertain DB outcome remains a blocker; preserve the journal and inspect `rag-schema check`.
+
+After successful reset, the command runs `rag-dev up --build -d`, waits for confirmed readiness,
+and prints the application URL and [Web Quick Start step 1](quickstart.md#qs-web-1) in both languages.
+A failed build or readiness check reuses `rag-ollama-check` diagnostics and offers one confirmed
+`rag-dev down` → `rag-dev up --build -d` recovery, preserving volumes. An incomplete reset never
+reaches that restart. Browser conversations are not deleted by ordinary clean start.
+
+### Configuration repair within the current step
+
+Both `rag-quickstart` and ordinary `rag-fresh-start` identify each invalid key's `.env` line, shell
+value and effective source. Credential/contact values stay hidden. For the reported embedding
+conflict, `[f]` ignores failing shell exports for this invocation, `[e]` writes the two required
+public embedding settings, `[r]` rechecks after a local file edit, and `[q]` cancels. The command
+resumes at configuration instead of reinstalling dependencies. Parent-shell exports are unchanged;
+use the printed `unset KEY` command there for future invocations. No option writes credentials or
+makes an embedding/model request. Noninteractive blockers return failure with the same repair hints.
+
+### SCREENSHOT NEEDED
+<!-- Feature: guided terminal clean start and source-aware configuration repair; locale=en; plain ASCII/no-color; show redacted file/shell conflict, exact reset preview and successful readiness URL to qs-web-1 using disposable data. Preserve existing screenshots. -->
+
+### Extreme reset
+
+Only `rag-fresh-start --extreme` requires the existing DEV operator (`rag-dev up -d`). Its broader
+web/operator deletion protocol and browser acknowledgement remain separate:
+
+```bash
 rag-fresh-start --extreme
 ```
 
@@ -544,7 +576,7 @@ review completed stages; no automatic restart or deletion retry occurs.
 The browser acknowledgement page has no new screenshot evidence yet.
 
 
-Use `rag-fresh-start --status` to read the last reset even when extreme deletion
+Use `rag-fresh-start --status` to read the last extreme/web reset even when extreme deletion
 removed `.env` or stopped the web container. This command uses the existing local
 operator connection and never resubmits deletion. After updating the code, restart
 the local operator with `rag-dev down` followed by `rag-dev up -d` before using the
@@ -639,6 +671,7 @@ status/navigation/dismiss buttons retain their behavior.
 | `uv run python -m scripts.schema recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
 | Same command with `--sample` | Same clean start | Server-persisted NVDA/AMD FY2023–2024 draft; press Download yourself |
 | Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `RECREATE <checkout-name>` |
-| `rag-fresh-start` | Broader environment reset, including evaluation results, local model settings and database volume | Follow its independent exact preview and confirmation |
+| `rag-fresh-start` | Same ORM/source scope as schema recreation; `--keep-sources` and `--sample` supported | Preserves settings/exports/volume; starts DEV, verifies readiness, opens the web hand-off |
+| `rag-fresh-start --extreme` | Previewed config, runtime files/caches and volumes | Two reset gates and browser acknowledgement; no automatic restart |
 
 The two options cannot be combined. CLI acquisition still requires explicit identifiers and years. Source cleanup quarantines the exact previewed files under `data/.schema-recreate-journal` until the DB transaction commits. A DB failure attempts to restore all source bytes; inspect the schema before retrying because a lost connection can leave the DB outcome unconfirmed. Interrupted or incomplete cleanup retains `journal.json` with paths and phase and blocks another reset. Inspect that journal and preserve its backups; do not delete it or repeat recreation to hide the failure. If DB commit succeeded but file cleanup failed, the command returns failure and says so explicitly. The API remains stopped until you inspect state and run `rag-up`.

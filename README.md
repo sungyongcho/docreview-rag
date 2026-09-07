@@ -26,7 +26,9 @@ rag-quickstart
 ```
 
 `rag-quickstart`는 Python 환경을 설치하고, `.env`가 없으면 템플릿을 생성합니다.
-안내된 SEC 연락처·DART 키·OpenAI 개발 키를 **로컬 `.env`에서만** 입력하고 다시 실행하세요.
+안내된 SEC 연락처·DART 키·OpenAI 개발 키를 **로컬 `.env`에서만** 입력한 뒤 `[r]`로 같은 단계에서 다시 확인하세요.
+충돌한 값은 `.env` 줄과 shell 출처를 구분해 표시합니다. `[f]`는 이번 실행의 잘못된 export를 제외하고,
+`[e]`는 공개 임베딩 설정 두 개를 맞춥니다. 부모 셸이나 인증 정보는 자동 변경하지 않습니다.
 OpenAI 임베딩은 `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-large`로 설정합니다.
 기존 설정과 데이터는 보존하며, 첫 실행 자체는 원문 다운로드나 유료 모델 호출을 하지 않습니다.
 
@@ -452,8 +454,9 @@ ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대
 `RECREATE <체크아웃 이름> AND SOURCES`로 승인합니다. `--keep-sources`는 원문을 보존하며,
 `--sample`은 동일한 초기화 뒤 NVDA/AMD FY2023–2024 초안만 저장하고 다운로드하지 않습니다.
 코드·`.env`·평가 내보내기·무관한 테이블·DB 볼륨은 보존합니다. 완료 후 `rag-up`으로 시작하세요.
-`rag-fresh-start`는 평가 결과·로컬 모델 설정·DB 볼륨까지 지우는 별도 환경 초기화이며
-일반 설치에 필요하지 않습니다.
+`rag-fresh-start`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Web Quick Start 1단계 안내까지 이어갑니다.
+`--keep-sources`·`--sample`을 지원하며 설정·내보내기·DB 볼륨은 보존합니다. 권한 오류는 소유자에게 요청할
+정확한 명령과 한 번의 검사 재시도를 제공합니다. 더 넓은 삭제는 별도 `--extreme`의 두 확인 단계와 브라우저 확인을 요구합니다.
 
 검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를
 따릅니다. Quick Start는 답변 질문을 제출하기 전에 끝납니다.

@@ -14,6 +14,7 @@ class FakeClient:
     def __init__(self, status="succeeded", expired=False):
         """Select the final reset outcome and preview validity."""
         self.calls = []
+        self.origin = "http://127.0.0.1:8000"
         self.status = status
         self.expired = expired
 
@@ -44,37 +45,31 @@ def reset(monkeypatch):
     builds = []
     monkeypatch.setattr(commands.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(commands, "operator_client", lambda root: client)
-    monkeypatch.setattr("builtins.input", lambda prompt: "WIPE test")
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt: "yes" if prompt.startswith("Have you") else "WIPE test"
+    )
     monkeypatch.setattr(commands.time, "sleep", lambda seconds: None)
-    monkeypatch.setattr(commands, "run", lambda mode, args, *, root: builds.append(args) or 0)
+    monkeypatch.setattr(commands, "quickstart", lambda root, **options: builds.append(options) or 0)
     return client, builds
 
 
-def test_reset_shares_web_confirmation_and_waits_before_rebuild(reset, tmp_path, capsys):
-    """Use the web preview token and terminal status before any build or restart."""
-    client, builds = reset
-    assert commands.fresh_start(tmp_path) == 0
-    assert client.calls == [
-        ("/wipe/preview", {}),
-        ("/wipe", {"token": "private-preview-token", "confirmation": "WIPE test"}),
-        ("/wipe", None),
-    ]
-    assert builds == [
-        ["build", "--no-cache", "app"],
-        ["up", "-d", "--no-build", "--force-recreate"],
-    ]
-    output = capsys.readouterr().out
-    assert "private-preview-token" not in output
-    assert "View reset status" in output
+def test_normal_clean_start_uses_host_scope_without_web_preview(reset, tmp_path):
+    """The default command bypasses the broader web preview that produced HTTP 409."""
+    client, starts = reset
+    assert commands.fresh_start(tmp_path, sample=True) == 0
+    assert client.calls == []
+    assert starts == [{"reset": True, "keep_sources": False, "sample": True, "timeout": 1800}]
 
 
 @pytest.mark.parametrize("answer", ["", "yes", "WIPE another-checkout"])
 def test_wrong_confirmation_never_starts_reset(reset, tmp_path, monkeypatch, answer):
     """Only the exact web confirmation authorizes destructive execution."""
     client, builds = reset
-    monkeypatch.setattr("builtins.input", lambda prompt: answer)
-    assert commands.fresh_start(tmp_path) == 0
-    assert client.calls == [("/wipe/preview", {})]
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt: "yes" if prompt.startswith("Have you") else answer
+    )
+    assert commands.fresh_start(tmp_path, extreme=True) == 0
+    assert client.calls == [("/wipe/preview", {"extreme": True})]
     assert builds == []
 
 
@@ -83,7 +78,7 @@ def test_noninteractive_reset_does_not_request_preview(reset, tmp_path, monkeypa
     client, builds = reset
     monkeypatch.setattr(commands.sys.stdin, "isatty", lambda: False)
     with pytest.raises(commands.RuntimeCommandError, match="interactively"):
-        commands.fresh_start(tmp_path)
+        commands.fresh_start(tmp_path, extreme=True)
     assert not client.calls and not builds
 
 
@@ -92,7 +87,7 @@ def test_expired_preview_does_not_start_reset(reset, tmp_path):
     client, builds = reset
     client.expired = True
     with pytest.raises(commands.RuntimeCommandError, match="expired"):
-        commands.fresh_start(tmp_path)
+        commands.fresh_start(tmp_path, extreme=True)
     assert len(client.calls) == 1 and not builds
 
 
@@ -102,16 +97,16 @@ def test_incomplete_reset_never_builds(reset, tmp_path, status):
     client, builds = reset
     client.status = status
     with pytest.raises(commands.RuntimeCommandError):
-        commands.fresh_start(tmp_path, timeout=-1 if status == "running" else 10)
+        commands.fresh_start(tmp_path, extreme=True, timeout=-1 if status == "running" else 10)
     assert not builds
 
 
-def test_failed_build_does_not_restart(reset, tmp_path, monkeypatch):
-    """Do not report success or start services from a failed fresh image build."""
-    calls = []
-    monkeypatch.setattr(commands, "run", lambda mode, args, *, root: calls.append(args) or 7)
+def test_host_setup_failure_is_not_reported_as_success(reset, tmp_path, monkeypatch):
+    """A failed guided setup keeps its failure code and never falls back to web deletion."""
+    client, _ = reset
+    monkeypatch.setattr(commands, "quickstart", lambda root, **options: 7)
     assert commands.fresh_start(tmp_path) == 7
-    assert calls == [["build", "--no-cache", "app"]]
+    assert not client.calls
 
 
 def test_corpus_submits_the_web_job_contract(tmp_path, monkeypatch):
@@ -158,7 +153,7 @@ def test_changed_reset_identity_stops_rebuild(reset, tmp_path, monkeypatch):
 
     monkeypatch.setattr(client, "request", changed)
     with pytest.raises(commands.RuntimeCommandError, match="identity changed"):
-        commands.fresh_start(tmp_path)
+        commands.fresh_start(tmp_path, extreme=True)
     assert not builds
 
 
@@ -344,3 +339,38 @@ def test_operator_connection_uses_recorded_origin_without_env(tmp_path, monkeypa
         state["token"],
     )
     assert not (tmp_path / ".env").exists()
+
+
+def test_host_database_failure_is_reported_without_sql_disclosure(reset, monkeypatch, capsys):
+    """The new host reset path returns failure without exposing raw database statement details."""
+    from unittest.mock import Mock
+
+    from sqlalchemy.exc import ProgrammingError
+
+    error = ProgrammingError(
+        "SELECT private-sql-marker", {"key": "private-parameter"}, Exception("private-db-detail")
+    )
+    monkeypatch.setattr(commands, "quickstart", Mock(side_effect=error))
+    monkeypatch.setattr("sys.argv", ["commands", "fresh-start"])
+    assert commands.main() == 1
+    output = capsys.readouterr()
+    for private in ("private-sql-marker", "private-parameter", "private-db-detail"):
+        assert private not in output.out + output.err
+    assert output.err
+
+
+@pytest.mark.parametrize("interruption", [EOFError, KeyboardInterrupt])
+def test_host_interruption_points_to_schema_state_without_claiming_operator_evidence(
+    reset, monkeypatch, capsys, interruption
+):
+    """A stopped host clean start returns interruption and preserves the source journal path."""
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(commands, "quickstart", Mock(side_effect=interruption))
+    monkeypatch.setattr("sys.argv", ["commands", "fresh-start"])
+    assert commands.main() == 130
+    output = capsys.readouterr().err
+    assert "data/.schema-recreate-journal" in output
+    assert "rag-schema check" in output
+    assert "rag-fresh-start --status" not in output
+    assert "No automatic retry or restart" in output

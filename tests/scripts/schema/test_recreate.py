@@ -24,7 +24,7 @@ def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
     monkeypatch.setattr("builtins.input", lambda prompt: answer)
-    assert command.run(tmp_path) == 0
+    assert command.run(tmp_path) == "cancelled"
     assert operation.await_count == 1
     assert operation.await_args.args == (
         "postgresql+asyncpg://filing:filing@127.0.0.1:12345/filing",
@@ -133,3 +133,180 @@ def test_stale_preview_never_stops_or_deletes(tmp_path, monkeypatch, boundary):
         command.run(tmp_path)
     assert operation.await_count == 1
     stop.assert_not_called()
+
+
+@pytest.mark.parametrize("retry", [False, True])
+def test_permission_preview_offers_exact_owner_fix_before_one_retry(
+    tmp_path, monkeypatch, capsys, retry
+):
+    """Source permission recovery never applies ACLs or enters a destructive operation."""
+    import errno
+
+    source = tmp_path / "data/raw source.html"
+    source.parent.mkdir()
+    source.write_text("preserve")
+    preview = Mock(side_effect=[PermissionError(errno.EACCES, "denied", str(source)), {}])
+    apply = Mock()
+    monkeypatch.setattr(command, "source_preview", preview)
+    monkeypatch.setattr(command, "confirm", lambda _: retry)
+    monkeypatch.setattr(command.subprocess, "run", apply)
+    if retry:
+        assert command.preview_sources(tmp_path) == {}
+        assert preview.call_count == 2
+    else:
+        with pytest.raises(ValueError, match="no deletion was submitted"):
+            command.preview_sources(tmp_path)
+        assert preview.call_count == 1
+    output = capsys.readouterr().out
+    assert "setfacl -m" in output
+    assert str(source) in output
+    assert source.read_text() == "preserve"
+    apply.assert_not_called()
+
+
+@pytest.mark.parametrize("restart_planned", [False, True])
+def test_successful_reset_reports_the_callers_restart_intent(
+    tmp_path, monkeypatch, capsys, restart_planned
+):
+    """The host caller may plan a later restart, but recreation itself only stops the API."""
+    target = {"port": "12345", "apps": ["fixture-app"], "volume": "fixture", "docker": ["docker"]}
+    operation = AsyncMock(side_effect=[{"documents": 1}, {"documents": 0}])
+    stop = Mock()
+    monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(command, "local_target", lambda root: (target, {}))
+    monkeypatch.setattr(command, "recreate", operation)
+    monkeypatch.setattr(command.subprocess, "run", stop)
+    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name}")
+    assert command.run(tmp_path, keep_sources=True, restart_planned=restart_planned) == "succeeded"
+    assert operation.await_count == 2
+    stop.assert_called_once_with(["docker", "stop", "fixture-app"], env={}, check=True)
+    output = capsys.readouterr().out
+    if restart_planned:
+        assert "Guided setup will now rebuild/start DEV and verify readiness" in output
+        assert "not restarted automatically" not in output
+    else:
+        assert "not restarted automatically" in output
+        assert "Run rag-up" in output
+
+
+@pytest.mark.parametrize("owner_repairs", [False, True])
+def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
+    tmp_path, monkeypatch, capsys, owner_repairs
+):
+    """A real mode denial needs an owner repair; the command never applies access changes itself."""
+    import shlex
+
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses the Unix mode-denial fixture.")
+    source = tmp_path / "data/corpus/source owner's report.html"
+    source.parent.mkdir(parents=True)
+    source.write_text("preserve these real bytes")
+    source.chmod(0)
+    preview = Mock(wraps=command.source_preview)
+    apply = Mock(side_effect=AssertionError("permission commands must not run automatically"))
+
+    def owner_choice(_message):
+        """Let this fixture's owner grant actual read access only for the successful retry case."""
+        if owner_repairs:
+            source.chmod(0o600)
+        return True
+
+    confirm = Mock(side_effect=owner_choice)
+    monkeypatch.setattr(command, "source_preview", preview)
+    monkeypatch.setattr(command, "confirm", confirm)
+    monkeypatch.setattr(command.subprocess, "run", apply)
+    try:
+        with pytest.raises(PermissionError):
+            source.read_bytes()
+        if owner_repairs:
+            result = command.preview_sources(tmp_path)
+            assert set(result["files"]) == {source.name}
+            assert source.read_text() == "preserve these real bytes"
+        else:
+            with pytest.raises(ValueError, match="no deletion was submitted"):
+                command.preview_sources(tmp_path)
+        assert preview.call_count == 2
+        confirm.assert_called_once()
+        apply.assert_not_called()
+        hints = [
+            line.strip()
+            for line in capsys.readouterr().out.splitlines()
+            if line.startswith("  setfacl")
+        ]
+        assert hints
+        assert all(
+            shlex.split(line)
+            == ["setfacl", "-m", f"u:{os.getuid()}:rwX", "--", str(source.parent), str(source)]
+            for line in hints
+        )
+    finally:
+        source.chmod(0o600)
+
+
+def test_permission_hint_never_targets_another_checkout(tmp_path, monkeypatch, capsys):
+    """An outside-path denial cannot suggest broad ACL changes or offer a retry."""
+    import errno
+
+    outside = tmp_path.parent / "another-checkout/private-source.html"
+    monkeypatch.setattr(
+        command,
+        "source_preview",
+        Mock(side_effect=PermissionError(errno.EACCES, "denied", str(outside))),
+    )
+    confirm = Mock()
+    monkeypatch.setattr(command, "confirm", confirm)
+    with pytest.raises(ValueError, match="outside this checkout"):
+        command.preview_sources(tmp_path)
+    confirm.assert_not_called()
+    assert "setfacl" not in capsys.readouterr().out
+
+
+def test_declined_permission_repair_precedes_docker_and_deletion_confirmation(
+    tmp_path, monkeypatch, capsys
+):
+    """An unreadable real source blocks all Docker, database and typed-deletion activity."""
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses the Unix mode-denial fixture.")
+    source = tmp_path / "data/corpus/private.html"
+    source.parent.mkdir(parents=True)
+    source.write_text("keep")
+    source.chmod(0)
+    forbidden = Mock(side_effect=AssertionError("permission preview must stop first"))
+    confirm = Mock(return_value=False)
+    monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(command, "confirm", confirm)
+    monkeypatch.setattr(command, "local_target", forbidden)
+    monkeypatch.setattr(command, "recreate", forbidden)
+    monkeypatch.setattr(command.subprocess, "run", forbidden)
+    monkeypatch.setattr("builtins.input", forbidden)
+    try:
+        with pytest.raises(ValueError, match="no deletion was submitted"):
+            command.run(tmp_path)
+        confirm.assert_called_once()
+        forbidden.assert_not_called()
+        assert "DANGER:" not in capsys.readouterr().out
+    finally:
+        source.chmod(0o600)
+    assert source.read_text() == "keep"
+
+
+def test_keep_sources_requires_readable_journal_state_before_docker(tmp_path, monkeypatch):
+    """Keeping raw files never allows an inaccessible unfinished journal to be ignored."""
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses the Unix mode-denial fixture.")
+    data = tmp_path / "data"
+    (data / ".schema-recreate-journal").mkdir(parents=True)
+    data.chmod(0)
+    forbidden = Mock(side_effect=AssertionError("unconfirmed journal state must stop setup"))
+    monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(command, "confirm", Mock(return_value=False))
+    monkeypatch.setattr(command, "source_preview", forbidden)
+    monkeypatch.setattr(command, "local_target", forbidden)
+    monkeypatch.setattr(command.subprocess, "run", forbidden)
+    monkeypatch.setattr("builtins.input", forbidden)
+    try:
+        with pytest.raises(ValueError, match="no deletion was submitted"):
+            command.run(tmp_path, keep_sources=True)
+        forbidden.assert_not_called()
+    finally:
+        data.chmod(0o700)
