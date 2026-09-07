@@ -1,4 +1,5 @@
 "use client";
+import { NotificationOutlet } from "./notifications";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -10,6 +11,8 @@ import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { loadDefaultProfile } from "@/lib/storage";
 import { conversationSettingsError } from "@/lib/saved-presets";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
+import { RunLimitGuidance } from "./run-limit-guidance";
+import { LOCAL_CPU_STARTING_BUDGET, LOCAL_CPU_EVIDENCE_CHARS } from "@/lib/local-limit-suggestion";
 import { RunLimitFields } from "./run-limit-fields";
 import { ProfileFields } from "@/components/profile-fields";
 import type { DocumentFacets, ReviewSessionDraft } from "@/lib/types";
@@ -103,7 +106,7 @@ export function ConversationSettings(props: Props) {
   function patchPolicy(update: Partial<ReviewSessionDraft["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
   return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
     <div className="conversation-settings-dialog" role="dialog" aria-modal={active ? true : undefined} aria-labelledby={titleId} tabIndex={-1} ref={panel}>
-    <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={props.onClose}><X size={20} /></button></header>
+    <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={props.onClose}><X size={20} /></button></header><NotificationOutlet priority={50} active={active} />
     <nav className="conversation-settings-sections settings-mode" aria-label={t("Settings view")}>{(["basic", ...(props.editable ? ["advanced"] : []), "preview"] as const).map(value => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { if (value === "advanced" && tab === "filters") props.onTabChange("retrieval"); setMode(value as typeof mode); }}>{t(value === "basic" ? "Basic" : value === "advanced" ? "Advanced" : "Preview")}</button>)}</nav>
     {mode === "advanced" && <nav className="conversation-settings-sections" aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button key={id} type="button" aria-pressed={tab === id} title={id !== "filters" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => props.onTabChange(id)}>{t(label)}{id !== "filters" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>)}</nav>}
     <div className="conversation-settings-body">
@@ -112,14 +115,14 @@ export function ConversationSettings(props: Props) {
     {mode === "basic" && <section className="settings-basic"><h3>{t("Retrieval preset")}</h3><RetrievalPresetSelect profile={props.profile} editable={props.editable} onChange={props.onChange} onManage={props.onManagePresets} />
       <p className="helper">{t("Advanced settings changed: {count}", { count: changes })}</p>
       <dl className="request-facts"><div><dt>{t("Maximum evidence characters")}</dt><dd>{props.profile.prompt_policy.max_context_chars.toLocaleString(locale)}</dd></div><div><dt>{t("Maximum wall clock seconds")}</dt><dd>{budget.max_wall_clock_s} {t("seconds")}</dd></div><div><dt>{t("Maximum input tokens")}</dt><dd>{budget.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Maximum output tokens")}</dt><dd>{budget.max_output_tokens.toLocaleString(locale)}</dd></div></dl>
-      <h3>{t("Filters")}</h3>
+      <RunLimitGuidance /><h3>{t("Filters")}</h3>
     </section>}
     {(mode === "basic" || mode === "advanced" && tab === "filters") && <ConversationFilters profile={props.profile} editable={props.editable} onChange={props.onChange} onValidityChange={props.onValidityChange} />}
     {mode === "advanced" && tab === "retrieval" && props.editable && <div data-help="review.retrieval">
       {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}
     </div>}
     {mode === "advanced" && tab === "evidence" && props.editable && <div className="profile-grid" data-help="review.evidence-policy">{props.speed && props.profile.prompt_policy.max_context_chars > 1000 && <div className="notice warning limit-recommendation"><p>{t("Reducing evidence can reduce answer coverage. Review the limit before applying it.")}</p><button className="button" type="button" onClick={() => patchPolicy({ max_context_chars: Math.max(1000, Math.floor(props.profile.prompt_policy.max_context_chars / 2)) })}>{t("Reduce evidence: {before} → {after} characters", { before: props.profile.prompt_policy.max_context_chars, after: Math.max(1000, Math.floor(props.profile.prompt_policy.max_context_chars / 2)) })}</button></div>}<label>{t("Conversation history turns")}<input type="number" min={0} max={6} value={props.profile.prompt_policy.history_turns} onChange={(event) => patchPolicy({ history_turns: Number(event.target.value) })} /></label><label>{t("Maximum evidence characters")}<input type="number" min={1000} max={100000} value={props.profile.prompt_policy.max_context_chars} onChange={(event) => patchPolicy({ max_context_chars: Number(event.target.value) })} /></label><label>{t("Evidence overfetch")}<input type="number" min={1} max={10} value={props.profile.prompt_policy.evidence_overfetch} onChange={(event) => patchPolicy({ evidence_overfetch: Number(event.target.value) })} /></label><label>{t("Maximum hits per document")}<input type="number" min={1} max={100} value={props.profile.prompt_policy.max_hits_per_document} onChange={(event) => patchPolicy({ max_hits_per_document: Number(event.target.value) })} /></label></div>}
-    {mode === "advanced" && tab === "limits" && props.editable && <RunLimitFields budget={budget} speed={props.speed} onChange={workflow_budget => patchPolicy({ workflow_budget })} />}
+    {mode === "advanced" && tab === "limits" && props.editable && <RunLimitFields onApplyCpuPreset={() => patchPolicy({ workflow_budget: { ...LOCAL_CPU_STARTING_BUDGET }, max_context_chars: LOCAL_CPU_EVIDENCE_CHARS })} budget={budget} speed={props.speed} onChange={workflow_budget => patchPolicy({ workflow_budget })} />}
 
     {mode === "advanced" && props.editable && <section className="settings-policy-actions"><label>{t("Additional instructions")}<textarea maxLength={8000} value={props.profile.prompt_policy.additional_instructions} onChange={event => patchPolicy({ additional_instructions: event.target.value })} /></label><p className="helper">{t("Instructions, evidence policy and limits apply together to this conversation. Search presets only change retrieval.")}</p><button className="button" type="button" onClick={() => { const defaults = loadDefaultProfile(); patch({ retrieval_preset: defaults.retrieval_preset, custom_retrieval: structuredClone(defaults.custom_retrieval), prompt_policy: structuredClone(defaults.prompt_policy) }); }}>{t("Restore setting defaults")}</button><p className="helper">{t("Restores search, prompt, evidence and limits. Document filters stay unchanged.")}</p></section>}
     </div>

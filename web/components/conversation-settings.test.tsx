@@ -32,9 +32,9 @@ it("edits only the current conversation policy and reads the next conversation's
   expect(props.onClose).toHaveBeenCalledOnce();
 });
 
-it("uses the conversation candidate and fusion limits for custom retrieval", () => {
+it("uses the API candidate and conversation fusion limits for custom retrieval", () => {
   render(<ConversationSettings tab="retrieval" editable profile={{ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: DEFAULT_PROFILE }} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
-  expect(screen.getByLabelText("candidate_k")).toHaveAttribute("max", "100");
+  expect(screen.getByLabelText("candidate_k")).toHaveAttribute("max", "500");
   expect(screen.getByLabelText("candidate_k")).toHaveAttribute("min", String(DEFAULT_PROFILE.k));
   expect(screen.getByLabelText("RRF k")).toHaveAttribute("max", "10000");
 });

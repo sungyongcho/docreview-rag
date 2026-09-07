@@ -49,7 +49,7 @@ import { PathDecisionBadge, ReviewProgressSteps, WaitingGlyph, reviewProgressFro
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
-import { NotificationProvider, useNotifications } from "@/components/notifications";
+import { NotificationProvider, NotificationOutlet, useNotifications } from "@/components/notifications";
 import { ProductionPreviewFrame } from "@/components/production-preview-frame";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { enterProductionPreview, exitProductionPreview, previewState } from "@/lib/production-preview";
@@ -182,7 +182,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const runtimeHealth = useRuntimeHealth({ active: sessionActive, publicPreview });
   const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
   const environment = permissions?.environment ?? runtimeHealth.readiness?.environment;
-  const modeLabel = `${environment?.toUpperCase() ?? "CHECKING"} MODE`;
+  const modeLabel = environment ? `${environment.toUpperCase()} MODE` : null;
   const adminLive = adminBuild && permissions?.can_edit_prompt_policy === true;
   const localAllowed = LOCAL_ENGINE_VISIBLE && permissions?.environment === "dev" && permissions.can_configure_local_llm;
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
@@ -192,12 +192,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const { notify, dismissNotice } = useNotifications();
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check, sessionActive);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
-  useEffect(() => {
-    if (sessionActive && runtimeHealth.waiting) {
-      notify(t(workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage."), "info", "health-wait", 0);
-    } else dismissNotice("health-wait");
-    return () => dismissNotice("health-wait");
-  }, [sessionActive, runtimeHealth.waiting, workPending, notify, dismissNotice, t]);
+
 
 
   useEffect(() => {
@@ -920,9 +915,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             </div>
           ))}
         </div>
-        <div className={`runtime-mode-badge ${environment ?? "checking"}`} role="note" aria-label={modeLabel} title={t("Server environment: {p0}", { p0: modeLabel })}>
-          <strong>{environment?.toUpperCase() ?? "CHECKING"}</strong><span>{t("MODE")}</span>
-        </div>
+        {environment && <div className={`runtime-mode-badge ${environment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
+          <strong>{environment.toUpperCase()}</strong><span>{t("MODE")}</span>
+        </div>}
         <div className="sidebar-nav">
           <GuidesNavigation />
           <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
@@ -943,11 +938,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       <section className="workspace">
         <header className="topbar">
           <div className="topbar-navigation">
-            <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
+            <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel ?? undefined} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
             <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
           </div>
           <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
+        {sessionActive && (runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
+        <NotificationOutlet active={sessionActive} />
 
         <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
           <div className="messages" ref={messagesViewport} onScroll={(event) => { const element = event.currentTarget; followReview.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
@@ -1031,6 +1028,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
+          connectionPending={runtimeHealth.waiting}
           profile={resolvedRetrievalProfile(activeSessionProfile)}
           jobBoard={operatorJobs.board}
           jobsLoading={operatorJobs.loading}

@@ -10,3 +10,9 @@ export function suggestLocalLimits(budget: RunBudget, speed: number) {
   if (output < 1) return null;
   return { estimatedSeconds, budget: { ...budget, max_wall_clock_s: time, max_output_tokens: output } };
 }
+
+/** Optional whole-run starting point; never replaces shipped or saved defaults automatically. */
+export const LOCAL_CPU_STARTING_BUDGET: RunBudget = {
+  max_iterations: 6, max_input_tokens: 24000, max_output_tokens: 2000, max_wall_clock_s: 300,
+};
+export const LOCAL_CPU_EVIDENCE_CHARS = 8000;

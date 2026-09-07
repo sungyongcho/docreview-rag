@@ -50,3 +50,16 @@ it("saves new-conversation limits without modifying an existing conversation or 
   fireEvent.change(screen.getByLabelText("Maximum wall clock seconds"), { target: { value: "0" } });
   expect(screen.getByRole("button", { name: "Save default limits" })).toBeDisabled();
 });
+
+it("applies the optional CPU starting point only to the defaults draft until saved", () => {
+  render(<DefaultRunLimits />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Limit preset" }), { target: { value: "cpu-start" } });
+  expect(screen.getByLabelText("Maximum input tokens")).toHaveValue(24000);
+  expect(screen.getByLabelText("Maximum output tokens")).toHaveValue(2000);
+  expect(screen.getByLabelText("Maximum wall clock seconds")).toHaveValue(300);
+  expect(screen.getByLabelText("Maximum evidence characters")).toHaveValue(8000);
+  expect(loadDefaultProfile().prompt_policy).toEqual(DEFAULT_SESSION_PROFILE.prompt_policy);
+  fireEvent.click(screen.getByRole("button", { name: "Save default limits" }));
+  expect(loadDefaultProfile().prompt_policy).toMatchObject({ max_context_chars: 8000, workflow_budget: { max_input_tokens: 24000, max_output_tokens: 2000, max_wall_clock_s: 300 } });
+  expect(DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget.max_wall_clock_s).toBe(120);
+});

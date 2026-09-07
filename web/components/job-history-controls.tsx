@@ -1,4 +1,5 @@
 "use client";
+import { NotificationOutlet } from "./notifications";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -68,7 +69,7 @@ export function JobHistoryControls({ onChanged }: { onChanged: () => void }) {
   return <>
     <button ref={trigger} className="button" type="button" aria-haspopup="dialog" aria-expanded={visible} onClick={() => { setOpen(true); void sync(false); }}>{t("Manage history")}</button>
     {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} className="wipe-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <header><h2 id={titleId}>{t("Manage job history")}</h2><button className="button" type="button" disabled={busy} onClick={() => { setOpen(false); setConfirmation(""); }}>{t("Close")}</button></header>
+      <header><h2 id={titleId}>{t("Manage job history")}</h2><button className="button" type="button" disabled={busy} onClick={() => { setOpen(false); setConfirmation(""); }}>{t("Close")}</button></header><NotificationOutlet priority={50} />
       <p>{t("Only finished job records are affected. Queued and running jobs, source files, embeddings, and evaluation results are preserved.")}</p>
       {busy && <p role="status">{t("Updating job history…")}</p>}
       {error && <p role="alert" className="notice error">{error}</p>}

@@ -71,3 +71,26 @@ it("offers explicit dropdowns for all addable filters and uses returned section 
   fireEvent.click(sectionToggle);
   expect(screen.queryByRole("group", { name: "Sections suggestions" })).toBeNull();
 });
+
+/** Valid server-supported values must pass native form checks and persist on submit. */
+it("saves presets with 500 candidates and fractional BM25 values", () => {
+  render(<RetrievalPresetManager />);
+  const row = screen.getByRole("button", { name: "Balanced" }).closest("section")!;
+  fireEvent.click(within(row).getByRole("button", { name: "Balanced" }));
+  fireEvent.click(within(row).getByRole("button", { name: "Copy and edit" }));
+  fireEvent.change(screen.getByLabelText("Preset name"), { target: { value: "Wide fractional search" } });
+  for (const [label, value] of [["candidate_k", "500"], ["BM25 k1", "0.05"], ["BM25 b", "0.33"]]) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  }
+  const save = screen.getByRole("button", { name: "Save preset" });
+  expect(save.closest("form")!.checkValidity()).toBe(true);
+  fireEvent.click(save);
+  expect(screen.getByRole("button", { name: "Wide fractional search" })).toBeVisible();
+});
+
+it("keeps CPU guidance readable in public mode without enabling limit editing", () => {
+  render(<ConversationSettings profile={DEFAULT_SESSION_PROFILE} tab="filters" editable={false} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
+  expect(screen.getByText(/public PROD uses server policy/)).toBeVisible();
+  expect(screen.queryByRole("combobox", { name: "Limit preset" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+});

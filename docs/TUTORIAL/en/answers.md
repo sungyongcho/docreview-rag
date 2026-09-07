@@ -100,6 +100,8 @@ Use **View corpus readiness** to inspect preparation and **Back** to return to t
 draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated
 calls, uncollected fields, and legacy records.
 
+For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run’s timings.
+
 ### Reading the actual model-call limit
 
 A run has both conversation Run limits and a server provider allowance. The smaller token allowance applies to the call. A provider stop now names input tokens, output tokens or estimated cost with the observed and allowed values; it does not assume every provider budget failure is an input-token failure. The failure action opens Run limits when that setting supplied the smaller ceiling, or System status when the server provider allowance did. Older records without a known source do not guess a settings destination.

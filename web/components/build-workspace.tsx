@@ -54,6 +54,8 @@ export interface BuildWorkspaceProps {
   ready: boolean;
   readiness: Readiness | null;
   healthKind: RuntimeHealthKind;
+  /** Retained readiness is unconfirmed while a failed connection check retries. */
+  connectionPending?: boolean;
   profile: RetrievalProfile;
   jobBoard: OperatorJobBoard;
   jobsLoading: boolean;
@@ -95,12 +97,13 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, healthKind, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
   const { notify } = useNotifications();
   const environment = deploymentLabel(readiness?.environment);
+  const connectionConfirmed = healthKind !== "checking" && healthKind !== "api_down" && !connectionPending;
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
   // Fixtures seed only the public build; a live build waits for the administrator API.
   const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS, sources: [] }));
@@ -333,6 +336,7 @@ export function BuildWorkspace({ live, readiness, healthKind, profile, jobBoard,
   const pipeline = useMemo(() => derivePipeline({
     live,
     healthKind,
+    connectionPending,
     readiness,
     corpus: live && adminLoaded ? status : null,
     manifests,
@@ -342,22 +346,22 @@ export function BuildWorkspace({ live, readiness, healthKind, profile, jobBoard,
     evaluationResults,
     snapshots: snapshotCount,
     profile,
-  }), [live, healthKind, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile]);
+  }), [live, healthKind, connectionPending, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile]);
   /** Runtime flags for the strip: the administrator snapshot once loaded, otherwise `/ready`. */
-  const runtimeCounts: CorpusCounts | null = live && adminLoaded ? status : readiness?.corpus ?? null;
-  const answerModelLabel = readiness === null
+  const runtimeCounts: CorpusCounts | null = !connectionConfirmed ? null : live && adminLoaded ? status : readiness?.corpus ?? null;
+  const answerModelLabel = !connectionConfirmed || readiness === null
     ? null
     : !readiness.review_enabled
       ? "off"
       : readiness.review_engines?.openai?.enabled
         ? `${readiness.review_engines.openai.key_slot ?? "explicit"} key`
         : "local";
-  const canOperateCorpus = live && status.writable !== false;
+  const canOperateCorpus = live && connectionConfirmed && status.writable !== false;
   const activeCorpusJobs = jobBoard.jobs.filter((job) => job.domain === "corpus" && ["queued", "running"].includes(job.status));
   const waitingCorpusJob = activeCorpusJobs.find((job) => job.status === "running") ?? activeCorpusJobs[0];
   const evaluationBlockedReason = !live ? null
     : healthKind === "api_down" ? "API unavailable"
-    : healthKind === "checking" ? "Checking corpus…"
+    : !connectionConfirmed ? "Checking corpus…"
     : runtimeCounts?.database_connected === false ? "Database is unreachable"
     : runtimeCounts?.schema_status === "empty" ? "Database schema is empty"
     : runtimeCounts?.schema_status === "drifted" ? "Database schema is incompatible"
@@ -381,7 +385,7 @@ export function BuildWorkspace({ live, readiness, healthKind, profile, jobBoard,
           <p>{t("Complete corpus setup to ask questions. Evaluation measures retrieval quality separately.")}</p>
         </div>
         <div className="page-badges">
-          <span className="mode-badge">{environment}</span>
+          {environment && <span className="mode-badge">{environment}</span>}
           <span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span>
         </div>
       </header>

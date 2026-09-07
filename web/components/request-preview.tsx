@@ -1,6 +1,7 @@
 "use client";
 
 import "./review-controls.css";
+import { RunLimitGuidance } from "./run-limit-guidance";
 import { PresetDetails } from "./preset-details";
 import { useI18n } from "@/lib/i18n";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft, type RetrievalPreset } from "@/lib/types";
@@ -31,7 +32,7 @@ export function RequestPreviewContent({ profile, query }: { profile: ReviewSessi
   const { t } = useI18n();
   const effective = resolvedRetrievalProfile(profile);
   const filters = { corpus_scope: profile.corpus_scope, issuers: profile.issuers, fiscal_years: profile.fiscal_years, forms: profile.forms, sections: profile.sections, languages: profile.languages, snapshot_id: profile.snapshot_id };
-  return <div className="settings-preview-content"><h3>{t("Next request preview")}</h3><p className="helper">{t("These are the next question’s settings, not the selected run’s recorded settings.")}</p><p>{query || t("No question entered yet.")}</p>
+  return <div className="settings-preview-content"><h3>{t("Next request preview")}</h3><RunLimitGuidance /><p className="helper">{t("These are the next question’s settings, not the selected run’s recorded settings.")}</p><p>{query || t("No question entered yet.")}</p>
       <h3>{t("Retrieval presets")}</h3>
       <div className="preset-list">{PRESETS.map(([id, label]) => {
         const description = presetDescription(profile, id);

@@ -1,4 +1,5 @@
 "use client";
+import { NotificationOutlet } from "./notifications";
 import { useI18n } from "@/lib/i18n";
 import { DatabaseZap, Layers, RefreshCw, RotateCw, ServerCrash, X } from "lucide-react";
 
@@ -37,7 +38,7 @@ export function ServiceHealthModal({
         {!apiDown && <button className="icon-button health-modal-x" type="button" aria-label={t(preparationNeeded ? "Close preparation notice" : "Close database warning")} onClick={onDismiss}><X size={17} /></button>}
         <div className="health-modal-icon" aria-hidden="true">{apiDown ? <ServerCrash /> : preparationNeeded ? <Layers /> : <DatabaseZap />}</div>
         <p className="eyebrow">{t("Runtime health")}</p>
-        <h2 id="health-modal-title">{apiDown ? t("DocReview API is unavailable") : preparationNeeded ? t("Corpus preparation is needed") : t("Database is not ready")}</h2>
+        <h2 id="health-modal-title">{apiDown ? t("DocReview API is unavailable") : preparationNeeded ? t("Corpus preparation is needed") : t("Database is not ready")}</h2><NotificationOutlet priority={50} />
         {!apiDown && !preparationNeeded && degradedMessage ? <details className="health-error-details">
           <summary>{t("Please review the error")}</summary>
           <pre><code>{degradedMessage}</code></pre>

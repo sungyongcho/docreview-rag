@@ -104,6 +104,8 @@ Click a selected Pin or Exclude again to deselect it. Both buttons sit in each c
 
 Under **Settings and preview → Advanced → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
 
+For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run’s timings.
+
 ## Defaults and permissions {#defaults}
 
 > [!DEV]

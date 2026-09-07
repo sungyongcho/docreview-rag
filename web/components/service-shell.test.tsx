@@ -232,7 +232,8 @@ it("keeps the sidebar mode unknown until the server reports development", async 
   const { ServiceShell: LiveShell } = await import("./service-shell");
   try {
     render(<LiveShell />);
-    expect(screen.getByRole("note", { name: "CHECKING MODE" })).toBeInTheDocument();
+    expect(screen.queryByRole("note", { name: "CHECKING MODE" })).toBeNull();
+  expect(screen.getByText("Checking API connection…")).toBeVisible();
     expect(screen.queryByRole("note", { name: "DEV MODE" })).not.toBeInTheDocument();
     await act(async () => release());
     const modeBadge = await screen.findByRole("note", { name: "DEV MODE" });

@@ -76,6 +76,15 @@ export const KO: Record<string, string> = {
   "Open settings": "설정 열기",
 
 
+  "Local CPU starting point": "로컬 CPU 시작 설정",
+  "For smoother local use, adjust input/output tokens and evidence to your hardware. Start with Local CPU starting point, then check an actual run.": "원활한 로컬 사용을 위해 PC 사양에 맞춰 입·출력 토큰과 근거 양을 조정하세요. 로컬 CPU 시작 설정을 적용한 뒤 실제 실행을 확인하세요.",
+  "Defaults: 60,000 input / 4,000 output tokens, 120 seconds. Optional CPU start: 24,000 / 2,000 tokens, 300 seconds, 8,000 evidence characters. These are whole-run budgets, not promised usage or completion times.": "기본값: 입력 60,000·출력 4,000토큰, 120초. 선택 가능한 CPU 시작값: 24,000·2,000토큰, 300초, 근거 8,000자. 전체 실행 예산이며 사용량이나 완료 시간을 보장하지 않습니다.",
+  "DEV sends the selected limits with the question. Server per-call limits may be lower; public PROD uses server policy and does not enable local LLM editing. Check Run details for the limits actually applied.": "DEV는 선택한 한도를 질문과 함께 전달합니다. 서버의 호출당 한도는 더 작을 수 있습니다. 공개 PROD는 서버 정책을 사용하며 로컬 LLM 편집을 허용하지 않습니다. 실제 적용값은 실행 상세에서 확인하세요.",
+  "Notifications": "알림",
+  "Expand notification": "알림 펼치기",
+  "Collapse notification": "알림 접기",
+  "Checking API connection…": "API 연결을 확인하고 있습니다…",
+  "Retry connection": "연결 다시 확인",
   "Browser storage": "브라우저 저장소",
   "⚠️ Settings and conversations are saved only in this browser": "⚠️ 설정과 대화는 이 브라우저에만 저장됩니다",
   "They are not synced and can be removed when you clear browser data.": "다른 브라우저와 동기화되지 않으며 브라우저 데이터를 지우면 삭제될 수 있습니다.",

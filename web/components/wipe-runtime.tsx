@@ -1,4 +1,5 @@
 "use client";
+import { NotificationOutlet } from "./notifications";
 import { browserResetStores } from "@/lib/storage";
 import { LOCALE_KEY, useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -188,7 +189,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
   return <section className="wipe-danger-zone">
     <button ref={trigger} type="button" className="button danger-button" aria-haspopup="dialog" aria-expanded={visible} onClick={() => setOpen(true)}><AlertTriangle size={16} aria-hidden="true" /><span>{t("Reset runtime data")}</span></button>
     {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="wipe-title" aria-describedby="wipe-warning" className="wipe-dialog">
-      <header><h2 id="wipe-title">{t("Delete all runtime data?")}</h2><button type="button" className="icon-button" aria-label={t("Close reset dialog")} disabled={busy || result?.status === "running"} onClick={close}><X size={18} /></button></header>
+      <header><h2 id="wipe-title">{t("Delete all runtime data?")}</h2><button type="button" className="icon-button" aria-label={t("Close reset dialog")} disabled={busy || result?.status === "running"} onClick={close}><X size={18} /></button></header><NotificationOutlet priority={50} />
       <div className="wipe-disclosure-body">
         <p>{t("Start over by clearing this local runtime. Source files and credentials are preserved.")}</p>
         <p>{t("After reset, download SEC/DART filings again, ingest them, generate embeddings, rebuild BM25, and configure your answer model in Build.")}</p>

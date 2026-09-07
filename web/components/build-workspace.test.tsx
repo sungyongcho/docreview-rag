@@ -707,3 +707,63 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
   if (failIndex) expect(await screen.findByText(/Indexing stopped after 1 queued jobs/)).toBeInTheDocument();
   cleanup(); vi.unstubAllGlobals();
 });
+
+
+describe("connection readiness presentation", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/admin/corpus")) return jsonResponse({
+        ...CANNED_CORPUS,
+        status: READY_RUNTIME.corpus,
+        sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true }],
+      });
+      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+      if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
+      if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
+      if (url.endsWith("/admin/snapshots")) return jsonResponse([]);
+      return jsonResponse({});
+    }));
+  });
+
+  it("does not expose ready stages or invent an environment while the initial connection is checking", async () => {
+    const { container } = render(<Harness live healthKind="checking" />);
+    await screen.findByRole("button", { name: "NVDA FY2024 · On disk" });
+    expect(screen.queryByText("hybrid ready")).toBeNull();
+    expect(screen.queryByText("Corpus ready")).toBeNull();
+    expect(container.querySelectorAll(".pipeline-node.done")).toHaveLength(0);
+    expect(container.querySelectorAll(".page-badges .mode-badge")).toHaveLength(1);
+    expect(screen.queryByText("Checking mode…")).toBeNull();
+    expect(screen.queryByText("Runtime connected")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+  });
+
+  it("neutralizes retained ready data and actions during waiting or API loss without losing the known environment", async () => {
+    const readiness = { ...READY_RUNTIME, environment: "dev" as const };
+    const { rerender, container } = render(<Harness live readiness={readiness} />);
+    await screen.findByText("Corpus ready");
+    expect(screen.getByText("hybrid ready")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
+    rerender(<Harness live readiness={readiness} connectionPending />);
+    expect(container.querySelectorAll(".pipeline-node.done, .pipeline-node.action, .pipeline-node.running, .pipeline-node.queued")).toHaveLength(0);
+    expect(screen.queryByText("hybrid ready")).toBeNull();
+    expect(screen.queryByText("Corpus ready")).toBeNull();
+    expect(screen.queryByText("Runtime connected")).toBeNull();
+    expect(container.querySelector(".page-badges")).toHaveTextContent("DEV");
+    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
+    expect(screen.getByText("Checking corpus…")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Run quick evaluation" })).toBeNull();
+    rerender(<Harness live readiness={readiness} healthKind="api_down" connectionPending />);
+    expect(screen.getAllByText("API unavailable").length).toBeGreaterThan(0);
+    expect(screen.queryByText("hybrid ready")).toBeNull();
+    expect(screen.queryByText("Database connected")).toBeNull();
+    rerender(<Harness live readiness={readiness} healthKind="healthy" connectionPending={false} />);
+    expect(screen.getByText("hybrid ready")).toBeVisible();
+    expect(screen.getByText("Corpus ready")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
+  });
+});
