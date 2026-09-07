@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from scripts.benchmark_local_grade import (
+from scripts.diagnostics.local_grade import (
     classify_placement,
     grade_prompt,
     hits_from_records,

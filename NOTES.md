@@ -1,1 +1,2 @@
 [2026-09-07] [tests/api/test_execution.py:82] [type: debt] The clean-checkout gate fails Ruff I001 on main because report_to_records precedes records_to_report in a local import; the one-line reorder is outside the approved script refactor and awaits explicit permission.
+[2026-09-07] [tests/api/test_execution.py:82] [type: debt] Resolved by merged PR #113; the complete clean-checkout gate passed, including required live reset verification.

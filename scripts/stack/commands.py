@@ -316,7 +316,7 @@ def fresh_start(root: Path, *, timeout: float = 1800, extreme: bool = False) -> 
         return code
     code = run("dev", ["up", "-d", "--no-build", "--force-recreate"], root=root)
     if code:
-        print("Data was reset and the image built, but service startup failed. Run rag-diagnose.")
+        print("Data was reset and the image built, but service startup failed. Run rag-ollama-check.")
         return code
     print(
         "Build completed and service startup submitted. Server "
