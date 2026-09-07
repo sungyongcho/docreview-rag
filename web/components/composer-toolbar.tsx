@@ -10,6 +10,8 @@ import { RequestPreview, presetDescription } from "@/components/request-preview"
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
 import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
+import { retrievalReadiness } from "@/lib/pipeline";
+import type { OperatorJob } from "@/lib/types";
 
 export interface ComposerToolbarProps {
   engineControls?: ReactNode;
@@ -101,12 +103,13 @@ export function filterCount(profile: ReviewSessionDraft): number {
   return profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
-export type ComposerBannerKind = "empty" | "vector" | "answer-model" | "budget";
+export type ComposerBannerKind = "empty" | "preparation" | "answer-model" | "budget";
 
 export interface ComposerBannerModel {
   kind: ComposerBannerKind;
   text: string;
   action?: "build" | "answer-model";
+  step?: 2 | 3 | 4;
 }
 
 export interface ComposerBannerInput {
@@ -115,15 +118,19 @@ export interface ComposerBannerInput {
   profile: ReviewSessionDraft;
   /** `ReleaseLimits.daily_cost_reset_at_utc` captured after a `daily_cost_limit` error, else null. */
   resetAt: string | null;
+  jobs?: OperatorJob[];
 }
 
 /** Picks the single banner the composer shows, highest-priority blocker first; null means the plain helper line. */
-export function composerBanner({ readiness, live, profile, resetAt }: ComposerBannerInput): ComposerBannerModel | null {
+export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }: ComposerBannerInput): ComposerBannerModel | null {
   if (live && readiness?.corpus.documents === 0) {
     return { kind: "empty", text: "The corpus is empty. Build it first.", action: "build" };
   }
-  if (resolvedRetrievalProfile(profile).strategy === "vector" && (readiness?.corpus.pending_embeddings ?? 0) > 0) {
-    return { kind: "vector", text: "Vector-only retrieval is unavailable until embeddings are ready.", action: "build" };
+  // Public readiness deliberately hides corpus counts; its ready status remains authoritative.
+  if (readiness?.mode === "runtime" && readiness.corpus.availability !== "not_applicable"
+    && (live || readiness.corpus.availability !== "ready")) {
+    const requirement = retrievalReadiness(readiness.corpus, resolvedRetrievalProfile(profile).strategy, jobs);
+    if (requirement.status !== "done") return { kind: "preparation", text: requirement.hint, action: "build", step: requirement.blockedBy === "embeddings" ? 3 : requirement.blockedBy === "lexical" ? 4 : 2 };
   }
   if (readiness?.mode === "runtime" && readiness.review_enabled === false) {
     return {

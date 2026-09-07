@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, failureReport, STAGE_ORDER } from "./pipeline";
+import { ANSWER_MODEL_HINT, derivePipeline, failureMessage, failureReport, overallJobPercent, STAGE_ORDER } from "./pipeline";
 import type { Pipeline, PipelineInput, Stage, StageId } from "./pipeline";
+import { DEFAULT_PROFILE } from "./types";
 import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./types";
 
 /** Full, healthy corpus as reported by `/admin/corpus`.status. */
@@ -119,6 +120,42 @@ function statuses(pipeline: Pipeline): Record<StageId, Stage["status"]> {
 }
 
 describe("derivePipeline", () => {
+  it.each(["hybrid", "vector", "lexical"] as const)("matches all index readiness combinations for %s", (strategy) => {
+    for (const pending of [0, 12]) for (const bm25 of [false, true]) {
+      const pipeline = derivePipeline(liveInput({ profile: { ...DEFAULT_PROFILE, strategy }, corpus: fullCorpus({ pending_embeddings: pending, bm25_ready: bm25 }) }));
+      const ready = (strategy === "lexical" || pending === 0) && (strategy === "vector" || bm25);
+      expect(stage(pipeline, "ask").status).toBe(ready ? "done" : "blocked");
+      if (!ready) expect(stage(pipeline, "ask").blockedBy).toBe(strategy !== "lexical" && pending > 0 ? "embeddings" : "lexical");
+    }
+  });
+
+  it.each(["running", "queued"] as const)("waits for %s preparation only when the active strategy requires it", (status) => {
+    for (const kind of ["backfill_embeddings", "rebuild_bm25"]) for (const strategy of ["hybrid", "vector", "lexical"] as const) {
+      const pipeline = derivePipeline(liveInput({ profile: { ...DEFAULT_PROFILE, strategy }, jobs: [job({ kind, status })] }));
+      const required = strategy === "hybrid" || (strategy === "vector" ? kind === "backfill_embeddings" : kind === "rebuild_bm25");
+      expect(stage(pipeline, "ask").status).toBe(required ? status : "done");
+    }
+  });
+
+  it("offers recompute after invalidation when an earlier BM25 computation is recorded", () => {
+    const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ bm25_ready: false, bm25_rebuild_recorded: true }) }));
+    expect(stage(pipeline, "lexical").status).toBe("action");
+    expect(stage(pipeline, "lexical").action?.label).toBe("Recompute BM25");
+    expect(stage(derivePipeline(liveInput()), "lexical").action?.label).toBe("Recompute BM25");
+  });
+
+  it("keeps card progress on reported overall units across stage resets", () => {
+    const sequence = [
+      job({ kind: "ingest_manifest", status: "running", stage: "prepare", current: 4, total: 4, overall_current: 40, overall_total: 100 }),
+      job({ kind: "ingest_manifest", status: "running", stage: "schema", current: 0, total: 1, overall_current: 40, overall_total: 100 }),
+      job({ kind: "ingest_manifest", status: "running", stage: "chunks", current: 12, total: 53, overall_current: 62, overall_total: 100 }),
+      job({ kind: "ingest_manifest", status: "running", stage: "cleanup", current: 4, total: 4, overall_current: 100, overall_total: 100 }),
+    ];
+    expect(sequence.map((item) => stage(derivePipeline(liveInput({ jobs: [item] })), "index").progress)).toEqual([40, 40, 62, 99]);
+    expect(overallJobPercent({ ...sequence[3], status: "succeeded" })).toBe(100);
+    expect(overallJobPercent(job({ current: 4, total: 4 }))).toBeNull();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
@@ -284,8 +321,8 @@ describe("derivePipeline", () => {
     expect(pipeline.next?.id).toBe("filings");
   });
 
-  // Case 5: chunks exist but some still lack vectors; BM25 keeps Ask usable.
-  it("asks for Backfill embeddings when chunks are pending and reports lexical-only retrieval", () => {
+  // Case 5: hybrid cannot search a partially embedded corpus.
+  it("blocks hybrid Ask on the embedding step when chunks are pending", () => {
     const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ embedded_chunks: 21915, pending_embeddings: 12 }) }));
 
     expect(pipeline.corpusReady).toBe(false);
@@ -298,8 +335,9 @@ describe("derivePipeline", () => {
     expect(embeddings.action).toEqual({ label: "Backfill embeddings", kind: "embed" });
 
     const ask = stage(pipeline, "ask");
-    expect(ask.status).toBe("done");
-    expect(ask.statusDetail).toBe("lexical only · embeddings pending");
+    expect(ask.status).toBe("blocked");
+    expect(ask.blockedBy).toBe("embeddings");
+    expect(ask.hint).toContain("step 3");
   });
 
   it("appends the embedding provider to the pending count when the snapshot names one", () => {
@@ -308,7 +346,7 @@ describe("derivePipeline", () => {
   });
 
   // Case 6: vectors are complete but the BM25 statistics were reset.
-  it("asks for Rebuild BM25 when bm25_ready is false and reports vector-only retrieval", () => {
+  it("requires explicit BM25 computation and blocks hybrid Ask when BM25 is absent", () => {
     const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ bm25_ready: false }) }));
 
     expect(pipeline.corpusReady).toBe(false);
@@ -317,22 +355,23 @@ describe("derivePipeline", () => {
     const lexical = stage(pipeline, "lexical");
     expect(lexical.status).toBe("action");
     expect(lexical.numbers).toEqual(["BM25 not built"]);
-    expect(lexical.hint).toBe("Run Rebuild BM25 to compute the term statistics.");
-    expect(lexical.action).toEqual({ label: "Rebuild BM25", kind: "bm25" });
+    expect(lexical.hint).toContain("Compute BM25 after parsing");
+    expect(lexical.action).toEqual({ label: "Compute BM25", kind: "bm25" });
 
     const ask = stage(pipeline, "ask");
-    expect(ask.status).toBe("done");
-    expect(ask.statusDetail).toBe("vector ready · BM25 pending");
+    expect(ask.status).toBe("blocked");
+    expect(ask.blockedBy).toBe("lexical");
+    expect(ask.hint).toContain("step 4");
   });
 
   it("reports limited retrieval when neither vectors nor BM25 are complete", () => {
     const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ pending_embeddings: 5, embedded_chunks: 21922, bm25_ready: false }) }));
-    expect(stage(pipeline, "ask").statusDetail).toBe("retrieval limited");
+    expect(stage(pipeline, "ask").blockedBy).toBe("embeddings");
   });
 
   // Case 7: a running job overrides its stage with progress; a queued one shows its position.
   it("shows a running backfill with 50% progress and a queued BM25 rebuild as Queued #2", () => {
-    const running = job({ job_id: "embed-1", kind: "backfill_embeddings", status: "running", stage: "embed", current: 50, total: 100, message: "Embedded 50", can_cancel: true });
+    const running = job({ job_id: "embed-1", kind: "backfill_embeddings", status: "running", stage: "embed", current: 50, total: 100, overall_current: 50, overall_total: 100, message: "Embedded 50", can_cancel: true });
     const queued = job({ job_id: "bm25-1", kind: "rebuild_bm25", status: "queued", stage: "queued", queue_position: 2 });
     const pipeline = derivePipeline(liveInput({
       corpus: fullCorpus({ embedded_chunks: 21877, pending_embeddings: 50, bm25_ready: false }),

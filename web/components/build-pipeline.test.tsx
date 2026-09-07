@@ -173,7 +173,7 @@ describe("BuildPipeline", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Embeddings" }));
     expect(screen.getByRole("button", { name: "Backfill embeddings" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
-    expect(screen.getByRole("button", { name: "Rebuild BM25" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Recompute BM25" })).toBeDisabled();
     expect(screen.getByText("Runs on the local operator build.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
     fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));

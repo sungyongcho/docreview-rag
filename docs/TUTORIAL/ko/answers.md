@@ -8,6 +8,9 @@
 
 - **목표:** 의도한 보고서에서 주장과 인용을 확인할 수 있는 답변을 얻습니다.
 - **선행 조건:** [8단계](retrieval.md#step-8)에서 관련 근거를 찾았고 답변 엔진과 범위 필터가 유효합니다.
+  하이브리드는 임베딩(Build 3단계)과 BM25(Build 4단계)가 모두 필요합니다. 벡터 검색은 임베딩,
+  키워드 검색은 BM25가 필요합니다. 필요한 인덱스가 미완료면 질문 전송이 차단되고 입력창에서
+  준비할 단계를 안내합니다. 해당 작업이 대기·실행 중이면 질문 단계도 대기하며 전송은 비활성화됩니다.
   결과를 읽는 방법만 익히려면 기존 답변을 재사용할 수 있습니다.
 - **화면 경로:** 새 대화 → 질문 위의 제어 영역 → 요청 보기.
 - **입력:** SEC 범위, 사용 가능한 [답변 엔진](#engines), 균형 프리셋을 선택합니다. 코퍼스에 있으면
@@ -145,3 +148,6 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 ### SCREENSHOT NEEDED
 
 <!-- Feature: stage disclosures and right-side run details; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+
+### SCREENSHOT NEEDED
+<!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=ko; light mode; preserve existing assets. -->

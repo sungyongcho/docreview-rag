@@ -284,6 +284,7 @@ class CorpusStatusResource(StrictAdminModel):
     embedded_chunks: NonnegativeInt
     pending_embeddings: NonnegativeInt
     bm25_ready: StrictBool
+    bm25_rebuild_recorded: StrictBool | None = None
     writable: StrictBool = Field(
         description=(
             "Source directory write permission, independent of database schema compatibility."
@@ -535,6 +536,12 @@ class OperatorJobResource(StrictAdminModel):
     total: NonnegativeInt | None
     detail_current: NonnegativeInt | None
     detail_total: NonnegativeInt | None
+    overall_current: NonnegativeInt | None = None
+    overall_total: NonnegativeInt | None = None
+    stage_index: PositiveInt | None = None
+    stage_count: PositiveInt | None = None
+    stage_started_at: datetime | None = None
+    progress_stage: str | None = None
     message: str
     error_code: str | None
     result_refs: dict[str, object]

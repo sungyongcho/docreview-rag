@@ -280,6 +280,20 @@ rag-corpus status
 
 Wait for each job to succeed. The acquisition result identifies an exact processing selection inside the common manifest; no catalog extraction or copied manifest is needed.
 
+Ingestion only parses and stores chunks. It invalidates BM25 statistics without rebuilding
+them. Run `rag-corpus backfill_embeddings`, wait for success, then run
+`rag-corpus rebuild_bm25` and wait for success before hybrid retrieval. Repeat the BM25
+operation after every parse/chunk run. Build step 4 offers **Compute BM25** initially
+and **Recompute BM25** when statistics or a successful rebuild record exist; it also
+permits recomputation while ready.
+
+The direct runtime seed API retains its combined ingest-and-BM25 behavior for existing
+API clients; isolated evaluation corpus arms likewise prepare their own statistics.
+These are separate from the Build/CLI ingestion job.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit BM25 stage; state: ingest succeeded, BM25 action needed; locale: en; evidence: CLI ingest history ends at cleanup, followed by explicit rebuild_bm25 success. -->
+
 ## Python CLI reference
 
 ### Ingestion
@@ -448,7 +462,7 @@ System status, Jobs, and the answer's Run trace. If the web itself is unavailabl
 | API/DB unavailable | service and DB health | Restore the connection; refresh and verify schema |
 | schema_drift | Existing schema mismatch | Preserve this database and choose an empty isolated or compatible database |
 | Missing/stale embeddings | provider, identity, pending | Correct configuration and run needed paid backfill after checking the manifest and explicit selection |
-| BM25 not ready | missing/invalidated statistics | Rebuild BM25 and verify job success plus readiness |
+| BM25 not ready | Normal intermediate state after parsing/chunking | Run Compute/Recompute BM25 (step 4); hybrid/lexical wait, vector needs embeddings only |
 | NOT_IN_DOCS | scope, company/year filters, evidence | Inspect Documents and candidates; ask something actually supported by the corpus |
 | provider_failure | status, attempts, details, node | Fix key/access/connectivity/limits; schema recreation does not fix this |
 | budget_exceeded | resource, limit, observed, blocked_node | Adjust the specific limit under Review settings → Run limits; retries can cost more |

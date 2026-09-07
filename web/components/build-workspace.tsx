@@ -8,9 +8,10 @@ import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { BuildPipeline, type AcquisitionForm } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
-import { JobCenter } from "@/components/job-center";
+import { JobCenter, jobCopy } from "@/components/job-center";
 import { useNotifications } from "@/components/notifications";
 import {
+  ApiError,
   getAdminSnapshots,
   getCorpusSnapshot,
   getDocumentFacets,
@@ -29,6 +30,7 @@ import type {
   CorpusDocument,
   CorpusCounts,
   EvaluationJob,
+  EvaluationRequest,
   ExperimentDefaults,
   CorpusSnapshot,
   CorpusOperationRequest,
@@ -80,7 +82,20 @@ const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "", years: "" };
 
 const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: null, schema_message: null, documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: null, writable: null, provider: null };
 
-export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
+/** Compare the submitted evaluation options without depending on object key order. */
+function sameEvaluationRequest(left: unknown, right: unknown): boolean {
+  /** Keep nested profile comparisons stable without changing array order. */
+  const canonical = (value: unknown): string => {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    if (value && typeof value === "object") return "{" + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",") + "}";
+    return JSON.stringify(value) ?? "null";
+  };
+  if (!left || typeof left !== "object" || !right || typeof right !== "object") return false;
+  const submitted = Object.fromEntries(Object.keys(right).map((key) => [key, (left as Record<string, unknown>)[key]]));
+  return canonical(submitted) === canonical(right);
+}
+
+export function BuildWorkspace({ live, readiness, healthKind, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -100,6 +115,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   const [historyWarning, setHistoryWarning] = useState("");
   const [corpusWarning, setCorpusWarning] = useState("");
   const [facetWarning, setFacetWarning] = useState("");
+  const [duplicateEvaluation, setDuplicateEvaluation] = useState(false);
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
   const draftInitialized = useRef(false);
@@ -260,7 +276,8 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
 
   async function runQuickEvaluation() {
     if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval"); return; }
-    if (!ready) return;
+    if (evaluationBlockedReason) { notify(t(evaluationBlockedReason), "warning", "evaluation"); return; }
+    setDuplicateEvaluation(false);
     setBusy(true);
     try {
       // The saved default revision applies only when it still exists for the suite;
@@ -268,21 +285,36 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
       const revisions = await getGoldenRevisions(experimentDefaults.suite_id).catch(() => []);
       const defaultRevision = experimentDefaults.golden_revision_id;
       const goldenRevisionId = Array.isArray(revisions) && revisions.some((row) => row.revision_id === defaultRevision) ? defaultRevision : null;
-      const job = await queueEvaluation({
+      const request: EvaluationRequest = {
         suite_id: experimentDefaults.suite_id,
         golden_revision_id: goldenRevisionId,
-        mode: "quick",
+        mode: "quick" as const,
         profile,
         target_tokens: [1024, 2048],
         strategies: ["lexical", "vector", "hybrid"],
         lexical_rankers: ["ts_rank_cd", "bm25"],
-      });
+      };
+      const activeEvaluations = [...jobBoard.jobs.filter((job) => job.domain === "evaluation"), ...jobs];
+      if (activeEvaluations.some((job) => ["queued", "running"].includes(job.status) && sameEvaluationRequest(job.request, request))) {
+        setDuplicateEvaluation(true);
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate");
+        return;
+      }
+      const job = await queueEvaluation(request);
       setJobs((current) => [job, ...current]);
       onRefreshJobs();
-      notify(t("Evaluation queued."), "success", "evaluation-queued");
+      notify(waitingCorpusJob
+        ? waitingCorpusJob.kind === "backfill_embeddings"
+          ? t("Embedding is in progress. The evaluation was added to the job queue and starts when embedding finishes.")
+          : t("{kind} is in progress. The evaluation was added to the job queue and starts when it finishes.", { kind: t(jobCopy(waitingCorpusJob).label) })
+        : t("Evaluation queued."), "success", "evaluation-queued");
       onTabChange("jobs");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation");
+      if (reason instanceof ApiError && reason.code === "evaluation_already_queued") {
+        setDuplicateEvaluation(true);
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate");
+        onRefreshJobs();
+      } else notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation");
     } finally {
       setBusy(false);
     }
@@ -308,7 +340,8 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     jobs: Array.isArray(jobBoard.jobs) ? jobBoard.jobs : [],
     evaluationResults,
     snapshots: snapshotCount,
-  }), [live, healthKind, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount]);
+    profile,
+  }), [live, healthKind, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile]);
   /** Runtime flags for the strip: the administrator snapshot once loaded, otherwise `/ready`. */
   const runtimeCounts: CorpusCounts | null = live && adminLoaded ? status : readiness?.corpus ?? null;
   const answerModelLabel = readiness === null
@@ -319,12 +352,28 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         ? `${readiness.review_engines.openai.key_slot ?? "explicit"} key`
         : "local";
   const canOperateCorpus = live && status.writable !== false;
+  const activeCorpusJobs = jobBoard.jobs.filter((job) => job.domain === "corpus" && ["queued", "running"].includes(job.status));
+  const waitingCorpusJob = activeCorpusJobs.find((job) => job.status === "running") ?? activeCorpusJobs[0];
+  const evaluationBlockedReason = !live ? null
+    : healthKind === "api_down" ? "API unavailable"
+    : healthKind === "checking" ? "Checking corpus…"
+    : runtimeCounts?.database_connected === false ? "Database is unreachable"
+    : runtimeCounts?.schema_status === "empty" ? "Database schema is empty"
+    : runtimeCounts?.schema_status === "drifted" ? "Database schema is incompatible"
+    : runtimeCounts?.schema_status === "unavailable" ? "Database schema is unavailable"
+    : runtimeCounts?.writable === false ? "Source directory is not writable"
+    : runtimeCounts?.database_connected !== true || !["ok", "compatible"].includes(runtimeCounts?.schema_status ?? "") ? "Readiness not confirmed"
+    : !runtimeCounts?.chunks ? "Finish steps 1–2 to enable retrieval."
+    : profile.strategy !== "lexical" && runtimeCounts.pending_embeddings !== 0 && !activeCorpusJobs.some((job) => job.kind === "backfill_embeddings") ? "Complete Embeddings (step 3) before evaluating."
+    : profile.strategy !== "vector" && runtimeCounts.bm25_ready !== true && !activeCorpusJobs.some((job) => job.kind === "rebuild_bm25") ? "Complete BM25 (step 4) before evaluating."
+    : null;
 
   return (
     <section className="lab-shell build-workspace">
       {historyWarning && <p className="notice" role="status">{historyWarning}</p>}
       {corpusWarning && <p className="notice" role="status">{corpusWarning}</p>}
       {facetWarning && <p className="notice" role="status">{facetWarning}</p>}
+      {duplicateEvaluation && <p className="notice" role="status">{t("The same evaluation is already queued.")} <button type="button" className="inline-link" onClick={() => onTabChange("jobs")}>{t("Open Jobs")}</button></p>}
       <header className="page-heading">
         <div>
           <h1>{t("From filings to verified answers.")}</h1>
@@ -349,6 +398,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         live={live}
         busy={busy}
         canOperateCorpus={canOperateCorpus}
+        evaluationBlockedReason={evaluationBlockedReason}
         acquisition={acquisition}
         companies={referenceCompanies}
         onAcquisitionChange={(next) => { draftDirty.current = true; setAcquisition(next); }}

@@ -61,7 +61,7 @@ from app.db.models import (
     Run,
     Trace,
 )
-from app.evals.admin import EvaluationAdminService
+from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
 from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
@@ -69,6 +69,7 @@ from app.llm.local_connection import LocalConnectionError, LocalConnectionManage
 from app.observability.usage import USAGE_KEY, merge_usage, review_usage
 from app.operator.job_history import JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
+from app.operator.progress import progress_fields
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.service import ComponentRankings, RetrievalResult, retrieve
 from app.retrieval.types import RetrievalFilters
@@ -113,6 +114,7 @@ class RuntimeAdminApiServices:
             execution_coordinator=execution_coordinator,
         )
         self._evaluations = evaluations or EvaluationAdminService(
+            corpus_status=self._corpus.status,
             session_factory=runtime.session_factory,
             job_store=self._job_store,
             execution_lock=execution_lock,
@@ -340,7 +342,14 @@ class RuntimeAdminApiServices:
 
     async def enqueue_evaluation(self, request: EvaluationRunRequest) -> EvaluationJobResource:
         """Queue one quick or matrix evaluation."""
-        return await self._evaluations.enqueue(request)
+        try:
+            return await self._evaluations.enqueue(request)
+        except EvaluationAlreadyQueuedError as error:
+            raise ApiProblemError(
+                status_code=409,
+                code="evaluation_already_queued",
+                message=str(error),
+            ) from error
 
     async def evaluation_jobs(self) -> EvaluationJobsResponse:
         """Return newest-first evaluation job state."""
@@ -363,6 +372,7 @@ class RuntimeAdminApiServices:
             message=job.message,
             error_code=job.error_code,
             result_refs=job.result_refs,
+            **progress_fields(job.result_refs),
             queue_position=queue_positions.get(job.job_id),
             can_cancel=(
                 job.status == "queued"

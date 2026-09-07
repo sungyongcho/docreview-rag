@@ -954,6 +954,17 @@
             "title": "Bm25 Ready",
             "type": "boolean"
           },
+          "bm25_rebuild_recorded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bm25 Rebuild Recorded"
+          },
           "chunks": {
             "minimum": 0.0,
             "title": "Chunks",
@@ -4404,6 +4415,41 @@
             "title": "Message",
             "type": "string"
           },
+          "overall_current": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Current"
+          },
+          "overall_total": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Total"
+          },
+          "progress_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Stage"
+          },
           "queue_position": {
             "anyOf": [
               {
@@ -4429,6 +4475,42 @@
           "stage": {
             "title": "Stage",
             "type": "string"
+          },
+          "stage_count": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Count"
+          },
+          "stage_index": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Index"
+          },
+          "stage_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Started At"
           },
           "started_at": {
             "anyOf": [

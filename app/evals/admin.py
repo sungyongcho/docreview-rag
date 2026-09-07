@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import hashlib
@@ -30,6 +31,7 @@ from app.api.admin_schemas import (
     RetrievalProfile,
 )
 from app.config import Settings, get_settings
+from app.corpus_admin import CorpusStatus
 from app.db.models import EvalResult, GoldenRevision
 from app.evals.arms import Retriever, make_retriever
 from app.evals.artifacts import read_strict_json
@@ -159,6 +161,15 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
 }
 
 
+class EvaluationAlreadyQueuedError(ValueError):
+    """Identify an active equivalent quick evaluation for authoritative duplicate feedback."""
+
+    def __init__(self, job_id: str) -> None:
+        """Attach the already registered job to the duplicate response."""
+        self.job_id = job_id
+        super().__init__(f"The same evaluation is already queued: {job_id}. Open Jobs to view it.")
+
+
 class EvaluationAdminService:
     """Run golden evaluations serially and retain bounded in-process job state."""
 
@@ -172,6 +183,7 @@ class EvaluationAdminService:
         job_store: JobStore | None = None,
         execution_lock: asyncio.Lock | None = None,
         execution_coordinator: JobExecutionCoordinator | None = None,
+        corpus_status: Callable[[], Awaitable[CorpusStatus]] | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._session_factory = session_factory
@@ -188,6 +200,8 @@ class EvaluationAdminService:
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._recovered_jobs = False
+        self._enqueue_lock = asyncio.Lock()
+        self._corpus_status = corpus_status
         self._persister = ProgressPersister(self._persist_current_job)
 
     def _definition(self, suite_id: GoldenSuiteId) -> GoldenSuiteDefinition:
@@ -251,8 +265,64 @@ class EvaluationAdminService:
     async def enqueue(
         self, request: EvaluationRunRequest, *, retry_of: str | None = None
     ) -> EvaluationJobResource:
-        """Queue one quick or matrix evaluation on the single worker."""
+        """Atomically deduplicate and queue a request, including concurrent callers."""
+        async with self._enqueue_lock:
+            return await self._enqueue(request, retry_of=retry_of)
+
+    async def _require_preparation(
+        self, request: EvaluationRunRequest, *, allow_pending: bool
+    ) -> None:
+        """Require the selected quick profile's index, optionally waiting for explicit prep jobs."""
+        if request.mode != "quick" or self._corpus_status is None:
+            return
+        status = await self._corpus_status()
+        if not status.database_connected or status.schema_status != "compatible":
+            raise ValueError(f"Evaluation requires a compatible database: {status.schema_message}")
+        if not status.writable:
+            raise ValueError("Evaluation requires writable source storage.")
+        if status.chunks == 0 and not (
+            allow_pending and self._execution_coordinator.has_kind("ingest_manifest")
+        ):
+            raise ValueError("Parse and chunk sources before evaluation (step 2).")
+        needed = []
+        if request.profile.strategy in {"hybrid", "vector"} and (
+            status.pending_embeddings > 0 or status.chunks == 0
+        ):
+            needed.append(
+                ("backfill_embeddings", "Complete embeddings before evaluation (step 3).")
+            )
+        if request.profile.strategy in {"hybrid", "lexical"} and not status.bm25_ready:
+            needed.append(("rebuild_bm25", "Compute BM25 before evaluation (step 4)."))
+        for kind, message in needed:
+            if not (allow_pending and self._execution_coordinator.has_kind(kind)):
+                raise ValueError(message)
+
+    def _waiting_message(self, job_id: str, message: str) -> None:
+        """Refresh a pending evaluation when the shared queue's preceding job changes."""
+        job = self._jobs[job_id]
+        if job.status == "queued" and job.message != message:
+            self._jobs[job_id] = job.model_copy(update={"message": message})
+            if self._job_store is not None:
+                self._persister.schedule(job_id)
+
+    async def _enqueue(
+        self, request: EvaluationRunRequest, *, retry_of: str | None = None
+    ) -> EvaluationJobResource:
+        """Reserve one request under the enqueue lock before durable registration."""
         await self.recover_jobs()
+        if request.mode == "quick":
+            for existing in self._jobs.values():
+                other = existing.request
+                if (
+                    existing.status in {"queued", "running"}
+                    and other.mode == "quick"
+                    and other.suite_id == request.suite_id
+                    and other.golden_revision_id == request.golden_revision_id
+                    and other.profile == request.profile
+                    and set(other.strategies) == set(request.strategies)
+                ):
+                    raise EvaluationAlreadyQueuedError(existing.job_id)
+        await self._require_preparation(request, allow_pending=True)
         if self._queue.full():
             raise RuntimeError("evaluation queue is full")
         job_id = f"eval-{uuid4().hex}"
@@ -264,7 +334,6 @@ class EvaluationAdminService:
             message="Queued",
             created_at=datetime.now(UTC),
         )
-        self._jobs[job_id] = job
         if self._job_store is not None:
             await self._job_store.create(
                 job_id=job_id,
@@ -274,11 +343,17 @@ class EvaluationAdminService:
                 created_at=job.created_at,
                 result_refs={"retry_of": retry_of} if retry_of is not None else {},
             )
-        await self._execution_coordinator.register(job_id, job.created_at)
+        self._jobs[job_id] = job
+        await self._execution_coordinator.register(
+            job_id,
+            job.created_at,
+            kind=request.mode,
+            on_wait=lambda message: self._waiting_message(job_id, message),
+        )
         self._queue.put_nowait(job_id)
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._work(), name="evaluation-admin-worker")
-        return job
+        return self._jobs[job_id]
 
     async def jobs(self) -> EvaluationJobsResponse:
         """Return active, queued, and completed jobs in newest-first order."""
@@ -368,7 +443,9 @@ class EvaluationAdminService:
         self._jobs[job_id] = cancelled
         await self._execution_coordinator.cancel(job_id)
         if self._job_store is not None:
-            await self._job_store.cancel(job_id)
+            await self._persister.write_final(
+                job_id, lambda: self._persist_job(cancelled, error_code="cancelled")
+            )
         return cancelled
 
     async def recover_jobs(self) -> None:
@@ -686,6 +763,7 @@ class EvaluationAdminService:
         error_code = None
         try:
             if job.request.mode == "quick":
+                await self._require_preparation(job.request, allow_pending=False)
                 result_id, baseline_id, artifact_path = await self._quick(job_id, job.request)
                 updates = {
                     "result_id": result_id,

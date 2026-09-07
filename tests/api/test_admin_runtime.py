@@ -102,3 +102,22 @@ def test_readiness_status_extends_max_age_while_a_job_is_registered() -> None:
 
     asyncio.run(scenario())
     assert corpus.ages == [2.0, 10.0, 2.0]
+
+
+def test_duplicate_evaluation_is_a_typed_409():
+    """Expose the authoritative duplicate identity through the standard API error contract."""
+    import pytest
+
+    from app.api.admin_schemas import EvaluationRunRequest
+    from app.api.errors import ApiProblemError
+    from app.evals.admin import EvaluationAlreadyQueuedError
+
+    service = object.__new__(RuntimeAdminApiServices)
+    service._evaluations = SimpleNamespace(
+        enqueue=AsyncMock(side_effect=EvaluationAlreadyQueuedError("eval-existing"))
+    )
+    with pytest.raises(ApiProblemError) as error:
+        asyncio.run(service.enqueue_evaluation(EvaluationRunRequest(suite_id="sec-en")))
+    assert error.value.status_code == 409
+    assert error.value.error.code == "evaluation_already_queued"
+    assert "eval-existing" in error.value.error.message

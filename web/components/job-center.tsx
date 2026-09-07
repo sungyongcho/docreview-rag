@@ -11,6 +11,7 @@ import styles from "./master-detail.module.css";
 import { useState } from "react";
 
 import type { OperatorJob, OperatorJobBoard } from "@/lib/types";
+import { overallJobPercent } from "@/lib/pipeline";
 
 export const JOB_COPY: Record<string, { label: string; purpose: string }> = {
   acquire_edgar: { label: "Acquire SEC filings", purpose: "Download missing EDGAR filings into the corpus." },
@@ -52,7 +53,7 @@ export function jobErrorSummary(code: string | null | undefined, locale: Locale 
   }
 }
 
-export function elapsedLabel(job: OperatorJob, locale: Locale = "en"): string {
+export function elapsedLabel(job: Pick<OperatorJob, "started_at" | "finished_at">, locale: Locale = "en"): string {
   if (!job.started_at) return translate(locale, "Not started");
   const end = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
   const seconds = Math.max(0, Math.floor((end - new Date(job.started_at).getTime()) / 1000));
@@ -62,10 +63,21 @@ export function elapsedLabel(job: OperatorJob, locale: Locale = "en"): string {
 
 export function JobProgress({ job }: { job: OperatorJob }) {
   const { t, locale } = useI18n();
-  const percent = job.total && job.total > 0
+  const overall = overallJobPercent(job);
+  const stage = job.progress_stage ?? job.stage;
+  const indeterminate = job.status === "running" && ["schema", "documents", "bm25"].includes(stage) && job.total === 1;
+  const percent = !indeterminate && job.total && job.total > 0
     ? Math.min(100, Math.round((job.current / job.total) * 100))
     : null;
-  return <div className="job-progress"><div><span>{t(job.stage)}</span><strong>{job.total === null ? job.current.toLocaleString(locale) : t("{p0} / {p1}{p2}", { p0: job.current.toLocaleString(locale === "ko" ? "ko-KR" : "en-US"), p1: job.total.toLocaleString(locale === "ko" ? "ko-KR" : "en-US"), p2: percent === null ? "" : ` · ${percent}%` })}</strong></div>{job.total !== null && <progress max={Math.max(job.total, 1)} value={Math.min(job.current, job.total)} />}{job.detail_total !== null && <><div><span>{t("Current item")}</span><strong>{(job.detail_current ?? 0).toLocaleString(locale)} / {job.detail_total.toLocaleString(locale)}</strong></div><progress max={Math.max(job.detail_total, 1)} value={Math.min(job.detail_current ?? 0, job.detail_total)} /></>}</div>;
+  return <div className="job-progress">
+    <div><span>{t("Overall progress")}</span><strong>{job.stage_index != null && job.stage_count != null ? t("Stage {current} / {total}", { current: job.stage_index, total: job.stage_count }) + " · " : ""}{overall === null ? t("Progress not reported") : `${overall}%`}</strong></div>
+    {overall !== null && <progress aria-label={t("Overall progress")} max={100} value={overall} />}
+    <p className="helper">{t("Elapsed")}: {elapsedLabel(job, locale)}</p>
+    <div><span>{t("Current stage")} · {t(stage)}</span><strong>{indeterminate ? t("In progress") : job.total == null ? job.current.toLocaleString(locale) : t("{p0} / {p1}{p2}", { p0: job.current.toLocaleString(locale), p1: job.total.toLocaleString(locale), p2: percent === null ? "" : ` · ${percent}%` })}</strong></div>
+    {(indeterminate || job.total != null) && <progress aria-label={t("Current stage")} max={Math.max(job.total ?? 1, 1)} value={indeterminate ? undefined : Math.min(job.current, job.total ?? 1)} />}
+    <p className="helper">{job.message}{job.stage_started_at ? ` · ${t("Stage elapsed")}: ${elapsedLabel({ started_at: job.stage_started_at, finished_at: job.finished_at }, locale)}` : ""}</p>
+    {job.detail_current != null && job.detail_total != null && <><div><span>{t("Current item")}</span><strong>{job.detail_current.toLocaleString(locale)} / {job.detail_total.toLocaleString(locale)}</strong></div><progress aria-label={t("Current item")} max={Math.max(job.detail_total, 1)} value={Math.min(job.detail_current, job.detail_total)} /></>}
+  </div>;
 }
 
 export function JobActivityPanel({ board, loading, onOpenJobs }: { board: OperatorJobBoard; loading: boolean; onOpenJobs: () => void }) {
@@ -73,7 +85,7 @@ export function JobActivityPanel({ board, loading, onOpenJobs }: { board: Operat
   const active = board.jobs.find((job) => job.status === "running") ?? null;
   const queued = board.jobs.filter((job) => job.status === "queued").toSorted((left, right) => (left.queue_position ?? 0) - (right.queue_position ?? 0));
   const latest = board.jobs.find((job) => ["succeeded", "failed", "interrupted", "cancelled"].includes(job.status)) ?? null;
-  return <section className="surface job-activity"><div className="surface-heading"><div><h2>{t("Job activity")}</h2><p className="helper">{t("Persistent corpus and evaluation queue")}</p></div><button className="button" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button></div>{loading && !board.jobs.length ? <p className="helper">{t("Loading job activity…")}</p> : active ? <article className="active-job"><div className="job-title"><div><strong>{t(jobCopy(active).label)}</strong><p>{t(jobCopy(active).purpose)}</p></div><span className={`job-status ${active.status}`}>{t(active.status)}</span></div><JobProgress job={active} /><p className="helper">{active.message}</p><p className="helper">{t("Started")}{" "}{active.started_at ? new Date(active.started_at).toLocaleTimeString(locale === "ko" ? "ko-KR" : "en-US") : "—"}{t("· elapsed")}{" "}{elapsedLabel(active, locale)}</p></article> : <p className="helper">{t("No job is running.")}{latest ? t(" Latest: {p0} · {p1}.", { p0: t(jobCopy(latest).label), p1: t(latest.status) }) : ""}</p>}{queued.length > 0 && <div className="queued-jobs"><strong>{t("Queued ·")}{" "}{queued.length}</strong>{queued.slice(0, 3).map((job) => <span key={job.job_id}>#{job.queue_position} {t(jobCopy(job).label)}</span>)}</div>}</section>;
+  return <section className="surface job-activity"><div className="surface-heading"><div><h2>{t("Job activity")}</h2><p className="helper">{t("Persistent corpus and evaluation queue")}</p></div><button className="button" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button></div>{loading && !board.jobs.length ? <p className="helper">{t("Loading job activity…")}</p> : active ? <article className="active-job"><div className="job-title"><div><strong>{t(jobCopy(active).label)}</strong><p>{t(jobCopy(active).purpose)}</p></div><span className={`job-status ${active.status}`}>{t(active.status)}</span></div><JobProgress job={active} /><p className="helper">{t("Started")}{" "}{active.started_at ? new Date(active.started_at).toLocaleTimeString(locale === "ko" ? "ko-KR" : "en-US") : "—"}{t("· elapsed")}{" "}{elapsedLabel(active, locale)}</p></article> : <p className="helper">{t("No job is running.")}{latest ? t(" Latest: {p0} · {p1}.", { p0: t(jobCopy(latest).label), p1: t(latest.status) }) : ""}</p>}{queued.length > 0 && <div className="queued-jobs"><strong>{t("Queued ·")}{" "}{queued.length}</strong>{queued.slice(0, 3).map((job) => <span key={job.job_id}>#{job.queue_position} {t(jobCopy(job).label)}</span>)}</div>}</section>;
 }
 
 /** Keep job selection explicit and expose only actions supported by its current state. */
@@ -110,10 +122,10 @@ export function JobCenter({ board, loading, stale = false, onRetry, onCancel, on
       <div ref={layout.listRef} className={styles.list} aria-busy={loading}>
         {loading && !board.jobs.length && <p className={styles.status} role="status">{t("Loading job activity…")}</p>}
         {visible.map((job) => <button className={`job-list-row ${styles.jobRow}`} type="button" key={job.job_id} aria-pressed={selectedId === job.job_id} onClick={() => { setSelectedId(job.job_id); layout.openDetail(); }}>
-          <span><strong>{t(jobCopy(job).label)}</strong><small>{job.queue_position ? t("Queue #{p0} · ", { p0: job.queue_position }) : ""}{t(job.stage)}</small></span>
+          <span><strong>{t(jobCopy(job).label)}</strong><small>{job.queue_position ? t("Queue #{p0} · ", { p0: job.queue_position }) : ""}{t(job.progress_stage ?? job.stage)}</small></span>
           <span className={styles.jobTarget}>{jobTarget(job) ?? t(job.domain)}</span>
           <span className={`job-status ${job.status}`}>{t(job.status)}</span>
-          <span className={styles.jobProgress}>{job.total === null ? job.current.toLocaleString(locale) : t("{p0}%", { p0: Math.min(100, Math.round(job.current / Math.max(job.total, 1) * 100)) })}</span>
+          <span className={styles.jobProgress}>{overallJobPercent(job) === null ? "—" : t("{p0}%", { p0: overallJobPercent(job)! })}</span>
           <time dateTime={job.created_at}>{new Date(job.created_at).toLocaleDateString(dateLocale, { month: "short", day: "numeric" })}<small>{new Date(job.created_at).toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" })}</small></time>
         </button>)}
         {!loading && !visible.length && <p className={styles.status}>{t("No jobs match this filter.")}</p>}
@@ -124,7 +136,7 @@ export function JobCenter({ board, loading, stale = false, onRetry, onCancel, on
       <button className="button ghost" type="button" onClick={layout.closeDetail}><ArrowLeft size={15} />{t("Back to jobs")}</button>
       {excluded ? <section className="surface" role="status"><h2>{t("Job outside current filters")}</h2><p className="helper">{t("The selected job is not in these results. Change filters or choose another job.")}</p><button className="button" type="button" onClick={() => { setDomain("all"); setGroup("all"); layout.closeDetail(); }}>{t("Reset filters")}</button></section> : selected && <section className="surface job-detail">
         <div className="job-title"><div><p className="eyebrow">{t("Job details")}</p><h2>{t(jobCopy(selected).label)}</h2><p>{t(jobCopy(selected).purpose)}</p></div><span className={`job-status ${selected.status}`}>{t(selected.status)}</span></div>
-        <section className="document-detail-section"><h3>{t("Actual progress")}</h3><JobProgress job={selected} /><p>{selected.message}</p><dl className="status-list"><div><dt>{t("Created")}</dt><dd>{new Date(selected.created_at).toLocaleString(dateLocale)}</dd></div><div><dt>{t("Started")}</dt><dd>{selected.started_at ? new Date(selected.started_at).toLocaleString(dateLocale) : "—"}</dd></div><div><dt>{t("Finished")}</dt><dd>{selected.finished_at ? new Date(selected.finished_at).toLocaleString(dateLocale) : "—"}</dd></div><div><dt>{t("Elapsed")}</dt><dd>{elapsedLabel(selected, locale)}</dd></div><div><dt>{t("Last update")}</dt><dd>{new Date(selected.updated_at).toLocaleString(dateLocale)}</dd></div></dl></section>
+        <section className="document-detail-section"><h3>{t("Actual progress")}</h3><JobProgress job={selected} /><dl className="status-list"><div><dt>{t("Created")}</dt><dd>{new Date(selected.created_at).toLocaleString(dateLocale)}</dd></div><div><dt>{t("Started")}</dt><dd>{selected.started_at ? new Date(selected.started_at).toLocaleString(dateLocale) : "—"}</dd></div><div><dt>{t("Finished")}</dt><dd>{selected.finished_at ? new Date(selected.finished_at).toLocaleString(dateLocale) : "—"}</dd></div><div><dt>{t("Elapsed")}</dt><dd>{elapsedLabel(selected, locale)}</dd></div><div><dt>{t("Last update")}</dt><dd>{new Date(selected.updated_at).toLocaleString(dateLocale)}</dd></div></dl></section>
         {selected.error_code && <section className="document-detail-section"><h3>{t("Error")}</h3><p className="job-error">{jobErrorSummary(selected.error_code, locale)}</p><code>{selected.error_code}</code></section>}
         <section className="document-detail-section"><h3>{t("Request options")}</h3>{Object.keys(selected.request).length > 0 ? <dl className={styles.request}>{Object.entries(selected.request).map(([key, value]) => <div key={key}><dt>{t(key.replaceAll("_", " "))}</dt><dd>{typeof value === "string" ? value : JSON.stringify(value)}</dd></div>)}</dl> : <p className="helper">{t("No request options were recorded.")}</p>}</section>
         {(resultId !== null || Object.keys(selected.result_refs).length > 0) && <section className="document-detail-section"><h3>{t("Results")}</h3><dl className={styles.request}>{Object.entries(selected.result_refs).map(([key, value]) => <div key={key}><dt>{t(key.replaceAll("_", " "))}</dt><dd>{typeof value === "string" ? value : JSON.stringify(value)}</dd></div>)}</dl></section>}
