@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { KO } from "./messages-ko";
 import { localizedDocumentationRoute } from "./documentation-registry.mjs";
-import { browserStorage } from "./production-preview";
+import { browserStorage, subscribeStorageRestored, storageEventValue } from "./storage";
 
 export type Locale = "ko" | "en";
 export const LOCALE_KEY = "docreview.locale";
@@ -100,10 +100,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     update(initial);
     if (/\/docs\/(ko|en)(?:\/[^/]+)?\/?$/.test(window.location.pathname)) persistLocale(initial);
     function changed(event: StorageEvent) {
-      if (event.key === LOCALE_KEY) update(preferredLocale(window.location.pathname, event.newValue));
+      const value = storageEventValue(event, LOCALE_KEY);
+      if (value !== undefined) update(preferredLocale(window.location.pathname, value));
     }
+    const restored = subscribeStorageRestored(() => update(preferredLocale(window.location.pathname, savedLocale())));
     window.addEventListener("storage", changed);
-    return () => window.removeEventListener("storage", changed);
+    return () => { restored(); window.removeEventListener("storage", changed); };
   }, []);
   useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const t = useCallback((source: string, values?: Values) => translate(locale, source, values), [locale]);

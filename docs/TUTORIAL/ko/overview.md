@@ -123,3 +123,7 @@ URL은 화면·탭·선택한 준비 단계나 평가 결과·로컬 대화 ID�
 ### SCREENSHOT NEEDED
 
 <!-- Feature: bidirectional header navigation and history list; locale=ko; light mode; show Back/current location/Forward with the current list entry marked, including narrow-screen sheet. Preserve existing assets. -->
+
+## 브라우저 저장소 {#browser-storage}
+
+PROD의 대화·기본값·필터·프리셋·언어/테마·도움말 설정은 이 브라우저와 origin에만 저장됩니다. 동기화되지 않으며 사이트 데이터나 비공개 세션을 지우면 사라질 수 있습니다. **설정 → 데이터와 도움말 → 브라우저 저장소**에서 용량을 확인하고 삭제 전에 백업을 내보내거나 가져오세요. 첫 방문의 ⚠️ 안내는 [전체 저장 항목·복구·삭제 설명](settings.md#browser-storage)으로 연결됩니다. DEV와 메모리 기반 배포 미리보기는 기존 동작을 유지합니다.

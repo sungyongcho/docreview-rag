@@ -1,0 +1,8 @@
+.browser-storage-notice { position:fixed; z-index:45; bottom:18px; right:18px; width:min(360px,calc(100vw - 36px)); padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--surface); box-shadow:0 8px 28px #0002; color:var(--text); font-size:13px; overflow-wrap:anywhere; }
+.browser-storage-notice p { margin:8px 0; color:var(--muted); }
+.browser-storage-notice > div, .browser-storage-settings > header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.browser-storage-settings { min-width:0; border-top:1px solid var(--border); padding-top:12px; }
+.browser-storage-settings h3 { margin:0; }
+.browser-storage-settings dl > div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; padding:4px 0; }
+.browser-storage-settings dt { min-width:0; overflow-wrap:anywhere; }
+.browser-storage-settings dd { margin:0; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { browserStorage } from "@/lib/production-preview";
+import { browserStorage } from "@/lib/storage";
 
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
