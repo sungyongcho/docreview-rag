@@ -65,8 +65,9 @@ User directions and higher-priority instructions still prevail.
   development commits or PRs. Repository role/assignment rules still decide who may
   initiate each action; the account does not grant coordinator or merge authority.
 - Central policy, configuration, shell helpers and maintenance procedures live in the
-  private `sungyongcho/ops` repository, normally cloned at `~/Documents/ops`. Read its
-  `policies/identity.md` for the configured host. The policy covers all personally owned
+  private `sungyongcho/ops` repository. Resolve the active installed policy root with
+  `ops-doctor` and read its `policies/identity.md`; a development clone such as
+  `~/Documents/ops` may be older than the installed snapshot. The policy covers all personally owned
   public/private repositories; product tasks remain in their own repositories.
 - Use `ops-doctor` to check actual identities. `ops-init` registers an explicitly owned
   checkout; `ops-sync` discovers/registers owned repositories; `ops-status` reads work
