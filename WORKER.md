@@ -18,13 +18,15 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - Briefly review other workers' PR diffs, direct contracts/callers and verification at
   delivery checkpoints. Judge code against agreed outcomes; optional ideas do not block.
 - For this worker's completed PR, reuse the implementation and tester results, briefly
-  inspect the final diff and immediately post `OK` if no blocker remains.
+  inspect the final diff and immediately post `Self-review: LGTM` if no blocker remains.
 - Review corrections must state the actual issue, exact file/diff line, trigger and
   expected result, concrete fix direction and recheck. Use `Changes requested` with
   CORRECTNESS, CONTRACT, DATA_INTEGRITY, AUTHORIZATION, PERFORMANCE, VERIFICATION or
   INTEGRATION as applicable; do not invent defects or issue numbers.
 - Keep reviews concise and bound to the reviewed head. Inspect only the changed delta
-  when it moves; do not repost the same review. Label own-code OK as `Self-review`.
+  when it moves; do not repost the same review. Successful reviews start with exactly
+  `Self-review: LGTM` for own work or `Review: LGTM` for another worker's work. No other
+  approval wording is allowed; retain specific change requests for blockers.
 
 ## Project-specific contract — uneditable by default
 
@@ -40,12 +42,13 @@ User directions and higher-priority instructions still prevail.
   queue. Never create/edit/assign/close issues or manage unrelated Dependabot PRs.
 - Follow AGENTS.md branch/message/issue-link rules, including issue-free documentation PRs.
 - Approved implementation includes scoped commits, ordinary pushes and PR publication;
-  do not ask again. Review-result publication (`OK` / specific change requests) is also
-  authorized. None of these authorizes merge, deployment or local-main integration.
+  do not ask again. Publication of `Self-review: LGTM`, `Review: LGTM`, or specific change
+  requests is also authorized. None authorizes merge, deployment or local-main integration.
 - Never merge/cherry-pick into local main, advance its ref, pull it, switch the user's
   checkout, stash/reset user work or restart shared services. Maintainers own main.
 - Shared GitHub authorship is not worker ownership. Use a comment review when formal
-  self-review is disallowed. Never mark unfinished work or a pending required check OK.
+  self-review is disallowed. Neither approval label applies to unfinished work or a pending
+  required check.
 
 ### Worktrees, integration and retention
 
