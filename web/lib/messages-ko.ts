@@ -1098,6 +1098,7 @@ export const KO: Record<string, string> = {
   "Open System status": "시스템 상태 열기",
   "OpenAI Responses compatible": "OpenAI Responses 호환",
   "OpenAI embedding may incur cost for all pending chunks in the database. Check the provider and counts before running.": "OpenAI 임베딩은 DB 전체 미처리 청크에 비용이 발생할 수 있습니다. 실행 전 provider와 개수를 확인하세요.",
+  "Embedding a fresh clone, an enlarged corpus or an empty index can take a long time.": "처음 clone한 뒤, 데이터를 늘린 뒤, 또는 비어 있는 상태에서 임베딩을 돌리면 시간이 오래 걸릴 수 있습니다.",
   "OpenAI model policy": "OpenAI 모델 구성",
   "Operations": "로컬 작업",
   "Operations URL": "로컬 작업 API 주소",

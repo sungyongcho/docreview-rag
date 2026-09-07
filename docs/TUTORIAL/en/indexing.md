@@ -73,6 +73,13 @@ to reproduce a screenshot or to make an already-ready stage green again.
 
 *The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The database-wide cost notice and explicit backfill action remain visible.*
 
+The orange traffic-cone duration note below the cost notice is always visible in Build step 3, before, during, and after a run, for every provider. It is informational: clicking or using the keyboard does not activate it.
+
+> Embedding a fresh clone, an enlarged corpus or an empty index can take a long time.
+
+### SCREENSHOT NEEDED
+<!-- Embedding duration note: Build step 3 selected, English locale, light mode, before a run and while running. Show the orange cone badge below the cost notice with the full three-case wording, unchanged status/DEV pills, and wrapped text inside a narrow card. The retained capture above predates this badge. -->
+
 ## 7. Prepare BM25 {#step-7}
 
 - **Goal:** make keyword retrieval statistics agree with the current chunks.
