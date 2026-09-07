@@ -1,0 +1,11 @@
+.answer-engine-light { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; }
+.answer-engine-light i { width: .5rem; height: .5rem; flex: 0 0 .5rem; border-radius: 50%; background: var(--muted); }
+.answer-engine-light[data-light="green"] i { background: var(--good); }
+.answer-engine-light[data-light="amber"] i { background: var(--warn); }
+.answer-engine-lights { display: flex; flex-wrap: wrap; gap: .65rem; }
+.answer-engine-rows { display: grid; gap: .75rem; margin: 1rem 0; }
+.answer-engine-row { border: 1px solid var(--border); border-radius: .65rem; padding: .85rem; display: grid; gap: .5rem; }
+.answer-engine-row dl { margin: 0; display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; }
+.answer-engine-row dt { font-size: .75rem; color: var(--muted); }
+.answer-engine-row dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.answer-engine-row button { justify-self: start; }

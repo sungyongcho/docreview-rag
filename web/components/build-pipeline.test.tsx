@@ -416,3 +416,42 @@ it("returns to Filings with step 2 deselection preserved in the same sparse draf
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.queryByRole("button", { name: "AMD FY2023 · On disk" })).toBeNull();
 });
+
+
+it.each(["en", "ko"] as const)("shows matching dual engine lights, details and row destinations (%s)", async (locale) => {
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
+  vi.resetModules();
+  const { BuildPipeline: LivePipeline } = await import("./build-pipeline");
+  const { derivePipeline: deriveLivePipeline } = await import("@/lib/pipeline");
+  const { I18nProvider: LiveI18n } = await import("@/lib/i18n");
+  localStorage.setItem(LOCALE_KEY, locale);
+  const readiness: Readiness = { ...READINESS, review_engines: {
+    openai: { enabled: true, model: "gpt-test", key_slot: "dev" },
+    local: { enabled: true, protocol: "ollama", model: "gemma", models: [{ name: "gemma", selectable: true, loaded: true, placement: "cpu", cpu_performance: { tokens_per_second: 20, measured_at: new Date().toISOString() }, size_bytes: 100, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"] }] },
+  } };
+  const onOpenStatus = vi.fn(), onOpenLocalSettings = vi.fn();
+  const input = liveInput({ readiness });
+  const props = {
+    live: true, busy: false, canOperateCorpus: true, acquisition: { identifiers: "", years: "" }, manifests: [], focusStage: "answer_model",
+    onAcquisitionChange: vi.fn(), onCancelJob: vi.fn(), onDownload: vi.fn(), onIngestAll: vi.fn(), onIngest: vi.fn(), onBackfill: vi.fn(), onRebuildBm25: vi.fn(), onAsk: vi.fn(), onRecheck: vi.fn(), onEvaluate: vi.fn(), onCompareSnapshots: vi.fn(), onOpenDocuments: vi.fn(), onOpenJobs: vi.fn(), onRefresh: vi.fn(), onOpenStatus, onOpenLocalSettings,
+  };
+  const { rerender } = render(<LiveI18n><LivePipeline {...props} readiness={readiness} pipeline={deriveLivePipeline(input)} /></LiveI18n>);
+  const map = screen.getByRole("button", { name: translate(locale, "Select {p0}", { p0: translate(locale, "Answer model") }) });
+  expect(map.querySelectorAll('[data-light="green"]')).toHaveLength(2);
+  expect(screen.getByText("20.0 tok/s")).toBeVisible();
+  expect(screen.getByText("CPU")).toBeVisible();
+  expect(screen.getByText("Ollama")).toBeVisible();
+  expect(screen.getAllByText(locale === "en" ? "OpenAI ready · Local ready" : "OpenAI 준비 · 로컬 준비")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: locale === "en" ? "Open System status" : "시스템 상태 열기" }));
+  fireEvent.click(screen.getByRole("button", { name: locale === "en" ? "Open Local LLM settings" : "로컬 LLM 설정 열기" }));
+  expect(onOpenStatus).toHaveBeenCalledOnce();
+  expect(onOpenLocalSettings).toHaveBeenCalledOnce();
+  const changed: Readiness = { ...readiness, review_engines: { ...readiness.review_engines, local: { ...readiness.review_engines!.local, models: [{ ...readiness.review_engines!.local.models![0], loaded: false, placement: null, cpu_performance: null }] } } };
+  rerender(<LiveI18n><LivePipeline {...props} readiness={changed} pipeline={deriveLivePipeline({ ...input, readiness: changed })} /></LiveI18n>);
+  expect(map.querySelectorAll('[data-light="amber"]')).toHaveLength(1);
+  expect(map.querySelectorAll('[data-light="green"]')).toHaveLength(1);
+  expect(screen.queryByText("20.0 tok/s")).not.toBeInTheDocument();
+  expect(screen.getAllByText(locale === "en" ? "OpenAI only ready · Local: Model not loaded" : "OpenAI만 준비 · 로컬: 모델 미적재")).toHaveLength(2);
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});

@@ -10,14 +10,14 @@ it("hides the engine picker in public builds and reports checking in development
   cleanup(); vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live"); vi.resetModules();
   const { LocalEngineSettings: LivePicker } = await import("./local-engine-settings");
   render(<LivePicker profile={DEFAULT_SESSION_PROFILE} readiness={null} onChange={vi.fn()} />);
-  expect(screen.getByRole("option", { name: "Local LLM (Checking…)" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "⚪ Local LLM (Checking…)" })).toBeDisabled();
 });
 /** Two discovered answer models, including enough metadata to exercise selection. */
 function model(name: string): LocalModelInfo {
   return { name, selectable: true, size_bytes: 123, family: "test", parameter_size: "4B", quantization_level: "Q4", capabilities: ["completion"], loaded: false };
 }
 
-it("disables an unavailable local engine and preserves a missing explicit model", async () => {
+it("keeps a limited local engine selectable and preserves a missing explicit model", async () => {
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
   vi.resetModules();
   const { LocalEngineSettings: OperatorSettings } = await import("./local-engine-settings");
@@ -30,7 +30,7 @@ it("disables an unavailable local engine and preserves a missing explicit model"
   };
   const props = { onChange };
   const { rerender } = render(<OperatorSettings {...props} readiness={readiness} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local" }} />);
-  expect(screen.getByRole("option", { name: "Local LLM (Selected)" })).toBeEnabled();
+  expect(screen.getByRole("option", { name: "🟠 Local LLM (Selected)" })).toBeEnabled();
   expect(screen.getByLabelText("Local model")).toHaveValue("");
   fireEvent.change(screen.getByLabelText("Local model"), { target: { value: "second" } });
   expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ local_model: "second" }));
@@ -42,7 +42,8 @@ it("disables an unavailable local engine and preserves a missing explicit model"
 
   const offline = { ...readiness, review_engines: { local: { enabled: false, reason: "unreachable", models: [] } } };
   rerender(<OperatorSettings {...props} readiness={offline} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: "second" }} />);
-  expect(screen.getByRole("option", { name: "Local LLM (Unavailable)" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "🟠 Local LLM (Unavailable)" })).toBeEnabled();
+  expect(screen.getByLabelText("Answer engine")).toHaveAttribute("title", "Server unreachable");
   expect(screen.getByLabelText("Local model")).toBeDisabled();
   expect(screen.getByLabelText("Answer engine")).toHaveValue("local");
 });
@@ -77,4 +78,21 @@ it("translates the selected-model prefix while preserving the chosen identifier"
   render(<I18nProvider><LocalEngineSettings profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: name }} readiness={readiness} onChange={vi.fn()} /></I18nProvider>);
   expect(screen.getByRole("status")).toHaveTextContent(`선택한 모델: ${name}`);
   expect(screen.getByRole("option", { name })).toHaveValue(name);
+});
+
+
+it("keeps slow CPU amber selectable with the shared reason tooltip", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live"); vi.resetModules();
+  const { LocalEngineSettings } = await import("./local-engine-settings");
+  const local = { enabled: true, protocol: "ollama", model: "answer", models: [{ ...model("answer"), loaded: true, placement: "cpu" as const, cpu_performance: { tokens_per_second: 10, measured_at: new Date().toISOString() } }] };
+  const readiness: Readiness = { status: "ready", mode: "runtime", admin_mode: "live", policy_revision: "test", models: {}, review_enabled: true, active_review_model: null, review_engines: { local }, corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: null, documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true } };
+  const onChange = vi.fn();
+  render(<LocalEngineSettings profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: "answer" }} readiness={readiness} onChange={onChange} />);
+  const option = screen.getByRole("option", { name: "🟠 Local LLM (Selected)" });
+  expect(option).toBeEnabled();
+  expect(option).toHaveAttribute("title", "Slow CPU (below 15 tok/s)");
+  const light = screen.getByLabelText("Local: Slow CPU (below 15 tok/s)");
+  expect(light).toHaveAttribute("data-light", "amber");
+  expect(light.closest("label.composer-engine-field")).toContainElement(screen.getByLabelText("Answer engine"));
+  expect(screen.getByLabelText("Answer engine")).toHaveAttribute("title", "Slow CPU (below 15 tok/s)");
 });

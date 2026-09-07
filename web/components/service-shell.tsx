@@ -1042,6 +1042,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           tab={buildTab}
           onTabChange={(tab) => navigate({ view: "build", tab })}
           onNavigate={navigate}
+          onOpenLocalSettings={() => openSettings("local")}
         /></RetainedPanel>
         <RetainedPanel active={view === "measure"} className="retained-workspace" workspace="measure"><MeasureWorkspace
           capabilities={helpCapabilities}
