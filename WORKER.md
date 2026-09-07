@@ -51,24 +51,37 @@ User directions and higher-priority instructions still prevail.
   self-review is disallowed. Neither approval label applies to unfinished work or a pending
   required check.
 
-### Automation identity setup — in progress
+### Development identity and OPS orchestration
 
-- Setup status: `IN_PROGRESS`. The planned automation actor is `sungyongcho-ops`
-  (`ops@sungyongcho.com`) for authorized commits, pushes and scoped GitHub work.
-  This setup status is separate from an implementation PR's review readiness.
-- Verified host setup: the account has collaborator write access to
-  `sungyongcho/docreview-rag-agent` and `sungyongcho/dither-fm`. Plain `gh` uses the
-  personal `sungyongcho` profile; `gh-ops` uses `$HOME/.config/gh-ops`. Both CLI
-  identities were verified, and credentials are stored in the system keyring.
-- `gh-ops` selects the GitHub CLI identity only. It does not set Git author/committer
-  name/email or the credentials used by `git push`; those checks remain pending.
-  Keep an active assignment's established identity until its transition is configured.
-- At an authorized bot publication checkpoint, verify `gh-ops api user --jq .login`
-  returns `sungyongcho-ops`. If unavailable or different, report the setup blocker;
-  never silently fall back to the personal account or switch shared authentication.
-- Complete the rollout only after scoped Git attribution and push routing are verified
-  in an isolated worker worktree. This notice does not authorize global Git changes,
-  history rewriting, ownership transfer, additional repositories or maintainer actions.
+- The maintainer selected plan A. New code/configuration commits use
+  `Sungyong Cho <dev@sungyongcho.com>` as both author and committer. Development
+  pushes and PR creation use authenticated `sungyongcho`, including OPS-tool PRs.
+- `sungyongcho-ops` is the operations actor for authorized intake, tracking, labels,
+  coordination, work-state records and automated COMMENT reviews. It does not create
+  development commits or PRs. Repository role/assignment rules still decide who may
+  initiate each action; the account does not grant coordinator or merge authority.
+- Central policy, configuration, shell helpers and maintenance procedures live in the
+  private `sungyongcho/ops` repository, normally cloned at `~/Documents/ops`. Read its
+  `policies/identity.md` for the configured host. The policy covers all personally owned
+  public/private repositories; product tasks remain in their own repositories.
+- Use `ops-doctor` to check actual identities. `ops-init` registers an explicitly owned
+  checkout; `ops-sync` discovers/registers owned repositories; `ops-status` reads work
+  state. Use typed `opsctl` commands for PRs and operational writes. Plain `gh` remains
+  personal and `gh-ops` is a guarded read interface. Never fall back to another account.
+- Before publication confirm effective Git author/committer, the intended push route,
+  current PR head and the authenticated actor. Reuse unchanged evidence. A missing
+  profile, mismatched actor or unavailable registration is a blocker, not permission
+  to rewrite history, bypass checks or change another worker's credentials.
+- Adopt A only in a new or explicitly transitioned owned worktree. Existing workers
+  check their configuration at their next publication checkpoint. Preserve their
+  changes, personal/global authentication and backup worktrees. OPS SSH clone access
+  is separate from development push identity. Respect personal signing settings;
+  never substitute an OPS signing key or silently generate personal credentials.
+- DEV/OPS labels describe work purpose; OCCUPIED/REVIEW_READY mirror the authoritative
+  record below. Preserve other project labels and classify an OPS-created product issue
+  as DEV. Successful automated reviews keep the exact approved headings and reviewed
+  SHA; they are not independent human approval. No background scheduler, automatic
+  merge or product-main synchronization is introduced by this setup.
 
 ### Assigned ownership and work state
 
