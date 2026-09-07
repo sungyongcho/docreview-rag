@@ -37,3 +37,24 @@ def test_schema_action_uses_the_checkout_port(monkeypatch, capsys, action):
         "postgresql+asyncpg://filing:filing@127.0.0.1:38432/filing", prepare=action == "prepare"
     )
     assert "127.0.0.1:38432/filing" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "outcome,expected", [("cancelled", 0), ("succeeded", 0), ("incomplete", 1)]
+)
+def test_recreate_cli_maps_explicit_outcomes_without_planning_restart(
+    monkeypatch, outcome, expected
+):
+    """Standalone schema recreation distinguishes partial failure and leaves restart to the user."""
+    from scripts.schema import recreate
+
+    root = Path(__file__).resolve().parents[3]
+    run = Mock(return_value=outcome)
+    forbidden = Mock(side_effect=AssertionError("no secondary schema operation"))
+    monkeypatch.setattr("sys.argv", ["scripts.schema", "recreate", "--keep-sources"])
+    monkeypatch.setattr(recreate, "run", run)
+    monkeypatch.setattr(command, "load_local_environment", forbidden)
+    monkeypatch.setattr(command, "schema_status", forbidden)
+    assert command.main() == expected
+    run.assert_called_once_with(root, keep_sources=True, sample=False)
+    forbidden.assert_not_called()

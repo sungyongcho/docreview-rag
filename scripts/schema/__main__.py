@@ -49,7 +49,11 @@ def main() -> int:
         from scripts.schema.recreate import run
 
         try:
-            return run(root, keep_sources=args.keep_sources, sample=args.sample)
+            return (
+                1
+                if run(root, keep_sources=args.keep_sources, sample=args.sample) == "incomplete"
+                else 0
+            )
         except ValueError, OSError, SQLAlchemyError, subprocess.CalledProcessError:
             print(
                 "Recreation could not be confirmed. The API may remain stopped. "

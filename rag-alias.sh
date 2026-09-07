@@ -498,8 +498,8 @@ rag-help() {
     printf '  %-62s  %s\n' \
         'rag-schema recover [--parent DIR]' 'Recover separate stack' \
         'rag-schema recreate [--keep-sources|--sample]' 'Reset local data' \
-        'rag-fresh-start [--status|--extreme]' 'Reset project runtime'
-    _docreview_line 'WARNING ordinary reset: deletes DB, downloads, results and saved model settings; preserves code, .env and host Ollama.'
+        'rag-fresh-start [--keep-sources|--sample|--status|--extreme]' 'Reset project runtime'
+    _docreview_line 'WARNING ordinary reset: deletes ORM data and sources; preserves .env, exports, settings and DB volume; typed confirmation required.'
     _docreview_line 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
     _docreview_line 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
     printf '\n'

@@ -1,11 +1,13 @@
 """Journal local source changes around a separately transactional database reset."""
 
 from collections import Counter
+from collections.abc import Iterator
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import stat
 
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_selection import DRAFT_NAME
@@ -13,31 +15,74 @@ from app.ingestion.source_selection import DRAFT_NAME
 JOURNAL_NAME = ".schema-recreate-journal"
 
 
+def _source_stat(path: Path) -> os.stat_result | None:
+    """Treat only a missing path as absent; permission failures must stop the preview."""
+    try:
+        return path.lstat()
+    except FileNotFoundError:
+        return None
+
+
+def check_source_journal(root: Path) -> None:
+    """Require an inspectable data directory and no unfinished source journal."""
+    data = root / "data"
+    metadata = _source_stat(data)
+    if metadata is None:
+        return
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError("Source reset refuses symlinked data directories.")
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("Source data path is not a directory.")
+    with os.scandir(data) as entries:
+        if any(entry.name == JOURNAL_NAME for entry in entries):
+            raise ValueError(
+                "Unfinished source reset journal exists; inspect "
+                "data/.schema-recreate-journal/journal.json before retrying."
+            )
+
+
+def _source_paths(directory: Path) -> Iterator[Path]:
+    """Walk without following links or suppressing directory-access errors."""
+    with os.scandir(directory) as entries:
+        paths = sorted(Path(entry.path) for entry in entries)
+    for path in paths:
+        metadata = _source_stat(path)
+        if metadata is None:
+            raise ValueError("Source tree changed during inspection; review a new preview.")
+        yield path
+        if stat.S_ISDIR(metadata.st_mode):
+            yield from _source_paths(path)
+
+
 def source_preview(root: Path) -> dict:
     """Fingerprint exact confined raw files and manifests before asking for approval."""
     corpus = root / "data" / "corpus"
-    if (root / "data" / JOURNAL_NAME).exists():
-        raise ValueError(
-            "Unfinished source reset journal exists; inspect "
-            "data/.schema-recreate-journal/journal.json before retrying."
-        )
-    if corpus.is_symlink() or (root / "data").is_symlink():
+    check_source_journal(root)
+    metadata = _source_stat(corpus)
+    if metadata is not None and stat.S_ISLNK(metadata.st_mode):
         raise ValueError("Source reset refuses symlinked data directories.")
+    if metadata is not None and not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError("Source corpus path is not a directory.")
     manifests = {}
     raw = set()
-    if corpus.exists():
-        for path in sorted(corpus.glob("*.json")):
-            if path.name != "manifest.json" and not path.name.endswith("-manifest.json"):
+    if metadata is not None:
+        paths = tuple(_source_paths(corpus))
+        for path in paths:
+            if path.parent != corpus or (
+                path.name != "manifest.json" and not path.name.endswith("-manifest.json")
+            ):
                 continue
-            if path.is_symlink():
+            entry = _source_stat(path)
+            if entry is None:
+                raise ValueError("Source manifest changed during inspection; review a new preview.")
+            if stat.S_ISLNK(entry.st_mode):
                 raise ValueError("Source reset refuses symlinked manifests.")
             manifest = Manifest.read(path)
             manifests[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
             raw.update(artifact.path for artifact in manifest.artifacts)
-        # Include interrupted acquisition files in the registry's raw formats.
         raw.update(
             str(path.relative_to(corpus))
-            for path in corpus.rglob("*")
+            for path in paths
             if path.suffix.lower() in {".html", ".htm", ".xml", ".zip"}
         )
     if raw & (set(manifests) | {DRAFT_NAME}):
@@ -45,21 +90,27 @@ def source_preview(root: Path) -> dict:
     files = {}
     for relative in sorted(raw):
         path = corpus / relative
-        if any(
-            parent.is_symlink() for parent in (path, *path.parents)
-        ) or not path.resolve().is_relative_to(corpus.resolve()):
+        for parent in (path, *path.parents):
+            entry = _source_stat(parent)
+            if entry is not None and stat.S_ISLNK(entry.st_mode):
+                raise ValueError("Source reset refuses symlinked or escaped raw paths.")
+        if not path.resolve().is_relative_to(corpus.resolve()):
             raise ValueError("Source reset refuses symlinked or escaped raw paths.")
-        if path.exists():
-            if not path.is_file():
+        entry = _source_stat(path)
+        if entry is not None:
+            if not stat.S_ISREG(entry.st_mode):
                 raise ValueError("Source artifact is not a regular file.")
             files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     draft = corpus / DRAFT_NAME
-    if draft.is_symlink():
+    draft_entry = _source_stat(draft)
+    if draft_entry is not None and stat.S_ISLNK(draft_entry.st_mode):
         raise ValueError("Source reset refuses symlinked drafts.")
     return {
         "files": files,
         "manifests": manifests,
-        "draft": hashlib.sha256(draft.read_bytes()).hexdigest() if draft.exists() else None,
+        "draft": hashlib.sha256(draft.read_bytes()).hexdigest()
+        if draft_entry is not None
+        else None,
         "directories": dict(sorted(Counter(str(Path(name).parent) for name in files).items())),
     }
 

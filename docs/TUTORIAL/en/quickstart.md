@@ -53,10 +53,16 @@ service state/startup, schema preparation, and DEV server readiness. It identifi
 without a health check is not proof of server readiness. Existing healthy services
 are reported before Compose reconciles the development configuration.
 
-If configuration blocks progress, edit the printed `.env` path and correct or unset
-conflicting shell exports, then rerun `rag-quickstart` (or `bash scripts/stack/quickstart.sh`).
-That invocation has not started services; any existing services remain unchanged.
-For startup failures, use `rag-dev ps -a` and `rag-dev logs --tail 50` before retrying.
+If configuration blocks progress, each key shows its `.env` line, shell value and effective
+source, with credentials hidden. Choose `[f]` to ignore failing exports for this invocation,
+`[e]` to save the two public embedding settings, or edit the named file and choose `[r]` to resume
+at the same step. `[q]` cancels. The parent shell is unchanged; use the printed `unset KEY` there
+for future invocations. For startup/readiness failures, existing read-only diagnostics run and
+the command offers one confirmed, volume-preserving down/build/start recovery.
+
+### SCREENSHOT NEEDED
+<!-- Feature: guided Quick Start configuration repair; locale=en; plain ASCII/no-color; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
+
 For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart uses the local `DB_PORT`, not an external `DATABASE_URL`. Safe target-selection
 recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).

@@ -4,30 +4,26 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
-from scripts.stack.__main__ import run
+from sqlalchemy.exc import SQLAlchemyError
+
 from scripts.stack.environment import load_local_environment
 from scripts.stack.operator import LocalOperator, OperatorLifecycleError
+from scripts.stack.prompts import SetupCancelledError, step
+from scripts.stack.quickstart import quickstart
 
 ROOT = Path(__file__).resolve().parents[2]
-WARNING = """WARNING: This permanently deletes the project's database, downloaded
-SEC/DART filings, evaluation results, and saved local model settings.
-You must download the SEC/DART data again and repeat the setup and
-processing steps to restore full functionality.
-Use the terminal commands in rag-help or the development web interface
-started by Quick Start. Code, .env, keys, and host Ollama are preserved."""
-RECOVERY = """Next steps: download SEC/DART filings, ingest manifests, generate embeddings,
-rebuild BM25, and configure your answer model. Run rag-help for commands.
-In the development web UI, open Settings > Data & help > Reset runtime data,
-select View reset status, then Clear browser data and start again.
-Continue the Build steps in the web UI. Public read-only deployments cannot
-perform these administrator operations."""
+WARNING = """WARNING: Ordinary clean start deletes ORM-owned database data and downloaded sources.
+Code, .env, exports, saved model settings, unrelated tables, the DB volume and host Ollama remain.
+The exact preview and typed confirmation are required; no backup is created.
+--keep-sources preserves downloads; --sample presets the sample without downloading.
+After a verified reset, DEV starts and readiness is checked before the web tutorial hand-off."""
 
 
 class RuntimeCommandError(RuntimeError):
@@ -132,6 +128,9 @@ def operator_client(root: Path) -> LocalClient:
 
 def reset_status(root: Path) -> int:
     """Read reset evidence without prompting, retrying deletion, or needing a surviving .env."""
+    print(
+        "Operator reset evidence (extreme or web reset); host clean-start status: rag-schema check."
+    )
     result = operator_client(root).request("/wipe")
     status = result.get("status")
     if status not in {"idle", "running", "succeeded", "failed", "interrupted"}:
@@ -159,21 +158,39 @@ def reset_status(root: Path) -> int:
     return 0 if status in {"idle", "succeeded"} else 1
 
 
-def fresh_start(root: Path, *, timeout: float = 1800, extreme: bool = False) -> int:
-    """Confirm the web deletion preview, wait for its result, then rebuild the dev stack."""
+def fresh_start(
+    root: Path,
+    *,
+    timeout: float = 1800,
+    extreme: bool = False,
+    keep_sources: bool = False,
+    sample: bool = False,
+) -> int:
+    """Use the guarded host clean start, or retain the explicit extreme reset protocol."""
+    if not sys.stdin.isatty():
+        print(WARNING if not extreme else "EXTREME RESET: NO BACKUP. IRREVERSIBLE DELETION.")
+        raise RuntimeCommandError("Run interactively to review and type the deletion confirmation.")
+    if not extreme:
+        return quickstart(
+            root, reset=True, keep_sources=keep_sources, sample=sample, timeout=timeout
+        )
+    step(
+        1,
+        3,
+        "Extreme reset preview",
+        "Inspect the exact inventory; two confirmations and browser acknowledgement are required.",
+    )
     print(
         WARNING
         if not extreme
         else (
-            ("\033[1;31m" if sys.stdout.isatty() and "NO_COLOR" not in os.environ else "")
-            + "+==================================================+\n"
+            "+==================================================+\n"
             "| EXTREME RESET: NO BACKUP. IRREVERSIBLE DELETION.  |\n"
             "+==================================================+\n"
             "Deletes project .env files, untracked runtime/custom corpus and build caches, "
             "project volumes, and DocReview data in the browser that acknowledges this reset.\n"
             "Preserves tracked files and edits, Git history, unrelated files, host Ollama "
             "and external credentials. No automatic restart."
-            + ("\033[0m" if sys.stdout.isatty() and "NO_COLOR" not in os.environ else "")
         )
     )
     if not sys.stdin.isatty():
@@ -209,6 +226,12 @@ def fresh_start(root: Path, *, timeout: float = 1800, extreme: bool = False) -> 
         raise RuntimeCommandError(
             "The preview expired. Run the command again to review new targets."
         )
+    step(
+        2,
+        3,
+        "Confirmed deletion",
+        "Submit the preview once; inspect progress without retrying deletion.",
+    )
     result = client.request(
         "/wipe",
         {"token": preview["token"], "confirmation": answer}
@@ -290,6 +313,12 @@ def fresh_start(root: Path, *, timeout: float = 1800, extreme: bool = False) -> 
             raise RuntimeCommandError(
                 "Extreme completion is unverified; inspect reset status. No restart attempted."
             )
+        step(
+            3,
+            3,
+            "Deletion report",
+            "Check the completed inventory before starting fresh guided setup.",
+        )
         print("Verified deleted inventory:")
         for item in target["files"]:
             print("  File: " + json.dumps(item["path"]))
@@ -305,27 +334,6 @@ def fresh_start(root: Path, *, timeout: float = 1800, extreme: bool = False) -> 
             "then follow the tutorial to prepare data again."
         )
         return 0
-    print(
-        "Preserved: code/Git, .env/keys, tracked sources, unrelated files and host Ollama. "
-        "Browser conversations still require Clear browser data in the reset UI."
-    )
-    print("Runtime reset complete. Rebuilding the application image without cached layers.")
-    code = run("dev", ["build", "--no-cache", "app"], root=root)
-    if code:
-        print("Data was reset, but the build failed. Correct the build error before restarting.")
-        return code
-    code = run("dev", ["up", "-d", "--no-build", "--force-recreate"], root=root)
-    if code:
-        print(
-            "Data was reset and the image built, but service startup failed. Run rag-ollama-check."
-        )
-        return code
-    print(
-        "Build completed and service startup submitted. Server "
-        "readiness is not yet verified; run rag-corpus readiness."
-    )
-    print(RECOVERY)
-    return 0
 
 
 def corpus(args: argparse.Namespace, root: Path) -> int:
@@ -367,7 +375,7 @@ def corpus(args: argparse.Namespace, root: Path) -> int:
 
 def main() -> int:
     """Expose help without connecting to services or mutating runtime state."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, color=False)
     commands = parser.add_subparsers(dest="command", required=True)
     reset_parser = commands.add_parser(
         "fresh-start",
@@ -377,7 +385,8 @@ def main() -> int:
         + "\nExtreme mode additionally deletes previewed .env files, custom corpus, caches "
         "and project volumes after two confirmations and browser deletion acknowledgement. "
         "It never restarts services automatically. "
-        "Start rag-dev up -d first. --status only reads existing reset evidence.",
+        "Only extreme mode requires an existing rag-dev operator. "
+        "--status reads extreme/web reset evidence; use rag-schema check for host schema state.",
     )
     reset_mode = reset_parser.add_mutually_exclusive_group()
     reset_mode.add_argument(
@@ -393,6 +402,16 @@ def main() -> int:
             "acknowledged browser data; two confirmation gates, no "
             "restart."
         ),
+    )
+    reset_mode.add_argument(
+        "--keep-sources",
+        action="store_true",
+        help="Reset ORM data while keeping downloaded sources.",
+    )
+    reset_mode.add_argument(
+        "--sample",
+        action="store_true",
+        help="Reset ORM data and sources, then preset the sample selection without downloading.",
     )
     jobs = commands.add_parser(
         "corpus",
@@ -437,19 +456,50 @@ def main() -> int:
     args = parser.parse_args()
     try:
         return (
-            (reset_status(ROOT) if args.status else fresh_start(ROOT, extreme=args.extreme))
+            (
+                reset_status(ROOT)
+                if args.status
+                else fresh_start(
+                    ROOT, extreme=args.extreme, keep_sources=args.keep_sources, sample=args.sample
+                )
+            )
             if args.command == "fresh-start"
             else corpus(args, ROOT)
         )
-    except (RuntimeCommandError, OperatorLifecycleError, ValueError, OSError) as error:
+    except SetupCancelledError as error:
+        print(str(error))
+        return 0
+    except SQLAlchemyError as error:
+        print(
+            f"Local database work failed ({type(error).__name__}). "
+            "The reset outcome may be partial or uncertain. Preserve data/.schema-recreate-journal "
+            "and run rag-schema check before requesting another preview; no deletion is retried.",
+            file=sys.stderr,
+        )
+        return 1
+    except (
+        RuntimeCommandError,
+        OperatorLifecycleError,
+        ValueError,
+        RuntimeError,
+        OSError,
+        subprocess.CalledProcessError,
+    ) as error:
         print(str(error), file=sys.stderr)
         return 1
     except EOFError, KeyboardInterrupt:
-        print(
-            "Stopped waiting. For reset evidence run rag-fresh-start --status; "
-            "check corpus jobs in the web UI.",
-            file=sys.stderr,
-        )
+        if args.command == "fresh-start" and not args.extreme and not args.status:
+            message = (
+                "Host clean start interrupted. A reset may be partial: preserve "
+                "data/.schema-recreate-journal and run rag-schema check before another preview. "
+                "No automatic retry or restart occurs."
+            )
+        else:
+            message = (
+                "Stopped waiting. For extreme/web reset evidence run rag-fresh-start --status; "
+                "check corpus jobs in the web UI."
+            )
+        print(message, file=sys.stderr)
         return 130
 
 

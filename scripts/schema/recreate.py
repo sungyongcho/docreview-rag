@@ -6,10 +6,12 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import shlex
 import stat
 import subprocess
 import sys
 import time
+from typing import Literal
 from urllib.parse import urlparse
 
 from sqlalchemy import inspect, text
@@ -17,9 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.db.bootstrap import bootstrap_connection, ensure_complete_schema
 from app.db.models import Base
-from scripts.schema.sources import JOURNAL_NAME, SourceReset, source_preview
+from scripts.schema.sources import SourceReset, check_source_journal, source_preview
 from scripts.stack.__main__ import compose_command, compose_environment
 from scripts.stack.environment import load_local_environment
+from scripts.stack.prompts import confirm
 
 
 def local_target(root: Path) -> tuple[dict, dict[str, str]]:
@@ -159,16 +162,55 @@ async def recreate(url: str, expected: dict[str, int] | None = None) -> dict[str
         await engine.dispose()
 
 
-def run(root: Path, *, keep_sources: bool = False, sample: bool = False) -> int:
+def preview_sources(root: Path, *, keep_sources: bool = False) -> dict | None:
+    """Offer an exact permission repair and one read-only retry before any deletion preview."""
+    for attempt in range(2):
+        try:
+            if keep_sources:
+                check_source_journal(root)
+                return None
+            return source_preview(root)
+        except PermissionError as error:
+            denied = Path(error.filename) if error.filename else root / "data"
+            if not denied.is_absolute():
+                denied = root / denied
+            denied = denied.resolve()
+            if not denied.is_relative_to(root):
+                raise ValueError(
+                    "Denied path is outside this checkout; ask its owner to inspect it."
+                ) from None
+            command = [
+                "setfacl",
+                "-m",
+                f"u:{os.getuid()}:rwX",
+                "--",
+                *(str(path) for path in ((denied.parent, denied) if denied != root else (denied,))),
+            ]
+            print("Source access blocked. Ask the owner to grant access to these paths:")
+            print("  " + shlex.join(command))
+            if attempt or not confirm(
+                "After the owner grants access, retry source inspection once?"
+            ):
+                raise ValueError(
+                    "Source permissions remain blocked; no deletion was submitted."
+                ) from None
+    raise RuntimeError("Source inspection did not complete.")
+
+
+def run(
+    root: Path,
+    *,
+    keep_sources: bool = False,
+    sample: bool = False,
+    restart_planned: bool = False,
+) -> Literal["cancelled", "succeeded", "incomplete"]:
     """Require exact interactive approval before stopping the API or changing any table."""
     if not sys.stdin.isatty():
         raise ValueError("Recreate requires an interactive terminal; no changes made.")
     if keep_sources and sample:
         raise ValueError("--sample cannot be combined with --keep-sources")
     root = root.resolve()
-    if (root / "data" / JOURNAL_NAME).exists():
-        raise ValueError("Unfinished source reset journal exists; inspect it before another reset.")
-    sources = None if keep_sources else source_preview(root)
+    sources = preview_sources(root, keep_sources=keep_sources)
     target, environment = local_target(root)
     url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{target['port']}/filing"
     before = asyncio.run(recreate(url))
@@ -195,12 +237,16 @@ def run(root: Path, *, keep_sources: bool = False, sample: bool = False) -> int:
         + "Preserved: code, .env, evaluation exports, unrelated tables, "
         "the database volume and host Ollama. Dependent unknown objects cause rollback."
     )
-    print("The local API will stop after confirmation and is not restarted automatically.")
+    print(
+        "The API stops after confirmation. Guided setup rebuilds/starts it after success."
+        if restart_planned
+        else "The local API will stop after confirmation and is not restarted automatically."
+    )
     expires = time.monotonic() + 300
     phrase = f"RECREATE {root.name}" if keep_sources else f"RECREATE {root.name} AND SOURCES"
     if input(f"Type {phrase} to confirm this entire irreversible preview (default No): ") != phrase:
         print("Cancelled; nothing changed.")
-        return 0
+        return "cancelled"
     if time.monotonic() >= expires:
         raise ValueError("Preview expired; review a new preview. Nothing changed.")
     current, _ = local_target(root)
@@ -230,7 +276,7 @@ def run(root: Path, *, keep_sources: bool = False, sample: bool = False) -> int:
                 "Inspect data/.schema-recreate-journal/journal.json; do not repeat recreation.",
                 file=sys.stderr,
             )
-            return 1
+            return "incomplete"
     print(
         "Verified: ORM schema recreated and application tables empty. "
         + (
@@ -239,6 +285,11 @@ def run(root: Path, *, keep_sources: bool = False, sample: bool = False) -> int:
             else "Downloaded sources and manifest source entries cleared. "
         )
         + "Code, .env, exports, unrelated tables and volume preserved. "
-        "Run rag-up, then re-check Build and repeat data preparation. No paid work was started."
+        + (
+            "Guided setup will now rebuild/start DEV and verify readiness. "
+            if restart_planned
+            else "Run rag-up, then re-check Build and repeat data preparation. "
+        )
+        + "No paid work was started."
     )
-    return 0
+    return "succeeded"

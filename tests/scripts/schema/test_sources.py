@@ -92,7 +92,7 @@ def test_cleanup_failure_reports_database_commit_and_retains_journal(tmp_path, m
         raise PermissionError("fixture denied")
 
     monkeypatch.setattr(reset_module.shutil, "rmtree", refuse_cleanup)
-    assert recreate.run(tmp_path) == 1
+    assert recreate.run(tmp_path) == "incomplete"
     assert "DB committed" in capsys.readouterr().err
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert json.loads(journal.read_text())["phase"] == "database_committed_source_cleanup_pending"
@@ -167,3 +167,26 @@ def test_restore_refuses_a_source_parent_replaced_by_a_symlink(tmp_path):
         reset.restore()
     assert not list(foreign.iterdir())
     assert (reset.journal / "journal.json").exists()
+
+
+@pytest.mark.parametrize("denied_kind", ["file", "corpus", "nested"])
+def test_unreadable_sources_cannot_be_reported_as_an_empty_inventory(tmp_path, denied_kind):
+    """Unreadable files and directories block preview before deletion can be approved."""
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses the Unix mode-denial fixture.")
+    corpus = tmp_path / "data/corpus"
+    nested = corpus / "locked directory"
+    nested.mkdir(parents=True)
+    source = nested / "private-source.html"
+    source.write_text("keep inaccessible bytes")
+    (corpus / "visible.html").write_text("keep visible bytes")
+    denied = {"file": source, "corpus": corpus, "nested": nested}[denied_kind]
+    denied.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            source_preview(tmp_path)
+    finally:
+        denied.chmod(0o600 if denied_kind == "file" else 0o700)
+    assert source.read_text() == "keep inaccessible bytes"
