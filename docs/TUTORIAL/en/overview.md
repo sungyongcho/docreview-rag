@@ -56,7 +56,7 @@ You can go from prepared retrieval directly to step 11.
 | Measure | Search trials, evaluation datasets, evaluation runs, and snapshot comparisons. |
 | System → System status | API availability, DB/schema, corpus readiness, and model availability as separate facts. |
 
-When you open **View corpus readiness** from a conversation, use **Back to conversation**
+When you open **View corpus readiness** from a conversation, use **Back**
 to return to your question and retained state. See [Settings](settings.md) for request
 controls and [Runtime](runtime.md) for interpreting measured execution.
 
@@ -103,3 +103,24 @@ implementation context, use [Architecture](architecture.md). Detailed commands a
 their environment belong in the [CLI reference](cli.md).
 
 Continue with [step 1: verify the environment](environment.md#step-1).
+
+### Back, forward and shared locations
+
+The header places **Back** and **Forward** around the current workspace, tab and conversation
+title. Both arrows remain visible and are disabled at the ends of the recorded history.
+Click the title to open **Navigation history**, then choose an earlier or later entry.
+Arrow keys, Home/End and Enter operate the list; Escape or an outside click closes it.
+On narrow screens the list opens as a bottom sheet.
+
+App arrows and browser back/forward use the same history. A new navigation after going back
+clears forward entries. Returning restores the retained controls, conversation draft, focus
+and scroll; unsaved evaluation questions still require confirmation before leaving.
+
+The URL records the view, tab, selected Build stage or evaluation result, and local conversation
+ID. Reloading restores that location. A conversation ID absent from this browser falls back
+to its most recent saved conversation. Message text and drafts are never placed in the URL.
+Locale/theme parameters, the application base path and tutorial links remain intact.
+
+### SCREENSHOT NEEDED
+
+<!-- Feature: bidirectional header navigation and history list; locale=en; light mode; show Back/current location/Forward with the current list entry marked, including narrow-screen sheet. Preserve existing assets. -->

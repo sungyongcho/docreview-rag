@@ -9,6 +9,16 @@ import { enterProductionPreview, exitProductionPreview } from "@/lib/production-
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
+beforeEach(() => { window.history.replaceState(null, "", "/"); });
+
+/** Wait for the same asynchronous browser traversal used by the application arrows. */
+async function traverseHistory(direction: "Back" | "Forward") {
+  const position = window.history.state?.docreviewNavigation?.position;
+  fireEvent.click(screen.getByRole("button", { name: direction }));
+  await waitFor(() => expect(window.history.state?.docreviewNavigation?.position).not.toBe(position));
+  await act(async () => {});
+}
+
 const OPERATOR_URL = "http://operator.test";
 const EMPTY_DOCUMENT_FACETS: DocumentFacets = {
   registries: [], issuers: [], years: [], languages: [], forms: [], parse_statuses: [], embedding_statuses: [], snapshots: [],
@@ -290,20 +300,21 @@ describe("service shell", () => {
     readiness.focus();
     fireEvent.click(readiness);
     expect(screen.getByRole("heading", { name: "From filings to verified answers." })).toBeVisible();
-    const back = screen.getByRole("button", { name: "Back to conversation" });
+    const back = screen.getByRole("button", { name: "Back" });
     expect(back).toHaveAttribute("type", "button");
-    expect(back).toHaveAttribute("title", "Back to conversation");
+    expect(back).toHaveAttribute("title", expect.stringContaining("Conversation"));
     back.focus();
     expect(back).toHaveFocus();
     messages.scrollTop = 0;
-    fireEvent.click(back);
+    await traverseHistory("Back");
     expect(question).toBeVisible();
     expect(question).toHaveValue("Keep this unfinished question");
     expect(messages.scrollTop).toBe(280);
     expect(readiness).toHaveFocus();
     expect(loadConversations()).toEqual(original);
     expect(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("button", { name: /^Back to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Forward" })).toBeEnabled();
   });
 
   it("suspends pinned scope help while another workspace is visible", async () => {
@@ -314,11 +325,11 @@ describe("service shell", () => {
     expect(screen.getByRole("tooltip")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
     expect(screen.queryByRole("tooltip")).toBeNull();
-    const back = screen.getByRole("button", { name: "Back to conversation" });
+    const back = screen.getByRole("button", { name: "Back" });
     back.focus();
     fireEvent.keyDown(back, { key: "Escape" });
     expect(back).toHaveFocus();
-    fireEvent.click(back);
+    await traverseHistory("Back");
     expect(screen.getByRole("tooltip")).toBeVisible();
     fireEvent.keyDown(screen.getByRole("button", { name: "About corpus scope" }), { key: "Escape" });
     expect(screen.queryByRole("tooltip")).toBeNull();
@@ -360,13 +371,13 @@ describe("service shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next step" }));
     expect(screen.getByRole("button", { name: "Pipeline" })).toHaveAttribute("aria-pressed", "true");
     build.scrollTop = 0;
-    fireEvent.click(screen.getByRole("button", { name: "Back to Build" }));
+    await traverseHistory("Back");
     expect(search).toBeVisible();
     expect(search).toHaveValue("NVDA");
     expect(screen.getByRole("heading", { name: "Related work & next step" })).toBeVisible();
     expect(build.scrollTop).toBe(360);
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
-    fireEvent.click(screen.getByRole("button", { name: "Back to Build" }));
+    await traverseHistory("Back");
     expect(search).toHaveValue("NVDA");
     expect(screen.getByRole("button", { name: "Documents" })).toHaveAttribute("aria-pressed", "true");
     expect(build.scrollTop).toBe(360);
@@ -391,14 +402,16 @@ describe("service shell", () => {
     fireEvent.change(screen.getByLabelText("Golden revision"), { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: "draft-01" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Question" }), { target: { value: "Unsaved question" } });
-    fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
-    expect(confirm).toHaveBeenCalledTimes(1);
+    const rejectedPosition = window.history.state.docreviewNavigation.position;
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(window.history.state.docreviewNavigation.position).toBe(rejectedPosition));
     expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Unsaved question");
-    expect(screen.getByRole("button", { name: "Back to Measure" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
+    await traverseHistory("Back");
     expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Back to conversation" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockRestore();
   });
 
@@ -409,7 +422,7 @@ describe("service shell", () => {
       const requests = stubLiveApi(EMPTY_CORPUS);
       render(<ServiceShell />);
       await waitFor(() => expect(document.getElementById("stage-7")).toBeInTheDocument());
-      expect(screen.getByRole("button", { name: "Build, needs attention" })).toHaveAttribute("aria-pressed", "true");
+      expect(await screen.findByRole("button", { name: "Build, needs attention" })).toHaveAttribute("aria-pressed", "true");
       expect(requests.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     } finally { window.history.replaceState({}, "", originalUrl); }
   });
@@ -435,11 +448,11 @@ describe("service shell", () => {
     const request = screen.getByRole("textbox");
     fireEvent.change(request, { target: { value: '{"suite_id":"sec-ko"}' } });
     fireEvent.click(screen.getByRole("button", { name: "System status" }));
-    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
+    await traverseHistory("Back");
     expect(request).toBeVisible();
     expect(request).toHaveValue('{"suite_id":"sec-ko"}');
-    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
-    fireEvent.click(screen.getByRole("button", { name: "Back to Measure" }));
+    await traverseHistory("Back");
+    await traverseHistory("Back");
     expect(screen.getByRole("button", { name: "3. Run evaluation" })).toHaveAttribute("aria-pressed", "true");
     // Result detail intentionally replaces the run list while preserving the selected result.
     expect(screen.queryByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).not.toBeInTheDocument();
@@ -456,7 +469,7 @@ describe("service shell", () => {
     const guides = screen.getByText("Guides & development", { exact: true });
     expect(guides.closest("details")).not.toHaveAttribute("open");
     expect(screen.getByRole("link", { name: "Development log" })).not.toBeVisible();
-    const build = screen.getByRole("button", { name: /^Build/ });
+    const build = screen.getByRole("button", { name: /^Build(?:, needs attention)?$/ });
     expect(guides.closest(".sidebar-nav")).toBe(build.parentElement);
     expect(guides.compareDocumentPosition(build) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(guides);
@@ -622,7 +635,7 @@ describe("service shell", () => {
     render(<ServiceShell />);
 
     expect(await screen.findByRole("heading", { name: "From filings to verified answers." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Build(?:, needs attention)?$/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Local operator")).toBeInTheDocument();
   });
 
@@ -633,7 +646,7 @@ describe("service shell", () => {
     expect(await screen.findByText("Corpus total · 29 filings")).toBeInTheDocument();
     await flushEffects();
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Build(?:, needs attention)?$/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("stays on Review when a restored review already has messages", async () => {
@@ -644,7 +657,7 @@ describe("service shell", () => {
     expect(await screen.findByText("Corpus empty")).toBeInTheDocument();
     await flushEffects();
     expect(screen.getByText("Data center revenue grew on Hopper demand.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Build(?:, needs attention)?$/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("keeps the view the user chose while the first readiness is still loading", async () => {
@@ -660,7 +673,7 @@ describe("service shell", () => {
     expect(await screen.findByText("preparation needed")).toBeInTheDocument();
     await flushEffects();
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Build/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Build(?:, needs attention)?$/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("toggles Help from the topbar button and the ? key, and persists it", async () => {
@@ -1352,5 +1365,62 @@ describe("right-side run details", () => {
     fireEvent.pointerDown(screen.getByPlaceholderText("Ask a question about the filing corpus"));
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
     expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
+  });
+});
+
+
+describe("browser navigation history", () => {
+  beforeEach(() => {
+    cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done"); stubPublicApi();
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it("shares back/forward and list jumps with URL history and clears forward on new navigation", async () => {
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Forward" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    fireEvent.click(screen.getByRole("button", { name: "Documents" }));
+    fireEvent.click(screen.getByRole("button", { name: "System · healthy" }));
+    expect(new URLSearchParams(window.location.search).get("view")).toBe("system");
+    await traverseHistory("Back");
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe("documents");
+    expect(screen.getByRole("button", { name: "Documents" })).toHaveAttribute("aria-pressed", "true");
+    await traverseHistory("Forward");
+    expect(new URLSearchParams(window.location.search).get("view")).toBe("system");
+    fireEvent.click(screen.getByRole("button", { name: "System · Status" }));
+    const list = screen.getByRole("listbox", { name: "Navigation history" });
+    fireEvent.click(within(list).getByRole("option", { name: /Conversation/ }));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("view")).toBe("review"));
+    expect(screen.getByRole("button", { name: "Forward" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Measure" }));
+    expect(screen.getByRole("button", { name: "Forward" })).toBeDisabled();
+    window.history.back();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("view")).toBe("review"));
+    expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeVisible();
+    window.history.forward();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("view")).toBe("measure"));
+  });
+
+  it("restores a reloaded URL while preserving unrelated parameters and base path", async () => {
+    window.history.replaceState(null, "", "/docreview-rag-agent/?view=measure&tab=snapshots&locale=ko#saved");
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "4. Compare and save" })).toHaveAttribute("aria-pressed", "true"));
+    expect(window.location.pathname).toBe("/docreview-rag-agent/");
+    expect(new URLSearchParams(window.location.search).get("locale")).toBe("ko");
+    expect(window.location.hash).toBe("#saved");
+    cleanup(); render(<ServiceShell />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "4. Compare and save" })).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("falls back to a saved conversation when a shared URL names an unknown local id", async () => {
+    seedAnsweredConversation();
+    window.history.replaceState(null, "", "/?view=review&conversation=unavailable");
+    render(<ServiceShell />);
+    await screen.findByText("Data center revenue grew on Hopper demand.");
+    expect(new URLSearchParams(window.location.search).get("conversation")).toBe("seeded");
+    expect(screen.getByRole("button", { name: "Conversation · NVIDIA data center" })).toBeVisible();
   });
 });

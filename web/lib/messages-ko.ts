@@ -1,4 +1,7 @@
 export const KO: Record<string, string> = {
+  "Forward": "앞으로",
+  "Navigation history": "방문 기록",
+  "Conversation": "대화",
   "Candidate count": "후보 수",
   "Citation": "인용",
   "Decision source": "결정 방식",
