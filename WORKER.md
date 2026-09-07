@@ -42,8 +42,8 @@ User directions and higher-priority instructions still prevail.
   staffing and cleanup rules for assigned workers. Engineering requirements still apply.
 - Ordinary workers solve assigned work, verify it, publish its PR/review result, then
   continue the approved queue. They never create, assign or close issues, edit their
-  title/body/scope, or manage unrelated Dependabot PRs. The owned status-comment
-  exception below is narrowly authorized.
+  title/body/scope, or manage unrelated Dependabot PRs. The owned status-comment and managed
+  label exception below, including explicitly approved takeover, is narrowly authorized.
 - Follow AGENTS.md branch/message/issue-link rules, including issue-free documentation PRs.
 - Approved implementation includes scoped commits, ordinary pushes and PR publication;
   do not ask again. Publication of `Self-review: LGTM`, `Review: LGTM`, or specific change
@@ -82,21 +82,53 @@ User directions and higher-priority instructions still prevail.
   changes, personal/global authentication and backup worktrees. OPS SSH clone access
   is separate from development push identity. Respect personal signing settings;
   never substitute an OPS signing key or silently generate personal credentials.
-- DEV/OPS labels describe work purpose; OCCUPIED/REVIEW_READY mirror the authoritative
-  record below. Preserve other project labels and classify an OPS-created product issue
-  as DEV. Successful automated reviews keep the exact approved headings and reviewed
-  SHA; they are not independent human approval. Only an explicitly authorized resolver
-  runs foreground sequence merges. No background scheduler, App activation, credentials
+- OPS records actual pushed commit SHAs, PR links, worker identity and verification at
+  first publication, subsequent pushes, handoff and verification completion. Update existing
+  records at meaningful changes; a local checkpoint is not a remote delivery receipt.
+- Apply exactly one purpose label, DEV or OPS, according to the assigned outcome, not the
+  authenticated account: an OPS-created product issue is DEV; orchestration work is OPS.
+  Apply exactly one active status label, OCCUPIED or REVIEW_READY, from the authoritative
+  record. Preserve unrelated bug, enhancement, documentation and project labels. Never
+  create per-worker labels or use labels as ownership locks. Required managed labels may
+  be created once only within explicit repository setup authorization.
+- Synchronize managed issue/PR labels with work-state mirrors and Draft/Ready state. An
+  issue with multiple assignments remains OCCUPIED if any is queued, active, paused or
+  blocked; mark it REVIEW_READY only when all assigned scopes are ready. Record the
+  blocker in Verification while retaining OCCUPIED. Reconcile partial writes before
+  reporting readiness; never infer merge completion from a label.
+- Successful automated reviews keep the exact approved headings and reviewed SHA; they
+  are not independent human approval. Only an explicitly authorized resolver runs
+  foreground sequence merges. No background scheduler, App activation, credentials
   change or product-main checkout synchronization is introduced by this setup.
 
 ### Assigned ownership and work state
 
 - One user-designated coordinator owns issue intake, assignments and authorized main
-  synchronization. Workers use the stable IDs the user assigns, such as `worker-1`.
-  Do not invent an ID, claim an occupied assignment or assume the coordinator role.
+  synchronization. Explicit user approval can transfer a named assignment directly; it
+  does not grant coordinator authority or access to unrelated occupied work.
+- Workers are replaceable execution owners, not permanent conversations. Preserve the
+  assignment and its issue/PR/commit/test history when a chat is archived or deleted or
+  a later model takes over. Reuse valid evidence and improve through reproducible affected
+  tests; do not discard existing work or claim improvement solely because the model changed.
+- Preserve user-assigned and legacy worker IDs. When authorized assignment needs a new ID,
+  generate `<client>-<YYYYMMDDTHHMMSSZ>-<8 lowercase hex characters>` using UTC and random
+  bytes, then check existing project ownership records for a collision before registering
+  it. Regenerate only an unregistered collision. Every new independent owner receives a
+  new ID; resumption, conversation compaction or renaming keeps the existing ID. Record
+  verified model/client metadata separately, including a model change within one execution.
+- Keep conversation ID/title optional. When the surface exposes a supported rename tool,
+  set the current task title to `<short scope> | <project summary> | <short worker id>`
+  at assignment or takeover and verify it. Preserve the full worker ID in project records;
+  use the client and unique ID suffix in the title. Do not repeat an unchanged rename.
+  If unsupported, provide the suggested title and continue. Never edit internal chat
+  databases or conversation logs, install an SDK solely for renaming, or block delivery
+  on a title change.
 - Record each assignment before implementation in one issue comment containing the
   marker `<!-- commit-it:work-state:v1 -->`. Include `Assignment`, `Worker`, `Scope`,
-  `Work status`, `PR`, `Verification` and UTC `Updated` fields. Before a PR exists,
+  `Work status`, `PR`, `Verification` and UTC `Updated` fields. Retain the v1 marker and
+  legacy readable fields. On takeover add previous/new worker, handoff revision, approval
+  summary, preserved checkpoint and remaining verification; retain the same Assignment.
+  A grouped delivery preserves links to every original Assignment. Before a PR exists,
   use `PR: pending`. One assignment may cover linked issues; mirror the same record
   to each. Sharing an issue requires explicitly assigned, disjoint scopes. For a
   directly requested issue-free documentation PR, start the record in that PR; do
@@ -109,7 +141,8 @@ User directions and higher-priority instructions still prevail.
   Keep the owner and explain verification separately, for example `blocked: <reason>`.
   `Verification blocked`, silence or an old timestamp never releases an assignment.
 - When scope and required checks are complete and writers have stopped, set
-  `REVIEW_READY`, synchronize the issue mirrors and mark the PR Ready for review.
+  `REVIEW_READY`, synchronize the issue mirrors and managed labels, and mark the PR Ready
+  for review. Do not report readiness until every required update is verified.
   Publish the applicable approval heading for the verified head. Other workers may review that
   committed head; readiness never authorizes them to edit the branch or take ownership.
 - Before further implementation, return the PR to Draft and `OCCUPIED`, then update
@@ -119,13 +152,26 @@ User directions and higher-priority instructions still prevail.
   bodies, foreign comments and other assignments. Re-read owner/head before a write;
   duplicate records, conflicting ownership or a partial synchronization require
   reconciliation before readiness or reassignment. Never infer availability from a
-  missing/stale mirror. Configured PR labels may mirror the state; do not create labels
-  or Projects without authorization, and do not treat labels as an enforced Git lock.
-- Handoff requires the coordinator's explicit reassignment after the old owner stops
-  writers and preserves its checkpoint/backups. A merged PR stays linked as history;
-  only the coordinator or explicitly authorized resolver reconciles the named delivery.
-  Ordinary workers do not merge. No resolver may advance the user's local main without
-  separate checkout authority.
+  missing/stale mirror. Managed-label setup authority does not authorize creating Projects.
+- Explicit user-approved takeover of a named scope is sufficient reassignment authority.
+  Do not require the previous worker to reply, acknowledge or independently confirm a
+  stop, and do not ask the user to approve the same takeover again. Silence or an old
+  timestamp alone is still not authorization. Before editing, inspect and preserve the
+  actual HEAD, staged/unstaged/untracked/ignored work, backups and valid verification. If actual
+  concurrent writing is detected, pause only the overlapping unit and reconcile ownership.
+- Use the approved typed OPS handoff operation, including for pre-PR issue records. Check
+  the expected owner, Assignment, record revision and PR HEAD when present. Record the
+  previous and new owner, explicit approval, incremented handoff revision, preserved
+  checkpoint, verification and next action. Re-read the authoritative record and mirrors
+  to confirm success; retry the same handoff idempotently after reconciling partial results.
+  Preserve original authors, historical reviews and assignment lineage. A predecessor
+  returning later must check current ownership before writing and must not resume an
+  assignment transferred away without new authority.
+- Takeover permits preservation, scoped implementation, checks and the already-approved
+  PR delivery, not merge, force-push, deployment, credential changes or local-main updates.
+  A successor who modifies inherited work uses `Self-review: LGTM`, never claims independent
+  review merely through a new worker ID. A merged PR stays linked as history; only the
+  coordinator or explicitly authorized resolver reconciles the named delivery.
 - GitHub author identity comes from the authenticated account/App, not the commit
   email. A shared bot still requires the `Worker` field. Account/App/token setup is
   separately authorized; never silently change authentication to publish a status.
@@ -136,8 +182,9 @@ User directions and higher-priority instructions still prevail.
   PR set and authorize fixes, publication and merge. A role name, review, label or stale
   ownership record never grants authority. Ordinary worker permissions remain unchanged.
 - Preserve original Worker/Assignment records, commit authorship and review history. Record
-  the resolver and explicit stopped-writer handoff separately before changing another
-  implementer's branch. Never impersonate an independent reviewer by changing worker IDs.
+  the resolver and explicitly approved handoff under the ownership protocol above before
+  changing another implementer's branch. Actual concurrent writes block the overlapping
+  unit. Never impersonate an independent reviewer by changing worker IDs.
 - Prefer fixing existing PRs in persistent worktrees. Create an integration PR only if the
   current split cannot preserve correct, verifiable intermediate states; retain every source
   PR/issue reference and explain any supersession before closing an original PR.
