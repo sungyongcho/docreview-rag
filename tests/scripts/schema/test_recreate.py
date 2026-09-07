@@ -145,20 +145,23 @@ def test_permission_preview_offers_exact_owner_fix_before_one_retry(
     source = tmp_path / "data/raw source.html"
     source.parent.mkdir()
     source.write_text("preserve")
-    preview = Mock(side_effect=[PermissionError(errno.EACCES, "denied", str(source)), {}])
+    clean_preview = command.source_preview(tmp_path)
+    preview = Mock(
+        side_effect=[PermissionError(errno.EACCES, "denied", str(source)), clean_preview]
+    )
     apply = Mock()
     monkeypatch.setattr(command, "source_preview", preview)
     monkeypatch.setattr(command, "confirm", lambda _: retry)
     monkeypatch.setattr(command.subprocess, "run", apply)
     if retry:
-        assert command.preview_sources(tmp_path) == {}
+        assert command.preview_sources(tmp_path) == clean_preview
         assert preview.call_count == 2
     else:
         with pytest.raises(ValueError, match="no deletion was submitted"):
             command.preview_sources(tmp_path)
         assert preview.call_count == 1
     output = capsys.readouterr().out
-    assert "setfacl -m" in output
+    assert "sudo setfacl -R -m" in output
     assert str(source) in output
     assert source.read_text() == "preserve"
     apply.assert_not_called()
@@ -179,7 +182,9 @@ def test_successful_reset_reports_the_callers_restart_intent(
     monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name}")
     assert command.run(tmp_path, keep_sources=True, restart_planned=restart_planned) == "succeeded"
     assert operation.await_count == 2
-    stop.assert_called_once_with(["docker", "stop", "fixture-app"], env={}, check=True)
+    stop.assert_called_once_with(
+        ["docker", "stop", "fixture-app"], env={}, check=True, stdout=command.subprocess.DEVNULL
+    )
     output = capsys.readouterr().out
     if restart_planned:
         assert "Guided setup will now rebuild/start DEV and verify readiness" in output
@@ -231,12 +236,21 @@ def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
         hints = [
             line.strip()
             for line in capsys.readouterr().out.splitlines()
-            if line.startswith("  setfacl")
+            if line.startswith("  sudo setfacl")
         ]
         assert hints
         assert all(
             shlex.split(line)
-            == ["setfacl", "-m", f"u:{os.getuid()}:rwX", "--", str(source.parent), str(source)]
+            == [
+                "sudo",
+                "setfacl",
+                "-R",
+                "-m",
+                f"u:{os.geteuid()}:rwX",
+                "--",
+                str(source.parent),
+                str(source),
+            ]
             for line in hints
         )
     finally:
@@ -310,3 +324,139 @@ def test_keep_sources_requires_readable_journal_state_before_docker(tmp_path, mo
         forbidden.assert_not_called()
     finally:
         data.chmod(0o700)
+
+
+@pytest.mark.parametrize("repair", [False, True])
+def test_unwritable_source_parents_block_confirmation_until_one_repair(
+    tmp_path, monkeypatch, capsys, repair
+):
+    """Readable container-style directories must be writable before confirmation or API stop."""
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses the Unix write-permission fixture.")
+    corpus = tmp_path / "data/corpus"
+    blocked = [corpus / "sec", corpus / "sec/filing", corpus / "dart/receipt"]
+    for directory in (blocked[1], blocked[2]):
+        directory.mkdir(parents=True)
+        (directory / "source.html").write_text("original source")
+    for directory in blocked:
+        directory.chmod(0o555)
+    stop = Mock()
+    target = Mock(
+        return_value=(
+            {"port": "1", "apps": ["fixture-app"], "volume": "fixture", "docker": ["docker"]},
+            {},
+        )
+    )
+    confirm_input = Mock(return_value=f"RECREATE {tmp_path.name} AND SOURCES")
+
+    def owner_repair(_prompt):
+        """Only the fixture owner changes access; the reset code never executes the hint."""
+        if repair:
+            for directory in blocked:
+                directory.chmod(0o755)
+        return repair
+
+    repair_prompt = Mock(side_effect=owner_repair)
+    monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(command, "confirm", repair_prompt)
+    monkeypatch.setattr(command, "local_target", target)
+    monkeypatch.setattr(command, "recreate", AsyncMock(return_value={}))
+    monkeypatch.setattr(command.subprocess, "run", stop)
+    monkeypatch.setattr("builtins.input", confirm_input)
+    try:
+        if repair:
+            assert command.run(tmp_path) == "succeeded"
+            confirm_input.assert_called_once()
+            stop.assert_called_once()
+        else:
+            with pytest.raises(ValueError, match="permissions remain blocked"):
+                command.run(tmp_path)
+            confirm_input.assert_not_called()
+            target.assert_not_called()
+            stop.assert_not_called()
+            assert all(
+                (directory / "source.html").read_text() == "original source"
+                for directory in (blocked[1], blocked[2])
+            )
+        output = capsys.readouterr().out
+        assert "sudo setfacl -R -m" in output
+        assert all(f"Blocked: {directory}" in output for directory in blocked)
+        repair_prompt.assert_called_once()
+    finally:
+        for directory in blocked:
+            directory.chmod(0o755)
+
+
+def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
+    tmp_path, monkeypatch, capsys
+):
+    """A late filesystem failure cannot strand the API behind a bare errno message."""
+    corpus = tmp_path / "data/corpus"
+    corpus.mkdir(parents=True)
+    source = corpus / "original.html"
+    source.write_text("preserve original bytes")
+    stage = command.SourceReset.stage
+
+    def fail_after_staging(reset):
+        """Move real fixture files, then simulate a late permission loss before DB work."""
+        stage(reset)
+        raise PermissionError(13, "fixture denied", str(source))
+
+    target = {"port": "1", "apps": ["fixture-app"], "volume": "fixture", "docker": ["docker"]}
+    operation = AsyncMock(return_value={})
+    stop = Mock()
+    monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(command, "local_target", lambda _: (target, {}))
+    monkeypatch.setattr(command, "recreate", operation)
+    monkeypatch.setattr(command.subprocess, "run", stop)
+    monkeypatch.setattr(command.SourceReset, "stage", fail_after_staging)
+    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    with pytest.raises(ValueError, match="filesystem permissions") as caught:
+        command.run(tmp_path, restart_planned=True)
+    assert "[Errno" not in str(caught.value)
+    assert source.read_text() == "preserve original bytes"
+    assert not (tmp_path / "data/.schema-recreate-journal").exists()
+    assert operation.await_count == 1
+    stop.assert_called_once_with(
+        ["docker", "stop", "fixture-app"], env={}, check=True, stdout=command.subprocess.DEVNULL
+    )
+    output = capsys.readouterr().err
+    assert "database and sources are unchanged" in output
+    assert "rag-dev up -d" in output
+
+
+def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
+    tmp_path, monkeypatch, capsys
+):
+    """A failed stop request may have stopped a container and must still give recovery steps."""
+    target = {"port": "1", "apps": ["fixture-app"], "volume": "fixture", "docker": ["docker"]}
+    operation = AsyncMock(return_value={})
+    monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(command, "local_target", lambda _: (target, {}))
+    monkeypatch.setattr(command, "recreate", operation)
+    monkeypatch.setattr(
+        command.subprocess,
+        "run",
+        Mock(side_effect=command.subprocess.CalledProcessError(1, ["docker", "stop"])),
+    )
+    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    with pytest.raises(command.subprocess.CalledProcessError):
+        command.run(tmp_path)
+    assert operation.await_count == 1
+    output = capsys.readouterr().err
+    assert "database and sources are unchanged" in output
+    assert "rag-dev up -d" in output
+
+
+def test_keep_sources_does_not_require_source_directory_write_access(tmp_path):
+    """The explicit source-preserving reset remains usable on a read-only source directory."""
+    corpus = tmp_path / "data/corpus"
+    corpus.mkdir(parents=True)
+    source = corpus / "keep.html"
+    source.write_text("keep these bytes")
+    corpus.chmod(0o555)
+    try:
+        assert command.preview_sources(tmp_path, keep_sources=True) is None
+        assert source.read_text() == "keep these bytes"
+    finally:
+        corpus.chmod(0o755)

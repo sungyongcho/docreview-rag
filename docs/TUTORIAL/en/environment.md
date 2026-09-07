@@ -23,6 +23,23 @@ uv run python -m scripts.schema prepare
 
 Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing. If you deliberately choose to discard the local DEV database, use the separately confirmed `scripts.schema recreate` path in the CLI guide; it is never automatic. Service and actual storage-permission blockers display their own terminal command and expected result.
 
+
+### Local container file ownership
+
+Local Compose keeps the image's non-root UID 10001 and uses `HOST_GID` as the app's primary group
+(default 1000; `rag-dev` supplies the invoking host group). API startup applies `umask 0002` after
+the unchanged database initialization gate. New source/download and evaluation directories are
+group-writable; saved local-model settings are mode 0640, readable by the host group. The existing
+image user and deployment Compose remain unchanged; this is a local bind-mount sharing policy.
+
+The host's `data/` directory must permit that group to write. For direct Compose on a host whose
+primary group is not 1000, set `HOST_GID` to `id -g`. Earlier container-owned files keep their existing
+permissions: the reset preview prints the exact elevated repair for blocked source paths. If an old
+`data/local-settings` or `data/eval_runs` path also needs host access, ask its owner to apply the same
+scoped ACL repair to that directory. No ownership/ACL change is automatic. After updating this local
+Compose policy, recreate the app with `rag-dev up -d`; an existing container does not acquire a new
+primary group or command merely from a source reload. See [reset recovery](cli.md).
+
 An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
 
 ### SCREENSHOT NEEDED

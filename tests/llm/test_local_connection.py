@@ -421,3 +421,14 @@ def test_diagnostics_are_fresh_metadata_only_and_never_save_or_select(tmp_path) 
 
     asyncio.run(exercise())
     assert all(path in {"/api/tags", "/api/ps", "/api/show", "/v1/models"} for _, path in requests)
+
+
+def test_saved_connection_is_readable_by_the_configured_host_group(tmp_path) -> None:
+    """Atomic replacement grants group read access while keeping settings non-public."""
+    import stat
+
+    path = tmp_path / "local-settings/local-llm.json"
+    manager = LocalConnectionManager(path=path, transport=httpx.MockTransport(metadata_server))
+    asyncio.run(manager.connect("http://replacement:11435"))
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert json.loads(path.read_text())["selected_server_id"]

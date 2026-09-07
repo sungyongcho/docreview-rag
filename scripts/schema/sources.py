@@ -2,6 +2,7 @@
 
 from collections import Counter
 from collections.abc import Iterator
+import errno
 import hashlib
 import json
 import os
@@ -13,6 +14,41 @@ from app.ingestion.manifest import Manifest
 from app.ingestion.source_selection import DRAFT_NAME
 
 JOURNAL_NAME = ".schema-recreate-journal"
+
+
+class SourceAccessError(PermissionError):
+    """Report every inaccessible reset directory without attempting a filesystem write."""
+
+    def __init__(self, paths: tuple[Path, ...]) -> None:
+        """Retain exact blocked paths for a scoped, elevated manual repair."""
+        super().__init__(
+            errno.EACCES, "Source directories require write and search access", str(paths[0])
+        )
+        self.paths = paths
+
+
+def check_source_write_access(root: Path, preview: dict) -> None:
+    """Check source parents and journal/catalog destinations using the effective host UID."""
+    data = root / "data"
+    corpus = data / "corpus"
+    directories = {data, corpus}
+    for name in preview["files"]:
+        parent = (corpus / name).parent
+        while parent.is_relative_to(corpus):
+            directories.add(parent)
+            parent = parent.parent
+    existing = set()
+    for path in directories:
+        while not path.exists():
+            path = path.parent
+        existing.add(path)
+    blocked = tuple(
+        sorted(
+            path for path in existing if not os.access(path, os.W_OK | os.X_OK, effective_ids=True)
+        )
+    )
+    if blocked:
+        raise SourceAccessError(blocked)
 
 
 def _source_stat(path: Path) -> os.stat_result | None:
@@ -146,6 +182,7 @@ class SourceReset:
         """Quarantine exact files and replace source catalogs without deleting backups."""
         if source_preview(self.root) != self.preview:
             raise ValueError("Source inventory changed; review a new preview. Nothing deleted.")
+        check_source_write_access(self.root, self.preview)
         self.journal.mkdir(parents=True, exist_ok=False)
         self.save("staging")
         self.corpus.mkdir(parents=True, exist_ok=True)
