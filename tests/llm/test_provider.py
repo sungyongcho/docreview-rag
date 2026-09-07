@@ -537,10 +537,13 @@ def test_first_request_is_refused_before_the_call_when_its_projection_exceeds_th
     assert result.refusal.which == "input_tokens"
     assert result.refusal.used == 0
     assert result.refusal.limit == 2_000
-    assert result.refusal.attempts == 1
+    assert result.refusal.attempts == 0
     assert result.refusal.projected_input_tokens == 2_521
     assert provider.prompts == ()
-    assert result.metadata.raw_outputs == ("",)
+    assert result.metadata.requests == 0
+    assert result.metadata.raw_outputs == ()
+    assert result.metadata.llm_output == ""
+    assert result.metadata.request_ids == ()
     assert result.metadata.retries == 0
     assert result.metadata.input_tokens == 0
     assert result.metadata.request_time_ms == 0
@@ -565,31 +568,40 @@ def test_repair_is_refused_before_the_call_when_the_repair_prompt_would_not_fit(
     assert result.status == "budget_exceeded"
     assert isinstance(result.refusal, BudgetExceeded)
     assert result.refusal.used == 500
+    assert result.refusal.attempts == 1
     assert result.refusal.projected_input_tokens == 700
     assert result.refusal.schema_errors
     assert len(provider.prompts) == 1
+    assert result.metadata.requests == 1
     assert result.metadata.retries == 0
     assert result.metadata.raw_outputs == ('{"label":"SUPPORTED"}',)
 
 
-def test_projection_within_tolerance_still_sends_the_request():
-    """A projection up to ten percent above the allowance is admitted and measured post hoc."""
-    provider = DeterministicLLMProvider(
-        [raw(valid_output(), input_tokens=1_050, output_tokens=20)],
+def test_projection_equal_to_the_allowance_is_sent_and_one_token_over_is_refused():
+    """The gate compares against the allowance itself: exact fit is sent, one more is not."""
+    exact = DeterministicLLMProvider(
+        [raw(valid_output(), input_tokens=1_000, output_tokens=20)],
         clock=TickClock(),
-        projected_input_tokens=lambda _prompt: 1_090,
+        projected_input_tokens=lambda _prompt: 1_000,
+    )
+    over = DeterministicLLMProvider(
+        [raw(valid_output(), input_tokens=1_000, output_tokens=20)],
+        clock=TickClock(),
+        projected_input_tokens=lambda _prompt: 1_001,
     )
 
-    result = asyncio.run(
-        provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=1_000))
-    )
+    sent = asyncio.run(exact.complete(prompt(), AnswerDecision, budget(max_input_tokens=1_000)))
+    refused = asyncio.run(over.complete(prompt(), AnswerDecision, budget(max_input_tokens=1_000)))
 
-    assert len(provider.prompts) == 1
-    assert result.status == "budget_exceeded"
-    assert isinstance(result.refusal, BudgetExceeded)
-    assert result.refusal.used == 1_050
-    assert result.refusal.projected_input_tokens is None
-    assert result.metadata.projected_input_tokens is None
+    assert sent.status == "ok"
+    assert len(exact.prompts) == 1
+    assert sent.metadata.requests == 1
+    assert sent.metadata.input_tokens == 1_000
+    assert refused.status == "budget_exceeded"
+    assert isinstance(refused.refusal, BudgetExceeded)
+    assert refused.refusal.projected_input_tokens == 1_001
+    assert refused.refusal.attempts == 0
+    assert over.prompts == ()
 
 
 def test_post_hoc_accounting_is_unchanged_when_the_projection_undershoots():
@@ -622,11 +634,15 @@ def test_deterministic_provider_projects_nothing_by_default():
 
     assert len(provider.prompts) == 1
     assert result.status == "budget_exceeded"
+    assert isinstance(result.refusal, BudgetExceeded)
     assert result.refusal.projected_input_tokens is None
 
 
 def test_strict_format_keeps_the_reason_bound():
     """The strict decoding schema carries the rationale length bound to the provider."""
     schema = strict_response_format(RelevanceJudgment)["schema"]
-    reason = schema["$defs"]["ChunkRelevance"]["properties"]["reason"]
+    assert isinstance(schema, dict)
+    definitions = schema["$defs"]
+    assert isinstance(definitions, dict)
+    reason = definitions["ChunkRelevance"]["properties"]["reason"]
     assert reason["maxLength"] == 160

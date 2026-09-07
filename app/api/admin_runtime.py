@@ -473,6 +473,7 @@ class RuntimeAdminApiServices:
                         Run.created_at,
                         Run.request_context["model_calls"].label("model_calls"),
                         Run.request_context["provider_identity"].label("provider_identity"),
+                        Run.request_context["trace_requests"].label("trace_requests"),
                     )
                 )
             ).all()
@@ -480,6 +481,7 @@ class RuntimeAdminApiServices:
                 await session.execute(
                     select(
                         Trace.run_id,
+                        Trace.step,
                         Trace.node,
                         Trace.model_name,
                         Trace.api_url,
@@ -511,7 +513,11 @@ class RuntimeAdminApiServices:
         for run in runs:
             records.extend(
                 review_usage(
-                    {"model_calls": run.model_calls, "provider_identity": run.provider_identity},
+                    {
+                        "model_calls": run.model_calls,
+                        "provider_identity": run.provider_identity,
+                        "trace_requests": run.trace_requests,
+                    },
                     by_run.get(run.run_id, []),
                 )
             )

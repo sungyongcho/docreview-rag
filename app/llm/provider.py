@@ -263,14 +263,14 @@ class LLMProvider(ABC):
             # refused here, including the larger repair prompt of a second attempt.
             projected = self._projected_input_tokens(current_prompt)
             if projected is not None and exceeds_allowance(projected, remaining.max_input_tokens):
-                if attempt == 1:
-                    raw_outputs.append("")
+                # Nothing is sent, so nothing is fabricated: the refusal reports how many
+                # requests actually went out (none on the first attempt, one before a repair).
                 return failed(
                     BudgetExceeded(
                         which="input_tokens",
                         used=total_input_tokens,
                         limit=budget.max_input_tokens,
-                        attempts=1,
+                        attempts=len(raw_outputs),
                         schema_errors=repair_errors,
                         projected_input_tokens=projected,
                     ),
@@ -390,11 +390,12 @@ class LLMProvider(ABC):
                 cache_write_input_tokens=cache_write_input_tokens,
             ),
             request_time_ms=request_time_ms,
-            retries=len(raw_outputs) - 1,
+            retries=max(len(raw_outputs) - 1, 0),
             request_ids=tuple(request_ids),
-            llm_output=raw_outputs[-1],
+            llm_output=raw_outputs[-1] if raw_outputs else "",
             raw_outputs=tuple(raw_outputs),
             local_timings=tuple(local_timings),
+            requests=len(raw_outputs),
             projected_input_tokens=projected_input_tokens,
         )
 

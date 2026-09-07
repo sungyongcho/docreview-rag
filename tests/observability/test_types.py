@@ -5,7 +5,7 @@ from decimal import Decimal
 from pydantic import ValidationError
 import pytest
 
-from app.observability.types import RunReport
+from app.observability.types import RunReport, StepTrace
 from tests.observability.support import run_report, step_trace
 
 
@@ -65,6 +65,40 @@ def test_run_report_derives_cumulative_tokens_requests_and_iterations():
     assert type(report.total_input_tokens) is int
     assert isinstance(report.total_estimated_cost_usd, Decimal)
     assert report.steps == tuple(steps)
+
+
+def test_step_trace_counts_sent_requests_and_defaults_older_records_to_their_attempts():
+    """A refusal before the call records zero requests; older records keep retries + 1."""
+    assert step_trace().requests == 1
+    assert step_trace(retries=1).requests == 2
+    legacy = step_trace(retries=1).model_dump()
+    del legacy["requests"]
+    assert StepTrace.model_validate(legacy).requests == 2
+
+    refused = step_trace(
+        requests=0,
+        input_tokens=0,
+        output_tokens=0,
+        estimated_cost_usd=Decimal("0"),
+        request_time_ms=0.0,
+        llm_output="",
+        error="input_tokens: used=0 limit=2000",
+    )
+    report = run_report(
+        status="budget_exceeded",
+        report={"reason": {"code": "budget_exceeded"}},
+        steps=[step_trace(), refused.model_copy(update={"step": 2})],
+    )
+
+    assert refused.requests == 0
+    assert report.total_requests == 1
+    assert RunReport.model_validate(report.model_dump()).total_requests == 1
+    with pytest.raises(ValidationError, match="retries plus one"):
+        step_trace(requests=2)
+    with pytest.raises(ValidationError, match="no usage"):
+        step_trace(requests=0)
+    with pytest.raises(ValidationError, match="total_requests"):
+        RunReport.model_validate({**report.model_dump(), "total_requests": 2})
 
 
 def test_run_report_rejects_non_json_reports_and_inconsistent_direct_totals():

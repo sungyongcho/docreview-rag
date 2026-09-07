@@ -3540,6 +3540,8 @@ export interface components {
             reasoning_tokens: number;
             /** Request Time Ms */
             request_time_ms: number;
+            /** Requests */
+            requests: number;
             /** Retries */
             retries: number;
             /** Step */

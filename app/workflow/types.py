@@ -145,7 +145,8 @@ class ProviderFailure(StrictSchema):
         "provider_error",
         "budget_exceeded",
     ]
-    attempts: Annotated[StrictInt, Field(ge=1, le=2)]
+    #: Requests the provider actually received; zero when the call was refused beforehand.
+    attempts: Annotated[StrictInt, Field(ge=0, le=2)]
     details: tuple[NonBlank, ...]
     budget: BudgetExceeded | None = None
     budget_source: Literal["provider_budget", "run_limits", "both"] | None = None

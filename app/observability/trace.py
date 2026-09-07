@@ -58,6 +58,7 @@ def step_trace_from_provider_result[OutputT: BaseModel](
         cached_input_tokens=metadata.cached_input_tokens,
         cache_write_input_tokens=metadata.cache_write_input_tokens,
         reasoning_tokens=metadata.reasoning_tokens,
+        requests=metadata.requests,
         estimated_cost_usd=metadata.estimated_cost_usd,
         request_time_ms=metadata.request_time_ms,
         llm_output=metadata.llm_output,

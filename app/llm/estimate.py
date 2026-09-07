@@ -13,15 +13,12 @@ from functools import lru_cache
 import logging
 
 import tiktoken
+from tiktoken.model import MODEL_PREFIX_TO_ENCODING, MODEL_TO_ENCODING
 
 from app.llm.schemas import Prompt
 
 log = logging.getLogger(__name__)
 
-#: Fraction by which a projection may exceed the allowance before the call is refused.
-#: Refusing a request that would have fitted costs a whole run, while a small undercount
-#: only falls through to the post-hoc accounting that exists today.
-PROJECTION_TOLERANCE = 0.10
 #: Fixed allowance for chat-template turn markers around the system and user halves.
 FRAMING_TOKENS = 16
 FALLBACK_ENCODING = "o200k_base"
@@ -29,11 +26,22 @@ _unavailable: set[str] = set()
 
 
 def prompt_encoding(model_name: str) -> str:
-    """Return the tokenizer name for ``model_name``: its OpenAI encoding, else the fallback."""
-    try:
-        return tiktoken.encoding_for_model(model_name).name
-    except KeyError:
-        return FALLBACK_ENCODING
+    """Return the tokenizer name for ``model_name`` without loading any tokenizer data.
+
+    Only the name tables are consulted, so a recognized OpenAI model in an offline
+    container reaches the same guarded loader as an unknown local model.
+    """
+    name = MODEL_TO_ENCODING.get(model_name)
+    if name is None:
+        name = next(
+            (
+                encoding
+                for prefix, encoding in MODEL_PREFIX_TO_ENCODING.items()
+                if model_name.startswith(prefix)
+            ),
+            None,
+        )
+    return name or FALLBACK_ENCODING
 
 
 @lru_cache(maxsize=4)
@@ -64,5 +72,10 @@ def estimate_prompt_tokens(prompt: Prompt, *, model_name: str) -> int | None:
 
 
 def exceeds_allowance(projected: int, allowance: int) -> bool:
-    """Return whether the projection exceeds the allowance by more than the tolerance."""
-    return projected > allowance * (1 + PROJECTION_TOLERANCE)
+    """Return whether the projection does not fit the remaining allowance.
+
+    The comparison uses the configured allowance as-is: estimation uncertainty is not
+    turned into extra budget. The fallback encoding undercounts rather than overcounts,
+    so a projection that slips through still meets the post-hoc usage check.
+    """
+    return projected > allowance

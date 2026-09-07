@@ -612,6 +612,7 @@ def test_grade_is_refused_before_the_call_when_its_prompt_exceeds_the_provider_a
     assert reason["node"] == "grade"
     assert reason["budget"]["projected_input_tokens"] == 2_521
     assert reason["budget_source"] == "provider_budget"
+    assert reason["attempts"] == 0
     assert reason["details"][0] == "input_tokens: used=0 limit=2000"
     assert "refused before the call" in reason["details"][1]
     assert len(provider.prompts) == 0
@@ -640,25 +641,47 @@ def test_check_is_refused_before_the_call_when_spent_plus_projected_exceeds_the_
     assert reason["node"] == "check"
     assert reason["budget_source"] == "run_limits"
     assert reason["budget"]["projected_input_tokens"] == 400
+    assert reason["attempts"] == 0
     assert len(provider.prompts) == 1
+    assert result.total_requests == 1
 
 
-def test_a_projected_refusal_is_recorded_as_a_zero_usage_model_call():
-    """The refused attempt appears in the run's model calls with zero usage and its projection."""
+def test_a_projected_refusal_is_recorded_without_a_sent_request():
+    """The refusal keeps its projection in the run's model calls while counting zero requests."""
+    from app.observability.stages import record_stages, stage_metadata
+
     grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
     provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)], projected=2_521)
 
-    result = asyncio.run(
-        run_workflow(
-            _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
-            retriever=retriever_returning([_hit()]),
-            provider=provider,
-            clock=SequenceClock(),
-        )
-    )
+    async def observe(event):
+        """Discard stage events; only the recorded model calls matter here."""
+        del event
 
-    assert result.total_requests == 1
+    async def exercise():
+        """Run the refused grade call under the stage recorder."""
+        with record_stages(observe):
+            result = await run_workflow(
+                _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
+                retriever=retriever_returning([_hit()]),
+                provider=provider,
+                clock=SequenceClock(),
+            )
+            return result, stage_metadata()
+
+    result, metadata = asyncio.run(exercise())
+
+    assert result.total_requests == 0
     assert result.total_input_tokens == 0
     assert result.steps[-1].node == "grade"
+    assert result.steps[-1].requests == 0
+    assert result.steps[-1].retries == 0
     assert result.steps[-1].input_tokens == 0
+    assert result.steps[-1].llm_output == ""
     assert result.steps[-1].error is not None
+    calls = metadata["model_calls"]
+    assert isinstance(calls, list) and len(calls) == 1
+    call = calls[0]
+    assert isinstance(call, dict)
+    assert call["attempts"] == 0
+    assert call["projected_input_tokens"] == 2_521
+    assert call["input_tokens"] == 0

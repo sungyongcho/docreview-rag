@@ -10,7 +10,7 @@ from sqlalchemy import MetaData, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.admin_runtime import RuntimeAdminApiServices
-from app.db.models import Base, OperatorJob
+from app.db.models import Base, OperatorJob, Trace
 from app.observability.persistence import persist_run_report
 from app.observability.usage import (
     USAGE_KEY,
@@ -93,6 +93,39 @@ def test_model_calls_include_gate_without_double_counting_the_same_trace():
     assert sum(Decimal(row["estimated_cost_usd"]) for row in rows) == Decimal("0.03")
     assert {row["role"] for row in rows} == {"gate", "report"}
     assert all(row["credential_slot"] == "OPENAI_API_KEY_LOCAL" for row in rows)
+
+
+def test_stored_rows_without_call_records_reconstruct_their_sent_requests():
+    """Older rows count one request per attempt unless the context records a refusal."""
+    row = Trace(
+        run_id="run-1",
+        step=1,
+        node="grade",
+        model_name="gpt-4.1-mini",
+        api_url="https://api.openai.com/v1/responses",
+        input_tokens=0,
+        output_tokens=0,
+        cached_input_tokens=0,
+        cache_write_input_tokens=0,
+        reasoning_tokens=0,
+        estimated_cost_usd=Decimal("0"),
+        request_time_ms=0.0,
+        llm_output="",
+        retries=0,
+        error="input_tokens: used=0 limit=2000",
+    )
+    refused = step_trace(
+        requests=0,
+        input_tokens=0,
+        output_tokens=0,
+        estimated_cost_usd=Decimal("0"),
+        llm_output="",
+        error="input_tokens: used=0 limit=2000",
+    )
+
+    assert review_usage({}, [row])[0]["requests"] == 1
+    assert review_usage({"trace_requests": {"1": 0}}, [row])[0]["requests"] == 0
+    assert review_usage(None, [refused])[0]["requests"] == 0
 
 
 def test_old_unpriced_calls_and_local_estimates_remain_explicit():

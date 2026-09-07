@@ -1,6 +1,7 @@
 """Secret-safe record mapping and transaction-neutral run persistence."""
 
 import asyncio
+from decimal import Decimal
 from typing import cast
 
 import pytest
@@ -176,3 +177,36 @@ def test_local_timing_round_trips_through_existing_jsonb_context() -> None:
     assert run.request_context["trace_local_timings"]["1"] == [
         {"attempt": 2, "load_duration_ms": 1.5, "eval_count": 3}
     ]
+
+
+def test_sent_requests_round_trip_through_existing_jsonb_context() -> None:
+    """A step refused before its call keeps zero requests through storage without a new column."""
+    from app.observability.persistence import record_to_step, stored_step_requests
+
+    refused = step_trace(
+        step=2,
+        requests=0,
+        input_tokens=0,
+        output_tokens=0,
+        estimated_cost_usd=Decimal("0"),
+        request_time_ms=0.0,
+        llm_output="",
+        error="input_tokens: used=0 limit=2000",
+    )
+    report = run_report(
+        status="budget_exceeded",
+        report={"reason": {"code": "budget_exceeded"}},
+        steps=[step_trace(), refused],
+    )
+    run, traces = report_to_records(report)
+
+    assert run.total_requests == 1
+    context = run.request_context
+    assert context is not None
+    assert context["trace_requests"] == {"2": 0}
+    restored = records_to_report(run, traces)
+    assert [step.requests for step in restored.steps] == [1, 0]
+    assert restored.total_requests == 1
+    assert record_to_step(traces[1]).requests == 1
+    assert stored_step_requests({"trace_requests": {"2": True}}, step=2, retries=0) == 1
+    assert "trace_requests" not in (report_to_records(run_report())[0].request_context or {})

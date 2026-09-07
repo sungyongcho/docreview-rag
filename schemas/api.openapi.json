@@ -234,7 +234,7 @@
         "properties": {
           "attempts": {
             "maximum": 2.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Attempts",
             "type": "integer"
           },
@@ -4615,7 +4615,7 @@
         "properties": {
           "attempts": {
             "maximum": 2.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Attempts",
             "type": "integer"
           },
@@ -6282,6 +6282,11 @@
             "title": "Request Time Ms",
             "type": "number"
           },
+          "requests": {
+            "minimum": 0.0,
+            "title": "Requests",
+            "type": "integer"
+          },
           "retries": {
             "minimum": 0.0,
             "title": "Retries",
@@ -6303,7 +6308,8 @@
           "estimated_cost_usd",
           "request_time_ms",
           "llm_output",
-          "retries"
+          "retries",
+          "requests"
         ],
         "title": "StepTrace",
         "type": "object"

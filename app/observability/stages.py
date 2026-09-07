@@ -97,7 +97,7 @@ def record_model_call(metadata: ProviderMetadata) -> None:
             "step": len(recorder.model_calls) + 1,
             "node": _NODE.get(),
             "model": metadata.model_name,
-            "attempts": metadata.retries + 1,
+            "attempts": metadata.requests,
             "elapsed_ms": metadata.request_time_ms,
             "input_tokens": metadata.input_tokens,
             "output_tokens": metadata.output_tokens,
