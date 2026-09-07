@@ -13,6 +13,7 @@ import pytest
 
 from app.ingestion.manifest import CorpusIdentity, Manifest
 from app.operator.wipe import WipeError, WipeService
+from tests.live_postgres import live_postgres_unavailable
 
 
 def test_runtime_file_allowlist_preserves_sources_and_rejects_links(tmp_path):
@@ -88,7 +89,9 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
     """Erase only an isolated test volume and verify a real empty pgvector schema."""
     image = os.environ.get("DOCREVIEW_WIPE_TEST_IMAGE")
     if not image:
-        pytest.fail("Set DOCREVIEW_WIPE_TEST_IMAGE to a freshly built application image")
+        live_postgres_unavailable(
+            "Set DOCREVIEW_WIPE_TEST_IMAGE to a freshly built application image."
+        )
     root = tmp_path / "docreview-wipe-test"
     root.mkdir()
     (root / "docker").mkdir()
@@ -130,6 +133,8 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
         path.write_text("preserved source")
     (root / "docker/docker-compose.yml").write_text(f"""services:
   db:
+    cpuset: 0-1
+    cpus: 2
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: filing
@@ -142,6 +147,8 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
       interval: 1s
       retries: 30
   app:
+    cpuset: 0-1
+    cpus: 2
     image: {json.dumps(image)}
     pull_policy: never
     volumes:
@@ -159,6 +166,9 @@ def test_disposable_compose_reset_recreates_empty_schema(tmp_path, monkeypatch):
       OPENAI_API_KEY_LOCAL: ''
       OPENAI_API_KEY_PROD: ''
       DART_API_KEY: ''
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 1s
@@ -207,8 +217,11 @@ volumes:
             await service._sql(
                 target["database_container"],
                 "CREATE TABLE wipe_probe(id int); INSERT INTO wipe_probe VALUES(1); "
-                "CREATE TABLE operator_jobs(status text); "
-                "INSERT INTO operator_jobs VALUES('running')",
+                "INSERT INTO operator_jobs "
+                "(job_id, domain, kind, request_json, status, stage, "
+                "current, message, result_refs) "
+                "VALUES ('fixture-active-job', 'corpus', 'ingest_manifest', '{}', 'running', "
+                "'starting', 0, 'Fixture active job', '{}')",
             )
             with pytest.raises(WipeError, match="Finish active jobs"):
                 await service.preview()

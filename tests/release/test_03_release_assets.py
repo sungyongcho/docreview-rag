@@ -51,6 +51,12 @@ def test_clean_checkout_script_has_fresh_locked_and_smoke_gates() -> None:
     assert "npm run build" in text
     assert "canned health and Next smoke" in text
     assert "uv run ruff check --no-fix app tests scripts" in text
+    assert "uv run basedpyright app" in text
+    assert "--require-live-postgres" in text
+    assert (
+        "tests/operator/test_wipe.py::test_disposable_compose_reset_recreates_empty_schema" in text
+    )
+    assert 'DOCREVIEW_WIPE_TEST_IMAGE="${M7_PROJECT}-app"' in text
     assert (
         "docker compose --project-directory . -f docker/docker-compose.yml "
         '-p "$M7_PROJECT" config --quiet' in text

@@ -41,7 +41,9 @@ cd "$M7_ARCHIVE_ROOT"
 unset \
     OPENAI_API_KEY_LOCAL OPENAI_API_KEY_DEV OPENAI_API_KEY_PROD MODE \
     LOCAL_LLM_BASE_URL LOCAL_LLM_MODEL LOCAL_LLM_PROTOCOL LOCAL_LLM_API_KEY \
-    LOCAL_LLM_TIMEOUT_S LOCAL_LLM_MAX_INPUT_TOKENS LOCAL_LLM_MAX_OUTPUT_TOKENS
+    LOCAL_LLM_TIMEOUT_S LOCAL_LLM_MAX_INPUT_TOKENS LOCAL_LLM_MAX_OUTPUT_TOKENS \
+    DATABASE_URL SCHEMA_TEST_ADMIN_URL DOCREVIEW_EXPECT_LIVE_POSTGRES \
+    DOCREVIEW_CATALOG_TEST_DATABASE_URL DOCREVIEW_WIPE_TEST_IMAGE
 export DOCREVIEW_MODE=canned
 export UV_PROJECT_ENVIRONMENT="$M7_ARCHIVE_ROOT/.venv"
 
@@ -64,6 +66,7 @@ printf 'Clean archive: Next tests, typecheck, and static build\n'
 printf 'Clean archive: lint and owned format\n'
 uv run ruff check --no-fix app tests scripts
 uv run ruff format --check app tests
+uv run basedpyright app
 
 printf 'Clean archive: Compose configuration and application image build\n'
 docker compose --project-directory . -f docker/docker-compose.yml -p "$M7_PROJECT" config --quiet
@@ -71,9 +74,15 @@ docker compose --project-directory . -f docker/docker-compose.yml -p "$M7_PROJEC
 docker compose --project-directory . -f docker/docker-compose.yml -p "$M7_PROJECT" -f docker/docker-compose.prod.yml config --quiet
 docker compose --project-directory . -f docker/docker-compose.yml -p "$M7_PROJECT" build app
 
+printf 'Clean archive: isolated Compose reset with the freshly built image\n'
+DOCREVIEW_WIPE_TEST_IMAGE="${M7_PROJECT}-app" \
+    uv run pytest -q -m live_postgres --require-live-postgres \
+    tests/operator/test_wipe.py::test_disposable_compose_reset_recreates_empty_schema
+
 printf 'Clean archive: Hugging Face image build and canned local smoke\n'
 docker build --file deploy/huggingface/Dockerfile --tag "$M7_SPACE_IMAGE" .
 docker run --detach --name "$M7_SPACE_CONTAINER" \
+    --cpuset-cpus "${DOCREVIEW_VERIFY_CPUSET:-0-1}" --cpus 2 \
     --publish 127.0.0.1::7860 "$M7_SPACE_IMAGE" >/dev/null
 
 M7_PORT=$(docker port "$M7_SPACE_CONTAINER" 7860/tcp | tail -n 1 | sed 's/.*://')

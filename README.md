@@ -796,6 +796,12 @@ npm audit
 scripts/verify_clean_checkout.sh
 ```
 
+게이트는 `basedpyright app`과 전체 Ruff 검사에 더해, 방금 빌드한 앱 이미지로
+격리된 Compose DB의 실제 reset을 검증합니다. 사용자의 DB나 서비스는 대상으로 삼지 않습니다.
+reset 테스트를 단독 실행하려면 `DOCREVIEW_WIPE_TEST_IMAGE`에 검증할 로컬 앱 이미지 태그를
+지정하세요. 이 값이 없는 선택적 실행은 이유를 표시하고 건너뛰지만,
+`--require-live-postgres`를 지정한 필수 검증은 준비 조건이 없으면 실패합니다.
+
 ## Docker와 데이터 수명주기
 
 로컬 Compose는 `db`·`app`·`web` 세 서비스를 제공합니다. DB만 실행하거나 전체 서비스를
