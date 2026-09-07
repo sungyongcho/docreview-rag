@@ -36,7 +36,11 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 ### Authority and delivery
 
 - Worker implementation ends with PR delivery and its review result; maintainers own
-  merging. A review `OK` never authorizes merge, deployment or local-main integration.
+  merging. Neither successful review label authorizes merge, deployment or local-main integration.
+- Successful review comments must start with exactly `Self-review: LGTM` for work the
+  reviewer authored or `Review: LGTM` for another worker's work. These are the only
+  approval labels; do not use bare `OK`, bare `LGTM`, or other variants. Account
+  authorship alone does not distinguish workers sharing a GitHub account.
 - Non-worker maintainers follow the user-authorized commit-it tracking/delivery flow.
   Scoped implementation authorization covers issue tracking, commit, ordinary push,
   PR, verified squash merge and checkout synchronization only for that maintainer role.
