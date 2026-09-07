@@ -48,7 +48,9 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
   uses `Conflict resolution: LGTM`, bound to head/base/tree and sequence revision/order.
   These are the only approval headings; preserve original authors and actual worker IDs.
   Conflict approval is not independent human review or authorization by itself.
-- Non-worker maintainers follow the user-authorized commit-it tracking/delivery flow.
+- Non-worker maintainers follow the user-authorized commit-it tracking/delivery flow
+  (installed skill, currently 3.0.0). Reread its current source and references when
+  another conversation may have updated it; these repository rules still override it.
   Scoped implementation authorization covers issue tracking, commit, ordinary push,
   PR, verified squash merge and checkout synchronization only for that maintainer role.
 - Creating/deleting issues, changing issue scope, assigning people, merging or
