@@ -50,13 +50,13 @@ inputs to this documentation page.
 From the repository root, register this checkout's commands and start development:
 
 ```bash
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up --build -d
 ```
 
 Use this startup command when preparing the environment. If the same development
 stack is already running, open it and inspect its status instead of restarting it.
-`rag-help` lists the registered commands. Executing `./rag_alias.sh` displays setup
+`rag-help` lists the registered commands. Executing `./rag-alias.sh` displays setup
 instructions; sourcing it registers commands in the current Bash or Zsh shell.
 
 Open [the local service](http://localhost:8000/docreview-rag-agent/). If you configured

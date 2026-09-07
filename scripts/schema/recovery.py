@@ -148,7 +148,7 @@ def start_recovery(target: Path, *, return_stage: str = "index") -> None:
     )
     print(f"Recovery ready: {origin}/docreview-rag-agent/?recovery_stage={return_stage}")
     print(
-        f"Next: cd {target}\nThen source ./rag_alias.sh to use this recovery checkout's commands."
+        f"Next: cd {target}\nThen source ./rag-alias.sh to use this recovery checkout's commands."
     )
     print(
         "The original schema is still unchanged. This empty recovery database needs "

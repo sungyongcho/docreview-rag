@@ -3,7 +3,7 @@
 > [!DEV]
 > These commands are for the operator of a local checkout and its services. They are not actions available to visitors through the public interface.
 
-`rag_alias.sh` registers commands for starting, stopping, and inspecting this checkout in Bash or Zsh.
+`rag-alias.sh` registers commands for starting, stopping, and inspecting this checkout in Bash or Zsh.
 For the twelve-step screen-led exercise, start with the [DocReview RAG v2 overview](overview.md).
 Use [environment setup](environment.md#step-1), [acquisition](acquisition.md#step-3), and
 [indexing](indexing.md#step-5) alongside the commands below.
@@ -17,22 +17,21 @@ embedding configuration. Check completed CLI work in the dashboard instead of ru
 Run from the repository root:
 
 ```bash
-./rag_alias.sh
-source ./rag_alias.sh
+./rag-alias.sh
+source ./rag-alias.sh
 rag-help
 ```
 
-Executing `./rag_alias.sh` checks this checkout's startup registration and helper targets. If missing, choose Y to install or N to leave it unchanged. A valid existing installation is verified without another prompt. Paste the printed `source` command and run `rag-help` to activate commands without restarting your shell. Helper registration does not install application dependencies.
+Executing `./rag-alias.sh` checks this checkout's startup registration and helper targets. If missing, choose Y to install or N to leave it unchanged. A valid existing installation is verified without another prompt. Paste the printed `source` command and run `rag-help` to activate commands without restarting your shell. Helper registration does not install application dependencies.
 
 The shell and Web share the same checked-in Small ASCII wordmark. An 80-column terminal displays the
-full name; narrower terminals use the DR monogram or a plain product line. `NO_COLOR`, dumb terminals,
-and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
+full name; narrower terminals use the DR monogram or a plain product line. All terminals and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
 
 The installer adds one source line to `.bashrc` or `${ZDOTDIR:-$HOME}/.zshrc`, preserving existing content and backing it up. New terminals load it automatically. For manual registration only, the equivalent line is:
 
 ```bash
 # Replace this placeholder with your checkout's actual absolute path.
-source /absolute/path/to/docreview-rag-agent/rag_alias.sh >/dev/null
+source /absolute/path/to/docreview-rag-agent/rag-alias.sh >/dev/null
 ```
 
 Registered `rag-*` commands target the checkout that registered them, even from another directory.
@@ -55,12 +54,18 @@ Run Python CLI, file inspection, and direct Docker commands from the **repositor
 
 With no arguments, `rag-dev` and `rag-prod` use `up -d`. Without registration, run
 `.venv/bin/python -m scripts.stack dev up -d` from the repository root.
-`rag-help` lists ten commands, with one row per command and inline options; every command accepts
+`rag-help` starts with one Quick Start command and its printed-URL hand-off. Reset and recovery
+commands have their own `[RESET]` block. The twelve-row menu uses aligned columns and no ANSI
+colors or escapes, including in a color-capable terminal; every command accepts
 `--help`. Use `rag-corpus --help` for operation details and `rag-schema --help` for schema options.
 
 ### Command consolidation
 
-Reload the helper in a fresh shell after updating. These obsolete shortcuts are no longer registered;
+Run `./rag-alias.sh` after updating. If this checkout still has a registration for the previous
+underscore-named helper, the installer shows its exact path and offers to back up and replace that
+one registration. Declining preserves it; no compatibility file or symlink is created. Explicit
+uninstall also removes a detected old registration for this checkout. Reload the new helper in a
+fresh shell after migration. These obsolete shortcuts are no longer registered;
 use the replacement commands below. Existing shell definitions last until that shell exits.
 
 | Removed shortcut | Replacement |
@@ -295,7 +300,7 @@ Normal shutdown preserves DB data, source files, saved configuration, and browse
 ```bash
 rag-dev down
 # In a later terminal, from the repository root:
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up -d
 ```
 
@@ -439,7 +444,7 @@ and remaining scope before retrying paid embedding.
 ```bash
 rag-alias-delete
 # If the registered command is unavailable:
-./rag_alias.sh --delete
+./rag-alias.sh --delete
 ```
 
 Confirm the shown startup file/checkout. The matching registration line is backed up and removed; other
@@ -542,7 +547,7 @@ succeed does it print **Recovery ready** and a URL returning to the requested Bu
 step. Supported stages: filings, index, embeddings, lexical, ask, answer_model, evaluate.
 This is a new empty environment; the original incompatible schema is not repaired.
 
-Use the printed `cd` command and `source ./rag_alias.sh` in a separate terminal to
+Use the printed `cd` command and `source ./rag-alias.sh` in a separate terminal to
 select that recovery environment's CLI. Its schema output includes the local DB
 target. Re-check the destination in the web UI, then prepare missing data in order.
 Do not run commands from the original directory expecting them to target recovery.

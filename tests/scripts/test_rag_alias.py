@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pty
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -11,7 +12,7 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "rag_alias.sh"
+SCRIPT = ROOT / "rag-alias.sh"
 WORDMARK = (ROOT / "web/branding/wordmark.txt").read_text()
 MONOGRAM = (ROOT / "web/branding/monogram.txt").read_text()
 
@@ -98,14 +99,14 @@ def test_banner_needs_only_standard_tools(shell, tmp_path):
     assert result.stderr == ""
 
 
-@pytest.mark.parametrize("environment", [{"NO_COLOR": ""}, {"TERM": "dumb"}])
-def test_color_opt_out_is_escape_free(shell, environment):
-    """Color opt-outs suppress escapes even when banner output goes to an actual TTY."""
+@pytest.mark.parametrize("environment", [{}, {"NO_COLOR": ""}, {"TERM": "dumb"}])
+def test_help_is_always_escape_free(shell, environment):
+    """The complete menu stays plain even on a color-capable TTY without an opt-out."""
     args = [shell, "--noprofile", "--norc"] if Path(shell).name == "bash" else [shell, "-f"]
     master, slave = pty.openpty()
     try:
         subprocess.run(
-            [*args, "-c", 'source "$1" >/dev/null; _docreview_banner', "test", str(SCRIPT)],
+            [*args, "-c", 'source "$1" >/dev/null; rag-help', "test", str(SCRIPT)],
             env={**os.environ, "TERM": "xterm-256color", "COLUMNS": "80", **environment},
             stdin=subprocess.DEVNULL,
             stdout=slave,
@@ -140,7 +141,7 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
     """Confirmed removal touches only this checkout's exact source lines and owned commands."""
     startup = tmp_path / "startup"
     unrelated = (
-        "source /other/checkout/rag_alias.sh >/dev/null\n"
+        "source /other/checkout/rag-alias.sh >/dev/null\n"
         f'source "{SCRIPT}" && echo keep-composed-command\n'
         "# Preserve the rest of this temporary file.\n"
     )
@@ -216,7 +217,7 @@ def test_failed_validation_does_not_install(shell, tmp_path):
     """A checkout missing wrapper targets must not be reported or registered as installed."""
     checkout = tmp_path / "incomplete checkout"
     checkout.mkdir()
-    script = checkout / "rag_alias.sh"
+    script = checkout / "rag-alias.sh"
     shutil.copy2(SCRIPT, script)
     environment = {**os.environ, "SHELL": shell, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)}
     result = subprocess.run(
@@ -258,7 +259,7 @@ def test_install_preserves_symlink_and_quotes_checkout_path(shell, tmp_path):
     """Quoted checkout paths survive startup loading without replacing rc symlinks."""
     checkout = tmp_path / "checkout's helper"
     checkout.mkdir()
-    script = checkout / "rag_alias.sh"
+    script = checkout / "rag-alias.sh"
     shutil.copy2(SCRIPT, script)
     for name in [
         "stack/__main__.py",
@@ -295,11 +296,14 @@ def test_help_lists_unique_commands_with_compact_descriptions(shell):
     rows = [line.strip() for line in result.stdout.splitlines() if line.startswith("  rag-")]
     assert 1 <= len(rows) <= 15
     commands = []
+    invocations = []
     for row in rows:
         invocation, description = re.split(r"\s{2,}", row, maxsplit=1)
         commands.append(invocation.split()[0])
+        invocations.append(invocation)
         assert 1 <= len(description.split()) <= 4, row
-    assert len(commands) == len(set(commands))
+    assert len(invocations) == len(set(invocations))
+    assert commands.count("rag-schema") == 3
     assert "rag-schema" in commands
     assert "rag-ollama-check" in commands
     assert "--help" not in "\n".join(rows)
@@ -321,7 +325,7 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
     """Real helper help never installs dependencies, calls services, or changes local files."""
     checkout = tmp_path / "isolated checkout"
     checkout.mkdir()
-    helper = checkout / "rag_alias.sh"
+    helper = checkout / "rag-alias.sh"
     shutil.copy2(SCRIPT, helper)
     shutil.copytree(
         ROOT / "scripts", checkout / "scripts", ignore=shutil.ignore_patterns("__pycache__")
@@ -345,7 +349,9 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
         if path.is_file() and not path.is_symlink()
     }
     menu = run_shell(shell, 'source "$1" >/dev/null; rag-help').stdout
-    commands = [line.split()[0] for line in menu.splitlines() if line.startswith("  rag-")]
+    commands = list(
+        dict.fromkeys(line.split()[0] for line in menu.splitlines() if line.startswith("  rag-"))
+    )
     assert commands
     result = run_shell(
         shell,
@@ -367,3 +373,84 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
         if path.is_file() and not path.is_symlink()
     }
     assert after == before
+
+
+def test_quickstart_is_first_and_reset_commands_have_their_own_block(shell):
+    """The primary setup action stands alone before separate data and reset choices."""
+    menu = run_shell(shell, 'source "$1" >/dev/null; rag-help').stdout
+    quick = menu.split("[QUICK START]", 1)[1].split("[STACK]", 1)[0]
+    assert [line.split()[0] for line in quick.splitlines() if line.startswith("  rag-")] == [
+        "rag-quickstart"
+    ]
+    assert "Then open the printed URL." in quick
+    reset = menu.split("[RESET]", 1)[1].split("[HELP]", 1)[0]
+    assert "rag-schema recover" in reset
+    assert "rag-schema recreate" in reset
+    assert "rag-fresh-start" in reset
+    assert "WARNING ordinary reset:" in reset
+    assert "WARNING extreme reset:" in reset
+    assert "WARNING schema recreate:" in reset
+    assert 10 <= sum(line.startswith("  rag-") for line in menu.splitlines()) <= 15
+
+
+def helper_checkout(tmp_path, shell):
+    """Copy only the helper's read-only prerequisites into an isolated shell home."""
+    checkout = tmp_path / "checkout with spaces"
+    checkout.mkdir()
+    helper = checkout / "rag-alias.sh"
+    shutil.copy2(SCRIPT, helper)
+    shutil.copytree(
+        ROOT / "scripts", checkout / "scripts", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    legacy = helper.with_name(helper.name.replace("-", "_"))
+    startup = tmp_path / (".bashrc" if Path(shell).name == "bash" else ".zshrc")
+    environment = {
+        "HELPER": str(helper),
+        "HOME": str(tmp_path),
+        "ZDOTDIR": str(tmp_path),
+        "SHELL": shell,
+    }
+    return helper, legacy, startup, environment
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_old_registration_migrates_only_after_explicit_confirmation(shell, tmp_path, accept):
+    """A renamed helper explains the missing path and preserves a backup before migration."""
+    helper, legacy, startup, environment = helper_checkout(tmp_path, shell)
+    foreign = "source /another/checkout/helper.sh\n"
+    original = (
+        "# User configuration\nsource " + shlex.quote(str(legacy)) + " >/dev/null\n" + foreign
+    )
+    startup.write_text(original)
+    result = run_shell(shell, '"$HELPER"', env=environment, input="y\n" if accept else "n\n")
+    assert "[MIGRATION]" in result.stdout
+    assert str(legacy) in result.stdout
+    assert not legacy.exists()
+    if not accept:
+        assert startup.read_text() == original
+        assert not list(tmp_path.glob(startup.name + ".docreview-backup-*"))
+        return
+    assert str(legacy) not in startup.read_text()
+    assert shlex.quote(str(helper)) in startup.read_text()
+    assert foreign in startup.read_text()
+    backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
+    assert len(backups) == 1 and backups[0].read_text() == original
+    again = run_shell(shell, '"$HELPER"', env=environment)
+    assert "[INSTALLED]" in again.stdout
+    assert "[MIGRATION]" not in again.stdout
+
+
+def test_uninstall_removes_current_and_legacy_registration_only_for_this_checkout(shell, tmp_path):
+    """Explicit removal covers both owned names without touching another checkout's line."""
+    helper, legacy, startup, environment = helper_checkout(tmp_path, shell)
+    foreign = "source /another/checkout/" + legacy.name + "\n"
+    original = (
+        "\n".join("source " + shlex.quote(str(path)) for path in (helper, legacy)) + "\n" + foreign
+    )
+    startup.write_text(original)
+    result = run_shell(shell, '"$HELPER" --delete', env=environment, input="y\n")
+    assert str(legacy) in result.stdout
+    assert startup.read_text() == foreign
+    backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
+    assert len(backups) == 1 and backups[0].read_text() == original
+    assert helper.exists() and not legacy.exists()

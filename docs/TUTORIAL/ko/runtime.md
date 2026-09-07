@@ -112,7 +112,7 @@ rag-dev down
 다음에 저장소 루트에서 새 터미널을 열면 다음과 같이 실행합니다.
 
 ```bash
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up -d
 ```
 

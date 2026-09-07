@@ -45,13 +45,13 @@ uv run python -m scripts.schema prepare
 저장소 루트에서 현재 체크아웃의 명령을 등록하고 개발 서비스를 시작합니다.
 
 ```bash
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up --build -d
 ```
 
 위 명령은 환경을 준비할 때 사용합니다. 같은 개발 서비스가 이미 실행 중이면
 다시 시작하지 말고 접속해 상태를 확인하세요. `rag-help`로 등록된 명령을 봅니다.
-`./rag_alias.sh` 실행은 설치 방법을 보여 주고, `source`는 현재 Bash·Zsh 셸에
+`./rag-alias.sh` 실행은 설치 방법을 보여 주고, `source`는 현재 Bash·Zsh 셸에
 명령을 등록합니다.
 
 [로컬 서비스](http://localhost:8000/docreview-rag-agent/)에 접속합니다.

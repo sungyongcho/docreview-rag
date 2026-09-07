@@ -13,8 +13,8 @@ web container; this path does not require their installation on the host.
 ```bash
 git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
-./rag_alias.sh
-source ./rag_alias.sh
+./rag-alias.sh
+source ./rag-alias.sh
 rag-help
 rag-quickstart
 ```

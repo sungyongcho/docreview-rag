@@ -20,8 +20,8 @@ RAG Helper는 저장소에 포함되어 있어 따로 내려받지 않습니다.
 ```bash
 git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
-./rag_alias.sh
-source ./rag_alias.sh
+./rag-alias.sh
+source ./rag-alias.sh
 rag-help
 rag-quickstart
 ```
@@ -152,20 +152,20 @@ EMBEDDING_PROVIDER=openai
 중복 추가할 필요가 없습니다.
 
 ```bash
-./rag_alias.sh
-source ./rag_alias.sh
+./rag-alias.sh
+source ./rag-alias.sh
 rag-help
 rag-dev up -d
 ```
 
-`source ./rag_alias.sh`는 Small Slant `DocReview RAG` 배너와 `[OK]` 등록 완료 메시지,
+`source ./rag-alias.sh`는 Small Slant `DocReview RAG` 배너와 `[OK]` 등록 완료 메시지,
 대상 저장소 경로, 사용 가능한 명령 목록을 표시합니다. 등록은 현재 셸에 적용됩니다.
-`./rag_alias.sh`는 설치 여부와 Helper 명령을 검증합니다. 미설치 상태에서는 Y/N으로
+`./rag-alias.sh`는 설치 여부와 Helper 명령을 검증합니다. 미설치 상태에서는 Y/N으로
 설치를 선택하며, Y일 때만 셸 시작 파일에 등록합니다. 이미 정상 설치됐다면 재설치나
 삭제 질문 없이 검증 결과와 `rag-help` 안내를 표시합니다. 출력된 `source` 명령으로
 현재 셸에 바로 적용할 수 있어 셸 재시작이 필요 없습니다.
-셸 시작 파일에서 자동 로드할 때는 `source /실제/경로/rag_alias.sh >/dev/null`로 안내문 출력을 생략합니다.
-`rag-alias-delete` 또는 `./rag_alias.sh --delete`은 확인 후 이 파일의 정확한 자동 등록 줄만
+셸 시작 파일에서 자동 로드할 때는 `source /실제/경로/rag-alias.sh >/dev/null`로 안내문 출력을 생략합니다.
+`rag-alias-delete` 또는 `./rag-alias.sh --delete`은 확인 후 이 파일의 정확한 자동 등록 줄만
 백업하고 제거합니다(Python 3 필요). 다른 파일을 불러오는 줄이나 프로젝트 파일은 제거하지 않습니다.
 `rag-alias-delete`는 현재 셸에서 이 스크립트가 등록한 뒤 변경되지 않은 함수와 별칭만 해제합니다.
 별도 실행한 `--uninstall`은 부모 셸을 변경할 수 없으므로 기존 셸의 해제 명령을 안내합니다.
@@ -183,7 +183,10 @@ rag-prod ps
 등록된 명령은 어느 디렉터리에서 실행해도 등록 당시 저장소를 대상으로 합니다.
 시작·종료는 `rag-dev up -d` / `rag-dev down`, 공개 미리보기는 `rag-prod`로 선택합니다.
 별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
-`rag-help`는 명령 10개를 한 줄씩 표시하며, 상세 옵션은 각 명령의 `--help`에서 확인합니다.
+`rag-help`는 Quick Start 명령과 다음 URL 안내를 맨 앞에, 초기화·복구를 별도 RESET 영역에
+표시합니다. 명령 안내 12줄을 두 열로 정렬하며 색상은 사용하지 않습니다. 상세 옵션은 각 명령의
+`--help`에서 확인합니다. 이전 밑줄 파일명으로 등록한 경우 `./rag-alias.sh`가 정확한 이전 경로를
+알리고 백업 후 변경을 제안합니다. 호환 링크는 만들지 않습니다.
 스키마 관리는 `rag-schema check|prepare|recover|recreate`로 통합했습니다.
 패키지와 직접 실행 경로는 [스크립트 안내](scripts/README.md), 제거된 단축 명령은
 [로컬 실행 명령 안내](docs/TUTORIAL/ko/cli.md#명령-통합)에서 확인하세요.
@@ -415,8 +418,8 @@ Helper를 등록한 뒤 `rag-quickstart`를 실행하면 Python 환경과 빈 �
 이 동작은 prod 미리보기와 배포 Compose에도 적용되며, 공개 예시 모드는 DB 없이 시작합니다.
 
 ```bash
-./rag_alias.sh
-source ./rag_alias.sh
+./rag-alias.sh
+source ./rag-alias.sh
 rag-help
 rag-quickstart
 rag-corpus acquire_edgar --identifier NVDA --year 2024

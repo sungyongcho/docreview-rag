@@ -16,15 +16,9 @@ else
     printf '%s\n' 'DocReview aliases require Bash or Zsh.' >&2
     return 1 2>/dev/null || exit 1
 fi
-# Print a semantic accent only on color-capable terminals.
+# Keep helper output readable in every terminal without color or escape sequences.
 _docreview_line() {
-    local color="$1"
-    shift
-    if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR+x}" ]; then
-        printf '\033[%sm%s\033[0m\n' "$color" "$*"
-    else
-        printf '%s\n' "$*"
-    fi
+    printf '%s\n' "$*"
 }
 
 # Read the shared Small assets with standard shell tools at a readable width.
@@ -43,18 +37,18 @@ _docreview_banner() {
         cat -- "${_banner_asset}"
         printf '\n'
     fi
-    _docreview_line '1' 'DocReview RAG v2'
+    _docreview_line 'DocReview RAG v2'
     if [ "${_banner_columns}" -ge 51 ]; then
-        _docreview_line '2' 'SEC / DART · Evidence first. Answers with sources.'
+        _docreview_line 'SEC / DART · Evidence first. Answers with sources.'
     elif [ "${_banner_columns}" -ge 18 ]; then
-        _docreview_line '2' 'SEC / DART'
+        _docreview_line 'SEC / DART'
     fi
     printf '\n'
 }
 
 # Match only simple source statements naming this exact checkout's script.
 _docreview_startup() {
-    python3 - "$1" "${_DOCREVIEW_ROOT}/rag_alias.sh" "${_DOCREVIEW_RC}" <<'PYCODE'
+    python3 - "$1" "${_DOCREVIEW_ROOT}/rag-alias.sh" "${_DOCREVIEW_RC}" <<'PYCODE'
 import os
 import shlex
 import shutil
@@ -63,10 +57,11 @@ import tempfile
 from pathlib import Path
 
 mode, target, filename = sys.argv[1:]
+legacy = str(Path(target).with_name(Path(target).name.replace('-', '_')))
 p = Path(filename).expanduser().resolve()
 exists = p.exists()
 if not exists and mode != 'install':
-    sys.exit(1 if mode == 'check' else 0)
+    sys.exit(1 if mode in ('check', 'legacy-check') else 0)
 try:
     original = p.read_bytes() if exists else b''
 except OSError as error:
@@ -74,6 +69,8 @@ except OSError as error:
     sys.exit(2)
 lines = original.splitlines(keepends=True)
 kept = []
+registered = False
+legacy_registered = False
 for line in lines:
     try:
         lexer = shlex.shlex(line.decode(), posix=True, punctuation_chars=True)
@@ -82,21 +79,29 @@ for line in lines:
     except (ValueError, UnicodeDecodeError):
         kept.append(line)
         continue
-    matches = (len(tokens) >= 2 and tokens[0] in ('source', '.')
-               and tokens[1] == target
-               and tokens[2:] in ([], ['>', '/dev/null']))
-    if not matches:
+    simple = (len(tokens) >= 2 and tokens[0] in ('source', '.')
+              and tokens[2:] in ([], ['>', '/dev/null']))
+    matches = simple and tokens[1] == target
+    old_match = simple and tokens[1] == legacy
+    registered = registered or matches
+    legacy_registered = legacy_registered or old_match
+    if not matches and not (old_match and mode in ('migrate', 'remove')):
         kept.append(line)
-registered = len(kept) != len(lines)
 if mode == 'check':
     sys.exit(0 if registered else 1)
-if mode == 'install':
-    if registered:
+if mode == 'legacy-check':
+    if legacy_registered:
+        print('Old helper registration: ' + legacy)
+    sys.exit(0 if legacy_registered else 1)
+if mode in ('install', 'migrate'):
+    if registered and mode == 'install':
         sys.exit(0)
-    updated = original + (b'\n' if original and not original.endswith(b'\n') else b'')
+    updated = b''.join(kept) if mode == 'migrate' else original
+    if updated and not updated.endswith(b'\n'):
+        updated += b'\n'
     updated += ('source ' + shlex.quote(target) + ' >/dev/null\n').encode()
 else:
-    if not registered:
+    if not registered and not legacy_registered:
         print('No registration for this checkout in: ' + str(p))
         sys.exit(0)
     updated = b''.join(kept)
@@ -120,7 +125,7 @@ try:
 finally:
     if os.path.exists(temporary):
         os.unlink(temporary)
-print(('Installed registration in: ' if mode == 'install' else
+print(('Installed registration in: ' if mode in ('install', 'migrate') else
        'Removed this checkout\'s source line from: ') + str(p))
 PYCODE
 }
@@ -128,8 +133,9 @@ PYCODE
 # Confirm removal of exact startup entries; leave project files intact.
 _docreview_uninstall() {
     local answer
-    printf 'Target: %s\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
+    printf 'Target: %s\n' "${_DOCREVIEW_ROOT}/rag-alias.sh"
     printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
+    _docreview_startup legacy-check || [ "$?" = 1 ] || return 1
     printf 'Remove this registration? [y/N] '
     IFS= read -r answer || return 0
     case "$answer" in
@@ -184,8 +190,8 @@ _docreview_verify() {
         fi
     done
     case "${_DOCREVIEW_PARENT_SHELL}" in
-        bash) bash --noprofile --norc -c 'source "$1" >/dev/null' docreview "${_DOCREVIEW_ROOT}/rag_alias.sh" ;;
-        zsh) zsh -f -c 'source "$1" >/dev/null' docreview "${_DOCREVIEW_ROOT}/rag_alias.sh" ;;
+        bash) bash --noprofile --norc -c 'source "$1" >/dev/null' docreview "${_DOCREVIEW_ROOT}/rag-alias.sh" ;;
+        zsh) zsh -f -c 'source "$1" >/dev/null' docreview "${_DOCREVIEW_ROOT}/rag-alias.sh" ;;
         *) return 1 ;;
     esac
 }
@@ -194,10 +200,10 @@ _docreview_verify() {
 _docreview_activation() {
     printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
     printf '%s\n' 'Paste these commands into this terminal; no shell restart is needed:'
-    printf '  source %q\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
+    printf '  source %q\n' "${_DOCREVIEW_ROOT}/rag-alias.sh"
     printf '  rag-help\n'
     printf '\nRemove this checkout registration: rag-alias-delete, or:\n'
-    printf '  %q --delete\n' "${_DOCREVIEW_ROOT}/rag_alias.sh"
+    printf '  %q --delete\n' "${_DOCREVIEW_ROOT}/rag-alias.sh"
 }
 
 if [ "${_DOCREVIEW_EXECUTED}" = 1 ]; then
@@ -205,39 +211,58 @@ if [ "${_DOCREVIEW_EXECUTED}" = 1 ]; then
     case "${1:-}" in
         --delete|--uninstall) _docreview_uninstall; exit $? ;;
         '') ;;
-        *) printf '%s\n' 'Usage: ./rag_alias.sh [--delete|--uninstall]' >&2; exit 2 ;;
+        *) printf '%s\n' 'Usage: ./rag-alias.sh [--delete|--uninstall]' >&2; exit 2 ;;
     esac
     if [ "${_DOCREVIEW_RC}" = /dev/null ]; then
-        printf '%s\n' '[ERROR] Start Bash or Zsh, then run ./rag_alias.sh again.' >&2
+        printf '%s\n' '[ERROR] Start Bash or Zsh, then run ./rag-alias.sh again.' >&2
         exit 2
     fi
     if ! command -v python3 >/dev/null 2>&1; then
         printf '%s\n' '[ERROR] Python 3 is required to check and install startup registration.' >&2
         exit 1
     fi
-    if _docreview_startup check; then
+    if _docreview_startup legacy-check; then
+        _docreview_line '[MIGRATION] This helper is now named rag-alias.sh; the old path is unavailable.'
+        printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
+        printf 'Replace this checkout registration with rag-alias.sh? [y/N] '
+        IFS= read -r _DOCREVIEW_ANSWER || _DOCREVIEW_ANSWER=n
+        case "${_DOCREVIEW_ANSWER}" in
+            y|Y|yes|YES) ;;
+            *) printf '%s\n' 'Cancelled; startup registration is unchanged.'; _docreview_activation; exit 0 ;;
+        esac
         _docreview_verify || exit 1
-        _docreview_line '1;32' '[INSTALLED] Startup registration and helper commands verified.'
-        _docreview_line '1;36' 'Run rag-help for help!'
+        _docreview_startup migrate || exit 1
+        _docreview_startup check || exit 1
+        _docreview_line '[OK] Replaced the old registration; its backup was preserved.'
         _docreview_activation
         exit 0
     else
         _DOCREVIEW_REGISTRATION_STATUS=$?
         [ "${_DOCREVIEW_REGISTRATION_STATUS}" = 1 ] || exit "${_DOCREVIEW_REGISTRATION_STATUS}"
     fi
-    _docreview_line '1;33' "[SETUP] Install DocReview helper for ${_DOCREVIEW_PARENT_SHELL}"
+    if _docreview_startup check; then
+        _docreview_verify || exit 1
+        _docreview_line '[INSTALLED] Startup registration and helper commands verified.'
+        _docreview_line 'Run rag-help for help!'
+        _docreview_activation
+        exit 0
+    else
+        _DOCREVIEW_REGISTRATION_STATUS=$?
+        [ "${_DOCREVIEW_REGISTRATION_STATUS}" = 1 ] || exit "${_DOCREVIEW_REGISTRATION_STATUS}"
+    fi
+    _docreview_line "[SETUP] Install DocReview helper for ${_DOCREVIEW_PARENT_SHELL}"
     printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
     printf '%s\n' 'Registers rag-help and the helper commands; run rag-quickstart separately for application setup.'
     printf 'Install this checkout registration? [y/N] '
     IFS= read -r _DOCREVIEW_ANSWER || _DOCREVIEW_ANSWER=n
     case "${_DOCREVIEW_ANSWER}" in
         y|Y|yes|YES) ;;
-        *) printf '%s\n' 'Cancelled; nothing changed. Run ./rag_alias.sh when ready to install.'; exit 0 ;;
+        *) printf '%s\n' 'Cancelled; nothing changed. Run ./rag-alias.sh when ready to install.'; exit 0 ;;
     esac
     _docreview_verify || exit 1
     _docreview_startup install || exit 1
     _docreview_startup check || exit 1
-    _docreview_line '1;32' '[OK] Startup registration installed and helper commands verified.'
+    _docreview_line '[OK] Startup registration installed and helper commands verified.'
     _docreview_activation
     exit 0
 fi
@@ -288,30 +313,37 @@ rag-corpus() { _docreview_python scripts.stack.commands corpus "$@"; }
 rag-schema() { _docreview_python scripts.schema "$@"; }
 rag-help() {
     _docreview_banner
-    _docreview_line '1;36' '[STACK]'
+    _docreview_line '[QUICK START]'
+    printf '  %-62s  %s\n' 'rag-quickstart' 'Prepare first run'
+    printf '%s\n' '  Then open the printed URL.' ''
+    _docreview_line '[STACK]'
     printf '  %-62s  %s\n' \
-        'rag-quickstart' 'Prepare first run' \
         'rag-up [COMPOSE_UP_ARGS...]' 'Build DEV stack' \
         'rag-dev [COMPOSE_ARGS...]' 'Manage DEV stack' \
         'rag-prod [COMPOSE_ARGS...]' 'Manage public preview'
-    _docreview_line '1;36' '[DATA AND DIAGNOSTICS]'
+    printf '\n'
+    _docreview_line '[DATA AND DIAGNOSTICS]'
     printf '  %-62s  %s\n' \
         'rag-ollama-check [--setup|--details|--web-url URL]' 'Check model connection' \
-        'rag-schema check|prepare|recover|recreate' 'Manage local schema' \
-        'rag-fresh-start [--status|--extreme]' 'Reset project runtime' \
+        'rag-schema check|prepare' 'Inspect local schema' \
         'rag-corpus status|inspect|readiness|acquire_edgar|acquire_dart|ingest_manifest|backfill_embeddings|rebuild_bm25' 'Manage corpus jobs'
     printf '%s\n' '  Example: rag-corpus acquire_edgar --identifier NVDA --year 2024' ''
-    _docreview_line '1;33' 'WARNING ordinary reset: deletes DB, downloads, results and saved model settings; preserves code, .env and host Ollama.'
-    _docreview_line '1;31' 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
-    _docreview_line '1;33' 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
+    _docreview_line '[RESET]'
+    printf '  %-62s  %s\n' \
+        'rag-schema recover [--parent DIR]' 'Recover separate stack' \
+        'rag-schema recreate [--keep-sources|--sample]' 'Reset local data' \
+        'rag-fresh-start [--status|--extreme]' 'Reset project runtime'
+    _docreview_line 'WARNING ordinary reset: deletes DB, downloads, results and saved model settings; preserves code, .env and host Ollama.'
+    _docreview_line 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
+    _docreview_line 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
     printf '\n'
-    _docreview_line '1;36' '[HELP]'
+    _docreview_line '[HELP]'
     printf '  %-62s  %s\n' \
         'rag-help' 'Show command summary' \
         'rag-alias-delete' 'Remove helper registration'
     printf '\n'
-    _docreview_line '2' 'Every command accepts --help for options and examples.'
-    _docreview_line '2' "Checkout: ${_DOCREVIEW_ROOT}"
+    _docreview_line 'Every command accepts --help for options and examples.'
+    _docreview_line "Checkout: ${_DOCREVIEW_ROOT}"
 }
 
 typeset -A _DOCREVIEW_OWNED_FUNCTIONS
@@ -326,10 +358,10 @@ done
 unset _DOCREVIEW_COMMAND
 
 _docreview_banner
-_docreview_line '1;32' '[OK] DocReview commands registered and verified in this shell.'
-_docreview_line '2' "Checkout: ${_DOCREVIEW_ROOT}"
+_docreview_line '[OK] DocReview commands registered and verified in this shell.'
+_docreview_line "Checkout: ${_DOCREVIEW_ROOT}"
 printf '%s\n' \
     '  rag-up, rag-dev, rag-prod, rag-ollama-check, rag-help' \
     '  rag-quickstart, rag-fresh-start, rag-corpus, rag-schema, rag-alias-delete' \
     ''
-_docreview_line '1;36' 'Run rag-help for help!'
+_docreview_line 'Run rag-help for help!'

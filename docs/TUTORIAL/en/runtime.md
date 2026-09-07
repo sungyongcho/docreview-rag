@@ -112,7 +112,7 @@ rag-dev down
 In a later terminal, from the repository root:
 
 ```bash
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up -d
 ```
 

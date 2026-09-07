@@ -12,8 +12,8 @@ Bash 또는 Zsh, uv, Docker Engine·Compose 2.24.4+를 준비하세요.
 ```bash
 git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
-./rag_alias.sh
-source ./rag_alias.sh
+./rag-alias.sh
+source ./rag-alias.sh
 rag-help
 rag-quickstart
 ```

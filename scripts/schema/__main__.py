@@ -83,7 +83,7 @@ def main() -> int:
             if target:
                 print(f"Inspect the retained recovery checkout: {target}", file=sys.stderr)
                 print(
-                    "In that directory: uv sync --locked; source ./rag_alias.sh; "
+                    "In that directory: uv sync --locked; source ./rag-alias.sh; "
                     "rag-dev up -d --wait db; uv run python -m scripts.schema prepare; "
                     "rag-dev up --build -d; uv run python -m scripts.schema check.",
                     file=sys.stderr,
