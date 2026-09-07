@@ -154,7 +154,7 @@ describe("BuildPipeline", () => {
     expect(screen.getByText("Recommended next step")).toBeInTheDocument();
     expect(document.querySelector(".pipeline-guidance button")).toHaveTextContent("Parse & chunk");
     fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
-    expect(screen.getByRole("region", { name: "Downloaded sources" })).toHaveTextContent("NVDA → FY2024");
+    expect(screen.getByRole("region", { name: "Company and fiscal-year selection" })).toContainElement(screen.getByRole("button", { name: /^NVDA FY2024/ }));
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     const buttons = screen.getAllByRole("button", { name: "Parse & chunk selected sources" });
     expect(buttons).toHaveLength(1);

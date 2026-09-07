@@ -1,0 +1,21 @@
+.source-matrix { display: grid; gap: 12px; min-width: 0; }
+.source-matrix-summary { margin: 0; font-size: 12px; color: var(--muted); }
+.source-matrix-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-matrix-registry { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.source-matrix-registry h4, .source-matrix-add h4, .source-matrix-plan h4 { margin: 0 0 8px; }
+.source-matrix-row { display: grid; grid-template-columns: minmax(130px, 190px) minmax(0, 1fr); gap: 7px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.source-matrix-company { display: flex; gap: 7px; align-items: center; font-size: 12px; overflow-wrap: anywhere; }
+.source-matrix-company input { width: auto; flex: 0 0 auto; }
+.source-matrix-years { display: flex; flex-wrap: wrap; gap: 6px; }
+.source-matrix .source-matrix-year { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 9px; border: 1px dashed var(--border); border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; }
+.source-matrix .source-matrix-year.on-disk { border-style: solid; background: var(--surface-2); }
+.source-matrix .source-matrix-year.selected { color: var(--text); border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.source-matrix .source-matrix-year:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.source-matrix-state, .source-matrix-year small { font-size: 10px; }
+.source-matrix-row-summary { grid-column: 2; margin: 0; color: var(--muted); font-size: 11px; }
+.source-matrix-add { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto; gap: 6px 10px; align-items: end; }
+.source-matrix-add h4, .source-matrix-add .helper, .source-matrix-add [role="alert"] { grid-column: 1 / -1; }
+.source-matrix-add label, .source-matrix-add input { grid-column: 1 / -1; }
+.source-matrix-plan { border-top: 1px solid var(--border); padding-top: 10px; font-size: 12px; }
+.source-matrix button:disabled { cursor: default; opacity: .55; }
+@media (max-width: 640px) { .source-matrix-row { grid-template-columns: 1fr; }.source-matrix-row-summary { grid-column: 1; }.source-matrix-add { grid-template-columns: 1fr; } }
