@@ -51,9 +51,13 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 - For the maintainer's configured automation, code/configuration commits use
   `Sungyong Cho <dev@sungyongcho.com>` as both author and committer; development
   pushes and PR creation authenticate as `sungyongcho`.
-- `sungyongcho-ops` records authorized intake, status, commit tracking, coordination
-  and automated COMMENT reviews. Use the central OPS policy and guarded commands
-  described in WORKER.md. Account separation does not expand worker authority.
+- The configured GitHub App records authorized intake, status, commit tracking,
+  coordination and automated COMMENT reviews through `opsctl`. Use `--operator machine`
+  only for explicit `sungyongcho-ops` compatibility; never fall back automatically.
+  Account separation does not expand worker authority.
+- The central OPS repository permits bot/log emails only for registered generated
+  reports and sanitized audit receipts on its `ops-records` branch. This does not
+  change DocReview development author/committer identity or authorize product writes.
 - Preserve existing history and active assignments. External contributors retain
   their own identities; do not switch global credentials or foreign worktrees.
 - Destructive user-data actions, credentials, deployment, protection changes, meaningful

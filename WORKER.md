@@ -53,35 +53,45 @@ User directions and higher-priority instructions still prevail.
 
 ### Development identity and OPS orchestration
 
-- The maintainer selected plan A. New code/configuration commits use
+- Development keeps the maintainer's personal identity. New code/configuration
+  commits use
   `Sungyong Cho <dev@sungyongcho.com>` as both author and committer. Development
   pushes and PR creation use authenticated `sungyongcho`, including OPS-tool PRs.
-- `sungyongcho-ops` is the operations actor for authorized intake, tracking, labels,
-  coordination, work-state records and automated COMMENT reviews. It does not create
-  development commits or PRs. Repository role/assignment rules still decide who may
-  initiate each action; the account does not grant coordinator or merge authority.
+- The configured GitHub App is the default actor for authorized intake, tracking,
+  labels, coordination, work-state records and automated COMMENT reviews. It does not
+  create development commits or PRs. `opsctl --operator machine` explicitly selects
+  `sungyongcho-ops` compatibility; authentication failure never selects another account.
+  Repository role/assignment rules still decide who may initiate each action.
+- Only the central OPS records writer may use `bot@sungyongcho.com` for registered
+  deterministic reports and `log@sungyongcho.com` for sanitized audit receipts. Its
+  branch/path/run guards never authorize DocReview source or policy changes. Use
+  `opsctl history --json` for raw author/committer evidence; email alone is not approval.
 - Central policy, configuration, shell helpers and maintenance procedures live in the
   private `sungyongcho/ops` repository, normally cloned at `~/Documents/ops`. Read its
   `policies/identity.md` for the configured host. The policy covers all personally owned
-  public/private repositories; product tasks remain in their own repositories.
-- Use `ops-doctor` to check actual identities. `ops-init` registers an explicitly owned
-  checkout; `ops-sync` discovers/registers owned repositories; `ops-status` reads work
+  public/private repositories; product tasks remain in their own repositories. The
+  reusable commit-it source is public `sungyongcho/commit-it`; OPS pins its exact
+  package bytes and keeps personal policy outside the shared skill.
+- Use `ops-setup` and `ops-doctor` to check actual identities and pending setup.
+  `ops-init` registers an explicitly owned checkout; `ops-sync` discovers/registers owned repositories; `ops-status` reads work
   state. Use typed `opsctl` commands for PRs and operational writes. Plain `gh` remains
   personal and `gh-ops` is a guarded read interface. Never fall back to another account.
 - Before publication confirm effective Git author/committer, the intended push route,
   current PR head and the authenticated actor. Reuse unchanged evidence. A missing
   profile, mismatched actor or unavailable registration is a blocker, not permission
   to rewrite history, bypass checks or change another worker's credentials.
-- Adopt A only in a new or explicitly transitioned owned worktree. Existing workers
-  check their configuration at their next publication checkpoint. Preserve their
+- Adopt identity changes only in a new or explicitly transitioned owned worktree.
+  Existing workers check their configuration at their next publication checkpoint. Preserve their
   changes, personal/global authentication and backup worktrees. OPS SSH clone access
   is separate from development push identity. Respect personal signing settings;
   never substitute an OPS signing key or silently generate personal credentials.
 - DEV/OPS labels describe work purpose; OCCUPIED/REVIEW_READY mirror the authoritative
   record below. Preserve other project labels and classify an OPS-created product issue
   as DEV. Successful automated reviews keep the exact approved headings and reviewed
-  SHA; they are not independent human approval. No background scheduler, automatic
-  merge or product-main synchronization is introduced by this setup.
+  SHA; they are not independent human approval. Central OPS schedules require their
+  separately approved setup, zero-overage controls and notification verification.
+  Copilot analysis is preliminary evidence, not a final worker review. No automatic
+  merge, product-main synchronization or local background service is authorized here.
 
 ### Assigned ownership and work state
 
