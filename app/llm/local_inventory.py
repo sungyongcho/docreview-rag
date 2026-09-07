@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
+import math
 from time import monotonic
 from typing import Any
 
@@ -13,6 +14,15 @@ from app.llm.local_engine import resolve_local_protocol
 
 CACHE_TTL_S = 10.0
 PROBE_TIMEOUT_S = 2.0
+CPU_MEASUREMENT_TTL_S = 15 * 60
+
+
+@dataclass(frozen=True)
+class LocalCpuPerformance:
+    """Generation speed from a recent measured run on this server and model digest."""
+
+    tokens_per_second: float
+    measured_at: str
 
 
 @dataclass(frozen=True)
@@ -27,6 +37,7 @@ class LocalModelInfo:
     quantization_level: str | None = None
     capabilities: tuple[str, ...] | None = None
     loaded: bool | None = None
+    cpu_performance: LocalCpuPerformance | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +108,7 @@ class LocalModelInventory:
         self._cached: LocalInventorySnapshot | None = None
         self._expires_at = 0.0
         self._details: dict[tuple[str, str], LocalModelInfo] = {}
+        self._cpu_measurements: dict[tuple[str, str], tuple[float, LocalCpuPerformance]] = {}
 
     async def snapshot(self) -> LocalInventorySnapshot:
         """Coalesce concurrent readers and bound the entire refresh to two seconds."""
@@ -121,6 +133,73 @@ class LocalModelInventory:
             )
             self._expires_at = monotonic() + CACHE_TTL_S
             return self._cached
+
+    def record_cpu_performance(
+        self, model_name: str, placement: dict[str, Any], model_calls: object
+    ) -> None:
+        """Retain valid generation timing only for the model actually measured on CPU."""
+        names = {model_name, model_name + ":latest"}
+        keys = [key for key in self._details if key[0] in names]
+        for key in keys:
+            self._cpu_measurements.pop(key, None)
+        self._expires_at = 0.0
+        if (
+            self.protocol != "ollama"
+            or placement.get("placement") != "cpu"
+            or placement.get("model") not in names
+            or not isinstance(model_calls, list)
+        ):
+            return
+        tokens = duration_ms = 0.0
+        for call in model_calls:
+            if (
+                not isinstance(call, dict)
+                or call.get("provider") != "ollama"
+                or call.get("model") not in names
+            ):
+                continue
+            timings = call.get("local_timings")
+            if not isinstance(timings, list):
+                continue
+            for timing in timings:
+                if not isinstance(timing, dict):
+                    continue
+                count, duration = timing.get("eval_count"), timing.get("eval_duration_ms")
+                if (
+                    isinstance(count, bool)
+                    or not isinstance(count, (int, float))
+                    or isinstance(duration, bool)
+                    or not isinstance(duration, (int, float))
+                    or not math.isfinite(count)
+                    or not math.isfinite(duration)
+                    or count <= 0
+                    or duration <= 0
+                ):
+                    continue
+                tokens += count
+                duration_ms += duration
+        if duration_ms <= 0:
+            return
+        speed = tokens / duration_ms * 1000
+        if not math.isfinite(speed) or speed <= 0:
+            return
+        measurement = LocalCpuPerformance(speed, datetime.now(UTC).isoformat())
+        for key in keys:
+            self._cpu_measurements[key] = (monotonic(), measurement)
+
+    def _cpu_performance(
+        self, model: LocalModelInfo, loaded: dict[str, dict[str, Any]] | None
+    ) -> LocalCpuPerformance | None:
+        """Suppress old samples and require current evidence of CPU-only placement."""
+        row = loaded.get(model.name) if loaded is not None else None
+        if row is None or type(row.get("size_vram")) is not int or row["size_vram"] != 0:
+            return None
+        if type(row.get("size")) is not int or row["size"] <= 0:
+            return None
+        for key, (recorded_at, measurement) in self._cpu_measurements.items():
+            if key[0] == model.name and monotonic() - recorded_at < CPU_MEASUREMENT_TTL_S:
+                return measurement
+        return None
 
     async def placement(self, model_name: str) -> dict[str, Any]:
         """Read post-run Ollama placement without loading or changing a model."""
@@ -181,6 +260,9 @@ class LocalModelInventory:
             self._details = {
                 key: value for key, value in self._details.items() if key in current_keys
             }
+            self._cpu_measurements = {
+                key: value for key, value in self._cpu_measurements.items() if key in current_keys
+            }
             semaphore = asyncio.Semaphore(4)
 
             async def describe(item: dict[str, Any]) -> LocalModelInfo:
@@ -192,16 +274,20 @@ class LocalModelInventory:
                 self._loaded(client), asyncio.gather(*(describe(item) for item in entries))
             )
             return tuple(
-                replace(model, loaded=model.name in loaded if loaded is not None else None)
+                replace(
+                    model,
+                    loaded=model.name in loaded if loaded is not None else None,
+                    cpu_performance=self._cpu_performance(model, loaded),
+                )
                 for model in models
             )
 
-    async def _loaded(self, client: httpx.AsyncClient) -> set[str] | None:
+    async def _loaded(self, client: httpx.AsyncClient) -> dict[str, dict[str, Any]] | None:
         """Treat optional load-state failures as unknown, not as an empty running list."""
         try:
             response = await client.get(f"{self.base_url}/api/ps")
             response.raise_for_status()
-            return {item["name"] for item in _models(response.json(), "models", "name")}
+            return {item["name"]: item for item in _models(response.json(), "models", "name")}
         except httpx.HTTPError, ValueError:
             return None
 

@@ -34,3 +34,16 @@ export function localModelIssue(profile: ReviewSessionProfile, readiness: Readin
   }
   return null;
 }
+
+/** Below 15 generated tokens/s, a CPU model merits explicit run-limit/evidence guidance. */
+export const SLOW_LOCAL_CPU_TOKENS_PER_SECOND = 15;
+
+/** Use only recent server measurements for the selected, currently loaded Ollama model. */
+export function localCpuWarning(profile: ReviewSessionProfile, local: ReviewEngineState | undefined, now = Date.now()): number | null {
+  if (profile.engine !== "local" || !local?.enabled || local.protocol !== "ollama") return null;
+  const model = local.models?.find((item) => item.name === selectedLocalModel(profile, local) && item.selectable && item.loaded === true);
+  const sample = model?.cpu_performance;
+  if (!sample || !Number.isFinite(sample.tokens_per_second) || sample.tokens_per_second <= 0 || sample.tokens_per_second >= SLOW_LOCAL_CPU_TOKENS_PER_SECOND) return null;
+  const age = now - Date.parse(sample.measured_at);
+  return Number.isFinite(age) && age >= 0 && age < 15 * 60 * 1000 ? sample.tokens_per_second : null;
+}

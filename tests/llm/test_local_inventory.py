@@ -190,3 +190,125 @@ def test_placement_explains_missing_evidence(models, reason):
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"models": models})),
     )
     assert asyncio.run(inventory.placement("answer")) == {"reason": reason}
+
+
+@pytest.fixture
+def measured_cpu_inventory(monkeypatch):
+    """Provide isolated Ollama metadata with controllable hardware, digest and clock."""
+    state = {"now": 0.0, "digest": "d1", "loaded": True, "vram": 0, "size": 100}
+    monkeypatch.setattr(local_inventory, "CACHE_TTL_S", 0)
+    monkeypatch.setattr(local_inventory, "monotonic", lambda: state["now"])
+
+    def respond(request):
+        """Serve metadata only; no model generation is permitted by this fixture."""
+        if request.url.path == "/api/tags":
+            return httpx.Response(
+                200, json={"models": [{"name": "answer:latest", "digest": state["digest"]}]}
+            )
+        if request.url.path == "/api/ps":
+            row = {"name": "answer:latest", "size": state["size"], "size_vram": state["vram"]}
+            return httpx.Response(200, json={"models": [row] if state["loaded"] else []})
+        assert request.url.path == "/api/show"
+        return httpx.Response(200, json={"capabilities": ["completion"]})
+
+    inventory = LocalModelInventory(
+        base_url="http://cpu.test", transport=httpx.MockTransport(respond)
+    )
+    asyncio.run(inventory.snapshot())
+    return inventory, state
+
+
+def test_cpu_measurement_uses_generation_timings_and_preserves_server_isolation(
+    measured_cpu_inventory,
+):
+    """Weighted Ollama generation speed ignores wall clock and unrelated provider calls."""
+    inventory, _ = measured_cpu_inventory
+    calls = [
+        {
+            "provider": "ollama",
+            "model": "answer",
+            "elapsed_ms": 999999,
+            "local_timings": [
+                {"eval_count": 100, "eval_duration_ms": 10000},
+                {"eval_count": 200, "eval_duration_ms": 20000},
+            ],
+        },
+        {
+            "provider": "openai",
+            "model": "answer",
+            "local_timings": [{"eval_count": 999, "eval_duration_ms": 1}],
+        },
+        {
+            "provider": "ollama",
+            "model": "other",
+            "local_timings": [{"eval_count": 999, "eval_duration_ms": 1}],
+        },
+    ]
+    inventory.record_cpu_performance(
+        "answer", {"placement": "cpu", "model": "answer:latest"}, calls
+    )
+    sample = asyncio.run(inventory.snapshot()).public_state()["models"][0]["cpu_performance"]
+    assert sample["tokens_per_second"] == 10
+    assert sample["measured_at"]
+    other = LocalModelInventory(base_url="http://another.test", transport=inventory._transport)
+    assert asyncio.run(other.snapshot()).models[0].cpu_performance is None
+    inventory.record_cpu_performance("answer", {"reason": "unavailable"}, calls)
+    assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"vram": 100},
+        {"vram": 50},
+        {"vram": None},
+        {"vram": False},
+        {"size": 0},
+        {"loaded": False},
+        {"digest": "d2"},
+        {"now": 900.0},
+    ],
+)
+def test_cpu_measurement_is_hidden_when_hardware_identity_or_age_changes(
+    measured_cpu_inventory, change
+):
+    """Only a recent sample for the still-loaded CPU model digest reaches readiness."""
+    inventory, state = measured_cpu_inventory
+    inventory.record_cpu_performance(
+        "answer",
+        {"placement": "cpu", "model": "answer:latest"},
+        [
+            {
+                "provider": "ollama",
+                "model": "answer",
+                "local_timings": [{"eval_count": 100, "eval_duration_ms": 10000}],
+            },
+        ],
+    )
+    state.update(change)
+    assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
+
+
+@pytest.mark.parametrize(
+    "timing",
+    [
+        None,
+        {},
+        {"eval_count": True, "eval_duration_ms": 1},
+        {"eval_count": 1, "eval_duration_ms": 0},
+        {"eval_count": -1, "eval_duration_ms": 1},
+        {"eval_count": 1, "eval_duration_ms": float("nan")},
+        {"eval_count": 1, "eval_duration_ms": float("inf")},
+    ],
+)
+def test_cpu_measurement_rejects_unusable_generation_counts(measured_cpu_inventory, timing):
+    """Absent or invalid timing cannot manufacture a low-throughput warning."""
+    inventory, _ = measured_cpu_inventory
+    inventory.record_cpu_performance(
+        "answer",
+        {"placement": "cpu", "model": "answer:latest"},
+        [
+            {"provider": "ollama", "model": "answer", "local_timings": [timing]},
+        ],
+    )
+    assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None

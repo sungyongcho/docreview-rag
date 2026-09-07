@@ -1064,6 +1064,7 @@ class RuntimeApiServices(ApiServices):
         placement = None
         if provider is not None and identity["provider"] == "ollama" and inventory is not None:
             placement = await inventory.placement(provider.model_name)
+            inventory.record_cpu_performance(provider.model_name, placement, calls)
         return {
             **metadata,
             "provider_identity": identity if provider is not None else None,

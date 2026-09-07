@@ -218,3 +218,15 @@ Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.diagnostics.local_grade 
 ![A real read-only Default connection check passed server selection, connectivity and answer-model availability.](../assets/24-connection-diagnostics.en.jpg)
 
 *A real read-only Default connection check passed server selection, connectivity and answer-model availability. No settings, models or services were changed.*
+
+
+### Slow CPU warning before sending {#cpu-warning}
+
+With a local Ollama model selected, the composer shows **Slow local CPU model** when the currently loaded model is CPU-only and a run measured generation below **15 tokens/s** in the last **15 minutes**. This advisory threshold covers the measured 10–14 tokens/s CPU configuration above; it does not predict the total run time. Speed is total `eval_count` divided by total `eval_duration_ms` in seconds for that model's calls, excluding load and prompt-processing time.
+
+Use **Run limits** to review the whole-run wall clock (for example, 300 seconds for a cold CPU run), or **Evidence** to reduce the maximum context (for example, 8,000 characters). Sending stays enabled; the warning does not edit your settings. After changing settings, check the next run's Performance panel for generation speed and completion within your chosen wall clock.
+
+The first run after a backend restart or server change has no measurement and produces no speed warning. Samples stay in the active backend's memory, belong to one server and model digest, and disappear when too old, the model changes/unloads, or placement/timing is unavailable. GPU and mixed placement do not trigger this CPU warning. No benchmark or model load is started to obtain a sample; readiness refreshes after a local run and during normal polling.
+
+### SCREENSHOT NEEDED
+<!-- Feature: slow CPU composer warning with measured speed and Run limits/Evidence actions; locale=en; theme=light; state=selected loaded CPU Ollama model below 15 tok/s with a recent real measurement; preserve existing assets. -->
