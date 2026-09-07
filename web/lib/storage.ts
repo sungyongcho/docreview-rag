@@ -566,4 +566,5 @@ export function storageEventValue(event: StorageEvent, key: string): string | nu
     }
   } catch { /* Existing scalar preference events are validated below. */ }
   return validStoredValue(versionedKey(key), raw) ? raw : undefined;
+
 }

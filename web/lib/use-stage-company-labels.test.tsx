@@ -10,7 +10,7 @@ beforeEach(() => { vi.resetAllMocks(); });
 
 /** Supply a complete existing facet response without synthesizing a new API shape. */
 function facets(value: string, label: string): DocumentFacets {
-  return { registries: [], issuers: [{ value, label, count: 1 }], years: [], languages: [], forms: [], parse_statuses: [], embedding_statuses: [], snapshots: [] };
+  return { registries: [], issuers: [{ value, label, count: 1 }], years: [], languages: [], forms: [], sections: [], parse_statuses: [], embedding_statuses: [], snapshots: [] };
 }
 
 it("loads only an opened panel and reuses its registry-scoped catalog on reopening", async () => {

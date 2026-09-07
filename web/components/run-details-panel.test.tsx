@@ -118,7 +118,7 @@ describe("Run details panel", () => {
     expect(settings).toHaveAttribute("aria-selected", "true");
     expect(performance).toHaveAttribute("tabindex", "-1");
     fireEvent.keyDown(settings, { key: "End" });
-    const trace = screen.getByRole("tab", { name: "Trace" });
+    const trace = screen.getByRole("tab", { name: "Preview" });
     expect(trace).toHaveFocus();
     fireEvent.keyDown(trace, { key: "Home" });
     expect(performance).toHaveFocus();

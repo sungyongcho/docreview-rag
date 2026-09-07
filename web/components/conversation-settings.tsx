@@ -6,6 +6,14 @@ import { useI18n } from "@/lib/i18n";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { RequestPreviewContent } from "./request-preview";
+import { RetrievalPresetSelect } from "./retrieval-preset-select";
+import { loadDefaultProfile } from "@/lib/storage";
+import { conversationSettingsError } from "@/lib/saved-presets";
+import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
+import { RunLimitGuidance } from "./run-limit-guidance";
+import { LOCAL_CPU_STARTING_BUDGET, LOCAL_CPU_EVIDENCE_CHARS } from "@/lib/local-limit-suggestion";
+import { RunLimitFields } from "./run-limit-fields";
 import { ProfileFields } from "@/components/profile-fields";
 import type { DocumentFacets, ReviewSessionDraft } from "@/lib/types";
 import { getDocumentFacets, getPublishedDocumentFacets } from "@/lib/api";
@@ -15,11 +23,14 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
 import "./conversation-settings.css";
 
-export type ConversationSettingsTab = "filters" | "retrieval" | "evidence" | "limits";
+export type ConversationSettingsTab = "filters" | "retrieval" | "evidence" | "limits" | "preview";
 interface Props {
   tab: ConversationSettingsTab;
   profile: ReviewSessionDraft;
   editable: boolean;
+  query?: string;
+  speed?: number | null;
+  onManagePresets?: () => void;
   onChange: (update: Partial<ReviewSessionDraft>) => void;
   onTabChange: (tab: ConversationSettingsTab) => void;
   onClose: () => void;
@@ -30,6 +41,17 @@ interface Props {
 export function ConversationSettings(props: Props) {
   const { t, locale } = useI18n();
   const active = useRetainedPanelActive();
+  const [mode, setMode] = useState<"basic" | "advanced" | "preview">(props.tab === "preview" ? "preview" : props.editable && props.tab !== "filters" ? "advanced" : "basic");
+  useEffect(() => { setMode(props.tab === "preview" ? "preview" : props.editable && props.tab !== "filters" ? "advanced" : "basic"); }, [props.tab, props.editable]);
+  const settingsError = conversationSettingsError(props.profile);
+  const [savedDefaults, setSavedDefaults] = useState(DEFAULT_SESSION_PROFILE);
+  useEffect(() => {
+    function refresh() { setSavedDefaults(loadDefaultProfile()); }
+    refresh(); window.addEventListener("docreview:default-limits-changed", refresh); window.addEventListener("docreview:storage-restored", refresh);
+    return () => { window.removeEventListener("docreview:default-limits-changed", refresh); window.removeEventListener("docreview:storage-restored", refresh); };
+  }, []);
+  const baseline = savedDefaults.prompt_policy;
+  const changes = Object.entries(props.profile.prompt_policy).filter(([key, value]) => key !== "workflow_budget" && value !== baseline[key as keyof typeof baseline]).length + Object.entries(props.profile.prompt_policy.workflow_budget).filter(([key, value]) => value !== baseline.workflow_budget[key as keyof typeof baseline.workflow_budget]).length + Object.entries(resolvedRetrievalProfile(props.profile)).filter(([key, value]) => value !== resolvedRetrievalProfile(savedDefaults)[key as keyof ReturnType<typeof resolvedRetrievalProfile>]).length;
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -82,24 +104,27 @@ export function ConversationSettings(props: Props) {
   const budget = props.profile.prompt_policy.workflow_budget;
   function patch(update: Partial<ReviewSessionDraft>) { props.onChange(update); }
   function patchPolicy(update: Partial<ReviewSessionDraft["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
-  function patchBudget(update: Partial<typeof budget>) { patchPolicy({ workflow_budget: { ...budget, ...update } }); }
   return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
     <div className="conversation-settings-dialog" role="dialog" aria-modal={active ? true : undefined} aria-labelledby={titleId} tabIndex={-1} ref={panel}>
     <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={props.onClose}><X size={20} /></button></header><NotificationOutlet priority={50} active={active} />
-    <nav className="conversation-settings-sections" aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button key={id} type="button" aria-pressed={tab === id} title={id !== "filters" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => props.onTabChange(id)}>{t(label)}{id !== "filters" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>)}</nav>
+    <nav className="conversation-settings-sections settings-mode" aria-label={t("Settings view")}>{(["basic", ...(props.editable ? ["advanced"] : []), "preview"] as const).map(value => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { if (value === "advanced" && tab === "filters") props.onTabChange("retrieval"); setMode(value as typeof mode); }}>{t(value === "basic" ? "Basic" : value === "advanced" ? "Advanced" : "Preview")}</button>)}</nav>
+    {mode === "advanced" && <nav className="conversation-settings-sections" aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button key={id} type="button" aria-pressed={tab === id} title={id !== "filters" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => props.onTabChange(id)}>{t(label)}{id !== "filters" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>)}</nav>}
     <div className="conversation-settings-body">
-    {tab === "filters" && <ConversationFilters profile={props.profile} editable={props.editable} onChange={props.onChange} onValidityChange={props.onValidityChange} />}
-    {tab === "retrieval" && props.editable && <div data-help="review.retrieval">
+    {settingsError && <p className="notice error" role="alert">{t(settingsError)}</p>}
+    {mode === "preview" && <RequestPreviewContent profile={props.profile} query={props.query ?? ""} />}
+    {mode === "basic" && <section className="settings-basic"><h3>{t("Retrieval preset")}</h3><RetrievalPresetSelect profile={props.profile} editable={props.editable} onChange={props.onChange} onManage={props.onManagePresets} />
+      <p className="helper">{t("Advanced settings changed: {count}", { count: changes })}</p>
+      <dl className="request-facts"><div><dt>{t("Maximum evidence characters")}</dt><dd>{props.profile.prompt_policy.max_context_chars.toLocaleString(locale)}</dd></div><div><dt>{t("Maximum wall clock seconds")}</dt><dd>{budget.max_wall_clock_s} {t("seconds")}</dd></div><div><dt>{t("Maximum input tokens")}</dt><dd>{budget.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Maximum output tokens")}</dt><dd>{budget.max_output_tokens.toLocaleString(locale)}</dd></div></dl>
+      <RunLimitGuidance /><h3>{t("Filters")}</h3>
+    </section>}
+    {(mode === "basic" || mode === "advanced" && tab === "filters") && <ConversationFilters profile={props.profile} editable={props.editable} onChange={props.onChange} onValidityChange={props.onValidityChange} />}
+    {mode === "advanced" && tab === "retrieval" && props.editable && <div data-help="review.retrieval">
       {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}
     </div>}
-    {tab === "evidence" && props.editable && <div className="profile-grid" data-help="review.evidence-policy"><label>{t("Conversation history turns")}<input type="number" min={0} max={6} value={props.profile.prompt_policy.history_turns} onChange={(event) => patchPolicy({ history_turns: Number(event.target.value) })} /></label><label>{t("Maximum evidence characters")}<input type="number" min={1000} max={100000} value={props.profile.prompt_policy.max_context_chars} onChange={(event) => patchPolicy({ max_context_chars: Number(event.target.value) })} /></label><label>{t("Evidence overfetch")}<input type="number" min={1} max={10} value={props.profile.prompt_policy.evidence_overfetch} onChange={(event) => patchPolicy({ evidence_overfetch: Number(event.target.value) })} /></label><label>{t("Maximum hits per document")}<input type="number" min={1} max={100} value={props.profile.prompt_policy.max_hits_per_document} onChange={(event) => patchPolicy({ max_hits_per_document: Number(event.target.value) })} /></label></div>}
-    {tab === "limits" && props.editable && <div className="profile-grid" data-help="review.run-limits">
-      <label>{t("Maximum iterations")}<input type="number" min={0} max={20} value={budget.max_iterations} onChange={(event) => patchBudget({ max_iterations: Number(event.target.value) })} /></label>
-      <label>{t("Maximum input tokens")}<input type="number" min={0} max={100000} value={budget.max_input_tokens} onChange={(event) => patchBudget({ max_input_tokens: Number(event.target.value) })} /></label>
-      <label>{t("Maximum output tokens")}<input type="number" min={0} max={4000} value={budget.max_output_tokens} onChange={(event) => patchBudget({ max_output_tokens: Number(event.target.value) })} /></label>
-      <label>{t("Maximum wall clock seconds")}<input type="number" min={1} max={600} value={budget.max_wall_clock_s} onChange={(event) => patchBudget({ max_wall_clock_s: Number(event.target.value) })} /></label>
-      <p className="helper">{t("These limits cover the entire run across all model calls. Zero blocks a resource for failure-path experiments; the wall clock must be at least one second.")}</p>
-    </div>}
+    {mode === "advanced" && tab === "evidence" && props.editable && <div className="profile-grid" data-help="review.evidence-policy">{props.speed && props.profile.prompt_policy.max_context_chars > 1000 && <div className="notice warning limit-recommendation"><p>{t("Reducing evidence can reduce answer coverage. Review the limit before applying it.")}</p><button className="button" type="button" onClick={() => patchPolicy({ max_context_chars: Math.max(1000, Math.floor(props.profile.prompt_policy.max_context_chars / 2)) })}>{t("Reduce evidence: {before} → {after} characters", { before: props.profile.prompt_policy.max_context_chars, after: Math.max(1000, Math.floor(props.profile.prompt_policy.max_context_chars / 2)) })}</button></div>}<label>{t("Conversation history turns")}<input type="number" min={0} max={6} value={props.profile.prompt_policy.history_turns} onChange={(event) => patchPolicy({ history_turns: Number(event.target.value) })} /></label><label>{t("Maximum evidence characters")}<input type="number" min={1000} max={100000} value={props.profile.prompt_policy.max_context_chars} onChange={(event) => patchPolicy({ max_context_chars: Number(event.target.value) })} /></label><label>{t("Evidence overfetch")}<input type="number" min={1} max={10} value={props.profile.prompt_policy.evidence_overfetch} onChange={(event) => patchPolicy({ evidence_overfetch: Number(event.target.value) })} /></label><label>{t("Maximum hits per document")}<input type="number" min={1} max={100} value={props.profile.prompt_policy.max_hits_per_document} onChange={(event) => patchPolicy({ max_hits_per_document: Number(event.target.value) })} /></label></div>}
+    {mode === "advanced" && tab === "limits" && props.editable && <RunLimitFields onApplyCpuPreset={() => patchPolicy({ workflow_budget: { ...LOCAL_CPU_STARTING_BUDGET }, max_context_chars: LOCAL_CPU_EVIDENCE_CHARS })} budget={budget} speed={props.speed} onChange={workflow_budget => patchPolicy({ workflow_budget })} />}
+
+    {mode === "advanced" && props.editable && <section className="settings-policy-actions"><label>{t("Additional instructions")}<textarea maxLength={8000} value={props.profile.prompt_policy.additional_instructions} onChange={event => patchPolicy({ additional_instructions: event.target.value })} /></label><p className="helper">{t("Instructions, evidence policy and limits apply together to this conversation. Search presets only change retrieval.")}</p><button className="button" type="button" onClick={() => { const defaults = loadDefaultProfile(); patch({ retrieval_preset: defaults.retrieval_preset, custom_retrieval: structuredClone(defaults.custom_retrieval), prompt_policy: structuredClone(defaults.prompt_policy) }); }}>{t("Restore setting defaults")}</button><p className="helper">{t("Restores search, prompt, evidence and limits. Document filters stay unchanged.")}</p></section>}
     </div>
   </div></div>, document.body);
 }
@@ -164,11 +189,11 @@ function ConversationFilters({ profile, editable, onChange, onValidityChange }: 
       forms: profile.forms.filter((value) => !invalidForms.includes(value)),
     })}>{t("Remove unavailable selections")}</button></div>}
     <div className="profile-grid conversation-filters">
-      <TokenSelect label={t("Companies")} values={profile.issuers} options={companyOptions} invalidValues={invalidCompanies} disabled={!facets} placeholder={t("Search company name or code")} onValidityChange={(valid) => updateValidity("companies", valid)} onChange={(issuers) => onChange({ issuers })} />
-      <TokenSelect label={t("Languages")} values={profile.languages} options={languageOptions} quickOptions={languageOptions} invalidValues={invalidLanguages} disabled={!facets} placeholder={t("Choose document languages")} onValidityChange={(valid) => updateValidity("languages", valid)} onChange={(languages) => onChange({ languages: languages.filter((value): value is "en" | "ko" => value === "en" || value === "ko") })} />
-      <TokenSelect label={t("Fiscal years")} values={profile.fiscal_years.map(String)} options={yearOptions} quickOptions={yearOptions.slice(0, 5)} invalidValues={invalidYears} disabled={!facets} placeholder={t("Choose available fiscal years")} onValidityChange={(valid) => updateValidity("years", valid)} onChange={(years) => onChange({ fiscal_years: years.map(Number) })} />
-      <TokenSelect label={t("Forms")} values={profile.forms} options={formOptions} quickOptions={formOptions} invalidValues={invalidForms} disabled={!facets} placeholder={t("Choose report types")} onValidityChange={(valid) => updateValidity("forms", valid)} onChange={(forms) => onChange({ forms })} />
-      <TokenSelect label={t("Sections")} values={profile.sections.map((value) => value ?? "unsectioned")} options={[]} parseCustom={(value) => [value]} placeholder={t("7 7A unsectioned")} hint={t("Add section identifiers with Enter. Use unsectioned for documents without a section.")} onValidityChange={(valid) => updateValidity("sections", valid)} onChange={(sections) => onChange({ sections: sections.map((value) => value === "unsectioned" ? null : value) })} />
+      <TokenSelect showDropdown label={t("Companies")} values={profile.issuers} options={companyOptions} invalidValues={invalidCompanies} disabled={!facets} placeholder={t("Search company name or code")} onValidityChange={(valid) => updateValidity("companies", valid)} onChange={(issuers) => onChange({ issuers })} />
+      <TokenSelect showDropdown label={t("Languages")} values={profile.languages} options={languageOptions} quickOptions={languageOptions} invalidValues={invalidLanguages} disabled={!facets} placeholder={t("Choose document languages")} onValidityChange={(valid) => updateValidity("languages", valid)} onChange={(languages) => onChange({ languages: languages.filter((value): value is "en" | "ko" => value === "en" || value === "ko") })} />
+      <TokenSelect showDropdown label={t("Fiscal years")} values={profile.fiscal_years.map(String)} options={yearOptions} quickOptions={yearOptions.slice(0, 5)} invalidValues={invalidYears} disabled={!facets} placeholder={t("Choose available fiscal years")} onValidityChange={(valid) => updateValidity("years", valid)} onChange={(years) => onChange({ fiscal_years: years.map(Number) })} />
+      <TokenSelect showDropdown label={t("Forms")} values={profile.forms} options={formOptions} quickOptions={formOptions} invalidValues={invalidForms} disabled={!facets} placeholder={t("Choose report types")} onValidityChange={(valid) => updateValidity("forms", valid)} onChange={(forms) => onChange({ forms })} />
+      <TokenSelect showDropdown label={t("Sections")} values={profile.sections.map((value) => value ?? "unsectioned")} options={facets?.sections?.map(value => ({ value: value.value, label: value.label ?? value.value })) ?? []} disabled={!facets} parseCustom={(value) => [value]} placeholder={t("7 7A unsectioned")} hint={t("Add section identifiers with Enter. Use unsectioned for documents without a section.")} onValidityChange={(valid) => updateValidity("sections", valid)} onChange={(sections) => onChange({ sections: sections.map((value) => value === "unsectioned" ? null : value) })} />
     </div>
   </div>;
 }

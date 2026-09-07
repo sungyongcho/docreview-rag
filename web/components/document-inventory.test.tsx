@@ -36,7 +36,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const facets = { registries: [{ value: "sec", label: "SEC", count: 2 }], issuers: [], years: [], languages: [], forms: [], parse_statuses: [], embedding_statuses: [], snapshots: [] };
+const facets = { registries: [{ value: "sec", label: "SEC", count: 2 }], issuers: [], years: [], languages: [], forms: [], sections: [], parse_statuses: [], embedding_statuses: [], snapshots: [] };
 const page = (ids: string[], cursor: string | null = null): AdminDocumentPage => ({ documents: ids.map(filing), total: ids.length, next_cursor: cursor });
 
 beforeEach(() => {

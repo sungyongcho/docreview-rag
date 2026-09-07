@@ -2,7 +2,7 @@
 
 Conversation settings determine where to search, how to rank evidence, and how much work a review may do. They belong to the active conversation. Changing a control does not rewrite an existing answer or change the settings already submitted with a running request.
 
-The primary composer row follows **Corpus scope → answer engine/local model → retrieval preset → Review settings → Inspect request**. **Review settings** is the single editing entry; the separate **Inspect request** icon and label open a read-only preview. The secondary row shows corpus readiness. The corpus total describes the whole catalog, not the SEC or DART subset selected for your question; public mode describes published data.
+The primary composer row follows **Corpus scope → answer engine/local model → retrieval preset → Settings and preview**. The last action opens one drawer with **Basic**, **Advanced** (DEV) and **Preview** views. Switching views preserves configured values. The secondary row shows corpus readiness for the whole catalog, not the selected SEC/DART subset.
 
 <!-- capture:18-scope-presets -->
 
@@ -16,7 +16,7 @@ The primary composer row follows **Corpus scope → answer engine/local model �
 
 **Prerequisites:** an existing conversation and the documents needed for its question. A saved answer is useful for inspecting evidence choices; a new answer is not required merely to change settings.
 
-**Screen path:** open the conversation → **Retrieval preset** above the question. For filters, open **Review settings → Filters**, then close the editor to return to the primary controls.
+**Screen path:** conversation → **Retrieval preset** above the question. Open **Settings and preview → Basic** for document filters and the current limits summary.
 
 | Input | Meaning for this exercise |
 |---|---|
@@ -24,7 +24,7 @@ The primary composer row follows **Corpus scope → answer engine/local model �
 | Companies / Fiscal years | Select actual available entries, such as NVDA and 2024 when those filings exist. Empty selections leave that field unrestricted. |
 | Retrieval preset | Select Accuracy to inspect a wider candidate pool and reranking. This is a setting to evaluate, not a promise of a better answer. |
 
-**Primary action:** choose **Accuracy**. Close Review settings if it is open, then use **Inspect request** to check effective retrieval settings and filters before another execution.
+**Primary action:** choose **Accuracy**, then open **Settings and preview → Preview** to inspect the next question’s settings. Existing answers and in-flight requests retain their submitted values.
 
 **Visible result:** the selected preset changes; its explanation includes `candidate_k: 50` and `reranker: cross_encoder`. The question and earlier answer stay unchanged. The inspector describes the next request; evidence remains unresolved until execution.
 
@@ -34,11 +34,15 @@ The primary composer row follows **Corpus scope → answer engine/local model �
 
 **Next:** [11. Evaluate retrieval](evaluation.md#step-11). Evaluation can also be started directly after index preparation; it does not depend on generating an answer.
 
+### SCREENSHOT NEEDED
+
+<!-- Settings and preview: Basic, Advanced and Preview tabs; light mode; en; show preserved values and integrated navigation. Existing asset below is historical. -->
+
 <!-- capture:19-request-inspector -->
 
 ![Inspect request opens an independent drawer for effective presets, retrieval, engine, filters, prompt composition and the outgoing payload.](../assets/19-request-inspector.en.jpg)
 
-*Inspect request opens an independent drawer for effective presets, retrieval, engine, filters, prompt composition and the outgoing payload. Evidence remains unresolved before execution.*
+*Historical capture of the previous separate inspector/settings layout. Use the Basic / Advanced / Preview flow described above.*
 
 ## Presets and effective values {#presets}
 
@@ -54,31 +58,35 @@ The following values come from the current preset definitions. All three built-i
 | Accuracy | 50 | BM25 | Cross encoder | Off |
 | Custom | Your saved values | Your saved values | Your saved values | Your saved values |
 
-Balanced provides the default starting point. Korean changes the search configuration for language-aware retrieval; it does not translate stored filings or force the corpus scope to DART. It also leaves document-language filters explicit. With language routing enabled, only queries that differ from the resolved corpus language need translation; an English NVIDIA question stays on the English SEC lane. Accuracy reranks a larger pool and can take more work. Custom opens **Review settings → Search** immediately when permitted, retaining existing custom values. Use the same Search section to revisit them later. Built-in preset selection clears the explicit custom profile, so inspect values before switching away from a configuration you want to keep.
+Balanced provides the default starting point. Korean enables language-aware retrieval without forcing the corpus scope to DART. Accuracy reranks a larger pool. In DEV, **Manage presets…** opens **Measure → Retrieval presets**. Expand a built-in row and choose **Copy and edit**, or save the current search settings. Named presets are stored in this browser and appear in the composer selector. Saving or editing a preset does not change existing conversations; selecting it copies only retrieval values. Custom remains the label for unsaved values. Advanced search settings remain editable in the conversation drawer.
 
 <!-- capture:30-preset-help -->
 
 ![The preset explanation describes the selected Balanced definition beside the actual control.](../assets/30-preset-help.en.jpg)
 
-*The preset explanation describes the selected Balanced definition beside the actual control. Effective preset differences can also be compared in Inspect request; opening help does not run a review.*
+*The preset explanation describes the selected Balanced definition beside the actual control. Effective preset differences can also be compared in Settings and preview → Preview; opening help does not run a review.*
 
 `k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
 
 ## Scoped filters and unfinished input {#filters}
 
-**Review settings** opens one right-side drawer on desktop and a full-screen dialog on mobile. Its sections are **Filters**, **Search**, **Evidence**, and **Run limits**; public mode exposes only permitted filters. The body scrolls independently and keyboard focus stays inside. Close or Escape returns focus to the opener without enlarging the composer. Selected values apply to this conversation’s next request; an in-flight request keeps its submitted settings.
+**Settings and preview** opens a right-side drawer on desktop and a full-screen dialog on mobile. **Basic** shows preset selection, document filters, limits and the count of settings differing from defaults. **Advanced** exposes the existing search/evidence/run-limit sections and additional instructions, plus an explicit defaults reset. **Preview** shows the next question, readable policy values and expandable request JSON. The execution-details panel also has a **Preview** tab; its **Server settings** tab continues to describe the selected historical run. Public mode hides Advanced and local preset management. Keyboard focus stays inside the settings dialog and Escape returns it to the opener.
+
+### SCREENSHOT NEEDED
+
+<!-- Settings and preview: Basic, Advanced and Preview tabs; light mode; en; show preserved values and integrated navigation. Existing asset below is historical. -->
 
 <!-- capture:27-review-settings -->
 
 ![One Review settings entry opens a single drawer with Filters, Search, Evidence and Run limits.](../assets/27-review-settings.en.jpg)
 
-*One Review settings entry opens a single drawer with Filters, Search, Evidence and Run limits. It keeps the conversation visible behind a protected background without expanding the composer.*
+*Historical capture of the previous separate inspector/settings layout. Use the Basic / Advanced / Preview flow described above.*
 
 Company, language, form, and fiscal-year choices come from the complete catalog available within the selected scope. The application does not construct these lists from the first page of documents. Public choices come from the public catalog.
 
 Choose values as removable chips. Incompatible saved selections stay visible until you remove them. Invalid typed drafts block Send while the filter editor is open. Switching editor tabs or closing the editor discards unfinished text, as its notice explains; committed selections remain. Workspace navigation and Back preserve committed settings and the question; close the editor before using background controls.
 
-The scope and preset **?** controls support hover, focus, touch, and Escape. **View corpus readiness** opens Build; use **Back** to return to your draft. The request inspector has its own scrolling, Escape/close controls, and focus return.
+The scope and preset **?** controls support hover, focus, touch and Escape. **View corpus readiness** opens Build; use **Back** to return to the draft. Preview uses the settings drawer’s scrolling and focus behavior. Invalid committed advanced values remain visible as an error and block sending even after closing the drawer.
 
 ## Pin, Exclude, and reviewing again {#evidence}
 
@@ -94,7 +102,9 @@ Click a selected Pin or Exclude again to deselect it. Both buttons sit in each c
 > [!DEV]
 > Editing Search, Evidence, and Run limits requires DEV. Public users can still use permitted scope, preset, and filter choices.
 
-Under **Review settings → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
+Under **Settings and preview → Advanced → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
+
+For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run’s timings.
 
 ## Defaults and permissions {#defaults}
 
@@ -122,6 +132,15 @@ The [Ollama setup guide](ollama.md) opens in a new tab from this screen. It cove
 
 ### SCREENSHOT NEEDED
 <!-- Feature: provider and credential usage groups after a settings change; locale=en; theme=light; show role and reported/estimated usage distinction; preserve existing assets. -->
+
+### Saved execution defaults
+
+Open **Settings → Prompt → New-conversation limits and evidence** to edit and explicitly save the default budget and evidence size. System status shows a summary and a link to this editor. Existing conversations keep their own values and Basic shows their differences from saved defaults. **Restore setting defaults** in the conversation copies the saved search/prompt/evidence/limits while preserving document filters. The defaults editor’s **Restore limit defaults** prepares the original application values; save them explicitly to use them for future conversations.
+
+### SCREENSHOT NEEDED
+<!-- Default limits editor and System status summary; en; light mode; show saved values and a conversation override. Preserve existing assets. -->
+
+Company, language, fiscal-year, form and section fields support both typed search and a visible dropdown button. Section suggestions come from the actual scoped corpus; manual section identifiers remain supported. Preset previews use full-width expandable rows, and JSON retains its code-block background and monospace formatting.
 
 ## Browser storage {#browser-storage}
 

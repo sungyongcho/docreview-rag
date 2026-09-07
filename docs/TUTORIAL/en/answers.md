@@ -70,9 +70,9 @@ The scope/preset question-mark controls respond to hover, focus, touch, and Esca
 scope separate from the actual registry, companies, fiscal years, and reason returned by the server.
 Before resolution it is unconfirmed; the browser does not invent that decision.
 
-Use **Review settings** to edit Filters, Search, Evidence, or Run limits in one independent editor.
+Use **Settings and preview** to edit Filters, Search, Evidence, or Run limits in one independent editor.
 Choosing Custom opens its Search section directly. Close the editor before using the separate
-**Inspect request** icon and short label in the primary control row; it only reads the next request.
+**Settings and preview → Preview** icon and short label in the primary control row; it only reads the next request.
 
 Inspect request is a side drawer on wide screens and a full-screen dialog on narrow
 screens. It scrolls independently and returns focus when closed. It separates retrieval, filters, engine,
@@ -99,6 +99,8 @@ do not rewrite the current answer.
 Use **View corpus readiness** to inspect preparation and **Back** to return to the retained
 draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated
 calls, uncollected fields, and legacy records.
+
+For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run’s timings.
 
 ### Reading the actual model-call limit
 

@@ -244,6 +244,7 @@ def test_published_catalog_filters_identity_facets_detail_and_private_snapshot()
             facets = await catalog.document_facets()
             assert [value.value for value in facets.issuers] == ["published"]
             assert facets.issuers[0].label == "published · Visible Company"
+            assert [(value.value, value.count) for value in facets.sections] == [("1A", 1)]
             assert [value.value for value in facets.snapshots] == [str(published_id)]
             assert (await catalog.document_facets(registry="sec")) == facets
             hidden_facets = await catalog.document_facets("dart")

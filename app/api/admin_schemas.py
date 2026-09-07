@@ -421,6 +421,7 @@ class DocumentFacetsResponse(StrictAdminModel):
     years: tuple[DocumentFacetValue, ...]
     languages: tuple[DocumentFacetValue, ...]
     forms: tuple[DocumentFacetValue, ...]
+    sections: tuple[DocumentFacetValue, ...] = ()
     parse_statuses: tuple[DocumentFacetValue, ...]
     embedding_statuses: tuple[DocumentFacetValue, ...]
     snapshots: tuple[DocumentFacetValue, ...]

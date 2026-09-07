@@ -13,7 +13,7 @@ const facets: DocumentFacets = {
   registries: [], issuers: [{ value: "AAPL", label: "AAPL · Apple Inc.", count: 1 }, { value: "005930", label: "005930 · 삼성전자", count: 1 }],
   languages: [{ value: "en", label: null, count: 1 }, { value: "ko", label: null, count: 1 }],
   years: [{ value: "2024", label: null, count: 2 }], forms: [{ value: "10-K", label: null, count: 1 }, { value: "사업보고서", label: null, count: 1 }],
-  parse_statuses: [], embedding_statuses: [], snapshots: [],
+  sections: [], parse_statuses: [], embedding_statuses: [], snapshots: [],
 };
 beforeEach(() => { api.getDocumentFacets.mockResolvedValue(facets); api.getPublishedDocumentFacets.mockResolvedValue(facets); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -32,9 +32,9 @@ it("edits only the current conversation policy and reads the next conversation's
   expect(props.onClose).toHaveBeenCalledOnce();
 });
 
-it("uses the conversation candidate and fusion limits for custom retrieval", () => {
+it("uses the API candidate and conversation fusion limits for custom retrieval", () => {
   render(<ConversationSettings tab="retrieval" editable profile={{ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: DEFAULT_PROFILE }} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
-  expect(screen.getByLabelText("candidate_k")).toHaveAttribute("max", "100");
+  expect(screen.getByLabelText("candidate_k")).toHaveAttribute("max", "500");
   expect(screen.getByLabelText("candidate_k")).toHaveAttribute("min", String(DEFAULT_PROFILE.k));
   expect(screen.getByLabelText("RRF k")).toHaveAttribute("max", "10000");
 });
@@ -182,7 +182,7 @@ it("traps drawer focus, protects the background, and restores the opener on clos
   const { unmount } = render(<ConversationSettings tab="limits" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={onClose} />);
   const dialog = screen.getByRole("dialog", { name: "Conversation settings" });
   const close = screen.getByRole("button", { name: "Close conversation settings" });
-  const last = screen.getByLabelText("Maximum wall clock seconds");
+  const last = screen.getByRole("button", { name: "Restore setting defaults" });
   expect(dialog).toHaveAttribute("aria-modal", "true");
   expect(close).toHaveFocus();
   expect(opener).toHaveAttribute("inert");

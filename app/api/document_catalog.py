@@ -336,6 +336,23 @@ class DocumentCatalog:
         )
         async with self._session_factory() as session:
             await self._require_schema(session)
+            section_rows = (
+                await session.execute(
+                    join_current_parse(
+                        select(Chunk.item, func.count(func.distinct(Document.doc_id))).select_from(
+                            Document
+                        )
+                    )
+                    .join(
+                        Chunk,
+                        (Chunk.doc_id == Document.doc_id)
+                        & (Chunk.structure_id == ParsedStructure.structure_id),
+                    )
+                    .where(*document_filters)
+                    .group_by(Chunk.item)
+                    .order_by(Chunk.item)
+                )
+            ).all()
             coverage_rows = (
                 await session.execute(
                     select(
@@ -400,6 +417,12 @@ class DocumentCatalog:
             years=await values(Document.fiscal_year),
             languages=await values(Document.language),
             forms=await values(Document.form),
+            sections=tuple(
+                DocumentFacetValue(
+                    value=item if item is not None else "unsectioned", count=int(count)
+                )
+                for item, count in section_rows
+            ),
             parse_statuses=await values(ParsedStructure.parse_status),
             embedding_statuses=tuple(
                 DocumentFacetValue(value=status, count=count)

@@ -4,6 +4,8 @@ import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActive
 import { useI18n } from "@/lib/i18n";
 
 
+import { conversationSettingsError } from "@/lib/saved-presets";
+import { SlowCpuNotice } from "./slow-cpu-notice";
 import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
 import { GuidesNavigation } from "@/components/guides-navigation";
@@ -284,7 +286,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
-  const sendBlocked = publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const settingsValidationError = conversationSettingsError(activeSessionProfile);
+  const sendBlocked = settingsValidationError !== null || publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -987,7 +990,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             </div>
           </div>
           <div className="composer-wrap" data-tour="composer">
-            {conversationTab && <ConversationSettings key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
+            {conversationTab && <ConversationSettings speed={localCpuSpeed} query={query} onManagePresets={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }} key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
             <ComposerToolbar
               query={query}
               engineControls={localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
@@ -998,7 +1001,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               canUseCustom={adminBuild && permissions?.can_change_custom_retrieval === true}
               onLocked={() => notify(PROD_LOCKED_MESSAGE, "warning", "prod-locked")}
               onOpenSettings={() => openConversationSettings("filters")}
-              onOpenCustom={() => openConversationSettings("retrieval")}
+              onOpenCustom={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }}
               readiness={readiness}
               live={adminLive}
               onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
@@ -1008,11 +1011,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
-            {localCpuSpeed !== null && !publicPreview && <div className="notice warning" role="status" aria-label={t("Slow local CPU model")}>
-              <p>{t("{model} is running on CPU. Its recent generation speed was {speed} tok/s, below the {threshold} tok/s warning threshold. Before sending, allow more time in Run limits or reduce Evidence. Sending remains available.", { model: localModel ?? "", speed: localCpuSpeed.toLocaleString(locale, { maximumFractionDigits: 1 }), threshold: SLOW_LOCAL_CPU_TOKENS_PER_SECOND })}</p>
-              <button className="inline-link" type="button" onClick={() => openSettings("limits")}>{t("Run limits")}</button>{" · "}
-              <button className="inline-link" type="button" onClick={() => openConversationSettings("evidence")}>{t("Evidence")}</button>
-            </div>}
+            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
+
+            {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
@@ -1065,6 +1066,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           helpTarget={pendingHelpTarget}
         /></RetainedPanel>
         <RetainedPanel active={view === "system"} className="retained-workspace" workspace="system"><SystemWorkspace
+          onOpenLimitDefaults={() => openSettings("prompt")}
           live={adminLive}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
@@ -1080,7 +1082,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       <BrowserStorageSupport enabled={!publicPreview && environment === "prod" && productionBrowserStorageEnabled()} />
       <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <RunDetailsPanel stageRequest={runDetailsStage} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
+      <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
+
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
