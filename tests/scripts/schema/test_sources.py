@@ -8,7 +8,12 @@ import pytest
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_selection import acquisition_draft, source_inventory
 from scripts.schema import recreate
-from scripts.schema.sources import SourceReset, source_preview
+from scripts.schema.sources import (
+    SourceAccessError,
+    SourceReset,
+    check_source_write_access,
+    source_preview,
+)
 from tests.ingestion.support import write_selection_catalog
 
 
@@ -77,7 +82,10 @@ def test_command_preserves_sources_on_database_failure(tmp_path, monkeypatch, ke
     assert source_preview(tmp_path) == before
 
 
-def test_cleanup_failure_reports_database_commit_and_retains_journal(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("failure", [PermissionError, KeyboardInterrupt])
+def test_cleanup_failure_reports_database_commit_and_retains_journal(
+    tmp_path, monkeypatch, capsys, failure
+):
     """Failure after DB commit must not become a success or an automatic repeat."""
     write_selection_catalog(tmp_path / "data/corpus")
     target = {"port": "1", "apps": [], "volume": "fixture", "docker": ["docker"]}
@@ -89,11 +97,13 @@ def test_cleanup_failure_reports_database_commit_and_retains_journal(tmp_path, m
 
     def refuse_cleanup(path):
         """Simulate lost write access only at post-commit backup removal."""
-        raise PermissionError("fixture denied")
+        raise failure("fixture denied")
 
     monkeypatch.setattr(reset_module.shutil, "rmtree", refuse_cleanup)
     assert recreate.run(tmp_path) == "incomplete"
-    assert "DB committed" in capsys.readouterr().err
+    output = capsys.readouterr().err
+    assert "DB committed" in output
+    assert "rag-dev up -d" in output
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert json.loads(journal.read_text())["phase"] == "database_committed_source_cleanup_pending"
     with pytest.raises(ValueError, match="Unfinished"):
@@ -115,7 +125,9 @@ def test_restore_preserves_metadata_changed_after_staging(tmp_path, name):
     assert (reset.journal / "sources/manifest.json").exists()
 
 
-def test_uncertain_database_outcome_retains_durable_recovery_evidence(tmp_path, monkeypatch):
+def test_uncertain_database_outcome_retains_durable_recovery_evidence(
+    tmp_path, monkeypatch, capsys
+):
     """A lost DB connection restores source bytes but blocks retry with a durable journal."""
     from sqlalchemy.exc import SQLAlchemyError
 
@@ -131,6 +143,10 @@ def test_uncertain_database_outcome_retains_durable_recovery_evidence(tmp_path, 
     monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
     with pytest.raises(SQLAlchemyError):
         recreate.run(tmp_path)
+    output = capsys.readouterr().err
+    assert "Database outcome is unconfirmed" in output
+    assert "database and sources are unchanged" not in output
+    assert "rag-dev up -d" in output
     assert (corpus / "manifest.json").read_bytes() == original
     journal = tmp_path / "data/.schema-recreate-journal/journal.json"
     assert (
@@ -190,3 +206,50 @@ def test_unreadable_sources_cannot_be_reported_as_an_empty_inventory(tmp_path, d
     finally:
         denied.chmod(0o600 if denied_kind == "file" else 0o700)
     assert source.read_text() == "keep inaccessible bytes"
+
+
+@pytest.mark.parametrize("directory", ["data", "data/corpus"])
+def test_source_write_check_covers_journal_and_catalog_destinations(tmp_path, directory):
+    """Journal and empty-catalog creation require host write access even without source files."""
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("Root bypasses the Unix write-permission fixture.")
+    (tmp_path / "data/corpus").mkdir(parents=True)
+    preview = source_preview(tmp_path)
+    denied = tmp_path / directory
+    denied.chmod(0o555)
+    try:
+        with pytest.raises(SourceAccessError) as caught:
+            check_source_write_access(tmp_path, preview)
+        assert denied in caught.value.paths
+    finally:
+        denied.chmod(0o755)
+
+
+def test_failed_source_rollback_preserves_journal_and_reports_unconfirmed_recovery(
+    tmp_path, monkeypatch, capsys
+):
+    """A restoration failure must not claim intact sources or silently leave the API stopped."""
+    corpus = tmp_path / "data/corpus"
+    write_selection_catalog(corpus)
+    target = {"port": "1", "apps": [], "volume": "fixture", "docker": ["docker"]}
+    monkeypatch.setattr(recreate.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(recreate, "local_target", lambda _: (target, {}))
+    monkeypatch.setattr(
+        recreate, "recreate", AsyncMock(side_effect=[{}, ValueError("rollback DB")])
+    )
+    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+
+    def fail_restore(self, **options):
+        """Model a filesystem error while leaving the real staging journal intact."""
+        raise PermissionError("fixture restore denied")
+
+    monkeypatch.setattr(SourceReset, "restore", fail_restore)
+    with pytest.raises(RuntimeError, match="Source recovery failed"):
+        recreate.run(tmp_path)
+    output = capsys.readouterr().err
+    assert "rollback could not be confirmed" in output
+    assert "database and sources are unchanged" not in output
+    assert "rag-dev up -d" in output
+    assert (tmp_path / "data/.schema-recreate-journal/journal.json").exists()

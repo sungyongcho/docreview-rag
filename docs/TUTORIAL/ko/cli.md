@@ -548,12 +548,23 @@ rag-fresh-start --sample
 설정·무관한 테이블·DB 볼륨·호스트 Ollama를 보존합니다. `--keep-sources`는 원문도 보존하고,
 `--sample`은 다운로드 없이 NVDA/AMD FY2023–2024 초안만 지정합니다. 두 옵션은 함께 쓸 수 없습니다.
 
-일반 경로는 더 넓은 웹 reset의 `runtime_file_permission` 미리보기를 사용하지 않습니다.
-Host에서도 원문을 읽지 못하면 거부된 경로와 부모 디렉터리에 대해 소유자가 실행할 정확한
-`setfacl` 명령을 보여 줍니다. 경로를 확인해 소유자가 권한을 부여한 뒤 읽기 전용 검사를 한 번
-다시 시도할 수 있습니다. CLI는 ACL을 자동 적용하거나 삭제를 자동 재시도하지 않습니다.
-원문 저널이 남았거나 DB 결과가 불확실하면 중단 상태를 유지하고, 저널을 보존한 채
-`rag-schema check`로 확인하세요.
+확인 문구를 받거나 API를 중지하기 전에 원문 읽기 권한과 원문 부모 디렉터리,
+`data/corpus`, 저널을 만드는 `data`의 쓰기·탐색 권한을 검사합니다. 컨테이너가 만든
+디렉터리는 읽을 수 있어도 파일 이동이 막힐 수 있습니다. 차단된 디렉터리를 모두 나열하고
+경로를 안전하게 인용한 `sudo setfacl -R -m u:<host-uid>:rwX -- <경로들>` 명령을
+보여 줍니다. 정확한 경로를 확인해 권한을 복구한 뒤 검사를 한 번 다시 시도할 수 있습니다.
+CLI는 ACL을 자동 적용하거나 삭제를 자동 재시도하지 않습니다. `--keep-sources`에는
+원문 디렉터리의 쓰기 권한이 필요하지 않습니다.
+
+API 중지 이후 실패하면 DB·원문이 그대로인지 또는 복원됐는지, 복구 결과가 불확실한지를
+구분하고, 빌드를 요청하지 않고 API를 복구하는 `rag-dev up -d`를 출력합니다. 컨테이너 ID만
+출력하지 않습니다. 저널이 남거나 DB 결과가 불확실하면
+`data/.schema-recreate-journal/journal.json`을 보존하고 `rag-schema check`로
+해당 경계를 확인한 뒤 다시 초기화하세요. 이미 커밋된 DB 초기화를 변경 없음으로 안내하지 않습니다.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=ko; theme=light; preserve existing screenshot assets. -->
 
 초기화가 완료돼야 `rag-dev up --build -d`와 readiness 확인을 실행하고 앱 주소와 양쪽 언어의
 [Web Quick Start 1단계](quickstart.md#qs-web-1)를 출력합니다. 빌드·준비 확인 실패 시 기존

@@ -245,6 +245,8 @@ class LocalConnectionManager:
                 mode="w", dir=self.path.parent, prefix=".local-llm-", delete=False
             ) as stream:
                 temporary = Path(stream.name)
+                # The local Compose app uses the host's primary group for host-readable settings.
+                os.fchmod(stream.fileno(), 0o640)
                 json.dump({"version": 2, **data}, stream)
                 stream.write("\n")
                 stream.flush()
