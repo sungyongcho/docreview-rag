@@ -121,6 +121,19 @@ export function HelpOverlay({ screen, open, keyboard = true, onClose, location, 
     };
   }, [open, keyboard]);
 
+  useEffect(() => {
+    if (!open || !keyboard) return;
+    /** A conversation click dismisses help without stealing focus from the clicked control. */
+    const outside = (event: PointerEvent) => {
+      const target = event.target;
+      if (modalOwnsFocus() || !(target instanceof Element) || !target.closest(".messages, .composer-wrap")) return;
+      skipFocusReturn.current = true;
+      onClose();
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open, keyboard, onClose]);
+
   /** Save a single home origin; related topics replace the same detail view. */
   function navigate(next: HelpPage) {
     if (next.kind !== "topic" || (page.kind === "topic" && next.topicId === page.topicId)) return;

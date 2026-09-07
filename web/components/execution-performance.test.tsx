@@ -117,3 +117,49 @@ describe("Measured execution performance", () => {
     expect(screen.getByText("관련 근거 선택", { selector: "span" })).toBeVisible();
   });
 });
+
+/** Provider-specific facts remain useful without rendering empty timing disclosures. */
+describe("Provider execution facts", () => {
+  it("shows OpenAI usage and retries with one provider timing explanation", () => {
+    showPerformance({ model_calls: [
+      { node: "gate", provider: "openai_responses", elapsed_ms: 250, attempts: 2, input_tokens: 110, output_tokens: 30, cached_input_tokens: 40, reasoning_tokens: 12, provider_timing: null, timing_unavailable_reason: "provider_does_not_report_timing" },
+      { node: "chat", provider: "openai_responses", elapsed_ms: 800, attempts: 1, provider_timing: null, timing_unavailable_reason: "provider_does_not_report_timing" },
+    ] });
+    expect(screen.queryByText(/Provider timing breakdown/)).toBeNull();
+    expect(screen.getAllByText("OpenAI does not report server-side timings.")).toHaveLength(1);
+    fireEvent.click(screen.getByText(/Understand the question · Token usage and retries/));
+    expect(fact("Cached input tokens")).toHaveTextContent("40");
+    expect(fact("Reasoning tokens")).toHaveTextContent("12");
+    expect(fact("Retries")).toHaveTextContent("1");
+    expect(screen.getByText("250ms")).toBeVisible();
+    expect(screen.getByText("800ms")).toBeVisible();
+  });
+
+  it("shows all four authoritative Ollama durations and collected placement", () => {
+    showPerformance({ local_placement: { placement: "mixed", model: "qwen3:8b", source: "ollama_api_ps" }, model_calls: [
+      { node: "grade", provider: "ollama", attempts: 1, provider_timing: [{ total_duration_ms: 2600, load_duration_ms: 100, prompt_eval_duration_ms: 500, eval_duration_ms: 2000, eval_count: 40 }] },
+    ] });
+    expect(fact("CPU / GPU placement")).toHaveTextContent("CPU + GPU");
+    expect(fact("CPU / GPU placement")).toHaveTextContent("qwen3:8b");
+    fireEvent.click(screen.getByText(/Select relevant evidence · Provider timing breakdown/));
+    expect(fact("Provider total time")).toHaveTextContent("2.6s");
+    expect(fact("Model loading")).toHaveTextContent("100ms");
+    expect(fact("Input processing")).toHaveTextContent("500ms");
+    expect(fact("Generation")).toHaveTextContent("2s");
+    expect(fact("Generated tokens / speed")).toHaveTextContent("40 / 20 tok/s");
+  });
+
+  it("hides empty timing objects and reports the collected placement failure reason", () => {
+    showPerformance({ local_placement: { reason: "model_not_loaded" }, model_calls: [{ provider: "ollama", provider_timing: [{}] }] });
+    expect(screen.queryByText(/Provider timing breakdown/)).toBeNull();
+    expect(screen.getByText("Ollama timing fields were not recorded for this call.")).toBeVisible();
+    expect(fact("CPU / GPU placement")).toHaveTextContent("The model was not loaded when Ollama placement was checked.");
+  });
+
+  it("renders embedded performance without a second settings or routing disclosure", () => {
+    render(<ExecutionPerformance embedded state={state} data={{ total_elapsed_ms: 90, effective_settings: { engine: "openai" } }} />);
+    expect(screen.getByText("90ms")).toBeVisible();
+    expect(screen.queryByText("Execution performance")).toBeNull();
+    expect(screen.queryByText("Server-applied settings")).toBeNull();
+  });
+});

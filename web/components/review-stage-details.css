@@ -1,0 +1,14 @@
+.review-progress-steps li { position: relative; }
+.review-progress-steps .review-stage-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; padding: 0; background: transparent; color: inherit; cursor: pointer; }
+.review-progress-steps .review-stage-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.review-stage-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.review-stage-details { max-height: 360px; overflow: auto; font-size: 12px; overflow-wrap: anywhere; }
+.review-stage-details dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0; }
+.review-stage-details dt { color: var(--muted); font-size: 11px; }
+.review-stage-details dd { margin: 4px 0 0; }
+.review-stage-details pre { margin: 0; white-space: pre-wrap; font-size: 11px; }
+.review-stage-details table { width: 100%; font-size: 11px; text-align: left; }
+.review-stage-details th, .review-stage-details td { padding: 5px; border-bottom: 1px solid var(--border); }
+.review-stage-details h4 { margin: 12px 0 6px; font-size: 12px; }
+.review-stage-details .review-stage-skip { color: var(--phase-warning); }
+.review-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

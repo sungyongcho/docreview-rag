@@ -1,6 +1,5 @@
 "use client";
 
-import { RoutingSummary } from "@/components/review-progress";
 import { useI18n } from "@/lib/i18n";
 import type { ReviewExecution } from "@/lib/types";
 import "./performance.css";
@@ -12,7 +11,13 @@ interface ModelCall {
   elapsed_ms?: number | null;
   input_tokens?: number | null;
   output_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  cache_write_input_tokens?: number | null;
+  reasoning_tokens?: number | null;
+  provider?: string;
+  timing_unavailable_reason?: string | null;
   local_timings?: Array<Record<string, number | null>>;
+  provider_timing?: Array<Record<string, number | null>> | null;
 }
 interface StageTiming { node?: string; phase?: string; elapsed_ms?: number | null; status?: string }
 
@@ -48,8 +53,22 @@ function durationBar(value: number, longest: number): string {
   return `[${"#".repeat(filled)}${".".repeat(BAR_WIDTH - filled)}]`;
 }
 
+/** Prefer the explicit contract while accepting historical Ollama timing records. */
+function providerTimings(call: ModelCall) {
+  const records = call.provider_timing ?? call.local_timings ?? [];
+  return records.filter((record) => ["total_duration_ms", "load_duration_ms", "prompt_eval_duration_ms", "eval_duration_ms", "eval_count"].some((field) => collectedNumber(record[field])));
+}
+
+/** Show one provider-specific reason instead of an empty disclosure for each call. */
+function timingReason(call: ModelCall): string | null {
+  if (providerTimings(call).length) return null;
+  if (["openai", "openai_responses"].includes(call.provider ?? "")) return "OpenAI does not report server-side timings.";
+  if (call.provider === "ollama" || call.timing_unavailable_reason === "ollama_timing_not_recorded") return "Ollama timing fields were not recorded for this call.";
+  return null;
+}
+
 /** Display measured execution in recorded order while keeping optional legacy data explicit. */
-export function ExecutionPerformance({ data, state }: { data?: Record<string, unknown>; state: ReviewExecution }) {
+export function ExecutionPerformance({ data, state, embedded = false }: { data?: Record<string, unknown>; state: ReviewExecution; embedded?: boolean }) {
   const { t, locale } = useI18n();
   const callsCollected = Array.isArray(data?.model_calls);
   const calls = (callsCollected ? data.model_calls : []) as ModelCall[];
@@ -65,15 +84,22 @@ export function ExecutionPerformance({ data, state }: { data?: Record<string, un
   const sequenceWidth = Math.max(2, String(stages.length).length);
   const ascii = measured.map((stage) => `${String(stage.order).padStart(sequenceWidth, "0")} [${(STATUS_CODES[stage.status ?? ""] ?? "?").padEnd(4)}] ${(stage.node ?? "?").padEnd(nodeWidth)} ${durationBar(stage.elapsed_ms, longest)} ${duration(stage.elapsed_ms)}`).join("\n");
 
-  return <details className="execution-performance">
-    <summary>{t("Execution performance")}</summary>
-    <div className="performance-content">
-      <RoutingSummary state={state} />
+  const placement = data?.local_placement as { placement?: string; model?: string; reason?: string } | null | undefined;
+  const placementLabels: Record<string, string> = { cpu: "CPU", gpu: "GPU", mixed: "CPU + GPU" };
+  const placementReasons: Record<string, string> = {
+    provider_does_not_report_placement: "This provider does not report CPU / GPU placement.",
+    model_not_loaded: "The model was not loaded when Ollama placement was checked.",
+    ollama_memory_fields_unavailable: "Ollama did not report the memory fields needed for placement.",
+    ollama_placement_unavailable: "Ollama placement could not be checked after this run.",
+  };
+  const placementLabel = placement?.placement ? placementLabels[placement.placement] : undefined;
+  const reasons = [...new Set(calls.map(timingReason).filter((reason): reason is string => reason !== null))];
+  const content = <div className="performance-content">
       <dl className="performance-facts">
         <div><dt>{t("Request time")}</dt><dd>{duration(state.elapsedMs)}</dd></div>
         <div><dt>{t("Server execution")}</dt><dd>{duration(data?.total_elapsed_ms)}</dd></div>
         <div><dt>{t("Model calls / attempts")}</dt><dd>{callsCollected ? `${count(calls.length)} / ${count(attempts)}` : missing}</dd></div>
-        <div><dt>{t("CPU / GPU placement")}</dt><dd>{missing}</dd></div>
+        <div><dt>{t("CPU / GPU placement")}</dt><dd>{placementLabel ?? (placement?.reason && placementReasons[placement.reason] ? t(placementReasons[placement.reason]) : missing)}{placementLabel && placement?.model && <code className="performance-identifier">{placement.model}</code>}</dd></div>
       </dl>
 
       <section className="performance-section">
@@ -105,24 +131,41 @@ export function ExecutionPerformance({ data, state }: { data?: Record<string, un
               <td className="performance-number">{count(call.attempts)}</td><td className="performance-number">{count(call.input_tokens)}</td><td className="performance-number">{count(call.output_tokens)}</td>
             </tr>)}</tbody>
           </table></div>
-          {calls.map((call, index) => <details className="performance-provider" key={index}>
-            <summary><span className="performance-order">{String(index + 1).padStart(2, "0")}</span> {stageLabel(call.node)} · {t("Provider timing breakdown")}</summary>
-            {call.local_timings?.length ? call.local_timings.map((timing, record) => {
-              const speed = collectedNumber(timing.eval_count) && timing.eval_count > 0 && collectedNumber(timing.eval_duration_ms) && timing.eval_duration_ms > 0 ? timing.eval_count / timing.eval_duration_ms * 1000 : undefined;
-              return <div className="performance-timing-record" key={record}>
-                <p className="helper">{t("Timing record {number}", { number: record + 1 })}</p>
+          {reasons.map((reason) => <p className="helper" key={reason}>{t(reason)}</p>)}
+          {calls.map((call, index) => {
+            const timings = providerTimings(call);
+            const usage = [["Cached input tokens", call.cached_input_tokens], ["Cache write input tokens", call.cache_write_input_tokens], ["Reasoning tokens", call.reasoning_tokens]] as const;
+            const collectedUsage = usage.filter(([, value]) => collectedNumber(value));
+            const retries = collectedNumber(call.attempts) && call.attempts > 0 ? call.attempts - 1 : undefined;
+            return <div key={index}>
+              {(collectedUsage.length > 0 || (retries !== undefined && retries > 0)) && <details className="performance-provider">
+                <summary><span className="performance-order">{String(index + 1).padStart(2, "0")}</span> {stageLabel(call.node)} · {t("Token usage and retries")}</summary>
                 <dl className="performance-facts">
-                  <div><dt>{t("Model loading")}</dt><dd>{duration(timing.load_duration_ms)}</dd></div>
-                  <div><dt>{t("Input processing")}</dt><dd>{duration(timing.prompt_eval_duration_ms)}</dd></div>
-                  <div><dt>{t("Generation")}</dt><dd>{duration(timing.eval_duration_ms)}</dd></div>
-                  <div><dt>{t("Generated tokens / speed")}</dt><dd>{count(timing.eval_count)} / {collectedNumber(speed) ? `${speed.toLocaleString(locale, { maximumFractionDigits: 1 })} tok/s` : missing}</dd></div>
+                  {collectedUsage.map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{count(value)}</dd></div>)}
+                  {retries !== undefined && <div><dt>{t("Retries")}</dt><dd>{count(retries)}</dd></div>}
                 </dl>
-              </div>;
-            }) : <p className="helper">{t("Provider timing breakdown was not collected.")}</p>}
-          </details>)}
+              </details>}
+              {timings.length > 0 && <details className="performance-provider">
+                <summary><span className="performance-order">{String(index + 1).padStart(2, "0")}</span> {stageLabel(call.node)} · {t("Provider timing breakdown")}</summary>
+                {timings.map((timing, record) => {
+                  const speed = collectedNumber(timing.eval_count) && timing.eval_count > 0 && collectedNumber(timing.eval_duration_ms) && timing.eval_duration_ms > 0 ? timing.eval_count / timing.eval_duration_ms * 1000 : undefined;
+                  return <div className="performance-timing-record" key={record}>
+                    <p className="helper">{t("Timing record {number}", { number: record + 1 })}</p>
+                    <dl className="performance-facts">
+                      <div><dt>{t("Provider total time")}</dt><dd>{duration(timing.total_duration_ms)}</dd></div>
+                      <div><dt>{t("Model loading")}</dt><dd>{duration(timing.load_duration_ms)}</dd></div>
+                      <div><dt>{t("Input processing")}</dt><dd>{duration(timing.prompt_eval_duration_ms)}</dd></div>
+                      <div><dt>{t("Generation")}</dt><dd>{duration(timing.eval_duration_ms)}</dd></div>
+                      <div><dt>{t("Generated tokens / speed")}</dt><dd>{count(timing.eval_count)} / {collectedNumber(speed) ? `${speed.toLocaleString(locale, { maximumFractionDigits: 1 })} tok/s` : missing}</dd></div>
+                    </dl>
+                  </div>;
+                })}
+              </details>}
+            </div>;
+          })}
         </> : <p className="helper">{callsCollected ? count(0) : missing}</p>}
       </section>
-      <details className="performance-settings"><summary>{t("Server-applied settings")}</summary>{data?.effective_settings ? <pre>{JSON.stringify(data.effective_settings, null, 2)}</pre> : <p className="helper">{missing}</p>}</details>
-    </div>
-  </details>;
+      {!embedded && <details className="performance-settings"><summary>{t("Server-applied settings")}</summary>{data?.effective_settings ? <pre>{JSON.stringify(data.effective_settings, null, 2)}</pre> : <p className="helper">{missing}</p>}</details>}
+    </div>;
+  return embedded ? <div className="execution-performance">{content}</div> : <details className="execution-performance"><summary>{t("Execution performance")}</summary>{content}</details>;
 }
