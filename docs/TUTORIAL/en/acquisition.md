@@ -2,17 +2,30 @@
 
 ## Reference acquisition scope
 
-The initial draft reflects primary sources actually on disk. With no sources it is empty; `schema_status recreate --sample` explicitly presets **NVDA, AMD**, FY**2023, 2024**, without downloading. Company choices come from the current manifest and remain available before ingestion; the reference manifest includes: SEC offers NVDA, AMD, INTC and MU; DART offers Samsung Electronics (005930), SK hynix (000660) and NAVER (035420). Choose companies from one combined list. SEC and DART use distinct colored text badges; there is no registry tab. A mixed selection queues one source-specific acquisition job per registry and retains their explicit selections in the common manifest.
+The initial selection uses the exact company/year pairs actually on disk, without inventing
+cross-company combinations. With no sources it is empty; `schema_status recreate --sample`
+explicitly presets **NVDA, AMD**, FY**2023, 2024**, without downloading.
 
-The suggested five-year test range is **2020–2024**. Suggestions do not add years automatically, and a year being selectable does not guarantee that the provider has published the requested filing. The displayed filing count counts available primary documents, not archive files or overlapping processing selections.
+The company × year matrix is both the inventory and the selector. SEC and DART have separate
+sections, companies are sorted by code, and year chips are ascending. Filled chips are on disk;
+outlined chips need sources. The selection border and `aria-pressed` state identify selected years.
+A row checkbox selects or clears that company's years. Large sections offer **Show all companies**.
+Catalog names take precedence; otherwise one consistent name comes from the source records.
 
-Source acquisition can proceed while corpus schema drift blocks indexing, provided source storage and tracked-job storage are available. Read the separate schema diagnosis rather than changing HOST_GID for a schema problem. After acquisition completes, Parse & chunk automatically continues from these companies and fiscal years.
+The summary counts selected documents on disk, selected years needing downloads and on-disk
+unselected documents. A year with multiple source documents shows its ready/total count.
+Use **Select everything on disk** or **Clear selection** to change the draft explicitly; neither
+removes files. Enter a company code and year/range under the add controls for a new combination.
+An existing combination is focused instead of duplicated; use its chip to change selection.
 
-Company and year suggestions open directly below the active input, above nearby hints and quick-add controls. Select SEC and DART companies together in that same list; source badges identify each selection.
+Source acquisition can proceed while schema drift blocks indexing, provided source storage and
+tracked-job storage are available. After downloading, Parse & chunk receives the same exact
+company/year pairs. Companies with different selected years are submitted separately so no
+extra combinations are processed.
 
 ### SCREENSHOT NEEDED
 
-<!-- SCREENSHOT NEEDED: feature=mixed-company-picker-and-input-anchored-overlays; locale=en; theme=light; capture=seven-company-options-source-badges-and-year-overlay; issue=17; preserve-existing-assets=true -->
+<!-- SCREENSHOT NEEDED: feature=company-year-inventory-selector; locale=en; theme=light; capture=selected-and-unselected-ready-and-missing-chips-row-checkboxes-download-plan; issue=94; preserve-existing-assets=true -->
 
 **Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
 
@@ -28,37 +41,34 @@ environment does not need another download.
 
 - **Goal:** define the source reports you intend to prepare.
 - **Prerequisites:** [environment checks](environment.md#step-1) complete; know which reports are missing.
-- **Screen:** Build → Pipeline → Filings → Change….
+- **Screen:** Build → Pipeline → Filings → company/year matrix.
 - **Inputs:** choose `NVDA` and `2024`, or `005930` and `2024` for a Korean report. Both sources can be selected together.
   The year is the report's fiscal year, not necessarily its publication year.
-- **Primary action:** select the company and year chips. This configures the form without downloading.
-- **Visible result:** each accepted identifier and year appears as a removable chip; the terminal
-  reference reflects the same values.
+- **Primary action:** toggle year chips or company checkboxes; use the add controls for absent pairs.
+- **Visible result:** selected chips are highlighted, and the download plan lists only selected missing years.
 - **Completion:** companies and years describe the intended source, with no invalid draft left.
-- **Recovery:** keep an invalid draft visible, correct the highlighted token, and press Enter. For source
+- **Recovery:** correct invalid add-control text, then select **Add to selection**. For source
   credentials or unavailable reports, see [acquisition failures](troubleshooting.md).
 - **Next:** [download missing sources](#step-4), or [parse existing sources](indexing.md#step-5).
 
-Search existing companies by identifier or name. Labels use names supplied by actual source metadata;
-missing or conflicting names fall back to the identifier. Selecting a name still submits its stable code.
-Multiple identifiers can be pasted together. Remove an unwanted chip individually.
-
-Years must have four digits. An ascending range such as `2023-2025` expands to individual years;
-the input accepts at most 50 years and removes duplicates. Invalid text remains visible and disables
-acquisition. Finish or correct it before pressing the action button, including after leaving the field.
+The stable company code is always visible. Add controls accept SEC tickers and six-digit DART
+codes, including several codes separated by commas. Enter four-digit years or an ascending range
+such as `2023-2025` (up to 50 years). Invalid text stays visible and prevents acquisition until fixed.
+Existing chips remain the primary selector; typing an existing company/year does not select it.
 
 <!-- capture:04-sec-inputs -->
 
 ![Valid SEC company and fiscal-year chips with the Download missing filings action.](../assets/04-sec-inputs.en.jpg)
 
-*Valid SEC company and fiscal-year chips with the Download missing filings action. Existing NVDA/AMD and FY2023/FY2024 inputs are shown; no download was started. Used for steps 3 and 4.*
+*Historical screenshot of the previous separate company/year inputs. The new matrix still needs a verified capture; this image is not evidence of its layout.*
 
 ## 4. Download only missing filings {#step-4}
 
 - **Goal:** make the required original files available for parsing.
 - **Prerequisites:** valid selections from step 3 and the [source credentials](#sources).
 - **Screen:** Build → Pipeline → Filings, selected-stage execution panel.
-- **Inputs:** recheck the source, identifiers, years, and manifest scope shown above the action.
+- **Inputs:** recheck **Download plan**, grouped by SEC/DART. Only selected missing years are submitted.
+  Credential notes appear only for registries with missing selections; the button is disabled when none are missing.
 - **Primary action:** **Download missing filings**.
 - **Visible result:** a queued or running job appears. Open Build → Jobs to read progress and the actual result.
   Preparation status updates automatically when the job finishes; no manual refresh is needed.
@@ -89,11 +99,8 @@ See [the implementation map](architecture.md) for those boundaries.
 
 ## Downloaded state and the current selection
 
-**Downloaded sources** lists registry → company → fiscal year and on-disk counts, separately from **Change…**. The draft shows selected sources already on disk, missing company/year pairs, and downloaded sources excluded by the draft. Editing the draft never removes downloaded files. A step is done only when the current nonempty selection is fully present; an empty draft or missing source remains actionable.
-
-After Download finishes, the inventory refreshes. An untouched draft automatically reconciles with the new disk inventory. If you have edited it, your choice stays and **Sync draft with downloaded sources** explicitly replaces it with the downloaded company/year scope when inventory changes. Return from Parse & chunk with **Change selection in Filings**. A clean start uses `uv run python -m scripts.schema_status recreate`; `--sample` presets the sample, while `--keep-sources` preserves sources. Compare its scope with the broader `rag-fresh-start` in the [CLI guide](cli.md).
-
-### SCREENSHOT NEEDED
-<!-- Feature: downloaded sources grouped by registry/company/year, separate draft and missing/excluded delta; locale=en; light mode; capture empty and completed current selection. Preserve existing assets. -->
-
-Existing screenshots show the previous draft summary, not proof of the new downloaded-state list.
+Inventory refreshes update disk status without overwriting an edited selection. Use **Select
+everything on disk** to adopt the current downloaded set explicitly. **Clear selection** leaves
+all files intact. Return from Parse & chunk with **Change selection in Filings**. A clean start uses
+`uv run python -m scripts.schema_status recreate`; `--sample` presets the sample and
+`--keep-sources` preserves files. Compare reset scopes in the [CLI guide](cli.md).

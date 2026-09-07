@@ -6,8 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
-import { acquisitionGroups } from "@/lib/acquisition-catalog";
-import { BuildPipeline, splitList, type AcquisitionForm } from "@/components/build-pipeline";
+import { BuildPipeline, type AcquisitionForm } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
 import { JobCenter } from "@/components/job-center";
 import { useNotifications } from "@/components/notifications";
@@ -24,7 +23,7 @@ import {
 import { CANNED_CORPUS, CANNED_JOB } from "@/lib/canned";
 import { deploymentLabel } from "@/lib/deployment";
 import { derivePipeline } from "@/lib/pipeline";
-import { selectedSourceState } from "@/lib/source-selection";
+import { acquisitionBatches, acquisitionDraft, selectedSourceState } from "@/lib/source-selection";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type {
   CorpusDocument,
@@ -105,24 +104,18 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
 
   const draftInitialized = useRef(false);
   const draftDirty = useRef(false);
-  const previousSources = useRef("");
-  const [draftSyncAvailable, setDraftSyncAvailable] = useState(false);
   const serverDraft = useMemo<AcquisitionForm>(() => {
     const present = (corpus?.sources ?? []).filter((row) => row.on_disk);
     const draft = corpus?.acquisition_draft;
-    return { identifiers: (draft?.identifiers ?? [...new Set(present.map((row) => row.issuer))]).join(" "), years: (draft?.years ?? [...new Set(present.map((row) => row.fiscal_year))]).join(" ") };
+    if (present.length) return acquisitionDraft(present.map((row) => ({ registry: row.registry, issuer: row.issuer, year: row.fiscal_year })));
+    return draft ? { identifiers: draft.identifiers.join(" "), years: draft.years.join(" ") } : acquisitionDraft([]);
   }, [corpus]);
   useEffect(() => {
     if (!corpus) return;
-    const signature = JSON.stringify([corpus.sources ?? [], serverDraft]);
     if (!draftInitialized.current || !draftDirty.current) {
       setAcquisition(serverDraft);
-      setDraftSyncAvailable(false);
       draftInitialized.current = true;
-    } else if (previousSources.current !== signature) {
-      setDraftSyncAvailable(true);
     }
-    previousSources.current = signature;
   }, [corpus, serverDraft]);
 
   useEffect(() => {
@@ -214,15 +207,19 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     if (!live) return;
     const selection = selectedSourceState(corpus?.sources ?? [], acquisition);
     if (!selection.complete) { notify(t("Download missing sources in Filings first."), "warning", "corpus-operation"); return; }
-    const ordered = [{ identifiers: splitList(acquisition.identifiers), years: splitList(acquisition.years).map(Number) }];
+    const ordered = acquisitionBatches(selection.pairs);
     if (!ordered.length) { notify(t("Select processing sources first."), "warning", "corpus-operation"); return; }
     setBusy(true);
+    let queued = 0;
     try {
-      for (const item of ordered) await queueCorpusOperation({ kind: "ingest_selected", ...item });
-      onRefreshJobs();
+      for (const item of ordered) {
+        await queueCorpusOperation({ kind: "ingest_selected", identifiers: item.identifiers, years: item.years });
+        queued += 1;
+        onRefreshJobs();
+      }
       notify(t("Selections queued for ingest: {count}.", { count: ordered.length.toLocaleString(locale) }), "success", "corpus-operation");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
+      notify(t("Indexing stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation");
     } finally {
       setBusy(false);
     }
@@ -249,9 +246,9 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     setBusy(true);
     let queued = 0;
     try {
-      const years = splitList(acquisition.years).map(Number).filter(Number.isInteger);
-      for (const group of acquisitionGroups(splitList(acquisition.identifiers), referenceCompanies)) {
-        await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years });
+      const missing = selectedSourceState(corpus?.sources ?? [], acquisition).missingPairs;
+      for (const group of acquisitionBatches(missing)) {
+        await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years: group.years });
         queued += 1;
         onRefreshJobs();
       }
@@ -355,7 +352,6 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         acquisition={acquisition}
         companies={referenceCompanies}
         onAcquisitionChange={(next) => { draftDirty.current = true; setAcquisition(next); }}
-        onSyncAcquisition={draftSyncAvailable ? () => { draftDirty.current = false; setAcquisition(serverDraft); setDraftSyncAvailable(false); } : undefined}
         sources={corpus?.sources ?? []}
         manifests={manifests}
         selectedSources={selectedSources}

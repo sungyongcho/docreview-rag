@@ -416,7 +416,7 @@ describe("preparation refresh after corpus jobs", () => {
 });
 
 
-it("queues the committed acquisition after editing focused token fields", async () => {
+it("queues exactly the selected company years after changing matrix cells", async () => {
   const onRefreshJobs = vi.fn();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -428,8 +428,8 @@ it("queues the committed acquisition after editing focused token fields", async 
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} onRefreshJobs={onRefreshJobs} />);
   await screen.findByText("0 / 4 filings on disk");
-  fireEvent.click(screen.getByRole("button", { name: /^Remove AMD/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Remove 2023" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /^Select all years for AMD/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^NVDA FY2023/ }));
   const years = screen.getByRole("textbox", { name: "Fiscal years" });
   const download = screen.getByRole("button", { name: "Download missing filings" });
   fireEvent.focus(years);
@@ -477,12 +477,14 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
   }));
   render(<NotificationProvider><Harness live ready={false} /></NotificationProvider>);
   await screen.findByText("0 / 4 filings on disk");
-  fireEvent.paste(screen.getByRole("textbox", { name: "Tickers / stock codes" }), { clipboardData: { getData: () => "005930,000660" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Tickers / stock codes" }), { target: { value: "005930,000660" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Fiscal years" }), { target: { value: "2023-2024" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add to selection" }));
   fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
   await waitFor(() => expect(submitted).toHaveLength(2));
   expect(submitted).toEqual([
-    { kind: "acquire_edgar", identifiers: ["NVDA", "AMD"], years: [2023, 2024] },
-    { kind: "acquire_dart", identifiers: ["005930", "000660"], years: [2023, 2024] },
+    { kind: "acquire_edgar", identifiers: ["AMD", "NVDA"], years: [2023, 2024] },
+    { kind: "acquire_dart", identifiers: ["000660", "005930"], years: [2023, 2024] },
   ]);
   if (failDart) expect(await screen.findByText(/Acquisition stopped after 1 queued jobs/)).toBeInTheDocument();
 });
@@ -501,26 +503,26 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live />);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
-  await screen.findByText("No downloaded sources.");
-  expect(screen.queryByRole("button", { name: /^Remove NVDA/ })).not.toBeInTheDocument();
+  await screen.findByText("No sources yet. Add a company and fiscal year below.");
+  expect(screen.queryByRole("button", { name: /^NVDA FY/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
   preset = { identifiers: ["NVDA", "AMD"], years: [2023, 2024] };
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await screen.findByRole("button", { name: /^Remove NVDA/ });
+  await screen.findByRole("checkbox", { name: /^Select all years for NVDA/ });
   expect(screen.getByText("0 / 4 filings on disk")).toBeInTheDocument();
   sources = sourceRows;
   preset = null;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText("4 / 4 filings on disk");
-  fireEvent.click(screen.getByRole("button", { name: /^Remove AMD/ }));
-  expect(screen.getByText(/On disk but not selected: 2/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox", { name: /^Select all years for AMD/ }));
+  expect(screen.getByText(/On disk not selected: 2/)).toBeInTheDocument();
   sources = sourceRows.filter((row) => row.document_id !== "NVDA-FY2023");
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await screen.findByRole("button", { name: "Sync draft with downloaded sources" });
-  expect(screen.queryByRole("button", { name: /^Remove AMD/ })).not.toBeInTheDocument();
-  expect(screen.getByText("To download: NVDA FY2023")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Sync draft with downloaded sources" }));
-  expect(screen.getByRole("button", { name: /^Remove AMD/ })).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2023/ })).toHaveTextContent("Missing source"));
+  expect(screen.getByRole("checkbox", { name: /^Select all years for AMD/ })).not.toBeChecked();
+  expect(screen.getByRole("region", { name: "Download plan" })).toHaveTextContent("NVDA FY2023");
+  fireEvent.click(screen.getByRole("button", { name: "Select everything on disk" }));
+  expect(screen.getByRole("checkbox", { name: /^Select all years for AMD/ })).toBeChecked();
   expect(screen.queryByRole("button", { name: "Sync draft with downloaded sources" })).not.toBeInTheDocument();
 });
 
@@ -583,4 +585,38 @@ describe("refresh hygiene", () => {
     rerender(<Harness live jobBoard={board([corpusJob, { ...corpusJob, job_id: "eval-1", domain: "evaluation", kind: "quick" }])} />);
     await waitFor(() => expect(runsCalls()).toBe(before + 1));
   });
+});
+
+
+it.each([false, true])("queues exact sparse pairs and reports partial indexing submission: %s", async (failIndex) => {
+  const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: !(issuer === "NVDA" && year === 2024) })));
+  const submitted: Array<Record<string, unknown>> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") { const body = JSON.parse(String(init.body)); submitted.push(body); if (failIndex && body.kind === "ingest_selected" && body.identifiers[0] === "NVDA") return new Response(JSON.stringify({ error: { code: "unavailable", message: "Indexing unavailable" } }), { status: 503 }); return jsonResponse({ job_id: String(submitted.length), status: "queued" }); }
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, sources, status: { ...CANNED_CORPUS.status, writable: true, database_connected: true, schema_status: "compatible" } });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  }));
+  render(<NotificationProvider><Harness live /></NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  await screen.findByRole("button", { name: /^NVDA FY2024/ });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Clear selection" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  fireEvent.click(screen.getByRole("button", { name: /^AMD FY2023/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^NVDA FY2024/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
+  await waitFor(() => expect(submitted).toEqual([{ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] }]));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
+  sources.find((row) => row.issuer === "NVDA" && row.fiscal_year === 2024)!.on_disk = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2024/ })).toHaveTextContent("On disk"));
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
+  await waitFor(() => expect(submitted.slice(1)).toEqual([
+    { kind: "ingest_selected", identifiers: ["AMD"], years: [2023] },
+    { kind: "ingest_selected", identifiers: ["NVDA"], years: [2024] },
+  ]));
+  if (failIndex) expect(await screen.findByText(/Indexing stopped after 1 queued jobs/)).toBeInTheDocument();
+  cleanup(); vi.unstubAllGlobals();
 });
