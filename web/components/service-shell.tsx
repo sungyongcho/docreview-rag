@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
 import { GuidesNavigation } from "@/components/guides-navigation";
+import type { DisclosureStage } from "@/components/review-stage-details";
 import { RunDetailsPanel } from "@/components/run-details-panel";
 import { EvidenceCandidates } from "@/components/evidence-candidates";
 import { LanguageSwitch } from "@/lib/i18n";
@@ -135,6 +136,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
+  const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
   const [profile, setProfile] = useState<ReviewSessionDraft>(DEFAULT_SESSION_PROFILE);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -825,7 +827,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     : null;
 
   /** Keep the question visible beside one selected run without changing conversation state. */
-  function openRunDetails(messageId: string) {
+  function openRunDetails(messageId: string, stage?: DisclosureStage) {
+    setRunDetailsStage({ stage: stage ?? null });
     setHelp(false);
     setRunDetailsMessageId(messageId);
   }
@@ -957,7 +960,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   onSwitchScope={!busy ? () => { updateSessionProfile({ corpus_scope: "auto" }); setQuery(message.question ?? ""); } : undefined}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
-                  onOpenDetails={() => openRunDetails(message.id)}
+                  onOpenDetails={(stage) => openRunDetails(message.id, stage)}
                 />
               ))}
 
@@ -1055,7 +1058,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       </section>
       <SettingsModal open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <RunDetailsPanel message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
+      <RunDetailsPanel stageRequest={runDetailsStage} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
@@ -1079,7 +1082,7 @@ interface ReviewMessageProps {
   catalogMode?: "live" | "published";
   onStop?: () => void;
   onSwitchScope?: () => void;
-  onOpenDetails?: () => void;
+  onOpenDetails?: (stage?: DisclosureStage) => void;
   /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
   latestEvidence: boolean;
   busy: boolean;
@@ -1129,7 +1132,7 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
             </details>
           </>
         ) : null}
-        {message.role === "assistant" && (message.execution || message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={onOpenDetails}>{t("Run details")}</button>}
+        {message.role === "assistant" && (message.execution || message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={() => onOpenDetails()}>{t("Run details")}</button>}
       </div>
     </article>
   );

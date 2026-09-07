@@ -7,7 +7,7 @@
 .review-progress-steps li.review-stage-selected:is(.cancelled, .skipped)::after { background: var(--phase-warning); }
 .review-stage-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .review-stage-panel > .review-unrecorded { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
-.review-stage-details { container-type: inline-size; font-size: 12px; overflow-wrap: anywhere; display: grid; gap: 8px; }
+.review-stage-details { min-width: 0; container-type: inline-size; font-size: 12px; overflow-wrap: anywhere; display: grid; gap: 8px; }
 .review-stage-details .review-stage-fields { display: grid; grid-auto-flow: row dense; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 6px 10px; margin: 0; }
 .review-stage-details dt { color: var(--muted); font-size: 11px; }
 .review-stage-details dd { margin: 3px 0 0; min-width: 0; }
@@ -18,8 +18,8 @@
 .review-stage-details .review-value-chip { display: inline-block; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; max-width: 100%; }
 .review-stage-details .review-value-chip.registry { font-size: 11px; font-weight: 600; }
 .review-stage-details .review-value-empty, .review-stage-details .review-value-missing, .review-stage-details .review-unrecorded { color: var(--muted); }
-.review-stage-details .review-recorded-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; text-align: left; }
-.review-stage-details th, .review-stage-details td { padding: 4px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.review-stage-details .review-recorded-table { width: 100%; table-layout: auto; border-collapse: collapse; font-size: 11px; text-align: left; }
+.review-stage-details th, .review-stage-details td { padding: 4px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: normal; white-space: nowrap; }
 .review-stage-details caption { text-align: left; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
 .review-stage-details h4 { margin: 0 0 5px; font-size: 12px; }
 .review-stage-details p { margin: 0; }
@@ -28,3 +28,18 @@
 .review-stage-details .review-recorded-more > summary { cursor: pointer; color: var(--muted); font-size: 11px; }
 .review-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 @container (max-width: 290px) { .review-stage-details .review-field-wide { grid-column: span 1; } }
+
+.review-progress-heading .review-stage-actions { margin: 0 0 0 auto; }
+.review-stage-details > section { min-width: 0; }
+.review-stage-details .review-recorded-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+.review-stage-details .review-recorded-table { min-width: max-content; }
+.review-stage-details .review-value-chip.citation { white-space: nowrap; }
+.review-stage-details .review-node-code { display: block; font: 10px/1.6 ui-monospace, monospace; color: var(--muted); }
+.review-stage-details .review-number { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.review-stage-details .review-recorded-status { display: block; }
+.review-stage-details .review-recorded-status.is-complete { color: var(--good); }
+.review-stage-details .review-recorded-status.is-failed { color: var(--bad); }
+.review-stage-details .review-recorded-pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 6px; }
+.review-stage-details .review-recorded-pager button { display: inline-flex; }
+.review-stage-details .review-recorded-disclosure > summary, .review-stage-details .review-timing-groups summary { cursor: pointer; }
+.review-stage-details .review-recorded-disclosure > summary { margin-bottom: 6px; font-weight: 600; }

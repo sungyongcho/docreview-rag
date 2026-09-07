@@ -163,7 +163,7 @@ export function WaitingGlyph() {
   return <span className="waiting-glyph" aria-hidden="true">◐</span>;
 }
 
-export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLabel, catalogMode, onOpenDetails, onShowEvidence }: { catalogMode?: CompanyCatalogMode; state: ReviewProgressState; onSwitchScope?: () => void; performance?: Record<string, unknown>; finalLabel?: string; onOpenDetails?: () => void; onShowEvidence?: () => void }) {
+export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLabel, catalogMode, onOpenDetails, onShowEvidence }: { catalogMode?: CompanyCatalogMode; state: ReviewProgressState; onSwitchScope?: () => void; performance?: Record<string, unknown>; finalLabel?: string; onOpenDetails?: (stage?: DisclosureStage) => void; onShowEvidence?: () => void }) {
   const { t, locale } = useI18n();
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState<DisclosureStage | null>(null);
@@ -192,7 +192,7 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const status = state.outcome ?? "running";
   const announcement = status === "completed" ? "Execution complete" : status === "failed" ? "Stopped after the last reported step" : status === "cancelled" ? "Request cancelled" : state.node === "waiting" ? "Waiting for the server" : chat ? "Replying…" : REVIEW_STEPS[current]?.label ?? "Waiting for the server";
   return <div className={`review-progress ${status}`} role="status" aria-live="polite">
-    <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}</div>
+    <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}<div className="review-stage-actions">{onShowEvidence && <button type="button" onClick={onShowEvidence}>{t("Show evidence")}</button>}{onOpenDetails && <button type="button" data-run-details-open onClick={() => onOpenDetails(openStage ?? undefined)}>{t("Open run details")}</button>}</div></div>
     <ol className="review-progress-steps" aria-label={t("Evidence review progress")}>
       <li className={stageClass("path", pathPhase)}>
         {toggle("path", "Path decision", pathPhase)}
@@ -208,7 +208,7 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
         </li>;
       })}
     </ol>
-    <section id={`${disclosureId}-panel`} hidden={!openStage} role="region" aria-labelledby={openStage ? `${disclosureId}-${openStage}` : undefined} className="review-stage-panel">{openStage && <ReviewStageDetails stage={openStage} companyLabels={names.labels} state={state} performance={performance} finalLabel={finalLabel} onOpenDetails={onOpenDetails} onShowEvidence={onShowEvidence} />}{needsCompanyNames && names.failed && <p className="review-unrecorded">{t("Company names are unavailable. Original company codes are shown.")}</p>}</section>
+    <section id={`${disclosureId}-panel`} hidden={!openStage} role="region" aria-labelledby={openStage ? `${disclosureId}-${openStage}` : undefined} className="review-stage-panel">{openStage && <ReviewStageDetails stage={openStage} companyLabels={names.labels} state={state} performance={performance} finalLabel={finalLabel} />}{needsCompanyNames && names.failed && <p className="review-unrecorded">{t("Company names are unavailable. Original company codes are shown.")}</p>}</section>
     <RoutingSummary state={state} onSwitchScope={onSwitchScope} />
     <p className="review-progress-counts">{t("{p0} candidates · {p1} relevant · {p2} model steps", { p0: state.evidence, p1: state.relevant, p2: state.steps })}{chat && <span> · {t("No retrieval")}</span>}{state.elapsedMs !== undefined && <span> · {t("Request time")}: {(state.elapsedMs / 1000).toLocaleString(locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 })}s</span>}</p>
     {status === "running" && state.startedAt && <p className="review-progress-counts" aria-live="off">{t("Elapsed")}: {Math.max(0, Math.floor((now - state.startedAt) / 1000))}s · {state.lastEventAt ? t("Last update: {seconds}s ago", { seconds: Math.max(0, Math.floor((now - state.lastEventAt) / 1000)) }) : t("Waiting for the first server event")}</p>}

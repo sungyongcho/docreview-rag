@@ -32,3 +32,5 @@
   .execution-performance .performance-facts dd { font-size: 13px; }
   .execution-performance pre.performance-ascii { padding: 12px; font-size: 10px; }
 }
+
+.execution-performance .performance-table tr[aria-current="true"] { background: var(--surface-2); outline: 1px solid var(--border); outline-offset: -1px; }

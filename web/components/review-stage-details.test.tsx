@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ReviewProgressSteps } from "./review-progress";
 import { ReviewStageDetails, type DisclosureStage } from "./review-stage-details";
 import type { ReviewExecution } from "@/lib/types";
 
@@ -32,8 +33,10 @@ describe("recorded stage detail data", () => {
   });
   it("keeps candidate ranks, measured scores, zero candidates and repeated retrieval passes", () => {
     render(<ReviewStageDetails stage="retrieve" state={state} performance={performance} />);
+    expect(screen.getByText("Ranked candidates (1)").closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("Ranked candidates (1)"));
     expect(screen.getByText("NVDA c11")).toBeVisible();
-    expect(screen.getByText("0.75")).toBeVisible();
+    expect(screen.getByText("0.7500")).toBeVisible();
     expect(screen.getByText("Recorded pass 2")).toBeVisible();
     expect(field("Search preset")).toHaveTextContent("balanced");
     expect(field("Retrieval k")).toHaveTextContent("5");
@@ -44,7 +47,7 @@ describe("recorded stage detail data", () => {
     expect(field("Kept candidate IDs")).toHaveTextContent("1 · 11");
     expect(field("Rejected candidate IDs")).toHaveTextContent("1 · 12");
     const calls = screen.getByRole("table", { name: "Model calls / attempts" });
-    expect(within(calls).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["grade-model", "2", "18.0", "100", "5", "Provider retry detail"]);
+    expect(within(calls).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["1", "Select relevant evidencegrade", "grade-model", "2", "18ms", "100", "5", "Provider retry detail"]);
   });
   it("shows the recorded answer decision, citation chunk IDs and workflow reasons", () => {
     render(<ReviewStageDetails stage="check" state={state} performance={performance} />);
@@ -55,8 +58,8 @@ describe("recorded stage detail data", () => {
   });
   it("links the final label to evidence and the run details without a fetch", () => {
     const evidence = vi.fn(); const details = vi.fn();
-    render(<ReviewStageDetails stage="report" state={state} performance={performance} onShowEvidence={evidence} onOpenDetails={details} />);
-    expect(field("Final label")).toHaveTextContent("SUPPORTED");
+    render(<ReviewProgressSteps state={state} performance={performance} onShowEvidence={evidence} onOpenDetails={details} />);
+    expect(screen.queryByRole("region")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show evidence" }));
     fireEvent.click(screen.getByRole("button", { name: "Open run details" }));
     expect(evidence).toHaveBeenCalledOnce(); expect(details).toHaveBeenCalledOnce();
@@ -98,24 +101,79 @@ it("distinguishes recorded empty arrays/objects and zero from consolidated missi
 it("renders stage timings as rounded table cells without dropping repeated passes", () => {
   render(<ReviewStageDetails stage="gate" state={state} performance={{ stages: [{ node: "gate", status: "completed", elapsed_ms: 1.8702349625527859 }, { node: "route", status: "failed", elapsed_ms: 0 }] }} />);
   const table = screen.getByRole("table", { name: "Stage timings" });
-  expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["gate", "completed", "1.9", "route", "failed", "0.0"]);
+  expect(within(table).getByText("1.87ms")).toHaveAttribute("title", "1.8702349625527859ms");
+  expect(within(table).getByText("0ms")).toBeVisible();
+  expect(within(table).getByText("failed", { selector: "span" }).closest(".review-recorded-status")).toHaveClass("is-failed");
+
 });
 
-it("collapses long candidate tables behind Show more while retaining all ranks and identities", () => {
-  const candidates = Array.from({ length: 30 }, (_, index) => ({ rank: index + 1, citation: `[C${index}]`, doc_id: `document-${index}`, chunk_id: index, score: index / 100 }));
+it("collapses ranked candidates and pages five readable rows while retaining every identity", () => {
+  const candidates = Array.from({ length: 12 }, (_, index) => ({ rank: index + 1, citation: `[NVDA FY2024 · Item ${index}]`, doc_id: `document-${index}`, chunk_id: index, score: 0.03200204813108039 }));
   render(<ReviewStageDetails stage="retrieve" state={state} performance={{ stage_results: [{ node: "retrieve", candidates }] }} />);
-  expect(field("Candidate count")).toHaveTextContent("30");
-  expect(within(screen.getAllByRole("table", { name: "Ranked candidates" })[0]).getAllByRole("row")).toHaveLength(9);
-  const more = screen.getByText("Show more recorded rows (22)");
-  expect(more.closest("details")).not.toHaveAttribute("open");
-  fireEvent.click(more);
-  expect(screen.getByText("document-29")).toBeVisible();
-  expect(screen.getAllByRole("table", { name: "Ranked candidates" })).toHaveLength(2);
+  expect(field("Candidate count")).toHaveTextContent("12");
+  const summary = screen.getByText("Ranked candidates (12)");
+  expect(summary.closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByRole("table", { name: "Ranked candidates" })).not.toBeVisible();
+  fireEvent.click(summary);
+  const table = screen.getByRole("table", { name: "Ranked candidates" });
+  expect(within(table).getAllByRole("row")).toHaveLength(6);
+  expect(screen.getAllByText("0.03200")).toHaveLength(5);
+  expect(screen.getAllByText("0.03200")[0]).toHaveAttribute("title", "0.03200204813108039");
+  expect(screen.getByText("NVDA FY2024 · Item 0")).toHaveClass("citation");
+  expect(screen.getByText("document-0").tagName).toBe("CODE");
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  expect(screen.getByText("document-5")).toBeVisible();
+  expect(screen.queryByText("document-0")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  expect(screen.getByText("document-11")).toBeVisible();
+  expect(screen.getByText("3/3")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
 });
 
-it("opens the complete raw run record from any recorded stage without formatting its payload inline", () => {
-  const details = vi.fn(); render(<ReviewStageDetails stage="gate" state={state} performance={performance} onOpenDetails={details} />);
-  fireEvent.click(screen.getByRole("button", { name: "Open run details" }));
-  expect(details).toHaveBeenCalledOnce();
-  expect(document.querySelector(".review-stage-details pre")).toBeNull();
+it("groups repeated routing and retrieval passes with ordered details and measured totals", () => {
+  const stages = [{ node: "gate", status: "completed", elapsed_ms: 0.1 }, { node: "route", status: "completed", elapsed_ms: 1000 }, { node: "retrieve", status: "completed", elapsed_ms: 234.66 }, { node: "route", status: "failed", elapsed_ms: 580 }, { node: "retrieve", status: "completed", elapsed_ms: 2 }];
+  const { rerender } = render(<ReviewStageDetails stage="gate" state={state} performance={{ stages }} />);
+  expect(screen.getByText(/1. Understand the question/)).toHaveTextContent("gate, route");
+  const table = screen.getByRole("table", { name: "Stage timings" });
+  expect(table.querySelectorAll(":scope > tbody > tr")).toHaveLength(2);
+  expect(within(table).getByText("1.58s")).toBeVisible();
+  fireEvent.click(screen.getByText("Recorded passes ×2"));
+  const passes = screen.getByRole("table", { name: "Recorded passes" });
+  expect(within(passes).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell")[0].textContent)).toEqual(["2", "4"]);
+  expect(within(passes).getByText("1s")).toBeVisible();
+  expect(within(passes).getByText("580ms")).toBeVisible();
+  rerender(<ReviewStageDetails stage="retrieve" state={state} performance={{ stages }} />);
+  expect(screen.getByText("236.66ms")).toBeVisible();
+  expect(screen.getByText("Recorded passes ×2")).toBeVisible();
+});
+
+it("keeps unknown elapsed measurements unknown instead of showing a partial total", () => {
+  render(<ReviewStageDetails stage="gate" state={state} performance={{ stages: [{ node: "route", status: "completed", elapsed_ms: 12 }, { node: "route", status: "completed" }] }} />);
+  const row = screen.getByRole("table", { name: "Stage timings" }).querySelector("tbody > tr")!;
+  expect(within(row as HTMLElement).getAllByRole("cell")[3]).toHaveTextContent("—");
+});
+
+it("opens run details from the heading with the selected stage, even after panels are closed", () => {
+  const details = vi.fn();
+  render(<ReviewProgressSteps state={{ ...state, observed: ["gate", "retrieve", "report"] }} performance={performance} onOpenDetails={details} />);
+  const action = screen.getByRole("button", { name: "Open run details" });
+  expect(action.closest(".review-progress-heading")).not.toBeNull();
+  fireEvent.click(action);
+  expect(details).toHaveBeenLastCalledWith(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Retrieve evidence" }));
+  fireEvent.click(action);
+  expect(details).toHaveBeenLastCalledWith("retrieve");
+  fireEvent.click(screen.getByRole("button", { name: "Retrieve evidence" }));
+  expect(action).toBeVisible();
+});
+
+
+it.each(["failed", "cancelled"] as const)("keeps heading actions visible for a %s run without an open stage", (outcome) => {
+  const details = vi.fn();
+  render(<ReviewProgressSteps state={{ ...state, outcome }} onOpenDetails={details} />);
+  const action = screen.getByRole("button", { name: "Open run details" });
+  expect(action).toBeVisible();
+  expect(action.closest(".review-progress-heading")).not.toBeNull();
+  fireEvent.click(action);
+  expect(details).toHaveBeenCalledExactlyOnceWith(undefined);
 });

@@ -20,10 +20,11 @@ describe("evidence headings", () => {
 });
 
 describe("evidence pages", () => {
-  it("slices ten candidates per page with one-based bounds", () => {
+  it("slices five candidates per page with one-based bounds", () => {
     const items = Array.from({ length: 12 }, (_, index) => index + 1);
-    expect(evidencePage(items, 0)).toEqual({ items: items.slice(0, EVIDENCE_PAGE_SIZE), page: 0, pages: 2, from: 1, to: 10 });
-    expect(evidencePage(items, 1)).toEqual({ items: [11, 12], page: 1, pages: 2, from: 11, to: 12 });
+    expect(evidencePage(items, 0)).toEqual({ items: items.slice(0, EVIDENCE_PAGE_SIZE), page: 0, pages: 3, from: 1, to: 5 });
+    expect(evidencePage(items, 1)).toEqual({ items: [6, 7, 8, 9, 10], page: 1, pages: 3, from: 6, to: 10 });
+    expect(evidencePage(items, 2)).toEqual({ items: [11, 12], page: 2, pages: 3, from: 11, to: 12 });
   });
 
   it("clamps an overflowing page and reports an empty list honestly", () => {
