@@ -601,11 +601,13 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
   render(<NotificationProvider><Harness live /></NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   await screen.findByRole("button", { name: /^NVDA FY2024/ });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Clear selection" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
   fireEvent.click(screen.getByRole("button", { name: /^AMD FY2023/ }));
   fireEvent.click(screen.getByRole("button", { name: /^NVDA FY2024/ }));
   fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
   await waitFor(() => expect(submitted).toEqual([{ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] }]));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
   sources.find((row) => row.issuer === "NVDA" && row.fiscal_year === 2024)!.on_disk = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2024/ })).toHaveTextContent("On disk"));
