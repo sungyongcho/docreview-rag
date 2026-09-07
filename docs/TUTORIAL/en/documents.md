@@ -94,7 +94,7 @@ Documents and Jobs remember their widths independently.
 On narrower screens, details replace the list. **Back to documents** returns with
 the search, filters, selection, and list scroll retained. Tab changes and navigation
 between workspaces keep the relevant state during the session. When returning to a
-conversation after a readiness check, use the explicit **Back to conversation** action.
+conversation after a readiness check, use the explicit **Back** action.
 
 Preparation-related errors offer **Inspect this step** to open the relevant pipeline stage. Inspect the prerequisite and any terminal work there, then return and refresh Documents. Following the link does not ingest, embed, rebuild an index, or mark a failed request complete.
 
