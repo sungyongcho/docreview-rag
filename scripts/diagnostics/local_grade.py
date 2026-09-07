@@ -1,6 +1,6 @@
 """Benchmark the grade call of a local Ollama model and report its real cost.
 
-Unlike ``scripts/diagnose_ollama.py``, this script loads the model and generates: it
+Unlike ``scripts/diagnostics/ollama.py``, this script loads the model and generates: it
 builds the same grade prompt the workflow sends for one question, calls ``/api/chat``
 with the structured-output schema, and records prompt tokens, prompt-evaluation and
 generation speed, whether hidden reasoning consumed the output allowance, and whether
