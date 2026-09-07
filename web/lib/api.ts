@@ -1,6 +1,6 @@
 import type { components } from "./api-generated";
 import { DEFAULT_SESSION_PROFILE } from "./types";
-import { presentationFetch } from "./production-preview";
+import { presentationFetch, type PresentationInit } from "./production-preview";
 import type {
   EvaluationComparison,
   CorpusSnapshot,
@@ -46,12 +46,32 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await presentationFetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
-  });
-  const payload = (await response.json()) as Record<string, unknown>;
+/** Deadline for read requests; writes and streams keep none because they may legitimately wait on a busy worker. */
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+async function request<T>(path: string, init?: PresentationInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const read = method === "GET" || method === "HEAD";
+  let response: Response;
+  try {
+    response = await presentationFetch(`${API_BASE}${path}`, {
+      timeoutMs: read ? REQUEST_TIMEOUT_MS : undefined,
+      ...init,
+      headers: { "content-type": "application/json", ...init?.headers },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new ApiError(408, "request_timeout", "The request timed out; the API may be busy.");
+    }
+    throw error;
+  }
+  const text = await response.text();
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new ApiError(response.status, "invalid_response", `The API returned an unexpected response (HTTP ${response.status}).`);
+  }
   if (!response.ok) {
     const error = (payload.error ?? {}) as Record<string, unknown>;
     const details = Array.isArray(error.details) ? error.details.map(String) : [];

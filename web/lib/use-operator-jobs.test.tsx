@@ -1,8 +1,11 @@
 import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { useOperatorJobs } from "./use-operator-jobs";
+import { pollDelay, useOperatorJobs } from "./use-operator-jobs";
 import type { OperatorJobBoard } from "./types";
+
+const notifications = vi.hoisted(() => ({ notify: vi.fn(), dismissNotice: vi.fn() }));
+vi.mock("@/components/notifications", () => ({ useNotifications: () => notifications }));
 
 const RUNNING_BOARD: OperatorJobBoard = {
   active_count: 1, queued_count: 0,
@@ -24,6 +27,72 @@ describe("operator job polling", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.useRealTimers();
+    notifications.notify.mockClear();
+  });
+
+  it("computes poll delays with floors and a capped failure ladder", () => {
+    expect([0, 1, 2, 3, 4].map((failures) => pollDelay(failures, true, true))).toEqual([1_000, 2_000, 4_000, 8_000, 10_000]);
+    expect(pollDelay(0, false, true)).toBe(5_000);
+    expect(pollDelay(1, false, true)).toBe(5_000);
+    expect(pollDelay(3, false, true)).toBe(8_000);
+    expect(pollDelay(4, true, false)).toBe(15_000);
+  });
+
+  it("backs off 2/4/8/10 s after failed polls, keeps the last board, marks it stale and never toasts", async () => {
+    vi.useFakeTimers();
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      reads += 1;
+      if (reads > 1 && reads <= 5) throw new TypeError("Failed to fetch");
+      return response(RUNNING_BOARD);
+    }));
+    const { result } = renderHook(() => useOperatorJobs(true));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.board).toEqual(RUNNING_BOARD);
+    expect(result.current.stale).toBe(false);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(reads).toBe(2);
+    expect(result.current.stale).toBe(true);
+    expect(result.current.board).toEqual(RUNNING_BOARD);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_900); });
+    expect(reads).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(reads).toBe(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+    expect(reads).toBe(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    expect(reads).toBe(5);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(reads).toBe(6);
+    expect(result.current.stale).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(reads).toBe(7);
+    expect(notifications.notify).not.toHaveBeenCalled();
+  });
+
+  it("toasts a manual refresh failure once under jobs-refresh and keeps automatic failures silent", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
+    const { result } = renderHook(() => useOperatorJobs(true));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(notifications.notify).not.toHaveBeenCalled();
+    expect(result.current.stale).toBe(true);
+    expect(result.current.loading).toBe(false);
+
+    await act(async () => { await result.current.refresh(true); });
+    expect(notifications.notify).toHaveBeenCalledTimes(1);
+    expect(notifications.notify).toHaveBeenCalledWith("Failed to fetch", "error", "jobs-refresh");
+  });
+
+  it("keeps board identity when a poll returns an identical board", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => response(RUNNING_BOARD)));
+    const { result } = renderHook(() => useOperatorJobs(true));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const first = result.current.board;
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(result.current.board).toBe(first);
   });
 
   it("starts paused without admin reads or mutation actions and polls when resumed", async () => {

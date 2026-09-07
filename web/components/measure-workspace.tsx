@@ -245,10 +245,15 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   useEffect(() => {
     void refresh();
   }, [live]);
+  // Refetch evaluation runs only when an evaluation job moves; corpus job progress ticks do not count.
+  const evaluationSignature = useMemo(
+    () => jobBoard.jobs.filter((job) => job.domain === "evaluation").map((job) => `${job.job_id}:${job.status}:${job.updated_at}`).join("|"),
+    [jobBoard.jobs],
+  );
   useEffect(() => {
     if (!live) return;
     void refreshJobs();
-  }, [live, jobBoard]);
+  }, [live, evaluationSignature]);
   useEffect(() => {
     if (!live) void getPublishedSnapshots().then((rows) => setSnapshots(Array.isArray(rows) ? rows : [])).catch(() => undefined);
   }, [live]);

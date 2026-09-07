@@ -68,9 +68,21 @@ function waitForDevelopment(signal?: AbortSignal | null): Promise<void> {
   });
 }
 
+/** `RequestInit` plus an optional per-attempt deadline in milliseconds; `0` or absent means no deadline. */
+export type PresentationInit = RequestInit & { timeoutMs?: number };
+
+/** Reject as soon as `signal` aborts, so a body read that ignores the abort cannot outlive its deadline. */
+function rejectOnAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
+
 /** Bound every application request, including streaming and Local Operations callers. */
-export async function presentationFetch(url: string, init: RequestInit = {}, operator = false): Promise<Response> {
-  const method = (init.method ?? "GET").toUpperCase();
+export async function presentationFetch(url: string, init: PresentationInit = {}, operator = false): Promise<Response> {
+  const { timeoutMs, ...requestInit } = init;
+  const method = (requestInit.method ?? "GET").toUpperCase();
   const mutation = method !== "GET" && method !== "HEAD";
   const pathname = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname;
   const path = pathname.replace(/^\/docreview-rag-agent\/api(?=\/|$)/, "").replace(/\/$/, "");
@@ -83,26 +95,38 @@ export async function presentationFetch(url: string, init: RequestInit = {}, ope
   const controller = new AbortController();
   const startedNormally = state.mode === "normal";
   const abort = () => controller.abort();
-  if (init.signal?.aborted) controller.abort();
-  init.signal?.addEventListener("abort", abort, { once: true });
+  if (requestInit.signal?.aborted) controller.abort();
+  requestInit.signal?.addEventListener("abort", abort, { once: true });
   requests.set(controller, mutation);
   if (mutation) update({ ...state, pendingMutations: state.pendingMutations + 1 });
-  let headers = init.headers;
+  let headers = requestInit.headers;
   if (state.mode === "document") {
     const publicHeaders = new Headers(headers);
     publicHeaders.set("X-DocReview-Public", "true");
     headers = publicHeaders;
   }
+  // The deadline covers one attempt: a read resumed after a production preview starts a fresh clock.
+  const deadline = timeoutMs
+    ? setTimeout(() => controller.abort(new DOMException("Request timed out.", "TimeoutError")), timeoutMs)
+    : null;
   try {
-    return await fetch(url, { ...init, headers, signal: controller.signal });
+    const response = await fetch(url, { ...requestInit, headers, signal: controller.signal });
+    if (deadline === null) return response;
+    // A finite read stays under its deadline through body delivery: a server that sends the
+    // headers and then stalls must surface as a timeout, not as a promise that never settles.
+    const text = await Promise.race([response.text(), rejectOnAbort(controller.signal)]);
+    const bodyless = response.status === 204 || response.status === 205 || response.status === 304;
+    return new Response(bodyless ? null : text, { status: response.status, statusText: response.statusText, headers: response.headers });
   } catch (error) {
-    if (startedNormally && !mutation && controller.signal.reason === PREVIEW_PAUSE && !init.signal?.aborted) {
-      await waitForDevelopment(init.signal);
+    if (startedNormally && !mutation && controller.signal.reason === PREVIEW_PAUSE && !requestInit.signal?.aborted) {
+      if (deadline !== null) clearTimeout(deadline);
+      await waitForDevelopment(requestInit.signal);
       return await presentationFetch(url, init, operator);
     }
     throw error;
   } finally {
-    init.signal?.removeEventListener("abort", abort);
+    if (deadline !== null) clearTimeout(deadline);
+    requestInit.signal?.removeEventListener("abort", abort);
     requests.delete(controller);
     if (mutation) update({ ...state, pendingMutations: Math.max(0, state.pendingMutations - 1) });
   }

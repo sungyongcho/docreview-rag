@@ -97,3 +97,27 @@ it("keeps a preview frame isolated after a same-origin document reload", async (
     window.history.replaceState({}, "", previousPath);
   }
 });
+
+it("re-arms the read deadline for a read resumed after a preview that outlasts it", async () => {
+  vi.useFakeTimers();
+  try {
+    const signals: AbortSignal[] = [];
+    const fetch = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const signal = init?.signal as AbortSignal;
+      signals.push(signal);
+      signal.addEventListener("abort", () => reject(signal.reason));
+      if (signals.length === 2) setTimeout(() => resolve(new Response("{}")), 1_000);
+    }));
+    vi.stubGlobal("fetch", fetch);
+    const pending = presentationFetch("/docreview-rag-agent/api/admin/documents", { timeoutMs: 5_000 });
+    enterProductionPreview();
+    await vi.advanceTimersByTimeAsync(20_000);
+    exitProductionPreview();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(pending).resolves.toBeInstanceOf(Response);
+    expect(signals).toHaveLength(2);
+    expect(signals[1].aborted).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});

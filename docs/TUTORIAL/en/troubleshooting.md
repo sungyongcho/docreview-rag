@@ -137,3 +137,13 @@ the application can therefore show up to that many seconds late; every write pat
 the schema afresh. `python -m scripts.measure_readiness --base-url http://127.0.0.1:8001 --ingest tutorial`
 records `/health` and `/ready` latency before, during and after one ingest job against an
 isolated stack.
+
+The job board behind **Build → Jobs** and the top-bar job counter polls every second while
+work runs, every five seconds when idle and every fifteen seconds in a hidden tab. A failed
+poll keeps the last board on screen, marks it with a "may be out of date" status line in the
+Job Center and retries after 2, 4, 8 and then 10 seconds without raising a toast; a manual
+**Refresh** still reports its own error. Administrator reads such as the corpus snapshot,
+document filters, evaluation runs and snapshots time out after 15 seconds with "The request
+timed out"; writes are never timed out or retried. **Build → Pipeline** refreshes its four
+reads independently, keeps the last known state for any read that fails and shows an inline
+notice for it, and raises a toast only when you pressed Refresh yourself.

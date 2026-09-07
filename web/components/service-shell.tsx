@@ -932,9 +932,10 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           profile={resolvedRetrievalProfile(activeSessionProfile)}
           jobBoard={operatorJobs.board}
           jobsLoading={operatorJobs.loading}
+          jobsStale={operatorJobs.stale}
           onRetryJob={(jobId) => void operatorJobs.retry(jobId)}
           onCancelJob={(jobId) => void operatorJobs.cancel(jobId)}
-          onRefreshJobs={() => void operatorJobs.refresh()}
+          onRefreshJobs={() => void operatorJobs.refresh(true)}
           onRecheck={() => void runtimeHealth.check()}
           operationsAvailable={operationsAvailable}
           onRunOperation={(commandId) => void runOperation(commandId)}
@@ -957,7 +958,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           onApplyProfile={applyProfile}
           onApplySnapshot={applySnapshot}
           jobBoard={operatorJobs.board}
-          onRefreshJobs={() => void operatorJobs.refresh()}
+          onRefreshJobs={() => void operatorJobs.refresh(true)}
           tab={measureTab}
           onTabChange={(tab) => navigate({ view: "measure", tab }, true)}
           focusResultId={measureResultId}

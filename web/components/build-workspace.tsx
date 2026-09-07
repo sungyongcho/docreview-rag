@@ -56,6 +56,8 @@ export interface BuildWorkspaceProps {
   profile: RetrievalProfile;
   jobBoard: OperatorJobBoard;
   jobsLoading: boolean;
+  /** The newest board poll failed; the retained board may be out of date. */
+  jobsStale?: boolean;
   onRetryJob: (jobId: string) => void;
   onCancelJob: (jobId: string) => void;
   onRefreshJobs: () => void;
@@ -79,7 +81,7 @@ const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "", years: "" };
 
 const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: null, schema_message: null, documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: null, writable: null, provider: null };
 
-export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -97,6 +99,8 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   const completedJobs = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [historyWarning, setHistoryWarning] = useState("");
+  const [corpusWarning, setCorpusWarning] = useState("");
+  const [facetWarning, setFacetWarning] = useState("");
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
   const draftInitialized = useRef(false);
@@ -125,35 +129,59 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
     setExperimentDefaults(loadExperimentDefaults());
   }, []);
 
-  async function refresh() {
+  /**
+   * Reload the four administrator reads independently: a failed read keeps the last known state and
+   * leaves an inline notice, so one busy endpoint never blanks the others. Only a refresh the user
+   * asked for (`manual`) raises a toast; automatic refreshes after jobs stay quiet.
+   */
+  async function refresh(mode: "auto" | "manual" = "auto") {
     if (!live) return;
     setHistoryWarning("");
-    const historyUnavailable = () => { setHistoryWarning(t("Some history could not be loaded. Corpus status is shown separately.")); return []; };
-    try {
-      const [jobRows, corpusSnapshot, facets] = await Promise.all([
-        getEvaluationJobs().catch(historyUnavailable), getCorpusSnapshot(), getDocumentFacets().catch(() => null),
-      ]);
-      setJobs(Array.isArray(jobRows) ? jobRows : []);
-      setCorpus(corpusSnapshot);
+    setCorpusWarning("");
+    setFacetWarning("");
+    const [jobRows, corpusSnapshot, facets, snapshotRows] = await Promise.allSettled([
+      getEvaluationJobs(), getCorpusSnapshot(), getDocumentFacets(), getAdminSnapshots(),
+    ]);
+    const failures: string[] = [];
+    const reasonOf = (result: PromiseRejectedResult) => result.reason instanceof Error ? result.reason.message : t("Refresh failed.");
+    if (jobRows.status === "fulfilled") setJobs(Array.isArray(jobRows.value) ? jobRows.value : []);
+    else failures.push(reasonOf(jobRows));
+    if (corpusSnapshot.status === "fulfilled") {
+      setCorpus(corpusSnapshot.value);
       setAdminLoaded(true);
-      const registries = facets && Array.isArray(facets.registries) ? facets.registries : [];
-      setRegistryCounts(Object.fromEntries(registries.filter((item) => typeof item.value === "string" && typeof item.count === "number").map((item) => [item.value, item.count])));
-      const snapshotRows = await getAdminSnapshots().catch(historyUnavailable);
-      setSnapshotCount(Array.isArray(snapshotRows) ? snapshotRows.length : 0);
-      return true;
-    } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Refresh failed."), "error", "build-refresh");
-      return false;
+    } else {
+      setCorpusWarning(t("Corpus status could not be refreshed: {message}", { message: reasonOf(corpusSnapshot) }));
+      failures.push(reasonOf(corpusSnapshot));
     }
+    if (facets.status === "fulfilled") {
+      const registries = Array.isArray(facets.value.registries) ? facets.value.registries : [];
+      setRegistryCounts(Object.fromEntries(registries.filter((item) => typeof item.value === "string" && typeof item.count === "number").map((item) => [item.value, item.count])));
+    } else {
+      setFacetWarning(t("Document filters could not be loaded: {message}", { message: reasonOf(facets) }));
+      failures.push(reasonOf(facets));
+    }
+    if (snapshotRows.status === "fulfilled") setSnapshotCount(Array.isArray(snapshotRows.value) ? snapshotRows.value.length : 0);
+    else failures.push(reasonOf(snapshotRows));
+    if (jobRows.status === "rejected" || snapshotRows.status === "rejected") {
+      setHistoryWarning(t("Some history could not be loaded. Corpus status is shown separately."));
+    }
+    if (mode === "manual" && failures.length) notify(failures[0], "error", "build-refresh");
+    return failures.length === 0;
   }
 
   useEffect(() => {
     void refresh();
   }, [live]);
+  // Evaluation runs change only when an evaluation job moves, so key the refetch on that signature
+  // rather than on every board poll; a corpus job reporting progress each second must not refetch runs.
+  const evaluationSignature = useMemo(
+    () => jobBoard.jobs.filter((job) => job.domain === "evaluation").map((job) => `${job.job_id}:${job.status}:${job.updated_at}`).join("|"),
+    [jobBoard.jobs],
+  );
   useEffect(() => {
     if (!live) return;
     void getEvaluationJobs().then((rows) => setJobs(Array.isArray(rows) ? rows : [])).catch(() => undefined);
-  }, [live, jobBoard]);
+  }, [live, evaluationSignature]);
   useEffect(() => {
     if (!live) return;
     const terminal = jobBoard.jobs.filter((job) => job.domain === "corpus" && ["succeeded", "failed", "cancelled", "interrupted"].includes(job.status));
@@ -298,6 +326,8 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
   return (
     <section className="lab-shell build-workspace">
       {historyWarning && <p className="notice" role="status">{historyWarning}</p>}
+      {corpusWarning && <p className="notice" role="status">{corpusWarning}</p>}
+      {facetWarning && <p className="notice" role="status">{facetWarning}</p>}
       <header className="page-heading">
         <div>
           <h1>{t("From filings to verified answers.")}</h1>
@@ -353,7 +383,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
         onOpenDocuments={() => onTabChange("documents")}
         onOpenJobs={() => onTabChange("jobs")}
         onOpenStatus={() => onNavigate({ view: "system", tab: "status" })}
-        onRefresh={refresh}
+        onRefresh={() => refresh("manual")}
       /></RetainedPanel>
 
       <RetainedPanel active={tab === "documents"}><DocumentInventory onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={live ? [] : CANNED_CORPUS.documents} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
@@ -364,6 +394,7 @@ export function BuildWorkspace({ live, ready, readiness, healthKind, profile, jo
             onOpenPipeline={(stage) => { setFocusStage(stage); onTabChange("pipeline"); }}
             board={jobBoard}
             loading={jobsLoading}
+            stale={jobsStale}
             onRetry={onRetryJob}
             onCancel={onCancelJob}
             onRefresh={onRefreshJobs}

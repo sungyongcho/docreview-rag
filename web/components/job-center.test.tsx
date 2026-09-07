@@ -70,6 +70,15 @@ describe("JobCenter", () => {
     expect(screen.getByRole("button", { name: "Retry as new job" })).toBeInTheDocument();
   });
 
+  it("shows a status line while job activity is stale", () => {
+    render(<JobCenter board={{ jobs: [job()], active_count: 0, queued_count: 0 }} loading={false} stale onRefresh={vi.fn()} onRetry={vi.fn()} onCancel={vi.fn()} onOpenResult={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Job activity may be out of date. Retrying…");
+    cleanup();
+    render(<JobCenter board={{ jobs: [], active_count: 0, queued_count: 0 }} loading={false} stale onRefresh={vi.fn()} onRetry={vi.fn()} onCancel={vi.fn()} onOpenResult={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Job activity could not be loaded. Retrying…");
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
   it("carries the help hook so the Jobs tab can be explained", () => {
     // The topic lives on its own screen, because the Job Center is not on the pipeline tab.
     renderCenter([job()]);
