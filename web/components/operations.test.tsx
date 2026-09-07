@@ -15,19 +15,19 @@ vi.mock("@/lib/operator-api", async (importOriginal) => ({
   cancelOperatorJob: vi.fn(),
 }));
 
-function command(id: string, category: OperatorCommand["category"], label: string, confirmation: string | null = null): OperatorCommand {
-  return { command_id: id, label, description: `${label} description`, category, confirmation, timeout_seconds: 60 };
+function command(id: string, category: OperatorCommand["category"], label: string, confirmation: string | null = null, target: OperatorCommand["target"] = "python"): OperatorCommand {
+  return { command_id: id, label, description: `${label} description`, category, target, confirmation, timeout_seconds: 60 };
 }
 
 /** Registry order from app/operator/commands.py, plus one synthetic confirmation-required verify command placed first. */
 const COMMANDS: OperatorCommand[] = [
-  command("git-status", "inspect", "Git status"),
+  command("git-status", "inspect", "Git status", null, "app"),
   command("verify-confirm", "verify", "Guarded verify", "Type YES"),
   command("python-lint", "verify", "Python lint"),
   command("python-format-check", "verify", "Python format check"),
-  command("web-tests", "verify", "Web tests"),
-  command("schema-prepare", "service", "Prepare empty schema", "Create schema objects?"),
-  command("db-start", "service", "Start PostgreSQL", "Start the database?"),
+  command("web-tests", "verify", "Web tests", null, "web"),
+  command("schema-prepare", "service", "Prepare empty schema", "Create schema objects?", "database"),
+  command("db-start", "service", "Start PostgreSQL", "Start the database?", "database"),
 ];
 
 function job(status: OperatorJob["status"], output = ""): OperatorJob {
@@ -212,4 +212,37 @@ describe("Operations", () => {
     await flush(200);
     expect(getOperatorJobs).toHaveBeenCalledTimes(2);
   });
+});
+
+
+it("combines category and target filters and restores both without running a command", async () => {
+  render(<Operations />);
+  await screen.findByRole("heading", { name: "Git status" });
+  fireEvent.click(within(screen.getByRole("group", { name: "Command category" })).getByRole("button", { name: "Verify" }));
+  fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "Web" }));
+  expect(screen.getByRole("heading", { name: "Web tests" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Python lint" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Prepare empty schema" })).not.toBeInTheDocument();
+  expect(startOperatorJob).not.toHaveBeenCalled();
+  cleanup();
+  render(<Operations />);
+  await screen.findByRole("heading", { name: "Web tests" });
+  expect(within(screen.getByRole("group", { name: "Command category" })).getByRole("button", { name: "Verify" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "Web" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "Database" }));
+  expect(screen.getByText("No commands match these filters.")).toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole("group", { name: "Command category" })).getByRole("button", { name: "Service" }));
+  expect(screen.getByRole("heading", { name: "Prepare empty schema" })).toBeInTheDocument();
+  expect(screen.queryByText("No commands match these filters.")).not.toBeInTheDocument();
+});
+
+it("keeps an older operator response visible without guessing its missing target", async () => {
+  const { target: _target, ...legacy } = COMMANDS[0];
+  vi.mocked(getOperatorCommands).mockResolvedValue([legacy as OperatorCommand]);
+  render(<Operations />);
+  await screen.findByRole("heading", { name: "Git status" });
+  expect(screen.getByText("Target not reported")).toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "App" }));
+  expect(screen.getByText("No commands match these filters.")).toBeInTheDocument();
+  expect(startOperatorJob).not.toHaveBeenCalled();
 });

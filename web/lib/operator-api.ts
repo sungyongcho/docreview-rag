@@ -1,3 +1,4 @@
+import type { components as OperatorComponents } from "./operator-api-generated";
 import { presentationFetch } from "./production-preview";
 
 // Read at call time: Next inlines NEXT_PUBLIC_* either way, and tests can stub the env per case.
@@ -11,14 +12,13 @@ function operatorToken() {
 
 export type OperatorJobStatus = "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
 
-export interface OperatorCommand {
-  command_id: string;
-  label: string;
-  description: string;
+/** The sidecar schema owns command metadata; retain the existing category union. */
+export type OperatorCommand = Omit<OperatorComponents["schemas"]["CommandResource"], "category"> & {
   category: "inspect" | "verify" | "service";
-  confirmation: string | null;
-  timeout_seconds: number;
-}
+};
+export type OperatorTarget = OperatorCommand["target"];
+export const OPERATION_TARGETS = ["python", "web", "database", "app"] as const satisfies readonly OperatorTarget[];
+export type OperationsTargetFilter = "all" | OperatorTarget;
 
 /** Registry categories in display order; the operator sidecar emits exactly these values. */
 export const OPERATION_CATEGORIES = ["inspect", "verify", "service"] as const;

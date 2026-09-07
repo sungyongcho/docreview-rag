@@ -1,4 +1,4 @@
-import { OPERATION_CATEGORIES, type OperatorCommand, type OperationsFilter } from "./operator-api";
+import { OPERATION_CATEGORIES, OPERATION_TARGETS, type OperatorCommand, type OperationsFilter, type OperationsTargetFilter, type OperatorTarget } from "./operator-api";
 import { browserStorage } from "./production-preview";
 import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./types";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
@@ -12,6 +12,7 @@ const EXPERIMENT_DEFAULTS_KEY = "docreview:experiment-defaults:v1";
 /** Help mode open/closed; separate from the frozen onboarding key so the tour sentinel never changes. */
 export const HELP_KEY = "docreview:help:v1";
 const OPERATIONS_FILTER_KEY = "docreview:operations-filter:v1";
+const OPERATIONS_TARGET_FILTER_KEY = "docreview:operations-target-filter:v1";
 const MAX_CONVERSATIONS = 30;
 const MAX_MESSAGES = 100;
 
@@ -203,4 +204,19 @@ export function saveOperationsFilter(filter: OperationsFilter): void {
   if (typeof window === "undefined") return;
   if (filter === "all") browserStorage().removeItem(OPERATIONS_FILTER_KEY);
   else browserStorage().setItem(OPERATIONS_FILTER_KEY, filter);
+}
+
+
+/** Remember a target independently of the category; stale values leave every target visible. */
+export function loadOperationsTargetFilter(): OperationsTargetFilter {
+  if (typeof window === "undefined") return "all";
+  const value = browserStorage().getItem(OPERATIONS_TARGET_FILTER_KEY);
+  return OPERATION_TARGETS.includes(value as OperatorTarget) ? value as OperationsTargetFilter : "all";
+}
+
+/** Persist this browser's target choice without changing command execution or category selection. */
+export function saveOperationsTargetFilter(filter: OperationsTargetFilter): void {
+  if (typeof window === "undefined") return;
+  if (filter === "all") browserStorage().removeItem(OPERATIONS_TARGET_FILTER_KEY);
+  else browserStorage().setItem(OPERATIONS_TARGET_FILTER_KEY, filter);
 }

@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.observability.persistence import redact_sensitive_text
-from app.operator.commands import COMMANDS, OperatorCommand
+from app.operator.commands import COMMANDS, CommandTarget, OperatorCommand
 from app.operator.wipe import WipeError, WipeService, diagnose_wipe_error
 
 type JobStatus = Literal["running", "succeeded", "failed", "cancelled", "timed_out"]
@@ -43,6 +43,7 @@ class CommandResource(StrictOperatorModel):
     label: str
     description: str
     category: str
+    target: CommandTarget
     confirmation: str | None
     timeout_seconds: int
 
@@ -369,6 +370,7 @@ def create_operator_app(
                 label=command.label,
                 description=command.description,
                 category=command.category,
+                target=command.target,
                 confirmation=command.confirmation,
                 timeout_seconds=command.timeout_seconds,
             )

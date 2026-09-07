@@ -7,7 +7,7 @@ import sys
 from fastapi.testclient import TestClient
 import pytest
 
-from app.operator.commands import OperatorCommand
+from app.operator.commands import COMMANDS, OperatorCommand
 from app.operator.service import OperatorJobManager, create_operator_app
 from app.operator.wipe import WipeError, WipeService
 
@@ -128,6 +128,7 @@ def test_job_runs_exact_argv_redacts_output_and_rejects_concurrency(tmp_path):
         Path("."),
         5,
         "verify",
+        target="python",
     )
     manager = OperatorJobManager(tmp_path, {"probe": command})
     application = create_operator_app(
@@ -162,6 +163,7 @@ def test_running_job_can_be_cancelled_as_a_process_group(tmp_path):
         Path("."),
         60,
         "verify",
+        target="python",
     )
     manager = OperatorJobManager(tmp_path, {"wait": command})
     application = create_operator_app(
@@ -191,3 +193,21 @@ def test_browser_ack_requires_auth_and_matching_reset(tmp_path):
         result = client.post("/wipe/browser-cleared", headers=HEADERS, json={"operation_id": "old"})
         assert result.status_code == 409
         assert client.get("/wipe", headers=HEADERS).json()["status"] == "idle"
+
+
+def test_command_targets_match_the_registry_and_live_schema(tmp_path):
+    """Expose declared targets through the authenticated API without exposing command argv."""
+    application = create_operator_app(token=TOKEN, allowed_origin=ORIGIN, root=tmp_path)
+    with TestClient(application) as client:
+        response = client.get("/commands", headers=HEADERS)
+        assert response.status_code == 200
+        commands = response.json()
+        schema = client.get("/openapi.json").json()
+    assert {item["command_id"]: item["target"] for item in commands} == {
+        key: command.target for key, command in COMMANDS.items()
+    }
+    assert all("argv" not in item and "environment" not in item for item in commands)
+    target = schema["components"]["schemas"]["CommandResource"]["properties"]["target"]
+    assert set(target["enum"]) == {command.target for command in COMMANDS.values()}
+    assert COMMANDS["python-tests-postgres"].target == "database"
+    assert COMMANDS["web-build"].target == "web"
