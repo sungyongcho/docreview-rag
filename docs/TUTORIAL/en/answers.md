@@ -140,10 +140,19 @@ while candidates and relevant evidence remain zero.
 The execution summary stays with its answer. Select a recorded stage, including **Path decision**,
 to expand its recorded scope, ranked candidates, kept/rejected evidence, verification or
 result. One stage panel is open at a time; select it again to collapse it. Missing historical
-fields say **Not recorded for this run**. A stage with no recorded fields shows one short note.
+fields are listed together under **Not recorded for this run**. A stage with no recorded fields shows one short note.
 The open stage has an underline and a bottom marker; hovering or focusing a selectable stage
 underlines its title. Waiting and unreached stages are inert. Failed, cancelled, skipped,
 completed and currently running stages remain selectable. Enter or Space toggles a focused stage.
+
+Stage details display source badges, company/year chips, rounded millisecond timings and model-call
+tables instead of inline JSON. Company names come from the existing live or published document
+catalog when the scope panel is first opened; recorded codes and run scope remain unchanged.
+Unknown or ambiguous names keep the original code. A lookup failure is stated beside the panel.
+**None** means a recorded empty collection; a dash or the consolidated unrecorded-label line means
+an absent value. The panel grows inside the message column. Tables longer than eight rows retain
+their remaining records under **Show more recorded rows**. **Open run details** preserves access
+to the full raw execution record from every recorded stage.
 
 Use **Run details** for the right-side **Performance**, **Server settings** and **Trace** tabs.
 The `Q. <question>` heading and short message ID identify the selected answer. Reopening an
@@ -155,4 +164,4 @@ appear only when recorded.
 
 ### SCREENSHOT NEEDED
 
-<!-- Feature: issue 140 selected-stage underline and bottom marker, selectable hover/focus, inert unreached stages and one-line empty-stage note, with right-side run details; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+<!-- Feature: issues 140/141 selected execution strip and compact mapped stage details; show SEC/DART company names and FY chips, empty versus unrecorded values, rounded timings and model table, no inner scrollbar, collapsed long-table continuation and raw run-details access; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->

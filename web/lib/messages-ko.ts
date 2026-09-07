@@ -1,4 +1,12 @@
 export const KO: Record<string, string> = {
+  "Reason": "이유",
+  "Code": "코드",
+  "Chunk ID": "청크 ID",
+  "Show more recorded rows ({count})": "기록 더 보기 ({count}개)",
+  "Company names are unavailable. Original company codes are shown.": "회사 이름을 불러올 수 없어 원래 회사 코드를 표시합니다.",
+  "Citation chunk IDs": "인용 청크 ID",
+  "Removed chunk IDs": "제외된 청크 ID",
+
   "This stage was not recorded for this run.": "이 단계는 이 실행에서 기록되지 않았습니다",
   "Slow local CPU model": "느린 로컬 CPU 모델",
   "{model} is running on CPU. Its recent generation speed was {speed} tok/s, below the {threshold} tok/s warning threshold. Before sending, allow more time in Run limits or reduce Evidence. Sending remains available.": "{model} 모델이 CPU에서 실행 중입니다. 최근 생성 속도는 {speed} tok/s로, 경고 기준인 {threshold} tok/s보다 낮습니다. 전송 전에 실행 한도의 시간을 늘리거나 근거 양을 줄이세요. 그대로 전송할 수도 있습니다.",

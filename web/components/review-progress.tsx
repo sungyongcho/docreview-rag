@@ -2,6 +2,7 @@
 
 import { Check, Circle, LoaderCircle, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useStageCompanyLabels, type CompanyCatalogMode } from "@/lib/use-stage-company-labels";
 import { useI18n } from "@/lib/i18n";
 import type { ReviewProgress } from "@/lib/api";
 import type { CorpusScope, ReviewEventNode, ReviewExecution, ReviewResolvedScope, ReviewPathDecision } from "@/lib/types";
@@ -162,7 +163,7 @@ export function WaitingGlyph() {
   return <span className="waiting-glyph" aria-hidden="true">◐</span>;
 }
 
-export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLabel, onOpenDetails, onShowEvidence }: { state: ReviewProgressState; onSwitchScope?: () => void; performance?: Record<string, unknown>; finalLabel?: string; onOpenDetails?: () => void; onShowEvidence?: () => void }) {
+export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLabel, catalogMode, onOpenDetails, onShowEvidence }: { catalogMode?: CompanyCatalogMode; state: ReviewProgressState; onSwitchScope?: () => void; performance?: Record<string, unknown>; finalLabel?: string; onOpenDetails?: () => void; onShowEvidence?: () => void }) {
   const { t, locale } = useI18n();
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState<DisclosureStage | null>(null);
@@ -173,6 +174,10 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const selectable = (phase: string) => ["done", "current", "failed", "cancelled", "skipped"].includes(phase);
   const openStage = expanded && selectable(expanded === "path" ? pathPhase : phases[expanded]) ? expanded : null;
   useEffect(() => { if (expanded && !openStage) setExpanded(null); }, [expanded, openStage]);
+  const detailScope = resolvedScopeFromServer(objectRecord(performance?.path_decision)?.resolved_scope ?? performance?.resolved_scope) ?? state.pathDecision?.resolved_scope ?? state.resolvedScope;
+  const registryKey = [...new Set(detailScope?.filters.registries ?? [])].map((registry) => registry.toLowerCase()).sort().join(",");
+  const needsCompanyNames = (openStage === "path" || openStage === "gate") && Boolean(detailScope?.filters.issuers.length);
+  const names = useStageCompanyLabels(needsCompanyNames, catalogMode, registryKey);
   /** Keep phase colors and layout while marking only actionable and expanded stages. */
   const stageClass = (stage: DisclosureStage, phase: string) => `${phase}${selectable(phase) ? " review-stage-selectable" : ""}${openStage === stage ? " review-stage-selected" : ""}`;
   /** Native buttons preserve Enter/Space; unreached stages have no activation surface. */
@@ -203,7 +208,7 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
         </li>;
       })}
     </ol>
-    <section id={`${disclosureId}-panel`} hidden={!openStage} role="region" aria-labelledby={openStage ? `${disclosureId}-${openStage}` : undefined} className="review-stage-panel">{openStage && <ReviewStageDetails stage={openStage} state={state} performance={performance} finalLabel={finalLabel} onOpenDetails={onOpenDetails} onShowEvidence={onShowEvidence} />}</section>
+    <section id={`${disclosureId}-panel`} hidden={!openStage} role="region" aria-labelledby={openStage ? `${disclosureId}-${openStage}` : undefined} className="review-stage-panel">{openStage && <ReviewStageDetails stage={openStage} companyLabels={names.labels} state={state} performance={performance} finalLabel={finalLabel} onOpenDetails={onOpenDetails} onShowEvidence={onShowEvidence} />}{needsCompanyNames && names.failed && <p className="review-unrecorded">{t("Company names are unavailable. Original company codes are shown.")}</p>}</section>
     <RoutingSummary state={state} onSwitchScope={onSwitchScope} />
     <p className="review-progress-counts">{t("{p0} candidates · {p1} relevant · {p2} model steps", { p0: state.evidence, p1: state.relevant, p2: state.steps })}{chat && <span> · {t("No retrieval")}</span>}{state.elapsedMs !== undefined && <span> · {t("Request time")}: {(state.elapsedMs / 1000).toLocaleString(locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 })}s</span>}</p>
     {status === "running" && state.startedAt && <p className="review-progress-counts" aria-live="off">{t("Elapsed")}: {Math.max(0, Math.floor((now - state.startedAt) / 1000))}s · {state.lastEventAt ? t("Last update: {seconds}s ago", { seconds: Math.max(0, Math.floor((now - state.lastEventAt) / 1000)) }) : t("Waiting for the first server event")}</p>}

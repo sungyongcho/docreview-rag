@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReviewStageDetails, type DisclosureStage } from "./review-stage-details";
 import type { ReviewExecution } from "@/lib/types";
@@ -27,11 +27,12 @@ describe("recorded stage detail data", () => {
     expect(field("Company")).toHaveTextContent("NVDA");
     expect(field("Fiscal year")).toHaveTextContent("2024");
     expect(field("Routing queries")).toHaveTextContent("NVIDIA data center");
-    expect(field("History turns considered")).toHaveTextContent("Not recorded for this run");
+    expect(document.querySelector(".review-unrecorded")).toHaveTextContent("History turns considered");
+    expect(screen.queryByText("History turns considered", { selector: "dt" })).toBeNull();
   });
   it("keeps candidate ranks, measured scores, zero candidates and repeated retrieval passes", () => {
     render(<ReviewStageDetails stage="retrieve" state={state} performance={performance} />);
-    expect(screen.getByText("[NVDA c11]")).toBeVisible();
+    expect(screen.getByText("NVDA c11")).toBeVisible();
     expect(screen.getByText("0.75")).toBeVisible();
     expect(screen.getByText("Recorded pass 2")).toBeVisible();
     expect(field("Search preset")).toHaveTextContent("balanced");
@@ -42,14 +43,13 @@ describe("recorded stage detail data", () => {
     render(<ReviewStageDetails stage="grade" state={state} performance={performance} />);
     expect(field("Kept candidate IDs")).toHaveTextContent("1 · 11");
     expect(field("Rejected candidate IDs")).toHaveTextContent("1 · 12");
-    expect(field("Model")).toHaveTextContent("grade-model");
-    expect(field("Attempts")).toHaveTextContent("2");
-    expect(field("Input tokens")).toHaveTextContent("100");
-    expect(field("Error")).toHaveTextContent("Provider retry detail");
+    const calls = screen.getByRole("table", { name: "Model calls / attempts" });
+    expect(within(calls).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["grade-model", "2", "18.0", "100", "5", "Provider retry detail"]);
   });
   it("shows the recorded answer decision, citation chunk IDs and workflow reasons", () => {
     render(<ReviewStageDetails stage="check" state={state} performance={performance} />);
-    expect(field("Verification decision")).toHaveTextContent('"citation_chunk_ids": [ 11 ]');
+    expect(field("Verification decision")).toHaveTextContent("Citation chunk IDs11");
+    expect(field("Verification decision").querySelector("pre")).toBeNull();
     expect(field("Verification decision")).toHaveTextContent("Chunk 11 supports the claim.");
     expect(field("Reasons")).toHaveTextContent("grade_references_filtered");
   });
@@ -72,4 +72,50 @@ describe("recorded stage detail data", () => {
     expect(screen.getByText("This stage was not recorded for this run.")).toBeVisible();
     expect(document.querySelectorAll("dd")).toHaveLength(0);
   });
+});
+
+it("uses registry-specific catalog names with code-only fallback and year/registry chips", () => {
+  const scope = { source: "alias", filters: { registries: ["sec", "dart"], issuers: ["NVDA", "005930", "UNKNOWN"], fiscal_years: [2024] } };
+  render(<ReviewStageDetails stage="gate" state={{ ...state, resolvedScope: scope }} companyLabels={{ "sec:NVDA": "NVDA · NVIDIA", "dart:005930": "삼성전자" }} />);
+  expect(field("Company")).toHaveTextContent("NVDA · NVIDIA");
+  expect(field("Company")).toHaveTextContent("005930 · 삼성전자");
+  expect(field("Company")).toHaveTextContent("UNKNOWN");
+  expect(field("Source").querySelectorAll(".registry")).toHaveLength(2);
+  expect(field("Fiscal year")).toHaveTextContent("FY2024");
+  for (const chip of document.querySelectorAll(".review-value-chip")) { expect(chip.tagName).toBe("SPAN"); expect(chip).not.toHaveAttribute("tabindex"); }
+});
+
+it("distinguishes recorded empty arrays/objects and zero from consolidated missing fields", () => {
+  render(<ReviewStageDetails stage="gate" state={{ ...state, resolvedScope: { filters: { registries: [], issuers: [], fiscal_years: [] } } }} performance={{ path_decision: { history_turns: 0, routing_queries: {} }, model_calls: [] }} />);
+  for (const label of ["Source", "Company", "Fiscal year", "Routing queries"]) expect(field(label)).toHaveTextContent("None");
+  expect(field("History turns considered")).toHaveTextContent("0");
+  expect(document.querySelectorAll(".review-unrecorded")).toHaveLength(1);
+  expect(document.querySelector(".review-unrecorded")).toHaveTextContent("Retrieval query");
+  expect(document.querySelector(".review-unrecorded")).not.toHaveTextContent("History turns considered");
+  expect(document.querySelector(".review-stage-details")!.textContent).not.toMatch(/[\[\]{}]/);
+});
+
+it("renders stage timings as rounded table cells without dropping repeated passes", () => {
+  render(<ReviewStageDetails stage="gate" state={state} performance={{ stages: [{ node: "gate", status: "completed", elapsed_ms: 1.8702349625527859 }, { node: "route", status: "failed", elapsed_ms: 0 }] }} />);
+  const table = screen.getByRole("table", { name: "Stage timings" });
+  expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["gate", "completed", "1.9", "route", "failed", "0.0"]);
+});
+
+it("collapses long candidate tables behind Show more while retaining all ranks and identities", () => {
+  const candidates = Array.from({ length: 30 }, (_, index) => ({ rank: index + 1, citation: `[C${index}]`, doc_id: `document-${index}`, chunk_id: index, score: index / 100 }));
+  render(<ReviewStageDetails stage="retrieve" state={state} performance={{ stage_results: [{ node: "retrieve", candidates }] }} />);
+  expect(field("Candidate count")).toHaveTextContent("30");
+  expect(within(screen.getAllByRole("table", { name: "Ranked candidates" })[0]).getAllByRole("row")).toHaveLength(9);
+  const more = screen.getByText("Show more recorded rows (22)");
+  expect(more.closest("details")).not.toHaveAttribute("open");
+  fireEvent.click(more);
+  expect(screen.getByText("document-29")).toBeVisible();
+  expect(screen.getAllByRole("table", { name: "Ranked candidates" })).toHaveLength(2);
+});
+
+it("opens the complete raw run record from any recorded stage without formatting its payload inline", () => {
+  const details = vi.fn(); render(<ReviewStageDetails stage="gate" state={state} performance={performance} onOpenDetails={details} />);
+  fireEvent.click(screen.getByRole("button", { name: "Open run details" }));
+  expect(details).toHaveBeenCalledOnce();
+  expect(document.querySelector(".review-stage-details pre")).toBeNull();
 });
