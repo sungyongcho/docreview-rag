@@ -766,7 +766,7 @@ select.chip { appearance: auto; padding-right: 6px; }
 .review-progress { --phase-green: light-dark(#17633c, #5fe09b); --phase-warning: light-dark(#795500, #e7bc64); display: grid; gap: 10px; width: 100%; }
 .review-progress-heading { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .review-progress-heading > span { color: var(--muted); display: inline-flex; gap: 5px; align-items: center; font-size: 11px; }
-.review-progress-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; font-size: 11px; }
+.review-progress-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; font-size: 11px; }
 .review-progress-steps li, .review-progress-steps li + li, .review-progress-steps li:first-child, .review-progress-steps li:last-child { display: flex; align-items: flex-start; gap: 7px; padding: 10px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--bg); }
 .review-progress-steps strong { display: block; font-size: 11px; font-weight: 600; line-height: 1.5; }
 .review-progress-steps small { display: block; font-size: 10px; line-height: 1.5; margin-top: 4px; }

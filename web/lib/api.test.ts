@@ -120,3 +120,13 @@ describe("review response body cancellation", () => {
     for (const [name, listener] of added.mock.calls) expect(removed.mock.calls.some(([removedName, removedListener]) => removedName === name && removedListener === listener)).toBe(true);
   });
 });
+
+
+it("sends no history when the policy is zero", async () => {
+  const fetch = vi.fn().mockResolvedValue(streamResponse(['event: report\ndata: {"report":{"answer":"done"}}\n\nevent: done\ndata: {}\n\n']));
+  vi.stubGlobal("fetch", fetch);
+  try {
+    await streamReview("Hi", { ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, history_turns: 0 } }, null, [{ role: "user", text: "Prior filing" }], () => {});
+    expect(JSON.parse(fetch.mock.calls[0][1].body).conversation_history).toEqual([]);
+  } finally { vi.unstubAllGlobals(); }
+});

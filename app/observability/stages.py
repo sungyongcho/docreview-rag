@@ -24,6 +24,7 @@ class StageEvent(StrictSchema):
     elapsed_ms: NonNegativeFloat | None = None
     total_elapsed_ms: NonNegativeFloat
     resolved_scope: JsonObject | None = None
+    path_decision: JsonObject | None = None
 
 
 type StageObserver = Callable[[StageEvent], Awaitable[None]]
@@ -37,6 +38,7 @@ class StageRecorder:
     started: float = field(default_factory=time.perf_counter)
     events: list[StageEvent] = field(default_factory=list)
     model_calls: list[JsonObject] = field(default_factory=list)
+    routing_cache: dict[str, JsonObject] = field(default_factory=dict)
 
 
 @dataclass
@@ -45,6 +47,7 @@ class StageMeasurement:
 
     failed: bool = False
     resolved_scope: JsonObject | None = None
+    path_decision: JsonObject | None = None
 
 
 _NODE: ContextVar[WorkflowNode | None] = ContextVar("review_active_stage", default=None)
@@ -64,6 +67,12 @@ def record_stages(observer: StageObserver | None = None) -> Iterator[StageRecord
         yield recorder
     finally:
         _ACTIVE.reset(token)
+
+
+def routing_cache() -> dict[str, JsonObject]:
+    """Reuse server decisions only within the current captured request."""
+    recorder = _ACTIVE.get()
+    return recorder.routing_cache if recorder is not None else {}
 
 
 def stage_metadata() -> JsonObject:
@@ -138,6 +147,7 @@ async def stage(node: WorkflowNode) -> AsyncIterator[StageMeasurement]:
             phase="end",
             status="failed" if measurement.failed else "completed",
             resolved_scope=measurement.resolved_scope,
+            path_decision=measurement.path_decision,
             started_at=started_at,
             elapsed_ms=max(0.0, (ended - started) * 1000),
             total_elapsed_ms=max(0.0, (ended - recorder.started) * 1000),

@@ -39,7 +39,7 @@ import { HelpOverlay } from "@/components/help-overlay";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
-import { ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer, type ReviewProgressState } from "@/components/review-progress";
+import { PathDecisionBadge, ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer, type ReviewProgressState } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
@@ -495,7 +495,6 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       const history = pending
         .slice(0, -1)
         .filter((message) => !message.pending && message.text.trim() && (message.role === "user" || message.role === "assistant"))
-        .slice(-6)
         .map((message) => ({ role: message.role, text: message.text }));
       const response = await streamReview(
         question,
@@ -509,7 +508,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           evidence = payload.candidates.length ? payload.candidates : payload.results;
           preparedEvidence = evidence;
           candidateToken = payload.candidate_token ?? undefined;
-          execution = candidateProgress(execution, evidence.length, payload.resolved_scope);
+          execution = candidateProgress(execution, evidence.length, payload.resolved_scope, payload.path_decision);
           updateMessage(conversationId, assistantId, { execution });
         },
       );
@@ -536,6 +535,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       };
       updateMessage(conversationId, assistantId, assistant);
     } catch (reason) {
+      if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       if (isInfrastructureFailure(reason)) {
         updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") });
@@ -660,6 +660,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     const controller = new AbortController();
     reviewAbort.current = controller;
     try {
+      // Reuse the context that produced this candidate snapshot, excluding its question and later turns.
+      const messageIndex = active.messages.findIndex((item) => item.id === message.id);
+      const questionIndex = active.messages.slice(0, Math.max(0, messageIndex)).findLastIndex((item) => item.role === "user" && item.text === message.question);
+      const historyTurns = (active.profile ?? profile).prompt_policy.history_turns;
+      const originalHistory = active.messages.slice(0, Math.max(0, questionIndex))
+        .filter((item) => !item.pending && item.text.trim() && (item.role === "user" || item.role === "assistant"))
+        .map((item) => ({ role: item.role, text: item.text }));
       const response = await streamReview(
         message.question,
         active.profile ?? profile,
@@ -668,7 +675,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           pinned: message.pinnedChunkIds ?? [],
           excluded: message.excludedChunkIds ?? [],
         },
-        active.messages.slice(-(active.profile ?? profile).prompt_policy.history_turns).map((item) => ({ role: item.role, text: item.text })),
+        historyTurns > 0 ? originalHistory.slice(-historyTurns) : [],
         (event) => { if (controller.signal.aborted) return; execution = reviewProgressFromEvent(event, execution); updateMessage(conversationId, assistantId, { execution }); },
         controller.signal,
       );
@@ -689,6 +696,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         failureFix: terminalFailureFix(response),
       });
     } catch (reason) {
+      if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
       noteDailyBudget(reason);
@@ -863,6 +871,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   latestEvidence={message.id === latestEvidenceId}
                   busy={busy || sendBlocked}
                   onStop={message.pending && activeReview?.conversationId === active?.id && activeReview.messageId === message.id ? () => reviewAbort.current?.abort() : undefined}
+                  onSwitchScope={!busy ? () => { updateSessionProfile({ corpus_scope: "auto" }); setQuery(message.question ?? ""); } : undefined}
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
                   onOpenFix={openSettings}
@@ -978,6 +987,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 interface ReviewMessageProps {
   message: ChatMessage;
   onStop?: () => void;
+  onSwitchScope?: () => void;
   /** Opens Settings at the category that owns the limit this run hit. */
   onOpenFix?: (category: "limits" | "runtime") => void;
   /** The newest message carrying evidence; only that one gets the `review.evidence` help hook. */
@@ -998,7 +1008,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, latestEvidence, busy, onStop, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
+function ReviewMessage({ message, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenFix }: ReviewMessageProps) {
   const { t, locale } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
@@ -1008,8 +1018,9 @@ function ReviewMessage({ message, latestEvidence, busy, onStop, onMark, onUseSel
       <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
+        {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
         {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
-        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{!message.pending && <ExecutionPerformance data={message.performance} state={message.execution} />}</>}
+        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} onSwitchScope={onSwitchScope} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{!message.pending && <ExecutionPerformance data={message.performance} state={message.execution} />}</>}
         {message.evidence?.length ? (
           <>
             {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}

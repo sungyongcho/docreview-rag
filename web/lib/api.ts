@@ -29,6 +29,7 @@ import type {
   RetrievalProfile,
   ReviewSessionProfile,
   SuiteId,
+  ReviewPathDecision,
 } from "./types";
 
 const API_BASE =
@@ -39,6 +40,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly pathDecision?: ReviewPathDecision,
   ) {
     super(message);
   }
@@ -58,12 +60,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
       String(error.code ?? "request_failed"),
       details.length ? `${message} ${details.join(" · ")}` : message,
+      error.path_decision as ReviewPathDecision | undefined,
     );
   }
   return payload as T;
 }
 
 export interface RetrievePayload {
+  path_decision?: ReviewPathDecision | null;
   results: EvidenceHit[];
   candidates: EvidenceHit[];
   candidate_token: string | null;
@@ -79,6 +83,7 @@ export async function retrieveEvidence(query: string, sessionProfile: ReviewSess
 }
 
 export interface ReviewProgress {
+  path_decision?: ReviewPathDecision | null;
   node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
   evidence_count: number;
   relevant_count: number;
@@ -110,6 +115,7 @@ export async function streamReview(
   signal?: AbortSignal,
   onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<Record<string, unknown>> {
+  const historyTurns = sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns;
   const response = await presentationFetch(`${API_BASE}/review/stream`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
@@ -121,7 +127,7 @@ export async function streamReview(
         pinned_chunk_ids: evidenceSelection.pinned,
         excluded_chunk_ids: evidenceSelection.excluded,
       } : null,
-      conversation_history: history.slice(-(sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns)),
+      conversation_history: historyTurns > 0 ? history.slice(-historyTurns) : [],
     }),
     signal,
   });
@@ -140,6 +146,7 @@ export async function streamReview(
       response.status,
       String(error.code ?? "stream_failed"),
       details.length ? `${message} ${details.join(" · ")}` : message,
+      error.path_decision as ReviewPathDecision | undefined,
     );
   }
   const reader = response.body.getReader();
@@ -168,7 +175,7 @@ export async function streamReview(
     if (frame.event === "error") {
       if (terminal) throw new Error("Review stream emitted more than one terminal event.");
       const error = (payload.error ?? {}) as Record<string, unknown>;
-      throw new ApiError(503, String(error.code ?? "stream_error"), String(error.message ?? "Review failed."));
+      throw new ApiError(503, String(error.code ?? "stream_error"), String(error.message ?? "Review failed."), error.path_decision as ReviewPathDecision | undefined);
     }
     if (frame.event === "done") {
       done = true;

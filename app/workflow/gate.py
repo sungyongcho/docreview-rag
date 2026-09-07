@@ -33,6 +33,26 @@ FILING_CUES = re.compile(
 )
 
 
+FOLLOWUP_CUES = re.compile(
+    r"^(?:what about|how about|and\b|then\b|also\b|그럼|그러면|그것|이것|그거|이거)|"
+    r"(?:는|은)(?:요)?[?？]?$|\b(?:19|20)\d{2}\b",
+    re.IGNORECASE,
+)
+CASUAL_CUES = re.compile(
+    r"\b(?:weather|thanks|thank you|joke)\b|날씨|고마워|감사합니다|농담", re.IGNORECASE
+)
+
+
+def is_filing_followup(query: str) -> bool:
+    """Recognize a bounded elliptical continuation, excluding clear casual topics."""
+    return (
+        len(query) <= 160
+        and len(query.split()) <= 18
+        and bool(FOLLOWUP_CUES.search(query.strip()))
+        and not CASUAL_CUES.search(query)
+    )
+
+
 def normalize_intent_text(value: str) -> str:
     """Normalize one full utterance for exact canned-intent matching."""
     normalized = unicodedata.normalize("NFKC", value).casefold().strip()
@@ -80,6 +100,7 @@ def deterministic_decision(
     query: str,
     *,
     has_issuer_alias: bool = False,
+    prior_filing_query: str | None = None,
 ) -> ConversationDecision | None:
     """Return only high-confidence exact casual or filing decisions."""
     if not isinstance(query, str) or not query.strip():
@@ -92,6 +113,13 @@ def deterministic_decision(
             matched_rule=f"canned:{normalized}",
             rationale="The complete normalized utterance matches a canned casual intent.",
             canned_answer=answer,
+        )
+    if prior_filing_query and is_filing_followup(query):
+        return ConversationDecision(
+            intent="document_review",
+            source="deterministic",
+            matched_rule="filing_followup",
+            rationale="A short follow-up continues a filing question in the permitted history.",
         )
     if has_issuer_alias and FILING_CUES.search(query):
         return ConversationDecision(

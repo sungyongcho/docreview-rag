@@ -87,6 +87,7 @@ class ApiError(StrictApiModel):
     code: Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9_]*$")]
     message: NonBlank
     details: tuple[ValidationIssue, ...] = ()
+    path_decision: JsonObject | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ErrorResponse(StrictApiModel):
@@ -170,6 +171,9 @@ class RetrieveRequest(StrictApiModel):
 
     query: NonBlank
     session_profile: ReviewSessionProfile = Field(default_factory=ReviewSessionProfile)
+    conversation_history: Annotated[
+        tuple[ConversationTurn, ...], BeforeValidator(_tuple_from_json_array), Field(max_length=6)
+    ] = ()
 
 
 class RetrieveResponse(StrictApiModel):
@@ -184,6 +188,7 @@ class RetrieveResponse(StrictApiModel):
     component_rankings: dict[str, JsonValue]
     resolved_profile: ResolvedRetrievalProfile
     resolved_scope: ResolvedQueryScope | None = None
+    path_decision: JsonObject | None = None
 
 
 class DocumentResource(StrictApiModel):
@@ -411,6 +416,7 @@ class RunResponse(StrictApiModel):
             **{
                 key: context.get(key)
                 for key in (
+                    "path_decision",
                     "effective_settings",
                     "provider_identity",
                     "resolved_scope",

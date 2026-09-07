@@ -42,7 +42,23 @@ export interface ReviewResolvedScope {
   source?: string;
   filters: { registries: string[]; issuers: string[]; fiscal_years: number[] };
 }
+/** Server-recorded intent and scope decision, retained with each conversation turn. */
+export interface ReviewPathDecision {
+  intent: "document_review" | "casual_chat";
+  source: "deterministic" | "classifier";
+  matched_rule: string;
+  rationale: string;
+  history_turns: number;
+  selected_scope: CorpusScope;
+  resolved_scope: ReviewResolvedScope | null;
+  routing_queries: Record<string, string>;
+  retrieval_query: string;
+  scope_outcome: "not_applicable" | "resolved" | "conflict" | "empty";
+  stopping_reason: string | null;
+  suggested_scope: "auto" | null;
+}
 export interface ReviewExecution {
+  pathDecision?: ReviewPathDecision;
   node: ReviewEventNode;
   evidence: number;
   relevant: number;
@@ -60,7 +76,7 @@ export interface ReviewExecution {
   resolvedScope?: ReviewResolvedScope;
   stageTimings?: Array<{ node: ReviewEventNode; elapsed_ms: number; status: string }>;
   /** Intentional bypasses backed by the terminal server result, never inferred from missing events. */
-  skippedNodes?: Partial<Record<ReviewEventNode, "relevance_below_threshold">>;
+  skippedNodes?: Partial<Record<ReviewEventNode, "relevance_below_threshold" | "casual_chat">>;
 }
 
 export interface ChatMessage {

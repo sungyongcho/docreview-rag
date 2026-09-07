@@ -173,6 +173,20 @@
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "path_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Decision"
           }
         },
         "required": [
@@ -2698,6 +2712,20 @@
             "title": "Model Calls",
             "type": "array"
           },
+          "path_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Decision"
+          },
           "provider_identity": {
             "anyOf": [
               {
@@ -5161,6 +5189,15 @@
         "additionalProperties": false,
         "description": "One bounded evidence retrieval request.",
         "properties": {
+          "conversation_history": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConversationTurn"
+            },
+            "maxLength": 6,
+            "title": "Conversation History",
+            "type": "array"
+          },
           "query": {
             "title": "Query",
             "type": "string"
@@ -5208,6 +5245,20 @@
             },
             "title": "Component Rankings",
             "type": "object"
+          },
+          "path_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Decision"
           },
           "query": {
             "title": "Query",
@@ -6053,6 +6104,20 @@
             ],
             "title": "Node",
             "type": "string"
+          },
+          "path_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Decision"
           },
           "phase": {
             "enum": [
