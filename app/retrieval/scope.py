@@ -127,24 +127,26 @@ class ManifestScopeIndex:
 
     @classmethod
     def from_entries(cls, entries: Iterable[DocumentReference]) -> ManifestScopeIndex:
-        """Build an index while requiring identical aliases per canonical issuer."""
+        """Merge aliases across filings while retaining canonical issuer ownership."""
         issuers: dict[tuple[str, str], IssuerMetadata] = {}
         documents: list[DocumentMetadata] = []
         for position, entry in enumerate(entries):
             registry = entry.registry
             issuer = entry.issuer
             aliases = _aliases(entry, owner=f"manifest entry {position}")
-            metadata = IssuerMetadata(
+            key = (registry, issuer)
+            existing = issuers.get(key)
+            if existing is not None:
+                combined = {_normalized(alias): alias for alias in existing.aliases}
+                for alias in aliases:
+                    combined.setdefault(_normalized(alias), alias)
+                aliases = tuple(combined[key] for key in sorted(combined))
+            issuers[key] = IssuerMetadata(
                 issuer=issuer,
                 registry=registry,
                 language=entry.language,
                 aliases=aliases,
             )
-            key = (registry, issuer)
-            existing = issuers.get(key)
-            if existing is not None and existing.aliases != aliases:
-                raise ValueError(f"manifest aliases disagree for {registry}:{issuer}")
-            issuers[key] = metadata
             documents.append(
                 DocumentMetadata(
                     doc_id=entry.document_id,

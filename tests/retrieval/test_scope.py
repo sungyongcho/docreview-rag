@@ -127,3 +127,39 @@ def test_normalized_alias_conflict_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="maps to both"):
         ManifestScopeIndex.from_entries(conflicting)
+
+
+def test_same_issuer_filings_merge_acquired_and_existing_aliases() -> None:
+    """An acquired official name must not disable routing for the entire corpus."""
+    older = _document(
+        "sec", "INTC", "0000050863", "0000050863-24-000010", ("INTC", "Intel", "Intel Corporation")
+    ).model_copy(update={"document_id": "INTC-FY2023", "fiscal_year": 2023})
+    newer = _document("sec", "INTC", "0000050863", "0000050863-25-000009", ("intc", "INTEL CORP"))
+    merged = ManifestScopeIndex.from_entries((*ENTRIES, older, newer))
+    intel = next(item for item in merged.issuers if item.issuer == "INTC")
+    assert intel.aliases == ("INTC", "Intel", "INTEL CORP", "Intel Corporation")
+    for alias in ("INTC", "Intel Corporation", "INTEL CORP"):
+        assert resolve_query_scope(f"{alias} revenue", merged).filters.issuers == ("INTC",)
+    assert resolve_query_scope(
+        "What drove NVIDIA data center revenue growth?", merged
+    ).filters.issuers == ("NVDA",)
+    assert merged.documents[older.document_id].fiscal_year == 2023
+    assert merged.documents[newer.document_id].fiscal_year == 2024
+
+
+def test_merged_aliases_still_reject_a_different_canonical_owner() -> None:
+    """Merging one issuer's aliases never authorizes ambiguous cross-issuer routing."""
+    older = ENTRIES[0]
+    newer = older.model_copy(
+        update={"document_id": "NVDA-FY2023", "aliases": ("NVDA", "Shared name")}
+    )
+    other = _document("sec", "INTC", "0000050863", "0000050863-25-000009", ("INTC", "shared NAME"))
+    with pytest.raises(ValueError, match="maps to both"):
+        ManifestScopeIndex.from_entries((older, newer, other))
+
+
+def test_alias_union_does_not_accept_duplicates_inside_one_filing() -> None:
+    """Only equivalent names across filings are deduplicated; malformed entries still fail."""
+    malformed = ENTRIES[0].model_copy(update={"aliases": ("NVIDIA", " nvidia ")})
+    with pytest.raises(ValueError, match="normalized duplicate"):
+        ManifestScopeIndex.from_entries((malformed,))
