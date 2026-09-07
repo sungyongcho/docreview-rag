@@ -218,3 +218,15 @@ rag-ollama-check --setup
 ![Default의 실제 읽기 전용 진단입니다.](../assets/24-connection-diagnostics.ko.jpg)
 
 *Default의 실제 읽기 전용 진단입니다. 서버 선택·접속·답변용 모델 확인이 통과했으며 설정이나 모델 상태를 바꾸지 않았습니다.*
+
+
+### 전송 전 느린 CPU 경고 {#cpu-warning}
+
+로컬 Ollama 모델을 선택했을 때, 현재 로드된 모델이 CPU 전용이며 최근 **15분** 안의 실행에서 생성 속도가 **15 tokens/s 미만**으로 측정되면 입력창에 **느린 로컬 CPU 모델** 안내가 표시됩니다. 이 안내 기준은 위의 CPU 구성에서 측정된 10–14 tokens/s를 포함하며, 전체 실행 시간을 예측하는 값은 아닙니다. 생성 속도는 해당 모델 호출들의 `eval_count` 합계를 `eval_duration_ms` 합계의 초 단위 값으로 나눈 것으로, 모델 로딩과 입력 처리 시간은 제외합니다.
+
+**실행 한도**에서 전체 실행의 경과 시간 한도를 확인하거나(예: 콜드 CPU 실행 300초), **근거**에서 최대 컨텍스트를 줄이세요(예: 8,000자). 그대로 전송할 수 있으며 경고가 설정을 자동으로 바꾸지는 않습니다. 설정을 바꾼 다음 실행의 성능 패널에서 생성 속도와 지정한 시간 한도 내 완료 여부를 확인하세요.
+
+백엔드 재시작이나 서버 변경 직후의 첫 실행에는 측정값이 없어 속도 경고가 나오지 않습니다. 측정값은 활성 백엔드 메모리에만 보관되며 서버와 모델 digest별로 구분합니다. 시간이 오래됐거나 모델 변경·언로드, 배치·시간 정보 미수집 상태이면 경고하지 않습니다. GPU나 혼합 배치도 이 CPU 경고의 대상이 아닙니다. 측정값을 얻으려고 벤치마크나 모델 로드를 시작하지 않으며, 로컬 실행 후와 일반 상태 조회 때 정보를 갱신합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: slow CPU composer warning with measured speed and Run limits/Evidence actions; locale=ko; theme=light; state=selected loaded CPU Ollama model below 15 tok/s with a recent real measurement; preserve existing assets. -->

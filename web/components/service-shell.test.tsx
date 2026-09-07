@@ -1424,3 +1424,41 @@ describe("browser navigation history", () => {
     expect(screen.getByRole("button", { name: "Conversation · NVIDIA data center" })).toBeVisible();
   });
 });
+
+
+it.each(["en", "ko"] as const)("shows the measured CPU warning before sending and opens the right settings in %s", async (locale) => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  window.localStorage.setItem("docreview.locale", locale);
+  const model = { name: "answer", selectable: true, loaded: true, size_bytes: 100, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], cpu_performance: { tokens_per_second: 10, measured_at: new Date().toISOString() } };
+  let local: NonNullable<Readiness["review_engines"]>[string] = { enabled: true, protocol: "ollama", models: [model] };
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { local } }));
+  const original = { ...DEFAULT_SESSION_PROFILE, engine: "local" as const, local_model: "answer" };
+  saveConversations([{ id: "cpu", title: "CPU review", createdAt: "2026-09-07", updatedAt: "2026-09-07", messages: [], profile: original }]);
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  const { I18nProvider, translate } = await import("@/lib/i18n");
+  const t = (key: string) => translate(locale, key);
+  try {
+    render(<I18nProvider><LiveShell /></I18nProvider>);
+    const warning = await screen.findByRole("status", { name: t("Slow local CPU model") });
+    expect(warning).toHaveTextContent("10 tok/s");
+    expect(warning).toHaveTextContent("15 tok/s");
+    fireEvent.change(screen.getByPlaceholderText(t("Ask a question about the filing corpus")), { target: { value: "Revenue?" } });
+    expect(screen.getByRole("button", { name: t("Send question") })).toBeEnabled();
+    fireEvent.click(within(warning).getByRole("button", { name: t("Run limits") }));
+    expect(await screen.findByLabelText(t("Maximum wall clock seconds"))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("Close conversation settings") }));
+    fireEvent.click(within(warning).getByRole("button", { name: t("Evidence") }));
+    expect(await screen.findByLabelText(t("Maximum evidence characters"))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("Close conversation settings") }));
+    expect(loadConversations()[0].profile).toEqual(original);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/review/stream"))).toBe(true);
+    fireEvent.change(screen.getByLabelText(t("Answer engine")), { target: { value: "openai" } });
+    expect(screen.queryByRole("status", { name: t("Slow local CPU model") })).toBeNull();
+    fireEvent.change(screen.getByLabelText(t("Answer engine")), { target: { value: "local" } });
+    expect(await screen.findByRole("status", { name: t("Slow local CPU model") })).toBeInTheDocument();
+    local = { ...local, models: [{ ...model, cpu_performance: null }] };
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await waitFor(() => expect(screen.queryByRole("status", { name: t("Slow local CPU model") })).toBeNull());
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
+});
