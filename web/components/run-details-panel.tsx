@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { disclosureNodes, type DisclosureStage } from "@/components/review-stage-details";
 import { ExecutionPerformance } from "@/components/execution-performance";
 import { useI18n } from "@/lib/i18n";
 import type { ChatMessage } from "@/lib/types";
@@ -16,12 +17,13 @@ const SECTIONS: Array<{ id: Section; label: string }> = [
 
 interface RunDetailsPanelProps {
   message: ChatMessage | null;
+  stageRequest?: { stage: DisclosureStage | null };
   onClose: () => void;
   onOpenFix?: (category: "limits" | "runtime") => void;
 }
 
 /** Inspect one message beside its conversation, preserving its last selected section. */
-export function RunDetailsPanel({ message, onClose, onOpenFix }: RunDetailsPanelProps) {
+export function RunDetailsPanel({ message, onClose, onOpenFix, stageRequest }: RunDetailsPanelProps) {
   const { t } = useI18n();
   const uid = useId();
   const panel = useRef<HTMLElement>(null);
@@ -82,6 +84,12 @@ export function RunDetailsPanel({ message, onClose, onOpenFix }: RunDetailsPanel
     if (content.current) content.current.scrollTop = 0;
   }, [message?.id, section]);
 
+  useEffect(() => {
+    if (!message || !stageRequest?.stage) return;
+    setSections((previous) => ({ ...previous, [message.id]: "performance" }));
+    setCollapsed(false);
+  }, [message?.id, stageRequest]);
+
   /** Activate and focus a neighboring section using the standard tab keyboard pattern. */
   function moveTab(event: React.KeyboardEvent<HTMLButtonElement>, current: number) {
     const next = event.key === "Home" ? 0 : event.key === "End" ? SECTIONS.length - 1 : event.key === "ArrowRight" ? (current + 1) % SECTIONS.length : event.key === "ArrowLeft" ? (current + SECTIONS.length - 1) % SECTIONS.length : null;
@@ -108,7 +116,7 @@ export function RunDetailsPanel({ message, onClose, onOpenFix }: RunDetailsPanel
       <div className="run-details-content" ref={content}>
         <section id={`${uid}-performance`} role="tabpanel" aria-labelledby={`${uid}-performance-tab`} hidden={section !== "performance"} tabIndex={0}>
           <h3>{t("Execution performance")}</h3>
-          {message.execution ? <ExecutionPerformance data={message.performance} state={message.execution} embedded /> : <p className="helper">{t("Execution measurements were not recorded for this message.")}</p>}
+          {message.execution ? <ExecutionPerformance data={message.performance} state={message.execution} selectedNodes={stageRequest?.stage ? disclosureNodes(stageRequest.stage, message.execution) : []} embedded /> : <p className="helper">{t("Execution measurements were not recorded for this message.")}</p>}
         </section>
         <section id={`${uid}-settings`} role="tabpanel" aria-labelledby={`${uid}-settings-tab`} hidden={section !== "settings"} tabIndex={0}>
           <h3>{t("Server-applied settings")}</h3>

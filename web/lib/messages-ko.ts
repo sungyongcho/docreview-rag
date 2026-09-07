@@ -2114,4 +2114,7 @@ export const KO: Record<string, string> = {
   "Job cancellation failed.": "작업 취소에 실패했습니다.",
   "Corpus status could not be refreshed: {message}": "코퍼스 상태를 갱신하지 못했습니다: {message}",
   "Document filters could not be loaded: {message}": "문서 필터를 불러오지 못했습니다: {message}",
+  "Total elapsed": "총 소요 시간",
+  "Recorded passes": "기록된 회차",
+  "{table} pages": "{table} 페이지",
 };

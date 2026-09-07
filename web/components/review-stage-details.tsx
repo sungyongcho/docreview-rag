@@ -2,7 +2,7 @@
 
 import { useI18n } from "@/lib/i18n";
 import type { ReviewExecution } from "@/lib/types";
-import { RecordedTable, RecordedValue, type CompanyLabels, type RecordedColumn, type ValueKind } from "./review-stage-value";
+import { RecordedStageTimings, RecordedTable, RecordedValue, type CompanyLabels, type RecordedColumn, type ValueKind } from "./review-stage-value";
 import "./review-stage-details.css";
 
 export type DisclosureStage = "path" | "gate" | "retrieve" | "grade" | "check" | "report";
@@ -19,21 +19,30 @@ function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item) => item !== null && typeof item === "object" && !Array.isArray(item)).map(record) : [];
 }
 
-const TIMING_COLUMNS: RecordedColumn[] = [{ key: "node", label: "Stage" }, { key: "status", label: "Status", kind: "status" }, { key: "elapsed_ms", label: "Elapsed (ms)", kind: "duration" }];
-const CALL_COLUMNS: RecordedColumn[] = [{ key: "model", label: "Model" }, { key: "attempts", label: "Attempts" }, { key: "elapsed_ms", label: "Elapsed (ms)", kind: "duration" }, { key: "input_tokens", label: "Input tokens" }, { key: "output_tokens", label: "Output tokens" }, { key: "error", label: "Error" }];
-const CANDIDATE_COLUMNS: RecordedColumn[] = [{ key: "rank", label: "Rank" }, { key: "citation", label: "Citation", kind: "citation" }, { key: "doc_id", label: "Document ID" }, { key: "chunk_id", label: "Chunk ID" }, { key: "score", label: "Score" }];
+/** Map the visual strip to the actual nodes recorded by the server. */
+export function disclosureNodes(stage: DisclosureStage, state: ReviewExecution): string[] {
+  return stage === "path" ? ["gate"] : stage === "gate" ? ["gate", "route"] : stage === "report" && state.pathDecision?.intent === "casual_chat" ? ["chat", "report"] : [stage];
+}
+
+const DISCLOSURE_LABELS: Record<DisclosureStage, [number, string]> = {
+  path: [0, "Path decision"], gate: [1, "Understand the question"], retrieve: [2, "Retrieve evidence"],
+  grade: [3, "Select relevant evidence"], check: [4, "Verify answer and citations"], report: [5, "Prepare the result"],
+};
+
+const CALL_COLUMNS: RecordedColumn[] = [{ key: "order", label: "Order" }, { key: "node", label: "Stage", kind: "stage" }, { key: "model", label: "Model", kind: "code" }, { key: "attempts", label: "Attempts" }, { key: "elapsed_ms", label: "Elapsed", kind: "duration" }, { key: "input_tokens", label: "Input tokens" }, { key: "output_tokens", label: "Output tokens" }, { key: "error", label: "Error" }];
+const CANDIDATE_COLUMNS: RecordedColumn[] = [{ key: "rank", label: "Rank" }, { key: "citation", label: "Citation", kind: "citation" }, { key: "doc_id", label: "Document ID", kind: "code" }, { key: "chunk_id", label: "Chunk ID", kind: "code" }, { key: "score", label: "Score", kind: "score" }];
 
 /** Render compact recorded facts, preserving empty collections and consolidating absent fields. */
-export function ReviewStageDetails({ stage, state, performance, finalLabel, companyLabels = {}, onOpenDetails, onShowEvidence }: {
+export function ReviewStageDetails({ stage, state, performance, finalLabel, companyLabels = {} }: {
   stage: DisclosureStage; state: ReviewExecution; performance?: Record<string, unknown>; finalLabel?: string;
-  companyLabels?: CompanyLabels; onOpenDetails?: () => void; onShowEvidence?: () => void;
+  companyLabels?: CompanyLabels;
 }) {
   const { t } = useI18n();
-  const nodes = stage === "path" ? ["gate"] : stage === "gate" ? ["gate", "route"] : stage === "report" && state.pathDecision?.intent === "casual_chat" ? ["chat", "report"] : [stage];
+  const nodes = disclosureNodes(stage, state);
   const results = records(performance?.stage_results).filter((item) => nodes.includes(String(item.node)));
-  const calls = Array.isArray(performance?.model_calls) ? records(performance.model_calls).filter((item) => nodes.includes(String(item.node))) : undefined;
+  const calls = Array.isArray(performance?.model_calls) ? records(performance.model_calls).map((item, index): Record<string, unknown> => ({ ...item, order: index + 1 })).filter((item) => nodes.includes(String(item.node))) : undefined;
   const timingSource = performance?.stages ?? state.stageTimings;
-  const timings = Array.isArray(timingSource) ? records(timingSource).filter((item) => nodes.includes(String(item.node)) && item.phase !== "start") : undefined;
+  const timings = Array.isArray(timingSource) ? records(timingSource).map((item, index): Record<string, unknown> => ({ ...item, order: index + 1 })).filter((item) => nodes.includes(String(item.node)) && item.phase !== "start") : undefined;
   const path = record(performance?.path_decision ?? state.pathDecision);
   const settings = record(performance?.effective_settings);
   const scope = record(path.resolved_scope ?? performance?.resolved_scope ?? state.resolvedScope);
@@ -57,7 +66,7 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
   if (!["path", "gate"].includes(stage)) for (const [index, result] of (results.length ? results : [{}]).entries()) {
     const fields: Field[] = [];
     if (stage === "retrieve") fields.push({ label: "Candidate count", value: Array.isArray(result.candidates) ? result.candidates.length : undefined });
-    if (stage === "grade") fields.push({ label: "Kept candidate IDs", value: result.kept_chunk_ids, count: true }, { label: "Rejected candidate IDs", value: result.rejected_chunk_ids, count: true });
+    if (stage === "grade") fields.push({ label: "Kept candidate IDs", value: result.kept_chunk_ids, count: true, kind: "code" }, { label: "Rejected candidate IDs", value: result.rejected_chunk_ids, count: true, kind: "code" });
     if (stage === "check") fields.push({ label: "Verification decision", value: result.decision, wide: true }, { label: "Reasons", value: result.reasons, wide: true });
     if (stage === "report") fields.push({ label: "Final label", value: finalLabel ? t(finalLabel) : record(result.decision).label }, { label: "Reasons", value: result.reasons, wide: true }, { label: "Request time", value: performance?.total_elapsed_ms ?? state.elapsedMs, kind: "duration" });
     fields.push({ label: "Failure", value: result.failure, wide: true });
@@ -69,18 +78,16 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
   const hasRecordedFields = Boolean(skip) || calls !== undefined || timings !== undefined || sections.some((section) => section.fields.some((field) => field.value !== undefined && field.value !== null));
   if (!hasRecordedFields) return <div className="review-stage-details"><p className="review-stage-empty">{t("This stage was not recorded for this run.")}</p></div>;
   return <div className="review-stage-details">
+    <h4 className="review-stage-mapping">{DISCLOSURE_LABELS[stage][0]}. {t(DISCLOSURE_LABELS[stage][1])} · <code>{nodes.join(", ")}</code></h4>
     {skip && <p className="review-stage-skip">{t(skip)}</p>}
     {sections.map((section, index) => <section key={index}>
       {section.pass && <h4>{t("Recorded pass")} {section.pass}</h4>}
       <dl className="review-stage-fields">{section.fields.filter((field) => field.value !== undefined && field.value !== null).map((field) => <div key={field.label} className={field.wide ? "review-field-wide" : undefined}><dt>{t(field.label)}</dt><dd>{field.count && Array.isArray(field.value) && <span>{field.value.length} · </span>}<RecordedValue value={field.value} kind={field.kind} companyLabels={companyLabels} registries={registries} /></dd></div>)}</dl>
-      {section.candidates && <RecordedTable label="Ranked candidates" rows={section.candidates} columns={CANDIDATE_COLUMNS} />}
+      {section.candidates && <RecordedTable label="Ranked candidates" rows={section.candidates} columns={CANDIDATE_COLUMNS} collapsed />}
     </section>)}
-    {timings && <section><RecordedTable label="Stage timings" rows={timings} columns={TIMING_COLUMNS} /></section>}
+    {timings && <section><RecordedStageTimings rows={timings} /></section>}
     {calls && <section><RecordedTable label="Model calls / attempts" rows={calls} columns={CALL_COLUMNS} /></section>}
     {missing.size > 0 && <p className="review-unrecorded">{t("Not recorded for this run")}: {[...missing].join(" · ")}</p>}
-    <div className="review-stage-actions">
-      {stage === "report" && <button type="button" onClick={onShowEvidence} disabled={!onShowEvidence}>{t("Show evidence")}</button>}
-      <button type="button" onClick={onOpenDetails} disabled={!onOpenDetails}>{t("Open run details")}</button>
-    </div>
+
   </div>;
 }

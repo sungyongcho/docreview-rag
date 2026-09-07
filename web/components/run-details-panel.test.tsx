@@ -155,3 +155,22 @@ describe("Run details panel", () => {
     expect(screen.getByText("A run trace was not recorded for this message.")).toBeVisible();
   });
 });
+
+
+it("opens the selected stage on Performance while retaining every collected node and pass", () => {
+  const nodes = ["gate", "route", "retrieve", "route", "retrieve", "grade", "check", "report"];
+  const message = { ...first, performance: { stages: nodes.map((node, index) => ({ node, status: "completed", elapsed_ms: index + 1 })) } };
+  const { rerender } = render(<RunDetailsPanel message={message} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Server settings" }));
+  rerender(<RunDetailsPanel message={message} onClose={vi.fn()} stageRequest={{ stage: "retrieve" }} />);
+  expect(screen.getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
+  const table = screen.getByRole("table", { name: /Measured stage durations/ });
+  expect(Array.from(table.querySelectorAll("tbody tr"), (row) => row.getAttribute("data-stage-node"))).toEqual(nodes);
+  expect(table.querySelectorAll('tr[aria-current="true"]')).toHaveLength(2);
+  expect(Array.from(table.querySelectorAll('tr[aria-current="true"]'), (row) => row.getAttribute("data-stage-node"))).toEqual(["retrieve", "retrieve"]);
+  fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
+  fireEvent.click(screen.getByRole("button", { name: "Collapse run details" }));
+  rerender(<RunDetailsPanel message={message} onClose={vi.fn()} stageRequest={{ stage: "retrieve" }} />);
+  expect(screen.getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("button", { name: "Collapse run details" })).toHaveAttribute("aria-expanded", "true");
+});

@@ -80,8 +80,8 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 **검색한 근거 후보**를 펼치면 후보마다 접힌 카드 하나가 공시 항목 제목과 함께 나타납니다. EDGAR 공시는
 `Item 7 - (Management's Discussion and Analysis)`, DART 공시는 `II. 사업의 내용`처럼 부문 이름, 제목을 알 수
 없는 경우에는 인용 라벨만 표시합니다. 헤더에는 문서 식별자·표 배지·문자 범위가 함께 있고, 카드를 열면
-구절과 전체 인용을 읽을 수 있습니다. 한 페이지에 10개씩 표시하며, 고정된 툴바에 표시 범위, 고정·제외
-개수, **모두 펼치기** / **모두 접기**, 두 페이지 이상이면 **이전 페이지** / **다음 페이지**가 항상 보입니다.
+구절과 전체 인용을 읽을 수 있습니다. 한 페이지에 5개씩 표시하며, 고정된 툴바에 표시 범위, 고정·제외
+개수, **모두 펼치기** / **모두 접기**, 두 페이지 이상이면 **이전 페이지** / **다음 페이지** 접근성 라벨의 화살표와 `1/3` 형태의 위치가 보입니다.
 고정한 카드는 펼친 상태로, 나머지는 접힌 상태로 시작합니다. 고정·제외 버튼은 각 헤더에 있어 접힌
 카드에서도, 페이지를 넘겨도 동작합니다. 후보 수와 인용 수는 서로 다른 수치입니다. 고정·제외는
 [선택한 근거로 다시 검토](settings.md#step-10)할 때 적용하며 현재 답변을 다시 쓰지 않습니다.
@@ -142,13 +142,20 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 밑줄이 보입니다. 대기·미실행 단계는 눌러도 열리지 않습니다. 실패·취소·건너뜀·완료·
 실행 중인 단계는 선택할 수 있고, 초점이 있는 단계는 Enter 또는 Space로 열고 닫습니다.
 
-단계 상세는 JSON 대신 출처 배지·회사/연도 칩·소수 첫째 자리의 밀리초 시간·모델 호출 표로
+단계 상세는 JSON 대신 출처 배지·회사/연도 칩·단위가 붙은 측정 시간·모델 호출 표로
 표시합니다. 회사 이름은 범위 패널을 처음 열 때 기존 문서 목록의 개발/공개 카탈로그에서
 가져오며, 실행에 기록된 코드와 범위는 바꾸지 않습니다. 이름이 없거나 모호하면 원래 코드만
 표시하고 조회 실패는 패널 옆에 알립니다. **없음**은 기록된 빈 목록이며, 대시나 미기록 안내는
 값이 기록되지 않았다는 뜻입니다. 패널 자체의 스크롤 없이 메시지 안에서 내용만큼 늘어납니다.
-표가 8행을 넘으면 **기록 더 보기**로 나머지를 펼칩니다. 기록된 어느 단계에서든 **실행 상세 열기**로
-원본 실행 기록을 확인할 수 있습니다.
+패널 제목에서 화면 단계와 대응하는 서버 노드 코드를 확인합니다. 반복된 노드 시간은 한 행에
+회차 수와 총 소요 시간을 표시하고 **기록된 회차**를 펼치면 실제 수집 순서대로 각 회차를 봅니다.
+시간이 누락된 회차가 있으면 일부만 더한 합계를 표시하지 않습니다. 상태에는 원래 코드도 남습니다.
+**순위별 후보 (N)**는 처음에 접혀 있으며 펼치면 5행씩 표시됩니다. 다른 기록 표와 근거 카드에도
+같은 화살표 페이지 이동을 사용합니다. 점수는 유효숫자 네 자리로 표시하고 마우스를 올리면
+전체 값을 확인합니다. 인용은 한 칩으로 유지하고 문서·청크 ID는 코드 글꼴로 표시합니다.
+**실행 상세 열기**와 근거가 있을 때의 **근거 보기**는 실행 상태 제목 옆에 있어 단계를 모두
+접어도 보입니다. 단계를 선택한 상태에서 상세를 열면 **성능** 탭에서 해당 노드를 강조하며,
+다른 단계와 회차도 그대로 남습니다.
 
 **실행 상세**는 오른쪽 패널의 **성능**, **서버 설정**, **트레이스** 탭을 엽니다.
 `Q. <질문>` 제목과 짧은 메시지 ID로 어느 답변의 기록인지 확인합니다. 같은 답변을 다시
@@ -159,7 +166,7 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 
 ### SCREENSHOT NEEDED
 
-<!-- Feature: issues 140/141 selected execution strip and compact mapped stage details; show SEC/DART company names and FY chips, empty versus unrecorded values, rounded timings and model table, no inner scrollbar, collapsed long-table continuation and raw run-details access; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+<!-- Feature: issues 140/141/157/158 selected execution strip, grouped ordered timing passes, heading actions, highlighted inspector stage, and five-row candidate/evidence pagination; show SEC/DART company names and FY chips, empty versus unrecorded values, timings with units and model table, collapsed ranked candidates and arrow pagers, and raw run-details access; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
 
 ### SCREENSHOT NEEDED
 <!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=ko; light mode; preserve existing assets. -->

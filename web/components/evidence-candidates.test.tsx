@@ -96,13 +96,15 @@ describe("evidence candidates", () => {
     render(<Harness initial={message(hits(12))} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
-    expect(screen.getAllByText(/^Body \d+$/)).toHaveLength(10);
+    expect(screen.getAllByText(/^Body \d+$/)).toHaveLength(5);
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(screen.getByText("Body 11")).toBeVisible();
     expect(screen.getByText("Body 12")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
     expect(screen.queryByText(/^Body \d+$/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     expect(screen.queryByText(/^Body \d+$/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Item 1 - (Title 1)" })).toHaveAttribute("aria-expanded", "false");
@@ -112,8 +114,11 @@ describe("evidence candidates", () => {
     const onUseSelected = vi.fn();
     render(<Harness initial={message(hits(12))} onUseSelected={onUseSelected} />);
 
-    expect(screen.getByText("Showing 1–10 of 12")).toBeInTheDocument();
-    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1–5 of 12")).toBeInTheDocument();
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "Previous page" }).querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Next page" }).querySelector("svg")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Review again with selected evidence" })).not.toBeInTheDocument();
 
@@ -123,8 +128,10 @@ describe("evidence candidates", () => {
     expect(onUseSelected).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("2/3")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(screen.getByText("Showing 11–12 of 12")).toBeInTheDocument();
-    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getByText("3/3")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Item 1 - (Title 1)" })).not.toBeInTheDocument();
 
@@ -132,6 +139,7 @@ describe("evidence candidates", () => {
     expect(card("Item 12 - (Title 12)")).toHaveClass("excluded");
     expect(screen.getByText("1 pinned · 1 excluded")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
     expect(within(card("Item 1 - (Title 1)")).getByRole("button", { name: "Pin" })).toHaveAttribute("aria-pressed", "true");
     expect(card("Item 1 - (Title 1)")).toHaveClass("pinned");

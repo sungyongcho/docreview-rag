@@ -1,7 +1,7 @@
 import type { EvidenceHit } from "@/lib/types";
 
-/** Candidates rendered per page; a 30-candidate list becomes three short pages. */
-export const EVIDENCE_PAGE_SIZE = 10;
+/** Candidates rendered per page; a 30-candidate list becomes six short pages. */
+export const EVIDENCE_PAGE_SIZE = 5;
 
 /** Saved conversations predate the `section_title` field, so a heading tolerates its absence. */
 type HeadingSource = Pick<EvidenceHit, "citation"> & { section_title?: string | null };
