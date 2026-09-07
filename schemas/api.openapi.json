@@ -250,6 +250,18 @@
             ],
             "title": "Limit"
           },
+          "projected_input_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Input Tokens"
+          },
           "schema_errors": {
             "default": [],
             "items": {
@@ -2910,6 +2922,17 @@
           "output_tokens": {
             "title": "Output Tokens",
             "type": "integer"
+          },
+          "projected_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Input Tokens"
           },
           "provider": {
             "default": "unknown",

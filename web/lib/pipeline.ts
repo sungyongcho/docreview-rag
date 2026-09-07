@@ -465,7 +465,12 @@ export function failureReport(failure: Record<string, unknown>): FailureReport {
     const limit = budget?.limit ?? legacy?.[3];
     const kind = resource === "input_tokens" ? "input token" : resource === "output_tokens" ? "output token" : resource === "estimated_cost_usd" ? "estimated cost" : null;
     const amount = used !== undefined && limit !== undefined ? ` (${used} of ${limit})` : "";
-    const text = kind ? `The model call reached its ${kind} limit${amount}${at("node")}.` : `The model call reached a budget limit${at("node")}.`;
+    const projected = typeof budget?.projected_input_tokens === "number" ? budget.projected_input_tokens : null;
+    // A refusal made before the call: the prompt was measured against what remained, not spent.
+    const remaining = projected !== null && used !== undefined && limit !== undefined ? Math.max(0, Number(limit) - Number(used)) : null;
+    const text = projected !== null && remaining !== null
+      ? `The model call was refused before it started: its prompt is about ${projected} input tokens and ${remaining} remain of ${limit}${at("node")}.`
+      : kind ? `The model call reached its ${kind} limit${amount}${at("node")}.` : `The model call reached a budget limit${at("node")}.`;
     const fix = failure.budget_source === "run_limits" ? RUN_LIMITS : failure.budget_source === "provider_budget" || failure.budget_source === "both" ? { label: "Open System status", category: "runtime" as const } : undefined;
     return { text, fix };
   }

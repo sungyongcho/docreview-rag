@@ -6,6 +6,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.llm.schemas import (
+    GRADE_REASON_MAX_CHARS,
     AnswerDecision,
     BudgetExceeded,
     ChunkRelevance,
@@ -233,3 +234,35 @@ def test_provider_result_requires_exactly_one_output_or_matching_refusal():
             refusal=None,
             metadata=metadata(),
         )
+
+
+def test_budget_refusal_projection_requires_the_input_resource():
+    """A projected prompt size belongs to the input budget only and never to output or cost."""
+    refusal = BudgetExceeded(
+        which="input_tokens", used=0, limit=2_000, attempts=1, projected_input_tokens=2_521
+    )
+    assert refusal.projected_input_tokens == 2_521
+    with pytest.raises(ValidationError, match="input token budget only"):
+        BudgetExceeded(
+            which="output_tokens", used=600, limit=600, attempts=1, projected_input_tokens=1
+        )
+
+
+def test_grade_reason_is_bounded_in_schema_and_truncated_instead_of_rejected():
+    """The schema advertises the bound; a longer rationale is cut at a word, blanks still fail."""
+    schema = RelevanceJudgment.model_json_schema()
+    reason = schema["$defs"]["ChunkRelevance"]["properties"]["reason"]
+    assert reason["maxLength"] == GRADE_REASON_MAX_CHARS
+    assert reason["minLength"] == 1
+
+    long = "word " * 60
+    grade = ChunkRelevance(chunk_id=1, relevant=True, reason=long)
+    assert len(grade.reason) <= GRADE_REASON_MAX_CHARS
+    assert not grade.reason.endswith(" ")
+    assert grade.reason.endswith("word")
+    short = ChunkRelevance(chunk_id=1, relevant=True, reason="Direct evidence.")
+    assert short.reason == "Direct evidence."
+    with pytest.raises(ValidationError):
+        ChunkRelevance(chunk_id=1, relevant=True, reason="   ")
+    with pytest.raises(ValidationError):
+        ChunkRelevance(chunk_id=1, relevant=True, reason=42)

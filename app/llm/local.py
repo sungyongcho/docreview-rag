@@ -8,6 +8,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
+from app.llm.estimate import estimate_prompt_tokens
 from app.llm.provider import Clock, LLMProvider, RawProviderResponse, strict_response_format
 from app.llm.schemas import LocalModelTiming, Prompt, ProviderBudget
 
@@ -29,6 +30,7 @@ class LocalLLMProvider(LLMProvider):
         timeout_s: float = 120.0,
         client: httpx.AsyncClient | None = None,
         clock: Clock = time.perf_counter_ns,
+        context_window: int | None = None,
     ) -> None:
         if not base_url.strip() or not model_name.strip():
             raise ValueError("local LLM base URL and model must be nonblank")
@@ -36,6 +38,8 @@ class LocalLLMProvider(LLMProvider):
             raise ValueError("unsupported local LLM protocol")
         if timeout_s <= 0:
             raise ValueError("local LLM timeout must be positive")
+        if context_window is not None and context_window <= 0:
+            raise ValueError("local LLM context window must be positive")
         super().__init__(clock=clock)
         self.model_name = model_name.strip()
         self.protocol = protocol
@@ -45,6 +49,14 @@ class LocalLLMProvider(LLMProvider):
         self._api_key = api_key
         self._client = client if client is not None else httpx.AsyncClient(timeout=timeout_s)
         self._owned_client = self._client if client is None else None
+        #: Window requested from Ollama for every call of a run. The remaining budget
+        #: shrinks after each call, and Ollama reloads the model whenever the requested
+        #: window changes, which cost 10-12 s per call on CPU; a fixed window avoids that.
+        self._context_window = context_window
+
+    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
+        """Project the prompt before the call; local models use the shared fallback encoding."""
+        return estimate_prompt_tokens(prompt, model_name=self.model_name)
 
     async def aclose(self) -> None:
         """Close only the HTTP client owned by this provider."""
@@ -132,9 +144,16 @@ class LocalLLMProvider(LLMProvider):
                 ],
                 "format": schema.model_json_schema(),
                 "stream": False,
+                # Thinking models such as gemma4 otherwise spend the whole output allowance
+                # on hidden reasoning and return an empty structured answer; the prompts
+                # already state their rules, so only the visible JSON is paid for.
+                "think": False,
                 "options": {
                     "num_predict": budget.max_output_tokens,
-                    "num_ctx": budget.max_input_tokens + budget.max_output_tokens,
+                    "num_ctx": max(
+                        self._context_window or 0,
+                        budget.max_input_tokens + budget.max_output_tokens,
+                    ),
                     "temperature": 0,
                 },
             },

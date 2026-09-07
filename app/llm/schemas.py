@@ -8,6 +8,7 @@ from typing import Annotated, Literal, Self
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictBool,
@@ -26,6 +27,31 @@ def _reject_blank(value: str) -> str:
 
 
 NonBlank = Annotated[StrictStr, Field(min_length=1), AfterValidator(_reject_blank)]
+
+#: Longest grade rationale kept: about twenty words, so five grades cost far less than the
+#: 600-token local output allowance the grade and check calls share.
+GRADE_REASON_MAX_CHARS = 160
+
+
+def _truncate_reason(value: object) -> object:
+    """Cut an over-long rationale at its last word boundary instead of rejecting it.
+
+    Constrained decoders honour the schema's ``maxLength``; providers that ignore it would
+    otherwise turn a wordy but correct grade into a schema failure and a repair round.
+    """
+    if isinstance(value, str) and len(value) > GRADE_REASON_MAX_CHARS:
+        head = value[:GRADE_REASON_MAX_CHARS]
+        cut = head.rfind(" ")
+        return (head[:cut] if cut > GRADE_REASON_MAX_CHARS // 2 else head).rstrip()
+    return value
+
+
+BoundedReason = Annotated[
+    StrictStr,
+    BeforeValidator(_truncate_reason),
+    Field(min_length=1, max_length=GRADE_REASON_MAX_CHARS),
+    AfterValidator(_reject_blank),
+]
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
 NonNegativeFloat = Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
@@ -211,7 +237,7 @@ class ChunkRelevance(StrictSchema):
 
     chunk_id: PositiveInt
     relevant: StrictBool
-    reason: NonBlank
+    reason: BoundedReason
 
 
 class RelevanceJudgment(StrictSchema):
@@ -319,12 +345,17 @@ class BudgetExceeded(StrictSchema):
     limit: StrictInt | Decimal
     attempts: Annotated[StrictInt, Field(ge=1, le=2)]
     schema_errors: tuple[NonBlank, ...] = ()
+    #: Estimated size of the request that was refused before it was sent. ``used`` stays
+    #: actual usage, so an estimate never inflates reported accounting.
+    projected_input_tokens: NonNegativeInt | None = None
 
     @model_validator(mode="after")
     def validate_nonnegative_values(self) -> Self:
-        """Reject nonsensical negative budget evidence."""
+        """Reject nonsensical negative budget evidence and misplaced projections."""
         if self.used < 0 or self.limit < 0:
             raise ValueError("budget evidence must be nonnegative")
+        if self.projected_input_tokens is not None and self.which != "input_tokens":
+            raise ValueError("a projected prompt size applies to the input token budget only")
         if isinstance(self.used, Decimal) and not self.used.is_finite():
             raise ValueError("used budget evidence must be finite")
         if isinstance(self.limit, Decimal) and not self.limit.is_finite():
@@ -361,6 +392,8 @@ class ProviderMetadata(StrictSchema):
     llm_output: StrictStr
     raw_outputs: tuple[StrictStr, ...]
     local_timings: tuple[LocalModelTiming, ...] = ()
+    #: Set when the final attempt was refused before the call from its projected size.
+    projected_input_tokens: NonNegativeInt | None = None
 
     @model_validator(mode="after")
     def validate_attempt_metadata(self) -> Self:

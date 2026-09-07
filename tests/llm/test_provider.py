@@ -518,3 +518,115 @@ def test_repair_loop_still_guards_the_strict_path():
     assert len(responses.calls) == 2
     assert "failed validation" in responses.calls[1]["input"]
     assert responses.calls[1]["text"] == responses.calls[0]["text"]
+
+
+def test_first_request_is_refused_before_the_call_when_its_projection_exceeds_the_allowance():
+    """A prompt projected far above the remaining input allowance is never sent."""
+    provider = DeterministicLLMProvider(
+        [raw(valid_output(), input_tokens=100, output_tokens=20)],
+        clock=TickClock(),
+        projected_input_tokens=lambda _prompt: 2_521,
+    )
+
+    result = asyncio.run(
+        provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=2_000))
+    )
+
+    assert result.status == "budget_exceeded"
+    assert isinstance(result.refusal, BudgetExceeded)
+    assert result.refusal.which == "input_tokens"
+    assert result.refusal.used == 0
+    assert result.refusal.limit == 2_000
+    assert result.refusal.attempts == 1
+    assert result.refusal.projected_input_tokens == 2_521
+    assert provider.prompts == ()
+    assert result.metadata.raw_outputs == ("",)
+    assert result.metadata.retries == 0
+    assert result.metadata.input_tokens == 0
+    assert result.metadata.request_time_ms == 0
+    assert result.metadata.projected_input_tokens == 2_521
+
+
+def test_repair_is_refused_before_the_call_when_the_repair_prompt_would_not_fit():
+    """The larger repair prompt passes the same gate and keeps the validation errors."""
+    provider = DeterministicLLMProvider(
+        [
+            raw('{"label":"SUPPORTED"}', input_tokens=500, output_tokens=5),
+            raw(valid_output(), input_tokens=15, output_tokens=5, request_id="req-2"),
+        ],
+        clock=TickClock(),
+        projected_input_tokens=lambda p: 700 if "failed validation" in p.user else 300,
+    )
+
+    result = asyncio.run(
+        provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=1_000))
+    )
+
+    assert result.status == "budget_exceeded"
+    assert isinstance(result.refusal, BudgetExceeded)
+    assert result.refusal.used == 500
+    assert result.refusal.projected_input_tokens == 700
+    assert result.refusal.schema_errors
+    assert len(provider.prompts) == 1
+    assert result.metadata.retries == 0
+    assert result.metadata.raw_outputs == ('{"label":"SUPPORTED"}',)
+
+
+def test_projection_within_tolerance_still_sends_the_request():
+    """A projection up to ten percent above the allowance is admitted and measured post hoc."""
+    provider = DeterministicLLMProvider(
+        [raw(valid_output(), input_tokens=1_050, output_tokens=20)],
+        clock=TickClock(),
+        projected_input_tokens=lambda _prompt: 1_090,
+    )
+
+    result = asyncio.run(
+        provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=1_000))
+    )
+
+    assert len(provider.prompts) == 1
+    assert result.status == "budget_exceeded"
+    assert isinstance(result.refusal, BudgetExceeded)
+    assert result.refusal.used == 1_050
+    assert result.refusal.projected_input_tokens is None
+    assert result.metadata.projected_input_tokens is None
+
+
+def test_post_hoc_accounting_is_unchanged_when_the_projection_undershoots():
+    """An undercounted prompt is sent and the reported usage still trips the post-hoc check."""
+    provider = DeterministicLLMProvider(
+        [raw(valid_output(), input_tokens=1_100, output_tokens=20)],
+        clock=TickClock(),
+        projected_input_tokens=lambda _prompt: 900,
+    )
+
+    result = asyncio.run(
+        provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=1_000))
+    )
+
+    assert len(provider.prompts) == 1
+    assert result.status == "budget_exceeded"
+    assert isinstance(result.refusal, BudgetExceeded)
+    assert result.refusal.which == "input_tokens"
+    assert result.refusal.used == 1_100
+    assert result.refusal.projected_input_tokens is None
+
+
+def test_deterministic_provider_projects_nothing_by_default():
+    """Fixtures without an injected projection keep today's usage-only accounting."""
+    provider = DeterministicLLMProvider(
+        [raw(valid_output(), input_tokens=100, output_tokens=20)], clock=TickClock()
+    )
+
+    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget(max_input_tokens=5)))
+
+    assert len(provider.prompts) == 1
+    assert result.status == "budget_exceeded"
+    assert result.refusal.projected_input_tokens is None
+
+
+def test_strict_format_keeps_the_reason_bound():
+    """The strict decoding schema carries the rationale length bound to the provider."""
+    schema = strict_response_format(RelevanceJudgment)["schema"]
+    reason = schema["$defs"]["ChunkRelevance"]["properties"]["reason"]
+    assert reason["maxLength"] == 160

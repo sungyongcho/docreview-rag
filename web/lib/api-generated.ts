@@ -1124,6 +1124,8 @@ export interface components {
             attempts: number;
             /** Limit */
             limit: number | string;
+            /** Projected Input Tokens */
+            projected_input_tokens?: number | null;
             /**
              * Schema Errors
              * @default []
@@ -2190,6 +2192,8 @@ export interface components {
             node?: ("gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report") | null;
             /** Output Tokens */
             output_tokens: number;
+            /** Projected Input Tokens */
+            projected_input_tokens?: number | null;
             /**
              * Provider
              * @default unknown

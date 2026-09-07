@@ -391,6 +391,11 @@ bash scripts/diagnose_ollama.sh --web-url http://localhost:18080
 
 CPU 모델의 실제 답변은 상태 조회보다 오래 걸릴 수 있습니다. 개별 호출 기본 제한은 120초이고
 고급 설정은 `LOCAL_LLM_TIMEOUT_S`·`LOCAL_LLM_MAX_INPUT_TOKENS`·`LOCAL_LLM_MAX_OUTPUT_TOKENS`입니다.
+gemma4처럼 thinking을 지원하는 모델은 요청에서 thinking을 끈 채(`think: false`) 실행하고, 창 크기
+(`num_ctx`)는 설정된 입력+출력 허용량으로 한 실행 동안 고정해 호출 사이에 모델을 다시 로드하지
+않습니다. GPU 없는 CPU(Ryzen 7 8845HS) 실측은 생성 약 10 tok/s, 프롬프트 평가 약 80–95 tok/s,
+기준 질문 36–103초입니다(`docs/TUTORIAL/ko/ollama.md`의 지원 구성 표). 프롬프트가 남은 입력
+허용량을 넘길 것으로 추정되면 호출 전에 거절되고 Run trace에 `projected_input_tokens`로 남습니다.
 대화 전체 한도는 RAG settings → Run limits에서 조절합니다. 연결 성공이 답변 품질 검증 완료를
 뜻하지는 않으며, 실패 원인은 응답의 Run trace에서 확인합니다.
 

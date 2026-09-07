@@ -763,3 +763,18 @@ it("preserves the recorded provider output ceiling instead of guessing an input 
   expect(failureReport({ ...structured, budget_source: "run_limits" }).fix?.category).toBe("limits");
   expect(failureReport({ ...legacy, details: [] }).text).not.toContain("input");
 });
+
+it("explains a refusal made before the call from the projected prompt size", async () => {
+  const { translate } = await import("./i18n");
+  const refused = {
+    code: "provider_failure", node: "grade", status: "budget_exceeded", attempts: 1,
+    details: ["input_tokens: used=0 limit=2000", "next request projected at 2521 input tokens; refused before the call"],
+    budget: { which: "input_tokens", used: 0, limit: 2000, attempts: 1, projected_input_tokens: 2521 },
+    budget_source: "provider_budget",
+  };
+  const report = failureReport(refused);
+  expect(report.text).toBe("The model call was refused before it started: its prompt is about 2521 input tokens and 2000 remain of 2000 at the grade step.");
+  expect(report.fix?.category).toBe("runtime");
+  expect(failureReport({ ...refused, budget_source: "run_limits" }).fix?.category).toBe("limits");
+  expect(translate("ko", report.text)).toBe("모델 호출을 시작하기 전에 거절했습니다: 프롬프트가 약 2521 입력 토큰인데 한도 2000 중 2000만 남아 있습니다. 중단 단계: grade.");
+});

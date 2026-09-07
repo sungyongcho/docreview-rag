@@ -105,6 +105,7 @@ def record_model_call(metadata: ProviderMetadata) -> None:
             "cache_write_input_tokens": metadata.cache_write_input_tokens,
             "reasoning_tokens": metadata.reasoning_tokens,
             "estimated_cost_usd": str(metadata.estimated_cost_usd),
+            "projected_input_tokens": metadata.projected_input_tokens,
             **provider_identity(api_url=metadata.api_url),
             "local_timings": [
                 timing.model_dump(mode="json", exclude_none=True)

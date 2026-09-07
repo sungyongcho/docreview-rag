@@ -52,9 +52,13 @@ def _raw(output, *, input_tokens=10, output_tokens=5, request_id="req-1"):
     )
 
 
-def _provider(responses):
+def _provider(responses, *, projected=None):
     """Build a deterministic provider returning the queued responses."""
-    return DeterministicLLMProvider(responses, clock=TickClock())
+    return DeterministicLLMProvider(
+        responses,
+        clock=TickClock(),
+        projected_input_tokens=None if projected is None else (lambda _prompt: projected),
+    )
 
 
 def _request(*, budget=None, provider_budget=None):
@@ -587,3 +591,74 @@ def test_grade_output_repair_limit_preserves_its_actual_source():
     assert failure["budget"]["used"] == failure["budget"]["limit"] == 600
     assert failure["budget_source"] == "provider_budget"
     assert "json_invalid" in " ".join(failure["details"])
+
+
+def test_grade_is_refused_before_the_call_when_its_prompt_exceeds_the_provider_allowance():
+    """A grade prompt projected above the provider allowance is refused without a request."""
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)], projected=2_521)
+
+    result = asyncio.run(
+        run_workflow(
+            _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
+            retriever=retriever_returning([_hit()]),
+            provider=provider,
+            clock=SequenceClock(),
+        )
+    )
+
+    assert result.status == "budget_exceeded"
+    reason = report_of(result)["reason"]
+    assert reason["node"] == "grade"
+    assert reason["budget"]["projected_input_tokens"] == 2_521
+    assert reason["budget_source"] == "provider_budget"
+    assert reason["details"][0] == "input_tokens: used=0 limit=2000"
+    assert "refused before the call" in reason["details"][1]
+    assert len(provider.prompts) == 0
+    assert result.node_path == ("retrieve", "grade")
+
+
+def test_check_is_refused_before_the_call_when_spent_plus_projected_exceeds_the_run_limit():
+    """Spent grade tokens plus the projected check prompt trip the run limit before the call."""
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    provider = _provider([_raw(grade, input_tokens=900, output_tokens=1)], projected=400)
+
+    result = asyncio.run(
+        run_workflow(
+            _request(
+                budget=Budget(max_input_tokens=1_200),
+                provider_budget=_provider_budget(max_input_tokens=5_000),
+            ),
+            retriever=retriever_returning([_hit()]),
+            provider=provider,
+            clock=SequenceClock(),
+        )
+    )
+
+    assert result.status == "budget_exceeded"
+    reason = report_of(result)["reason"]
+    assert reason["node"] == "check"
+    assert reason["budget_source"] == "run_limits"
+    assert reason["budget"]["projected_input_tokens"] == 400
+    assert len(provider.prompts) == 1
+
+
+def test_a_projected_refusal_is_recorded_as_a_zero_usage_model_call():
+    """The refused attempt appears in the run's model calls with zero usage and its projection."""
+    grade = '{"grades":[{"chunk_id":1,"relevant":true,"reason":"Direct evidence."}]}'
+    provider = _provider([_raw(grade, input_tokens=10, output_tokens=1)], projected=2_521)
+
+    result = asyncio.run(
+        run_workflow(
+            _request(provider_budget=_provider_budget(max_input_tokens=2_000)),
+            retriever=retriever_returning([_hit()]),
+            provider=provider,
+            clock=SequenceClock(),
+        )
+    )
+
+    assert result.total_requests == 1
+    assert result.total_input_tokens == 0
+    assert result.steps[-1].node == "grade"
+    assert result.steps[-1].input_tokens == 0
+    assert result.steps[-1].error is not None

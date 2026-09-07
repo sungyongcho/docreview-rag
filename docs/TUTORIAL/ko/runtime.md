@@ -65,7 +65,7 @@
 실패 필드로 수정 위치를 구분합니다.
 
 - `budget_exceeded`: `resource`, `limit`, `observed`, `blocked_node`를 읽습니다.
-- `provider_failure`: `status`, `attempts`, `details`, `node`를 읽습니다.
+- `provider_failure`: `status`, `attempts`, `details`, `node`를 읽습니다. `budget`에 `projected_input_tokens`가 있으면 추정한 프롬프트가 남은 입력 허용량에 맞지 않아 호출을 시작하기 전에 거절한 것입니다. 아무것도 전송하지 않았고, 거절된 시도는 토큰 0인 요청 1건으로 기록됩니다. **대화 설정 → 근거**의 최대 컨텍스트를 낮추거나 `budget_source`가 가리키는 입력 한도를 올리세요.
 - `node_error`: `error_type`, `message`, `node`를 읽습니다.
 
 실행 예산은 **대화 설정 → 실행 한도**에서 조정합니다. 프롬프트·근거 크기는 **대화 설정 → 근거**에 있으며 별도 설정입니다. 제공자 시간 초과나 인증 오류는 실행 토큰 한도를 높여 해결하지 않습니다. 공개 요청 속도·금액 한도도 다른 경계이며 시스템의 한도 화면에 표시됩니다. [실행 문제 해결](troubleshooting.md#execution)을 참고하세요.
