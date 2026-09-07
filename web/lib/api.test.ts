@@ -146,6 +146,15 @@ describe("request deadlines", () => {
     expect(error).toMatchObject({ status: 408, code: "request_timeout" });
   });
 
+  it("times out a GET whose headers arrive but whose body stalls", async () => {
+    vi.useFakeTimers();
+    const open = new Response(new ReadableStream({ start() { /* the body never closes */ } }), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(open));
+    const outcome = getCorpusSnapshot().then(() => "resolved", (error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+    await expect(outcome).resolves.toMatchObject({ status: 408, code: "request_timeout" });
+  });
+
   it("does not time out mutations", async () => {
     vi.useFakeTimers();
     let release!: (response: Response) => void;
