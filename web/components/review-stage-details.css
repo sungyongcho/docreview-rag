@@ -1,6 +1,10 @@
 .review-progress-steps li { position: relative; }
 .review-progress-steps .review-stage-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; padding: 0; background: transparent; color: inherit; cursor: pointer; }
 .review-progress-steps .review-stage-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.review-progress-steps li.review-stage-selectable:is(:hover, :has(.review-stage-toggle:focus-visible), .review-stage-selected) strong { text-decoration: underline; text-underline-offset: 3px; }
+.review-progress-steps li.review-stage-selected::after { content: ""; position: absolute; height: 2px; left: 0; right: 0; bottom: 0; background: var(--phase-green); pointer-events: none; }
+.review-progress-steps li.review-stage-selected.failed::after { background: var(--bad); }
+.review-progress-steps li.review-stage-selected:is(.cancelled, .skipped)::after { background: var(--phase-warning); }
 .review-stage-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .review-stage-details { max-height: 360px; overflow: auto; font-size: 12px; overflow-wrap: anywhere; }
 .review-stage-details dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0; }

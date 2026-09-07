@@ -67,10 +67,9 @@ describe("recorded stage detail data", () => {
     rerender(<ReviewStageDetails stage="report" state={state} finalLabel="Answer not generated" />);
     expect(field("Final label")).toHaveTextContent("Answer not generated");
   });
-  it.each<DisclosureStage>(["path", "gate", "retrieve", "grade", "check", "report"])("keeps missing legacy fields explicit in %s", (stage) => {
+  it.each<DisclosureStage>(["path", "gate", "retrieve", "grade", "check", "report"])("uses one empty-state note when no fields were recorded in %s", (stage) => {
     render(<ReviewStageDetails stage={stage} state={{ node: "report", evidence: 0, relevant: 0, steps: 0 }} />);
-    const values = document.querySelectorAll("dd");
-    expect(values.length).toBeGreaterThan(0);
-    for (const item of values) expect(item).toHaveTextContent("Not recorded for this run");
+    expect(screen.getByText("This stage was not recorded for this run.")).toBeVisible();
+    expect(document.querySelectorAll("dd")).toHaveLength(0);
   });
 });
