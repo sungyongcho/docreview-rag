@@ -6,7 +6,7 @@ import { TerminalHandoff } from "@/components/terminal-handoff";
 import { PipelineReference } from "@/components/pipeline-reference";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { WipeRuntime } from "@/components/wipe-runtime";
-import { Activity, ArrowDown, ArrowRight, Check, RefreshCw } from "lucide-react";
+import { Activity, ArrowDown, ArrowRight, Check, RefreshCw, TrafficCone } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { JobProgress } from "@/components/job-center";
@@ -200,6 +200,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         <p className="helper">{selected.blockedBy ? t("Required first: {p0}", { p0: t(pipeline.stages.find((item) => item.id === selected.blockedBy)?.title ?? selected.blockedBy) }) : t("Review the inputs before starting. Selecting a step does not execute it.")}</p>
         {selected.id === "evaluate" && props.evaluationBlockedReason && <p className="notice" role="status">{t(props.evaluationBlockedReason)}</p>}
         {selected.id === "embeddings" && <p className="notice">{t("OpenAI embedding may incur cost for all pending chunks in the database. Check the provider and counts before running.")}</p>}
+        {selected.id === "embeddings" && <p className="embedding-duration-note" role="note"><TrafficCone size={16} aria-hidden="true" focusable="false" /><span>{t("Embedding a fresh clone, an enlarged corpus or an empty index can take a long time.")}</span></p>}
       <ol className="stage-list" role="list" data-tour="stage-list">
         {[selected].map((stage) => (
           <StageCard

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { I18nProvider, LOCALE_KEY, translate } from "@/lib/i18n";
-import { derivePipeline, type PipelineInput } from "@/lib/pipeline";
+import { derivePipeline, type PipelineInput, type StageStatus } from "@/lib/pipeline";
 import type { OperatorJob, Readiness } from "@/lib/types";
 import { BuildPipeline, type BuildPipelineProps } from "./build-pipeline";
 
@@ -108,6 +108,44 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
 }
 
 describe("BuildPipeline", () => {
+  it.each(["en", "ko"] as const)("keeps the embedding duration note visible and inert across stage states (%s)", (locale) => {
+    localStorage.setItem(LOCALE_KEY, locale);
+    const message = locale === "en"
+      ? "Embedding a fresh clone, an enlarged corpus or an empty index can take a long time."
+      : "처음 clone한 뒤, 데이터를 늘린 뒤, 또는 비어 있는 상태에서 임베딩을 돌리면 시간이 오래 걸릴 수 있습니다.";
+    const statuses: StageStatus[] = ["action", "running", "queued", "done", "failed", "blocked", "readonly", "unknown"];
+    for (const status of statuses) {
+      const input = liveInput({ jobs: status === "running" ? [RUNNING_JOB] : [] });
+      const pipeline = derivePipeline(input);
+      pipeline.stages.find((stage) => stage.id === "embeddings")!.status = status;
+      const handlers = renderPipeline(input, { pipeline, focusStage: "embeddings" });
+      const note = screen.getByText(message).closest('[role="note"]')!;
+      expect(note).toBeVisible();
+      expect(note.tagName).toBe("P");
+      expect(note).not.toHaveAttribute("tabindex");
+      expect(note).not.toHaveAttribute("onclick");
+      expect(note.querySelector("button, a, input, [tabindex]")).toBeNull();
+      expect(note.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+      expect(note.querySelector("svg")).toHaveAttribute("focusable", "false");
+      fireEvent.click(note);
+      (note as HTMLElement).focus();
+      fireEvent.keyDown(note, { key: "Enter" });
+      fireEvent.keyDown(note, { key: " " });
+      expect(note).not.toHaveFocus();
+      expect(screen.getByRole("heading", { name: locale === "en" ? "3. Embeddings" : "3. 임베딩" })).toBeVisible();
+      for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it.each(["openai", "deterministic", "none", null])("shows the duration note only on embedding execution for provider %s", (provider) => {
+    const handlers = renderPipeline(liveInput(), { embeddingProvider: provider, focusStage: "embeddings" });
+    expect(document.querySelector("#pipeline-execution .embedding-duration-note")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
+    expect(document.querySelector(".embedding-duration-note")).toBeNull();
+    for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
+  });
+
   it("marks operator execution stages without marking the public question path", () => {
     renderPipeline(liveInput(), { focusStage: "filings" });
     expect(document.querySelector(".stage-head .development-badge")).toHaveAttribute("title", "DEV only");

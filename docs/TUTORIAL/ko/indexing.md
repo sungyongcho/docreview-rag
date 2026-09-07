@@ -73,6 +73,13 @@
 
 *개발 인덱스는 deterministic 임베딩과 미처리 청크 0개를 보고합니다. 이를 OpenAI 임베딩 준비나 의미 검색 품질의 근거로 해석하지 않습니다. DB 전체 적용 범위와 비용 안내, 명시적 누락 임베딩 생성 버튼을 확인합니다.*
 
+데이터 준비의 3단계에는 비용 안내 아래 주황색 트래픽 콘 시간 안내가 항상 표시됩니다. 공급자와 관계없이 실행 전·실행 중·완료 후에도 보이며, 클릭이나 키보드로 실행하는 기능은 없습니다.
+
+> 처음 clone한 뒤, 데이터를 늘린 뒤, 또는 비어 있는 상태에서 임베딩을 돌리면 시간이 오래 걸릴 수 있습니다.
+
+### SCREENSHOT NEEDED
+<!-- Embedding duration note: Build step 3 selected, Korean locale, light mode, before a run and while running. Show the orange cone badge below the cost notice with the full three-case wording, unchanged status/DEV pills, and wrapped text inside a narrow card. The retained capture above predates this badge. -->
+
 ## 7. BM25 준비 {#step-7}
 
 - **목표:** 키워드 검색 통계가 현재 청크와 일치하도록 준비합니다.
