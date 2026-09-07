@@ -17,13 +17,21 @@
 저장소 루트에서 다음을 실행합니다.
 
 ```bash
-./rag-alias.sh
 source ./rag-alias.sh
 rag-help
 ```
 
-`./rag-alias.sh`는 현재 체크아웃의 자동 등록과 Helper 파일을 확인합니다. 미설치 상태에서 Y를 선택하면 설치하고 N이면 변경하지 않습니다. 이미 정상 설치됐다면 재설치 질문 없이 검증 결과를 표시합니다. 출력된 `source` 명령과 `rag-help`를 실행하면 셸 재시작 없이 바로 사용할 수 있습니다. Helper 등록은 앱 의존성 설치와 별개입니다.
-처음 실행한다면 아래 설치·설정도 완료합니다.
+대화형 Bash/Zsh 터미널에서는 `source ./rag-alias.sh` 한 명령으로 설치와 현재 셸 활성화를
+진행합니다. Y를 선택하면 자동 등록을 저장하고, 같은 source 실행에서 바로 명령을 사용할 수
+있습니다. No는 시작 파일을 보존하고 이번 셸에만 명령을 불러옵니다. 시작 파일의 자동 로드,
+검증·update 재로드, 비대화형 또는 출력이 리다이렉트된 source는 설치 질문을 하지 않습니다.
+Helper 등록은 앱 의존성 설치와 별개입니다.
+
+`./rag-alias.sh`로 실행했다면 설치·검증 후 대화형 터미널에서 기본값 No인 로그인 셸 선택을
+제공합니다. 동의하면 설치기 프로세스를 감지된 Bash/Zsh 로그인 셸로 바꿉니다. 부모 셸에 함수를
+주입하거나 부모 프로세스를 대체하는 동작은 아니며, 새 셸을 종료하면 원래 셸로 돌아옵니다.
+로그인 설정에 따라 파일을 읽으므로 Bash profile이 `.bashrc`를 불러오지 않으면 출력된 source
+명령을 사용하세요. 거절·EOF에서는 셸을 시작하지 않습니다. 기본 활성화 경로는 source입니다.
 
 셸과 웹은 저장소에 있는 같은 Small ASCII 워드마크를 사용합니다. 80열 터미널에는 전체 이름을,
 좁은 터미널에는 DR 모노그램이나 일반 제품명 한 줄을 표시합니다. 모든 터미널과 파일로 보낸 출력에는 색상 이스케이프가 남지 않습니다. 배너 출력에는 언어 런타임이나 네트워크가 필요하지 않습니다.
@@ -56,13 +64,13 @@ Python CLI·파일 조회·직접 Docker 명령은 **저장소 루트**에서 �
 `rag-dev`, `rag-prod`는 인자가 없으면 `up -d`를 실행합니다.
 별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
 `rag-help`는 Quick Start 명령 하나와 출력된 URL을 여는 안내로 시작합니다. 초기화·복구는
-별도 `[RESET]` 영역에 두고, 명령 안내 12줄을 두 열로 정렬합니다. 색상 터미널에서도 ANSI 색상이나
+별도 `[RESET]` 영역에 두고, 간결한 명령 안내를 두 열로 정렬합니다. 색상 터미널에서도 ANSI 색상이나
 이스케이프를 출력하지 않습니다. 모든 명령은 `--help`를
 지원합니다. 작업별 설명은 `rag-corpus --help`, 스키마 옵션은 `rag-schema --help`에서 확인합니다.
 
 ### 명령 통합
 
-업데이트 후 `./rag-alias.sh`를 실행하세요. 현재 체크아웃의 이전 밑줄 파일명으로 자동 등록된
+이미 불러온 Helper는 `rag-alias update`, 첫 활성화는 `source ./rag-alias.sh`를 사용하세요. 현재 체크아웃의 이전 밑줄 파일명으로 자동 등록된
 경로가 있으면 정확한 경로를 표시하고, 백업한 뒤 새 이름으로 바꿀지 묻습니다. 거절하면 기존
 등록을 보존하며, 호환 파일이나 심볼릭 링크는 만들지 않습니다. 명시적인 삭제 시에는 이
 체크아웃의 이전 등록도 함께 확인하여 제거합니다. 이전 등록을 옮긴 후 새 셸에서 새 Helper를 불러오세요. 아래 단축 명령은 더 이상 등록되지 않으므로
@@ -80,6 +88,25 @@ DEV 재빌드·시작은 `rag-up`, 스키마 관리는 `rag-schema check|prepare
 Helper를 등록하지 않았다면 `uv run python -m scripts.schema <action>`으로 실행합니다.
 짧은 메뉴에도 일반·extreme·스키마 초기화 경고를 각각 유지합니다. 실제 삭제 전에는 전체
 미리보기와 해당 명령의 도움말을 읽고 확인하세요.
+
+### 현재 셸의 Helper 갱신
+
+```bash
+rag-alias --check-updates
+rag-alias update
+# 체크아웃이 이동했다면 새 디렉터리 또는 정식 helper 파일 경로를 지정합니다.
+rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+```
+
+현재 불러온 경로·설치된 SHA-256과 체크아웃 파일의 경로·hash를 함께 표시합니다. 조회는
+업데이트 유무와 무관하게 성공하는 읽기 전용 동작입니다. Update는 변경된 Helper 소유 명령을
+현재 셸에 다시 불러오고 직접 수정한 함수는 보존합니다. 기존 소유 등록 줄을 같은 위치에서
+수정하며, 이동·이름 변경이나 중복 등록은 새 경로 한 줄로 맞춥니다. 무관한 줄과 순서는 보존하고
+이미 올바른 줄은 다시 쓰지 않습니다. 소유 등록이 없으면 이번 셸만 갱신하고 그 사실을 알립니다.
+자동 등록은 source 설치 경로로 진행하세요. 호환 파일은 만들지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: sourced helper installation, loaded/check-out hash update and default-No login offer; locale=ko; plain terminal; show isolated startup registration and unchanged/moved update, without credentials. Preserve historical installer assets. -->
 
 ## 설치와 초기 설정
 

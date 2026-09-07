@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 
-from scripts.export_api_schema import export_operator_schema, export_schema, main
+from scripts.release.api_schema import export_operator_schema, export_schema, main
 
 
 def test_committed_contracts_match_the_real_api_factories():

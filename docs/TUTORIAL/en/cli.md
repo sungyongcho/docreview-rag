@@ -17,12 +17,22 @@ embedding configuration. Check completed CLI work in the dashboard instead of ru
 Run from the repository root:
 
 ```bash
-./rag-alias.sh
 source ./rag-alias.sh
 rag-help
 ```
 
-Executing `./rag-alias.sh` checks this checkout's startup registration and helper targets. If missing, choose Y to install or N to leave it unchanged. A valid existing installation is verified without another prompt. Paste the printed `source` command and run `rag-help` to activate commands without restarting your shell. Helper registration does not install application dependencies.
+`source ./rag-alias.sh` is the one-command installation and activation path in an interactive
+Bash or Zsh terminal. Choose Y to persist the startup registration; the commands are available
+in the same source call. No leaves startup unchanged and loads the commands for this session only.
+Startup-file loading, verification, update reloads and noninteractive/redirected sourcing do not
+prompt for installation. Registration does not install application dependencies.
+
+If you instead execute `./rag-alias.sh`, it installs/verifies registration and offers a new login
+shell with an explicit default-No prompt in an interactive terminal. Consent replaces the installer
+process with the detected Bash/Zsh login shell; it cannot replace the calling parent shell or inject
+functions into it. Exiting the new shell returns to the original one. Login files control startup;
+if a Bash login profile does not load `.bashrc`, use the printed source command. Declining or EOF
+never starts a shell. Sourcing remains the reliable primary activation path.
 
 The shell and Web share the same checked-in Small ASCII wordmark. An 80-column terminal displays the
 full name; narrower terminals use the DR monogram or a plain product line. All terminals and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
@@ -55,13 +65,13 @@ Run Python CLI, file inspection, and direct Docker commands from the **repositor
 With no arguments, `rag-dev` and `rag-prod` use `up -d`. Without registration, run
 `.venv/bin/python -m scripts.stack dev up -d` from the repository root.
 `rag-help` starts with one Quick Start command and its printed-URL hand-off. Reset and recovery
-commands have their own `[RESET]` block. The twelve-row menu uses aligned columns and no ANSI
+commands have their own `[RESET]` block. The compact menu uses aligned columns and no ANSI
 colors or escapes, including in a color-capable terminal; every command accepts
 `--help`. Use `rag-corpus --help` for operation details and `rag-schema --help` for schema options.
 
 ### Command consolidation
 
-Run `./rag-alias.sh` after updating. If this checkout still has a registration for the previous
+Use `rag-alias update` for an already-loaded helper, or `source ./rag-alias.sh` for first activation. If this checkout still has a registration for the previous
 underscore-named helper, the installer shows its exact path and offers to back up and replace that
 one registration. Declining preserves it; no compatibility file or symlink is created. Explicit
 uninstall also removes a detected old registration for this checkout. Reload the new helper in a
@@ -80,6 +90,26 @@ Use `rag-up` to rebuild/start DEV and `rag-schema check|prepare|recover|recreate
 Without helper registration, use `uv run python -m scripts.schema <action>`.
 The compact menu retains separate ordinary, extreme, and schema-reset warnings. Read the full reset
 preview and command help before confirming deletion.
+
+### Refresh an already-loaded helper
+
+```bash
+rag-alias --check-updates
+rag-alias update
+# If the checkout moved, give its new directory or canonical helper file explicitly:
+rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+```
+
+The comparison reports the loaded path and installed SHA-256 alongside the checkout path and hash.
+The check is read-only and succeeds whether or not an update is available. Update reloads changed
+helper-owned commands in this shell, preserves customized functions, and repairs an existing owned
+startup line in place. A moved/renamed registration or duplicate owned lines becomes one current
+line; unrelated lines and their order remain. An unchanged valid line is not rewritten. If there
+is no owned startup entry, update only refreshes this shell and reports that registration is absent.
+Use the sourced installation path to persist it. No compatibility file is created.
+
+### SCREENSHOT NEEDED
+<!-- Feature: sourced helper installation, loaded/check-out hash update and default-No login offer; locale=en; plain terminal; show isolated startup registration and unchanged/moved update, without credentials. Preserve historical installer assets. -->
 
 ## Installation and configuration
 

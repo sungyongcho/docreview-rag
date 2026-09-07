@@ -12,13 +12,12 @@ Bash 또는 Zsh, uv, Docker Engine·Compose 2.24.4+를 준비하세요.
 ```bash
 git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
-./rag-alias.sh
 source ./rag-alias.sh
 rag-help
 rag-quickstart
 ```
 
-Y를 선택하면 Helper 자동 등록 줄을 설치하고, N이면 변경하지 않습니다. 이어서 위 source 명령을 실행하면 셸을 재시작하지 않고 바로 명령을 사용할 수 있습니다.
+source 한 번으로 설치와 현재 셸 활성화를 진행합니다. Y는 자동 등록을 저장하고 N은 이번 셸만 불러옵니다. 같은 터미널에서 바로 명령을 사용할 수 있으며 이후 변경은 `rag-alias update`로 반영합니다.
 
 Helper는 저장소에 포함됩니다. `source`는 현재 터미널에 등록하며,
 선택적인 [영구 등록 방법](cli.md)은 명령 안내를 참고하세요.
