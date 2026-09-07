@@ -39,12 +39,21 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 
 ### Authority and delivery
 
-- Ordinary worker implementation ends with PR delivery and its review result. An explicitly
-  user-designated `conflict-resolver` may fix, verify and squash-merge only its authorized PR
-  set through the sequence protocol in WORKER.md. A review label alone grants no merge,
-  deployment or local-main authority.
-- Successful review comments must start with exactly `Self-review: LGTM` for work the
-  reviewer authored or `Review: LGTM` for another worker's work. Authorized conflict resolution
+- Ordinary worker implementation ends with verified PR delivery at `REVIEW_READY`.
+  Code reviews are off by default: the implementing worker must request a review in a
+  different conversation/task, strictly within its implementation scope. Ordinary self-review
+  requires explicit user approval for that scope; a worker cannot grant its own exception.
+- Add `MERGE_READY` alongside `REVIEW_READY` only after eligible review and current passing
+  checks for the matching head/base. Remove it when edits or changed evidence invalidate it.
+  Neither ready label grants merge, deployment or local-main authority.
+- An explicitly user-designated commit-error or conflict resolver may close assigned PRs,
+  edit assigned issues and self-review only when those actions and targets are explicitly
+  granted. A `conflict-resolver` may fix, verify and squash-merge only its separately
+  authorized PR set through WORKER.md. Preserve authors/history; no global maintainer rights
+  or merge authority follows from the role name or a label.
+- Eligible successful reviews start exactly with `Self-review: LGTM` for explicit
+  user-approved self-review or `Review: LGTM` for requested review in a different task.
+  Implementation verification alone must not publish an approval heading. Authorized conflict resolution
   uses `Conflict resolution: LGTM`, bound to head/base/tree and sequence revision/order.
   These are the only approval headings; preserve original authors and actual worker IDs.
   Conflict approval is not independent human review or authorization by itself.
@@ -65,7 +74,8 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 - `sungyongcho-ops` records authorized intake, ownership and handoffs, status, actual pushed
   commit SHAs and PR links, managed labels, and automated COMMENT reviews. Use the central
   OPS policy and guarded commands described in WORKER.md. DEV/OPS classify work purpose;
-  OCCUPIED/REVIEW_READY mirror verified state across issues and PRs. Preserve unrelated
+  OCCUPIED/REVIEW_READY mirror work state; MERGE_READY additionally records eligible review
+  and current verification across issues and PRs. Preserve unrelated
   labels. Account separation does not expand worker authority.
 - Preserve existing history and active assignments. External contributors retain
   their own identities; do not switch global credentials or foreign worktrees.
