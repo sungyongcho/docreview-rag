@@ -331,13 +331,15 @@ it("counts partial and absent source identities and explains disabled parsing", 
 });
 
 it.each(["running", "queued"] as const)("replaces parsing with shared progress and cancel while %s", (status) => {
-  const job = { ...RUNNING_JOB, kind: "ingest_manifest", status, stage: "prepare", message: "Preparing selected sources" };
+  const job = { ...RUNNING_JOB, kind: "ingest_manifest", status, stage: "prepare", message: "Preparing selected sources", overall_current: 25, overall_total: 100, stage_index: 2, stage_count: 4 };
   const input = liveInput(); const pipeline = derivePipeline(input);
   const stage = pipeline.stages.find((item) => item.id === "index")!;
   stage.job = job; stage.status = status;
   const handlers = renderPipeline(input, { pipeline, focusStage: "index", sources: [selectionSource("NVDA", 2024)], acquisition: { identifiers: "NVDA", years: "2024" } });
   const actions = screen.getByRole("group", { name: "Parsing actions" });
-  expect(within(actions).getByRole("progressbar")).toHaveAttribute("value", "50");
+  expect(within(actions).getByRole("progressbar", { name: "Overall progress" })).toHaveAttribute("value", "25");
+  expect(within(actions).getByRole("progressbar", { name: "Current stage" })).toHaveAttribute("value", "50");
+  expect(within(actions).getByText("Stage 2 / 4 · 25%")).toBeVisible();
   expect(document.querySelectorAll(".job-progress")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Parse & chunk selected sources" })).toBeNull();
   fireEvent.click(within(actions).getByRole("button", { name: "Cancel" }));

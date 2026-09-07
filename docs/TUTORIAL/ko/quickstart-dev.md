@@ -126,7 +126,7 @@ rag-corpus readiness
 
 ### 2. NVIDIA SEC FY2024 다운로드 {#qs-web-2}
 
-**데이터 준비 → 파이프라인 → 원문 수집**을 열고 **선택 해제**로 이번 실습의 범위를 좁힙니다. 회사·연도 표에서 `NVDA` / `2024` 연도 칩을 선택하세요. 조합이 없으면 **티커 / 종목 코드**와 **회계연도**에 입력하고 **선택에 추가**를 누릅니다. 기존 조합을 추가하면 해당 칩으로 초점만 이동하므로 그 칩을 명시적으로 선택하세요. 다운로드 계획에 의도한 누락 조합만 있는지 확인하고 **누락된 원문 다운로드**를 누른 뒤 **Build → Jobs**에서 성공을 기다립니다.
+**데이터 준비 → 파이프라인 → 원문 수집**을 열고 **선택 해제**로 이번 실습의 범위를 좁힙니다. **회사 또는 연도 검색/추가**에서 `NVDA`를 검색해 NVIDIA를 선택한 뒤 `2024`를 체크하세요. 준비된 원문은 즉시 선택되고 누락된 원문은 **담길 예정**에 표시됩니다. 의도한 조합만 대기 목록에 있는지 확인하고 **동기화**를 누른 뒤 **Build → Jobs**에서 성공을 기다립니다.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: current filings-matrix-and-exact-year-selection; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
@@ -143,7 +143,7 @@ rag-corpus readiness
 
 ### 3. 삼성전자 DART FY2024 다운로드 {#qs-web-3}
 
-**원문 수집**으로 돌아가 다운로드된 NVIDIA 조합은 선택된 상태로 유지합니다. `005930` / `2024` 칩을 선택하거나, 없는 조합을 **티커 / 종목 코드**, **회계연도**, **선택에 추가**로 추가하세요. 기존 칩으로 초점만 이동했다면 명시적으로 선택합니다. 다운로드 계획에 누락된 삼성전자 조합만 있는지 확인하고 **누락된 원문 다운로드**를 누른 뒤 **Jobs**에서 DART 작업의 성공을 확인하세요.
+**원문 수집**으로 돌아가 다운로드된 NVIDIA 조합은 선택된 상태로 유지합니다. **회사 변경**을 누르고 **회사 또는 연도 검색/추가**에서 `005930`을 선택한 뒤 `2024`를 체크하세요. **담길 예정**에 누락된 삼성전자 조합만 있는지 확인하고 **동기화**를 누른 뒤 **Jobs**에서 DART 작업의 성공을 기다립니다. 준비된 원문은 다시 다운로드하지 않습니다.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: current filings-matrix-and-exact-year-selection; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
