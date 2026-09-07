@@ -144,6 +144,7 @@ class CorpusReadiness(BaseModel):
     embedded_chunks: int | None = None
     pending_embeddings: int | None = None
     bm25_ready: bool | None = None
+    bm25_rebuild_recorded: bool | None = None
     writable: bool | None = None
 
 
@@ -406,6 +407,7 @@ def create_release_app(
                 and documents > 0
                 and chunks > 0
                 and pending_embeddings == 0
+                and raw_status.get("bm25_ready") is True
             )
             corpus = CorpusReadiness(
                 availability="ready" if corpus_ready else "degraded",
@@ -417,6 +419,7 @@ def create_release_app(
                 embedded_chunks=int(raw_status.get("embedded_chunks", 0)),
                 pending_embeddings=pending_embeddings,
                 bm25_ready=raw_status.get("bm25_ready") is True,
+                bm25_rebuild_recorded=raw_status.get("bm25_rebuild_recorded") is True,
                 writable=raw_status.get("writable") is True,
             )
         except Exception as error:

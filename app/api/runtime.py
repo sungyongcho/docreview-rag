@@ -871,6 +871,8 @@ class RuntimeApiServices(ApiServices):
                 )
                 await bootstrap_schema(database_engine)
             async with self._session_factory() as session:
+                # The seed API remains an atomic convenience for existing API callers;
+                # Build/CLI jobs require a separate explicit rebuild_bm25 operation.
                 return await persist_seed_batch_with_stats(
                     session,
                     batch,

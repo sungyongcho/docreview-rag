@@ -39,8 +39,8 @@ indicator is not proof that either index matches the current corpus.
 - **Next:** [prepare embeddings](#step-6), or skip it when the current embedding identity is already ready.
 
 Each Ingest action processes only its explicit selection. The common catalog remains intact.
-The operation stores source-linked structures and chunks and recomputes BM25; it does not fill missing
-provider embeddings. Work already completed by CLI against this same DB should be reused.
+The operation stores source-linked structures and chunks. It leaves embeddings and BM25 to Build
+steps 3 and 4; changing chunks invalidates existing BM25 statistics. Work already completed by CLI against this same DB should be reused.
 
 <!-- capture:05-manifest-ingest -->
 
@@ -79,9 +79,10 @@ to reproduce a screenshot or to make an already-ready stage green again.
 - **Prerequisites:** chunks exist. Embeddings and an answer model are not required for this preparation.
 - **Screen:** Build → Pipeline → Lexical index (BM25).
 - **Inputs:** inspect the current statistics and readiness state; there is no company selection for this rebuild.
-- **Primary action:** **Rebuild BM25**, only if statistics are missing or invalidated.
+- **Primary action:** **Compute BM25** for the first computation, or **Recompute BM25** when a previous
+  computation is recorded. Run it after each parse/chunk operation; manual recompute remains available when ready.
 - **Visible result:** the job completes and the BM25 readiness indicator updates.
-- **Completion:** BM25 is ready for the current corpus. If ingestion already refreshed it, inspection completes this step.
+- **Completion:** the explicit BM25 job succeeds and BM25 is ready for the current corpus.
 - **Recovery:** inspect database/schema errors and the job result; see [troubleshooting](troubleshooting.md).
 - **Next:** [test retrieval](retrieval.md#step-8).
 
@@ -101,3 +102,22 @@ The primary action records one immutable manifest/selection reference for exactl
 
 ### SCREENSHOT NEEDED
 <!-- Feature: step 2 selected NVDA/AMD FY2023–2024 documents, one primary parse action, missing-source return link and collapsed Advanced; locale=en; light mode; preserve existing assets. -->
+
+## Job progress and evaluation queue {#job-progress}
+
+The step card and running badge show reported overall job progress. The execution panel shows the
+overall bar and current-stage bar separately, with their elapsed times. Overall completion uses stage
+weights, not an estimate of time remaining, and reaches 100%
+only on success. Single-unit schema, document-storage and BM25 stages show an indeterminate bar while
+running. Current-item counts appear only when the server reports them; legacy jobs do not invent overall progress.
+
+Quick evaluation can wait behind queued or running corpus preparation when every missing index has
+its preparation job queued. A toast names the work it waits for; the Jobs record retains the waiting
+message. Submitting the same active evaluation shows an existing-queue notice and **Open Jobs**.
+Database, schema, write-access and missing-index blockers remain visible next to the disabled action.
+A missing BM25 index requires step 4; queueing an evaluation never computes it automatically.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit BM25 Compute/Recompute after ingest, overall plus current-stage progress with an indeterminate schema stage, and evaluation waiting/duplicate notices; locale=en; light mode; preserve existing assets. -->
+
+Existing screenshots above predate the separate BM25 step and the new progress display.

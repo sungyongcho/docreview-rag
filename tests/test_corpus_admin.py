@@ -19,6 +19,7 @@ from app.corpus_admin import (
 )
 from app.ingestion.progress import OperationProgress
 from app.operator.jobs import JobDomain, JobStatus, JobStore, StoredJob
+from app.operator.progress import PROGRESS_KEY, stored_progress
 from app.retrieval.bm25 import TermStatCounts
 from app.retrieval.embeddings import (
     DeterministicEmbeddingProvider,
@@ -603,7 +604,8 @@ def test_acquisition_result_keeps_selection_in_completed_job(tmp_path):
         await service._queue.join()
         job = (await service.jobs()).history[0]
         assert job.status == "succeeded"
-        assert job.result_refs == {
+        assert stored_progress(job.result_refs).overall_current == 100
+        assert {key: value for key, value in job.result_refs.items() if key != PROGRESS_KEY} == {
             "manifest": "manifest.json",
             "selection_id": "selected",
             "summary": "Fetched 1 filing",
@@ -1014,3 +1016,105 @@ def test_live_postgres_admin_status_matches_snapshot_status() -> None:
     if not status.database_connected:
         live_postgres_unavailable(status.schema_message)
     assert status == snapshot.status
+
+
+@pytest.mark.live_postgres
+def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path, monkeypatch):
+    """Exercise actual index writes only against an explicitly named disposable fixture database."""
+    import os
+
+    from sqlalchemy import func, select
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.db.bootstrap import bootstrap_schema
+    from app.db.models import BM25CorpusStat
+    from app.evals.corpus import temporary_corpus_session
+    from tests.ingestion.seed.support import sample_batch
+
+    raw_url = os.getenv("DOCREVIEW_PIPELINE_TEST_URL")
+    if not raw_url:
+        live_postgres_unavailable(
+            "Set DOCREVIEW_PIPELINE_TEST_URL to a disposable pipeline_test_ DB."
+        )
+    url = make_url(raw_url)
+    if url.host not in {"127.0.0.1", "localhost"} or not (url.database or "").startswith(
+        "pipeline_test_"
+    ):
+        pytest.fail("The pipeline integration fixture requires a loopback pipeline_test_ database.")
+    _write_manifest(tmp_path)
+    batch = sample_batch()
+
+    def load(*args, on_progress, **kwargs):
+        """Supply an already-parsed fixture while retaining the real persistence pipeline."""
+        on_progress(OperationProgress("prepare", 0, 1, "Parsing fixture"))
+        on_progress(OperationProgress("prepare", 1, 1, "Parsed fixture"))
+        return batch
+
+    monkeypatch.setattr(corpus_admin, "load_seed_batch", load)
+
+    async def scenario():
+        """Inspect readiness, history and isolated evaluation statistics after serial jobs."""
+        engine = create_async_engine(url, poolclass=NullPool)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        provider = DeterministicEmbeddingProvider()
+        try:
+            await bootstrap_schema(engine)
+            store = JobStore(session_factory=factory)
+            service = RuntimeCorpusAdminService(
+                settings=Settings(corpus_dir=tmp_path, _env_file=None),
+                session_factory=factory,
+                engine=engine,
+                embedding_provider=provider,
+                job_store=store,
+            )
+            events = []
+            publish = service._publish
+
+            def capture(job_id, progress):
+                """Observe actual production stages without replacing their persistence."""
+                events.append(progress.stage)
+                publish(job_id, progress)
+
+            monkeypatch.setattr(service, "_publish", capture)
+            command = AdminCommand(
+                "ingest_manifest", manifest="manifest.json", selection_id="selected"
+            )
+            first = await service.enqueue(command)
+            await service._queue.join()
+            record = await store.get(first.job_id)
+            assert record.status == "succeeded", record.message
+            assert list(dict.fromkeys(events)) == [
+                "prepare",
+                "schema",
+                "documents",
+                "chunks",
+                "cleanup",
+            ]
+            assert stored_progress(record.result_refs).overall_current == 100
+            assert stored_progress(record.result_refs).progress_stage == "cleanup"
+            assert (await service.status()).bm25_ready is False
+            rebuilt = await service.enqueue(AdminCommand("rebuild_bm25"))
+            await service._queue.join()
+            assert (await store.get(rebuilt.job_id)).status == "succeeded"
+            assert (await service.status()).bm25_ready is True
+            await service.enqueue(command)
+            await service._queue.join()
+            status = await service.status()
+            assert status.bm25_ready is False
+            assert status.bm25_rebuild_recorded is True
+            assert (await service.snapshot()).status.bm25_rebuild_recorded is True
+            async with temporary_corpus_session(
+                engine,
+                batch,
+                provider,
+                target_tokens=1024,
+                embedding_provider="deterministic",
+            ) as (session, _measurement):
+                assert await session.scalar(select(func.count()).select_from(BM25CorpusStat)) > 0
+            assert (await service.status()).bm25_ready is False
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

@@ -56,6 +56,28 @@ function liveReadiness(corpus: Readiness["corpus"]): Readiness {
   return { ...READY_RUNTIME, environment: "dev", status: corpus.documents ? "ready" : "degraded", admin_mode: "live", corpus };
 }
 
+it.each([
+  [{ pending_embeddings: 10 }, 3, "Complete Embeddings (step 3) before asking."],
+  [{ bm25_ready: false }, 4, "Complete BM25 (step 4) before asking."],
+] as const)("blocks button and Enter submission with the matching Build pointer: %j", async (missing, step, hint) => {
+  cleanup();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true, ...missing });
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  render(<LiveShell />);
+  await screen.findByText(hint);
+  const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(input, { target: { value: "What drove revenue?" } });
+  expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url)))).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Open Build" }));
+  await screen.findByRole("heading", { name: step === 3 ? "3. Embeddings" : "4. Lexical index (BM25)" });
+});
+
 /** Live-build API stub: runtime endpoints plus empty `/admin/*` and operator lists; `ready` lets a test hold back `/ready`. */
 function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness> = async () => liveReadiness(corpus)) {
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");

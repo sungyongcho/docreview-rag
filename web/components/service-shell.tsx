@@ -259,12 +259,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
   const activeSessionProfile = active?.profile ?? profile;
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
-  const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt });
+  const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
   const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
-  const sendBlocked = publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -993,7 +993,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
-              ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
+              ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline", stage: banner.step })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
               : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
           </div>
         </RetainedPanel>

@@ -153,6 +153,7 @@ export interface Readiness {
     embedded_chunks: number | null;
     pending_embeddings: number | null;
     bm25_ready: boolean | null;
+    bm25_rebuild_recorded?: boolean | null;
     writable: boolean | null;
   };
 }
@@ -221,6 +222,7 @@ export interface CorpusCounts {
   embedded_chunks: number | null;
   pending_embeddings: number | null;
   bm25_ready: boolean | null;
+  bm25_rebuild_recorded?: boolean | null;
   writable: boolean | null;
   provider?: string | null;
 }

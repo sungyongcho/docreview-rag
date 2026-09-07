@@ -289,3 +289,10 @@ Open **System status** and **Build → Documents**. Verify both reports have chu
 [Next: test retrieval and inspect evidence](retrieval.md#step-8)
 
 No question or answer was executed in Quick Start. After inspecting retrieval evidence, continue to [the first answer](answers.md#step-9).
+
+Parsing stores documents and chunks; it does not compute BM25. In Build step 4, use **Compute BM25**
+for the first run or **Recompute BM25** after a recorded run. Complete this explicit job after chunk
+changes before asking with Balanced/hybrid. Hybrid also requires zero pending embeddings.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit first BM25 computation after both report ingests and hybrid Ask blocked until embeddings and BM25 finish; locale=en; light mode; preserve existing assets. -->

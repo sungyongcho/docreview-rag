@@ -74,6 +74,31 @@ describe("corpus readiness summary", () => {
 });
 
 describe("composerBanner", () => {
+  it("trusts public ready status with redacted counts while retaining model and budget notices", () => {
+    const publicReady = readiness({ documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, writable: null }, { admin_mode: "readonly" });
+    const input = { readiness: publicReady, live: false, profile: DEFAULT_SESSION_PROFILE, resetAt: null };
+    expect(composerBanner(input)).toBeNull();
+    expect(composerBanner({ ...input, readiness: { ...publicReady, review_enabled: false } })).toMatchObject({ kind: "answer-model" });
+    expect(composerBanner({ ...input, resetAt: "2026-09-03T00:00:00Z" })).toMatchObject({ kind: "budget" });
+  });
+
+  it.each([false, true])("keeps redacted degraded corpus readiness blocked (live=%s)", (live) => {
+    const degraded = readiness({ availability: "degraded", documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, writable: null }, { status: "degraded", admin_mode: live ? "live" : "readonly" });
+    expect(composerBanner({ readiness: degraded, live, profile: DEFAULT_SESSION_PROFILE, resetAt: null })).toMatchObject({ kind: "preparation", text: "Readiness not confirmed" });
+  });
+
+  it("gates the active strategy and preserves canned and not-applicable readiness", () => {
+    for (const strategy of ["hybrid", "vector", "lexical"] as const) {
+      const profile: ReviewSessionDraft = { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: { ...DEFAULT_PROFILE, strategy } };
+      const pending = composerBanner({ readiness: readiness({ pending_embeddings: 12 }), live: true, profile, resetAt: null });
+      expect(pending?.step ?? null).toBe(strategy === "lexical" ? null : 3);
+      const bm25 = composerBanner({ readiness: readiness({ bm25_ready: false }), live: true, profile, resetAt: null });
+      expect(bm25?.step ?? null).toBe(strategy === "vector" ? null : 4);
+      for (const exempt of [readiness({ pending_embeddings: 12, bm25_ready: false }, { mode: "canned" }), readiness({ availability: "not_applicable", pending_embeddings: null, bm25_ready: null })]) {
+        expect(composerBanner({ readiness: exempt, live: false, profile, resetAt: null })).toBeNull();
+      }
+    }
+  });
   const vectorProfile: ReviewSessionDraft = { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: { ...DEFAULT_PROFILE, strategy: "vector" } };
   const resetAt = "2026-09-03T00:00:00Z";
 
@@ -83,14 +108,15 @@ describe("composerBanner", () => {
   });
 
   it("ranks empty corpus above vector-only, answer model, and budget", () => {
-    const everything = readiness({ documents: 0, pending_embeddings: 5 }, { review_enabled: false });
+    const everything = readiness({ availability: "degraded", documents: 0, pending_embeddings: 5 }, { review_enabled: false });
     expect(composerBanner({ readiness: everything, live: true, profile: vectorProfile, resetAt })).toMatchObject({ kind: "empty", action: "build" });
-    expect(composerBanner({ readiness: everything, live: false, profile: vectorProfile, resetAt })).toMatchObject({ kind: "vector", action: "build" });
+    expect(composerBanner({ readiness: everything, live: false, profile: vectorProfile, resetAt })).toMatchObject({ kind: "preparation", action: "build" });
     const pendingOff = readiness({ pending_embeddings: 5 }, { review_enabled: false });
     expect(composerBanner({ readiness: pendingOff, live: true, profile: DEFAULT_SESSION_PROFILE, resetAt })).toMatchObject({
-      kind: "answer-model",
-      text: "Answer model is off — evidence only. Questions return retrieved filing evidence without a generated answer.",
-      action: "answer-model",
+      kind: "preparation",
+      text: "Complete Embeddings (step 3) before asking.",
+      action: "build",
+      step: 3,
     });
     const budget = composerBanner({ readiness: READINESS, live: true, profile: DEFAULT_SESSION_PROFILE, resetAt });
     expect(budget?.kind).toBe("budget");

@@ -411,3 +411,39 @@ def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_paylo
     assert ages == [2.0]
     assert default.status_code == injected.status_code == 200
     assert default.text == injected.text
+
+
+def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
+    """Expose BM25 preparation as degraded without misreporting schema or database failure."""
+
+    async def probe():
+        """Report a populated vector index whose BM25 stage has not yet run."""
+        return {
+            "status": {
+                "database_connected": True,
+                "schema_status": "compatible",
+                "schema_message": "ok",
+                "documents": 1,
+                "chunks": 10,
+                "embedded_chunks": 10,
+                "pending_embeddings": 0,
+                "bm25_ready": False,
+                "bm25_rebuild_recorded": True,
+                "writable": True,
+            }
+        }
+
+    settings = ReleaseSettings(mode="runtime", admin_mode="live", host="127.0.0.1", _env_file=None)
+    with TestClient(
+        create_release_app(
+            settings,
+            services=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+            readiness_probe=probe,
+        )
+    ) as client:
+        response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["corpus"]["availability"] == "degraded"
+    assert response.json()["corpus"]["schema_status"] == "compatible"
+    assert response.json()["corpus"]["database_connected"] is True
+    assert response.json()["corpus"]["bm25_rebuild_recorded"] is True

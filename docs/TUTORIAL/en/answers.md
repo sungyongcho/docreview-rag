@@ -8,7 +8,10 @@ separately instead of treating every completed request as a successful answer.
 
 - **Goal:** obtain an answer whose claims can be checked against the intended filing.
 - **Prerequisites:** relevant evidence found in [step 8](retrieval.md#step-8), an available answer engine,
-  and valid scoped filters. Reuse an existing result when you only need to learn the inspection controls.
+  and valid scoped filters. Hybrid requires completed embeddings (Build step 3) and BM25 (Build step 4);
+  vector requires completed embeddings, and lexical requires BM25. Pending embeddings block hybrid/vector
+  sending; missing BM25 blocks hybrid/lexical sending. The composer names the required step. While its
+  preparation job is queued or running, Ask shows waiting and sending stays disabled. Reuse an existing result when you only need to learn the inspection controls.
 - **Screen:** New review → controls above the question → Inspect request.
 - **Inputs:** choose SEC scope, an available [engine](#engines), Balanced preset, and NVIDIA/FY2024 filters
   when those values are present in the catalog. Inspect the next request before sending.
@@ -165,3 +168,6 @@ appear only when recorded.
 ### SCREENSHOT NEEDED
 
 <!-- Feature: issues 140/141 selected execution strip and compact mapped stage details; show SEC/DART company names and FY chips, empty versus unrecorded values, rounded timings and model table, no inner scrollbar, collapsed long-table continuation and raw run-details access; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+
+### SCREENSHOT NEEDED
+<!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=en; light mode; preserve existing assets. -->

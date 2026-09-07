@@ -26,6 +26,7 @@ from app.db.models import (
     ChunkEmbedding,
     Document,
     EvaluationSnapshot,
+    OperatorJob,
     SnapshotDocument,
 )
 from app.db.queries import join_current_parse
@@ -33,7 +34,7 @@ from app.ingestion.dart_api import acquire_dart
 from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
-from app.ingestion.seed import load_seed_batch, persist_seed_batch_with_stats
+from app.ingestion.seed import load_seed_batch, persist_seed_batch
 from app.ingestion.source_selection import (
     SourceInventory,
     acquisition_draft,
@@ -49,6 +50,7 @@ from app.operator.jobs import (
     ProgressPersister,
     StoredJob,
 )
+from app.operator.progress import advance_progress, finish_progress, start_progress
 from app.retrieval.bm25 import backfill_term_stats
 from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
@@ -173,6 +175,7 @@ class CorpusStatus:
     bm25_ready: bool
     writable: bool
     provider: str
+    bm25_rebuild_recorded: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +190,7 @@ class _StatusProbe:
     embedded_chunks: int
     bm25_ready: bool
     observed_at: float
+    bm25_rebuild_recorded: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -814,6 +818,25 @@ class RuntimeCorpusAdminService:
             for document, chunk_count in rows
         )
 
+    async def _bm25_rebuild_recorded(self, tables: set[str]) -> bool:
+        """Remember an explicit completed rebuild even after chunk changes invalidate its rows."""
+        if "operator_jobs" not in tables:
+            return False
+        async with self._session_factory() as session:
+            return bool(
+                await session.scalar(
+                    select(
+                        select(OperatorJob.job_id)
+                        .where(
+                            OperatorJob.domain == "corpus",
+                            OperatorJob.kind == "rebuild_bm25",
+                            OperatorJob.status == "succeeded",
+                        )
+                        .exists()
+                    )
+                )
+            )
+
     async def _probe_status(self, max_age_s: float) -> _StatusProbe:
         """Inspect schema state and counts, reusing a reading younger than ``max_age_s``.
 
@@ -827,9 +850,11 @@ class RuntimeCorpusAdminService:
             schema_status, schema_message, tables = await self._schema_state()
             documents = chunks = embedded = 0
             bm25_ready = False
+            rebuild_recorded = False
             if schema_status == "compatible":
                 try:
                     documents, chunks, embedded, bm25_ready = await self._counts(tables)
+                    rebuild_recorded = bm25_ready or await self._bm25_rebuild_recorded(tables)
                 except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
                     schema_status = "unavailable"
                     schema_message = self._redact(type(error).__name__)
@@ -842,6 +867,7 @@ class RuntimeCorpusAdminService:
                 embedded_chunks=embedded,
                 bm25_ready=bm25_ready,
                 observed_at=time.monotonic(),
+                bm25_rebuild_recorded=rebuild_recorded,
             )
             self._status_cache = probe
             return probe
@@ -857,6 +883,7 @@ class RuntimeCorpusAdminService:
             embedded_chunks=probe.embedded_chunks,
             pending_embeddings=max(probe.chunks - probe.embedded_chunks, 0),
             bm25_ready=probe.bm25_ready,
+            bm25_rebuild_recorded=probe.bm25_rebuild_recorded,
             writable=os.access(self._corpus_root, os.W_OK | os.X_OK),
             provider=self._settings.embedding_provider,
         )
@@ -917,6 +944,7 @@ class RuntimeCorpusAdminService:
                 embedded_chunks=embedded,
                 pending_embeddings=max(chunks - embedded, 0),
                 bm25_ready=bm25_ready,
+                bm25_rebuild_recorded=probe.bm25_rebuild_recorded,
                 writable=os.access(self._corpus_root, os.W_OK | os.X_OK),
                 provider=self._settings.embedding_provider,
             ),
@@ -1071,7 +1099,7 @@ class RuntimeCorpusAdminService:
                 created_at=job.created_at,
                 result_refs=job.result_refs,
             )
-        await self._execution_coordinator.register(job.job_id, job.created_at)
+        await self._execution_coordinator.register(job.job_id, job.created_at, kind=command.kind)
         self._queue.put_nowait(job)
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._work(), name="corpus-admin-worker")
@@ -1172,6 +1200,7 @@ class RuntimeCorpusAdminService:
             message=self._redact(progress.message),
             detail_current=progress.detail_current,
             detail_total=progress.detail_total,
+            result_refs=advance_progress(job.command.kind, job.result_refs, progress, _utc_now()),
         )
         if self._job_store is not None:
             self._persister.schedule(job_id)
@@ -1291,7 +1320,7 @@ class RuntimeCorpusAdminService:
             await bootstrap_schema(self._database_engine)
             publish(OperationProgress("schema", 1, 1, "Schema compatible"))
             async with self._session_factory() as session:
-                result = await persist_seed_batch_with_stats(
+                result = await persist_seed_batch(
                     session,
                     batch,
                     on_progress=publish,
@@ -1367,6 +1396,7 @@ class RuntimeCorpusAdminService:
             stage="starting",
             message="Starting",
             started_at=_utc_now(),
+            result_refs=start_progress(queued.command.kind, queued.result_refs, _utc_now()),
         )
         self._jobs[queued.job_id] = running
         if self._job_store is not None:
@@ -1427,7 +1457,7 @@ class RuntimeCorpusAdminService:
                 message=self._redact(message),
                 finished_at=_utc_now(),
                 result_refs={
-                    **(self._jobs[queued.job_id].result_refs or {}),
+                    **finish_progress(self._jobs[queued.job_id].result_refs),
                     **result_refs,
                     "summary": self._redact(message),
                 },

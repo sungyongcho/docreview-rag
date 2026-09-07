@@ -535,6 +535,8 @@ def build_seed_batch(
     documents: list[DocumentRecord] = []
     chunks: list[ChunkRecord] = []
     filings: list[ParsedFiling] = []
+    if on_progress is not None:
+        on_progress(OperationProgress("prepare", 0, len(ordered), "Parsing selected filings"))
     for position, entry in enumerate(ordered, start=1):
         filing, _profile = (parser or registry_for(entry.document.registry).parse)(entry)
         filings.append(filing)
@@ -809,6 +811,8 @@ async def persist_seed_batch(
         if on_progress is not None:
             on_progress(OperationProgress("documents", 1, 1, f"{len(batch.documents)} documents"))
         chunk_batch_total = (len(batch.chunks) + chunk_batch_size - 1) // chunk_batch_size
+        if on_progress is not None:
+            on_progress(OperationProgress("chunks", 0, chunk_batch_total, "Storing chunk batches"))
         for position, records in enumerate(
             _batches(batch.chunks, chunk_batch_size),
             start=1,
@@ -823,6 +827,8 @@ async def persist_seed_batch(
                         f"{min(position * chunk_batch_size, len(batch.chunks))} chunks",
                     )
                 )
+        if on_progress is not None:
+            on_progress(OperationProgress("cleanup", 0, len(chunk_keys), "Removing stale chunks"))
         for position, (doc_id, keys) in enumerate(chunk_keys.items(), start=1):
             await session.execute(
                 delete(ChunkModel).where(

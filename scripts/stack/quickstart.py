@@ -264,7 +264,7 @@ def handoff(bindings: dict[str, str]) -> None:
     print(f"Korean Quick Start: {origin}/docreview-rag-agent/docs/ko/quickstart/#qs-web-1")
     print(
         "Continue in the web: Quick Start, Web path, step 1: verify the environment; "
-        "then follow the filing acquisition and indexing steps."
+        "then acquire sources, parse and chunk, prepare embeddings, and explicitly compute BM25."
     )
     print("No filings were downloaded and no embedding or answer requests were made.")
 

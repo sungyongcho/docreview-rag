@@ -20,6 +20,11 @@ function renderSystem(overrides: Partial<SystemWorkspaceProps> = {}) {
 }
 
 describe("System workspace", () => {
+  it("explains why the raw API action is disabled while readiness is degraded", () => {
+    renderSystem({ live: true, ready: false, tab: "api" });
+    expect(screen.getByRole("button", { name: "Send to API" })).toBeDisabled();
+    expect(screen.getByText("Corpus not ready. Inspect the earliest verified prerequisite.")).toBeInTheDocument();
+  });
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();

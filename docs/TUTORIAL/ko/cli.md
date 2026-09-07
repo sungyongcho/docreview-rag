@@ -286,6 +286,19 @@ rag-corpus status
 
 각 작업이 성공한 뒤 다음 명령을 실행합니다. 수집 결과는 공통 manifest 안의 정확한 처리 선택을 알려줍니다. 문서 목록을 추출하거나 manifest를 복사하지 않습니다.
 
+파싱 작업은 청크 저장까지만 수행하며 BM25를 다시 계산하지 않습니다.
+`rag-corpus backfill_embeddings`의 성공을 확인한 다음 `rag-corpus rebuild_bm25`를
+실행하고 성공을 기다려야 하이브리드 검색을 사용할 수 있습니다. 파싱·청킹을 다시
+실행할 때마다 BM25도 명시적으로 다시 계산합니다. Build 4단계는 처음에 **BM25 계산**,
+통계나 성공한 계산 기록이 있으면 **BM25 재계산**을 표시하며 준비 완료 후에도 재계산할 수 있습니다.
+
+직접 호출하는 runtime seed API는 기존 API 사용자의 호환성을 위해 파싱과 BM25를
+함께 수행합니다. 격리 평가용 코퍼스도 자체 통계를 준비합니다. 이 경로들은 Build/CLI
+파싱 작업과 별개입니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit BM25 stage; state: ingest succeeded, BM25 action needed; locale: ko; evidence: CLI ingest history ends at cleanup, followed by explicit rebuild_bm25 success. -->
+
 ## Python CLI 참고
 
 ### DB 적재
@@ -486,7 +499,7 @@ rag-corpus readiness
 | 웹은 열리지만 API·DB 실패 | 시스템 상태, `rag-dev ps`, DB health | 해당 서비스 연결을 복구하고 새로고침; healthy와 schema 확인 |
 | `schema_drift` | 현재 구조와 기존 DB가 다름 | 기존 DB를 보존하고 비어 있는 별도 DB나 호환 DB를 선택 |
 | embedding 누락·stale | 데이터 준비의 provider·pending·모델 정체성 | OpenAI 설정과 키를 확인하고 필요한 누락 임베딩 생성 실행; 유료이므로 manifest와 명시적 선택 범위 확인 |
-| BM25 미준비 | DB 적재 뒤 통계 누락·무효화 | Rebuild BM25 후 succeeded와 ready 확인 |
+| BM25 미준비 | 파싱·청킹 뒤 통계가 없는 정상 준비 단계 | 4단계 BM25 계산/재계산 필요. 하이브리드·키워드는 대기, 벡터는 임베딩만 필요 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |
 | `budget_exceeded` | resource·limit·observed·blocked_node | 대화 설정 → 실행 한도에서 해당 한도만 조정; 재시도는 추가 비용 가능 |

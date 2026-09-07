@@ -127,8 +127,10 @@ def test_persist_seed_batch_owns_one_transaction_and_batches_chunks():
     assert [(update.stage, update.current, update.total) for update in progress] == [
         ("documents", 0, 1),
         ("documents", 1, 1),
+        ("chunks", 0, 2),
         ("chunks", 1, 2),
         ("chunks", 2, 2),
+        ("cleanup", 0, 1),
         ("cleanup", 1, 1),
     ]
 

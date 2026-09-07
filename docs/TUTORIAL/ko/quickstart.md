@@ -280,3 +280,10 @@ DART는 먼저 기업 고유번호 목록을 내려받습니다. 이 API는 응�
 [다음: 검색 테스트와 근거 확인](retrieval.md#step-8)
 
 Quick Start에서는 질문·답변을 실행하지 않았습니다. 다음 문서에서 검색 근거를 확인한 뒤 [첫 답변](answers.md#step-9)으로 이어집니다.
+
+파싱은 문서와 청크를 저장하며 BM25를 계산하지 않습니다. Build 4단계에서 처음에는
+**BM25 계산**, 이전 계산 기록이 있으면 **BM25 재계산**을 실행하세요. 청크 변경 후 이 작업을
+명시적으로 완료해야 균형/하이브리드 질문을 보낼 수 있습니다. 임베딩 미처리 수도 0이어야 합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit first BM25 computation after both report ingests and hybrid Ask blocked until embeddings and BM25 finish; locale=ko; light mode; preserve existing assets. -->

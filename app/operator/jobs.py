@@ -138,6 +138,26 @@ class JobExecutionCoordinator:
         self._condition = asyncio.Condition()
         self._pending: list[tuple[datetime, str]] = []
         self._active: str | None = None
+        self._kinds: dict[str, str] = {}
+        self._waiting: dict[str, Callable[[str], None]] = {}
+
+    def has_kind(self, kind: str) -> bool:
+        """Report a registered active or pending prerequisite without a database poll."""
+        return kind in self._kinds.values()
+
+    def _notify_waiters(self) -> None:
+        """Refresh queued messages synchronously; callbacks may schedule, never await, writes."""
+        preceding = self._active
+        for _created, identity in self._pending:
+            callback = self._waiting.get(identity)
+            if callback is not None:
+                callback(
+                    f"Waiting for {self._kinds[preceding]} {preceding} to finish."
+                    if preceding is not None
+                    else "Queued"
+                )
+            if preceding is None:
+                preceding = identity
 
     @property
     def busy(self) -> bool:
@@ -148,19 +168,34 @@ class JobExecutionCoordinator:
         """
         return self._active is not None or bool(self._pending)
 
-    async def register(self, job_id: str, created_at: datetime) -> None:
+    async def register(
+        self,
+        job_id: str,
+        created_at: datetime,
+        *,
+        kind: str = "job",
+        on_wait: Callable[[str], None] | None = None,
+    ) -> None:
         """Register one job before either domain worker can compete for execution."""
         async with self._condition:
             if any(identity == job_id for _created, identity in self._pending):
                 raise ValueError(f"job {job_id} is already registered")
+            self._kinds[job_id] = kind
+            if on_wait is not None:
+                self._waiting[job_id] = on_wait
             self._pending.append((created_at, job_id))
             self._pending.sort(key=lambda item: (item[0], item[1]))
+            self._notify_waiters()
             self._condition.notify_all()
 
     async def cancel(self, job_id: str) -> None:
         """Remove one not-yet-active ticket and wake its waiting worker."""
         async with self._condition:
             self._pending = [item for item in self._pending if item[1] != job_id]
+            if self._active != job_id:
+                self._kinds.pop(job_id, None)
+                self._waiting.pop(job_id, None)
+            self._notify_waiters()
             self._condition.notify_all()
 
     @asynccontextmanager
@@ -174,6 +209,8 @@ class JobExecutionCoordinator:
                 if self._active is None and self._pending[0][1] == job_id:
                     self._pending.pop(0)
                     self._active = job_id
+                    self._waiting.pop(job_id, None)
+                    self._notify_waiters()
                     break
                 await self._condition.wait()
         try:
@@ -182,6 +219,9 @@ class JobExecutionCoordinator:
             async with self._condition:
                 if self._active == job_id:
                     self._active = None
+                self._kinds.pop(job_id, None)
+                self._waiting.pop(job_id, None)
+                self._notify_waiters()
                 self._condition.notify_all()
 
 

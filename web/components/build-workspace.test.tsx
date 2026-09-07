@@ -526,6 +526,90 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   expect(screen.queryByRole("button", { name: "Sync draft with downloaded sources" })).not.toBeInTheDocument();
 });
 
+describe("quick evaluation feedback", () => {
+  /** Serve current corpus facts and persist the request returned by the queue endpoint. */
+  function stubQueue(corpus: Partial<Readiness["corpus"]> = {}, duplicate = false) {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...READY_RUNTIME.corpus, ...corpus }, sources: [] });
+      if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") {
+        if (duplicate) return new Response(JSON.stringify({ error: { code: "evaluation_already_queued", message: "Already queued" } }), { status: 409, headers: { "content-type": "application/json" } });
+        return jsonResponse({ ...CANNED_JOB, job_id: "eval-queued", status: "queued", result_id: null, request: JSON.parse(String(init.body)) });
+      }
+      if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
+      if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+      if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
+      return jsonResponse([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  /** A recorded corpus job whose backfill must finish before evaluation. */
+  function preparingJob(): OperatorJob {
+    return {
+      job_id: "embedding-active", domain: "corpus", kind: "backfill_embeddings", request: {},
+      status: "running", stage: "embed", current: 90, total: 100, detail_current: null, detail_total: null,
+      message: "Embedding", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false,
+      created_at: "2026-09-07T10:00:00Z", started_at: "2026-09-07T10:00:00Z", finished_at: null, updated_at: "2026-09-07T10:00:01Z",
+    };
+  }
+
+  async function openEvaluation() {
+    fireEvent.click(screen.getByRole("button", { name: "Pipeline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run quick evaluation" })).toBeEnabled());
+  }
+
+  it("queues behind embedding with a waiting toast and keeps the submitted profile", async () => {
+    const fetchMock = stubQueue({ pending_embeddings: 10 });
+    const profile = { ...DEFAULT_PROFILE, k: 9 };
+    render(<NotificationProvider><Harness live ready={false} readiness={READY_RUNTIME} profile={profile} jobBoard={{ jobs: [preparingJob()], active_count: 1, queued_count: 0 }} /></NotificationProvider>);
+    await openEvaluation();
+    fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
+    expect(await screen.findByText("Embedding is in progress. The evaluation was added to the job queue and starts when embedding finishes.")).toBeInTheDocument();
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body)).profile).toEqual(profile);
+  });
+
+  it("reports a healthy queue then detects the same local request without a second POST", async () => {
+    const fetchMock = stubQueue();
+    render(<NotificationProvider><Harness live readiness={READY_RUNTIME} /></NotificationProvider>);
+    await openEvaluation();
+    fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
+    expect(await screen.findByText("Evaluation queued.")).toBeInTheDocument();
+    await openEvaluation();
+    fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
+    await waitFor(() => expect(screen.getAllByText("The same evaluation is already queued.").length).toBeGreaterThan(0));
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Open Jobs" }).length).toBeGreaterThan(0);
+  });
+
+  it("handles an authoritative duplicate response with a notice and Jobs action", async () => {
+    stubQueue({}, true);
+    render(<NotificationProvider><Harness live readiness={READY_RUNTIME} /></NotificationProvider>);
+    await openEvaluation();
+    fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
+    await waitFor(() => expect(screen.getAllByText("The same evaluation is already queued.").length).toBeGreaterThan(0));
+    expect(screen.getAllByRole("button", { name: "Open Jobs" }).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    [{ database_connected: false }, "Database is unreachable"],
+    [{ schema_status: "empty" }, "Database schema is empty"],
+    [{ schema_status: "drifted" }, "Database schema is incompatible"],
+    [{ writable: false }, "Source directory is not writable"],
+    [{ bm25_ready: false, pending_embeddings: 10 }, "Complete BM25 (step 4) before evaluating."],
+  ] as const)("disables the action and reports the current blocker: %j", async (corpus, reason) => {
+    const fetchMock = stubQueue(corpus);
+    render(<Harness live ready={false} jobBoard={{ jobs: [preparingJob()], active_count: 1, queued_count: 0 }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
+    await waitFor(() => expect(screen.getAllByText(reason).length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: "Run quick evaluation" })).toBeDisabled();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  });
+});
+
 describe("refresh hygiene", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
