@@ -167,8 +167,16 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState<DisclosureStage | null>(null);
   const disclosureId = useId();
-  /** Native buttons keep Enter/Space activation and focus available without altering the strip. */
-  const toggle = (stage: DisclosureStage, label: string) => <button id={`${disclosureId}-${stage}`} type="button" className="review-stage-toggle" aria-label={t(label)} aria-expanded={expanded === stage} aria-controls={`${disclosureId}-panel`} onClick={() => setExpanded((current) => current === stage ? null : stage)} />;
+  const pathPhase = state.pathDecision ? state.pathDecision.stopping_reason ? "failed" : "done" : (state.outcome ?? "running") === "running" ? "waiting" : "not-run";
+  const phases = Object.fromEntries(REVIEW_STEPS.map((step, index) => [step.node, phaseStatus(state, index)]));
+  /** Waiting and unobserved phases cannot expose a stage panel. */
+  const selectable = (phase: string) => ["done", "current", "failed", "cancelled", "skipped"].includes(phase);
+  const openStage = expanded && selectable(expanded === "path" ? pathPhase : phases[expanded]) ? expanded : null;
+  useEffect(() => { if (expanded && !openStage) setExpanded(null); }, [expanded, openStage]);
+  /** Keep phase colors and layout while marking only actionable and expanded stages. */
+  const stageClass = (stage: DisclosureStage, phase: string) => `${phase}${selectable(phase) ? " review-stage-selectable" : ""}${openStage === stage ? " review-stage-selected" : ""}`;
+  /** Native buttons preserve Enter/Space; unreached stages have no activation surface. */
+  const toggle = (stage: DisclosureStage, label: string, phase: string) => selectable(phase) ? <button id={`${disclosureId}-${stage}`} type="button" className="review-stage-toggle" aria-label={t(label)} aria-expanded={openStage === stage} aria-current={openStage === stage ? "true" : undefined} aria-controls={`${disclosureId}-panel`} onClick={() => setExpanded((current) => current === stage ? null : stage)} /> : null;
   useEffect(() => {
     if (state.outcome !== "running" || !state.startedAt) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -181,21 +189,21 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   return <div className={`review-progress ${status}`} role="status" aria-live="polite">
     <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}</div>
     <ol className="review-progress-steps" aria-label={t("Evidence review progress")}>
-      <li className={state.pathDecision ? state.pathDecision.stopping_reason ? "failed" : "done" : status === "running" ? "waiting" : "not-run"}>
-        {toggle("path", "Path decision")}
+      <li className={stageClass("path", pathPhase)}>
+        {toggle("path", "Path decision", pathPhase)}
         <span className="review-phase-icon" aria-hidden="true">{state.pathDecision?.stopping_reason ? <TriangleAlert size={14} /> : state.pathDecision ? <Check size={14} /> : <Circle size={12} />}</span>
         <span><strong>0. {t("Path decision")}</strong><small>{state.pathDecision ? t(state.pathDecision.intent === "casual_chat" ? "Conversation reply" : "Document review") : t("Intent and filing scope")}</small></span>
       </li>
       {REVIEW_STEPS.map((step, index) => {
         const phase = phaseStatus(state, index);
-        return <li key={step.node} className={phase} aria-current={phase === "current" || phase === "waiting" ? "step" : undefined}>
-          {toggle(step.node, step.label)}
+        return <li key={step.node} className={stageClass(step.node, phase)} aria-current={phase === "current" || phase === "waiting" ? "step" : undefined}>
+          {toggle(step.node, step.label, phase)}
           <span className="review-phase-icon" aria-hidden="true">{phase === "done" ? <Check size={14} /> : phase === "current" ? <LoaderCircle size={14} /> : phase === "failed" || phase === "cancelled" || phase === "skipped" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
           <span><strong>{index + 1}. {t(step.label)}</strong><small className={phase === "skipped" ? "review-phase-reason" : undefined}>{t(phase === "skipped" ? chat ? "Skipped: conversation reply without retrieval" : "Skipped: relevance threshold not met" : phase === "not-run" ? "Not performed in this request" : step.detail)}</small></span>
         </li>;
       })}
     </ol>
-    <section id={`${disclosureId}-panel`} hidden={!expanded} role="region" aria-labelledby={expanded ? `${disclosureId}-${expanded}` : undefined} className="review-stage-panel">{expanded && <ReviewStageDetails stage={expanded} state={state} performance={performance} finalLabel={finalLabel} onOpenDetails={onOpenDetails} onShowEvidence={onShowEvidence} />}</section>
+    <section id={`${disclosureId}-panel`} hidden={!openStage} role="region" aria-labelledby={openStage ? `${disclosureId}-${openStage}` : undefined} className="review-stage-panel">{openStage && <ReviewStageDetails stage={openStage} state={state} performance={performance} finalLabel={finalLabel} onOpenDetails={onOpenDetails} onShowEvidence={onShowEvidence} />}</section>
     <RoutingSummary state={state} onSwitchScope={onSwitchScope} />
     <p className="review-progress-counts">{t("{p0} candidates · {p1} relevant · {p2} model steps", { p0: state.evidence, p1: state.relevant, p2: state.steps })}{chat && <span> · {t("No retrieval")}</span>}{state.elapsedMs !== undefined && <span> · {t("Request time")}: {(state.elapsedMs / 1000).toLocaleString(locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 })}s</span>}</p>
     {status === "running" && state.startedAt && <p className="review-progress-counts" aria-live="off">{t("Elapsed")}: {Math.max(0, Math.floor((now - state.startedAt) / 1000))}s · {state.lastEventAt ? t("Last update: {seconds}s ago", { seconds: Math.max(0, Math.floor((now - state.lastEventAt) / 1000)) }) : t("Waiting for the first server event")}</p>}

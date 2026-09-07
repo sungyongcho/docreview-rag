@@ -137,10 +137,13 @@ while candidates and relevant evidence remain zero.
 
 ### Explore a stage or open run details
 
-The execution summary stays with its answer. Select any stage, including **Path decision**,
+The execution summary stays with its answer. Select a recorded stage, including **Path decision**,
 to expand its recorded scope, ranked candidates, kept/rejected evidence, verification or
 result. One stage panel is open at a time; select it again to collapse it. Missing historical
-fields say **Not recorded for this run**.
+fields say **Not recorded for this run**. A stage with no recorded fields shows one short note.
+The open stage has an underline and a bottom marker; hovering or focusing a selectable stage
+underlines its title. Waiting and unreached stages are inert. Failed, cancelled, skipped,
+completed and currently running stages remain selectable. Enter or Space toggles a focused stage.
 
 Use **Run details** for the right-side **Performance**, **Server settings** and **Trace** tabs.
 The `Q. <question>` heading and short message ID identify the selected answer. Reopening an
@@ -152,4 +155,4 @@ appear only when recorded.
 
 ### SCREENSHOT NEEDED
 
-<!-- Feature: stage disclosures and right-side run details; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+<!-- Feature: issue 140 selected-stage underline and bottom marker, selectable hover/focus, inert unreached stages and one-line empty-stage note, with right-side run details; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->

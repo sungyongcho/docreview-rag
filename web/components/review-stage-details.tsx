@@ -47,6 +47,16 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, onOp
   const ids = (label: string, item: unknown) => <div key={label}><dt>{t(label)}</dt><dd>{Array.isArray(item) ? `${item.length} · ${item.join(", ") || "[]"}` : missing}</dd></div>;
   const skip = state.pathDecision?.intent === "casual_chat" && ["retrieve", "grade", "check"].includes(stage) ? "Skipped: conversation reply without retrieval" : stage === "check" && state.skippedNodes?.check ? "Skipped: relevance threshold not met" : null;
 
+  const stageFields = stage === "path" || stage === "gate"
+    ? [path.selected_scope ?? state.selectedScope, filters.registries, filters.issuers, filters.fiscal_years, path.rationale ?? scope.source, path.matched_rule, path.history_turns, path.intent, path.source, path.routing_queries ?? performance?.routing_queries, path.retrieval_query, path.stopping_reason]
+    : stage === "retrieve" ? [retrieval.preset ?? requested.retrieval_preset ?? settings.retrieval_preset, retrieval.k ?? resolved.k, ...results.map((result) => result.candidates)]
+    : stage === "grade" ? results.flatMap((result) => [result.kept_chunk_ids, result.rejected_chunk_ids])
+    : stage === "check" ? results.flatMap((result) => [result.decision, result.reasons])
+    : [finalLabel, performance?.total_elapsed_ms ?? state.elapsedMs, ...results.flatMap((result) => [record(result.decision).label, result.reasons])];
+  const hasRecordedFields = Boolean(skip) || timings.length > 0 || Array.isArray(performance?.model_calls)
+    || [...stageFields, ...results.map((result) => result.failure)].some((item) => item !== undefined && item !== null);
+  if (!hasRecordedFields) return <div className="review-stage-details"><p className="review-stage-empty">{t("This stage was not recorded for this run.")}</p></div>;
+
   return <div className="review-stage-details">
     {skip && <p className="review-stage-skip">{t(skip)}</p>}
     {(stage === "path" || stage === "gate") && <dl>

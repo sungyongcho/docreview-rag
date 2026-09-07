@@ -214,8 +214,8 @@ describe("recorded path decisions", () => {
 
 
 describe("stage disclosures", () => {
-  it("keeps all six panels collapsed and exposes focusable native disclosure buttons", () => {
-    render(<ReviewProgressSteps state={initialReviewProgress()} />);
+  it("keeps recorded panels collapsed and marks only the currently expanded native button", () => {
+    render(<ReviewProgressSteps state={{ node: "report", evidence: 0, relevant: 0, steps: 0, outcome: "completed", observed: ["gate", "retrieve", "grade", "check", "report"], pathDecision: { intent: "document_review", source: "deterministic", matched_rule: "filing", rationale: "Filing question", selected_scope: "auto", history_turns: 0, routing_queries: {}, retrieval_query: "Question", scope_outcome: "resolved", stopping_reason: null, resolved_scope: null, suggested_scope: null } }} />);
     const labels = ["Path decision", ...REVIEW_STEPS.map((step) => step.label)];
     expect(screen.queryByRole("region")).toBeNull();
     for (const label of labels) {
@@ -226,11 +226,15 @@ describe("stage disclosures", () => {
       expect(button).toHaveFocus();
       fireEvent.click(button);
       expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(button).toHaveAttribute("aria-current", "true");
+      expect(button.closest("li")).toHaveClass("review-stage-selectable", "review-stage-selected");
       const panel = screen.getByRole("region", { name: label });
       expect(button).toHaveAttribute("aria-controls", panel.id);
       expect(panel).toBeVisible();
       fireEvent.click(button);
       expect(screen.queryByRole("region")).toBeNull();
+      expect(button).not.toHaveAttribute("aria-current");
+      expect(button.closest("li")).not.toHaveClass("review-stage-selected");
     }
   });
   it("switches disclosures without changing the recorded skipped status", () => {
@@ -242,4 +246,37 @@ describe("stage disclosures", () => {
     expect(screen.getByRole("button", { name: "Verify answer and citations" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("region", { name: "Retrieve evidence" })).toBeVisible();
   });
+});
+
+it("keeps waiting/pending and unreached failed-run stages inert while preserving the failing stage", () => {
+  const { rerender } = render(<ReviewProgressSteps state={initialReviewProgress()} />);
+  expect(document.querySelectorAll(".review-stage-toggle")).toHaveLength(0);
+  for (const row of document.querySelectorAll(".review-progress-steps li")) { expect(row).not.toHaveClass("review-stage-selectable"); fireEvent.click(row); }
+  expect(screen.queryByRole("region")).toBeNull();
+  const state = finishReviewProgress(reviewProgressFromEvent({ ...event("gate"), phase: "start" }, initialReviewProgress()), "failed", 30);
+  rerender(<ReviewProgressSteps state={state} />);
+  expect(document.querySelectorAll(".review-stage-toggle")).toHaveLength(1);
+  const failing = screen.getByRole("button", { name: "Understand the question" });
+  expect(failing.closest("li")).toHaveClass("failed");
+  fireEvent.click(failing);
+  expect(screen.getByRole("region", { name: "Understand the question" })).toHaveTextContent("This stage was not recorded for this run.");
+  for (const step of REVIEW_STEPS.slice(1)) expect(screen.queryByRole("button", { name: step.label })).toBeNull();
+});
+
+it("closes an open panel if a new pass makes that stage unreached", () => {
+  const completed = { node: "report" as const, evidence: 1, relevant: 1, steps: 1, outcome: "completed" as const, observed: ["gate", "retrieve", "grade", "check", "report"] as const };
+  const { rerender } = render(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed] }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Verify answer and citations" }));
+  rerender(<ReviewProgressSteps state={initialReviewProgress()} />);
+  expect(screen.queryByRole("region")).toBeNull();
+  rerender(<ReviewProgressSteps state={{ ...completed, observed: [...completed.observed] }} />);
+  expect(screen.queryByRole("region")).toBeNull();
+});
+
+it("provides hover/focus underline only through selectable classes without changing strip sizing", () => {
+  const styles = readFileSync("components/review-stage-details.css", "utf8");
+  expect(styles).toContain("li.review-stage-selectable:is(:hover, :has(.review-stage-toggle:focus-visible), .review-stage-selected) strong");
+  expect(styles).toContain("text-decoration: underline");
+  expect(styles).toContain("li.review-stage-selected::after");
+  expect(styles.split(".review-stage-panel")[0]).not.toContain("grid-template-columns");
 });
