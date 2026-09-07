@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile } from "@/lib/storage";
+import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
 import type { DocumentFacets, Readiness } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
@@ -9,7 +9,7 @@ import { enterProductionPreview, exitProductionPreview } from "@/lib/production-
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
-beforeEach(() => { window.history.replaceState(null, "", "/"); });
+beforeEach(() => { configureBrowserStorage(undefined); window.history.replaceState(null, "", "/"); });
 
 /** Wait for the same asynchronous browser traversal used by the application arrows. */
 async function traverseHistory(direction: "Back" | "Forward") {
@@ -80,6 +80,7 @@ it.each([
 
 /** Live-build API stub: runtime endpoints plus empty `/admin/*` and operator lists; `ready` lets a test hold back `/ready`. */
 function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness> = async () => liveReadiness(corpus)) {
+  configureBrowserStorage("dev");
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -130,6 +131,7 @@ function noteTargets(seen: Set<string>) {
 
 /** Public-build API stub: runtime endpoints plus the public `/snapshots` list; everything else is `{}`. */
 function stubPublicApi() {
+  configureBrowserStorage("prod");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
     let payload: unknown = {};
@@ -623,7 +625,7 @@ describe("service shell", () => {
     expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-fallback", "operations"]);
 
     fireEvent.click(screen.getByText("Finish"));
-    expect(window.localStorage.getItem(ONBOARDING_KEY)).toBe("done");
+    expect(readStoredValue(ONBOARDING_KEY)).toBe("done");
     expect(screen.queryByText("Step 7 of 7")).toBeNull();
   });
 
@@ -649,7 +651,7 @@ describe("service shell", () => {
     expect(TOUR_TARGETS.filter((name) => !seen.has(name))).toEqual(["evidence-toggle"]);
 
     fireEvent.click(screen.getByText("Finish"));
-    expect(window.localStorage.getItem(ONBOARDING_KEY)).toBe("done");
+    expect(readStoredValue(ONBOARDING_KEY)).toBe("done");
   });
 
   it("starts on Build when the live corpus is empty", async () => {
@@ -712,12 +714,12 @@ describe("service shell", () => {
     expect(screen.getByRole("heading", { name: "Choose a topic" })).toBeInTheDocument();
     expect(document.querySelector(".help-marker, .help-target-highlight")).toBeNull();
     expect(within(screen.getByRole("region", { name: "Recommended" })).getByRole("button", { name: "Corpus scope" })).toBeInTheDocument();
-    expect(window.localStorage.getItem(HELP_KEY)).toBe("open");
+    expect(readStoredValue(HELP_KEY)).toBe("open");
 
     fireEvent.keyDown(window, { key: "?" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
-    expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
+    expect(readStoredValue(HELP_KEY)).toBeNull();
     fireEvent.keyDown(window, { key: "?" });
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
 
@@ -756,7 +758,7 @@ describe("service shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show tutorial" }));
     expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
-    expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
+    expect(readStoredValue(HELP_KEY)).toBeNull();
     fireEvent.keyDown(window, { key: "?" });
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
 
@@ -821,14 +823,14 @@ describe("service shell", () => {
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
-    expect(window.localStorage.getItem(HELP_KEY)).toBe("open");
+    expect(readStoredValue(HELP_KEY)).toBe("open");
   });
 
   it("hooks help onto the newest answered message only", async () => {
     stubPublicApi();
     seedAnsweredConversation();
     // A second answer: the marker must sit beside it, not beside the first one scrolled away above.
-    const stored = JSON.parse(window.localStorage.getItem("docreview:conversations:v2")!) as Array<{ messages: unknown[] }>;
+    const stored = JSON.parse(readStoredValue("docreview:conversations:v2")!) as Array<{ messages: unknown[] }>;
     const answered = stored[0].messages[1] as Record<string, unknown>;
     stored[0].messages.push({ ...answered, id: "a2", text: "Gross margin rose on mix." });
     window.localStorage.setItem("docreview:conversations:v2", JSON.stringify(stored));
@@ -1388,7 +1390,7 @@ describe("right-side run details", () => {
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
     fireEvent.pointerDown(screen.getByPlaceholderText("Ask a question about the filing corpus"));
     expect(screen.queryByRole("complementary", { name: "Help" })).toBeNull();
-    expect(window.localStorage.getItem(HELP_KEY)).toBeNull();
+    expect(readStoredValue(HELP_KEY)).toBeNull();
   });
 });
 

@@ -14,8 +14,8 @@ export function DefaultRunLimits({ summary = false, onOpen, speed }: { summary?:
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     function refresh() { setPolicy(loadDefaultProfile().prompt_policy); }
-    refresh(); window.addEventListener("docreview:default-limits-changed", refresh);
-    return () => window.removeEventListener("docreview:default-limits-changed", refresh);
+    refresh(); window.addEventListener("docreview:default-limits-changed", refresh); window.addEventListener("docreview:storage-restored", refresh);
+    return () => { window.removeEventListener("docreview:default-limits-changed", refresh); window.removeEventListener("docreview:storage-restored", refresh); };
   }, []);
   const validation = conversationSettingsError({ ...DEFAULT_SESSION_PROFILE, prompt_policy: policy });
   return <section className="surface default-run-limits"><h3>{t("New-conversation limits and evidence")}</h3>

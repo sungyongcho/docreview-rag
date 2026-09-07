@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { applyTheme, normalizeTheme, readTheme, saveTheme, THEME_KEY, type Theme } from "@/lib/theme";
+import { subscribeStorageRestored, storageEventValue } from "@/lib/storage";
 import { previewState, subscribePreview } from "@/lib/production-preview";
 
 const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void }>({ theme: "system", setTheme: () => undefined });
@@ -14,8 +15,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const media = window.matchMedia?.("(prefers-color-scheme: dark)");
     const apply = (value: Theme) => { current.current = value; updateTheme(value); applyTheme(value, media?.matches ?? false); };
     apply(readTheme());
+    const restored = subscribeStorageRestored(() => apply(readTheme()));
     const systemChanged = () => { if (current.current === "system") applyTheme("system", media?.matches ?? false); };
-    const stored = (event: StorageEvent) => { if (event.key === THEME_KEY && previewState().mode === "normal") apply(normalizeTheme(event.newValue)); };
+    const stored = (event: StorageEvent) => { const value = storageEventValue(event, THEME_KEY); if (value !== undefined && previewState().mode === "normal") apply(normalizeTheme(value)); };
     let previousMode = previewState().mode;
     const unsubscribe = subscribePreview(() => {
       const mode = previewState().mode;
@@ -24,7 +26,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     });
     media?.addEventListener("change", systemChanged);
     window.addEventListener("storage", stored);
-    return () => { unsubscribe(); media?.removeEventListener("change", systemChanged); window.removeEventListener("storage", stored); };
+    return () => { restored(); unsubscribe(); media?.removeEventListener("change", systemChanged); window.removeEventListener("storage", stored); };
   }, []);
   const setTheme = useCallback((value: Theme) => {
     saveTheme(value);

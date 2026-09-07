@@ -1,4 +1,5 @@
 "use client";
+import { BrowserStorageSettings } from "./browser-storage";
 import { DefaultRunLimits } from "./default-run-limits";
 import { localCpuWarning } from "@/lib/local-models";
 import { CreatorSignature } from "@/components/creator-signature";
@@ -22,6 +23,7 @@ export type SettingsCategory = "prompt" | "local" | "data" | "about";
 
 interface Props {
   open: boolean;
+  storageImportDisabled?: boolean;
   initialCategory?: SettingsCategory;
   profile: ReviewSessionDraft;
   capabilities: Capabilities | null;
@@ -76,7 +78,7 @@ export function SettingsModal(props: Props) {
   saveDefaultPrompt(props.profile.prompt_policy.additional_instructions);
   notify(t("Prompt saved for new conversations."), "success", "prompt-defaults");
 }}>{t("Save prompt for new conversations")}</button>{props.capabilities?.can_edit_run_limits && <DefaultRunLimits speed={localCpuWarning(props.profile, props.readiness?.review_engines?.local)} />}</div>}
-        {category === "data" && <div className="settings-actions"><div className="settings-metrics"><Metric label={t("DocReview browser data")} value={formatStorage(browserStorageUsage())} /><Metric label={t("Retention")} value={t("30 conversations · 100 messages each")} /></div><button className="button" type="button" onClick={props.onOpenTour}><HelpCircle />{t("Show tutorial")}</button><GuidesNavigation /><button className="button" type="button" onClick={() => { if (window.confirm(t("Reset this conversation's settings?"))) { props.onChange(DEFAULT_SESSION_PROFILE); notify(t("Conversation settings reset."), "success"); } }}><RotateCcw />{t("Reset conversation settings")}</button><button className="button" type="button" onClick={() => { if (window.confirm(t("Reset all new-conversation and experiment defaults?"))) { resetDefaultProfile(); resetExperimentDefaults(); notify(t("New conversation and experiment defaults reset."), "success", "all-defaults"); } }}><RotateCcw />{t("Reset saved defaults")}</button><button className="button danger-button" type="button" onClick={() => { if (window.confirm(t("Clear all local conversations?"))) props.onClear(); }}><Trash2 />{t("Clear conversations")}</button><p className="helper">{t("Conversation content and settings stay in this browser. Clear conversations does not delete PostgreSQL documents, snapshots, golden revisions, or job history.")}</p></div>}
+        {category === "data" && <div className="settings-actions"><BrowserStorageSettings disabled={props.storageImportDisabled} onShowNotice={props.onClose} /><div className="settings-metrics"><Metric label={t("DocReview browser data")} value={formatStorage(browserStorageUsage())} /><Metric label={t("Retention")} value={t("30 conversations · 100 messages each")} /></div><button className="button" type="button" onClick={props.onOpenTour}><HelpCircle />{t("Show tutorial")}</button><GuidesNavigation /><button className="button" type="button" onClick={() => { if (window.confirm(t("Reset this conversation's settings?"))) { props.onChange(DEFAULT_SESSION_PROFILE); notify(t("Conversation settings reset."), "success"); } }}><RotateCcw />{t("Reset conversation settings")}</button><button className="button" type="button" onClick={() => { if (window.confirm(t("Reset all new-conversation and experiment defaults?"))) { resetDefaultProfile(); resetExperimentDefaults(); notify(t("New conversation and experiment defaults reset."), "success", "all-defaults"); } }}><RotateCcw />{t("Reset saved defaults")}</button><button className="button danger-button" type="button" onClick={() => { if (window.confirm(t("Clear all local conversations?"))) props.onClear(); }}><Trash2 />{t("Clear conversations")}</button><p className="helper">{t("Conversation content and settings stay in this browser. Clear conversations does not delete PostgreSQL documents, snapshots, golden revisions, or job history.")}</p></div>}
       </section>
     </div>
   </div>;

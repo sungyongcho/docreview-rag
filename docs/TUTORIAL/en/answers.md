@@ -83,8 +83,8 @@ Expand **Retrieved evidence candidates** to see one collapsed card per candidate
 section: `Item 7 - (Management's Discussion and Analysis)` for EDGAR filings, the division name such as
 `II. 사업의 내용` for DART filings, and the bare citation label when no title is known. The header also
 carries the document id, a table badge and the character span; open a card to read the excerpt and its
-full citation. Ten cards show per page. The sticky toolbar always shows the visible range, the pinned and
-excluded counts, **Expand all** / **Collapse all** and, beyond one page, **Previous page** / **Next page**.
+full citation. Five cards show per page. The sticky toolbar always shows the visible range, the pinned and
+excluded counts, **Expand all** / **Collapse all** and, beyond one page, arrow buttons with **Previous page** / **Next page** labels and a `1/3` page position.
 Pinned cards start open; every other card starts closed. Pin/Exclude sit in each header, so they work on
 collapsed cards and across pages. Candidate count and citation count measure different things.
 Pin/Exclude choices apply only when you [review again with selected evidence](settings.md#step-10); they
@@ -148,14 +148,21 @@ The open stage has an underline and a bottom marker; hovering or focusing a sele
 underlines its title. Waiting and unreached stages are inert. Failed, cancelled, skipped,
 completed and currently running stages remain selectable. Enter or Space toggles a focused stage.
 
-Stage details display source badges, company/year chips, rounded millisecond timings and model-call
+Stage details display source badges, company/year chips, measured timings with units and model-call
 tables instead of inline JSON. Company names come from the existing live or published document
 catalog when the scope panel is first opened; recorded codes and run scope remain unchanged.
 Unknown or ambiguous names keep the original code. A lookup failure is stated beside the panel.
 **None** means a recorded empty collection; a dash or the consolidated unrecorded-label line means
-an absent value. The panel grows inside the message column. Tables longer than eight rows retain
-their remaining records under **Show more recorded rows**. **Open run details** preserves access
-to the full raw execution record from every recorded stage.
+an absent value. The panel grows inside the message column. Its heading identifies the strip stage
+and corresponding server node codes. Repeated node timings share one row with their pass count
+and total elapsed time; expand **Recorded passes** to inspect each pass in collection order.
+An incomplete duration record does not produce a partial total. Status labels retain their raw codes.
+**Ranked candidates (N)** starts closed. Open it for five rows per page, using the same arrow pager
+as other recorded tables and evidence cards. Scores use four significant digits with the full value
+on hover; citations stay in one chip and document/chunk IDs use code font.
+**Open run details** and **Show evidence** (when evidence exists) are beside the execution heading,
+even with every stage closed. Opening details from a selected stage opens **Performance** and
+highlights its recorded nodes without hiding the other stages or passes.
 
 Use **Run details** for the right-side **Performance**, **Server settings** and **Trace** tabs.
 The `Q. <question>` heading and short message ID identify the selected answer. Reopening an
@@ -167,7 +174,7 @@ appear only when recorded.
 
 ### SCREENSHOT NEEDED
 
-<!-- Feature: issues 140/141 selected execution strip and compact mapped stage details; show SEC/DART company names and FY chips, empty versus unrecorded values, rounded timings and model table, no inner scrollbar, collapsed long-table continuation and raw run-details access; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+<!-- Feature: issues 140/141/157/158 selected execution strip, grouped ordered timing passes, heading actions, highlighted inspector stage, and five-row candidate/evidence pagination; show SEC/DART company names and FY chips, empty versus unrecorded values, timings with units and model table, collapsed ranked candidates and arrow pagers, and raw run-details access; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
 
 ### SCREENSHOT NEEDED
 <!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=en; light mode; preserve existing assets. -->

@@ -1,5 +1,6 @@
 "use client";
 
+import { STAGE_LABELS, collectedNumber, formatDuration } from "@/lib/execution-format";
 import { useI18n } from "@/lib/i18n";
 import type { ReviewExecution } from "@/lib/types";
 import "./performance.css";
@@ -21,31 +22,8 @@ interface ModelCall {
 }
 interface StageTiming { node?: string; phase?: string; elapsed_ms?: number | null; status?: string }
 
-const STAGE_LABELS: Record<string, string> = {
-  gate: "Understand the question",
-  route: "Resolve filing scope",
-  retrieve: "Retrieve evidence",
-  candidates: "Collect candidate evidence",
-  grade: "Select relevant evidence",
-  check: "Verify answer and citations",
-  report: "Prepare the result",
-  chat: "Reply to the conversation",
-};
 const STATUS_CODES: Record<string, string> = { completed: "OK", succeeded: "OK", failed: "ERR", cancelled: "STOP", running: "RUN" };
 const BAR_WIDTH = 20;
-
-/** Reject absent and invalid measurements without conflating a measured zero. */
-function collectedNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-
-/** Keep subsecond measurements legible without rounding a positive duration to zero. */
-function formatDuration(value: unknown, locale: string, missing: string): string {
-  if (!collectedNumber(value)) return missing;
-  if (value > 0 && value < 1) return "<1ms";
-  if (value < 1000) return `${value.toLocaleString(locale, { maximumFractionDigits: 2 })}ms`;
-  return `${(value / 1000).toLocaleString(locale, { maximumFractionDigits: 2 })}s`;
-}
 
 /** Use discrete relative bars for collected durations only; a measured zero stays empty. */
 function durationBar(value: number, longest: number): string {
@@ -68,7 +46,7 @@ function timingReason(call: ModelCall): string | null {
 }
 
 /** Display measured execution in recorded order while keeping optional legacy data explicit. */
-export function ExecutionPerformance({ data, state, embedded = false }: { data?: Record<string, unknown>; state: ReviewExecution; embedded?: boolean }) {
+export function ExecutionPerformance({ data, state, embedded = false, selectedNodes = [] }: { selectedNodes?: readonly string[]; data?: Record<string, unknown>; state: ReviewExecution; embedded?: boolean }) {
   const { t, locale } = useI18n();
   const callsCollected = Array.isArray(data?.model_calls);
   const calls = (callsCollected ? data.model_calls : []) as ModelCall[];
@@ -108,7 +86,7 @@ export function ExecutionPerformance({ data, state, embedded = false }: { data?:
         {stages.length ? <div className="table-wrap performance-table-wrap"><table className="performance-table">
           <caption><strong>{t("Measured stage durations")}</strong><span>{t("Bar length is relative to the longest measured stage. Events remain in collection order.")}</span></caption>
           <thead><tr><th scope="col">{t("Order")}</th><th scope="col">{t("Stage")}</th><th scope="col">{t("Status")}</th><th scope="col">{t("Elapsed")}</th></tr></thead>
-          <tbody>{stages.map((stage, index) => <tr key={index}>
+          <tbody>{stages.map((stage, index) => <tr key={index} data-stage-node={stage.node} aria-current={stage.node && selectedNodes.includes(stage.node) ? "true" : undefined}>
             <td className="performance-order">{String(index + 1).padStart(2, "0")}</td>
             <td><span>{stageLabel(stage.node)}</span>{stage.node && <code className="performance-identifier">{stage.node}</code>}</td>
             <td><span className={`performance-status ${stage.status === "completed" || stage.status === "succeeded" ? "is-complete" : stage.status === "failed" ? "is-failed" : ""}`}>{stage.status ? t(stage.status) : t("Unknown status")}</span>{stage.status && <code className="performance-identifier">{stage.status}</code>}</td>

@@ -23,7 +23,8 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - Review corrections must state the actual issue, exact file/diff line, trigger and
   expected result, concrete fix direction and recheck. Use `Changes requested` with
   CORRECTNESS, CONTRACT, DATA_INTEGRITY, AUTHORIZATION, PERFORMANCE, VERIFICATION or
-  INTEGRATION as applicable; do not invent defects or issue numbers.
+  INTEGRATION as applicable; do not invent defects or issue numbers. When only
+  verification is blocked, state `Verification blocked — VERIFICATION` instead.
 - Keep reviews concise and bound to the reviewed head. Inspect only the changed delta
   when it moves; do not repost the same review. Successful reviews start with exactly
   `Self-review: LGTM` for ordinary own work, `Review: LGTM` for another worker's work,
@@ -119,15 +120,19 @@ User directions and higher-priority instructions still prevail.
 - Keep conversation ID/title optional. When the surface exposes a supported rename tool,
   set the current task title to `<short scope> | <project summary> | <short worker id>`
   at assignment or takeover and verify it. Preserve the full worker ID in project records;
-  use the client and unique ID suffix in the title. Do not repeat an unchanged rename.
+  the short ID is `<client>-<8 hex digits>` for generated IDs or the readable legacy ID,
+  extended only to resolve a project-local collision. Do not repeat an unchanged rename.
   If unsupported, provide the suggested title and continue. Never edit internal chat
   databases or conversation logs, install an SDK solely for renaming, or block delivery
   on a title change.
 - Record each assignment before implementation in one issue comment containing the
   marker `<!-- commit-it:work-state:v1 -->`. Include `Assignment`, `Worker`, `Scope`,
-  `Work status`, `PR`, `Verification` and UTC `Updated` fields. Retain the v1 marker and
-  legacy readable fields. On takeover add previous/new worker, handoff revision, approval
-  summary, preserved checkpoint and remaining verification; retain the same Assignment.
+  `Issues`, `Work status`, `PR`, `Verification`, `Head` (the actual remote PR head, never
+  a local checkpoint) and UTC `Updated` fields. Retain the v1 marker and legacy readable
+  fields. On takeover add `Previous worker`, `Handoff revision` and a durable `Handoff`
+  record link plus the approval summary, preserved checkpoint and remaining verification;
+  retain the same Assignment. An approved first transfer of a legacy record without
+  lineage fields uses prior handoff revision zero; missing lineage never permits takeover.
   A grouped delivery preserves links to every original Assignment. Before a PR exists,
   use `PR: pending`. One assignment may cover linked issues; mirror the same record
   to each. Sharing an issue requires explicitly assigned, disjoint scopes. For a

@@ -1,5 +1,5 @@
 "use client";
-import { ChevronDown, ChevronRight, CircleMinus, Pin as PinIcon } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, CircleMinus, Pin as PinIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { evidenceHeading, evidencePage } from "@/lib/evidence";
@@ -56,9 +56,9 @@ export function EvidenceCandidates({ message, busy, onMark, onUseSelected }: Evi
           <button className="button" type="button" onClick={() => setExpanded(new Set())}>{t("Collapse all")}</button>
           {pages > 1 && (
             <nav className="evidence-pager" aria-label={t("Evidence pages")}>
-              <button className="button" type="button" disabled={page === 0} onClick={() => goTo(page - 1)}>{t("Previous page")}</button>
-              <span>{t("Page {page} of {pages}", { page: page + 1, pages })}</span>
-              <button className="button" type="button" disabled={page >= pages - 1} onClick={() => goTo(page + 1)}>{t("Next page")}</button>
+              <button className="button" type="button" disabled={page === 0} aria-label={t("Previous page")} onClick={() => goTo(page - 1)}><ChevronLeft size={16} aria-hidden="true" /></button>
+              <span>{page + 1}/{pages}</span>
+              <button className="button" type="button" disabled={page >= pages - 1} aria-label={t("Next page")} onClick={() => goTo(page + 1)}><ChevronRight size={16} aria-hidden="true" /></button>
             </nav>
           )}
           {selectable && pinned.length + excluded.length > 0 && <button className="button primary" type="button" disabled={busy} onClick={onUseSelected}>{t("Review again with selected evidence")}</button>}

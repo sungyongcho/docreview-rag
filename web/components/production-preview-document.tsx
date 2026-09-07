@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { browserStorage, enterProductionPreview } from "@/lib/production-preview";
+import { enterProductionPreview } from "@/lib/production-preview";
+import { browserStorage } from "@/lib/storage";
 import { getCapabilities } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { ServiceShell } from "./service-shell";

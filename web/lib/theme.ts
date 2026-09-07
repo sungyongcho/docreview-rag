@@ -1,4 +1,4 @@
-import { browserStorage } from "./production-preview";
+import { browserStorage, browserThemeBootstrap } from "./storage";
 
 export type Theme = "light" | "dark" | "system";
 export const THEME_KEY = "docreview:theme";
@@ -25,4 +25,4 @@ export function applyTheme(theme: Theme, systemDark: boolean): void {
 }
 
 /** Run before first paint; only a validated display preference enters the DOM. */
-export const THEME_BOOTSTRAP = `(function(){var t="system";try{var p=window.name==="docreview-production-preview";var v=p?new URLSearchParams(location.search).get("theme"):localStorage.getItem(${JSON.stringify(THEME_KEY)});if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
+export const THEME_BOOTSTRAP = browserThemeBootstrap(THEME_KEY);

@@ -44,11 +44,11 @@ export function ConversationSettings(props: Props) {
   const [savedDefaults, setSavedDefaults] = useState(DEFAULT_SESSION_PROFILE);
   useEffect(() => {
     function refresh() { setSavedDefaults(loadDefaultProfile()); }
-    refresh(); window.addEventListener("docreview:default-limits-changed", refresh);
-    return () => window.removeEventListener("docreview:default-limits-changed", refresh);
+    refresh(); window.addEventListener("docreview:default-limits-changed", refresh); window.addEventListener("docreview:storage-restored", refresh);
+    return () => { window.removeEventListener("docreview:default-limits-changed", refresh); window.removeEventListener("docreview:storage-restored", refresh); };
   }, []);
   const baseline = savedDefaults.prompt_policy;
-  const changes = Object.entries(props.profile.prompt_policy).filter(([key, value]) => key !== "workflow_budget" && value !== baseline[key as keyof typeof baseline]).length + Object.entries(props.profile.prompt_policy.workflow_budget).filter(([key, value]) => value !== baseline.workflow_budget[key as keyof typeof baseline.workflow_budget]).length + (props.profile.retrieval_preset === "custom" ? 1 : 0);
+  const changes = Object.entries(props.profile.prompt_policy).filter(([key, value]) => key !== "workflow_budget" && value !== baseline[key as keyof typeof baseline]).length + Object.entries(props.profile.prompt_policy.workflow_budget).filter(([key, value]) => value !== baseline.workflow_budget[key as keyof typeof baseline.workflow_budget]).length + Object.entries(resolvedRetrievalProfile(props.profile)).filter(([key, value]) => value !== resolvedRetrievalProfile(savedDefaults)[key as keyof ReturnType<typeof resolvedRetrievalProfile>]).length;
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);

@@ -1,4 +1,5 @@
 "use client";
+import { browserResetStores } from "@/lib/storage";
 import { LOCALE_KEY, useI18n } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -179,7 +180,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
   function finish() {
     if (result?.status !== "succeeded") return;
     try {
-      clearDocReviewBrowserData(localStorage);
+      clearDocReviewBrowserData(browserResetStores()[0]);
       window.location.assign("/docreview-rag-agent/");
     } catch (reason) { setError(String(reason)); }
   }
