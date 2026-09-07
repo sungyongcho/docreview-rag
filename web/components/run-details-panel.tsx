@@ -1,4 +1,5 @@
 "use client";
+import { NotificationOutlet } from "./notifications";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
@@ -112,7 +113,7 @@ export function RunDetailsPanel({ message, onClose, onOpenFix, stageRequest }: R
         <div className="run-details-question-line"><h2 className={fullQuestion ? "is-expanded" : ""} title={`Q. ${question}`}>Q. {question}</h2><code className="run-details-message-id" title={message.id}>{message.id.slice(0, 8)}</code></div>
         <button className="run-details-question-toggle" type="button" aria-expanded={fullQuestion} onClick={() => setExpandedQuestion(fullQuestion ? null : message.id)}>{t(fullQuestion ? "Collapse question" : "Show full question")}</button>
         <div className="run-details-tabs" role="tablist" aria-label={t("Run detail sections")}>{SECTIONS.map((item, index) => <button key={item.id} id={`${uid}-${item.id}-tab`} role="tab" type="button" aria-selected={section === item.id} aria-controls={`${uid}-${item.id}`} tabIndex={section === item.id ? 0 : -1} onClick={() => setSections((previous) => ({ ...previous, [message.id]: item.id }))} onKeyDown={(event) => moveTab(event, index)}>{t(item.label)}</button>)}</div>
-      </header>
+      </header><NotificationOutlet priority={20} active={!collapsed} />
       <div className="run-details-content" ref={content}>
         <section id={`${uid}-performance`} role="tabpanel" aria-labelledby={`${uid}-performance-tab`} hidden={section !== "performance"} tabIndex={0}>
           <h3>{t("Execution performance")}</h3>
