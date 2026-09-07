@@ -1,14 +1,30 @@
 .review-progress-steps li { position: relative; }
 .review-progress-steps .review-stage-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; padding: 0; background: transparent; color: inherit; cursor: pointer; }
 .review-progress-steps .review-stage-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.review-progress-steps li.review-stage-selectable:is(:hover, :has(.review-stage-toggle:focus-visible), .review-stage-selected) strong { text-decoration: underline; text-underline-offset: 3px; }
+.review-progress-steps li.review-stage-selected::after { content: ""; position: absolute; height: 2px; left: 0; right: 0; bottom: 0; background: var(--phase-green); pointer-events: none; }
+.review-progress-steps li.review-stage-selected.failed::after { background: var(--bad); }
+.review-progress-steps li.review-stage-selected:is(.cancelled, .skipped)::after { background: var(--phase-warning); }
 .review-stage-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
-.review-stage-details { max-height: 360px; overflow: auto; font-size: 12px; overflow-wrap: anywhere; }
-.review-stage-details dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 8px 0; }
+.review-stage-panel > .review-unrecorded { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.review-stage-details { container-type: inline-size; font-size: 12px; overflow-wrap: anywhere; display: grid; gap: 8px; }
+.review-stage-details .review-stage-fields { display: grid; grid-auto-flow: row dense; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 6px 10px; margin: 0; }
 .review-stage-details dt { color: var(--muted); font-size: 11px; }
-.review-stage-details dd { margin: 4px 0 0; }
-.review-stage-details pre { margin: 0; white-space: pre-wrap; font-size: 11px; }
-.review-stage-details table { width: 100%; font-size: 11px; text-align: left; }
-.review-stage-details th, .review-stage-details td { padding: 5px; border-bottom: 1px solid var(--border); }
-.review-stage-details h4 { margin: 12px 0 6px; font-size: 12px; }
+.review-stage-details dd { margin: 3px 0 0; min-width: 0; }
+.review-stage-details .review-field-wide { grid-column: span 2; min-width: 0; }
+.review-stage-details .review-value-record { display: grid; gap: 5px; margin: 0; }
+.review-stage-details .review-value-list { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; list-style: none; margin: 0; padding: 0; }
+.review-stage-details .review-value-list > li { min-width: 0; max-width: 100%; margin: 0; }
+.review-stage-details .review-value-chip { display: inline-block; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; max-width: 100%; }
+.review-stage-details .review-value-chip.registry { font-size: 11px; font-weight: 600; }
+.review-stage-details .review-value-empty, .review-stage-details .review-value-missing, .review-stage-details .review-unrecorded { color: var(--muted); }
+.review-stage-details .review-recorded-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; text-align: left; }
+.review-stage-details th, .review-stage-details td { padding: 4px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.review-stage-details caption { text-align: left; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.review-stage-details h4 { margin: 0 0 5px; font-size: 12px; }
+.review-stage-details p { margin: 0; }
 .review-stage-details .review-stage-skip { color: var(--phase-warning); }
-.review-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.review-stage-details .review-recorded-more { margin-top: 5px; }
+.review-stage-details .review-recorded-more > summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.review-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+@container (max-width: 290px) { .review-stage-details .review-field-wide { grid-column: span 1; } }

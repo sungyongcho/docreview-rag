@@ -126,7 +126,10 @@ rag-corpus readiness
 
 ### 2. NVIDIA SEC FY2024 다운로드 {#qs-web-2}
 
-**데이터 준비 → 파이프라인 → 원문 수집 → 변경…**에서 **SEC EDGAR**를 선택합니다. 회사는 `NVDA`, 회계연도는 `2024`만 남기고 **누락된 원문 다운로드**를 누릅니다. **Build → Jobs**에서 성공할 때까지 기다리세요.
+**데이터 준비 → 파이프라인 → 원문 수집**을 열고 **선택 해제**로 이번 실습의 범위를 좁힙니다. 회사·연도 표에서 `NVDA` / `2024` 연도 칩을 선택하세요. 조합이 없으면 **티커 / 종목 코드**와 **회계연도**에 입력하고 **선택에 추가**를 누릅니다. 기존 조합을 추가하면 해당 칩으로 초점만 이동하므로 그 칩을 명시적으로 선택하세요. 다운로드 계획에 의도한 누락 조합만 있는지 확인하고 **누락된 원문 다운로드**를 누른 뒤 **Build → Jobs**에서 성공을 기다립니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: current filings-matrix-and-exact-year-selection; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 <!-- capture:quickstart-02-ko -->
 
@@ -140,7 +143,10 @@ rag-corpus readiness
 
 ### 3. 삼성전자 DART FY2024 다운로드 {#qs-web-3}
 
-**Filings → 변경…**로 돌아가 **DART**, `005930`, `2024`를 선택하고 **누락된 원문 다운로드**를 누릅니다. **Jobs**에서 DART 작업의 성공을 확인하세요.
+**원문 수집**으로 돌아가 다운로드된 NVIDIA 조합은 선택된 상태로 유지합니다. `005930` / `2024` 칩을 선택하거나, 없는 조합을 **티커 / 종목 코드**, **회계연도**, **선택에 추가**로 추가하세요. 기존 칩으로 초점만 이동했다면 명시적으로 선택합니다. 다운로드 계획에 누락된 삼성전자 조합만 있는지 확인하고 **누락된 원문 다운로드**를 누른 뒤 **Jobs**에서 DART 작업의 성공을 확인하세요.
+
+### SCREENSHOT NEEDED
+<!-- Feature: current filings-matrix-and-exact-year-selection; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 DART는 먼저 기업 고유번호 목록을 내려받습니다. 이 API는 응답이 느릴 수 있습니다. Jobs의 바이트 진행량을 확인하고, 실행 중에는 다운로드를 중복 제출하지 마세요.
 
@@ -160,7 +166,10 @@ DART는 먼저 기업 고유번호 목록을 내려받습니다. 이 API는 응�
 
 ### 4. 두 보고서 파싱·청킹·저장 {#qs-web-4}
 
-다운로드가 완료되면 준비 상태가 자동으로 갱신됩니다. 파싱·인덱싱 단계에서 `manifest.json`의 NVIDIA 선택 `sec-08b5f645cc174083`와 삼성전자 선택 `dart-1a4f24de25a92617`를 확인합니다. 각 선택에 보고서 한 개와 원문 한 개가 준비됐는지 확인하고, 선택별 수집 작업을 하나씩 실행합니다. 앞 작업이 성공한 뒤 다음 작업을 시작합니다.
+**다운로드가 완료되면 준비 상태가 자동으로 갱신됩니다.** **파싱·청킹**을 열고 **선택한 문서**에 의도한 두 보고서의 원문이 준비됐는지 확인한 뒤 **선택한 원문 파싱 및 청크 생성**을 한 번 누릅니다. 적재 작업이 성공할 때까지 기다리세요. 선택별 수동 적재를 하려면 **고급**을 열어 `manifest.json`의 NVIDIA 선택 `sec-08b5f645cc174083`와 삼성전자 선택 `dart-1a4f24de25a92617`의 원문을 확인하고 각각 **DB 적재**를 실행합니다. 이 경우 주 동작까지 중복 실행하지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: current shared-parse-action-and-manual-advanced-alternative; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 공통 목록에는 다른 보고서도 있을 수 있습니다. 이 실습의 완료 여부는 선택한 보고서와 원문 수를 기준으로 확인합니다.
 
@@ -225,3 +234,10 @@ DART는 먼저 기업 고유번호 목록을 내려받습니다. 이 API는 응�
 [다음: 검색 테스트와 근거 확인](retrieval.md#step-8)
 
 Quick Start에서는 질문·답변을 실행하지 않았습니다. 다음 문서에서 검색 근거를 확인한 뒤 [첫 답변](answers.md#step-9)으로 이어집니다.
+
+파싱은 문서와 청크를 저장하며 BM25를 계산하지 않습니다. Build 4단계에서 처음에는
+**BM25 계산**, 이전 계산 기록이 있으면 **BM25 재계산**을 실행하세요. 청크 변경 후 이 작업을
+명시적으로 완료해야 균형/하이브리드 질문을 보낼 수 있습니다. 임베딩 미처리 수도 0이어야 합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit first BM25 computation after both report ingests and hybrid Ask blocked until embeddings and BM25 finish; locale=ko; light mode; preserve existing assets. -->

@@ -1,2 +1,4 @@
 [2026-09-07] [tests/api/test_execution.py:82] [type: debt] The clean-checkout gate fails Ruff I001 on main because report_to_records precedes records_to_report in a local import; the one-line reorder is outside the approved script refactor and awaits explicit permission.
 [2026-09-07] [tests/api/test_execution.py:82] [type: debt] Resolved by merged PR #113; the complete clean-checkout gate passed, including required live reset verification.
+
+[2026-09-07] [web/app/v2.css:313] [type: bug] At a 360px viewport, skipped-phase reason text can protrude into adjacent execution-strip tiles under the existing compact-theme layout. Observed during issue #140 browser QA; the text and layout rules are unchanged by that issue.

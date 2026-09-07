@@ -422,7 +422,9 @@ def main() -> int:
             "and model configuration; status checks job completion before the next step. "
             "Downloads require SEC/DART configuration; embeddings may incur provider charges. "
             "After reset, download sources again, ingest the selected manifest, then rebuild "
-            "embeddings and BM25 statistics. Configure the answer model and evaluate "
+            "embeddings and BM25 statistics as separate operations. ingest_manifest only "
+            "parses and stores chunks; rebuild_bm25 computes the lexical index. "
+            "Configure the answer model and evaluate "
             "in the web UI. "
             "Public read-only deployments cannot perform admin operations."
         ),

@@ -286,6 +286,19 @@ rag-corpus status
 
 각 작업이 성공한 뒤 다음 명령을 실행합니다. 수집 결과는 공통 manifest 안의 정확한 처리 선택을 알려줍니다. 문서 목록을 추출하거나 manifest를 복사하지 않습니다.
 
+파싱 작업은 청크 저장까지만 수행하며 BM25를 다시 계산하지 않습니다.
+`rag-corpus backfill_embeddings`의 성공을 확인한 다음 `rag-corpus rebuild_bm25`를
+실행하고 성공을 기다려야 하이브리드 검색을 사용할 수 있습니다. 파싱·청킹을 다시
+실행할 때마다 BM25도 명시적으로 다시 계산합니다. Build 4단계는 처음에 **BM25 계산**,
+통계나 성공한 계산 기록이 있으면 **BM25 재계산**을 표시하며 준비 완료 후에도 재계산할 수 있습니다.
+
+직접 호출하는 runtime seed API는 기존 API 사용자의 호환성을 위해 파싱과 BM25를
+함께 수행합니다. 격리 평가용 코퍼스도 자체 통계를 준비합니다. 이 경로들은 Build/CLI
+파싱 작업과 별개입니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit BM25 stage; state: ingest succeeded, BM25 action needed; locale: ko; evidence: CLI ingest history ends at cleanup, followed by explicit rebuild_bm25 success. -->
+
 ## Python CLI 참고
 
 ### DB 적재
@@ -486,7 +499,7 @@ rag-corpus readiness
 | 웹은 열리지만 API·DB 실패 | 시스템 상태, `rag-dev ps`, DB health | 해당 서비스 연결을 복구하고 새로고침; healthy와 schema 확인 |
 | `schema_drift` | 현재 구조와 기존 DB가 다름 | 기존 DB를 보존하고 비어 있는 별도 DB나 호환 DB를 선택 |
 | embedding 누락·stale | 데이터 준비의 provider·pending·모델 정체성 | OpenAI 설정과 키를 확인하고 필요한 누락 임베딩 생성 실행; 유료이므로 manifest와 명시적 선택 범위 확인 |
-| BM25 미준비 | DB 적재 뒤 통계 누락·무효화 | Rebuild BM25 후 succeeded와 ready 확인 |
+| BM25 미준비 | 파싱·청킹 뒤 통계가 없는 정상 준비 단계 | 4단계 BM25 계산/재계산 필요. 하이브리드·키워드는 대기, 벡터는 임베딩만 필요 |
 | `NOT_IN_DOCS` | corpus·기업·연도 필터와 검색된 근거 | 문서와 인용 후보 확인 후 문서에 실제 있는 질문으로 재시도 |
 | `provider_failure` | 실행 트레이스의 status·attempts·details·node | 키·모델 접근 권한·연결·한도를 확인; DB 재생성으로 해결하지 않음 |
 | `budget_exceeded` | resource·limit·observed·blocked_node | 대화 설정 → 실행 한도에서 해당 한도만 조정; 재시도는 추가 비용 가능 |
@@ -548,12 +561,23 @@ rag-fresh-start --sample
 설정·무관한 테이블·DB 볼륨·호스트 Ollama를 보존합니다. `--keep-sources`는 원문도 보존하고,
 `--sample`은 다운로드 없이 NVDA/AMD FY2023–2024 초안만 지정합니다. 두 옵션은 함께 쓸 수 없습니다.
 
-일반 경로는 더 넓은 웹 reset의 `runtime_file_permission` 미리보기를 사용하지 않습니다.
-Host에서도 원문을 읽지 못하면 거부된 경로와 부모 디렉터리에 대해 소유자가 실행할 정확한
-`setfacl` 명령을 보여 줍니다. 경로를 확인해 소유자가 권한을 부여한 뒤 읽기 전용 검사를 한 번
-다시 시도할 수 있습니다. CLI는 ACL을 자동 적용하거나 삭제를 자동 재시도하지 않습니다.
-원문 저널이 남았거나 DB 결과가 불확실하면 중단 상태를 유지하고, 저널을 보존한 채
-`rag-schema check`로 확인하세요.
+확인 문구를 받거나 API를 중지하기 전에 원문 읽기 권한과 원문 부모 디렉터리,
+`data/corpus`, 저널을 만드는 `data`의 쓰기·탐색 권한을 검사합니다. 컨테이너가 만든
+디렉터리는 읽을 수 있어도 파일 이동이 막힐 수 있습니다. 차단된 디렉터리를 모두 나열하고
+경로를 안전하게 인용한 `sudo setfacl -R -m u:<host-uid>:rwX -- <경로들>` 명령을
+보여 줍니다. 정확한 경로를 확인해 권한을 복구한 뒤 검사를 한 번 다시 시도할 수 있습니다.
+CLI는 ACL을 자동 적용하거나 삭제를 자동 재시도하지 않습니다. `--keep-sources`에는
+원문 디렉터리의 쓰기 권한이 필요하지 않습니다.
+
+API 중지 이후 실패하면 DB·원문이 그대로인지 또는 복원됐는지, 복구 결과가 불확실한지를
+구분하고, 빌드를 요청하지 않고 API를 복구하는 `rag-dev up -d`를 출력합니다. 컨테이너 ID만
+출력하지 않습니다. 저널이 남거나 DB 결과가 불확실하면
+`data/.schema-recreate-journal/journal.json`을 보존하고 `rag-schema check`로
+해당 경계를 확인한 뒤 다시 초기화하세요. 이미 커밋된 DB 초기화를 변경 없음으로 안내하지 않습니다.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=ko; theme=light; preserve existing screenshot assets. -->
 
 초기화가 완료돼야 `rag-dev up --build -d`와 readiness 확인을 실행하고 앱 주소와 양쪽 언어의
 [Quick Start — DEV ONLY, Web 1단계](quickstart-dev.md#qs-web-1)를 출력합니다. 빌드·준비 확인 실패 시 기존

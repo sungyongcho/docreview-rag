@@ -8,7 +8,10 @@ separately instead of treating every completed request as a successful answer.
 
 - **Goal:** obtain an answer whose claims can be checked against the intended filing.
 - **Prerequisites:** relevant evidence found in [step 8](retrieval.md#step-8), an available answer engine,
-  and valid scoped filters. Reuse an existing result when you only need to learn the inspection controls.
+  and valid scoped filters. Hybrid requires completed embeddings (Build step 3) and BM25 (Build step 4);
+  vector requires completed embeddings, and lexical requires BM25. Pending embeddings block hybrid/vector
+  sending; missing BM25 blocks hybrid/lexical sending. The composer names the required step. While its
+  preparation job is queued or running, Ask shows waiting and sending stays disabled. Reuse an existing result when you only need to learn the inspection controls.
 - **Screen:** New review → controls above the question → Inspect request.
 - **Inputs:** choose SEC scope, an available [engine](#engines), Balanced preset, and NVIDIA/FY2024 filters
   when those values are present in the catalog. Inspect the next request before sending.
@@ -137,10 +140,22 @@ while candidates and relevant evidence remain zero.
 
 ### Explore a stage or open run details
 
-The execution summary stays with its answer. Select any stage, including **Path decision**,
+The execution summary stays with its answer. Select a recorded stage, including **Path decision**,
 to expand its recorded scope, ranked candidates, kept/rejected evidence, verification or
 result. One stage panel is open at a time; select it again to collapse it. Missing historical
-fields say **Not recorded for this run**.
+fields are listed together under **Not recorded for this run**. A stage with no recorded fields shows one short note.
+The open stage has an underline and a bottom marker; hovering or focusing a selectable stage
+underlines its title. Waiting and unreached stages are inert. Failed, cancelled, skipped,
+completed and currently running stages remain selectable. Enter or Space toggles a focused stage.
+
+Stage details display source badges, company/year chips, rounded millisecond timings and model-call
+tables instead of inline JSON. Company names come from the existing live or published document
+catalog when the scope panel is first opened; recorded codes and run scope remain unchanged.
+Unknown or ambiguous names keep the original code. A lookup failure is stated beside the panel.
+**None** means a recorded empty collection; a dash or the consolidated unrecorded-label line means
+an absent value. The panel grows inside the message column. Tables longer than eight rows retain
+their remaining records under **Show more recorded rows**. **Open run details** preserves access
+to the full raw execution record from every recorded stage.
 
 Use **Run details** for the right-side **Performance**, **Server settings** and **Trace** tabs.
 The `Q. <question>` heading and short message ID identify the selected answer. Reopening an
@@ -152,4 +167,7 @@ appear only when recorded.
 
 ### SCREENSHOT NEEDED
 
-<!-- Feature: stage disclosures and right-side run details; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+<!-- Feature: issues 140/141 selected execution strip and compact mapped stage details; show SEC/DART company names and FY chips, empty versus unrecorded values, rounded timings and model table, no inner scrollbar, collapsed long-table continuation and raw run-details access; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+
+### SCREENSHOT NEEDED
+<!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=en; light mode; preserve existing assets. -->

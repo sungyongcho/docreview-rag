@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OperatorJob, OperatorJobStatus } from "@/lib/types";
 import { I18nProvider } from "@/lib/i18n";
-import { JobCenter, jobErrorSummary, elapsedLabel } from "./job-center";
+import { JobCenter, JobProgress, jobErrorSummary, elapsedLabel } from "./job-center";
 
 function job(overrides: Partial<OperatorJob> = {}): OperatorJob {
   return {
@@ -45,6 +45,34 @@ function renderCenter(jobs: OperatorJob[]) {
 }
 
 afterEach(cleanup);
+
+describe("recorded overall and stage progress", () => {
+  it("shows separate overall, stage and reported item bars with both elapsed times", () => {
+    render(<JobProgress job={job({ status: "succeeded", stage: "done", progress_stage: "cleanup", current: 4, total: 4, overall_current: 100, overall_total: 100, stage_index: 5, stage_count: 5, stage_started_at: "2026-09-02T10:00:31Z", detail_current: 2, detail_total: 3 })} />);
+    expect(screen.getByRole("progressbar", { name: "Overall progress" })).toHaveAttribute("value", "100");
+    expect(screen.getByRole("progressbar", { name: "Current stage" })).toHaveAttribute("value", "4");
+    expect(screen.getByRole("progressbar", { name: "Current item" })).toHaveAttribute("value", "2");
+    expect(screen.getByText("Stage 5 / 5 · 100%")).toBeInTheDocument();
+    expect(screen.getByText("Current stage · cleanup")).toBeInTheDocument();
+    expect(screen.getByText("Elapsed: 40s")).toBeInTheDocument();
+    expect(screen.getByText(/Stage elapsed: 10s/)).toBeInTheDocument();
+  });
+
+  it.each(["schema", "documents", "bm25"])("renders the running %s stage without a fabricated zero percent", (stage) => {
+    render(<JobProgress job={job({ stage, status: "running", current: 0, total: 1, overall_current: 45, overall_total: 100, finished_at: null })} />);
+    expect(screen.getByRole("progressbar", { name: "Current stage" })).not.toHaveAttribute("value");
+    expect(screen.getByRole("progressbar", { name: "Overall progress" })).toHaveAttribute("value", "45");
+    expect(screen.queryByText(/0 \/ 1/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Current item")).not.toBeInTheDocument();
+  });
+
+  it("leaves overall progress unknown for legacy records", () => {
+    render(<JobProgress job={job()} />);
+    expect(screen.getByText("Progress not reported")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar", { name: "Overall progress" })).not.toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Current stage" })).toHaveAttribute("value", "3");
+  });
+});
 
 describe("jobErrorSummary", () => {
   it("explains the fixed codes and wraps a bare exception name", () => {

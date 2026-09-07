@@ -1,6 +1,6 @@
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import { CANNED_CORPUS } from "./canned";
-import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./types";
+import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness, RetrievalProfile } from "./types";
 import type { RuntimeHealthKind } from "./use-runtime-health";
 
 export type StageId = "filings" | "index" | "embeddings" | "lexical" | "ask" | "answer_model" | "evaluate";
@@ -56,6 +56,7 @@ export interface PipelineInput {
   jobs: OperatorJob[];
   evaluationResults: number;
   snapshots: number;
+  profile?: RetrievalProfile;
 }
 
 export const STAGE_ORDER: readonly StageId[] = ["filings", "index", "embeddings", "lexical", "ask", "answer_model", "evaluate"];
@@ -88,8 +89,8 @@ export const STAGE_COPY: Record<StageId, StageCopy> = {
   },
   lexical: {
     title: "Lexical index (BM25)",
-    description: "Keyword statistics for exact terms, tickers, numbers and Korean tokens. Recomputed automatically after every ingest.",
-    why: "Hybrid retrieval fuses this index with embeddings (RRF). Rebuild by hand only if the statistics were reset.",
+    description: "Compute keyword statistics for exact terms, tickers, numbers and Korean tokens after each parse and chunk operation.",
+    why: "Step 4 owns BM25 computation. Hybrid retrieval requires this index and embeddings; chunk changes invalidate the statistics.",
     jobKinds: ["rebuild_bm25"],
   },
   ask: {
@@ -163,6 +164,40 @@ function stepRef(order: number, title: string): string {
   return `step ${order} · ${title}`;
 }
 
+/** Use reported job-wide units only; running work cannot claim final completion. */
+export function overallJobPercent(job: OperatorJob): number | null {
+  if (typeof job.overall_current !== "number" || !Number.isFinite(job.overall_current)
+    || typeof job.overall_total !== "number" || !Number.isFinite(job.overall_total) || job.overall_total <= 0) return null;
+  return Math.max(0, Math.min(job.status === "succeeded" ? 100 : 99, Math.round(job.overall_current / job.overall_total * 100)));
+}
+
+/** Share strategy prerequisites between the pipeline and the question composer. */
+export function retrievalReadiness(counts: CorpusCounts | null, strategy: RetrievalProfile["strategy"], jobs: OperatorJob[] = []): {
+  status: "done" | "blocked" | "running" | "queued" | "unknown";
+  blockedBy: "index" | "embeddings" | "lexical" | null;
+  hint: string;
+} {
+  if (!counts) return { status: "unknown", blockedBy: null, hint: "Checking corpus…" };
+  if (counts.database_connected === false || ["empty", "drifted", "unavailable"].includes(counts.schema_status ?? "")) {
+    return { status: "blocked", blockedBy: "index", hint: "Resolve database setup before continuing." };
+  }
+  if (counts.database_connected !== true || !["ok", "compatible"].includes(counts.schema_status ?? "")
+    || counts.chunks == null || counts.pending_embeddings == null && strategy !== "lexical") {
+    return { status: "unknown", blockedBy: null, hint: "Readiness not confirmed" };
+  }
+  if (!counts.chunks) return { status: "blocked", blockedBy: "index", hint: "Finish steps 1–2 to enable retrieval." };
+  for (const prerequisite of ["embeddings", "lexical"] as const) {
+    if (prerequisite === "embeddings" && strategy === "lexical" || prerequisite === "lexical" && strategy === "vector") continue;
+    const kind = prerequisite === "embeddings" ? "backfill_embeddings" : "rebuild_bm25";
+    const active = jobs.find((job) => job.domain === "corpus" && job.kind === kind && job.status === "running")
+      ?? jobs.find((job) => job.domain === "corpus" && job.kind === kind && job.status === "queued");
+    if (active) return { status: active.status as "running" | "queued", blockedBy: prerequisite, hint: prerequisite === "embeddings" ? "Embeddings are in progress (step 3). Ask when they finish." : "BM25 is in progress (step 4). Ask when it finishes." };
+    const done = prerequisite === "embeddings" ? counts.pending_embeddings === 0 : counts.bm25_ready === true;
+    if (!done) return { status: "blocked", blockedBy: prerequisite, hint: prerequisite === "embeddings" ? "Complete Embeddings (step 3) before asking." : "Complete BM25 (step 4) before asking." };
+  }
+  return { status: "done", blockedBy: null, hint: "" };
+}
+
 interface Draft {
   status: StageStatus;
   statusDetail?: string;
@@ -211,7 +246,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const filingsUnknown = drafts.filings.status === "unknown";
   const checking: Draft = { status: "unknown", statusDetail: "Checking…", numbers: [] };
   const indexDone = documents > 0 && chunks > 0;
-  const embeddingsDone = chunks > 0 && pending === 0;
+  const embeddingsDone = chunks > 0 && counts.pending_embeddings === 0;
   const lexicalDone = bm25Ready;
   const provider = counts.provider ? ` · ${counts.provider}` : "";
 
@@ -258,8 +293,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     else if (lexicalDone) drafts.lexical = { status: "done", numbers };
     else if (drafts.index.status === "unknown") drafts.lexical = { ...checking };
     else if (!indexDone) drafts.lexical = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: "Ingest a manifest first (step 2).", blockedBy: "index" };
-    else drafts.lexical = { status: "action", numbers, hint: "Run Rebuild BM25 to compute the term statistics." };
-    drafts.lexical.action = { label: "Rebuild BM25", kind: "bm25" };
+    else drafts.lexical = { status: "action", numbers, hint: "Compute BM25 after parsing and chunking, or recompute it after chunk changes." };
+    drafts.lexical.action = { label: bm25Ready || counts.bm25_rebuild_recorded ? "Recompute BM25" : "Compute BM25", kind: "bm25" };
   }
 
   // Step 5 — Ask
@@ -269,8 +304,11 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     } else if (drafts.index.status === "unknown") {
       drafts.ask = { ...checking };
     } else if (chunks > 0) {
-      const detail = embeddingsDone && lexicalDone ? "hybrid ready" : embeddingsDone ? "vector ready · BM25 pending" : lexicalDone ? "lexical only · embeddings pending" : "retrieval limited";
-      drafts.ask = { status: "done", statusDetail: detail, numbers: [`${n(chunks)} chunks searchable`] };
+      const strategy = input.profile?.strategy ?? "hybrid";
+      const readiness = source === "fixture"
+        ? { status: "done" as const, blockedBy: null, hint: "" }
+        : retrievalReadiness(counts, strategy, readOnly ? [] : input.jobs);
+      drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? [`${n(chunks)} chunks searchable`] : [] };
     } else {
       drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Nothing to search yet."], hint: "Finish steps 1–2 to enable retrieval.", blockedBy: "index" };
     }
@@ -318,7 +356,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       const latest = input.jobs.find((item) => copy.jobKinds.includes(item.kind)) ?? null;
       if (running) {
         job = running;
-        progress = running.total ? Math.min(100, Math.round((running.current / Math.max(running.total, 1)) * 100)) : null;
+        progress = overallJobPercent(running);
         status = "running";
         statusDetail = progress === null ? running.stage : `${progress}%`;
         hint = running.message;

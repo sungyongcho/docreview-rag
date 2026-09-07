@@ -280,6 +280,20 @@ rag-corpus status
 
 Wait for each job to succeed. The acquisition result identifies an exact processing selection inside the common manifest; no catalog extraction or copied manifest is needed.
 
+Ingestion only parses and stores chunks. It invalidates BM25 statistics without rebuilding
+them. Run `rag-corpus backfill_embeddings`, wait for success, then run
+`rag-corpus rebuild_bm25` and wait for success before hybrid retrieval. Repeat the BM25
+operation after every parse/chunk run. Build step 4 offers **Compute BM25** initially
+and **Recompute BM25** when statistics or a successful rebuild record exist; it also
+permits recomputation while ready.
+
+The direct runtime seed API retains its combined ingest-and-BM25 behavior for existing
+API clients; isolated evaluation corpus arms likewise prepare their own statistics.
+These are separate from the Build/CLI ingestion job.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit BM25 stage; state: ingest succeeded, BM25 action needed; locale: en; evidence: CLI ingest history ends at cleanup, followed by explicit rebuild_bm25 success. -->
+
 ## Python CLI reference
 
 ### Ingestion
@@ -448,7 +462,7 @@ System status, Jobs, and the answer's Run trace. If the web itself is unavailabl
 | API/DB unavailable | service and DB health | Restore the connection; refresh and verify schema |
 | schema_drift | Existing schema mismatch | Preserve this database and choose an empty isolated or compatible database |
 | Missing/stale embeddings | provider, identity, pending | Correct configuration and run needed paid backfill after checking the manifest and explicit selection |
-| BM25 not ready | missing/invalidated statistics | Rebuild BM25 and verify job success plus readiness |
+| BM25 not ready | Normal intermediate state after parsing/chunking | Run Compute/Recompute BM25 (step 4); hybrid/lexical wait, vector needs embeddings only |
 | NOT_IN_DOCS | scope, company/year filters, evidence | Inspect Documents and candidates; ask something actually supported by the corpus |
 | provider_failure | status, attempts, details, node | Fix key/access/connectivity/limits; schema recreation does not fix this |
 | budget_exceeded | resource, limit, observed, blocked_node | Adjust the specific limit under Review settings → Run limits; retries can cost more |
@@ -504,11 +518,22 @@ evaluation exports, saved model settings, unrelated tables, the DB volume and ho
 `--keep-sources` also preserves downloaded files; `--sample` presets NVDA/AMD FY2023–2024 without
 performing downloads. The two options are mutually exclusive.
 
-The host path avoids the broader web reset's `runtime_file_permission` preview. If the host cannot
-read a source, it shows the exact owner `setfacl` command for the denied path and parent. Review
-those paths, have the owner grant access, then choose the single read-only inspection retry.
-The CLI never applies ACLs or automatically retries deletion. A retained source journal or an
-uncertain DB outcome remains a blocker; preserve the journal and inspect `rag-schema check`.
+Before the typed confirmation or API stop, the host path checks source readability and write/search
+access to source parent directories, `data/corpus` and the journal destination under `data`.
+Readable container-owned directories can still prevent a rename. The preview lists every blocked
+directory and prints a quoted `sudo setfacl -R -m u:<host-uid>:rwX -- <paths>` repair. Review the
+exact paths, apply the repair, then choose the single inspection retry. The CLI never applies ACLs
+or retries deletion automatically. `--keep-sources` does not require source-directory write access.
+
+If failure occurs after an API stop, the command reports whether the database and sources are
+unchanged/restored or whether recovery is uncertain, and prints `rag-dev up -d` to restore the API
+without requesting a build. It does not print a raw container ID. If a journal remains or the DB
+outcome is uncertain, preserve `data/.schema-recreate-journal/journal.json`, run `rag-schema check`
+and inspect the stated boundary before another reset; a committed DB reset is never called unchanged.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=en; theme=light; preserve existing screenshot assets. -->
 
 After successful reset, the command runs `rag-dev up --build -d`, waits for confirmed readiness,
 and prints the application URL and [Quick Start — DEV ONLY, Web step 1](quickstart-dev.md#qs-web-1) in both languages.

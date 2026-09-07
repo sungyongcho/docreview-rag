@@ -543,8 +543,13 @@ API를 중지해도 단일 웹 화면은 남아 상태 확인과 가능한 복�
 기본 `docker compose --project-directory . -f docker/docker-compose.yml up -d`만 사용할 수도 있지만 호스트 Operations는 연결되지 않습니다.
 필요하면 `rag-dev up -d`를 사용합니다. prod와 공개 화면에는 Operations URL·토큰·메뉴를 제공하지 않습니다.
 
-Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 권한이 필요합니다.
-기본 GID는 1000이며 다른 환경은 `.env`의 `HOST_GID`를 자신의 `id -g` 결과에 맞춥니다.
+로컬 Compose 앱은 비루트 UID 10001과 호스트 기본 그룹(`HOST_GID`)으로 실행하고,
+`umask 0002`로 새 다운로드·평가 디렉터리의 그룹 쓰기를 허용합니다. 로컬 모델 설정 파일은
+0640으로 저장해 호스트 그룹이 읽을 수 있습니다. `data/` 자체의 그룹 쓰기 권한은 필요하며,
+직접 Compose를 실행하는 다른 GID 환경은 `.env`의 `HOST_GID`를 `id -g` 값에 맞춥니다.
+기존 컨테이너 소유 경로는 자동 변경하지 않습니다. `rag-fresh-start`가 확인·API 중지 전에
+정확한 `sudo` 복구 명령을 출력하며, 실패 후 API 복구 명령은 `rag-dev up -d`입니다.
+자세한 동작은 [환경 안내](docs/TUTORIAL/ko/environment.md)를 참고하세요.
 스크립트는 DB reset·볼륨 삭제·배포·Git stage/commit을 자동 실행하지 않습니다.
 
 <!-- operator-commands:start -->

@@ -1394,6 +1394,8 @@ export interface components {
         CorpusStatusResource: {
             /** Bm25 Ready */
             bm25_ready: boolean;
+            /** Bm25 Rebuild Recorded */
+            bm25_rebuild_recorded?: boolean | null;
             /** Chunks */
             chunks: number;
             /** Database Connected */
@@ -2773,6 +2775,12 @@ export interface components {
             kind: string;
             /** Message */
             message: string;
+            /** Overall Current */
+            overall_current?: number | null;
+            /** Overall Total */
+            overall_total?: number | null;
+            /** Progress Stage */
+            progress_stage?: string | null;
             /** Queue Position */
             queue_position: number | null;
             /** Request */
@@ -2785,6 +2793,12 @@ export interface components {
             };
             /** Stage */
             stage: string;
+            /** Stage Count */
+            stage_count?: number | null;
+            /** Stage Index */
+            stage_index?: number | null;
+            /** Stage Started At */
+            stage_started_at?: string | null;
             /** Started At */
             started_at: string | null;
             /**

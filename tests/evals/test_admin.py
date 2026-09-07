@@ -1,15 +1,19 @@
 """Golden suite metadata and serialized evaluation queue behavior."""
 
 import asyncio
+from dataclasses import replace
+from datetime import UTC, datetime
 import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from app.api.admin_schemas import EvaluationRunRequest
 from app.config import Settings
-from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
+from app.corpus_admin import AdminCommand, CorpusStatus, OperationOutcome, RuntimeCorpusAdminService
 import app.evals.admin as admin_module
-from app.evals.admin import EvaluationAdminService
+from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
 from app.operator.jobs import JobExecutionCoordinator
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
@@ -330,3 +334,211 @@ def test_suite_source_failure_is_typed_without_guessing(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(admin_module, "load_golden_cases", invalid)
     assert all(row.source_error_code == "source_invalid" for row in asyncio.run(service.suites()))
+
+
+@pytest.mark.parametrize("preparation_succeeds", [True, False])
+def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
+    tmp_path, monkeypatch, preparation_succeeds
+):
+    """Queue behind embeddings, reject duplicates, and never measure a failed partial index."""
+
+    async def scenario():
+        """Hold the corpus turn, submit twice, then expose the actual terminal readiness."""
+        coordinator = JobExecutionCoordinator()
+        await coordinator.register("embedding-job", datetime.now(UTC), kind="backfill_embeddings")
+        status = CorpusStatus(True, "compatible", "ok", 1, 10, 5, 5, True, True, "deterministic")
+        calls = []
+
+        async def readiness():
+            """Return readiness as changed by the simulated corpus completion."""
+            return status
+
+        async def quick(job_id, request):
+            """Record evaluation only after readiness has been checked."""
+            calls.append(job_id)
+            return 1, None, tmp_path / "result.json"
+
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            provider=DeterministicEmbeddingProvider(),
+            execution_coordinator=coordinator,
+            corpus_status=readiness,
+        )
+        monkeypatch.setattr(service, "_quick", quick)
+        request = EvaluationRunRequest(suite_id="sec-en")
+        async with coordinator.turn("embedding-job"):
+            first, duplicate = await asyncio.gather(
+                service.enqueue(request),
+                service.enqueue(request),
+                return_exceptions=True,
+            )
+            assert isinstance(duplicate, EvaluationAlreadyQueuedError)
+            assert duplicate.job_id == first.job_id
+            assert first.message == "Waiting for backfill_embeddings embedding-job to finish."
+            assert len(service._jobs) == 1
+            assert calls == []
+            if preparation_succeeds:
+                status = replace(status, pending_embeddings=0, embedded_chunks=10)
+        await service._queue.join()
+        result = await service.job(first.job_id)
+        assert result.status == ("succeeded" if preparation_succeeds else "failed")
+        assert len(calls) == int(preparation_succeeds)
+        if not preparation_succeeds:
+            assert "step 3" in result.message
+
+    asyncio.run(scenario())
+
+
+def test_evaluation_waiting_message_tracks_the_current_global_blocker(tmp_path):
+    """Refresh every queued evaluation when the active corpus job advances to BM25."""
+
+    async def scenario():
+        """Advance a controlled queue without starting expensive evaluation work."""
+        coordinator = JobExecutionCoordinator()
+        now = datetime.now(UTC)
+        await coordinator.register("embed", now, kind="backfill_embeddings")
+        await coordinator.register("lexical", now, kind="rebuild_bm25")
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            provider=DeterministicEmbeddingProvider(),
+            execution_coordinator=coordinator,
+        )
+        async with coordinator.turn("embed"):
+            first = await service.enqueue(EvaluationRunRequest(suite_id="sec-en"))
+            second = await service.enqueue(EvaluationRunRequest(suite_id="sec-ko"))
+            assert "embed" in second.message
+        async with coordinator.turn("lexical"):
+            assert "rebuild_bm25 lexical" in (await service.job(first.job_id)).message
+            assert "rebuild_bm25 lexical" in (await service.job(second.job_id)).message
+            await service.cancel(first.job_id)
+            await service.cancel(second.job_id)
+        await service._queue.join()
+        assert coordinator.busy is False
+        assert coordinator.has_kind("backfill_embeddings") is False
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "strategy,embeddings,bm25,allowed",
+    [
+        ("hybrid", False, True, False),
+        ("hybrid", True, False, False),
+        ("vector", True, False, True),
+        ("lexical", False, True, True),
+        ("hybrid", True, True, True),
+    ],
+)
+def test_quick_evaluation_preparation_matches_the_selected_strategy(
+    tmp_path, strategy, embeddings, bm25, allowed
+):
+    """Keep BM25 explicit while allowing vector or lexical profiles their independent ready lane."""
+
+    async def status():
+        """Return one corpus combination without provider or database work."""
+        return CorpusStatus(
+            True,
+            "compatible",
+            "ok",
+            1,
+            10,
+            10 if embeddings else 0,
+            0 if embeddings else 10,
+            bm25,
+            True,
+            "deterministic",
+        )
+
+    service = EvaluationAdminService(
+        settings=Settings(corpus_dir=tmp_path),
+        provider=DeterministicEmbeddingProvider(),
+        corpus_status=status,
+    )
+    request = EvaluationRunRequest(
+        suite_id="sec-en",
+        profile={"strategy": strategy, "lexical_ranker": None if strategy == "vector" else "bm25"},
+    )
+    if allowed:
+        asyncio.run(service._require_preparation(request, allow_pending=False))
+    else:
+        with pytest.raises(ValueError, match="step [34]"):
+            asyncio.run(service._require_preparation(request, allow_pending=False))
+
+
+def test_failed_durable_enqueue_does_not_leave_a_duplicate_reservation(tmp_path):
+    """Allow retry after failed ledger creation without leaving a ghost queued job."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    async def scenario():
+        """Fail one durable create, then confirm the same request receives a real queue ticket."""
+        coordinator = JobExecutionCoordinator()
+        await coordinator.register("blocker", datetime.now(UTC))
+        store = SimpleNamespace(
+            interrupt_incomplete=AsyncMock(),
+            create=AsyncMock(side_effect=[RuntimeError("offline"), None]),
+            put=AsyncMock(),
+            cancel=AsyncMock(),
+        )
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            provider=DeterministicEmbeddingProvider(),
+            job_store=store,
+            execution_coordinator=coordinator,
+        )
+        request = EvaluationRunRequest(suite_id="sec-en")
+        with pytest.raises(RuntimeError, match="offline"):
+            await service.enqueue(request)
+        assert not service._jobs
+        job = await service.enqueue(request)
+        assert service._queue.qsize() == 1
+        assert list(service._jobs) == [job.job_id]
+        # Cancel from the in-memory record; no retrieval or user DB is involved.
+        service._job_store = None
+        await service.cancel(job.job_id)
+        await coordinator.cancel("blocker")
+        await service._queue.join()
+        await service._persister.flush(job.job_id)
+
+    asyncio.run(scenario())
+
+
+def test_cancel_waits_for_queued_progress_before_persisting_terminal_state(tmp_path):
+    """A delayed queued message must not overwrite a cancellation in the persistent job board."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    async def scenario():
+        """Hold a queued metadata write, request cancellation, then release the stale write."""
+        started = asyncio.Event()
+        release = asyncio.Event()
+        written = []
+
+        async def put(job_id, **fields):
+            """Delay the first queued snapshot to reproduce an out-of-order commit."""
+            if fields["status"] == "queued":
+                started.set()
+                await release.wait()
+            written.append(fields["status"])
+
+        store = SimpleNamespace(interrupt_incomplete=AsyncMock(), create=AsyncMock(), put=put)
+        coordinator = JobExecutionCoordinator()
+        await coordinator.register("blocker", datetime.now(UTC), kind="backfill_embeddings")
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            provider=DeterministicEmbeddingProvider(),
+            job_store=store,
+            execution_coordinator=coordinator,
+        )
+        job = await service.enqueue(EvaluationRunRequest(suite_id="sec-en"))
+        await started.wait()
+        cancellation = asyncio.create_task(service.cancel(job.job_id))
+        await asyncio.sleep(0)
+        assert not cancellation.done()
+        release.set()
+        assert (await cancellation).status == "cancelled"
+        await service._queue.join()
+        assert written == ["queued", "cancelled"]
+        await coordinator.cancel("blocker")
+
+    asyncio.run(scenario())

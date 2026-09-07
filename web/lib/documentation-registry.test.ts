@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { renderTutorial } from "./tutorial-markdown.mjs";
 import { describe, expect, it } from "vitest";
 import { DEVELOPMENT_STORY_SOURCE, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
 
@@ -55,4 +57,14 @@ describe("documentation registry", () => {
     expect(localizedDocumentationRoute("/docreview-rag-agent/docs/ko/development/", "en", "#References")).toBe("/docreview-rag-agent/docs/en/development/#References");
     expect(localizedDocumentationRoute("/docs/en/development/", "ko", "#시작과-학습")).toBe(`/docs/ko/development/#${encodeURIComponent("시작과-학습")}`);
   });
+});
+
+it.each(["en", "ko"] as const)("preserves the progress/queue section when changing language from %s", (locale) => {
+  const other = locale === "en" ? "ko" : "en";
+  const headings = renderTutorial(readFileSync(`../docs/TUTORIAL/${locale}/indexing.md`, "utf8"), { locale }).headings;
+  expect(headings.some((heading) => heading.id === "job-progress")).toBe(true);
+  const destination = localizedDocumentationRoute(`/docreview-rag-agent/docs/${locale}/indexing/`, other, "#job-progress")!;
+  const target = renderTutorial(readFileSync(`../docs/TUTORIAL/${other}/indexing.md`, "utf8"), { locale: other }).headings;
+  const fragment = decodeURIComponent(destination.split("#")[1]);
+  expect(target.some((heading) => heading.id === fragment)).toBe(true);
 });

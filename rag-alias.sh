@@ -481,7 +481,7 @@ rag-help() {
     _docreview_banner
     _docreview_line '[QUICK START]'
     printf '  %-62s  %s\n' 'rag-quickstart' 'Prepare first run'
-    printf '%s\n' '  Then open the printed URL.' ''
+    printf '%s\n' '  Then open the printed URL. Acquire, parse/chunk, embeddings, compute BM25.' ''
     _docreview_line '[STACK]'
     printf '  %-62s  %s\n' \
         'rag-up [COMPOSE_UP_ARGS...]' 'Build DEV stack' \
@@ -493,13 +493,15 @@ rag-help() {
         'rag-ollama-check [--setup|--details|--web-url URL]' 'Check model connection' \
         'rag-schema check|prepare' 'Inspect local schema' \
         'rag-corpus status|inspect|readiness|acquire_edgar|acquire_dart|ingest_manifest|backfill_embeddings|rebuild_bm25' 'Manage corpus jobs'
-    printf '%s\n' '  Example: rag-corpus acquire_edgar --identifier NVDA --year 2024' ''
+    printf '%s\n' '  Example: rag-corpus acquire_edgar --identifier NVDA --year 2024' \
+        '  ingest_manifest only parses/chunks; run backfill_embeddings and rebuild_bm25 separately.' ''
     _docreview_line '[RESET]'
     printf '  %-62s  %s\n' \
         'rag-schema recover [--parent DIR]' 'Recover separate stack' \
         'rag-schema recreate [--keep-sources|--sample]' 'Reset local data' \
         'rag-fresh-start [--keep-sources|--sample|--status|--extreme]' 'Reset project runtime'
     _docreview_line 'WARNING ordinary reset: deletes ORM data and sources; preserves .env, exports, settings and DB volume; typed confirmation required.'
+    _docreview_line 'Reset preflight checks host write access; legacy container-owned paths need the printed sudo repair. After failure: rag-dev up -d.'
     _docreview_line 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
     _docreview_line 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
     printf '\n'

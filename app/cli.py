@@ -96,7 +96,12 @@ def _add_retrieve_parser(subparsers: Subparsers) -> None:
 
 def _add_ingest_parser(subparsers: Subparsers) -> None:
     """Declare ingestion through the shared application job API."""
-    parser = subparsers.add_parser("ingest", help="Queue one selected corpus ingestion job.")
+    parser = subparsers.add_parser(
+        "ingest",
+        help="Queue parsing and chunking; run embeddings and BM25 separately.",
+        description="Parse and store selected sources. Then run rag-corpus backfill_embeddings "
+        "and rag-corpus rebuild_bm25 before hybrid retrieval.",
+    )
     parser.add_argument("--manifest", required=True, help="Corpus-relative manifest name.")
     parser.add_argument("--selection", required=True, help="Explicit processing selection ID.")
     parser.add_argument("--expected-documents", type=int, default=None)

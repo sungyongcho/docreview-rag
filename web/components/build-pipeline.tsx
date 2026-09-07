@@ -9,7 +9,7 @@ import { WipeRuntime } from "@/components/wipe-runtime";
 import { Activity, ArrowDown, ArrowRight, Check, RefreshCw } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
-import { elapsedLabel, JobProgress } from "@/components/job-center";
+import { JobProgress } from "@/components/job-center";
 import { SourceMatrix } from "@/components/source-matrix";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { selectedSourceState, type SourceInventory } from "@/lib/source-selection";
@@ -40,6 +40,7 @@ export interface BuildPipelineProps {
   live: boolean;
   busy: boolean;
   canOperateCorpus: boolean;
+  evaluationBlockedReason?: string | null;
   acquisition: AcquisitionForm;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
@@ -132,6 +133,8 @@ export function BuildPipeline(props: BuildPipelineProps) {
   }
 
   function disabled(kind: StageActionKind): boolean {
+    if (kind === "evaluate" && props.evaluationBlockedReason) return true;
+    if (kind === "ask" && !["done", "readonly"].includes(pipeline.stages.find((stage) => stage.id === "ask")?.status ?? "unknown")) return true;
     if (OPERATOR_ACTIONS.has(kind) && props.live) {
       if (props.databaseConnected === false || props.schemaStatus === "empty" || props.schemaStatus === "unavailable") return true;
       if (kind !== "acquire" && props.schemaStatus === "drifted") return true;
@@ -195,6 +198,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
       <section id="pipeline-execution" className="pipeline-execution" aria-label={t("Selected step execution")}>
         <header><span>{t("Selected step")}</span><h2>{selected.order}. {t(selected.title)}</h2><button type="button" className="button ghost" onClick={props.onOpenJobs}>{t("Open Jobs")}</button></header>
         <p className="helper">{selected.blockedBy ? t("Required first: {p0}", { p0: t(pipeline.stages.find((item) => item.id === selected.blockedBy)?.title ?? selected.blockedBy) }) : t("Review the inputs before starting. Selecting a step does not execute it.")}</p>
+        {selected.id === "evaluate" && props.evaluationBlockedReason && <p className="notice" role="status">{t(props.evaluationBlockedReason)}</p>}
         {selected.id === "embeddings" && <p className="notice">{t("OpenAI embedding may incur cost for all pending chunks in the database. Check the provider and counts before running.")}</p>}
       <ol className="stage-list" role="list" data-tour="stage-list">
         {[selected].map((stage) => (
@@ -228,7 +232,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
           />
         ))}
       </ol>
-        <details className="execution-console"><summary>{t("Actual server job record")}</summary>{selected.job ? <pre>{JSON.stringify({ job_id: selected.job.job_id, status: selected.job.status, stage: selected.job.stage, current: selected.job.current, total: selected.job.total, message: selected.job.message }, null, 2)}</pre> : <p className="helper">{t("No job has been started for this step.")}</p>}</details>
+        <details className="execution-console"><summary>{t("Actual server job record")}</summary>{selected.job ? <pre>{JSON.stringify({ job_id: selected.job.job_id, status: selected.job.status, stage: selected.job.stage, current: selected.job.current, total: selected.job.total, overall_current: selected.job.overall_current, overall_total: selected.job.overall_total, stage_index: selected.job.stage_index, stage_count: selected.job.stage_count, stage_started_at: selected.job.stage_started_at, progress_stage: selected.job.progress_stage, detail_current: selected.job.detail_current, detail_total: selected.job.detail_total, message: selected.job.message }, null, 2)}</pre> : <p className="helper">{t("No job has been started for this step.")}</p>}</details>
         <PipelineReference stage={selected.id} acquisition={props.acquisition} manifests={props.manifests} provider={props.embeddingProvider} />
       </section>
       </div>
@@ -384,7 +388,6 @@ function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, reco
           {job && (
             <div className="stage-job">
               <JobProgress job={job} />
-              <p className="helper">{job.message} · {elapsedLabel(job, locale)}</p>
             </div>
           )}
           {showHint && <p className="stage-hint">{t(stage.hint)}</p>}
@@ -415,7 +418,7 @@ function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, reco
                 ))}
                 {onIngestAdvanced && <button className="button" type="button" disabled={disabled("ingest_all") || !selectedSources.length} onClick={onIngestAdvanced}>{t("Ingest advanced selections")}</button>}
                 {!manifests.length && <p className="helper">{t("No manifests found in data/corpus.")}</p>}
-                <p className="helper">{t("Ingest upserts documents from each manifest in order and recomputes BM25. Run Backfill embeddings afterwards (step 3).")}</p>
+                <p className="helper">{t("Ingest stores documents and chunks. Run Backfill embeddings (step 3) and Compute BM25 (step 4) afterwards.")}</p>
               </div>
             </details>
           )}

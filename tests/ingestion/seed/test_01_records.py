@@ -156,6 +156,7 @@ def test_build_seed_batch_sorts_manifest_and_output():
         ("chunk", "NVDA"),
     ]
     assert [(update.current, update.total, update.message) for update in progress] == [
+        (0, 2, "Parsing selected filings"),
         (1, 2, "AMD-FY2023"),
         (2, 2, "NVDA-FY2024"),
     ]

@@ -129,6 +129,7 @@ function ApiInspector({ ready }: { ready: boolean }) {
         <h2>{t("Request")}</h2>
         <textarea aria-label={t("API request body")} value={rawRequest} onChange={(event) => setRawRequest(event.target.value)} spellCheck={false} />
         <button className="button primary" type="button" disabled={!ready} onClick={() => void sendRawRequest()}><Braces size={15} />{t("Send to API")}</button>
+        {!ready && <p className="notice" role="status">{t("Corpus not ready. Inspect the earliest verified prerequisite.")}</p>}
       </section>
       <section>
         <h2>{t("Response")}</h2>

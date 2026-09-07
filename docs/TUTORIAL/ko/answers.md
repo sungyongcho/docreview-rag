@@ -8,6 +8,9 @@
 
 - **목표:** 의도한 보고서에서 주장과 인용을 확인할 수 있는 답변을 얻습니다.
 - **선행 조건:** [8단계](retrieval.md#step-8)에서 관련 근거를 찾았고 답변 엔진과 범위 필터가 유효합니다.
+  하이브리드는 임베딩(Build 3단계)과 BM25(Build 4단계)가 모두 필요합니다. 벡터 검색은 임베딩,
+  키워드 검색은 BM25가 필요합니다. 필요한 인덱스가 미완료면 질문 전송이 차단되고 입력창에서
+  준비할 단계를 안내합니다. 해당 작업이 대기·실행 중이면 질문 단계도 대기하며 전송은 비활성화됩니다.
   결과를 읽는 방법만 익히려면 기존 답변을 재사용할 수 있습니다.
 - **화면 경로:** 새 대화 → 질문 위의 제어 영역 → 요청 보기.
 - **입력:** SEC 범위, 사용 가능한 [답변 엔진](#engines), 균형 프리셋을 선택합니다. 코퍼스에 있으면
@@ -131,9 +134,21 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 
 ### 단계 펼침과 실행 상세
 
-실행 요약은 답변 안에 유지됩니다. **경로 결정**을 포함한 단계를 누르면 기록된 범위,
+실행 요약은 답변 안에 유지됩니다. **경로 결정**을 포함한 기록된 단계를 누르면 기록된 범위,
 순위별 후보, 채택·제외 근거, 검증 또는 결과를 펼쳐 볼 수 있습니다. 한 번에 한 단계가
-열리고 다시 누르면 접힙니다. 과거 기록에 없는 항목은 **이 실행에서 기록되지 않음**으로 표시합니다.
+열리고 다시 누르면 접힙니다. 과거 기록에 없는 항목은 **이 실행에서 기록되지 않음** 아래 한 줄로 모아 표시합니다.
+기록된 항목이 전혀 없는 단계에는 짧은 안내 한 줄만 표시됩니다. 열린 단계에는 밑줄과
+하단 표시가 생기며, 선택 가능한 단계는 마우스를 올리거나 키보드 초점을 두면 제목에
+밑줄이 보입니다. 대기·미실행 단계는 눌러도 열리지 않습니다. 실패·취소·건너뜀·완료·
+실행 중인 단계는 선택할 수 있고, 초점이 있는 단계는 Enter 또는 Space로 열고 닫습니다.
+
+단계 상세는 JSON 대신 출처 배지·회사/연도 칩·소수 첫째 자리의 밀리초 시간·모델 호출 표로
+표시합니다. 회사 이름은 범위 패널을 처음 열 때 기존 문서 목록의 개발/공개 카탈로그에서
+가져오며, 실행에 기록된 코드와 범위는 바꾸지 않습니다. 이름이 없거나 모호하면 원래 코드만
+표시하고 조회 실패는 패널 옆에 알립니다. **없음**은 기록된 빈 목록이며, 대시나 미기록 안내는
+값이 기록되지 않았다는 뜻입니다. 패널 자체의 스크롤 없이 메시지 안에서 내용만큼 늘어납니다.
+표가 8행을 넘으면 **기록 더 보기**로 나머지를 펼칩니다. 기록된 어느 단계에서든 **실행 상세 열기**로
+원본 실행 기록을 확인할 수 있습니다.
 
 **실행 상세**는 오른쪽 패널의 **성능**, **서버 설정**, **트레이스** 탭을 엽니다.
 `Q. <질문>` 제목과 짧은 메시지 ID로 어느 답변의 기록인지 확인합니다. 같은 답변을 다시
@@ -144,4 +159,7 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 
 ### SCREENSHOT NEEDED
 
-<!-- Feature: stage disclosures and right-side run details; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+<!-- Feature: issues 140/141 selected execution strip and compact mapped stage details; show SEC/DART company names and FY chips, empty versus unrecorded values, rounded timings and model table, no inner scrollbar, collapsed long-table continuation and raw run-details access; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
+
+### SCREENSHOT NEEDED
+<!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=ko; light mode; preserve existing assets. -->

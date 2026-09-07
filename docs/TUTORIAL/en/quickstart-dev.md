@@ -126,7 +126,10 @@ Open **System → System status** and click **Refresh**. Confirm DEV, database c
 
 ### 2. Download NVIDIA SEC FY2024 {#qs-web-2}
 
-Open **Build → Pipeline → Filings → Change…**. Choose **SEC EDGAR**, leave only `NVDA` and `2024`, then click **Download missing filings**. Open **Build → Jobs** and wait for success.
+Open **Build → Pipeline → Filings** and use **Clear selection** to limit this exercise. Select the `NVDA` / `2024` year chip in the company/year matrix. If that pair is absent, enter the code under **Tickers / stock codes** and the year under **Fiscal years**, then choose **Add to selection**. Adding an existing pair only focuses its chip; select that chip explicitly. Confirm the download plan contains only the intended missing pair, choose **Download missing filings**, and wait for success in **Build → Jobs**.
+
+### SCREENSHOT NEEDED
+<!-- Feature: current filings-matrix-and-exact-year-selection; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 <!-- capture:quickstart-02-en -->
 
@@ -140,7 +143,10 @@ Open **Build → Pipeline → Filings → Change…**. Choose **SEC EDGAR**, lea
 
 ### 3. Download Samsung DART FY2024 {#qs-web-3}
 
-Return to **Filings → Change…**, choose **DART**, leave only `005930` and `2024`, and click **Download missing filings**. Wait for the DART job to succeed in **Jobs**.
+Return to **Filings** and keep the downloaded NVIDIA pair selected. Select the `005930` / `2024` chip, or add an absent pair with **Tickers / stock codes**, **Fiscal years** and **Add to selection**. Select a focused existing chip explicitly. Confirm the download plan now lists only the missing Samsung pair, choose **Download missing filings**, and wait for its DART job to succeed in **Jobs**.
+
+### SCREENSHOT NEEDED
+<!-- Feature: current filings-matrix-and-exact-year-selection; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 DART first downloads its issuer-code index. This endpoint can be slow: watch the byte progress in Jobs and do not submit another download while it is running.
 
@@ -160,7 +166,10 @@ DART first downloads its issuer-code index. This endpoint can be slow: watch the
 
 ### 4. Parse, chunk, and store both reports {#qs-web-4}
 
-After each download completes, preparation state refreshes automatically. Choose the parsing/indexing stage and find the two selections under `manifest.json`: `sec-08b5f645cc174083` for NVIDIA and `dart-1a4f24de25a92617` for Samsung. Confirm each contains one document with its source present, then run each selection's ingest action and wait for success.
+After each download completes, preparation state refreshes automatically. Open **Parse & chunk**, confirm that both intended downloaded reports appear under **Selected documents**, and choose **Parse & chunk selected sources** once. Wait for the ingest job to succeed. For manual per-selection ingestion, open **Advanced**, find the two selections under `manifest.json` (`sec-08b5f645cc174083` for NVIDIA and `dart-1a4f24de25a92617` for Samsung), verify their sources, and use **Ingest** for each instead of also running the primary action.
+
+### SCREENSHOT NEEDED
+<!-- Feature: current shared-parse-action-and-manual-advanced-alternative; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 The catalog can describe other reports. The selected document and source counts determine completion for this exercise.
 
@@ -225,3 +234,10 @@ Open **System status** and **Build → Documents**. Verify both reports have chu
 [Next: test retrieval and inspect evidence](retrieval.md#step-8)
 
 No question or answer was executed in Quick Start. After inspecting retrieval evidence, continue to [the first answer](answers.md#step-9).
+
+Parsing stores documents and chunks; it does not compute BM25. In Build step 4, use **Compute BM25**
+for the first run or **Recompute BM25** after a recorded run. Complete this explicit job after chunk
+changes before asking with Balanced/hybrid. Hybrid also requires zero pending embeddings.
+
+### SCREENSHOT NEEDED
+<!-- Feature: explicit first BM25 computation after both report ingests and hybrid Ask blocked until embeddings and BM25 finish; locale=en; light mode; preserve existing assets. -->
