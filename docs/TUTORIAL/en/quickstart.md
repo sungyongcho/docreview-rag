@@ -1,5 +1,7 @@
 # Quick Start
 
+For local installation, follow [Environment setup](environment.md#qs-setup); use this guide once the service is running.
+
 Use this guide to try an already running DocReview RAG instance. Start with a small question, read its evidence, and explore the published filings and measured results. The available corpus and request limits belong to that instance.
 
 ## 1. Find your way around {#qs-app-1}

@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from scripts.schema import recreate as command
 
 
-@pytest.mark.parametrize("answer", ["", "yes", "RECREATE another-checkout"])
+@pytest.mark.parametrize("answer", ["", "yes", "confirm"])
 def test_wrong_confirmation_never_stops_or_deletes(tmp_path, monkeypatch, answer):
-    """Only the exact irreversible phrase can progress beyond the read-only preview."""
+    """Only the single uppercase Y can progress beyond the read-only preview."""
     target = {"port": "12345", "apps": ["app"], "volume": "fixture", "docker": ["docker"]}
     monkeypatch.setattr(command.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(command, "local_target", lambda root: (target, {}))
@@ -121,7 +121,7 @@ def test_stale_preview_never_stops_or_deletes(tmp_path, monkeypatch, boundary):
     stop = Mock()
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
-    monkeypatch.setattr("builtins.input", lambda prompt: f"RECREATE {tmp_path.name} AND SOURCES")
+    monkeypatch.setattr("builtins.input", lambda prompt: "Y")
     from types import SimpleNamespace
 
     monkeypatch.setattr(
@@ -179,7 +179,7 @@ def test_successful_reset_reports_the_callers_restart_intent(
     monkeypatch.setattr(command, "local_target", lambda root: (target, {}))
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
-    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name}")
+    monkeypatch.setattr("builtins.input", lambda _: "Y")
     assert command.run(tmp_path, keep_sources=True, restart_planned=restart_planned) == "succeeded"
     assert operation.await_count == 2
     stop.assert_called_once_with(
@@ -347,10 +347,12 @@ def test_unwritable_source_parents_block_confirmation_until_one_repair(
             {},
         )
     )
-    confirm_input = Mock(return_value=f"RECREATE {tmp_path.name} AND SOURCES")
+    confirm_input = Mock(return_value="Y")
 
     def owner_repair(_prompt):
         """Only the fixture owner changes access; the reset code never executes the hint."""
+        if _prompt.startswith("Confirm"):
+            return confirm_input(_prompt) == "Y"
         if repair:
             for directory in blocked:
                 directory.chmod(0o755)
@@ -381,7 +383,7 @@ def test_unwritable_source_parents_block_confirmation_until_one_repair(
         output = capsys.readouterr().out
         assert "sudo setfacl -R -m" in output
         assert all(f"Blocked: {directory}" in output for directory in blocked)
-        repair_prompt.assert_called_once()
+        assert repair_prompt.call_count == (2 if repair else 1)
     finally:
         for directory in blocked:
             directory.chmod(0o755)
@@ -410,7 +412,7 @@ def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
     monkeypatch.setattr(command.SourceReset, "stage", fail_after_staging)
-    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    monkeypatch.setattr("builtins.input", lambda _: "Y")
     with pytest.raises(ValueError, match="filesystem permissions") as caught:
         command.run(tmp_path, restart_planned=True)
     assert "[Errno" not in str(caught.value)
@@ -439,7 +441,7 @@ def test_api_stop_failure_also_explains_the_unchanged_data_and_recovery(
         "run",
         Mock(side_effect=command.subprocess.CalledProcessError(1, ["docker", "stop"])),
     )
-    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    monkeypatch.setattr("builtins.input", lambda _: "Y")
     with pytest.raises(command.subprocess.CalledProcessError):
         command.run(tmp_path)
     assert operation.await_count == 1

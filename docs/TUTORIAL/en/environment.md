@@ -1,5 +1,10 @@
 # Environment setup
 
+Cloned the repository and unsure what to do? Run `source ./rag-alias.sh`, then
+`rag-start-quick`. Use `rag-start-fresh` only for a separately confirmed checkout cleanup;
+`rag-reset` resets ORM data/sources while preserving configuration and volumes.
+All commands accept `--verbose` (`-vv`); see [CLI setup/reset](cli.md).
+
 This page is for people who clone DocReview RAG from GitHub and run it locally from scratch. Follow Part 1 below to reach a running service and open Build. If you only want to try an existing instance, use [Quick Start](quickstart.md).
 
 ## Part 1: Setup {#qs-setup}
@@ -14,14 +19,14 @@ git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
 source ./rag-alias.sh
 rag-help
-rag-quickstart
+rag-start-quick
 ```
 
-Source is the one-command install and activation path. Choose Y to save startup registration or N to load only this session; the commands are available in the same terminal immediately.
+Source is the one-command install and activation path. Choose Y to save startup registration and restart the login shell; its banner reminds you to type rag-help. N loads only this session. Re-sourcing reports [already installed] or [update required] by comparing the version and registered definitions.
 
 The Helper is included in the clone. `rag-alias update` refreshes it when the checkout changes. Use `source` for shell registration.
 See [helper installation and updates](cli.md) for moved paths and the optional default-No login-shell offer after executed installation.
-The first run creates `.env` only if absent. Edit it locally and rerun `rag-quickstart`:
+The first run creates `.env` only if absent. Edit it locally and rerun `rag-start-quick`:
 
 ```dotenv
 SEC_USER_AGENT=Your Real Name your-real-contact@example.org
@@ -39,7 +44,7 @@ generating embeddings incurs OpenAI usage. The first-run command does neither.
 
 The command creates a schema only in an empty database, preserves a compatible
 existing database, and reports schema drift without resetting it. Fix missing tools
-or configuration and rerun the same command; do not use `rag-fresh-start` to repair
+or configuration and rerun the same command; do not use `rag-reset` to repair
 installation. Open the printed URL, normally `http://localhost:8000/docreview-rag-agent/`.
 
 The setup command reports five stages: prerequisites, local configuration, project
@@ -56,7 +61,7 @@ for future invocations. For startup/readiness failures, existing read-only diagn
 the command offers one confirmed, volume-preserving down/build/start recovery.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: guided Quick Start configuration repair; locale=en; plain ASCII/no-color; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
+<!-- Feature: guided Quick Start configuration repair; locale=en; TTY color/bold or NO_COLOR plain text; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
 
 ## 1. Open and verify the environment {#step-1}
 

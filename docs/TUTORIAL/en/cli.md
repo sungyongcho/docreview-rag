@@ -23,7 +23,7 @@ rag-help
 
 `source ./rag-alias.sh` is the one-command installation and activation path in an interactive
 Bash or Zsh terminal. Choose Y to persist the startup registration; the commands are available
-in the same source call. No leaves startup unchanged and loads the commands for this session only.
+after a login-shell restart. The restart banner says **remember to type rag-help**. No leaves startup unchanged and loads the commands for this session only. Re-sourcing compares the embedded version and registered definitions: [already installed] means identical; [update required] refreshes changed, missing or customized registrations.
 Startup-file loading, verification, update reloads and noninteractive/redirected sourcing do not
 prompt for installation. Registration does not install application dependencies.
 
@@ -35,7 +35,7 @@ if a Bash login profile does not load `.bashrc`, use the printed source command.
 never starts a shell. Sourcing remains the reliable primary activation path.
 
 The shell and Web share the same checked-in Small ASCII wordmark. An 80-column terminal displays the
-full name; narrower terminals use the DR monogram or a plain product line. All terminals and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
+full name; narrower terminals use the DR monogram or a plain product line. The wordmark remains plain; help adds color and bold only on a TTY when NO_COLOR is unset. Printing the banner needs no language runtime or network.
 
 The installer adds one source line to `.bashrc` or `${ZDOTDIR:-$HOME}/.zshrc`, preserving existing content and backing it up. New terminals load it automatically. For manual registration only, the equivalent line is:
 
@@ -64,10 +64,10 @@ Run Python CLI, file inspection, and direct Docker commands from the **repositor
 
 With no arguments, `rag-dev` and `rag-prod` use `up -d`. Without registration, run
 `.venv/bin/python -m scripts.stack dev up -d` from the repository root.
-`rag-help` starts with one Quick Start command and its printed-URL hand-off. Reset and recovery
-commands have their own `[RESET]` block. The compact menu uses aligned columns and no ANSI
-colors or escapes, including in a color-capable terminal; every command accepts
-`--help`. Use `rag-corpus --help` for operation details and `rag-schema --help` for schema options.
+`rag-help` lists quick setup before fresh cleanup under Quick Start; data reset has its own
+`[RESET]` block. Command names are bold, sections colored, secondary notes dim and warnings
+yellow. NO_COLOR or redirected output stays plain. Every command accepts `--help` and
+`--verbose` (`-vv`). Use `rag-corpus --help` for operation details and `rag-schema --help` for schema options.
 
 ### Command consolidation
 
@@ -76,7 +76,7 @@ underscore-named helper, the installer shows its exact path and offers to back u
 one registration. Declining preserves it; no compatibility file or symlink is created. Explicit
 uninstall also removes a detected old registration for this checkout. Reload the new helper in a
 fresh shell after migration. These obsolete shortcuts are no longer registered;
-use the replacement commands below. Existing shell definitions last until that shell exits.
+use the replacement commands below. Re-sourcing retires removed definitions only when they still match the previously owned command.
 
 | Removed shortcut | Replacement |
 |---|---|
@@ -156,7 +156,7 @@ shows API/DB and model availability. Never upload `.env` or enter keys into the 
 ## Initial schema setup
 
 ```bash
-rag-quickstart
+rag-start-quick
 ```
 
 Quick Start bootstraps Python, validates configuration, prepares an empty schema, and starts development services. It preserves existing compatible data. If the schema is incompatible, it stops; keep that database intact and choose an empty isolated or compatible database. Do not use a reset as installation recovery.
@@ -304,7 +304,7 @@ The Python CLI submits the same server job as the web interface:
 uv run python -m app.cli ingest --manifest manifest.json --selection SELECTION_ID
 ```
 
-Use the selection ID returned by acquisition. For a non-default development address, pass `--api-url`. Schema preparation belongs to `rag-quickstart`; destructive reset belongs to `rag-fresh-start`.
+Use the selection ID returned by acquisition. For a non-default development address, pass `--api-url`. Schema preparation belongs to `rag-start-quick`; destructive reset belongs to `rag-reset`.
 
 ### Embedding and retrieval
 
@@ -498,115 +498,99 @@ Keep the backup path and verify a new terminal does not auto-load the registrati
 [registration instructions](#register-commands-and-open-help).
 
 
-## Ordinary and extreme runtime reset
+## Quick Start and data reset
 
-`rag-fresh-start` is a guided host-side clean start. It checks prerequisites and configuration,
-starts the checkout's DB, previews ORM data and downloaded sources, then requires the exact typed
-phrase before resetting. A running web/operator service is not required for this ordinary path.
-The five numbered ASCII steps contain no color escapes.
+Cloned the repository and unsure what to do? Run **`rag-start-quick`**. It prepares
+Python dependencies, creates `.env` only when missing, checks configuration, starts
+DEV, prepares an empty schema, waits for readiness and prints the web Quick Start link.
+Existing data is preserved. It makes no model, embedding or filing download request.
+
+Every command accepts `--verbose` (`-vv`). Setup/build commands normally show step
+status and elapsed time; verbose mode streams the underlying output. A failed step
+prints its last 20 lines and the exact command to rerun. Colour and bold appear only
+in a terminal with `NO_COLOR` unset; redirected output uses plain `[ OK ]` / `[FAIL]`.
+`rag-help` groups Quick Start, stack, data and reset commands in aligned columns.
+
+### Fresh checkout
 
 ```bash
-rag-fresh-start
-rag-fresh-start --keep-sources
-rag-fresh-start --sample
+rag-start-fresh
+rag-start-fresh --no-start
+rag-start-fresh --extreme
+rag-start-fresh --status
 ```
 
-The default and sample modes require `RECREATE <checkout-name> AND SOURCES`; keeping sources
-requires `RECREATE <checkout-name>`. The preview expires after five minutes and is rechecked before
-execution. Cancellation never starts the application. A verified reset preserves code, `.env`,
-evaluation exports, saved model settings, unrelated tables, the DB volume and host Ollama.
-`--keep-sources` also preserves downloaded files; `--sample` presets NVDA/AMD FY2023–2024 without
-performing downloads. The two options are mutually exclusive.
+Before changing anything, a numbered preview groups untracked/ignored files by
+top-level path with file counts and sizes, lists tracked files to restore, and lists
+this checkout's containers, named volumes and locally built images. This includes
+sources and exports under `data/`, `.venv`, `web/node_modules`, `.next` and other caches.
+Tracked changes under `data/` return to HEAD; tracked changes elsewhere block cleanup
+unless you explicitly choose `--discard-tracked`. No backup is created.
 
-Before the typed confirmation or API stop, the host path checks source readability and write/search
-access to source parent directories, `data/corpus` and the journal destination under `data`.
-Readable container-owned directories can still prevent a rename. The preview lists every blocked
-directory and prints a quoted `sudo setfacl -R -m u:<host-uid>:rwX -- <paths>` repair. Review the
-exact paths, apply the repair, then choose the single inspection retry. The CLI never applies ACLs
-or retries deletion automatically. `--keep-sources` does not require source-directory write access.
+Preserved: Git metadata/history, `.env*`, `.claude/`, `.agents/`, `.codex/`, `.vscode/`,
+`.idea/`, `.freshstart-keep` and paths listed there, plus the Ollama models volume.
+The keep file accepts one literal checkout-relative path per line; empty lines and
+`#` comments are ignored. Absolute paths and `..` are rejected. Linked source paths
+or nested Git repositories block cleanup. Other Docker projects and shared resources
+are never deleted; no builder-cache pruning occurs. Tracked `.env.example` remains
+available as the setup template even in extreme mode.
 
-If failure occurs after an API stop, the command reports whether the database and sources are
-unchanged/restored or whether recovery is uncertain, and prints `rag-dev up -d` to restore the API
-without requesting a build. It does not print a raw container ID. If a journal remains or the DB
-outcome is uncertain, preserve `data/.schema-recreate-journal/journal.json`, run `rag-schema check`
-and inspect the stated boundary before another reset; a committed DB reset is never called unchanged.
+Every destructive prompt displays `(Y/n)` but **only the single uppercase `Y`**
+accepts. `y`, `yes`, Enter, spaces and EOF cancel with “nothing changed”. Previews
+expire after five minutes and changed inventories require a new preview. Extreme
+mode asks a second time, naming `.env*`; it additionally deletes private `.env*`
+files and this project's Ollama models volume. It never restarts automatically.
 
+The cleaner attempts removals first. If permissions actually prevent deletion, it
+lists only those failed paths, prints a scoped
+`sudo chown -R "$(id -u):$(id -g)" -- <paths>` repair, and offers one retry after you
+apply it. It never invokes sudo. A failure after deletion starts leaves a partial
+receipt; inspect `rag-start-fresh --status` before requesting another preview.
 
-### SCREENSHOT NEEDED
-<!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=en; theme=light; preserve existing screenshot assets. -->
+Ordinary cleanup then runs `rag-start-quick`, including reinstalling dependencies.
+`--no-start` stops after cleanup. Extreme mode ends with the instruction to run
+`rag-start-quick`, which creates a new `.env` for local editing. Browser storage is
+unchanged; clear it separately under **Settings → Data and help**. The existing web
+wipe endpoint and its browser acknowledgement remain available through the web UI.
 
-After successful reset, the command runs `rag-dev up --build -d`, waits for confirmed readiness,
-and prints the application URL and [Quick Start — DEV ONLY, Web step 1](quickstart-dev.md#qs-web-1) in both languages.
-A failed build or readiness check reuses `rag-ollama-check` diagnostics and offers one confirmed
-`rag-dev down` → `rag-dev up --build -d` recovery, preserving volumes. An incomplete reset never
-reaches that restart. Browser conversations are not deleted by ordinary clean start.
+### Narrow data reset
+
+```bash
+rag-reset
+rag-reset --keep-sources
+rag-reset --sample
+rag-reset --status
+```
+
+`rag-reset` previews ORM-owned database data and downloaded sources, asks for `Y`,
+resets that scope, rebuilds DEV and waits for readiness. It preserves `.env`, saved
+model settings, evaluation exports, unrelated tables, images and data volumes.
+`--keep-sources` preserves downloaded files; `--sample` presets NVDA/AMD FY2023–2024
+without downloading. These flags are mutually exclusive. It does not support
+`--extreme`; use the separate fresh-checkout command for that purpose.
+
+The existing source permission preflight and rollback journal remain in this narrow
+reset. Follow its exact repair instructions if blocked. After uncertain DB work,
+preserve `data/.schema-recreate-journal/journal.json`, run `rag-schema check`, and
+inspect completed stages before another reset. A failed reset never starts a rebuild.
+After a successful reset the command prints the application URL and bilingual
+[Quick Start — DEV ONLY, Web step 1](quickstart-dev.md#qs-web-1) links.
+
+Each setup/reset command keeps its own receipt under the checkout's Git metadata:
+`rag-start-quick --status`, `rag-start-fresh --status`, and `rag-reset --status` read
+those records. The reset status command also reads previous web/extreme evidence
+when the existing operator is reachable; it never resubmits deletion.
 
 ### Configuration repair within the current step
 
-Both `rag-quickstart` and ordinary `rag-fresh-start` identify each invalid key's `.env` line, shell
-value and effective source. Credential/contact values stay hidden. For the reported embedding
-conflict, `[f]` ignores failing shell exports for this invocation, `[e]` writes the two required
-public embedding settings, `[r]` rechecks after a local file edit, and `[q]` cancels. The command
-resumes at configuration instead of reinstalling dependencies. Parent-shell exports are unchanged;
-use the printed `unset KEY` command there for future invocations. No option writes credentials or
-makes an embedding/model request. Noninteractive blockers return failure with the same repair hints.
+`rag-start-quick` and `rag-reset` report invalid keys' `.env` lines and effective
+shell/file sources without exposing credentials. Choose `[f]` to ignore failing
+shell exports for this invocation, `[e]` to write the two public embedding settings,
+`[r]` to recheck a local edit, or `[q]` to cancel. Parent-shell exports are unchanged.
+Startup failures offer diagnosed, confirmed recovery while preserving volumes.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: guided terminal clean start and source-aware configuration repair; locale=en; plain ASCII/no-color; show redacted file/shell conflict, exact reset preview and successful readiness URL to qs-web-1 using disposable data. Preserve existing screenshots. -->
-
-### Extreme reset
-
-Only `rag-fresh-start --extreme` requires the existing DEV operator (`rag-dev up -d`). Its broader
-web/operator deletion protocol and browser acknowledgement remain separate:
-
-```bash
-rag-fresh-start --extreme
-```
-
-Extreme mode shows the exact deletion inventory before two independent gates:
-confirm that `.env`, conversations and custom corpus have been backed up, then type
-`EXTREME <checkout-name>` to accept irreversible deletion. Enter, No, EOF, or
-noninteractive input cannot authorize deletion. A changed or expired preview stops
-execution. No backup is created and the application cannot restore deleted data.
-
-The explicit fresh-clone **runtime-content** boundary is:
-
-- Remove untracked files under `data/corpus` (including custom PDFs/JSON),
-  `data/eval_runs`, `data/local-settings`, `build`, `dist`, `web/.next`, `web/out`,
-  `web/.tutorial`, `web/public/tutorial-assets`, `.pytest_cache`, and `.ruff_cache`;
-  remove untracked root `.env*` files. Empty directories may remain.
-- Remove only verified checkout-owned `db`, `app`, `web` containers and local
-  `pg_data`, `web_next`, `web_node_modules` Compose volumes. Shared/external volumes,
-  unexpected containers and symbolic links block the operation.
-- Preserve tracked files and local edits, Git history, host `.venv`/`node_modules`,
-  unrelated untracked/ignored files, other Docker projects, host Ollama, external
-  credentials, and the reset audit record. This is not `git clean` or a host reset.
-
-After both terminal gates, close other DocReview tabs and open the printed
-`/reset-local/#<operation-id>` URL in the browser holding the conversations.
-The page clears and checks this origin's DocReview local/session storage, then sends
-an authenticated acknowledgement for that operation. Only then can local deletion
-proceed. The CLI reports browser deletion only with that acknowledgement, scoped to
-that browser and origin; other profiles, devices, ports and localhost/127.0.0.1
-origins are separate. Do not reopen old tabs that could save in-memory conversations.
-If acknowledgement times out, local deletion does not start; browser deletion may
-already have occurred, so inspect status before another attempt.
-
-After verified extreme success, services stay stopped. Run `rag-quickstart`, fill the
-new `.env` locally, and follow [Quick Start — DEV ONLY](quickstart-dev.md) to prepare data again. On partial failure,
-review completed stages; no automatic restart or deletion retry occurs.
-
-### SCREENSHOT NEEDED
-<!-- Feature: extreme CLI browser acknowledgement. State: matching waiting operation on reset-local, then acknowledged deletion. Capture en and ko in light mode using disposable data only; no credentials. -->
-The browser acknowledgement page has no new screenshot evidence yet.
-
-
-Use `rag-fresh-start --status` to read the last extreme/web reset even when extreme deletion
-removed `.env` or stopped the web container. This command uses the existing local
-operator connection and never resubmits deletion. After updating the code, restart
-the local operator with `rag-dev down` followed by `rag-dev up -d` before using the
-new reset options; these commands preserve data volumes.
-
+<!-- Feature: styled rag-help and three separate start/reset paths; locale=en; light mode; actual terminal preview counts, uppercase Y gates, quiet completed build/readiness, verbose failure tail, and preserved environment; disposable checkout only. Existing screenshot assets are preserved. -->
 
 ## Recover an incompatible local schema
 
@@ -659,7 +643,7 @@ New screenshot evidence is pending; existing images are unchanged.
 ## Explicit local database recreation
 
 `rag-up` is a shortcut for `rag-dev up --build -d`; it uses the Python environment
-prepared by `rag-quickstart` or `uv sync --locked`. Its automatic startup prepares
+prepared by `rag-start-quick` or `uv sync --locked`. Its automatic startup prepares
 only an empty DB; it never discards existing data. For first-time setup or users who
 understand the consequences, the preparation notice also offers this dangerous option:
 
@@ -669,7 +653,7 @@ uv run python -m scripts.schema recreate
 
 This deletes ORM-owned tables and all their rows in the verified local DEV database,
 then recreates the schema from the current models. Review the exact target and table
-counts and raw-file paths/counts. Default recreation also clears downloaded raw sources and manifest source entries. Type `RECREATE <checkout-name> AND SOURCES` only if you accept the entire preview.
+counts and raw-file paths/counts. Default recreation also clears downloaded raw sources and manifest source entries. Type `Y` only if you accept the entire preview.
 Enter, wrong text, EOF and noninteractive input do not authorize it; previews expire
 after five minutes. The app is stopped only after confirmation. Other DB clients must
 be closed; shared Docker volumes and nonlocal targets are refused.
@@ -695,8 +679,8 @@ status/navigation/dismiss buttons retain their behavior.
 | --- | --- | --- |
 | `uv run python -m scripts.schema recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
 | Same command with `--sample` | Same clean start | Server-persisted NVDA/AMD FY2023–2024 draft; press Download yourself |
-| Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `RECREATE <checkout-name>` |
-| `rag-fresh-start` | Same ORM/source scope as schema recreation; `--keep-sources` and `--sample` supported | Preserves settings/exports/volume; starts DEV, verifies readiness, prints the web hand-off links |
-| `rag-fresh-start --extreme` | Previewed config, runtime files/caches and volumes | Two reset gates and browser acknowledgement; no automatic restart |
+| Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `Y` |
+| `rag-reset` | Same ORM/source scope as schema recreation; `--keep-sources` and `--sample` supported | Preserves settings/exports/volume; starts DEV, verifies readiness, prints the web hand-off links |
+| `rag-start-fresh --extreme` | Previewed config, runtime files/caches and volumes | Two uppercase Y gates; browser storage unchanged; no restart |
 
 The two options cannot be combined. CLI acquisition still requires explicit identifiers and years. Source cleanup quarantines the exact previewed files under `data/.schema-recreate-journal` until the DB transaction commits. A DB failure attempts to restore all source bytes; inspect the schema before retrying because a lost connection can leave the DB outcome unconfirmed. Interrupted or incomplete cleanup retains `journal.json` with paths and phase and blocks another reset. Inspect that journal and preserve its backups; do not delete it or repeat recreation to hide the failure. If DB commit succeeded but file cleanup failed, the command returns failure and says so explicitly. The API remains stopped until you inspect state and run `rag-up`.

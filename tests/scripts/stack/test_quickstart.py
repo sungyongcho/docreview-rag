@@ -282,7 +282,7 @@ def test_startup_failure_diagnoses_and_restarts_once(configured, monkeypatch):
     calls = []
     results = iter([7, 0, 0])
 
-    def run(mode, args, *, root):
+    def run(mode, args, *, root, quiet=False):
         """Fail the first start, then allow the confirmed down/up sequence."""
         calls.append(args)
         return next(results)
@@ -445,3 +445,14 @@ def test_handoff_links_to_developer_quick_start(capsys):
         )
     assert "Quick Start - DEV ONLY" in output
     assert output.isascii()
+
+
+@pytest.fixture(autouse=True)
+def isolated_progress_io(monkeypatch):
+    """Keep orchestration fixtures isolated; subprocess output has its own process tests."""
+    monkeypatch.setattr(setup, "write_receipt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        setup,
+        "run_step",
+        lambda title, command, **kwargs: setup.subprocess.run(command, check=True, **kwargs),
+    )

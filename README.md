@@ -24,10 +24,16 @@ git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
 source ./rag-alias.sh
 rag-help
-rag-quickstart
+rag-start-quick
 ```
 
-`rag-quickstart`는 Python 환경을 설치하고, `.env`가 없으면 템플릿을 생성합니다.
+**clone했는데 무엇부터 할지 모르겠다면 `rag-start-quick`를 실행하세요.**
+`rag-start-fresh`는 `.env*`·도구 설정·보존 목록·Ollama 모델을 남기고 체크아웃과 해당 Docker 자원을
+정리한 뒤 다시 준비합니다. `--no-start`는 정리 후 중지합니다. `rag-reset`는 ORM 데이터와 원문만 초기화합니다.
+모든 명령에 `--verbose` (`-vv`)를 붙일 수 있으며 기본 출력은 단계 상태·소요 시간입니다.
+삭제 미리보기의 `(Y/n)`은 대문자 한 글자 `Y`만 승인합니다.
+
+`rag-start-quick`는 Python 환경을 설치하고, `.env`가 없으면 템플릿을 생성합니다.
 안내된 SEC 연락처·DART 키·OpenAI 개발 키를 **로컬 `.env`에서만** 입력한 뒤 `[r]`로 같은 단계에서 다시 확인하세요.
 충돌한 값은 `.env` 줄과 shell 출처를 구분해 표시합니다. `[f]`는 이번 실행의 잘못된 export를 제외하고,
 `[e]`는 공개 임베딩 설정 두 개를 맞춥니다. 부모 셸이나 인증 정보는 자동 변경하지 않습니다.
@@ -41,7 +47,7 @@ OpenAI 임베딩은 `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding
 청킹·OpenAI 임베딩·BM25까지 준비합니다. [GitHub에서 바로 읽기](docs/TUTORIAL/ko/quickstart-dev.md)도 가능합니다.
 
 `source` 등록은 현재 터미널에 적용됩니다. 영구 등록은 아래 설치 절의 절대경로 안내를 따르세요.
-`rag-fresh-start`는 기존 데이터를 지우는 재시작 명령이므로 새 clone의 첫 실행에는 사용하지 않습니다.
+`rag-reset`는 기존 데이터를 지우는 재시작 명령이므로 새 clone의 첫 실행에는 사용하지 않습니다.
 
 ## 주요 기능
 
@@ -187,7 +193,7 @@ rag-prod ps
 시작·종료는 `rag-dev up -d` / `rag-dev down`, 공개 미리보기는 `rag-prod`로 선택합니다.
 별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
 `rag-help`는 Quick Start 명령과 다음 URL 안내를 맨 앞에, 초기화·복구를 별도 RESET 영역에
-표시합니다. 간결한 명령 안내를 두 열로 정렬하며 색상은 사용하지 않습니다. 상세 옵션은 각 명령의
+표시합니다. 두 열로 정렬하고 TTY에서는 굵은 명령명과 색상 제목·주의를 사용합니다. NO_COLOR나 파일 출력은 일반 텍스트입니다. 상세 옵션은 각 명령의
 `--help`에서 확인합니다. 이전 밑줄 파일명으로 등록한 경우 source 설치가 정확한 이전 경로를
 알리고 백업 후 변경을 제안합니다. 호환 링크는 만들지 않습니다.
 스키마 관리는 `rag-schema check|prepare|recover|recreate`로 통합했습니다.
@@ -413,7 +419,7 @@ gemma4처럼 thinking을 지원하는 모델은 요청에서 thinking을 끈 채
 
 ### 1. 환경과 원문 준비
 
-Helper를 등록한 뒤 `rag-quickstart`를 실행하면 Python 환경과 빈 스키마를 준비하고
+Helper를 등록한 뒤 `rag-start-quick`를 실행하면 Python 환경과 빈 스키마를 준비하고
 개발 서비스를 시작합니다. 기존 설정과 호환되는 데이터는 보존합니다.
 `rag-dev up --build -d`도 DB health 확인 후 이미지 시작 게이트에서 빈 DB 스키마를
 자동 생성합니다. 기존 DB는 검사만 하며 불일치하면 API 시작을 차단합니다.
@@ -423,7 +429,7 @@ Helper를 등록한 뒤 `rag-quickstart`를 실행하면 Python 환경과 빈 �
 ```bash
 source ./rag-alias.sh
 rag-help
-rag-quickstart
+rag-start-quick
 rag-corpus acquire_edgar --identifier NVDA --year 2024
 rag-corpus acquire_dart --identifier 005930 --year 2024
 rag-corpus status
@@ -453,12 +459,13 @@ rag-corpus inspect
 DB 연결을 확인하고 기존 데이터를 보존한 상태에서 운영자가 원인을 조사해야 합니다.
 기본 복구는 기존 데이터를 보존합니다. `uv run python -m scripts.schema recreate`는
 ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대상·행 수·원문 경로를 확인한 뒤
-`RECREATE <체크아웃 이름> AND SOURCES`로 승인합니다. `--keep-sources`는 원문을 보존하며,
+`Y`로 승인합니다. `--keep-sources`는 원문을 보존하며,
 `--sample`은 동일한 초기화 뒤 NVDA/AMD FY2023–2024 초안만 저장하고 다운로드하지 않습니다.
 코드·`.env`·평가 내보내기·무관한 테이블·DB 볼륨은 보존합니다. 완료 후 `rag-up`으로 시작하세요.
-`rag-fresh-start`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Quick Start — DEV ONLY의 Web 1단계 안내까지 이어갑니다.
+`rag-reset`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Quick Start — DEV ONLY의 Web 1단계 안내까지 이어갑니다.
 `--keep-sources`·`--sample`을 지원하며 설정·내보내기·DB 볼륨은 보존합니다. 권한 오류는 소유자에게 요청할
-정확한 명령과 한 번의 검사 재시도를 제공합니다. 더 넓은 삭제는 별도 `--extreme`의 두 확인 단계와 브라우저 확인을 요구합니다.
+정확한 명령과 한 번의 검사 재시도를 제공합니다. 더 넓은 삭제는 `rag-start-fresh`이며,
+`rag-start-fresh --extreme`은 대문자 `Y` 두 번 확인 후 `.env*`와 프로젝트 Ollama 모델 볼륨도 지우고 멈춥니다. 브라우저 데이터는 설정 → 데이터와 도움말에서 별도로 지우세요.
 
 검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를
 따릅니다. Quick Start — DEV ONLY는 답변 질문을 제출하기 전에 끝납니다.
@@ -547,7 +554,7 @@ API를 중지해도 단일 웹 화면은 남아 상태 확인과 가능한 복�
 `umask 0002`로 새 다운로드·평가 디렉터리의 그룹 쓰기를 허용합니다. 로컬 모델 설정 파일은
 0640으로 저장해 호스트 그룹이 읽을 수 있습니다. `data/` 자체의 그룹 쓰기 권한은 필요하며,
 직접 Compose를 실행하는 다른 GID 환경은 `.env`의 `HOST_GID`를 `id -g` 값에 맞춥니다.
-기존 컨테이너 소유 경로는 자동 변경하지 않습니다. `rag-fresh-start`가 확인·API 중지 전에
+기존 컨테이너 소유 경로는 자동 변경하지 않습니다. `rag-reset`가 확인·API 중지 전에
 정확한 `sudo` 복구 명령을 출력하며, 실패 후 API 복구 명령은 `rag-dev up -d`입니다.
 자세한 동작은 [환경 안내](docs/TUTORIAL/ko/environment.md)를 참고하세요.
 스크립트는 DB reset·볼륨 삭제·배포·Git stage/commit을 자동 실행하지 않습니다.
