@@ -208,6 +208,8 @@ def test_command_targets_match_the_registry_and_live_schema(tmp_path):
     }
     assert all("argv" not in item and "environment" not in item for item in commands)
     target = schema["components"]["schemas"]["CommandResource"]["properties"]["target"]
+    if "$ref" in target:
+        target = schema["components"]["schemas"][target["$ref"].rsplit("/", 1)[-1]]
     assert set(target["enum"]) == {command.target for command in COMMANDS.values()}
     assert COMMANDS["python-tests-postgres"].target == "database"
     assert COMMANDS["web-build"].target == "web"

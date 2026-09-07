@@ -1,4 +1,7 @@
 export const KO: Record<string, string> = {
+  "Python": "Python",
+  "App": "앱",
+  "Web": "웹",
   "Command target": "명령 대상",
   "All targets": "모든 대상",
   "Target not reported": "대상 정보 없음",

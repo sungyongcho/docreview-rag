@@ -121,6 +121,12 @@ describe("Operations", () => {
     expect(headings(3)).toEqual(["점검", "검증", "서비스"]);
     expect(screen.getByRole("group", { name: "명령 유형" })).toBeInTheDocument();
     expect(screen.getAllByText("확인 필요")).toHaveLength(3);
+    const targets = screen.getByRole("group", { name: "명령 대상" });
+    expect(within(targets).getByRole("button", { name: "데이터베이스" })).toBeInTheDocument();
+    expect(within(targets).getByRole("button", { name: "앱" })).toBeInTheDocument();
+    fireEvent.click(within(targets).getByRole("button", { name: "웹" }));
+    expect(document.querySelectorAll(".command-card")).toHaveLength(1);
+    expect(document.querySelector(".command-card .target")).toHaveTextContent("웹");
   });
 
   it("runs a command after confirmation and cancels the running job", async () => {
@@ -217,7 +223,8 @@ describe("Operations", () => {
 
 it("combines category and target filters and restores both without running a command", async () => {
   render(<Operations />);
-  await screen.findByRole("heading", { name: "Git status" });
+  await flush();
+  expect(screen.getByRole("heading", { name: "Git status" })).toBeInTheDocument();
   fireEvent.click(within(screen.getByRole("group", { name: "Command category" })).getByRole("button", { name: "Verify" }));
   fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "Web" }));
   expect(screen.getByRole("heading", { name: "Web tests" })).toBeInTheDocument();
@@ -226,7 +233,8 @@ it("combines category and target filters and restores both without running a com
   expect(startOperatorJob).not.toHaveBeenCalled();
   cleanup();
   render(<Operations />);
-  await screen.findByRole("heading", { name: "Web tests" });
+  await flush();
+  expect(screen.getByRole("heading", { name: "Web tests" })).toBeInTheDocument();
   expect(within(screen.getByRole("group", { name: "Command category" })).getByRole("button", { name: "Verify" })).toHaveAttribute("aria-pressed", "true");
   expect(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "Web" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "Database" }));
@@ -240,7 +248,8 @@ it("keeps an older operator response visible without guessing its missing target
   const { target: _target, ...legacy } = COMMANDS[0];
   vi.mocked(getOperatorCommands).mockResolvedValue([legacy as OperatorCommand]);
   render(<Operations />);
-  await screen.findByRole("heading", { name: "Git status" });
+  await flush();
+  expect(screen.getByRole("heading", { name: "Git status" })).toBeInTheDocument();
   expect(screen.getByText("Target not reported")).toBeInTheDocument();
   fireEvent.click(within(screen.getByRole("group", { name: "Command target" })).getByRole("button", { name: "App" }));
   expect(screen.getByText("No commands match these filters.")).toBeInTheDocument();

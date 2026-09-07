@@ -90,9 +90,11 @@
 
 **시스템 → 로컬 작업**은 등록된 로컬 명령을 유형별로 묶은 카드로 보여 줍니다. **점검**은 상태를 읽고(Git status), **검증**은 파일을 바꾸지 않는 lint·테스트·타입 검사·프로덕션 빌드를 실행하며, **서비스**는 PostgreSQL과 앱을 시작·중지하거나 빈 스키마를 준비합니다. 그룹 안에서는 읽기 전용 명령이 먼저, 확인을 요구하는 명령이 마지막에 오고 각 헤더에 **확인 필요** 배지가 붙습니다. 카드 위의 **전체 · 점검 · 검증 · 서비스** 필터로 보기를 좁힐 수 있으며 선택은 브라우저별로 기억됩니다. **실행**은 한 번에 한 명령만 시작하고, **최근 실행**이 출력을 보여 주며 실행 중에는 **취소**를 제공합니다.
 
+**명령 대상** 필터로 각 유형 안에서 **Python**, **웹**, **데이터베이스**, **앱** 대상을 좁힙니다. **모든 대상**은 전체 대상을 표시하며, 유형 필터와 함께 적용되고 선택은 브라우저에 따로 저장됩니다. 앱은 저장소 상태와 앱 서비스 작업, 데이터베이스는 PostgreSQL 검사와 스키마 작업을 포함합니다. 대상 배지는 명령 registry에서 가져오며 이름으로 추측하지 않습니다. 구버전 오퍼레이터가 대상 필드를 보내지 않으면 **대상 정보 없음**으로 표시합니다. 필터 선택은 명령을 실행하지 않습니다.
+
 ### SCREENSHOT NEEDED
 
-<!-- SCREENSHOT NEEDED: feature=operations-category-groups-and-filter; locale=ko; theme=light; capture=operations-tab-grouped-cards-with-verify-filter-selected-and-confirmation-required-badge; issue=81; preserve-existing-assets=true -->
+<!-- SCREENSHOT NEEDED: feature=operations-category-and-target-filters; locale=ko; theme=light; capture=operations-tab-with-category-and-target-filters-target-badges-and-confirmation-required-badge; issue=106; preserve-existing-assets=true -->
 
 **유형별로 묶인 로컬 작업 카드와 필터, 확인 필요 배지가 보이는 스크린샷이 필요합니다. 기존 스크린샷은 유지합니다.**
 
