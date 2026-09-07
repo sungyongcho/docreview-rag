@@ -19,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.db.bootstrap import bootstrap_connection, ensure_complete_schema
 from app.db.models import Base
-from scripts.schema.sources import SourceReset, check_source_journal, source_preview
+from scripts.schema.sources import (
+    SourceAccessError,
+    SourceReset,
+    check_source_journal,
+    check_source_write_access,
+    source_preview,
+)
 from scripts.stack.__main__ import compose_command, compose_environment
 from scripts.stack.environment import load_local_environment
 from scripts.stack.prompts import confirm
@@ -169,28 +175,35 @@ def preview_sources(root: Path, *, keep_sources: bool = False) -> dict | None:
             if keep_sources:
                 check_source_journal(root)
                 return None
-            return source_preview(root)
+            preview = source_preview(root)
+            check_source_write_access(root, preview)
+            return preview
         except PermissionError as error:
-            denied = Path(error.filename) if error.filename else root / "data"
-            if not denied.is_absolute():
-                denied = root / denied
-            denied = denied.resolve()
-            if not denied.is_relative_to(root):
+            if isinstance(error, SourceAccessError):
+                paths = error.paths
+            else:
+                denied = Path(error.filename) if error.filename else root / "data"
+                denied = (denied if denied.is_absolute() else root / denied).resolve()
+                paths = (denied.parent, denied) if denied != root else (denied,)
+            if any(not path.is_relative_to(root) for path in paths):
                 raise ValueError(
                     "Denied path is outside this checkout; ask its owner to inspect it."
                 ) from None
             command = [
+                "sudo",
                 "setfacl",
+                "-R",
                 "-m",
-                f"u:{os.getuid()}:rwX",
+                f"u:{os.geteuid()}:rwX",
                 "--",
-                *(str(path) for path in ((denied.parent, denied) if denied != root else (denied,))),
+                *(str(path) for path in paths),
             ]
-            print("Source access blocked. Ask the owner to grant access to these paths:")
+            print("Source access blocked before confirmation; the API and data are unchanged.")
+            for path in paths:
+                print(f"  Blocked: {path}")
+            print("Apply this scoped repair as the host user, then retry inspection:")
             print("  " + shlex.join(command))
-            if attempt or not confirm(
-                "After the owner grants access, retry source inspection once?"
-            ):
+            if attempt or not confirm("After applying the repair, retry source inspection once?"):
                 raise ValueError(
                     "Source permissions remain blocked; no deletion was submitted."
                 ) from None
@@ -252,28 +265,84 @@ def run(
     current, _ = local_target(root)
     if current != target:
         raise ValueError("Docker target changed; nothing deleted. Review a new preview.")
-    for app in target["apps"]:
-        subprocess.run(target["docker"] + ["stop", app], env=environment, check=True)
     reset = SourceReset(root, sources, sample=sample) if sources is not None else None
     database_started = False
     try:
+        for app in target["apps"]:
+            subprocess.run(
+                target["docker"] + ["stop", app],
+                env=environment,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
         if reset is not None:
             reset.stage()
         database_started = True
         asyncio.run(recreate(url, before))
     except (Exception, KeyboardInterrupt) as error:
-        if reset is not None and reset.journal.exists():
-            reset.restore(
-                database_outcome_uncertain=database_started and not isinstance(error, ValueError)
+        uncertain = database_started and not isinstance(error, ValueError)
+        sources_unchanged = reset is None or not (reset.state["moved"] or reset.state["created"])
+        try:
+            if reset is not None and reset.journal.exists():
+                reset.restore(database_outcome_uncertain=uncertain)
+                sources_unchanged = True
+        except (Exception, KeyboardInterrupt) as recovery_error:
+            print(
+                "INCOMPLETE: source rollback could not be confirmed. "
+                "Preserve data/.schema-recreate-journal/journal.json; do not repeat the reset.",
+                file=sys.stderr,
             )
+            print(
+                "Inspect the journal and run rag-schema check; "
+                "then restore the API with: rag-dev up -d",
+                file=sys.stderr,
+            )
+            raise RuntimeError(
+                f"Source recovery failed ({type(recovery_error).__name__}); "
+                "journal inspection is required."
+            ) from recovery_error
+        if not uncertain and sources_unchanged:
+            print(
+                "Reset failed; database and sources are unchanged by this reset "
+                "(any staging was rolled back).",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "Reset failed; "
+                + (
+                    "sources were restored. "
+                    if sources_unchanged
+                    else "source restoration is unconfirmed. "
+                )
+                + ("Database outcome is unconfirmed. " if uncertain else "Database is unchanged. ")
+                + "Preserve data/.schema-recreate-journal/journal.json "
+                "and run rag-schema check before another reset.",
+                file=sys.stderr,
+            )
+        print(
+            "The API may be stopped. Restore it without requesting a build: rag-dev up -d",
+            file=sys.stderr,
+        )
+        if isinstance(error, PermissionError):
+            path = f" at {error.filename}" if error.filename else ""
+            raise ValueError(
+                f"Source reset was blocked by filesystem permissions{path}. "
+                "Recheck the source access repair before retrying."
+            ) from error
         raise
     if reset is not None:
         try:
             reset.finish()
-        except OSError:
+        except OSError, KeyboardInterrupt:
             print(
                 "INCOMPLETE: DB committed, but source backup cleanup failed. "
                 "Inspect data/.schema-recreate-journal/journal.json; do not repeat recreation.",
+                file=sys.stderr,
+            )
+            print(
+                "After inspecting the journal, restore the API without requesting a build: "
+                "rag-dev up -d",
                 file=sys.stderr,
             )
             return "incomplete"

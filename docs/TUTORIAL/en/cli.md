@@ -504,11 +504,22 @@ evaluation exports, saved model settings, unrelated tables, the DB volume and ho
 `--keep-sources` also preserves downloaded files; `--sample` presets NVDA/AMD FY2023–2024 without
 performing downloads. The two options are mutually exclusive.
 
-The host path avoids the broader web reset's `runtime_file_permission` preview. If the host cannot
-read a source, it shows the exact owner `setfacl` command for the denied path and parent. Review
-those paths, have the owner grant access, then choose the single read-only inspection retry.
-The CLI never applies ACLs or automatically retries deletion. A retained source journal or an
-uncertain DB outcome remains a blocker; preserve the journal and inspect `rag-schema check`.
+Before the typed confirmation or API stop, the host path checks source readability and write/search
+access to source parent directories, `data/corpus` and the journal destination under `data`.
+Readable container-owned directories can still prevent a rename. The preview lists every blocked
+directory and prints a quoted `sudo setfacl -R -m u:<host-uid>:rwX -- <paths>` repair. Review the
+exact paths, apply the repair, then choose the single inspection retry. The CLI never applies ACLs
+or retries deletion automatically. `--keep-sources` does not require source-directory write access.
+
+If failure occurs after an API stop, the command reports whether the database and sources are
+unchanged/restored or whether recovery is uncertain, and prints `rag-dev up -d` to restore the API
+without requesting a build. It does not print a raw container ID. If a journal remains or the DB
+outcome is uncertain, preserve `data/.schema-recreate-journal/journal.json`, run `rag-schema check`
+and inspect the stated boundary before another reset; a committed DB reset is never called unchanged.
+
+
+### SCREENSHOT NEEDED
+<!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=en; theme=light; preserve existing screenshot assets. -->
 
 After successful reset, the command runs `rag-dev up --build -d`, waits for confirmed readiness,
 and prints the application URL and [Web Quick Start step 1](quickstart.md#qs-web-1) in both languages.

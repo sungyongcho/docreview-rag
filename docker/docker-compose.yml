@@ -17,7 +17,9 @@ services:
       retries: 10
 
   app:
-    command: ["uv", "run", "--no-sync", "uvicorn", "app.release.space:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app", "--log-level", "warning"]
+    # Keep the image's non-root UID while sharing new bind-mounted files with the host group.
+    user: "10001:${HOST_GID:-1000}"
+    command: ["sh", "-c", 'umask 0002; exec "$$@"', "--", "uv", "run", "--no-sync", "uvicorn", "app.release.space:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app", "--log-level", "warning"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     build:
@@ -54,8 +56,6 @@ services:
       db:
         condition: service_healthy
     init: true
-    group_add:
-      - "${HOST_GID:-1000}"
     volumes:
       - ./data:/app/data
       - ./app:/app/app:ro
