@@ -53,14 +53,19 @@ User directions and higher-priority instructions still prevail.
 
 ### Automation identity setup
 
-- Setup status: `IN_PROGRESS`. `sungyongcho-ops` uses
+- Setup status: `COMPLETE` on the configured host. `sungyongcho-ops` uses
   `OPS | Sungyong Cho <ops@sungyongcho.com>` for authorized automation in
   `sungyongcho/docreview-rag-agent` and `sungyongcho/dither-fm` only. Repository role
   rules still govern every action; machine authentication is not maintainer authority.
 - The public profile, verified email, collaborator write access and separate CLI
   profiles are configured. Authenticator-app 2FA is enabled. Dedicated SSH authentication
-  and signing keys and isolated Git configuration are prepared locally; GitHub key
-  registration, passkey enrollment and remote delivery verification remain pending.
+  and signing keys are registered; both repositories passed SSH push dry runs, and a
+  DocReview publication verified the OPS commit/PR actor and GitHub signature. Passkey
+  enrollment is intentionally excluded at the user's request; it is not a completion gate.
+- The host-local `gh-ops-setup` helper checks the original setup worktrees without
+  writing remote refs. `gh-ops-setup --apply` registers missing approved public keys
+  after any required OAuth consent, then checks SSH, signing and push dry runs. It
+  does not configure future worktrees, create new keys or enroll passkeys.
 - Plain `gh` keeps the personal `sungyongcho` profile. Use `gh-ops` for authorized
   bot API/PR/review operations, with an explicit `--repo`. It removes inherited
   `GH_TOKEN`/`GITHUB_TOKEN` and selects `$HOME/.config/gh-ops`; credentials remain in
