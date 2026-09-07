@@ -31,6 +31,13 @@ export const KO: Record<string, string> = {
   "The same evaluation is already queued.": "같은 평가가 이미 큐에 있습니다.",
   "Embedding is in progress. The evaluation was added to the job queue and starts when embedding finishes.": "임베딩이 진행 중입니다. 평가가 작업 큐에 추가됐으며 임베딩이 끝나면 실행됩니다.",
   "{kind} is in progress. The evaluation was added to the job queue and starts when it finishes.": "{kind} 작업이 진행 중입니다. 평가가 작업 큐에 추가됐으며 해당 작업이 끝나면 실행됩니다.",
+  "{documents} documents · {ready} ready · {missing} to download": "문서 {documents}개 · 준비됨 {ready}개 · 다운로드 예정 {missing}개",
+  "{companies} companies · {years} fiscal years": "회사 {companies}개 · 회계연도 {years}개",
+  "Select sources in Filings to start parsing.": "원문 단계에서 파싱할 원문을 선택하세요.",
+  "{count} sources missing → download in Filings before parsing.": "원문 {count}개 누락 → 원문 단계에서 다운로드한 뒤 파싱하세요.",
+  "Select a year to remove it, or change the selection in Filings.": "연도를 눌러 선택에서 빼거나 원문 단계에서 선택을 변경하세요.",
+  "Parsing actions": "파싱 작업",
+
   "Search/add company or year": "회사 또는 연도 검색/추가",
   "Change company": "회사 변경",
   "{count} years on disk": "원문 {count}개 연도 준비됨",

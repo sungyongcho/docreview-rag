@@ -30,9 +30,9 @@ indicator is not proof that either index matches the current corpus.
 - **Goal:** store the explicitly selected reports as searchable, traceable chunks.
 - **Prerequisites:** compatible DB/schema and every required source file from [acquisition](acquisition.md#step-4).
 - **Screen:** Build → Pipeline → Parse & chunk → Selected documents.
-- **Inputs:** review the companies, fiscal years and downloaded documents carried over from Filings. Missing pairs are named; use **Change selection in Filings** to correct them. There is no second picker.
+- **Inputs:** review the compact SEC/DART → company → year summary carried over from Filings. The header counts documents, ready/missing sources, companies and fiscal years. Use the visible **Change selection in Filings** button or remove a year directly; both steps share the same selection.
 - **Primary action:** **Parse & chunk selected sources** once for the entire current selection.
-- **Visible result:** a job records progress and document/chunk counts; Documents shows the ingested report.
+- **Visible result:** the action bar replaces the primary button with shared job progress and **Cancel** when supported. **Open Documents** and **View all jobs** remain available; Documents shows the ingested report.
 - **Completion:** the job succeeds, the expected document identity is present, and its chunk count is positive.
 - **Recovery:** inspect missing-file or schema errors in Jobs. Correct that prerequisite before retrying;
   do not erase the database to resolve an unknown cause. See [troubleshooting](troubleshooting.md).
@@ -98,10 +98,18 @@ Retrieval evaluation depends on an index and evaluation dataset, not on generati
 
 ## Continuing the Filings selection
 
+The compact summary shows each company/year once; raw document IDs are in chip details rather
+than primary labels. Large selections collapse to eight companies per registry with **Show all
+companies**. Click a year to remove it from both steps. Missing sources explain why parsing is
+disabled and must be downloaded in Filings first. The primary button carries the ready-document
+count; Documents is secondary and Jobs is a tertiary action. **Advanced** is a styled disclosure
+for manual manifest selections, without repeating the default count. Its individual Ingest actions
+remain available independently of the default draft.
+
 The primary action records one immutable manifest/selection reference for exactly the selected downloaded documents. Jobs and retries retain that reference even if you later change the draft. Missing files or unrequested company/year pairs are never silently dropped. **Advanced** retains existing manifest rows and per-selection **Ingest** controls; use it for a separately named selection. The historical screenshot above represents the Advanced controls, not the default selection flow.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: step 2 selected NVDA/AMD FY2023–2024 documents, one primary parse action, missing-source return link and collapsed Advanced; locale=en; light mode; preserve existing assets. -->
+<!-- Feature: issue 127 step 2 compact 32-document SEC/DART company/year summary, header totals and change-selection button, primary count badge, missing-source explanation, running shared progress with Cancel, collapsed Advanced; locale=en; light mode; preserve existing assets. -->
 
 ## Job progress and evaluation queue {#job-progress}
 

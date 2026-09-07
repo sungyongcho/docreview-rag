@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -264,7 +264,7 @@ describe("Build workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     const ingestButtons = screen.getAllByRole("button", { name: "Parse & chunk selected sources" });
     for (const button of ingestButtons) expect(button).toBeEnabled();
-    expect(screen.getByText("Selected documents: 4")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 4 ready · 0 to download");
     fireEvent.click(ingestButtons[0]);
 
     await waitFor(() => {
@@ -399,7 +399,7 @@ describe("preparation refresh after corpus jobs", () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/documents/facets"))).toHaveLength(2);
   });
 
-  it("counts overlapping selected document identities once", async () => {
+  it("keeps manual manifest choices separate from the compact default selection", async () => {
     const manifest = CANNED_CORPUS.manifests[0];
     const selection = manifest.selections[0];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -411,7 +411,9 @@ describe("preparation refresh after corpus jobs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: /sec-evaluation/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /overlap/ }));
-    expect(screen.getByText("Selected documents: 20")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /sec-evaluation/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /overlap/ })).toBeChecked();
+    expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 0 ready · 4 to download");
   });
 });
 
