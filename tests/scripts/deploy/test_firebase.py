@@ -33,8 +33,9 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
         'if [ "$*" = "run build" ]; then\n'
         '  [ "$BUILD_SUCCEEDS" = true ] || exit 19\n'
         '  [ "$NEXT_PUBLIC_ADMIN_MODE" = canned ] || exit 20\n'
-        '  [ "$NEXT_PUBLIC_API_BASE_URL" = https://sungyongcho.com/docreview-rag-agent/api ] || exit 21\n'
-        '  mkdir -p out; printf new-application > out/index.html\n'
+        '  [ "$NEXT_PUBLIC_API_BASE_URL" = '
+        "https://sungyongcho.com/docreview-rag-agent/api ] || exit 21\n"
+        "  mkdir -p out; printf new-application > out/index.html\n"
         "fi\n"
     )
     npm.chmod(0o755)
@@ -43,7 +44,7 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
         "#!/bin/sh\n"
         'printf "npx:%s:%s\\n" "$*" "$PWD" >> "$COMMAND_LOG"\n'
         '[ "$(cat public/docreview-rag-agent/index.html)" = new-application ] || exit 22\n'
-        '[ ! -e public/docreview-rag-agent/old.html ] || exit 23\n'
+        "[ ! -e public/docreview-rag-agent/old.html ] || exit 23\n"
     )
     npx.chmod(0o755)
     log = tmp_path / "commands.log"
@@ -67,7 +68,8 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
     if build_succeeds:
         assert result.returncode == 0, result.stderr
         assert commands[2:] == [
-            f"npx:firebase-tools deploy --only hosting --project fixture-project:{checkout}/deploy/firebase"
+            "npx:firebase-tools deploy --only hosting --project "
+            f"fixture-project:{checkout}/deploy/firebase"
         ]
         assert (staged / "index.html").read_text() == "new-application"
         assert not (staged / "old.html").exists()

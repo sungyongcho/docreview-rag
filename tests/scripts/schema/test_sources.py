@@ -66,9 +66,9 @@ def test_command_preserves_sources_on_database_failure(tmp_path, monkeypatch, ke
     before = source_preview(tmp_path)
     target = {"port": "1", "apps": [], "volume": "fixture", "docker": ["docker"]}
     monkeypatch.setattr(recreate.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(schema_recreate, "local_target", lambda root: (target, {}))
+    monkeypatch.setattr(recreate, "local_target", lambda root: (target, {}))
     monkeypatch.setattr(
-        schema_recreate, "recreate", AsyncMock(side_effect=[{}, ValueError("fixture failure")])
+        recreate, "recreate", AsyncMock(side_effect=[{}, ValueError("fixture failure")])
     )
     phrase = f"RECREATE {tmp_path.name}" + ("" if keep_sources else " AND SOURCES")
     monkeypatch.setattr("builtins.input", lambda _: phrase)
@@ -82,8 +82,8 @@ def test_cleanup_failure_reports_database_commit_and_retains_journal(tmp_path, m
     write_selection_catalog(tmp_path / "data/corpus")
     target = {"port": "1", "apps": [], "volume": "fixture", "docker": ["docker"]}
     monkeypatch.setattr(recreate.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(schema_recreate, "local_target", lambda root: (target, {}))
-    monkeypatch.setattr(schema_recreate, "recreate", AsyncMock(return_value={}))
+    monkeypatch.setattr(recreate, "local_target", lambda root: (target, {}))
+    monkeypatch.setattr(recreate, "recreate", AsyncMock(return_value={}))
     monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
     import scripts.schema.sources as reset_module
 
@@ -124,9 +124,9 @@ def test_uncertain_database_outcome_retains_durable_recovery_evidence(tmp_path, 
     original = (corpus / "manifest.json").read_bytes()
     target = {"port": "1", "apps": [], "volume": "fixture", "docker": ["docker"]}
     monkeypatch.setattr(recreate.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(schema_recreate, "local_target", lambda root: (target, {}))
+    monkeypatch.setattr(recreate, "local_target", lambda root: (target, {}))
     monkeypatch.setattr(
-        schema_recreate, "recreate", AsyncMock(side_effect=[{}, SQLAlchemyError("connection lost")])
+        recreate, "recreate", AsyncMock(side_effect=[{}, SQLAlchemyError("connection lost")])
     )
     monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
     with pytest.raises(SQLAlchemyError):

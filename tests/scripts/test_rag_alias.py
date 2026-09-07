@@ -312,7 +312,7 @@ def test_removed_aliases_are_not_registered(shell):
     run_shell(
         shell,
         'source "$1" >/dev/null; '
-        'for name in rag-dev-up rag-dev-down rag-prod-up rag-prod-down rag-diagnose; do '
+        "for name in rag-dev-up rag-dev-down rag-prod-up rag-prod-down rag-diagnose; do "
         'if command -v "$name" >/dev/null 2>&1; then exit 7; fi; done',
     )
 
@@ -323,10 +323,10 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
     checkout.mkdir()
     helper = checkout / "rag_alias.sh"
     shutil.copy2(SCRIPT, helper)
-    shutil.copytree(ROOT / "scripts", checkout / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
-    python = checkout / ".venv/bin/python"
-    python.parent.mkdir(parents=True)
-    python.symlink_to(sys.executable)
+    shutil.copytree(
+        ROOT / "scripts", checkout / "scripts", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    (checkout / ".venv").symlink_to(sys.prefix, target_is_directory=True)
     (checkout / ".env").write_text("UNRELATED_SETTING=preserved\n")
     startup = tmp_path / ".bashrc"
     startup.write_text("# Preserve existing shell configuration.\n")
@@ -335,7 +335,9 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
     tools.mkdir()
     for name in ("docker", "uv", "ollama", "npm"):
         command = tools / name
-        command.write_text("#!/bin/sh\nprintf 'External command called during help\n' >&2\nexit 97\n")
+        command.write_text(
+            "#!/bin/sh\nprintf 'External command called during help\n' >&2\nexit 97\n"
+        )
         command.chmod(0o755)
     before = {
         str(path.relative_to(tmp_path)): path.read_bytes()
@@ -347,8 +349,8 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
     assert commands
     result = run_shell(
         shell,
-        'source "$HELPER" >/dev/null; for name in ' + " ".join(commands) + '; do '
-        '"$name" --help >/dev/null || exit; done',
+        'source "$HELPER" >/dev/null; for name in ' + " ".join(commands) + "; do "
+        '"$name" --help >/dev/null || exit $?; done',
         env={
             "HELPER": str(helper),
             "HOME": str(tmp_path),

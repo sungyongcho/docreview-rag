@@ -57,7 +57,9 @@ def test_failed_detached_start_cleans_up_only_new_operations(tmp_path, monkeypat
     operator.environment.return_value = {"NEXT_PUBLIC_OPERATOR_TOKEN": ""}
     operator.start.return_value = {"NEXT_PUBLIC_OPERATOR_TOKEN": "new-test-token"}
     monkeypatch.setattr("scripts.stack.__main__.LocalOperator", lambda root: operator)
-    monkeypatch.setattr("scripts.stack.__main__.subprocess.run", Mock(return_value=Mock(returncode=1)))
+    monkeypatch.setattr(
+        "scripts.stack.__main__.subprocess.run", Mock(return_value=Mock(returncode=1))
+    )
     assert run("dev", ["up", "-d"], root=tmp_path) == 1
     operator.stop.assert_called_once()
 

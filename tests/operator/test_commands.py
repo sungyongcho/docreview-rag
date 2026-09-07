@@ -35,7 +35,7 @@ def test_markdown_renderer_is_derived_from_the_registry():
     """Render every executable command into one stable README table."""
     rendered = render_commands_markdown()
     assert rendered.count("\n|") == len(COMMANDS) + 1
-    assert "`.venv/bin/python -m scripts.release.web_build`" in rendered
+    assert "`.venv/bin/python scripts/release/web_build.py`" in rendered
     assert "`docker compose --project-directory . -f docker/docker-compose.yml stop db`" in rendered
 
 

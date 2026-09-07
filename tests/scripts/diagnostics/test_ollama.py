@@ -130,7 +130,9 @@ def test_zero_or_embedding_only_models_are_connected_but_not_answerable(
     tmp_path, monkeypatch, capsys, models
 ) -> None:
     """Reachable model metadata is distinct from having an answer-capable model."""
-    monkeypatch.setattr("scripts.diagnostics.ollama.container_probe", Mock(side_effect=AssertionError))
+    monkeypatch.setattr(
+        "scripts.diagnostics.ollama.container_probe", Mock(side_effect=AssertionError)
+    )
     local = {"enabled": False, "reason": "no_answer_models", "models": models}
     with app_client(local=local) as client:
         assert diagnose(tmp_path, "http://localhost:8000", client=client) == 1
@@ -262,7 +264,9 @@ def test_authentication_status_is_redacted() -> None:
 
 def test_container_probe_executes_in_existing_stable_project(tmp_path, monkeypatch) -> None:
     """Diagnosis uses exec in the current app, never compose up or another project name."""
-    monkeypatch.setattr("scripts.diagnostics.ollama.shutil.which", lambda program: "/usr/bin/docker")
+    monkeypatch.setattr(
+        "scripts.diagnostics.ollama.shutil.which", lambda program: "/usr/bin/docker"
+    )
     execute = Mock(return_value=Mock(returncode=0, stdout='{"status":"reachable","local":{}}'))
     monkeypatch.setattr("scripts.diagnostics.ollama.subprocess.run", execute)
     container_probe(tmp_path, "http://active.example:11434", "ollama")
