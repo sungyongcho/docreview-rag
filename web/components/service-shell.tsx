@@ -12,7 +12,6 @@ import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
 import {
   Activity,
-  ArrowLeft,
   CircleHelp,
   FlaskConical,
   Hammer,
@@ -30,6 +29,8 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
+import { WorkspaceHistory } from "@/components/workspace-history";
+import { navigationLabel, navigationUrl, parseNavigationUrl, type NavigationTarget } from "@/lib/navigation";
 
 import { BuildWorkspace, type BuildTab } from "@/components/build-workspace";
 import { ConversationSettings, type ConversationSettingsTab } from "@/components/conversation-settings";
@@ -69,14 +70,8 @@ import { useOperatorJobs } from "@/lib/use-operator-jobs";
 
 type View = "review" | "build" | "measure" | "system";
 
-/** One deep-link target for every navigation call site: sidebar, topbar, modals, and workspaces. */
-export type NavigationTarget =
-  | { view: "review"; conversationId?: string }
-  | { view: "build"; tab?: BuildTab; stage?: number | "setup" }
-  | { view: "measure"; tab?: MeasureTab; resultId?: number | null }
-  | { view: "system"; tab?: SystemTab };
-
 interface NavigationEntry {
+  position: number;
   target: NavigationTarget;
   conversationId: string;
   query: string;
@@ -123,6 +118,10 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<View>("review");
   const [navigationHistory, setNavigationHistory] = useState<NavigationEntry[]>([]);
+  const [navigationForward, setNavigationForward] = useState<NavigationEntry[]>([]);
+  const navigationPosition = useRef(0);
+  const revertingPosition = useRef<number | null>(null);
+  const [buildStage, setBuildStage] = useState<number | "setup" | undefined>(undefined);
   const pendingReturn = useRef<NavigationEntry | null>(null);
   const [unsavedGolden, setUnsavedGolden] = useState(false);
   const [buildTab, setBuildTab] = useState<BuildTab>("pipeline");
@@ -166,7 +165,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     const stages: Record<string, number> = { filings: 1, index: 2, embeddings: 3, lexical: 4, ask: 5, answer_model: 6, evaluate: 7 };
     if (!stage || !stages[stage]) return;
     firstRunRouted.current = true;
-    setView("build"); setBuildTab("pipeline"); setPendingStage(stages[stage]);
+    setView("build"); setBuildTab("pipeline"); setBuildStage(stages[stage]); setPendingStage(stages[stage]);
   }, [publicPreview, sessionActive]);
   const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live" && !publicPreview;
   const runtimeHealth = useRuntimeHealth({ active: sessionActive, publicPreview });
@@ -210,7 +209,19 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         const restored = saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
         const initial = restored.length ? restored : [newConversation(adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
         setConversations(saved.some((conversation) => conversation.messages.some((message) => message.pending)) ? saveConversations(initial) : initial);
-        setActiveId(initial[0].id);
+        const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), initial[0].id);
+        const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? initial[0] : initial[0];
+        setActiveId(selected.id);
+        setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+        const position = window.history.state?.docreviewNavigation?.position;
+        navigationPosition.current = Number.isSafeInteger(position) ? position : 0;
+        if (target) {
+          firstRunRouted.current = true;
+          setView(target.view);
+          if (target.view === "build") { setBuildTab(target.tab ?? "pipeline"); setBuildStage(target.stage); if (target.stage !== undefined) setPendingStage(target.stage); }
+          if (target.view === "measure") { setMeasureTab(target.tab ?? "playground"); setMeasureResultId(target.resultId ?? null); }
+          if (target.view === "system") setSystemTab(!adminBuild || publicPreview ? "status" : target.tab ?? "status");
+        }
       }
       setCapabilities(adminBuild ? value : {
         ...value,
@@ -273,60 +284,119 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     setConversations(saveConversations(next));
   }
 
-  /** Save the visible origin only; offscreen panels retain their own controls and selections. */
-  function currentNavigation(): NavigationEntry {
-    const target: NavigationTarget = view === "build" ? { view, tab: buildTab }
+  /** Return the explicit location represented by the retained workspace controls. */
+  function currentTarget(): NavigationTarget {
+    return view === "build" ? { view, tab: buildTab, ...(buildTab === "pipeline" && buildStage !== undefined ? { stage: buildStage } : {}) }
       : view === "measure" ? { view, tab: measureTab, resultId: measureResultId }
-      : view === "system" ? { view, tab: systemTab } : { view, conversationId: active?.id };
+      : view === "system" ? { view, tab: systemTab } : { view, conversationId: active?.id ?? activeId };
+  }
+
+  /** Save only the visible origin; retained panels own their existing control state. */
+  function currentNavigation(): NavigationEntry {
     const panel = document.querySelector<HTMLElement>(`[data-workspace="${view}"]`);
     const scroll = Array.from(panel?.querySelectorAll<HTMLElement>("*") ?? [])
       .filter((element) => !element.closest("[hidden]") && (element.scrollTop !== 0 || element.scrollLeft !== 0 || element.matches(".messages, .lab-shell")))
       .map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
-    return { target, conversationId: active?.id ?? activeId, query, conversationTab, scroll, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+    return { position: navigationPosition.current, target: currentTarget(), conversationId: active?.id ?? activeId, query, conversationTab, scroll, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+  }
+
+  /** Keep navigation metadata local and preserve unrelated URL/Next history state. */
+  function writeNavigation(target: NavigationTarget, replace: boolean) {
+    const state = { ...window.history.state, docreviewNavigation: { position: navigationPosition.current } };
+    window.history[replace ? "replaceState" : "pushState"](state, "", navigationUrl(target, window.location.href));
   }
 
   function navigate(target: NavigationTarget, confirmed = false, returning = false) {
-    const changed = target.view !== view
-      || (target.view === "build" && target.tab !== undefined && target.tab !== buildTab)
-      || (target.view === "measure" && ((target.tab !== undefined && target.tab !== measureTab) || (target.resultId !== undefined && target.resultId !== measureResultId)))
-      || (target.view === "system" && target.tab !== undefined && target.tab !== systemTab)
-      || (target.view === "review" && target.conversationId !== undefined && target.conversationId !== activeId);
+    const normalized: NavigationTarget = target.view === "build" ? { ...target, tab: target.tab ?? buildTab }
+      : target.view === "measure" ? { ...target, tab: target.tab ?? measureTab, resultId: target.resultId === undefined ? measureResultId : target.resultId }
+      : target.view === "system" ? { ...target, tab: (!adminBuild || publicPreview) && target.tab !== undefined && target.tab !== "status" ? "status" : target.tab ?? systemTab }
+      : { ...target, conversationId: target.conversationId ?? active?.id ?? activeId };
+    const changed = normalized.view !== view
+      || (normalized.view === "build" && (normalized.tab !== buildTab || (normalized.stage !== undefined && normalized.stage !== buildStage)))
+      || (normalized.view === "measure" && (normalized.tab !== measureTab || normalized.resultId !== measureResultId))
+      || (normalized.view === "system" && normalized.tab !== systemTab)
+      || (normalized.view === "review" && normalized.conversationId !== activeId);
     if (!confirmed && changed && view === "measure" && unsavedGolden && !window.confirm(t("Discard unsaved question changes?"))) return false;
     if (changed && !returning) {
       const origin = currentNavigation();
       setNavigationHistory((history) => [...history.slice(-29), origin]);
+      setNavigationForward([]);
+      navigationPosition.current += 1;
+      writeNavigation(normalized, false);
     }
     firstRunRouted.current = true;
-    if (target.view === "build" && target.tab) setBuildTab(target.tab);
-    if (target.view === "build" && target.stage !== undefined) setPendingStage(target.stage);
-    if (target.view === "measure") {
-      if (target.tab) setMeasureTab(target.tab);
-      if (target.resultId !== undefined) setMeasureResultId(target.resultId);
+    if (normalized.view !== "review") setRunDetailsMessageId(null);
+    if (normalized.view === "build") {
+      if (normalized.tab) setBuildTab(normalized.tab);
+      setBuildStage(normalized.stage);
+      if (normalized.stage !== undefined) setPendingStage(normalized.stage);
     }
-    if (target.view === "system" && target.tab) setSystemTab(target.tab);
-    if (target.view === "review" && target.conversationId) {
-      setActiveId(target.conversationId);
-      const selected = conversations.find((conversation) => conversation.id === target.conversationId);
+    if (normalized.view === "measure") {
+      if (normalized.tab) setMeasureTab(normalized.tab);
+      if (normalized.resultId !== undefined) setMeasureResultId(normalized.resultId);
+    }
+    if (normalized.view === "system" && normalized.tab) setSystemTab(normalized.tab);
+    if (normalized.view === "review" && normalized.conversationId) {
+      setActiveId(normalized.conversationId);
+      const selected = conversations.find((conversation) => conversation.id === normalized.conversationId);
       if (selected) setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
     }
-    setView(target.view);
+    setView(normalized.view);
     return true;
   }
 
-  function navigateBack() {
-    const entry = navigationHistory.at(-1);
-    if (!navigate(entry?.target ?? { view: "review" }, false, true)) return;
-    if (!entry) return;
-    pendingReturn.current = entry;
-    setNavigationHistory((history) => history.slice(0, -1));
-    const restoredConversation = conversations.find((conversation) => conversation.id === entry.conversationId);
-    if (restoredConversation) {
-      setActiveId(restoredConversation.id);
-      setProfile(restoredConversation.profile ?? DEFAULT_SESSION_PROFILE);
-      if (restoredConversation.id !== activeId) setQuery(entry.query);
-    }
-    setConversationTab(entry.conversationTab);
+  /** The native traversal generates the same popstate path as browser back/forward. */
+  function jumpNavigation(position: number) {
+    const distance = position - navigationPosition.current;
+    if (distance) window.history.go(distance);
   }
+
+  useEffect(() => {
+    if (!initialized.current || !sessionActive || !active?.id) return;
+    writeNavigation(currentTarget(), true);
+  }, [view, buildTab, buildStage, measureTab, measureResultId, systemTab, active?.id, sessionActive]);
+
+  useEffect(() => {
+    if (!initialized.current || !sessionActive || !active?.id) return;
+    /** Restore a visited entry, or a valid URL whose in-memory scroll snapshot expired. */
+    const pop = (event: PopStateEvent) => {
+      const requested = event.state?.docreviewNavigation?.position;
+      const nextPosition = Number.isSafeInteger(requested) ? requested : navigationPosition.current - 1;
+      if (revertingPosition.current === nextPosition) { revertingPosition.current = null; return; }
+      const target = parseNavigationUrl(window.location.href, conversations.map((item) => item.id), active.id) ?? { view: "review" as const, conversationId: active.id };
+      const origin = currentNavigation();
+      const all = [...navigationHistory, origin, ...navigationForward];
+      const index = all.findIndex((entry) => entry.position === nextPosition);
+      const entry = index >= 0 ? all[index] : null;
+      if (!navigate(target, false, true)) {
+        const distance = origin.position - nextPosition;
+        if (distance) { revertingPosition.current = origin.position; window.history.go(distance); }
+        else writeNavigation(origin.target, true);
+        return;
+      }
+      navigationPosition.current = nextPosition;
+      if (entry) {
+        setNavigationHistory(all.slice(0, index).slice(-30));
+        setNavigationForward(all.slice(index + 1, index + 31));
+        pendingReturn.current = entry;
+        const restored = conversations.find((item) => item.id === entry.conversationId);
+        if (restored) {
+          setActiveId(restored.id);
+          setProfile(restored.profile ?? DEFAULT_SESSION_PROFILE);
+          if (restored.id !== activeId) setQuery(entry.query);
+        }
+        setConversationTab(entry.conversationTab);
+      } else if (nextPosition < origin.position) {
+        setNavigationHistory([]);
+        setNavigationForward([origin, ...navigationForward].slice(0, 30));
+      } else {
+        setNavigationHistory([...navigationHistory, origin].slice(-30));
+        setNavigationForward([]);
+      }
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [view, buildTab, buildStage, measureTab, measureResultId, systemTab, activeId, active, conversations, query, conversationTab, navigationHistory, navigationForward, unsavedGolden, sessionActive, adminBuild, publicPreview]);
 
   useLayoutEffect(() => {
     const entry = pendingReturn.current;
@@ -334,7 +404,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     pendingReturn.current = null;
     if (entry.focus?.isConnected && !entry.focus.closest("[hidden], [inert]")) entry.focus.focus({ preventScroll: true });
     for (const { element, top, left } of entry.scroll) if (element.isConnected) { element.scrollTop = top; element.scrollLeft = left; }
-  }, [view, buildTab, measureTab, systemTab, activeId, navigationHistory]);
+  }, [view, buildTab, measureTab, systemTab, activeId, navigationHistory, navigationForward]);
 
   function openConversationSettings(tab: ConversationSettingsTab) {
     if (!navigate({ view: "review" })) return;
@@ -794,11 +864,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run");
     }
   }
-  const topbarTitle = view === "review"
-    ? active?.title ?? "New review"
-    : view === "build" ? "Build" : view === "measure" ? "Measure" : "System";
-  const returnView = navigationHistory.at(-1)?.target.view ?? "review";
-  const returnLabel = t(returnView === "review" ? "Back to conversation" : returnView === "build" ? "Back to Build" : returnView === "measure" ? "Back to Measure" : "Back to System");
+  const historyEntries = [...navigationHistory.map(({ position, target }) => ({ position, target })), { position: navigationPosition.current, target: currentTarget() }, ...navigationForward.map(({ position, target }) => ({ position, target }))];
+  const conversationTitles = Object.fromEntries(conversations.map((item) => [item.id, item.title]));
   function closeSidebar() {
     setSidebarOpen(false);
     sidebarToggle.current?.focus();
@@ -845,9 +912,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         <header className="topbar">
           <div className="topbar-navigation">
             <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
-            {(navigationHistory.length > 0 || view !== "review") && <button className="workspace-back" type="button" aria-label={returnLabel} title={returnLabel} onClick={navigateBack}><ArrowLeft size={16} aria-hidden="true" /><span>{returnLabel}</span></button>}
+            <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
           </div>
-          <div><strong>{view === "review" && active?.messages.length ? topbarTitle : t(topbarTitle)}</strong><span>{t("Evidence-first SEC and DART filing review")}</span></div>
           <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "Inspect the public interface without changing the DEV backend.")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
