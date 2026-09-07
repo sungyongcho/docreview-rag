@@ -51,6 +51,25 @@ User directions and higher-priority instructions still prevail.
   self-review is disallowed. Neither approval label applies to unfinished work or a pending
   required check.
 
+### Automation identity setup — in progress
+
+- Setup status: `IN_PROGRESS`. The planned automation actor is `sungyongcho-ops`
+  (`ops@sungyongcho.com`) for authorized commits, pushes and scoped GitHub work.
+  This setup status is separate from an implementation PR's review readiness.
+- Verified host setup: the account has collaborator write access to
+  `sungyongcho/docreview-rag-agent` and `sungyongcho/dither-fm`. Plain `gh` uses the
+  personal `sungyongcho` profile; `gh-ops` uses `$HOME/.config/gh-ops`. Both CLI
+  identities were verified, and credentials are stored in the system keyring.
+- `gh-ops` selects the GitHub CLI identity only. It does not set Git author/committer
+  name/email or the credentials used by `git push`; those checks remain pending.
+  Keep an active assignment's established identity until its transition is configured.
+- At an authorized bot publication checkpoint, verify `gh-ops api user --jq .login`
+  returns `sungyongcho-ops`. If unavailable or different, report the setup blocker;
+  never silently fall back to the personal account or switch shared authentication.
+- Complete the rollout only after scoped Git attribution and push routing are verified
+  in an isolated worker worktree. This notice does not authorize global Git changes,
+  history rewriting, ownership transfer, additional repositories or maintainer actions.
+
 ### Assigned ownership and work state
 
 - One user-designated coordinator owns issue intake, assignments and authorized main
