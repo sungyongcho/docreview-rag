@@ -224,9 +224,23 @@ Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.diagnostics.local_grade 
 
 With a local Ollama model selected, the composer shows **Slow local CPU model** when the currently loaded model is CPU-only and a run measured generation below **15 tokens/s** in the last **15 minutes**. This advisory threshold covers the measured 10–14 tokens/s CPU configuration above; it does not predict the total run time. Speed is total `eval_count` divided by total `eval_duration_ms` in seconds for that model's calls, excluding load and prompt-processing time.
 
-Use **Run limits** to review the whole-run wall clock (for example, 300 seconds for a cold CPU run), or **Evidence** to reduce the maximum context (for example, 8,000 characters). Sending stays enabled; the warning does not edit your settings. After changing settings, check the next run's Performance panel for generation speed and completion within your chosen wall clock.
+The inline notice shows the measured speed, current output/time ceilings and exact changes on **Apply recommended limits** and **Reduce evidence**. Recommendations reserve 30% over estimated generation time; they extend the wall clock up to 600 seconds and reduce the output ceiling if needed. Retrieval and prompt processing add time, and actual provider ceilings may be lower, so this is not a completion guarantee. The warning’s **Review recommended limits in settings** button opens **Advanced → Run limits** without changing values or sending. Review the before/after values there and press **Apply recommended limits** explicitly. **Evidence** similarly opens its editor, where the reduction is applied. Changes affect only this conversation and never send the question or save defaults automatically. Sending with unchanged values remains available. **Run limits** and **Evidence** open the corresponding Advanced section.
 
 The first run after a backend restart or server change has no measurement and produces no speed warning. Samples stay in the active backend's memory, belong to one server and model digest, and disappear when too old, the model changes/unloads, or placement/timing is unavailable. GPU and mixed placement do not trigger this CPU warning. No benchmark or model load is started to obtain a sample; readiness refreshes after a local run and during normal polling.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: slow CPU composer warning with measured speed and Run limits/Evidence actions; locale=en; theme=light; state=selected loaded CPU Ollama model below 15 tok/s with a recent real measurement; preserve existing assets. -->
+
+## Which local Ollama settings can I change? {#editable-options}
+
+| Setting | Where it is controlled in DocReview |
+| --- | --- |
+| Retrieval presets, filters, evidence size and whole-run budgets | Settings and preview; also applies when the answer engine is Local LLM |
+| Server address, protocol and available model | Settings → Local LLM and the conversation model selector |
+| Local provider input/output ceilings | Server configuration: `LOCAL_LLM_MAX_INPUT_TOKENS` (default 12000) and `LOCAL_LLM_MAX_OUTPUT_TOKENS` (default 600); these are separate from the conversation's whole-run ceilings |
+| Local HTTP timeout | Server configuration: `LOCAL_LLM_TIMEOUT_S`; changing the conversation wall clock does not increase this HTTP timeout |
+| Ollama `num_predict` | Sent from the effective provider output allowance; raising the conversation limit does not bypass the provider ceiling |
+| Ollama `num_ctx` | Sent explicitly using the configured context window, normally local provider input + output ceilings; kept stable across calls in a run |
+| `temperature` / `think` | Currently sent as `0` / `false` by DocReview; there are no UI controls for these options |
+
+For server settings, edit the named non-secret configuration values in the environment used to start the backend, then recreate/restart that backend with the updated environment. Do not assume a new browser setting or an `ollama run /set` session changes DocReview API calls. Check **Run details → Server settings** after a real request for the configured and effective budgets. Ollama supports additional generation options, but exposing new options in DocReview requires a separate API/UI change. See the official [chat API](https://docs.ollama.com/api/chat) and [context-window FAQ](https://docs.ollama.com/faq).

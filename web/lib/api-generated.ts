@@ -1557,6 +1557,11 @@ export interface components {
             parse_statuses: components["schemas"]["DocumentFacetValue"][];
             /** Registries */
             registries: components["schemas"]["DocumentFacetValue"][];
+            /**
+             * Sections
+             * @default []
+             */
+            sections: components["schemas"]["DocumentFacetValue"][];
             /** Snapshots */
             snapshots: components["schemas"]["DocumentFacetValue"][];
             /** Years */

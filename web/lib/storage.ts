@@ -220,3 +220,13 @@ export function saveOperationsTargetFilter(filter: OperationsTargetFilter): void
   if (filter === "all") browserStorage().removeItem(OPERATIONS_TARGET_FILTER_KEY);
   else browserStorage().setItem(OPERATIONS_TARGET_FILTER_KEY, filter);
 }
+
+/** Read one application-owned value through the current browser storage transport. */
+export function readStoredValue(key: string): string | null {
+  return browserStorage().getItem(key);
+}
+
+/** Write one application-owned value without bypassing preview storage isolation. */
+export function writeStoredValue(key: string, value: string): void {
+  browserStorage().setItem(key, value);
+}

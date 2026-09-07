@@ -5,8 +5,9 @@ import { useI18n } from "@/lib/i18n";
 import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight, SlidersHorizontal } from "lucide-react";
+import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { Segmented } from "@/components/segmented";
-import { RequestPreview, presetDescription } from "@/components/request-preview";
+import { presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
 import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
@@ -25,7 +26,7 @@ export interface ComposerToolbarProps {
   onLocked: () => void;
   /** Opens the unified conversation editor at its Filters section. */
   onOpenSettings: () => void;
-  /** Opens the current Custom retrieval editor without submitting a request. */
+  /** Opens browser-local preset management without changing the conversation. */
   onOpenCustom?: () => void;
   readiness: Readiness | null;
   live: boolean;
@@ -173,33 +174,20 @@ export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, o
   const corpusCount = live && corpusLabel.startsWith("Corpus total · ") ? readiness?.corpus.documents : undefined;
   const readinessStatus = readinessStatusLabel(readiness);
 
-  function choosePreset(value: RetrievalPreset) {
-    if (value === "custom" && !canUseCustom) {
-      onLocked();
-      return;
-    }
-    onChange(applyRetrievalPreset(profile, value));
-    if (value === "custom") onOpenCustom?.();
-  }
 
   return (
     <div className="composer-toolbar composer-toolbar-aligned">
       <div className="chip-group composer-toolbar-primary">
         <div className="composer-scope-control"><span className="composer-control-label">{t("Corpus scope")}<ControlHelp label={t("About corpus scope")}><p><strong>{t("Auto")}</strong> — {t("Auto chooses SEC or DART from the question and filters. The server result appears in progress.")}</p><p><strong>SEC</strong> — {t("Search SEC filings from U.S. registrants.")}</p><p><strong>DART</strong> — {t("Search Korean DART filings.")}</p></ControlHelp></span><Segmented label={t("Corpus scope")} helpId="review.scope" options={SCOPE_OPTIONS} value={profile.corpus_scope} onChange={(value) => onChange({ corpus_scope: value })} /><p className="composer-control-description">{t(profile.corpus_scope === "auto" ? "Automatic source routing" : profile.corpus_scope === "sec" ? "U.S. SEC filings" : "Korean DART filings")}</p></div>
         {engineControls}
-        <div className="composer-preset-control"><div className="composer-control-label"><label htmlFor="composer-retrieval-preset">{t("Retrieval preset")}</label><ControlHelp label={t("About retrieval presets")}><p>{t(preset.purpose)}</p><code>{preset.settings}</code><p>{t("Open request preview to compare all presets.")}</p></ControlHelp></div><select id="composer-retrieval-preset" className="chip" aria-label={t("Retrieval preset")} data-help="review.preset" value={profile.retrieval_preset} onChange={(event) => choosePreset(event.target.value as RetrievalPreset)}>
-          <option value="balanced">{t("Balanced")}</option>
-          <option value="korean">{t("Korean")}</option>
-          <option value="accuracy">{t("Accuracy")}</option>
-          {(canUseCustom || profile.retrieval_preset === "custom") && <option value="custom">{t("Custom")}</option>}
-        </select><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p></div>
-        <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip" type="button" data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={16} aria-hidden="true" />{filters > 0 ? t("Review settings · {p0}", { p0: filters }) : t("Review settings")}</button>
+        <div className="composer-preset-control"><div className="composer-control-label"><label htmlFor="composer-retrieval-preset">{t("Retrieval preset")}</label><ControlHelp label={t("About retrieval presets")}><p>{t(preset.purpose)}</p><code>{preset.settings}</code><p>{t("Open Settings and preview to inspect the next request.")}</p></ControlHelp></div><RetrievalPresetSelect id="composer-retrieval-preset" profile={profile} editable={canUseCustom} onChange={onChange} onManage={onOpenCustom} onLocked={onLocked} /><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p></div>
+        <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip" type="button" data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={16} aria-hidden="true" />{filters > 0 ? t("Settings and preview · {p0}", { p0: filters }) : t("Settings and preview")}</button>
         {profile.snapshot_id !== null && (
           <span className="chip snapshot" data-help="review.snapshot">{t("Snapshot #")}{profile.snapshot_id}
             <button type="button" aria-label={t("Clear snapshot")} onClick={() => onChange({ snapshot_id: null, applied_from_evaluation: null })}>×</button>
           </span>
         )}
-        <RequestPreview profile={profile} query={query} />
+
         </div>
       </div>
       <div className="composer-toolbar-secondary">

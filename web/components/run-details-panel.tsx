@@ -2,26 +2,31 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { RequestPreviewContent } from "./request-preview";
+import type { ReviewSessionDraft } from "@/lib/types";
 import { ExecutionPerformance } from "@/components/execution-performance";
 import { useI18n } from "@/lib/i18n";
 import type { ChatMessage } from "@/lib/types";
 import "./run-details-panel.css";
 
-type Section = "performance" | "settings" | "trace";
+type Section = "performance" | "settings" | "trace" | "preview";
 const SECTIONS: Array<{ id: Section; label: string }> = [
   { id: "performance", label: "Performance" },
   { id: "settings", label: "Server settings" },
   { id: "trace", label: "Trace" },
+  { id: "preview", label: "Preview" },
 ];
 
 interface RunDetailsPanelProps {
   message: ChatMessage | null;
+  draftProfile?: ReviewSessionDraft;
+  draftQuery?: string;
   onClose: () => void;
   onOpenFix?: (category: "limits" | "runtime") => void;
 }
 
 /** Inspect one message beside its conversation, preserving its last selected section. */
-export function RunDetailsPanel({ message, onClose, onOpenFix }: RunDetailsPanelProps) {
+export function RunDetailsPanel({ message, onClose, onOpenFix, draftProfile, draftQuery = "" }: RunDetailsPanelProps) {
   const { t } = useI18n();
   const uid = useId();
   const panel = useRef<HTMLElement>(null);
@@ -106,6 +111,7 @@ export function RunDetailsPanel({ message, onClose, onOpenFix }: RunDetailsPanel
         <div className="run-details-tabs" role="tablist" aria-label={t("Run detail sections")}>{SECTIONS.map((item, index) => <button key={item.id} id={`${uid}-${item.id}-tab`} role="tab" type="button" aria-selected={section === item.id} aria-controls={`${uid}-${item.id}`} tabIndex={section === item.id ? 0 : -1} onClick={() => setSections((previous) => ({ ...previous, [message.id]: item.id }))} onKeyDown={(event) => moveTab(event, index)}>{t(item.label)}</button>)}</div>
       </header>
       <div className="run-details-content" ref={content}>
+        <section id={`${uid}-preview`} role="tabpanel" aria-labelledby={`${uid}-preview-tab`} hidden={section !== "preview"} tabIndex={0}>{section === "preview" && (draftProfile ? <RequestPreviewContent profile={draftProfile} query={draftQuery} /> : <p>{t("No next-request settings available.")}</p>)}</section>
         <section id={`${uid}-performance`} role="tabpanel" aria-labelledby={`${uid}-performance-tab`} hidden={section !== "performance"} tabIndex={0}>
           <h3>{t("Execution performance")}</h3>
           {message.execution ? <ExecutionPerformance data={message.performance} state={message.execution} embedded /> : <p className="helper">{t("Execution measurements were not recorded for this message.")}</p>}

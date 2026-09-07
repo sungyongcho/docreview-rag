@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { PanelRightOpen, X } from "lucide-react";
 import "./review-controls.css";
+import { PresetDetails } from "./preset-details";
 import { useI18n } from "@/lib/i18n";
-import { useRetainedPanelActive } from "@/components/retained-panel";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft, type RetrievalPreset } from "@/lib/types";
 
 const PRESETS: Array<[RetrievalPreset, string]> = [["balanced", "Balanced"], ["korean", "Korean"], ["accuracy", "Accuracy"], ["custom", "Custom"]];
@@ -27,66 +24,21 @@ export function presetDescription(profile: ReviewSessionDraft, preset: Retrieval
   };
 }
 
-export function RequestPreview({ profile, query }: { profile: ReviewSessionDraft; query: string }) {
+const POLICY_LABELS: Record<string, string> = { additional_instructions: "Additional instructions", history_turns: "Conversation history turns", max_context_chars: "Maximum evidence characters", evidence_overfetch: "Evidence overfetch", max_hits_per_document: "Maximum hits per document", max_iterations: "Maximum iterations", max_input_tokens: "Maximum input tokens", max_output_tokens: "Maximum output tokens", max_wall_clock_s: "Maximum wall clock seconds" };
+
+/** Show the next request independently of any historical run in the surrounding panel. */
+export function RequestPreviewContent({ profile, query }: { profile: ReviewSessionDraft; query: string }) {
   const { t } = useI18n();
   const effective = resolvedRetrievalProfile(profile);
-  const [open, setOpen] = useState(false);
-  const active = useRetainedPanelActive();
-  const visible = open && active;
-  const trigger = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const titleId = useId();
-  const panelId = useId();
-  useEffect(() => {
-    if (!visible || !panel.current) return;
-    const overlay = panel.current.parentElement;
-    const background = Array.from(document.body.children).filter((child) => child !== overlay);
-    const inertBefore = background.map((child) => child.hasAttribute("inert"));
-    background.forEach((child) => child.setAttribute("inert", ""));
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButton.current?.focus();
-    const focusables = () => Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]') ?? []).filter((element) => {
-      if (element.hidden) return false;
-      const collapsed = element.closest("details:not([open])");
-      return !collapsed || element === collapsed.querySelector("summary");
-    });
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
-      if (event.key !== "Tab") return;
-      const items = focusables();
-      const first = items[0];
-      const last = items.at(-1);
-      if (event.shiftKey && (document.activeElement === first || !panel.current?.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && (document.activeElement === last || !panel.current?.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
-    };
-    const keepFocus = (event: FocusEvent) => { if (!panel.current?.contains(event.target as Node)) closeButton.current?.focus(); };
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("focusin", keepFocus);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("focusin", keepFocus);
-      background.forEach((child, index) => { if (!inertBefore[index]) child.removeAttribute("inert"); });
-      document.body.style.overflow = previousOverflow;
-      if (!trigger.current?.closest("[hidden], [inert]")) trigger.current?.focus();
-    };
-  }, [visible]);
   const filters = { corpus_scope: profile.corpus_scope, issuers: profile.issuers, fiscal_years: profile.fiscal_years, forms: profile.forms, sections: profile.sections, languages: profile.languages, snapshot_id: profile.snapshot_id };
-  return <>
-    <button ref={trigger} className="chip request-inspector-trigger" type="button" aria-label={t("Settings details / request preview")} title={t("Settings details / request preview")} aria-haspopup="dialog" aria-expanded={visible} aria-controls={visible ? panelId : undefined} onClick={() => setOpen(true)}><PanelRightOpen className="request-inspector-icon" size={16} aria-hidden="true" /><span>{t("Inspect request")}</span></button>
-    {visible && createPortal(<div className="request-inspector-overlay" onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <div ref={panel} id={panelId} className="request-inspector-panel" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <header className="request-inspector-header"><h2 id={titleId}>{t("Settings details / request preview")}</h2><button ref={closeButton} type="button" className="button ghost" aria-label={t("Close request preview")} onClick={() => setOpen(false)}><X size={20} /></button></header>
-    <div className="request-inspector-body">
+  return <div className="settings-preview-content"><h3>{t("Next request preview")}</h3><p className="helper">{t("These are the next question’s settings, not the selected run’s recorded settings.")}</p><p>{query || t("No question entered yet.")}</p>
       <h3>{t("Retrieval presets")}</h3>
-      <div className="preset-comparison">{PRESETS.map(([id, label]) => {
+      <div className="preset-list">{PRESETS.map(([id, label]) => {
         const description = presetDescription(profile, id);
-        return <section key={id} aria-label={t(label)} className={profile.retrieval_preset === id ? "selected" : ""}>
-          <strong>{t(label)}</strong>
+        return <PresetDetails key={id} label={t(label)} selected={profile.retrieval_preset === id}>
           <p>{t(description.purpose)}</p>
           <code>{description.settings}</code>
-        </section>;
+        </PresetDetails>;
       })}</div>
       <dl className="request-facts">
         <div><dt>{t("Retrieval")}</dt><dd>{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</dd></div>
@@ -95,10 +47,10 @@ export function RequestPreview({ profile, query }: { profile: ReviewSessionDraft
         <div><dt>{t("Answer engine")}</dt><dd>{profile.engine}{profile.engine === "local" && profile.local_model ? ` · ${profile.local_model}` : ""}</dd></div>
       </dl>
       <details><summary>{t("Filters")}</summary><pre>{JSON.stringify(filters, null, 2)}</pre></details>
+      <h3>{t("Evidence and run limits")}</h3>
+      <dl className="request-facts">{Object.entries(profile.prompt_policy).filter(([key]) => key !== "workflow_budget").map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value) || t("None")}</dd></div>)}{Object.entries(profile.prompt_policy.workflow_budget).map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value)}</dd></div>)}</dl>
       <details><summary>{t("Prompt composition")}</summary><p className="helper">{t("Server policy + conversation history + question + retrieved evidence. The evidence is selected after execution begins.")}</p><pre>{JSON.stringify({ question: query, prompt_policy: profile.prompt_policy }, null, 2)}</pre></details>
       <details><summary>{t("Request payload")}</summary><pre>{JSON.stringify({ query, session_profile: profile }, null, 2)}</pre></details>
       <p className="helper">{t("Preview of this next request. Server-applied settings appear with the completed result.")}</p>
-    </div>
-    </div></div>, document.body)}
-  </>;
+</div>;
 }

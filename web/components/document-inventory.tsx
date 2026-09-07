@@ -21,7 +21,7 @@ const EMPTY_DOCUMENT_FACETS: DocumentFacets = {
   years: [],
   languages: [],
   forms: [],
-  parse_statuses: [],
+  sections: [], parse_statuses: [],
   embedding_statuses: [],
   snapshots: [],
 };

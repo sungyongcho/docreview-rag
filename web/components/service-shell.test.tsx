@@ -21,7 +21,7 @@ async function traverseHistory(direction: "Back" | "Forward") {
 
 const OPERATOR_URL = "http://operator.test";
 const EMPTY_DOCUMENT_FACETS: DocumentFacets = {
-  registries: [], issuers: [], years: [], languages: [], forms: [], parse_statuses: [], embedding_statuses: [], snapshots: [],
+  registries: [], issuers: [], years: [], languages: [], forms: [], sections: [], parse_statuses: [], embedding_statuses: [], snapshots: [],
 };
 
 const READY_RUNTIME: Readiness = {
@@ -971,7 +971,8 @@ it("preserves streamed messages and the submitted settings while background disc
     await waitFor(() => expect(submitted).toBeDefined());
     expect(screen.getByText("Waiting for the server")).toBeVisible();
     expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(6);
-    fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
     fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
     local = { enabled: true, protocol: "ollama", models: [{ name: "answer", selectable: true, size_bytes: null, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], loaded: false }] };
@@ -1013,7 +1014,7 @@ it("opens the unified public filter editor from an offscreen Help destination", 
   fireEvent.click(topic!);
   fireEvent.click(document.querySelector<HTMLButtonElement>(".help-go-button")!);
   const dialog = await screen.findByRole("dialog", { name: "Conversation settings" });
-  expect(within(dialog).getByRole("button", { name: "Filters" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByRole("button", { name: "Basic" })).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
   expect(within(dialog).queryByRole("button", { name: "Run limits" })).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/admin/"))).toBe(false);
@@ -1028,7 +1029,7 @@ it("preserves the question and blocks Send until an invalid drawer draft is disc
   const send = screen.getByRole("button", { name: "Send question" });
   const stored = loadConversations();
   expect(send).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
   const company = screen.getByLabelText("Companies");
   fireEvent.keyDown(window, { key: "?" });
   expect(screen.queryByRole("complementary", { name: "Help" })).not.toBeInTheDocument();
@@ -1073,7 +1074,8 @@ it("keeps confirmed routing with its submitted profile while next-request contro
     fireEvent.change(input, { target: { value: "Next draft stays here" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
     fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "accuracy" } });
-    fireEvent.click(screen.getByRole("button", { name: "Settings details / request preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
+  fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(input).toHaveValue("Next draft stays here");
     expect(submitted?.session_profile.corpus_scope).toBe("auto");
@@ -1144,7 +1146,7 @@ describe("isolated production presentation preview", () => {
     fireEvent.change(question, { target: { value: "Preview draft only" } });
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
     fireEvent.keyDown(question, { key: "Enter" });
-    fireEvent.click(screen.getByRole("button", { name: "Review settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/public/documents/facets"))).toBe(true));
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).endsWith("/ready") && !String(url).includes("/review/stream"))).toBe(true);
     expect(JSON.stringify(window.localStorage)).toBe(original);

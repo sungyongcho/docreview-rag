@@ -1343,6 +1343,14 @@
             "title": "Registries",
             "type": "array"
           },
+          "sections": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DocumentFacetValue"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
           "snapshots": {
             "items": {
               "$ref": "#/components/schemas/DocumentFacetValue"

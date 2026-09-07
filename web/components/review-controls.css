@@ -18,7 +18,7 @@
 .request-inspector-body { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 24px; font-size: 12px; }
 .request-inspector-body h3 { font-size: 13px; margin: 0 0 12px; }
 .request-inspector-body details > summary { min-height: 40px; align-content: center; cursor: pointer; }
-.request-inspector-body pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 12px; border-radius: 7px; font-size: 11px; }
+:is(.request-inspector-body, .settings-preview-content, .preset-list-details) pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 12px; border-radius: 7px; font-size: 11px; }
 .review-routing { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
 .review-routing strong { color: var(--text); }
 .review-routing p { margin: 2px 0; }

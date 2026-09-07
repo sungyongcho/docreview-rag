@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import "./token-select.css";
 
@@ -31,10 +31,11 @@ interface Props {
   hideValues?: boolean;
   commitOnBlur?: boolean;
   autoFocus?: boolean;
+  showDropdown?: boolean;
 }
 
 /** Keep editing text separate from committed filters and expose keyboard-friendly choices. */
-export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false, checkable = false, hideValues = false, commitOnBlur = true, autoFocus = false }: Props) {
+export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false, checkable = false, hideValues = false, commitOnBlur = true, autoFocus = false, showDropdown = false }: Props) {
   const { t } = useI18n();
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -125,6 +126,7 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
       <input ref={input} id={id} value={draft} autoFocus={autoFocus} aria-expanded={expanded && !disabled} aria-controls={expanded && !disabled ? `${id}-choices` : undefined} placeholder={placeholder} disabled={disabled} autoComplete="off"
         aria-invalid={showError || invalidValues.length > 0}
         aria-describedby={`${id}-hint${showError ? ` ${id}-error` : ""}`}
+        onClick={() => setExpanded(true)}
         onFocus={() => setExpanded(true)}
         onChange={(event) => {
           const text = event.target.value;
@@ -153,6 +155,7 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
           }
           if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); setExpanded(false); }
         }} />
+      {showDropdown && <button className="token-add token-dropdown" type="button" disabled={disabled} aria-label={t("Show {field} choices", { field: label })} aria-expanded={expanded && !disabled} aria-controls={expanded && !disabled ? `${id}-choices` : undefined} onMouseDown={event => event.preventDefault()} onClick={() => setExpanded(value => !value)}><ChevronDown size={16} aria-hidden="true" /></button>}
       {parseCustom && <button className="token-add" type="button" disabled={disabled || !draft.trim() || parsed === null} aria-label={t("Add {field}", { field: label })} onClick={() => { commit(); input.current?.focus(); }}><Plus size={16} aria-hidden="true" /></button>}
       {overlayOptions && suggestionPanel}
     </div>

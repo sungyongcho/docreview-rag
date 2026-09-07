@@ -1,4 +1,5 @@
 "use client";
+import { DefaultRunLimits } from "./default-run-limits";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -30,6 +31,7 @@ export interface SystemWorkspaceProps {
   localAllowed?: boolean;
   checking: boolean;
   onRefresh: () => void;
+  onOpenLimitDefaults?: () => void;
   operationsAvailable: boolean;
   tab: SystemTab;
   onTabChange: (tab: SystemTab) => void;
@@ -66,7 +68,7 @@ function sampleEvaluationRequest(): EvaluationRequest {
   };
 }
 
-export function SystemWorkspace({ live, ready = true, readiness, localModel, localAllowed = false, checking, onRefresh, operationsAvailable, tab, onTabChange }: SystemWorkspaceProps) {
+export function SystemWorkspace({ live, ready = true, readiness, localModel, localAllowed = false, checking, onRefresh, onOpenLimitDefaults, operationsAvailable, tab, onTabChange }: SystemWorkspaceProps) {
   const { t, locale } = useI18n();
   const tabs: Array<[SystemTab, string]> = [["status", "System status"]];
   if (live && operationsAvailable) tabs.push(["operations", "Operations"]);
@@ -88,7 +90,7 @@ export function SystemWorkspace({ live, ready = true, readiness, localModel, loc
         ))}
       </nav>
 
-      <RetainedPanel active={activeTab === "status"}><SystemStatus readiness={readiness} localModel={localModel} localAllowed={localAllowed} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" /><RuntimeSettings readiness={readiness} live={live} /></RetainedPanel>
+      <RetainedPanel active={activeTab === "status"}><SystemStatus readiness={readiness} localModel={localModel} localAllowed={localAllowed} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" /><RuntimeSettings readiness={readiness} live={live} />{live && <DefaultRunLimits summary onOpen={onOpenLimitDefaults} />}</RetainedPanel>
       {live && <RetainedPanel active={activeTab === "operations"}><DesktopJobNotifications />{operationsAvailable ? <Operations embedded helpId="system.operations" /> : <p className="helper">{t("Start rag-dev to connect Local Operations.")}</p>}</RetainedPanel>}
       {live && <RetainedPanel active={activeTab === "api"}><ApiInspector ready={ready} /></RetainedPanel>}
       {live && <RetainedPanel active={activeTab === "usage"}><UsagePanel /></RetainedPanel>}
