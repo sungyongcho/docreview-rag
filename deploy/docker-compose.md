@@ -79,7 +79,7 @@ backend container를 실행한 뒤 Next dev server를 별도로 시작합니다.
 docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
 
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
-  scripts/run_operator_web.sh
+  scripts/stack/operator_web.sh
 ```
 
 Next 개발 URL:
@@ -229,5 +229,5 @@ GCP_PROJECT_ID=<project-id> deploy/gcp/deploy_backend.sh
 
 ```bash
 GCP_PROJECT_ID=<project-id> deploy/gcp/operator_tunnel.sh
-scripts/run_operator_web.sh
+scripts/stack/operator_web.sh
 ```

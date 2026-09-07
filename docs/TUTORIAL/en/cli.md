@@ -53,8 +53,28 @@ Run Python CLI, file inspection, and direct Docker commands from the **repositor
 | Local public preview | `rag-prod up -d` | Switch to local prod UI and permissions |
 | Model connectivity | `rag-ollama-check` | Diagnose the DocReview-to-model-server path |
 
-With no arguments, `rag-dev` and `rag-prod` use `up -d`. The `rag-dev-up/down` and `rag-prod-up/down`
-aliases are shortcuts. Without registration, use `bash scripts/run_local.sh dev up -d`.
+With no arguments, `rag-dev` and `rag-prod` use `up -d`. Without registration, run
+`.venv/bin/python -m scripts.stack dev up -d` from the repository root.
+`rag-help` lists ten commands, with one row per command and inline options; every command accepts
+`--help`. Use `rag-corpus --help` for operation details and `rag-schema --help` for schema options.
+
+### Command consolidation
+
+Reload the helper in a fresh shell after updating. These obsolete shortcuts are no longer registered;
+use the replacement commands below. Existing shell definitions last until that shell exits.
+
+| Removed shortcut | Replacement |
+|---|---|
+| `rag-dev-up` | `rag-dev up -d` |
+| `rag-dev-down` | `rag-dev down` |
+| `rag-prod-up` | `rag-prod up -d` |
+| `rag-prod-down` | `rag-prod down` |
+| `rag-diagnose` | `rag-ollama-check` |
+
+Use `rag-up` to rebuild/start DEV and `rag-schema check|prepare|recover|recreate` for schema work.
+Without helper registration, use `uv run python -m scripts.schema <action>`.
+The compact menu retains separate ordinary, extreme, and schema-reset warnings. Read the full reset
+preview and command help before confirming deletion.
 
 ## Installation and configuration
 
@@ -210,7 +230,7 @@ rag-ollama-check --web-url http://localhost:18080
 | `--setup` | Print manual setup guidance without contacting or changing services |
 | `--web-url` | Override the **DocReview frontend** address, not the Ollama address |
 
-`rag-diagnose` runs the same diagnostic. These commands do not install, download/load models, start services, save settings, or generate answers. Read configuration, backend connectivity, and answer-model checks separately. An unavailable inventory is unconfirmed; an installed but unloaded model is normal standby.
+Diagnostics do not install, download/load models, start services, save settings, or generate answers. Read configuration, backend connectivity, and answer-model checks separately. An unavailable inventory is unconfirmed; an installed but unloaded model is normal standby.
 
 For an older API without the shared diagnostic route, the command explicitly reports a legacy read-only fallback. `ollama list` and `ollama ps` independently show installed and currently loaded models. Continue with [server selection](settings.md#local-server), [connection recovery](ollama.md#diagnostics), or [answer configuration](answers.md#engines).
 
@@ -502,8 +522,8 @@ A restart or schema check does not repair drift. Preserve the original database 
 use a separate recovery environment when you need a usable empty runtime:
 
 ```bash
-uv run python -m scripts.schema_status check
-uv run python -m scripts.schema_status recover --return-stage index
+uv run python -m scripts.schema check
+uv run python -m scripts.schema recover --return-stage index
 # Optional: --parent /existing/directory (outside the original checkout)
 ```
 
@@ -552,7 +572,7 @@ only an empty DB; it never discards existing data. For first-time setup or users
 understand the consequences, the preparation notice also offers this dangerous option:
 
 ```bash
-uv run python -m scripts.schema_status recreate
+uv run python -m scripts.schema recreate
 ```
 
 This deletes ORM-owned tables and all their rows in the verified local DEV database,
@@ -581,7 +601,7 @@ status/navigation/dismiss buttons retain their behavior.
 
 | Command | Cleared | Preserved / next step |
 | --- | --- | --- |
-| `uv run python -m scripts.schema_status recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
+| `uv run python -m scripts.schema recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
 | Same command with `--sample` | Same clean start | Server-persisted NVDA/AMD FY2023–2024 draft; press Download yourself |
 | Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `RECREATE <checkout-name>` |
 | `rag-fresh-start` | Broader environment reset, including evaluation results, local model settings and database volume | Follow its independent exact preview and confirmation |

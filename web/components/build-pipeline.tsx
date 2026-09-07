@@ -277,11 +277,11 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
   if (databaseConnected === false) {
     problems.push({ reason: schemaMessage || "The database is not connected.", fix: "rag-dev up --build -d", commands: [{ id: "db-start", label: "Start database" }] });
   } else if (schemaStatus === "empty") {
-    problems.push({ reason: "The local database needs its initial schema.", fix: "uv run python -m scripts.schema_status prepare", commands: [] });
+    problems.push({ reason: "The local database needs its initial schema.", fix: "uv run python -m scripts.schema prepare", commands: [] });
   } else if (schemaStatus === "drifted") {
-    problems.push({ reason: "Database schema is incompatible", guidance: "Preserve this database. Create a separate recovery checkout with its own ports and volume, then open the printed URL and re-check the blocked step.", fix: `uv run python -m scripts.schema_status recover --return-stage ${returnStage}`, commands: [] });
+    problems.push({ reason: "Database schema is incompatible", guidance: "Preserve this database. Create a separate recovery checkout with its own ports and volume, then open the printed URL and re-check the blocked step.", fix: `uv run python -m scripts.schema recover --return-stage ${returnStage}`, commands: [] });
   }
-  if (schemaStatus === "unavailable") { problems.push({ reason: schemaMessage || "Database schema is unavailable", fix: "uv run python -m scripts.schema_status check", commands: [] }); }
+  if (schemaStatus === "unavailable") { problems.push({ reason: schemaMessage || "Database schema is unavailable", fix: "uv run python -m scripts.schema check", commands: [] }); }
   if (writable === false) {
     problems.push({ reason: "data/ is not writable, so downloads and ingest cannot save files. Set HOST_GID=$(id -g) in .env, then rebuild the app.", fix: 'HOST_GID="$(id -g)" rag-dev up --build -d', commands: [{ id: "app-start", label: "Rebuild app" }] });
   }

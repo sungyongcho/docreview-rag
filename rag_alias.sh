@@ -143,18 +143,13 @@ _docreview_uninstall() {
     else
         # Preserve any command the user replaced after registration.
         local name
-        for name in rag-up rag-dev rag-prod rag-diagnose rag-ollama-check rag-fresh-start rag-corpus rag-quickstart rag-help rag-alias-delete; do
+        for name in rag-up rag-dev rag-prod rag-ollama-check rag-fresh-start rag-corpus rag-schema rag-quickstart rag-help rag-alias-delete; do
             if [ "$(typeset -f "$name")" = "${_DOCREVIEW_OWNED_FUNCTIONS[$name]}" ]; then
                 unset -f "$name"
             fi
         done
-        for name in rag-dev-up rag-dev-down rag-prod-up rag-prod-down; do
-            if [ "$(alias "$name" 2>/dev/null)" = "${_DOCREVIEW_OWNED_ALIASES[$name]}" ]; then
-                unalias "$name"
-            fi
-        done
         printf '%s\n' 'Removed this script\'"'"'s unchanged commands; project files were kept.'
-        unset _DOCREVIEW_OWNED_FUNCTIONS _DOCREVIEW_OWNED_ALIASES
+        unset _DOCREVIEW_OWNED_FUNCTIONS
     fi
 }
 
@@ -182,7 +177,7 @@ esac
 # Validate command registration and wrapper targets without running application operations.
 _docreview_verify() {
     local target
-    for target in scripts/run_local.sh scripts/diagnose_ollama.sh scripts/quickstart.sh scripts/runtime_commands.py; do
+    for target in scripts/stack/__main__.py scripts/diagnostics/ollama.py scripts/stack/quickstart.sh scripts/stack/commands.py scripts/schema/__main__.py; do
         if [ ! -r "${_DOCREVIEW_ROOT}/$target" ]; then
             printf '[ERROR] Missing helper target: %s\n' "${_DOCREVIEW_ROOT}/$target" >&2
             return 1
@@ -249,7 +244,13 @@ fi
 unset _DOCREVIEW_EXECUTED _DOCREVIEW_ALIAS_FILE
 
 # Remove only this checkout's registration and unchanged owned commands.
-rag-alias-delete() { _docreview_uninstall; }
+rag-alias-delete() {
+    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+        printf '%s\n' 'Usage: rag-alias-delete' 'Confirm removal of this checkout registration; keep project files.'
+    else
+        _docreview_uninstall
+    fi
+}
 
 rag-up() {
     if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
@@ -258,99 +259,63 @@ rag-up() {
         rag-dev up --build -d "$@"
     fi
 }
-rag-dev() { bash "${_DOCREVIEW_ROOT}/scripts/run_local.sh" dev "$@"; }
-rag-prod() { bash "${_DOCREVIEW_ROOT}/scripts/run_local.sh" prod "$@"; }
-rag-diagnose() { bash "${_DOCREVIEW_ROOT}/scripts/diagnose_ollama.sh" "$@"; }
-rag-ollama-check() { rag-diagnose "$@"; }
-rag-quickstart() { bash "${_DOCREVIEW_ROOT}/scripts/quickstart.sh" "$@"; }
-rag-fresh-start() { (cd "${_DOCREVIEW_ROOT}" && .venv/bin/python -m scripts.runtime_commands fresh-start "$@"); }
-rag-corpus() { (cd "${_DOCREVIEW_ROOT}" && .venv/bin/python -m scripts.runtime_commands corpus "$@"); }
+# Run the selected module in the checkout that registered these commands.
+_docreview_python() {
+    if [ ! -x "${_DOCREVIEW_ROOT}/.venv/bin/python" ]; then
+        printf '%s\n' '[FAIL] Project Python is missing. Run rag-quickstart or uv sync --locked first.' >&2
+        return 2
+    fi
+    (cd "${_DOCREVIEW_ROOT}" && .venv/bin/python -m "$@")
+}
+rag-dev() {
+    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+        printf '%s\n' 'Usage: rag-dev [COMPOSE_ARGS...]' 'Manage the development stack; default: up -d.' 'Examples: rag-dev ps; rag-dev logs -f app; rag-dev down.'
+    else
+        _docreview_python scripts.stack dev "$@"
+    fi
+}
+rag-prod() {
+    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+        printf '%s\n' 'Usage: rag-prod [COMPOSE_ARGS...]' 'Manage the local public preview; default: up -d.' 'Examples: rag-prod ps; rag-prod logs -f web; rag-prod down.'
+    else
+        _docreview_python scripts.stack prod "$@"
+    fi
+}
+rag-ollama-check() { _docreview_python scripts.diagnostics.ollama "$@"; }
+rag-quickstart() { bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "$@"; }
+rag-fresh-start() { _docreview_python scripts.stack.commands fresh-start "$@"; }
+rag-corpus() { _docreview_python scripts.stack.commands corpus "$@"; }
+rag-schema() { _docreview_python scripts.schema "$@"; }
 rag-help() {
     _docreview_banner
-    _docreview_line '1;36' '[STACK] Local development / production preview'
-    printf '%s\n' \
-        '  rag-up                      Build/start DEV; initialize only an empty DB' \
-        '  rag-dev [COMPOSE_ARGS...]     Development stack (default: up -d)' \
-        '  rag-prod [COMPOSE_ARGS...]    Local public preview (default: up -d)' \
-        '  rag-dev-up / rag-prod-up     Start in the background' \
-        '  rag-dev-down / rag-prod-down Stop; preserve data volumes' \
-        ''
-    _docreview_line '1;36' '[OBSERVE] Status and logs'
-    printf '%s\n' \
-        '  rag-dev ps                   Show service status' \
-        '  rag-dev logs -f app           Follow API logs' \
-        '  rag-prod logs -f web          Follow preview web logs' \
-        ''
-    _docreview_line '1;36' '[DIAGNOSE] Application and model connection'
-    printf '%s\n' \
-        '  rag-ollama-check              Diagnose the active/default server; no URL needed' \
-        '  rag-ollama-check --setup      Show Ollama installation and model setup steps' \
-        '  rag-ollama-check --details    Explain host/container and listener checks' \
-        '  rag-ollama-check --web-url http://localhost:9000' \
-        '                               Target a different DocReview address' \
-        '  rag-ollama-check --help       Show diagnostic options' \
-        '  rag-diagnose [OPTIONS...]     Same diagnostic command' \
-        ''
-    _docreview_line '1;33' '[QUICK START] Build and run'
-    printf '%s\n' \
-        '  rag-quickstart               Guide setup through readiness; print tutorial URLs' \
-        '  rag-quickstart --help        Show first-run requirements' \
-        '  uv run python -m scripts.schema_status recover   Create a separate recovery stack' \
-        '    --parent /existing/directory --return-stage index   Preserve the original DB' \
-        '  Setup: prerequisites -> .env -> service status/start -> schema -> ready server' \
-        '  If configuration blocks: edit the named local settings, then rerun rag-quickstart' \
-        '  After readiness: open Quick Start and choose CLI/Web step 1; data is not prepared yet' \
-        '  rag-dev up --build -d         Rebuild and start development services' \
-        '  rag-fresh-start              Reset project data, rebuild, and restart from scratch' \
-        '  rag-fresh-start --help       Show reset requirements and warnings' \
-        '  rag-fresh-start --status     Read reset evidence without resubmitting deletion' \
-        '  rag-fresh-start --extreme    Delete previewed config/data/caches; two confirmations' \
-        '  Extreme: acknowledge browser deletion at the printed URL; no automatic restart' \
-        '  Ordinary: preserves .env/code/Ollama; reports deletion separately from startup' \
-        '  Rejected/uncertain reset: inspect View reset status before any resubmission' \
-        '  uv run python -m scripts.schema_status recreate   DANGER: reset ORM data + sources; keep exports/config/volume' \
-        '    --keep-sources            Reset ORM data only; preserve downloaded sources' \
-        '    --sample                  Reset data + sources; preset NVDA/AMD FY2023–2024, no download' \
-        '  rag-help                     Show this help' \
-        ''
-    _docreview_line '1;31' 'WARNING: rag-fresh-start permanently deletes the project database,'
-    printf '%s\n' \
-        '  downloaded SEC/DART filings, evaluation results, and saved local model settings.' \
-        '  Download SEC/DART data again and repeat all setup and processing steps' \
-        '  to restore full functionality. No backup is created.' \
-        '  Use the commands below or the development web UI started by Quick Start.' \
-        '  Code, .env, keys, and host Ollama are preserved. Start rag-dev first.' \
-        ''
-    _docreview_line '1;36' '[REBUILD DATA] Same jobs as the development web Build / Jobs panels'
-    printf '%s\n' \
-        '  rag-corpus acquire_edgar --identifier NVDA --year 2024' \
-        '  rag-corpus acquire_dart --identifier 005930 --year 2024' \
-        '  rag-corpus ingest_manifest --manifest <manifest> --selection <selection-id>' \
-        '  rag-corpus backfill_embeddings' \
-        '  rag-corpus rebuild_bm25' \
-        '  rag-corpus inspect           Show manifests, documents, and index readiness' \
-        '  rag-corpus readiness         Show runtime and model configuration' \
-        '  rag-corpus status            Check completion before starting the next step' \
-        '  rag-corpus --help            Show operation options' \
-        '  Downloads require SEC/DART configuration; embeddings may incur provider charges.' \
-        '  Configure the answer model and run evaluation in the development web UI.' \
-        '  After a terminal reset: Settings > Data & help > Reset runtime data >' \
-        '  View reset status > Clear browser data and start again, then follow Build.' \
-        '  Public read-only deployments cannot perform these admin operations.' \
-        ''
-    _docreview_line '1;33' '[UNINSTALL] Remove this checkout'"'"'s aliases'
-    printf '%s\n' '  rag-alias-delete             Confirm removal; keep project files' ''
+    _docreview_line '1;36' '[STACK]'
+    printf '  %-62s  %s\n' \
+        'rag-quickstart' 'Prepare first run' \
+        'rag-up [COMPOSE_UP_ARGS...]' 'Build DEV stack' \
+        'rag-dev [COMPOSE_ARGS...]' 'Manage DEV stack' \
+        'rag-prod [COMPOSE_ARGS...]' 'Manage public preview'
+    _docreview_line '1;36' '[DATA AND DIAGNOSTICS]'
+    printf '  %-62s  %s\n' \
+        'rag-ollama-check [--setup|--details|--web-url URL]' 'Check model connection' \
+        'rag-schema check|prepare|recover|recreate' 'Manage local schema' \
+        'rag-fresh-start [--status|--extreme]' 'Reset project runtime' \
+        'rag-corpus status|inspect|readiness|acquire_edgar|acquire_dart|ingest_manifest|backfill_embeddings|rebuild_bm25' 'Manage corpus jobs'
+    printf '%s\n' '  Example: rag-corpus acquire_edgar --identifier NVDA --year 2024' ''
+    _docreview_line '1;33' 'WARNING ordinary reset: deletes DB, downloads, results and saved model settings; preserves code, .env and host Ollama.'
+    _docreview_line '1;31' 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
+    _docreview_line '1;33' 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
+    printf '\n'
+    _docreview_line '1;36' '[HELP]'
+    printf '  %-62s  %s\n' \
+        'rag-help' 'Show command summary' \
+        'rag-alias-delete' 'Remove helper registration'
+    printf '\n'
+    _docreview_line '2' 'Every command accepts --help for options and examples.'
     _docreview_line '2' "Checkout: ${_DOCREVIEW_ROOT}"
-    _docreview_line '2' 'Diagnostics read metadata; they do not start or install Ollama.'
-    _docreview_line '2' '--web-url points to DocReview, not to the Ollama server.'
 }
-alias rag-dev-up='rag-dev up -d'
-alias rag-dev-down='rag-dev down'
-alias rag-prod-up='rag-prod up -d'
-alias rag-prod-down='rag-prod down'
 
-typeset -A _DOCREVIEW_OWNED_FUNCTIONS _DOCREVIEW_OWNED_ALIASES
-for _DOCREVIEW_COMMAND in rag-up rag-dev rag-prod rag-diagnose rag-ollama-check rag-fresh-start rag-corpus rag-quickstart rag-help rag-alias-delete; do
+typeset -A _DOCREVIEW_OWNED_FUNCTIONS
+for _DOCREVIEW_COMMAND in rag-up rag-dev rag-prod rag-ollama-check rag-fresh-start rag-corpus rag-schema rag-quickstart rag-help rag-alias-delete; do
     if ! typeset -f "${_DOCREVIEW_COMMAND}" >/dev/null; then
         printf '[ERROR] Command registration failed: %s\n' "${_DOCREVIEW_COMMAND}" >&2
         unset _DOCREVIEW_COMMAND
@@ -358,22 +323,13 @@ for _DOCREVIEW_COMMAND in rag-up rag-dev rag-prod rag-diagnose rag-ollama-check 
     fi
     _DOCREVIEW_OWNED_FUNCTIONS[$_DOCREVIEW_COMMAND]="$(typeset -f "$_DOCREVIEW_COMMAND")"
 done
-for _DOCREVIEW_COMMAND in rag-dev-up rag-dev-down rag-prod-up rag-prod-down; do
-    if ! alias "${_DOCREVIEW_COMMAND}" >/dev/null; then
-        printf '[ERROR] Alias registration failed: %s\n' "${_DOCREVIEW_COMMAND}" >&2
-        unset _DOCREVIEW_COMMAND
-        return 1
-    fi
-    _DOCREVIEW_OWNED_ALIASES[$_DOCREVIEW_COMMAND]="$(alias "$_DOCREVIEW_COMMAND")"
-done
 unset _DOCREVIEW_COMMAND
 
 _docreview_banner
 _docreview_line '1;32' '[OK] DocReview commands registered and verified in this shell.'
 _docreview_line '2' "Checkout: ${_DOCREVIEW_ROOT}"
 printf '%s\n' \
-    '  rag-up, rag-dev, rag-prod, rag-diagnose, rag-ollama-check, rag-help' \
-    '  rag-quickstart, rag-fresh-start, rag-corpus' \
-    '  rag-dev-up, rag-dev-down, rag-prod-up, rag-prod-down' \
+    '  rag-up, rag-dev, rag-prod, rag-ollama-check, rag-help' \
+    '  rag-quickstart, rag-fresh-start, rag-corpus, rag-schema, rag-alias-delete' \
     ''
 _docreview_line '1;36' 'Run rag-help for help!'

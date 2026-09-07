@@ -3,7 +3,7 @@
 ## Reference acquisition scope
 
 The initial selection uses the exact company/year pairs actually on disk, without inventing
-cross-company combinations. With no sources it is empty; `schema_status recreate --sample`
+cross-company combinations. With no sources it is empty; `rag-schema recreate --sample`
 explicitly presets **NVDA, AMD**, FY**2023, 2024**, without downloading.
 
 The company × year matrix is both the inventory and the selector. SEC and DART have separate
@@ -102,5 +102,5 @@ See [the implementation map](architecture.md) for those boundaries.
 Inventory refreshes update disk status without overwriting an edited selection. Use **Select
 everything on disk** to adopt the current downloaded set explicitly. **Clear selection** leaves
 all files intact. Return from Parse & chunk with **Change selection in Filings**. A clean start uses
-`uv run python -m scripts.schema_status recreate`; `--sample` presets the sample and
+`uv run python -m scripts.schema recreate`; `--sample` presets the sample and
 `--keep-sources` preserves files. Compare reset scopes in the [CLI guide](cli.md).

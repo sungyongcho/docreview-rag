@@ -55,10 +55,10 @@ without a health check is not proof of server readiness. Existing healthy servic
 are reported before Compose reconciles the development configuration.
 
 If configuration blocks progress, edit the printed `.env` path and correct or unset
-conflicting shell exports, then rerun `rag-quickstart` (or `bash scripts/quickstart.sh`).
+conflicting shell exports, then rerun `rag-quickstart` (or `bash scripts/stack/quickstart.sh`).
 That invocation has not started services; any existing services remain unchanged.
 For startup failures, use `rag-dev ps -a` and `rag-dev logs --tail 50` before retrying.
-For incompatible schemas, run `.venv/bin/python -m scripts.schema_status check`;
+For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart uses the local `DB_PORT`, not an external `DATABASE_URL`. Safe target-selection
 recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).
 Do not reset your database to resolve this setup stop.

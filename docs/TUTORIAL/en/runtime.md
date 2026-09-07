@@ -86,7 +86,7 @@ Installed, loaded, and answer-capable are separate facts. An installed model can
 ## Local operations {#operations}
 
 > [!DEV]
-> The Operations tab appears only when the local operator started by `scripts/run_local.sh` is configured for this build. Visitors never see it.
+> The Operations tab appears only when the local operator started by `rag-dev` is configured for this build. Visitors never see it.
 
 **System → Operations** lists the registered local commands as cards grouped by category. **Inspect** reads state (Git status), **Verify** runs lint, tests, typecheck and the production build without changing files, and **Service** starts or stops PostgreSQL and the app or prepares an empty schema. Inside a group read-only commands come first and commands that ask for confirmation come last, each marked with a **Confirmation required** badge in its header. The **All · Inspect · Verify · Service** filter above the cards narrows the view and is remembered per browser. **Run** starts one command at a time; **Latest run** streams its output and offers **Cancel** while it is running.
 

@@ -180,9 +180,13 @@ rag-dev logs -f
 rag-prod ps
 ```
 
-`rag-dev-up/down`, `rag-prod-up/down`도 같은 동작의 단축 명령입니다. 어느 디렉터리에서
-실행해도 별칭을 등록한 이 저장소를 대상으로 합니다. 다른 프로젝트의 `dev-up` 등은 바꾸지
-않습니다. 별칭 없이도 `bash scripts/run_local.sh dev up -d`처럼 실행할 수 있습니다.
+등록된 명령은 어느 디렉터리에서 실행해도 등록 당시 저장소를 대상으로 합니다.
+시작·종료는 `rag-dev up -d` / `rag-dev down`, 공개 미리보기는 `rag-prod`로 선택합니다.
+별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
+`rag-help`는 명령 10개를 한 줄씩 표시하며, 상세 옵션은 각 명령의 `--help`에서 확인합니다.
+스키마 관리는 `rag-schema check|prepare|recover|recreate`로 통합했습니다.
+패키지와 직접 실행 경로는 [스크립트 안내](scripts/README.md), 제거된 단축 명령은
+[로컬 실행 명령 안내](docs/TUTORIAL/ko/cli.md#명령-통합)에서 확인하세요.
 
 **두 모드에서 여는 웹 주소는 같습니다.**
 
@@ -366,11 +370,11 @@ rag-ollama-check
 rag-ollama-check --help
 rag-ollama-check --web-url http://localhost:18080
 # 별칭 없이 실행하거나 웹 포트를 별도로 지정할 때
-bash scripts/diagnose_ollama.sh
-bash scripts/diagnose_ollama.sh --web-url http://localhost:18080
+.venv/bin/python -m scripts.diagnostics.ollama
+.venv/bin/python -m scripts.diagnostics.ollama --web-url http://localhost:18080
 ```
 
-`rag-diagnose`도 같은 진단을 실행하며 동일한 옵션을 받습니다. `--web-url`에는 Ollama 서버가
+`--web-url`에는 Ollama 서버가
 아닌 **DocReview 웹 주소**를 넣습니다. 진단은 연결과 모델 메타데이터를 확인하며 Ollama를
 설치하거나 시작하지 않습니다.
 
@@ -407,7 +411,7 @@ Helper를 등록한 뒤 `rag-quickstart`를 실행하면 Python 환경과 빈 �
 개발 서비스를 시작합니다. 기존 설정과 호환되는 데이터는 보존합니다.
 `rag-dev up --build -d`도 DB health 확인 후 이미지 시작 게이트에서 빈 DB 스키마를
 자동 생성합니다. 기존 DB는 검사만 하며 불일치하면 API 시작을 차단합니다.
-`rag-dev logs --tail 80 app`에서 원인과 `scripts.schema_status check`/`recover` 안내를 확인하세요.
+`rag-dev logs --tail 80 app`에서 원인과 `scripts.schema check`/`recover` 안내를 확인하세요.
 이 동작은 prod 미리보기와 배포 Compose에도 적용되며, 공개 예시 모드는 DB 없이 시작합니다.
 
 ```bash
@@ -442,7 +446,7 @@ rag-corpus inspect
 
 `schema_drift`는 저장된 스키마와 현재 모델이 맞지 않는다는 뜻입니다. 실행 중인 코드와
 DB 연결을 확인하고 기존 데이터를 보존한 상태에서 운영자가 원인을 조사해야 합니다.
-기본 복구는 기존 데이터를 보존합니다. `uv run python -m scripts.schema_status recreate`는
+기본 복구는 기존 데이터를 보존합니다. `uv run python -m scripts.schema recreate`는
 ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대상·행 수·원문 경로를 확인한 뒤
 `RECREATE <체크아웃 이름> AND SOURCES`로 승인합니다. `--keep-sources`는 원문을 보존하며,
 `--sample`은 동일한 초기화 뒤 NVDA/AMD FY2023–2024 초안만 저장하고 다운로드하지 않습니다.
@@ -531,8 +535,7 @@ registry의 고정 argv만 `shell=False`로 실행하며 Docker 소켓이나 루
 API를 중지해도 단일 웹 화면은 남아 상태 확인과 가능한 복구 작업을 할 수 있습니다.
 
 기본 `docker compose --project-directory . -f docker/docker-compose.yml up -d`만 사용할 수도 있지만 호스트 Operations는 연결되지 않습니다.
-필요하면 `rag-dev up -d`를 사용합니다. `scripts/run_local_operator_web.sh`는 같은 dev 실행의
-호환 진입점입니다. prod와 공개 화면에는 Operations URL·토큰·메뉴를 제공하지 않습니다.
+필요하면 `rag-dev up -d`를 사용합니다. prod와 공개 화면에는 Operations URL·토큰·메뉴를 제공하지 않습니다.
 
 Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 권한이 필요합니다.
 기본 GID는 1000이며 다른 환경은 `.env`의 `HOST_GID`를 자신의 `id -g` 결과에 맞춥니다.
@@ -548,9 +551,9 @@ Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 
 | `python-tests-postgres` | Database | `.venv/bin/pytest -q -m live_postgres --require-live-postgres` | Require the live PostgreSQL marker instead of silently skipping it. | no |
 | `web-tests` | Web | `npm test` | Run the Vitest component and client-contract suite. | no |
 | `web-typecheck` | Web | `npm run typecheck` | Run TypeScript without emitting build output. | no |
-| `web-build` | Web | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
-| `schema-check` | Database | `.venv/bin/python -m scripts.schema_status check` | Inspect this checkout's local database schema without changing data. | no |
-| `schema-prepare` | Database | `.venv/bin/python -m scripts.schema_status prepare` | Create schema objects only in an empty local database; preserve existing data. | required |
+| `web-build` | Web | `.venv/bin/python scripts/release/web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
+| `schema-check` | Database | `.venv/bin/python -m scripts.schema check` | Inspect this checkout's local database schema without changing data. | no |
+| `schema-prepare` | Database | `.venv/bin/python -m scripts.schema prepare` | Create schema objects only in an empty local database; preserve existing data. | required |
 | `db-start` | Database | `docker compose --project-directory . -f docker/docker-compose.yml up -d db` | Start the local pgvector service and retain its existing volume. | required |
 | `db-stop` | Database | `docker compose --project-directory . -f docker/docker-compose.yml stop db` | Stop the local database without deleting its volume. | required |
 | `app-start` | App | `docker compose --project-directory . -f docker/docker-compose.yml up --build -d app` | Build the local image and start the app with its database dependency. | required |
@@ -798,7 +801,7 @@ npm audit
 통합 게이트:
 
 ```bash
-scripts/verify_clean_checkout.sh
+scripts/release/clean_checkout.sh
 ```
 
 게이트는 `basedpyright app`과 전체 Ruff 검사에 더해, 방금 빌드한 앱 이미지로
@@ -836,7 +839,7 @@ Cloudflare Worker
 Firebase용 Next 정적 파일 생성과 배포:
 
 ```bash
-FIREBASE_PROJECT_ID=<project-id> scripts/deploy_firebase_web.sh
+FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh
 ```
 
 GCP VM 준비·배포 스크립트:
@@ -850,7 +853,7 @@ GCP_PROJECT_ID=<project-id> deploy/gcp/deploy_backend.sh
 
 ```bash
 GCP_PROJECT_ID=<project-id> deploy/gcp/operator_tunnel.sh
-scripts/run_operator_web.sh
+scripts/stack/operator_web.sh
 ```
 
 배포 스크립트는 비용과 외부 상태를 변경하므로 값을 검토한 뒤 별도로 실행해야 합니다.

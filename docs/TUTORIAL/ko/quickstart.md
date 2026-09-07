@@ -49,9 +49,9 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 
 설정 명령은 사전 요구사항 → 로컬 설정 → 프로젝트 서비스 상태·시작 → 스키마 준비 → DEV 서버 준비 확인의 다섯 단계를 표시합니다. `db`, `app`, `web` 각각의 중지·시작 중·비정상·실행 상태를 구분합니다. 헬스 체크가 없는 컨테이너가 실행 중이라는 사실만으로 서버 준비 완료를 선언하지 않습니다. 이미 정상 실행 중인 서비스도 Compose가 개발 설정을 적용하기 전에 표시합니다.
 
-설정에서 중단되면 출력된 `.env` 경로를 로컬에서 편집하고 충돌하는 셸 환경변수를 수정하거나 해제한 뒤 `rag-quickstart` 또는 `bash scripts/quickstart.sh`를 다시 실행하세요. 해당 실행은 서비스를 시작하지 않았으며 기존 서비스는 그대로 유지됩니다. 시작 실패는 `rag-dev ps -a`와 `rag-dev logs --tail 50`으로 확인하고 재시도하세요.
+설정에서 중단되면 출력된 `.env` 경로를 로컬에서 편집하고 충돌하는 셸 환경변수를 수정하거나 해제한 뒤 `rag-quickstart` 또는 `bash scripts/stack/quickstart.sh`를 다시 실행하세요. 해당 실행은 서비스를 시작하지 않았으며 기존 서비스는 그대로 유지됩니다. 시작 실패는 `rag-dev ps -a`와 `rag-dev logs --tail 50`으로 확인하고 재시도하세요.
 
-스키마가 호환되지 않으면 `.venv/bin/python -m scripts.schema_status check`로 진단하세요. Quickstart는 외부 `DATABASE_URL`이 아니라 로컬 `DB_PORT`를 사용합니다. 안전한 대상 선택 복구는 [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25)에서 다룹니다. 이 중단을 해결하려고 데이터베이스를 초기화하지 마세요.
+스키마가 호환되지 않으면 `.venv/bin/python -m scripts.schema check`로 진단하세요. Quickstart는 외부 `DATABASE_URL`이 아니라 로컬 `DB_PORT`를 사용합니다. 안전한 대상 선택 복구는 [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25)에서 다룹니다. 이 중단을 해결하려고 데이터베이스를 초기화하지 마세요.
 
 준비 확인이 성공하면 출력된 앱 또는 언어별 튜토리얼 URL을 여세요. 아래 CLI/Web 중 하나를 선택하고 1단계부터 시작한 다음 두 보고서를 수집하세요.
 

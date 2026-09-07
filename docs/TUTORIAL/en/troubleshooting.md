@@ -135,7 +135,7 @@ See [Local operations](runtime.md#operations).
 2 seconds, and for up to 10 seconds while a corpus or evaluation job holds or awaits the
 execution turn, then measures again as soon as the job ends. A schema change made outside
 the application can therefore show up to that many seconds late; every write path checks
-the schema afresh. `python -m scripts.measure_readiness --base-url http://127.0.0.1:8001 --ingest tutorial`
+the schema afresh. `python -m scripts.diagnostics.readiness --base-url http://127.0.0.1:8001 --ingest tutorial`
 records `/health` and `/ready` latency before, during and after one ingest job against an
 isolated stack.
 

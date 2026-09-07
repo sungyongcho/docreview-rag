@@ -39,7 +39,7 @@ def test_compose_app_has_single_container_security_guards() -> None:
 
 def test_clean_checkout_script_has_fresh_locked_and_smoke_gates() -> None:
     """Gate a clean checkout on a locked sync, the focused tests, lint, and the image build."""
-    script = Path("scripts/verify_clean_checkout.sh")
+    script = Path("scripts/release/clean_checkout.sh")
 
     assert script.is_file()
     text = script.read_text(encoding="utf-8")

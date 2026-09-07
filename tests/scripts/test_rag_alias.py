@@ -3,8 +3,10 @@
 import os
 from pathlib import Path
 import pty
+import re
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -65,7 +67,7 @@ def test_source_registration_help_and_width(shell, columns, asset):
     result = run_shell(
         shell,
         'source "$1" >/dev/null; typeset -f rag-help >/dev/null; '
-        "alias rag-dev-up >/dev/null; rag-help",
+        "typeset -f rag-dev >/dev/null; rag-help",
         env={"COLUMNS": columns},
     )
     assert "[OK]" not in result.stdout
@@ -169,11 +171,12 @@ def test_fresh_start_help_and_registration(shell):
     result = run_shell(
         shell, 'source "$1" >/dev/null; typeset -f rag-fresh-start; typeset -f rag-corpus; rag-help'
     )
-    assert "scripts.runtime_commands fresh-start" in result.stdout
-    assert "scripts.runtime_commands corpus" in result.stdout
-    assert "WARNING: rag-fresh-start permanently deletes" in result.stdout
-    assert "Download SEC/DART data again" in result.stdout
-    assert "View reset status" in result.stdout
+    assert "scripts.stack.commands fresh-start" in result.stdout
+    assert "scripts.stack.commands corpus" in result.stdout
+    assert "rag-fresh-start [--status|--extreme]" in result.stdout
+    assert "WARNING ordinary reset: deletes DB" in result.stdout
+    assert "WARNING extreme reset: also deletes" in result.stdout
+    assert "preserves code, .env and host Ollama" in result.stdout
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -257,9 +260,15 @@ def test_install_preserves_symlink_and_quotes_checkout_path(shell, tmp_path):
     checkout.mkdir()
     script = checkout / "rag_alias.sh"
     shutil.copy2(SCRIPT, script)
-    for name in ["run_local.sh", "diagnose_ollama.sh", "quickstart.sh", "runtime_commands.py"]:
+    for name in [
+        "stack/__main__.py",
+        "stack/quickstart.sh",
+        "stack/commands.py",
+        "schema/__main__.py",
+        "diagnostics/ollama.py",
+    ]:
         target = checkout / "scripts" / name
-        target.parent.mkdir(exist_ok=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("# Isolated wrapper target.\n")
     target_rc = tmp_path / "managed-startup"
     target_rc.write_text("# User configuration\n")
@@ -278,3 +287,81 @@ def test_install_preserves_symlink_and_quotes_checkout_path(shell, tmp_path):
     result = run_shell(shell, 'source "$RC"; rag-help; "$HELPER"', env=environment)
     assert "[STACK]" in result.stdout
     assert "[INSTALLED]" in result.stdout
+
+
+def test_help_lists_unique_commands_with_compact_descriptions(shell):
+    """The rendered menu keeps one short row per command and groups flag variants inline."""
+    result = run_shell(shell, 'source "$1" >/dev/null; rag-help')
+    rows = [line.strip() for line in result.stdout.splitlines() if line.startswith("  rag-")]
+    assert 1 <= len(rows) <= 15
+    commands = []
+    for row in rows:
+        invocation, description = re.split(r"\s{2,}", row, maxsplit=1)
+        commands.append(invocation.split()[0])
+        assert 1 <= len(description.split()) <= 4, row
+    assert len(commands) == len(set(commands))
+    assert "rag-schema" in commands
+    assert "rag-ollama-check" in commands
+    assert "--help" not in "\n".join(rows)
+    assert result.stdout.count("Every command accepts --help") == 1
+    assert "Example: rag-corpus acquire_edgar" in result.stdout
+
+
+def test_removed_aliases_are_not_registered(shell):
+    """Removed duplicate names cannot stay callable after loading the compact helper."""
+    run_shell(
+        shell,
+        'source "$1" >/dev/null; '
+        'for name in rag-dev-up rag-dev-down rag-prod-up rag-prod-down rag-diagnose; do '
+        'if command -v "$name" >/dev/null 2>&1; then exit 7; fi; done',
+    )
+
+
+def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_path):
+    """Real helper help never installs dependencies, calls services, or changes local files."""
+    checkout = tmp_path / "isolated checkout"
+    checkout.mkdir()
+    helper = checkout / "rag_alias.sh"
+    shutil.copy2(SCRIPT, helper)
+    shutil.copytree(ROOT / "scripts", checkout / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+    python = checkout / ".venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.symlink_to(sys.executable)
+    (checkout / ".env").write_text("UNRELATED_SETTING=preserved\n")
+    startup = tmp_path / ".bashrc"
+    startup.write_text("# Preserve existing shell configuration.\n")
+    (tmp_path / ".zshrc").write_text(startup.read_text())
+    tools = tmp_path / "blocked-tools"
+    tools.mkdir()
+    for name in ("docker", "uv", "ollama", "npm"):
+        command = tools / name
+        command.write_text("#!/bin/sh\nprintf 'External command called during help\n' >&2\nexit 97\n")
+        command.chmod(0o755)
+    before = {
+        str(path.relative_to(tmp_path)): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+    menu = run_shell(shell, 'source "$1" >/dev/null; rag-help').stdout
+    commands = [line.split()[0] for line in menu.splitlines() if line.startswith("  rag-")]
+    assert commands
+    result = run_shell(
+        shell,
+        'source "$HELPER" >/dev/null; for name in ' + " ".join(commands) + '; do '
+        '"$name" --help >/dev/null || exit; done',
+        env={
+            "HELPER": str(helper),
+            "HOME": str(tmp_path),
+            "ZDOTDIR": str(tmp_path),
+            "PYTHONPATH": str(ROOT),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+        },
+    )
+    assert result.stderr == ""
+    after = {
+        str(path.relative_to(tmp_path)): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+    assert after == before

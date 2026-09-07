@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { TerminalHandoff } from "./terminal-handoff";
 
 afterEach(cleanup);
-const steps = [{ reason: "Inspect schema", command: "uv run python -m scripts.schema_status check", expected: "Schema must be compatible" }];
+const steps = [{ reason: "Inspect schema", command: "uv run python -m scripts.schema check", expected: "Schema must be compatible" }];
 
 it("shows a terminal handoff without executing or marking the prerequisite resolved", async () => {
   const refresh = vi.fn().mockResolvedValue(true);

@@ -42,10 +42,10 @@ def main() -> int:
             )
             print(
                 "Server startup blocked; existing data preserved. In a local checkout run "
-                "uv run python -m scripts.schema_status check, then "
-                "uv run python -m scripts.schema_status recover --return-stage index. "
+                "uv run python -m scripts.schema check, then "
+                "uv run python -m scripts.schema recover --return-stage index. "
                 "To discard only local DEV database contents, explicitly review "
-                "uv run python -m scripts.schema_status recreate. "
+                "uv run python -m scripts.schema recreate. "
                 "For deployed databases, select a compatible target or an explicitly approved "
                 "migration. Restarting does not repair drift.",
                 flush=True,

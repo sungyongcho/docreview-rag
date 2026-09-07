@@ -55,8 +55,27 @@ Python CLI·파일 조회·직접 Docker 명령은 **저장소 루트**에서 �
 | 모델 진단 | `rag-ollama-check` | DocReview부터 Ollama까지 연결 확인 |
 
 `rag-dev`, `rag-prod`는 인자가 없으면 `up -d`를 실행합니다.
-`rag-dev-up/down`, `rag-prod-up/down`은 같은 시작·종료의 단축 명령입니다.
-별칭 없이 실행하려면 `bash scripts/run_local.sh dev up -d`처럼 사용합니다.
+별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
+`rag-help`는 명령 10개를 한 줄씩 표시하고 옵션은 같은 줄에 묶습니다. 모든 명령은 `--help`를
+지원합니다. 작업별 설명은 `rag-corpus --help`, 스키마 옵션은 `rag-schema --help`에서 확인합니다.
+
+### 명령 통합
+
+업데이트 후 새 셸에서 Helper를 불러오세요. 아래 단축 명령은 더 이상 등록되지 않으므로
+대체 명령을 사용합니다. 기존 셸에 남은 정의는 해당 셸이 종료될 때까지 유지됩니다.
+
+| 제거된 단축 명령 | 대체 명령 |
+|---|---|
+| `rag-dev-up` | `rag-dev up -d` |
+| `rag-dev-down` | `rag-dev down` |
+| `rag-prod-up` | `rag-prod up -d` |
+| `rag-prod-down` | `rag-prod down` |
+| `rag-diagnose` | `rag-ollama-check` |
+
+DEV 재빌드·시작은 `rag-up`, 스키마 관리는 `rag-schema check|prepare|recover|recreate`를 사용합니다.
+Helper를 등록하지 않았다면 `uv run python -m scripts.schema <action>`으로 실행합니다.
+짧은 메뉴에도 일반·extreme·스키마 초기화 경고를 각각 유지합니다. 실제 삭제 전에는 전체
+미리보기와 해당 명령의 도움말을 읽고 확인하세요.
 
 ## 설치와 초기 설정
 
@@ -221,7 +240,7 @@ rag-ollama-check --web-url http://localhost:18080
 | `--setup` | 서비스에 접속하거나 변경하지 않고 수동 준비 안내 출력 |
 | `--web-url` | Ollama 주소가 아닌 **DocReview 프런트엔드 주소** 지정 |
 
-`rag-diagnose`도 같은 진단을 실행합니다. 진단은 설치, 모델 다운로드·로드, 서비스 시작, 설정 저장, 답변 생성을 수행하지 않습니다. 설정·백엔드 연결·답변 모델 검사를 나누어 읽습니다. 목록을 확인하지 못하면 미확인이며, 설치됐지만 로드되지 않은 모델은 정상 대기입니다.
+진단은 설치, 모델 다운로드·로드, 서비스 시작, 설정 저장, 답변 생성을 수행하지 않습니다. 설정·백엔드 연결·답변 모델 검사를 나누어 읽습니다. 목록을 확인하지 못하면 미확인이며, 설치됐지만 로드되지 않은 모델은 정상 대기입니다.
 
 공유 진단 route가 없는 이전 API에서는 읽기 전용 호환 진단으로 전환했음을 명시합니다. `ollama list`와 `ollama ps`는 설치 모델·현재 로드된 모델을 별도로 확인합니다. [서버 선택](settings.md#local-server), [연결 복구](ollama.md#diagnostics), [답변 구성](answers.md#engines)에서 이어갑니다.
 
@@ -515,8 +534,8 @@ extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-qui
 재시작이나 스키마 확인은 드리프트를 고치지 않습니다. 기존 DB를 보존하면서 사용 가능한 빈 환경을 만들려면 다음 순서로 진행하세요.
 
 ```bash
-uv run python -m scripts.schema_status check
-uv run python -m scripts.schema_status recover --return-stage index
+uv run python -m scripts.schema check
+uv run python -m scripts.schema recover --return-stage index
 # 선택 사항: --parent /existing/directory (원래 체크아웃 밖의 기존 디렉터리)
 ```
 
@@ -540,7 +559,7 @@ uv run python -m scripts.schema_status recover --return-stage index
 `rag-up`은 `rag-dev up --build -d`의 단축 명령이며 `rag-quickstart` 또는 `uv sync --locked`로 준비한 Python 환경을 사용합니다. 자동 시작은 빈 DB만 준비하며 기존 데이터를 버리지 않습니다. 준비 안내에는 처음 프로젝트를 사용하거나 작업의 영향을 이해하는 사용자에게 다음 위험한 선택도 제공합니다.
 
 ```bash
-uv run python -m scripts.schema_status recreate
+uv run python -m scripts.schema recreate
 ```
 
 확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 기본 명령은 다운로드된 원문과 manifest 원문 항목도 지웁니다. 대상, 테이블별 행 수, 원문 경로와 수를 확인하고 전체 삭제에 동의할 때만 `RECREATE <체크아웃 이름> AND SOURCES`를 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
@@ -557,7 +576,7 @@ DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접
 
 | 명령 | 지우는 범위 | 보존 항목 / 다음 단계 |
 | --- | --- | --- |
-| `uv run python -m scripts.schema_status recreate` | ORM 테이블/데이터와 다운로드된 SEC/DART 원문, manifest 원문 항목 | 코드, `.env`, 평가 내보내기, 무관한 테이블, DB 볼륨 보존. 빈 원문 초안으로 시작 |
+| `uv run python -m scripts.schema recreate` | ORM 테이블/데이터와 다운로드된 SEC/DART 원문, manifest 원문 항목 | 코드, `.env`, 평가 내보내기, 무관한 테이블, DB 볼륨 보존. 빈 원문 초안으로 시작 |
 | 위 명령 + `--sample` | 동일한 초기화 | 서버에 NVDA/AMD FY2023–2024 초안 저장. 다운로드는 직접 실행 |
 | 위 명령 + `--keep-sources` | ORM 테이블/데이터만 | 원문 파일 보존. 확인 문구는 `RECREATE <checkout-name>` |
 | `rag-fresh-start` | 평가 결과·로컬 모델 설정·DB 볼륨까지 포함한 더 넓은 환경 초기화 | 별도 미리보기와 정확한 확인 절차 적용 |

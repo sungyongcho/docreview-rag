@@ -39,7 +39,7 @@ def test_drift_blocks_exec_and_reports_recovery(monkeypatch, capsys):
     assert startup.main() == 1
     launch.assert_not_called()
     output = capsys.readouterr().out
-    assert "scripts.schema_status recover" in output and '"created": false' in output
+    assert "scripts.schema recover" in output and '"created": false' in output
     assert "private-target" not in output
 
 

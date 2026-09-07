@@ -1,0 +1,86 @@
+"""Explicit mode selection and host lifecycle coordination."""
+
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+
+from scripts.stack import __main__ as command
+from scripts.stack.__main__ import compose_command, compose_environment, run
+from scripts.stack.environment import LocalEnvironmentError
+
+
+def test_selected_mode_overrides_stale_flags_and_keeps_other_environment(monkeypatch) -> None:
+    """Inherited settings cannot select permissions or route requests to another API."""
+    monkeypatch.setenv("MODE", "dev")
+    monkeypatch.setenv("DOCREVIEW_ADMIN_MODE", "live")
+    monkeypatch.setenv("NEXT_PUBLIC_ADMIN_MODE", "live")
+    monkeypatch.setenv("COMPOSE_FILE", "unrelated.yml")
+    monkeypatch.setenv("OPENAI_API_KEY_LOCAL", "test-existing-dev-key")
+    environment = compose_environment("prod", {"MODE": "prod"})
+    assert environment["MODE"] == "prod"
+    assert environment["DOCREVIEW_ADMIN_MODE"] == "readonly"
+    assert environment["NEXT_PUBLIC_ADMIN_MODE"] == "canned"
+    assert environment["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
+    assert environment["OPENAI_API_KEY_LOCAL"] == "test-existing-dev-key"
+    assert "COMPOSE_FILE" not in environment
+    assert environment["NEXT_PUBLIC_OPERATOR_TOKEN"] == ""
+
+
+def test_compose_arguments_target_the_repository_from_another_directory(tmp_path) -> None:
+    """Explicit files and project directory prevent aliases from affecting another stack."""
+    command = compose_command(tmp_path, "prod", ["logs", "-f"])
+    assert command[command.index("--project-directory") + 1] == str(tmp_path)
+    assert str(tmp_path / "docker" / "docker-compose.prod.yml") in command
+    assert command[-2:] == ["logs", "-f"]
+
+
+def test_prod_start_stops_owned_operations_before_compose(tmp_path, monkeypatch) -> None:
+    """A public preview cannot retain a host Operations token or server."""
+    events = []
+    operator = Mock()
+    operator.stop.side_effect = lambda: events.append("stop")
+    monkeypatch.setattr("scripts.stack.__main__.LocalOperator", lambda root: operator)
+    execute = Mock(
+        side_effect=lambda *args, **kwargs: events.append("compose") or Mock(returncode=0)
+    )
+    monkeypatch.setattr("scripts.stack.__main__.subprocess.run", execute)
+    assert run("prod", ["up", "-d"], root=tmp_path) == 0
+    assert events == ["stop", "compose"]
+    assert execute.call_args.kwargs["env"]["NEXT_PUBLIC_OPERATOR_TOKEN"] == ""
+    operator.start.assert_not_called()
+
+
+def test_failed_detached_start_cleans_up_only_new_operations(tmp_path, monkeypatch) -> None:
+    """A failing Compose start does not leave its newly launched host daemon running."""
+    operator = Mock()
+    operator.environment.return_value = {"NEXT_PUBLIC_OPERATOR_TOKEN": ""}
+    operator.start.return_value = {"NEXT_PUBLIC_OPERATOR_TOKEN": "new-test-token"}
+    monkeypatch.setattr("scripts.stack.__main__.LocalOperator", lambda root: operator)
+    monkeypatch.setattr("scripts.stack.__main__.subprocess.run", Mock(return_value=Mock(returncode=1)))
+    assert run("dev", ["up", "-d"], root=tmp_path) == 1
+    operator.stop.assert_called_once()
+
+
+def test_down_wrapper_never_deletes_volumes(tmp_path) -> None:
+    """The convenience command cannot silently remove the corpus database volume."""
+    with pytest.raises(LocalEnvironmentError, match="preserves data"):
+        run("dev", ["down", "-v"], root=tmp_path)
+
+
+def test_default_stack_root_is_the_registered_checkout(monkeypatch):
+    """A moved command still loads and invokes Compose from the repository root."""
+    root = Path(__file__).resolve().parents[3]
+    environment = Mock(return_value={"DOCREVIEW_LOCAL_HOST": "127.0.0.1", "APP_PORT": "38010"})
+    operator = Mock()
+    execute = Mock(return_value=Mock(returncode=0))
+    monkeypatch.setattr(command, "load_local_environment", environment)
+    monkeypatch.setattr(command, "LocalOperator", lambda path: operator)
+    monkeypatch.setattr(command.subprocess, "run", execute)
+    assert run("prod", ["ps"]) == 0
+    environment.assert_called_once_with(root / ".env", mode="prod")
+    argv = execute.call_args.args[0]
+    assert argv[argv.index("--project-directory") + 1] == str(root)
+    assert execute.call_args.kwargs["cwd"] == root
+    operator.start.assert_not_called()
+    operator.stop.assert_not_called()
