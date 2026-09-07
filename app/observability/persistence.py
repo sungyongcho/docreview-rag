@@ -193,6 +193,13 @@ def report_to_records(
     }
     if timing_metadata:
         context["trace_local_timings"] = timing_metadata
+    request_counts: dict[str, JsonValue] = {
+        str(trace.step): trace.requests
+        for trace in report.steps
+        if trace.requests != trace.retries + 1
+    }
+    if request_counts:
+        context["trace_requests"] = request_counts
     run = Run(
         run_id=report.run_id,
         status=report.status,
@@ -239,6 +246,22 @@ def report_to_records(
     return run, traces
 
 
+def stored_step_requests(
+    request_context: Mapping[str, object] | None, *, step: int, retries: int
+) -> int:
+    """Return the requests one stored step sent.
+
+    Trace rows carry no request column. A step that sent fewer requests than it made
+    attempts (a refusal before the call) records its count under ``trace_requests`` in
+    the run context, keyed by step; every other row keeps one request per attempt.
+    """
+    recorded = (request_context or {}).get("trace_requests", {})
+    value = recorded.get(str(step)) if isinstance(recorded, Mapping) else None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return retries + 1
+    return value
+
+
 def record_to_step(
     trace: Trace, *, request_context: Mapping[str, object] | None = None
 ) -> StepTrace:
@@ -259,6 +282,7 @@ def record_to_step(
         request_time_ms=trace.request_time_ms,
         llm_output=trace.llm_output,
         retries=trace.retries,
+        requests=stored_step_requests(request_context, step=trace.step, retries=trace.retries),
         error=trace.error,
         local_timings=tuple(LocalModelTiming.model_validate(value) for value in timings),
     )

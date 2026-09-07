@@ -106,6 +106,7 @@ def test_ollama_request_asks_for_a_window_that_fits_the_budget() -> None:
     assert isinstance(options, dict)
     assert options["num_ctx"] == 150, "the window must cover both halves of the budget"
     assert options["num_predict"] == 50
+    assert sent[0]["think"] is False, "hidden reasoning would consume the output allowance"
 
 
 def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
@@ -153,3 +154,69 @@ def test_ollama_timing_preserves_attempts_and_omits_unreceived_fields() -> None:
         assert "prompt_eval_duration_ms" not in recorded["model_calls"][0]["local_timings"][0]
 
     asyncio.run(exercise())
+
+
+def test_local_provider_refuses_an_oversized_prompt_before_contacting_ollama() -> None:
+    """A prompt that cannot fit the 100-token allowance is refused without any request."""
+    calls: list[httpx.Request] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": '{"answer":"hello"}'},
+                "prompt_eval_count": 8,
+                "eval_count": 3,
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
+    provider = LocalLLMProvider(
+        base_url="http://127.0.0.1:11434", model_name="test", protocol="ollama", client=client
+    )
+
+    result = asyncio.run(
+        provider.complete(Prompt(system="s", user="word " * 400), ChatReply, budget())
+    )
+    asyncio.run(client.aclose())
+
+    assert calls == []
+    assert result.status == "budget_exceeded"
+    assert result.refusal is not None
+    assert getattr(result.refusal, "which", None) == "input_tokens"
+    assert getattr(result.refusal, "projected_input_tokens", 0) > 100
+    assert result.metadata.input_tokens == 0
+
+
+def test_ollama_keeps_the_configured_window_when_the_remaining_budget_shrinks() -> None:
+    """A configured window is requested unchanged so later calls of a run never reload the model."""
+    sent: list[dict[str, object]] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "message": {"content": '{"answer":"hello"}'},
+                "prompt_eval_count": 8,
+                "eval_count": 3,
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(capture))
+    provider = LocalLLMProvider(
+        base_url="http://127.0.0.1:11434",
+        model_name="test",
+        protocol="ollama",
+        client=client,
+        context_window=12_600,
+    )
+
+    asyncio.run(provider.complete(Prompt(system="s", user="u"), ChatReply, budget()))
+    asyncio.run(client.aclose())
+
+    options = sent[0]["options"]
+    assert isinstance(options, dict)
+    assert options["num_ctx"] == 12_600
+    assert options["num_predict"] == 50

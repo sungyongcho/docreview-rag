@@ -376,7 +376,7 @@ class RunResponse(StrictApiModel):
                 "step": trace.step,
                 "node": trace.node,
                 "model": trace.model_name,
-                "attempts": trace.retries + 1,
+                "attempts": trace.requests,
                 "elapsed_ms": trace.request_time_ms,
                 "input_tokens": trace.input_tokens,
                 "output_tokens": trace.output_tokens,

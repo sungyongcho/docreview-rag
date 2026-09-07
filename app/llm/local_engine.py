@@ -63,12 +63,19 @@ def build_local_provider(
     protocol: ConfiguredLocalProtocol,
     api_key: str | None,
     timeout_s: float = DEFAULT_LOCAL_TIMEOUT_S,
+    context_window: int | None = None,
 ) -> LocalLLMProvider:
-    """Assemble the local provider with the protocol resolved from the endpoint."""
+    """Assemble the local provider with the protocol resolved from the endpoint.
+
+    ``context_window`` is the configured input plus output allowance; passing it keeps
+    the Ollama window identical across the calls of one run instead of shrinking with
+    the remaining budget.
+    """
     return LocalLLMProvider(
         base_url=base_url,
         model_name=model_name,
         protocol=resolve_local_protocol(base_url, protocol),
         api_key=api_key,
         timeout_s=timeout_s,
+        context_window=context_window,
     )

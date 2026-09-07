@@ -70,3 +70,27 @@ def test_provider_carries_the_configured_timeout_and_refuses_a_nonpositive_one()
 def test_default_timeout_leaves_room_for_a_slow_first_token() -> None:
     """30 seconds was not enough for structured output on a CPU host; the default is not that."""
     assert DEFAULT_LOCAL_TIMEOUT_S >= 120.0
+
+
+def test_provider_carries_the_configured_context_window_and_refuses_a_nonpositive_one() -> None:
+    """The builder forwards the run-wide window and rejects a window that cannot hold a prompt."""
+    provider = build_local_provider(
+        base_url="http://ollama:11434",
+        model_name="gemma4:e4b",
+        protocol="auto",
+        api_key=None,
+        context_window=12_600,
+    )
+    try:
+        assert provider._context_window == 12_600
+    finally:
+        asyncio.run(provider.aclose())
+
+    with pytest.raises(ValueError, match="context window must be positive"):
+        build_local_provider(
+            base_url="http://ollama:11434",
+            model_name="gemma4:e4b",
+            protocol="auto",
+            api_key=None,
+            context_window=0,
+        )

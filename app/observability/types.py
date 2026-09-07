@@ -74,12 +74,28 @@ class StepTrace(StrictSchema):
     request_time_ms: NonNegativeFloat
     llm_output: StrictStr
     retries: NonNegativeInt
+    #: Requests actually sent for this step; zero for a refusal made before any call.
+    #: Records written before the field existed default to one request per attempt.
+    requests: NonNegativeInt
     error: NonBlank | None = None
     local_timings: tuple[LocalModelTiming, ...] = ()
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_requests(cls, data: object) -> object:
+        """Count one request per attempt unless the trace states how many were sent."""
+        if isinstance(data, dict) and data.get("requests") is None:
+            retries = data.get("retries")
+            data = {**data, "requests": retries + 1 if isinstance(retries, int) else 1}
+        return data
+
     @model_validator(mode="after")
     def validate_usage_details(self) -> Self:
-        """Keep detailed token counters within their provider totals."""
+        """Keep sent requests and detailed token counters consistent with the step."""
+        if self.requests not in (0, self.retries + 1):
+            raise ValueError("requests must be retries plus one, or zero when nothing was sent")
+        if self.requests == 0 and (self.input_tokens or self.output_tokens):
+            raise ValueError("a step refused before any request carries no usage")
         if self.cached_input_tokens + self.cache_write_input_tokens > self.input_tokens:
             raise ValueError("detailed input tokens must not exceed input_tokens")
         if self.reasoning_tokens > self.output_tokens:
@@ -199,7 +215,7 @@ def derived_totals(
     """
     return {
         "iterations": len(node_path),
-        "total_requests": sum(1 + trace.retries for trace in steps),
+        "total_requests": sum(trace.requests for trace in steps),
         "total_input_tokens": sum(trace.input_tokens for trace in steps),
         "total_output_tokens": sum(trace.output_tokens for trace in steps),
         "total_cached_input_tokens": sum(trace.cached_input_tokens for trace in steps),

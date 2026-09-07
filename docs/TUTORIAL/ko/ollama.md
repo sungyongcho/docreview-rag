@@ -151,6 +151,17 @@ ollama ps
 
 `/api/show`는 모델 상세 정보, `/api/ps`는 현재 로드된 모델 정보를 제공합니다. 현재 DocReview 모델 목록은 최대·로드 컨텍스트 값을 수집하지 않으므로 Ollama 도구에서 확인합니다. 누락된 필드는 미확인으로 구분합니다. 컨텍스트 할당을 늘리면 일반적으로 메모리가 더 필요합니다. 이 안내는 선택한 모델·컨텍스트·예산을 바꾸지 않습니다. [모델 상세](https://docs.ollama.com/api-reference/show-model-details), [로드된 모델](https://docs.ollama.com/api/ps), [컨텍스트 길이](https://docs.ollama.com/context-length).
 
+### 지원하는 로컬 구성 {#configurations}
+
+DocReview는 모든 로컬 호출을 숨은 추론을 끈 채(`think: false`) 보냅니다. gemma4처럼 thinking을 지원하는 모델은 그렇지 않으면 출력 허용량 전체를 추론에 쓰고 빈 구조화 답변을 돌려줍니다. Ollama 창 크기(`num_ctx`)는 설정된 입력+출력 허용량이며 한 실행의 모든 호출에서 동일하게 유지됩니다. 요청한 창이 바뀌면 Ollama가 모델을 다시 로드하기 때문입니다(CPU 호스트에서 호출당 10–12초). grade의 근거 문장은 한 문장으로 제한됩니다. 2026-09-07에 Ollama 0.30.7, `gemma4:e4b`(8B, Q4_K_M, 9.6 GB), GPU 없는 Ryzen 7 8845HS, 채점 청크 5개, 근거 최대 12,000자로 측정했습니다.
+
+| 실행 위치 | 프롬프트 평가 | 생성 | 기준 질문 | 권장 설정 |
+| --- | --- | --- | --- | --- |
+| CPU 전용(`size_vram` 0) | 캐시되지 않은 2.5k 토큰 grade 프롬프트 기준 80–95 tokens/s(약 30초); 반복되는 프롬프트 접두어는 캐시에서 처리 | 약 10 tokens/s(단독 측정 12–14) | 끝까지 36–103초: grade 19–68초, 검증 17–35초; 재시작 후 첫 호출은 모델 로드 10–20초 추가 | 실행 한도 경과 시간 120초는 예열된 모델이면 충분하고, 콜드 로드까지 흡수하려면 300초. `LOCAL_LLM_MAX_OUTPUT_TOKENS`는 600 유지(grade 150–300, 검증 140–160 필요). 근거 최대 컨텍스트 8,000자는 결과는 같으면서 프롬프트 평가를 줄임. k는 5 유지; 더 큰 후보 집합은 CPU에서 지원하지 않음. `LOCAL_LLM_TIMEOUT_S=300` 설정. |
+| GPU 또는 혼합 | 미측정 | 미측정 | 미측정 | CPU 설정에서 시작해 측정 후 경과 시간을 낮춤 |
+
+이 변경 전에는 같은 질문이 grade 단계에서 77–144초 뒤 `output_tokens: used=600 limit=600`과 잘못된 JSON 본문으로 실패했습니다. 600토큰은 숨은 추론이었습니다. README의 `ollama run MODEL ""` 사전 로드는 Ollama 기본 4,096토큰 창으로 모델을 올리므로 DocReview의 첫 호출이 설정된 창으로 다시 로드하는 것은 정상입니다. 남은 입력 허용량을 넘길 것으로 추정되는 프롬프트는 호출 전에 거절됩니다([실행 한도](runtime.md#limits) 참고).
+
 ## DocReview에서 연결하기 {#connect}
 
 **설정 → 로컬 LLM**의 서버 선택기를 엽니다. **Default**는 현재 DocReview 환경에서 주소를 가져옵니다. **서버 추가…**를 선택하면 서버 이름·별도 주소·프로토콜 입력이 나타납니다. 이름은 나중에 연결 대상을 구분하기 위한 표시명입니다.
@@ -199,6 +210,8 @@ rag-ollama-check --setup
 | 연결 후 답변 실행 실패 | Run trace와 기록된 실패 유형 | [실행 문제 해결](troubleshooting.md#execution) 확인. 연결 성공은 답변 품질 검증이 아님 |
 
 로그와 실제 실행 측정은 [실행과 측정](runtime.md#local-models)에서 이어갑니다. 진단 명령의 상세 정의는 [CLI 안내](cli.md#로컬-모델-연결-진단)에 있습니다.
+
+`rag-ollama-check`와 달리 `.venv/bin/python -m scripts.benchmark_local_grade --api-url http://127.0.0.1:8001`은 모델을 로드하고 실행합니다. `/retrieve`로 워크플로의 grade 프롬프트를 만들어 thinking 켬/끔과 출력 상한별로 구조화 출력 스키마와 함께 Ollama를 호출하고, 프롬프트 토큰·초당 토큰·숨은 추론 길이·JSON 유효성을 보고합니다. 격리된 스택에서만 실행하며 운영 모드에서는 거부합니다. [지원하는 로컬 구성](#configurations) 표는 이 스크립트로 얻었습니다.
 
 <!-- capture:24-connection-diagnostics -->
 

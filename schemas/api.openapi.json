@@ -234,7 +234,7 @@
         "properties": {
           "attempts": {
             "maximum": 2.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Attempts",
             "type": "integer"
           },
@@ -249,6 +249,18 @@
               }
             ],
             "title": "Limit"
+          },
+          "projected_input_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Input Tokens"
           },
           "schema_errors": {
             "default": [],
@@ -2911,6 +2923,17 @@
             "title": "Output Tokens",
             "type": "integer"
           },
+          "projected_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projected Input Tokens"
+          },
           "provider": {
             "default": "unknown",
             "title": "Provider",
@@ -4592,7 +4615,7 @@
         "properties": {
           "attempts": {
             "maximum": 2.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Attempts",
             "type": "integer"
           },
@@ -6259,6 +6282,11 @@
             "title": "Request Time Ms",
             "type": "number"
           },
+          "requests": {
+            "minimum": 0.0,
+            "title": "Requests",
+            "type": "integer"
+          },
           "retries": {
             "minimum": 0.0,
             "title": "Retries",
@@ -6280,7 +6308,8 @@
           "estimated_cost_usd",
           "request_time_ms",
           "llm_output",
-          "retries"
+          "retries",
+          "requests"
         ],
         "title": "StepTrace",
         "type": "object"

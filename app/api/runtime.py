@@ -967,6 +967,7 @@ class RuntimeApiServices(ApiServices):
                 protocol=inventory.protocol,
                 api_key=inventory.api_key,
                 timeout_s=self._local_timeout_s,
+                context_window=budget.max_input_tokens + budget.max_output_tokens,
             )
             if context is not None:
                 context.provider = provider

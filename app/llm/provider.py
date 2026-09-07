@@ -13,7 +13,9 @@ from openai import AsyncOpenAI
 from openai.types.responses import ResponseFormatTextJSONSchemaConfigParam
 from pydantic import BaseModel, ValidationError
 
+from app.llm.estimate import estimate_prompt_tokens, exceeds_allowance
 from app.llm.schemas import (
+    BudgetExceeded,
     CompletionFailure,
     LocalModelTiming,
     Prompt,
@@ -158,6 +160,16 @@ class LLMProvider(ABC):
     ) -> RawProviderResponse:
         """Return one provider-neutral raw response without retrying."""
 
+    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
+        """Estimate the input tokens ``prompt`` would cost, or ``None`` to skip the pre-flight.
+
+        Providers with a tokenizer project every attempt so a request that cannot fit the
+        remaining allowance is refused before it is paid for; the base class projects
+        nothing, which keeps deterministic fixtures on their reported usage alone.
+        """
+        del prompt
+        return None
+
     async def complete[OutputT: BaseModel](
         self,
         prompt: Prompt,
@@ -210,7 +222,9 @@ class LLMProvider(ABC):
         total_reasoning_tokens = 0
         total_request_time_ms = 0.0
 
-        def failed(failure: CompletionFailure) -> ProviderResult[OutputT]:
+        def failed(
+            failure: CompletionFailure, *, projected: int | None = None
+        ) -> ProviderResult[OutputT]:
             """Close the completion over whatever evidence has accumulated so far."""
             return ProviderResult(
                 status=failure.status,
@@ -227,9 +241,11 @@ class LLMProvider(ABC):
                     reasoning_tokens=total_reasoning_tokens,
                     request_time_ms=total_request_time_ms,
                     budget=budget,
+                    projected_input_tokens=projected,
                 ),
             )
 
+        repair_errors: tuple[str, ...] = ()
         for attempt in (1, 2):
             remaining = ProviderBudget(
                 max_input_tokens=budget.max_input_tokens - total_input_tokens,
@@ -243,6 +259,23 @@ class LLMProvider(ABC):
                 ),
                 pricing=budget.pricing,
             )
+            # Fail before paying: a prompt that cannot fit the remaining input allowance is
+            # refused here, including the larger repair prompt of a second attempt.
+            projected = self._projected_input_tokens(current_prompt)
+            if projected is not None and exceeds_allowance(projected, remaining.max_input_tokens):
+                # Nothing is sent, so nothing is fabricated: the refusal reports how many
+                # requests actually went out (none on the first attempt, one before a repair).
+                return failed(
+                    BudgetExceeded(
+                        which="input_tokens",
+                        used=total_input_tokens,
+                        limit=budget.max_input_tokens,
+                        attempts=len(raw_outputs),
+                        schema_errors=repair_errors,
+                        projected_input_tokens=projected,
+                    ),
+                    projected=projected,
+                )
             started = self._clock()
             try:
                 raw = await self._request(current_prompt, schema, remaining)
@@ -305,6 +338,7 @@ class LLMProvider(ABC):
                     ):
                         return failed(failure)
                     current_prompt = _repair_prompt(prompt, raw.output_text, errors)
+                    repair_errors = tuple(errors)
                     continue
                 return failed(SchemaRejected(errors=errors))
 
@@ -337,6 +371,7 @@ class LLMProvider(ABC):
         reasoning_tokens: int,
         request_time_ms: float,
         budget: ProviderBudget,
+        projected_input_tokens: int | None = None,
     ) -> ProviderMetadata:
         """Build trace-ready metadata from accumulated attempts."""
         metadata = ProviderMetadata(
@@ -355,11 +390,13 @@ class LLMProvider(ABC):
                 cache_write_input_tokens=cache_write_input_tokens,
             ),
             request_time_ms=request_time_ms,
-            retries=len(raw_outputs) - 1,
+            retries=max(len(raw_outputs) - 1, 0),
             request_ids=tuple(request_ids),
-            llm_output=raw_outputs[-1],
+            llm_output=raw_outputs[-1] if raw_outputs else "",
             raw_outputs=tuple(raw_outputs),
             local_timings=tuple(local_timings),
+            requests=len(raw_outputs),
+            projected_input_tokens=projected_input_tokens,
         )
 
         record_model_call(metadata)
@@ -378,6 +415,7 @@ class DeterministicLLMProvider(LLMProvider):
         *,
         model_name: str = "deterministic-mock",
         clock: Clock = time.perf_counter_ns,
+        projected_input_tokens: Callable[[Prompt], int] | None = None,
     ) -> None:
         if not model_name.strip():
             raise ValueError("model_name must not be blank")
@@ -388,6 +426,11 @@ class DeterministicLLMProvider(LLMProvider):
         self._responses = list(responses)
         self._prompts: list[Prompt] = []
         self._budgets: list[ProviderBudget] = []
+        self._projection = projected_input_tokens
+
+    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
+        """Project only when a test injected a projection; fixtures otherwise report usage alone."""
+        return None if self._projection is None else self._projection(prompt)
 
     @property
     def prompts(self) -> tuple[Prompt, ...]:
@@ -531,6 +574,10 @@ class OpenAILLMProvider(LLMProvider):
         self._owned_client = AsyncOpenAI(api_key=api_key) if client is None else None
         client_value: object = client if client is not None else self._owned_client
         self._client = cast(_OpenAIClient, client_value)
+
+    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
+        """Project the prompt with the model's own encoding before any token is paid for."""
+        return estimate_prompt_tokens(prompt, model_name=self.model_name)
 
     async def aclose(self) -> None:
         """Close the HTTP client this provider opened for itself.

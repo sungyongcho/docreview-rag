@@ -151,6 +151,17 @@ ollama ps
 
 `/api/show` supplies model details; `/api/ps` reports currently loaded models. DocReview's current model list does not collect the maximum or loaded context values: inspect those through Ollama's own tools. Missing fields remain unknown. A larger context allocation generally needs more memory; this guide does not change your selected model, context, or budgets. See [model details](https://docs.ollama.com/api-reference/show-model-details), [loaded models](https://docs.ollama.com/api/ps), and [context length](https://docs.ollama.com/context-length).
 
+### Supported local configurations {#configurations}
+
+DocReview sends every local call with hidden reasoning disabled (`think: false`): a thinking model such as gemma4 otherwise spends the whole output allowance on reasoning and returns an empty structured answer. The Ollama window (`num_ctx`) is the configured input plus output allowance and stays identical for all calls of one run, because Ollama reloads the model whenever the requested window changes (10–12 s per call on a CPU host). Grade rationales are bounded to one sentence. Measured on 2026-09-07 with Ollama 0.30.7, `gemma4:e4b` (8B, Q4_K_M, 9.6 GB) on a Ryzen 7 8845HS without a GPU, five graded chunks, evidence up to 12,000 characters:
+
+| Placement | Prompt evaluation | Generation | Reference question | Recommended settings |
+| --- | --- | --- | --- | --- |
+| CPU only (`size_vram` 0) | 80–95 tokens/s for an uncached 2.5k-token grade prompt (about 30 s); a repeated prompt prefix is served from cache | about 10 tokens/s (12–14 in isolation) | 36–103 s end to end: grade 19–68 s, verification 17–35 s; the first call after a restart adds a 10–20 s model load | Run limits wall clock 120 s works for a warm model; use 300 s to absorb a cold load. Keep `LOCAL_LLM_MAX_OUTPUT_TOKENS` at 600 (grade needs 150–300, verification 140–160). Evidence max context 8,000 characters trims prompt evaluation with the same outcome. Keep k at 5; larger candidate sets are not supported on CPU. Set `LOCAL_LLM_TIMEOUT_S=300`. |
+| GPU or mixed | not measured | not measured | not measured | Start from the CPU settings and lower the wall clock once measured |
+
+Before these changes the same question failed after 77–144 s at the grade step with `output_tokens: used=600 limit=600` and an invalid JSON body: the 600 tokens were hidden reasoning. The `ollama run MODEL ""` preload in the README loads the model with Ollama's default 4,096-token window; DocReview's first call reloads it at the configured window, which is expected. A prompt projected above the remaining input allowance is refused before the call (see [run limits](runtime.md#limits)).
+
 ## Connect in DocReview {#connect}
 
 Open **Settings → Local LLM** and use the server selector. **Default** obtains its address from the current DocReview environment. **Add a server…** reveals a server name, alternate address, and protocol. The name is a label that helps you recognize this endpoint later.
@@ -199,6 +210,8 @@ Read failures by layer rather than repeating installation:
 | Answer fails after connection succeeds | Run trace and the recorded failure type | Follow [execution troubleshooting](troubleshooting.md#execution); reachability is not an answer-quality test |
 
 For logs and measured execution, continue with [runtime](runtime.md#local-models). The [CLI reference](cli.md#diagnose-local-model-connectivity) owns the full diagnostic-command details.
+
+Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.benchmark_local_grade --api-url http://127.0.0.1:8001` loads and runs the model: it builds the workflow's grade prompt from `/retrieve`, calls Ollama with the structured-output schema across thinking on/off and output ceilings, and reports prompt tokens, tokens per second, hidden-reasoning length and JSON validity. Run it only against an isolated stack; it refuses to run in production mode. The [supported configurations](#configurations) table comes from it.
 
 <!-- capture:24-connection-diagnostics -->
 

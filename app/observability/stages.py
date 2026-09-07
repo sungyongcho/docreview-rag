@@ -97,7 +97,7 @@ def record_model_call(metadata: ProviderMetadata) -> None:
             "step": len(recorder.model_calls) + 1,
             "node": _NODE.get(),
             "model": metadata.model_name,
-            "attempts": metadata.retries + 1,
+            "attempts": metadata.requests,
             "elapsed_ms": metadata.request_time_ms,
             "input_tokens": metadata.input_tokens,
             "output_tokens": metadata.output_tokens,
@@ -105,6 +105,7 @@ def record_model_call(metadata: ProviderMetadata) -> None:
             "cache_write_input_tokens": metadata.cache_write_input_tokens,
             "reasoning_tokens": metadata.reasoning_tokens,
             "estimated_cost_usd": str(metadata.estimated_cost_usd),
+            "projected_input_tokens": metadata.projected_input_tokens,
             **provider_identity(api_url=metadata.api_url),
             "local_timings": [
                 timing.model_dump(mode="json", exclude_none=True)

@@ -43,7 +43,7 @@ Open **Run details → Performance** beside the answer. **Execution performance*
 | `Not collected` | No usable measurement was recorded. It is not zero and not one attempt. |
 | `0ms` | A measured zero duration. |
 | `<1ms` | A positive duration below one millisecond. |
-| Calls / attempts | Calls and provider attempts when collected; retries may make them different. |
+| Calls / attempts | Calls and provider attempts when collected; retries may make them different, and a call refused before it started counts zero attempts. |
 | Loading / input processing / generation | Separate local-provider timings when that provider returned them. |
 | Tokens per second | Calculated only when generated-token count and generation duration exist. |
 
@@ -65,7 +65,7 @@ The default conversation budget is 6 iterations, 60,000 input tokens, 4,000 outp
 The failure field tells you what to change:
 
 - `budget_exceeded`: read `resource`, `limit`, `observed`, and `blocked_node`.
-- `provider_failure`: read `status`, `attempts`, `details`, and `node`.
+- `provider_failure`: read `status`, `attempts`, `details`, and `node`. When its `budget` carries `projected_input_tokens`, the call was refused before it started because the estimated prompt did not fit the remaining input allowance; nothing was sent, so the record keeps the projection with zero requests and no usage; when the refused prompt was the repair after a first response, exactly that one request stays counted. Lower **Review settings → Evidence** max context or raise the input limit named by `budget_source`.
 - `node_error`: read `error_type`, `message`, and `node`.
 
 Adjust a run budget under **Review settings → Run limits**. Prompt/evidence size is under **Review settings → Evidence**; it is a separate control. A provider timeout or authentication error is not fixed by raising the run token limit. Public request-rate and monetary allowances are another boundary, shown under System's limits. See [execution troubleshooting](troubleshooting.md#execution).

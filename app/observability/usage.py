@@ -15,6 +15,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import OperatorJob, Trace
+from app.observability.persistence import stored_step_requests
 from app.observability.types import StepTrace
 
 USAGE_KEY = "provider_usage"
@@ -224,6 +225,13 @@ async def persist_embedding_usage(session: AsyncSession, record: dict[str, objec
         )
 
 
+def _sent_requests(context: Mapping[str, object], trace: Trace | StepTrace | Row[Any]) -> int:
+    """Count the requests one trace sent: kept on a step, reconstructed for a stored row."""
+    if isinstance(trace, StepTrace):
+        return trace.requests
+    return stored_step_requests(context, step=trace.step, retries=trace.retries)
+
+
 def review_usage(
     run_context: Mapping[str, object] | None, traces: Sequence[Trace | StepTrace | Row[Any]]
 ) -> list[dict[str, object]]:
@@ -253,7 +261,7 @@ def review_usage(
                 ),
                 model_name=trace.model_name,
                 role=trace.node,
-                requests=1 + trace.retries,
+                requests=_sent_requests(context, trace),
                 input_tokens=trace.input_tokens,
                 cached_input_tokens=trace.cached_input_tokens,
                 cache_write_input_tokens=trace.cache_write_input_tokens,

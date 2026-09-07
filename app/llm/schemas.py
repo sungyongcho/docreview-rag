@@ -8,6 +8,7 @@ from typing import Annotated, Literal, Self
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictBool,
@@ -26,6 +27,31 @@ def _reject_blank(value: str) -> str:
 
 
 NonBlank = Annotated[StrictStr, Field(min_length=1), AfterValidator(_reject_blank)]
+
+#: Longest grade rationale kept: about twenty words, so five grades cost far less than the
+#: 600-token local output allowance the grade and check calls share.
+GRADE_REASON_MAX_CHARS = 160
+
+
+def _truncate_reason(value: object) -> object:
+    """Cut an over-long rationale at its last word boundary instead of rejecting it.
+
+    Constrained decoders honour the schema's ``maxLength``; providers that ignore it would
+    otherwise turn a wordy but correct grade into a schema failure and a repair round.
+    """
+    if isinstance(value, str) and len(value) > GRADE_REASON_MAX_CHARS:
+        head = value[:GRADE_REASON_MAX_CHARS]
+        cut = head.rfind(" ")
+        return (head[:cut] if cut > GRADE_REASON_MAX_CHARS // 2 else head).rstrip()
+    return value
+
+
+BoundedReason = Annotated[
+    StrictStr,
+    BeforeValidator(_truncate_reason),
+    Field(min_length=1, max_length=GRADE_REASON_MAX_CHARS),
+    AfterValidator(_reject_blank),
+]
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
 NonNegativeFloat = Annotated[StrictFloat, Field(ge=0, allow_inf_nan=False)]
@@ -211,7 +237,7 @@ class ChunkRelevance(StrictSchema):
 
     chunk_id: PositiveInt
     relevant: StrictBool
-    reason: NonBlank
+    reason: BoundedReason
 
 
 class RelevanceJudgment(StrictSchema):
@@ -317,14 +343,21 @@ class BudgetExceeded(StrictSchema):
     which: Literal["input_tokens", "output_tokens", "estimated_cost_usd"]
     used: StrictInt | Decimal
     limit: StrictInt | Decimal
-    attempts: Annotated[StrictInt, Field(ge=1, le=2)]
+    #: Requests actually sent before the refusal; zero when the first attempt was refused
+    #: from its projected size and nothing reached the provider.
+    attempts: Annotated[StrictInt, Field(ge=0, le=2)]
     schema_errors: tuple[NonBlank, ...] = ()
+    #: Estimated size of the request that was refused before it was sent. ``used`` stays
+    #: actual usage, so an estimate never inflates reported accounting.
+    projected_input_tokens: NonNegativeInt | None = None
 
     @model_validator(mode="after")
     def validate_nonnegative_values(self) -> Self:
-        """Reject nonsensical negative budget evidence."""
+        """Reject nonsensical negative budget evidence and misplaced projections."""
         if self.used < 0 or self.limit < 0:
             raise ValueError("budget evidence must be nonnegative")
+        if self.projected_input_tokens is not None and self.which != "input_tokens":
+            raise ValueError("a projected prompt size applies to the input token budget only")
         if isinstance(self.used, Decimal) and not self.used.is_finite():
             raise ValueError("used budget evidence must be finite")
         if isinstance(self.limit, Decimal) and not self.limit.is_finite():
@@ -361,14 +394,34 @@ class ProviderMetadata(StrictSchema):
     llm_output: StrictStr
     raw_outputs: tuple[StrictStr, ...]
     local_timings: tuple[LocalModelTiming, ...] = ()
+    #: Requests actually sent to the provider: one per raw output, or zero when the only
+    #: attempt was refused before the call. Defaults to the captured attempts.
+    requests: NonNegativeInt
+    #: Set when the final attempt was refused before the call from its projected size.
+    projected_input_tokens: NonNegativeInt | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_requests(cls, data: object) -> object:
+        """Count one request per captured raw output unless the caller states otherwise."""
+        if isinstance(data, dict) and data.get("requests") is None:
+            outputs = data.get("raw_outputs")
+            data = {**data, "requests": len(outputs) if isinstance(outputs, tuple | list) else 1}
+        return data
 
     @model_validator(mode="after")
     def validate_attempt_metadata(self) -> Self:
-        """Keep final output and retry count consistent with captured attempts."""
+        """Keep final output, retry count and sent requests consistent with captured attempts."""
+        if self.requests == 0:
+            if self.raw_outputs or self.retries or self.request_ids or self.llm_output:
+                raise ValueError("a refusal before any request carries no provider output")
+            if self.input_tokens or self.output_tokens:
+                raise ValueError("a refusal before any request carries no usage")
+            return self
         if not self.raw_outputs:
             raise ValueError("provider metadata requires at least one raw output")
-        if len(self.raw_outputs) != self.retries + 1:
-            raise ValueError("raw output count must equal retries plus one")
+        if len(self.raw_outputs) != self.retries + 1 or self.requests != len(self.raw_outputs):
+            raise ValueError("raw output count must equal retries plus one and sent requests")
         if self.llm_output != self.raw_outputs[-1]:
             raise ValueError("llm_output must equal the final raw output")
         if len(self.request_ids) > len(self.raw_outputs):

@@ -28,6 +28,8 @@ class ExecutionModelCall(StrictSchema):
     provider_timing: list[LocalModelTiming] | None = None
     timing_unavailable_reason: str | None = "not_recorded"
     error: str | None = None
+    #: Estimated prompt size of a call refused before it was sent; absent otherwise.
+    projected_input_tokens: int | None = None
 
 
 class ExecutionCandidate(StrictSchema):

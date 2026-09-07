@@ -6,6 +6,7 @@ from pydantic import ValidationError
 import pytest
 
 from app.llm.schemas import (
+    GRADE_REASON_MAX_CHARS,
     AnswerDecision,
     BudgetExceeded,
     ChunkRelevance,
@@ -31,6 +32,7 @@ def metadata():
         estimated_cost_usd=Decimal("0"),
         request_time_ms=1.0,
         retries=0,
+        requests=1,
         request_ids=("req-1",),
         llm_output="{}",
         raw_outputs=("{}",),
@@ -193,6 +195,7 @@ def test_provider_metadata_keeps_final_raw_output_and_retry_count_consistent():
         retries=1,
         raw_outputs=("invalid", "valid"),
         llm_output="valid",
+        requests=2,
     )
     result = ProviderMetadata.model_validate(values)
 
@@ -201,6 +204,32 @@ def test_provider_metadata_keeps_final_raw_output_and_retry_count_consistent():
         ProviderMetadata.model_validate({**values, "llm_output": "invalid"})
     with pytest.raises(ValidationError):
         ProviderMetadata.model_validate({**values, "provider": "   "})
+
+
+def test_provider_metadata_counts_sent_requests_and_allows_a_refusal_before_any_request():
+    """Requests default to one per captured output; a refusal before the call carries none."""
+    assert metadata().requests == 1
+    repaired = metadata().model_dump()
+    repaired.update(retries=1, raw_outputs=("invalid", "valid"), llm_output="valid", requests=None)
+    assert ProviderMetadata.model_validate(repaired).requests == 2
+    with pytest.raises(ValidationError, match="sent requests"):
+        ProviderMetadata.model_validate({**metadata().model_dump(), "requests": 2})
+
+    refused = metadata().model_dump()
+    refused.update(
+        requests=0,
+        raw_outputs=(),
+        llm_output="",
+        request_ids=(),
+        input_tokens=0,
+        output_tokens=0,
+        projected_input_tokens=2_521,
+    )
+    assert ProviderMetadata.model_validate(refused).requests == 0
+    with pytest.raises(ValidationError, match="no provider output"):
+        ProviderMetadata.model_validate({**refused, "raw_outputs": ("",)})
+    with pytest.raises(ValidationError, match="no usage"):
+        ProviderMetadata.model_validate({**refused, "input_tokens": 1})
 
 
 def test_provider_result_requires_exactly_one_output_or_matching_refusal():
@@ -233,3 +262,38 @@ def test_provider_result_requires_exactly_one_output_or_matching_refusal():
             refusal=None,
             metadata=metadata(),
         )
+
+
+def test_budget_refusal_projection_requires_the_input_resource():
+    """A projected prompt size belongs to the input budget only and never to output or cost."""
+    refusal = BudgetExceeded(
+        which="input_tokens", used=0, limit=2_000, attempts=0, projected_input_tokens=2_521
+    )
+    assert refusal.projected_input_tokens == 2_521
+    assert refusal.attempts == 0
+    with pytest.raises(ValidationError):
+        BudgetExceeded(which="input_tokens", used=0, limit=2_000, attempts=-1)
+    with pytest.raises(ValidationError, match="input token budget only"):
+        BudgetExceeded(
+            which="output_tokens", used=600, limit=600, attempts=1, projected_input_tokens=1
+        )
+
+
+def test_grade_reason_is_bounded_in_schema_and_truncated_instead_of_rejected():
+    """The schema advertises the bound; a longer rationale is cut at a word, blanks still fail."""
+    schema = RelevanceJudgment.model_json_schema()
+    reason = schema["$defs"]["ChunkRelevance"]["properties"]["reason"]
+    assert reason["maxLength"] == GRADE_REASON_MAX_CHARS
+    assert reason["minLength"] == 1
+
+    long = "word " * 60
+    grade = ChunkRelevance(chunk_id=1, relevant=True, reason=long)
+    assert len(grade.reason) <= GRADE_REASON_MAX_CHARS
+    assert not grade.reason.endswith(" ")
+    assert grade.reason.endswith("word")
+    short = ChunkRelevance(chunk_id=1, relevant=True, reason="Direct evidence.")
+    assert short.reason == "Direct evidence."
+    with pytest.raises(ValidationError):
+        ChunkRelevance(chunk_id=1, relevant=True, reason="   ")
+    with pytest.raises(ValidationError):
+        ChunkRelevance(chunk_id=1, relevant=True, reason=42)

@@ -264,8 +264,17 @@ def _provider_failure[OutputT: BaseModel](
     if isinstance(refusal, SchemaRejected):
         details = refusal.errors
     elif isinstance(refusal, BudgetExceeded):
+        projected = (
+            ()
+            if refusal.projected_input_tokens is None
+            else (
+                f"next request projected at {refusal.projected_input_tokens} input tokens; "
+                "refused before the call",
+            )
+        )
         details = (
             f"{refusal.which}: used={refusal.used} limit={refusal.limit}",
+            *projected,
             *refusal.schema_errors,
         )
     elif isinstance(refusal, ProviderRefusal):
