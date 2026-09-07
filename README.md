@@ -13,6 +13,8 @@ SEC 10-K와 한국 DART 사업보고서를 원문 근거와 함께 검토하는 
 
 ## 처음 실행하기
 
+새 clone의 전체 설치 경로는 [환경 준비](docs/TUTORIAL/ko/environment.md#qs-setup)를 따릅니다. 이미 실행 중인 앱은 [Quick Start](docs/TUTORIAL/ko/quickstart.md)에서 바로 체험하세요.
+
 원문·DB·청크·임베딩과 `.env`는 clone에 포함되지 않습니다. Bash 또는 Zsh에서
 [uv](https://docs.astral.sh/uv/getting-started/installation/)와 Docker Engine·Compose 2.24.4+를 준비하세요.
 RAG Helper는 저장소에 포함되어 있어 따로 내려받지 않습니다.
@@ -32,11 +34,11 @@ rag-quickstart
 OpenAI 임베딩은 `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-large`로 설정합니다.
 기존 설정과 데이터는 보존하며, 첫 실행 자체는 원문 다운로드나 유료 모델 호출을 하지 않습니다.
 
-서비스가 준비되면 표시된 **Quick Start** 링크를 여세요. 기본 포트에서는
-[한국어 Quick Start](http://localhost:8000/docreview-rag-agent/docs/ko/quickstart/) 또는
-[English Quick Start](http://localhost:8000/docreview-rag-agent/docs/en/quickstart/)에서
+서비스가 준비되면 표시된 **Quick Start — DEV ONLY** 링크를 여세요. 기본 포트에서는
+[한국어 Quick Start — DEV ONLY](http://localhost:8000/docreview-rag-agent/docs/ko/quickstart-dev/) 또는
+[English Quick Start — DEV ONLY](http://localhost:8000/docreview-rag-agent/docs/en/quickstart-dev/)에서
 **CLI / Web** 중 하나를 선택해 NVIDIA SEC FY2024와 삼성전자 DART FY2024의 원문부터
-청킹·OpenAI 임베딩·BM25까지 준비합니다. [GitHub에서 바로 읽기](docs/TUTORIAL/ko/quickstart.md)도 가능합니다.
+청킹·OpenAI 임베딩·BM25까지 준비합니다. [GitHub에서 바로 읽기](docs/TUTORIAL/ko/quickstart-dev.md)도 가능합니다.
 
 `source` 등록은 현재 터미널에 적용됩니다. 영구 등록은 아래 설치 절의 절대경로 안내를 따르세요.
 `rag-fresh-start`는 기존 데이터를 지우는 재시작 명령이므로 새 clone의 첫 실행에는 사용하지 않습니다.
@@ -454,12 +456,12 @@ ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대
 `RECREATE <체크아웃 이름> AND SOURCES`로 승인합니다. `--keep-sources`는 원문을 보존하며,
 `--sample`은 동일한 초기화 뒤 NVDA/AMD FY2023–2024 초안만 저장하고 다운로드하지 않습니다.
 코드·`.env`·평가 내보내기·무관한 테이블·DB 볼륨은 보존합니다. 완료 후 `rag-up`으로 시작하세요.
-`rag-fresh-start`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Web Quick Start 1단계 안내까지 이어갑니다.
+`rag-fresh-start`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Quick Start — DEV ONLY의 Web 1단계 안내까지 이어갑니다.
 `--keep-sources`·`--sample`을 지원하며 설정·내보내기·DB 볼륨은 보존합니다. 권한 오류는 소유자에게 요청할
 정확한 명령과 한 번의 검사 재시도를 제공합니다. 더 넓은 삭제는 별도 `--extreme`의 두 확인 단계와 브라우저 확인을 요구합니다.
 
 검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를
-따릅니다. Quick Start는 답변 질문을 제출하기 전에 끝납니다.
+따릅니다. Quick Start — DEV ONLY는 답변 질문을 제출하기 전에 끝납니다.
 
 ### 3. 전체 서비스 시작
 

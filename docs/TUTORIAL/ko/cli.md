@@ -580,7 +580,7 @@ API 중지 이후 실패하면 DB·원문이 그대로인지 또는 복원됐는
 <!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=ko; theme=light; preserve existing screenshot assets. -->
 
 초기화가 완료돼야 `rag-dev up --build -d`와 readiness 확인을 실행하고 앱 주소와 양쪽 언어의
-[Web Quick Start 1단계](quickstart.md#qs-web-1)를 출력합니다. 빌드·준비 확인 실패 시 기존
+[Quick Start — DEV ONLY, Web 1단계](quickstart-dev.md#qs-web-1)를 출력합니다. 빌드·준비 확인 실패 시 기존
 `rag-ollama-check` 진단을 재사용하고, 확인 후 볼륨을 보존하는 `rag-dev down` →
 `rag-dev up --build -d` 복구를 한 번 제안합니다. 불완전한 초기화에서는 재시작하지 않습니다.
 일반 clean start는 브라우저 대화를 삭제하지 않습니다.
@@ -617,7 +617,7 @@ extreme은 정확한 삭제 목록을 먼저 표시합니다. `.env`·대화·�
 
 터미널에서 두 번 확인한 뒤 다른 DocReview 탭을 닫고, 대화가 저장된 브라우저로 출력된 `/reset-local/#<operation-id>` URL을 여세요. 페이지가 해당 주소의 DocReview local/session storage를 삭제·검증하고 같은 작업 ID로 인증된 확인 응답을 보내야 로컬 삭제가 진행됩니다. CLI는 그 확인을 받은 브라우저·주소에 한해 삭제 완료를 표시합니다. 다른 프로필·기기·포트와 localhost/127.0.0.1 주소는 별개입니다. 메모리에 대화가 남은 이전 탭을 다시 열지 마세요. 확인이 만료되면 로컬 삭제는 시작하지 않지만 브라우저 삭제는 이미 발생했을 수 있으므로 상태를 먼저 확인하세요.
 
-extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-quickstart`로 새 `.env`를 준비하고 로컬에서 설정한 다음 Quick Start를 따라 데이터를 다시 준비하세요. 부분 실패는 완료된 단계를 확인하세요. 자동 재시작이나 삭제 재시도는 하지 않습니다.
+extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-quickstart`로 새 `.env`를 준비하고 로컬에서 설정한 다음 [Quick Start — DEV ONLY](quickstart-dev.md)를 따라 데이터를 다시 준비하세요. 부분 실패는 완료된 단계를 확인하세요. 자동 재시작이나 삭제 재시도는 하지 않습니다.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: extreme CLI browser acknowledgement. State: matching waiting operation on reset-local, then acknowledged deletion. Capture en and ko in light mode using disposable data only; no credentials. -->

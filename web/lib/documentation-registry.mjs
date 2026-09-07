@@ -92,7 +92,8 @@ export function legacyDocumentationTarget(locale, hash, value = registry) {
 export function documentationLink(file, hash, locale = "ko", value = registry) {
   const source = value.documents.find((document) => document.source === file || document.legacyFiles?.includes(file));
   if (!source) return null;
-  const legacy = source.legacyFiles?.includes(file) ? legacyDocumentationTarget(locale, hash, value) : null;
+  const legacy = source.legacyFiles?.includes(file) || (source.id === "quickstart" && fragment(hash).startsWith("qs-"))
+    ? legacyDocumentationTarget(locale, hash, value) : null;
   return legacy ?? { document: documentationDocument(source.id, locale, value), hash };
 }
 
@@ -107,7 +108,7 @@ export function localizedDocumentationRoute(pathname, locale, hash = "", value =
   let anchor = fragment(hash);
   const section = source.localizedSections?.find((entry) => match[2] ? entry[match[2]] === anchor : value.locales.some((language) => entry[language] === anchor));
   if (section) anchor = section[locale];
-  if (!source.slug && anchor) {
+  if ((!source.slug || source.id === "quickstart") && anchor) {
     const legacy = legacyDocumentationTarget(match[2] ?? locale, anchor, value);
     if (legacy) {
       target = documentationDocument(legacy.document.id, locale, value);

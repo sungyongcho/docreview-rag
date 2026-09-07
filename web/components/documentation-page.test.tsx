@@ -25,3 +25,23 @@ it.each(["ko", "en"] as const)("renders the development outline with honest lang
   for (const link of container.querySelectorAll('a[href^="/docs/"]')) expect(link).not.toHaveAttribute("target");
   expect(screen.getByRole("link", { name: locale === "ko" ? "개발 기록" : "Development log" })).toHaveAttribute("aria-current", "page");
 });
+
+
+it.each(["en", "ko"] as const)("renders separate visitor and DEV quick starts with purposeful next links (%s)", async (locale) => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const availability = locale === "ko" ? "이 안내의 사용 범위" : "Guide availability";
+  const visitor = render(await DocumentationPage({ documentId: "quickstart", locale }));
+  expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toHaveTextContent("Quick Start");
+  expect(screen.getByRole("complementary", { name: availability }).querySelector(".development-badge")).toBeNull();
+  expect(screen.queryByRole("tablist")).toBeNull();
+  expect(visitor.container.querySelector('a[rel="next"]')).toHaveAttribute("href", expect.stringMatching(new RegExp(`^/docs/${locale}/answers/?$`)));
+  cleanup();
+  const developer = render(await DocumentationPage({ documentId: "quickstart-dev", locale }));
+  expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toHaveTextContent("Quick Start — DEV ONLY");
+  expect(screen.getByRole("complementary", { name: availability }).querySelector(".development-badge")).not.toBeNull();
+  expect(screen.getByRole("tab", { name: "Web" })).toHaveAttribute("aria-selected", "true");
+  expect(developer.container.querySelectorAll('[id^="qs-web-"]')).toHaveLength(7);
+  expect(developer.container.querySelectorAll('[id^="qs-cli-"]')).toHaveLength(7);
+  expect(developer.container.querySelector("#qs-setup")).toBeNull();
+  expect(developer.container.querySelector('a[rel="next"]')).toHaveAttribute("href", expect.stringMatching(new RegExp(`^/docs/${locale}/retrieval/?$`)));
+});

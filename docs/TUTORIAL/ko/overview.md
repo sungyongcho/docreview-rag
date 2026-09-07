@@ -1,6 +1,6 @@
 # DocReview RAG 사용 안내
 
-처음 clone했다면 [Quick Start](quickstart.md)에서 CLI/Web을 선택해 데이터를 준비하세요.
+바로 체험하려면 [Quick Start](quickstart.md)를 여세요. 저장소를 clone하고 로컬 환경을 처음부터 준비한다면 [환경 준비](environment.md#qs-setup)에서 시작하세요.
 
 모든 문서 페이지는 DEV와 배포 환경에서 함께 제공되며, DEV 표시는 해당 작업을 실행할 수 있는 환경만 안내합니다.
 
@@ -13,13 +13,13 @@ DocReview RAG v2는 SEC·DART 공시를 검색 근거와 원문 인용으로 읽
 나누어 설명합니다. 같은 환경에서 이미 완료한 준비를 확인하고 이어서 사용할 수
 있습니다.
 
-## 현재 상태에서 시작하기 {#start}
+## 시작할 곳 {#start}
 
 | 현재 상태 | 시작할 곳 | 재사용할 것 |
 |---|---|---|
-| 로컬에 준비된 문서가 있음 | [실행 환경](environment.md#step-1)을 확인한 뒤 [문서](documents.md#step-2)를 살펴봅니다. | 다운로드한 원문, 파싱된 청크, 설정과 일치하는 임베딩, 준비된 BM25 인덱스. |
-| 로컬 DB가 비어 있음 | 실행 환경을 준비하고 빈 목록을 확인한 뒤 [수집 입력](acquisition.md#step-3)을 정합니다. | 식별 정보와 매니페스트 범위가 일치하는 기존 원문 파일. |
-| 공개 서비스에 접속함 | 공개 문서와 사용할 수 있는 [스냅샷](snapshots.md)을 확인합니다. | 공개된 코퍼스만 사용합니다. 관리자 준비 작업에는 개발 환경이 필요합니다. |
+| 로컬에 준비된 문서가 있음 | [문서](documents.md#step-2)를 확인하고, 빠진 준비는 [Quick Start — DEV ONLY](quickstart-dev.md)에서 이어갑니다. | 다운로드한 원문, 파싱된 청크, 설정과 일치하는 임베딩, 준비된 BM25 인덱스. |
+| 새 clone 또는 빈 로컬 DB | [환경 준비](environment.md#qs-setup)를 완료한 뒤 [Quick Start — DEV ONLY](quickstart-dev.md)로 이어갑니다. | 식별 정보와 매니페스트 범위가 일치하는 기존 원문 파일. |
+| 실행 중인 공개 서비스에 접속함 | [Quick Start](quickstart.md)에서 질문·근거 확인과 공개 문서·[스냅샷](snapshots.md) 탐색을 진행합니다. | 공개된 코퍼스만 사용하며, 관리자 준비 작업은 개발 환경이 필요합니다. |
 
 필터 결과가 없거나 공개 문서가 없다는 이유만으로 DB 전체가 비었다고 판단하지
 마세요. [문서 공개 범위](documents.md#visibility)에서 각 상태의 차이를 설명합니다.
@@ -29,10 +29,12 @@ CLI와 웹은 같은 DB·원문 디렉터리·실제 설정을 사용할 때 결
 다운로드·적재·인덱스 생성·모델 호출을 다시 시작하기 전에 기존 결과를 확인하세요.
 CLI에서 직접 실행한 작업은 웹 대기열을 거치지 않아 작업 목록에 없을 수 있습니다.
 
+### SCREENSHOT NEEDED
+<!-- Feature: guide entry routing and portfolio navigation; locale=ko; light mode; Overview shows the two reader paths and navigation begins Overview, Environment setup, Quick Start, Quick Start — DEV ONLY, with the wrench only on the last entry. Preserve existing assets. -->
+
 ## 열두 단계 학습 경로 {#learning-path}
 
-처음에는 순서대로 진행하세요. 다시 방문할 때는 각 단계의 선행 조건을 확인하고
-이미 완료된 준비를 건너뛰면 됩니다.
+전체 로컬 학습 경로입니다. 내비게이션은 사용법을 준비 작업보다 먼저 보여 주지만, 단계 번호는 실행 순서를 유지합니다. [Part 1: 환경 준비](environment.md#qs-setup)부터 시작하고 Part 2에서는 [DEV 준비 안내](quickstart-dev.md)와 사용법 문서로 이어가세요. 다음 방문에는 완료한 작업을 건너뜁니다.
 
 <!-- tutorial-steps -->
 
@@ -100,7 +102,7 @@ BM25 준비에 답변 생성은 필요하지 않습니다. 검색 평가의 선�
 읽은 뒤 맞는 조치를 적용하고 결과를 확인하세요. 구현 구조는
 [아키텍처](architecture.md), 자세한 명령과 실행 환경은 [CLI 참고](cli.md)에서 다룹니다.
 
-[1단계: 실행 환경 확인](environment.md#step-1)으로 이어가세요.
+앱을 체험하려면 [Quick Start](quickstart.md), 새 clone을 실행하려면 [환경 준비](environment.md#qs-setup)로 이어가세요.
 
 ### 뒤로·앞으로와 위치 복원
 

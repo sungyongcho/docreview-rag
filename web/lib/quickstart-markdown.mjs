@@ -1,4 +1,4 @@
-/** Split one GitHub-readable source into the shared setup, CLI/Web tabs, and handoff. */
+/** Split one GitHub-readable source into the DEV introduction, CLI/Web tabs, and handoff. */
 export function splitQuickStart(source) {
   const markers = ["<!-- quickstart-cli -->", "<!-- quickstart-web -->", "<!-- quickstart-end -->"];
   let remaining = source;

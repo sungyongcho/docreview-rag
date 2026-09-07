@@ -30,14 +30,15 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
   const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} /><div>{content}</div></aside>, renderCode: (block) => <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
   const tutorial = render(source);
-  const sections = document.id === "quickstart" ? splitQuickStart(source) : null;
+  const sections = document.id === "quickstart-dev" ? splitQuickStart(source) : null;
   const body = sections ? <><TutorialMarkdown content={render(sections.common).content} /><QuickStartPanels locale={locale} cli={<TutorialMarkdown content={render(sections.cli).content} />} web={<TutorialMarkdown content={render(sections.web).content} />} /><TutorialMarkdown content={render(sections.after).content} /></> : <TutorialMarkdown content={tutorial.content} />;
   const index = documents.findIndex((item) => item.id === document.id);
   const previous = story ? undefined : documents[index - 1];
-  const next = story ? undefined : document.id === "quickstart" ? documents.find((item) => item.id === "retrieval") : documents[index + 1];
+  const nextId = document.id === "environment" ? "quickstart-dev" : document.id === "quickstart" ? "answers" : document.id === "quickstart-dev" ? "retrieval" : null;
+  const next = story ? undefined : nextId ? documents.find((item) => item.id === nextId) : documents[index + 1];
   const related = document.related.map((id) => documents.find((item) => item.id === id)!);
   const page = <div className="docs-site" lang={locale}>
-    {document.id === "overview" && <DocumentationLegacyAnchor locale={locale} />}
+    {(document.id === "overview" || document.id === "quickstart") && <DocumentationLegacyAnchor locale={locale} />}
     <a className="docs-skip" href="#docs-content">{locale === "ko" ? "본문으로 바로가기" : "Skip to content"}</a>
     <header className="docs-header">
       <div className="docs-header-inner">

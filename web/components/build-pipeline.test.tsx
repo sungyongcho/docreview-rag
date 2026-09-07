@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { I18nProvider, LOCALE_KEY } from "@/lib/i18n";
+import { I18nProvider, LOCALE_KEY, translate } from "@/lib/i18n";
 import { derivePipeline, type PipelineInput } from "@/lib/pipeline";
 import type { OperatorJob, Readiness } from "@/lib/types";
 import { BuildPipeline, type BuildPipelineProps } from "./build-pipeline";
@@ -273,4 +274,26 @@ it("names missing company years, blocks the default ingest, and keeps Advanced a
   expect(handlers.onIngest).toHaveBeenCalledWith("manifest.json", "sec-evaluation");
   fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
   expect(screen.getByRole("textbox", { name: "Tickers / stock codes" })).toBeInTheDocument();
+});
+
+it.each(["en", "ko"] as const)("keeps the developer guide aligned with actual Filings and parsing controls (%s)", (locale) => {
+  localStorage.setItem(LOCALE_KEY, locale);
+  const guide = readFileSync(`../docs/TUTORIAL/${locale}/quickstart-dev.md`, "utf8").split("<!-- quickstart-web -->")[1];
+  renderPipeline(liveInput(), { focusStage: "filings" });
+  for (const key of ["Tickers / stock codes", "Fiscal years"]) {
+    const label = translate(locale, key);
+    expect(screen.getByRole("textbox", { name: label })).toBeVisible();
+    expect(guide).toContain(`**${label}**`);
+  }
+  for (const key of ["Clear selection", "Add to selection", "Download missing filings"]) {
+    const label = translate(locale, key);
+    expect(screen.getByRole("button", { name: label })).toBeVisible();
+    expect(guide).toContain(`**${label}**`);
+  }
+  expect(guide).not.toMatch(/(?:Filings|원문 수집) → (?:Change|변경)…/);
+  fireEvent.click(screen.getByRole("button", { name: translate(locale, "Select {p0}", { p0: translate(locale, "Parse & chunk") }) }));
+  expect(screen.getByRole("button", { name: translate(locale, "Parse & chunk selected sources") })).toBeVisible();
+  expect(guide).toContain(`**${translate(locale, "Parse & chunk selected sources")}**`);
+  expect(guide).toContain(`**${translate(locale, "Advanced")}**`);
+  expect(guide).toContain(`**${translate(locale, "Ingest")}**`);
 });

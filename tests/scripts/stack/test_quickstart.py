@@ -266,8 +266,8 @@ def test_host_clean_start_waits_for_verified_reset_before_starting(
     output = capsys.readouterr().out
     if outcome == "succeeded":
         assert calls == ["db", "reset", "ready"]
-        assert "/docs/en/quickstart/#qs-web-1" in output
-        assert "/docs/ko/quickstart/#qs-web-1" in output
+        assert "/docs/en/quickstart-dev/#qs-web-1" in output
+        assert "/docs/ko/quickstart-dev/#qs-web-1" in output
         assert output.isascii()
         assert "\x1b" not in output
     else:
@@ -432,3 +432,16 @@ def test_second_schema_failure_cannot_reset_or_start_services(configured, monkey
     assert database.call_count == prepare.await_count == 2
     confirm.assert_called_once()
     forbidden.assert_not_called()
+
+
+def test_handoff_links_to_developer_quick_start(capsys):
+    """Keep setup handoffs on the localized DEV guide and preserve its checkpoint."""
+    setup.handoff({"DOCREVIEW_LOCAL_HOST": "127.0.0.1", "APP_PORT": "38010"})
+    output = capsys.readouterr().out
+    for locale in ("en", "ko"):
+        assert (
+            f"http://127.0.0.1:38010/docreview-rag-agent/docs/{locale}/quickstart-dev/#qs-web-1"
+            in output
+        )
+    assert "Quick Start - DEV ONLY" in output
+    assert output.isascii()

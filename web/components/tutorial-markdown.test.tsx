@@ -48,6 +48,7 @@ describe("Tutorial Markdown", () => {
   it("expands the beginner path from the registry at the authored marker", () => {
     const parsed = renderTutorial("# Overview\n\n## Learning path {#learning-path}\n\n<!-- tutorial-steps -->", { locale: "en" });
     expect(parsed.links).toHaveLength(12);
+    expect(parsed.links.map((link) => link.hash)).toEqual(Array.from({ length: 12 }, (_, index) => `step-${index + 1}`));
     expect(parsed.links[0]).toEqual({ file: "en/environment.md", hash: "step-1" });
     expect(parsed.links[11]).toEqual({ file: "en/snapshots.md", hash: "step-12" });
     const { container } = render(<TutorialMarkdown content={parsed.content} />);

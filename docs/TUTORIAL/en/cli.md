@@ -536,7 +536,7 @@ and inspect the stated boundary before another reset; a committed DB reset is ne
 <!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=en; theme=light; preserve existing screenshot assets. -->
 
 After successful reset, the command runs `rag-dev up --build -d`, waits for confirmed readiness,
-and prints the application URL and [Web Quick Start step 1](quickstart.md#qs-web-1) in both languages.
+and prints the application URL and [Quick Start — DEV ONLY, Web step 1](quickstart-dev.md#qs-web-1) in both languages.
 A failed build or readiness check reuses `rag-ollama-check` diagnostics and offers one confirmed
 `rag-dev down` → `rag-dev up --build -d` recovery, preserving volumes. An incomplete reset never
 reaches that restart. Browser conversations are not deleted by ordinary clean start.
@@ -593,7 +593,7 @@ If acknowledgement times out, local deletion does not start; browser deletion ma
 already have occurred, so inspect status before another attempt.
 
 After verified extreme success, services stay stopped. Run `rag-quickstart`, fill the
-new `.env` locally, and follow Quick Start to prepare data again. On partial failure,
+new `.env` locally, and follow [Quick Start — DEV ONLY](quickstart-dev.md) to prepare data again. On partial failure,
 review completed stages; no automatic restart or deletion retry occurs.
 
 ### SCREENSHOT NEEDED
