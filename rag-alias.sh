@@ -290,7 +290,7 @@ _docreview_python() {
         printf '%s\n' '[FAIL] Project Python is missing. Run rag-quickstart or uv sync --locked first.' >&2
         return 2
     fi
-    (cd "${_DOCREVIEW_ROOT}" && .venv/bin/python -m "$@")
+    (cd "${_DOCREVIEW_ROOT}" && env -u FORCE_COLOR NO_COLOR=1 PYTHON_COLORS=0 .venv/bin/python -m "$@")
 }
 rag-dev() {
     if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
@@ -307,7 +307,7 @@ rag-prod() {
     fi
 }
 rag-ollama-check() { _docreview_python scripts.diagnostics.ollama "$@"; }
-rag-quickstart() { bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "$@"; }
+rag-quickstart() { env -u FORCE_COLOR NO_COLOR=1 PYTHON_COLORS=0 bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "$@"; }
 rag-fresh-start() { _docreview_python scripts.stack.commands fresh-start "$@"; }
 rag-corpus() { _docreview_python scripts.stack.commands corpus "$@"; }
 rag-schema() { _docreview_python scripts.schema "$@"; }

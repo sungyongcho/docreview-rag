@@ -121,6 +121,58 @@ def test_help_is_always_escape_free(shell, environment):
         os.close(master)
 
 
+def test_python_help_is_escape_free_on_a_forced_color_tty(shell, tmp_path):
+    """Argparse help stays plain without changing the calling shell or invoking services."""
+    helper, _legacy, _startup, settings = helper_checkout(tmp_path, shell)
+    (helper.parent / ".venv").symlink_to(sys.prefix, target_is_directory=True)
+    (helper.parent / ".env").write_text("DB_PORT=1\n")
+    tools = tmp_path / "blocked-tools"
+    tools.mkdir()
+    called = tmp_path / "service-called"
+    for name in ("docker", "uv", "ollama"):
+        command = tools / name
+        command.write_text('#!/bin/sh\nprintf called > "$SERVICE_CALLED"\nexit 97\n')
+        command.chmod(0o755)
+    environment = {
+        **os.environ,
+        **settings,
+        "TERM": "xterm-256color",
+        "FORCE_COLOR": "1",
+        "PYTHONPATH": str(ROOT),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+        "SERVICE_CALLED": str(called),
+    }
+    environment.pop("NO_COLOR", None)
+    environment.pop("PYTHON_COLORS", None)
+    args = [shell, "--noprofile", "--norc"] if Path(shell).name == "bash" else [shell, "-f"]
+    master, slave = pty.openpty()
+    try:
+        subprocess.run(
+            [
+                *args,
+                "-c",
+                'source "$HELPER" >/dev/null; rag-schema --help && '
+                '[ "$FORCE_COLOR" = 1 ] && [ -z "${NO_COLOR+x}" ] && '
+                '[ -z "${PYTHON_COLORS+x}" ]',
+            ],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=slave,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=True,
+        )
+        output = os.read(master, 8192).decode()
+        assert "usage:" in output.lower()
+        assert "{check,prepare,recover,recreate}" in output
+        assert "\x1b" not in output
+        assert not called.exists()
+    finally:
+        os.close(slave)
+        os.close(master)
+
+
 def test_uninstall_cancellation_preserves_commands_and_startup_file(shell, tmp_path):
     """Declining removal leaves a temporary registration and owned commands intact."""
     startup = tmp_path / "startup"
