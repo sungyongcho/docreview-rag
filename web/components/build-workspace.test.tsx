@@ -456,7 +456,7 @@ it("keeps source acquisition available during schema drift and exposes terminal 
   render(<Harness live ready={false} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Download missing filings" })).toBeEnabled());
   expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("This step is ready to run");
-  expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema_status recover --return-stage filings");
+  expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema recover --return-stage filings");
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
   expect(screen.queryByText("data/ not writable")).not.toBeInTheDocument();
 });

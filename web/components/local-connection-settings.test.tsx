@@ -176,5 +176,5 @@ it("offers a load retry and copies the safe CLI diagnostic commands exactly", as
   await waitFor(() => expect(screen.getByLabelText("Model server")).toBeEnabled());
   fireEvent.click(screen.getByText("Diagnose from the terminal"));
   fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith("source ./rag_alias.sh\nrag-ollama-check"));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith("source ./rag-alias.sh\nrag-ollama-check"));
 });

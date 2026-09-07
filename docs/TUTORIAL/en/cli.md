@@ -3,7 +3,7 @@
 > [!DEV]
 > These commands are for the operator of a local checkout and its services. They are not actions available to visitors through the public interface.
 
-`rag_alias.sh` registers commands for starting, stopping, and inspecting this checkout in Bash or Zsh.
+`rag-alias.sh` registers commands for starting, stopping, and inspecting this checkout in Bash or Zsh.
 For the twelve-step screen-led exercise, start with the [DocReview RAG v2 overview](overview.md).
 Use [environment setup](environment.md#step-1), [acquisition](acquisition.md#step-3), and
 [indexing](indexing.md#step-5) alongside the commands below.
@@ -17,22 +17,31 @@ embedding configuration. Check completed CLI work in the dashboard instead of ru
 Run from the repository root:
 
 ```bash
-./rag_alias.sh
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-help
 ```
 
-Executing `./rag_alias.sh` checks this checkout's startup registration and helper targets. If missing, choose Y to install or N to leave it unchanged. A valid existing installation is verified without another prompt. Paste the printed `source` command and run `rag-help` to activate commands without restarting your shell. Helper registration does not install application dependencies.
+`source ./rag-alias.sh` is the one-command installation and activation path in an interactive
+Bash or Zsh terminal. Choose Y to persist the startup registration; the commands are available
+in the same source call. No leaves startup unchanged and loads the commands for this session only.
+Startup-file loading, verification, update reloads and noninteractive/redirected sourcing do not
+prompt for installation. Registration does not install application dependencies.
+
+If you instead execute `./rag-alias.sh`, it installs/verifies registration and offers a new login
+shell with an explicit default-No prompt in an interactive terminal. Consent replaces the installer
+process with the detected Bash/Zsh login shell; it cannot replace the calling parent shell or inject
+functions into it. Exiting the new shell returns to the original one. Login files control startup;
+if a Bash login profile does not load `.bashrc`, use the printed source command. Declining or EOF
+never starts a shell. Sourcing remains the reliable primary activation path.
 
 The shell and Web share the same checked-in Small ASCII wordmark. An 80-column terminal displays the
-full name; narrower terminals use the DR monogram or a plain product line. `NO_COLOR`, dumb terminals,
-and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
+full name; narrower terminals use the DR monogram or a plain product line. All terminals and redirected output remain free of color escapes. Printing the banner needs no language runtime or network.
 
 The installer adds one source line to `.bashrc` or `${ZDOTDIR:-$HOME}/.zshrc`, preserving existing content and backing it up. New terminals load it automatically. For manual registration only, the equivalent line is:
 
 ```bash
 # Replace this placeholder with your checkout's actual absolute path.
-source /absolute/path/to/docreview-rag-agent/rag_alias.sh >/dev/null
+source /absolute/path/to/docreview-rag-agent/rag-alias.sh >/dev/null
 ```
 
 Registered `rag-*` commands target the checkout that registered them, even from another directory.
@@ -53,8 +62,54 @@ Run Python CLI, file inspection, and direct Docker commands from the **repositor
 | Local public preview | `rag-prod up -d` | Switch to local prod UI and permissions |
 | Model connectivity | `rag-ollama-check` | Diagnose the DocReview-to-model-server path |
 
-With no arguments, `rag-dev` and `rag-prod` use `up -d`. The `rag-dev-up/down` and `rag-prod-up/down`
-aliases are shortcuts. Without registration, use `bash scripts/run_local.sh dev up -d`.
+With no arguments, `rag-dev` and `rag-prod` use `up -d`. Without registration, run
+`.venv/bin/python -m scripts.stack dev up -d` from the repository root.
+`rag-help` starts with one Quick Start command and its printed-URL hand-off. Reset and recovery
+commands have their own `[RESET]` block. The compact menu uses aligned columns and no ANSI
+colors or escapes, including in a color-capable terminal; every command accepts
+`--help`. Use `rag-corpus --help` for operation details and `rag-schema --help` for schema options.
+
+### Command consolidation
+
+Use `rag-alias update` for an already-loaded helper, or `source ./rag-alias.sh` for first activation. If this checkout still has a registration for the previous
+underscore-named helper, the installer shows its exact path and offers to back up and replace that
+one registration. Declining preserves it; no compatibility file or symlink is created. Explicit
+uninstall also removes a detected old registration for this checkout. Reload the new helper in a
+fresh shell after migration. These obsolete shortcuts are no longer registered;
+use the replacement commands below. Existing shell definitions last until that shell exits.
+
+| Removed shortcut | Replacement |
+|---|---|
+| `rag-dev-up` | `rag-dev up -d` |
+| `rag-dev-down` | `rag-dev down` |
+| `rag-prod-up` | `rag-prod up -d` |
+| `rag-prod-down` | `rag-prod down` |
+| `rag-diagnose` | `rag-ollama-check` |
+
+Use `rag-up` to rebuild/start DEV and `rag-schema check|prepare|recover|recreate` for schema work.
+Without helper registration, use `uv run python -m scripts.schema <action>`.
+The compact menu retains separate ordinary, extreme, and schema-reset warnings. Read the full reset
+preview and command help before confirming deletion.
+
+### Refresh an already-loaded helper
+
+```bash
+rag-alias --check-updates
+rag-alias update
+# If the checkout moved, give its new directory or canonical helper file explicitly:
+rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+```
+
+The comparison reports the loaded path and installed SHA-256 alongside the checkout path and hash.
+The check is read-only and succeeds whether or not an update is available. Update reloads changed
+helper-owned commands in this shell, preserves customized functions, and repairs an existing owned
+startup line in place. A moved/renamed registration or duplicate owned lines becomes one current
+line; unrelated lines and their order remain. An unchanged valid line is not rewritten. If there
+is no owned startup entry, update only refreshes this shell and reports that registration is absent.
+Use the sourced installation path to persist it. No compatibility file is created.
+
+### SCREENSHOT NEEDED
+<!-- Feature: sourced helper installation, loaded/check-out hash update and default-No login offer; locale=en; plain terminal; show isolated startup registration and unchanged/moved update, without credentials. Preserve historical installer assets. -->
 
 ## Installation and configuration
 
@@ -210,7 +265,7 @@ rag-ollama-check --web-url http://localhost:18080
 | `--setup` | Print manual setup guidance without contacting or changing services |
 | `--web-url` | Override the **DocReview frontend** address, not the Ollama address |
 
-`rag-diagnose` runs the same diagnostic. These commands do not install, download/load models, start services, save settings, or generate answers. Read configuration, backend connectivity, and answer-model checks separately. An unavailable inventory is unconfirmed; an installed but unloaded model is normal standby.
+Diagnostics do not install, download/load models, start services, save settings, or generate answers. Read configuration, backend connectivity, and answer-model checks separately. An unavailable inventory is unconfirmed; an installed but unloaded model is normal standby.
 
 For an older API without the shared diagnostic route, the command explicitly reports a legacy read-only fallback. `ollama list` and `ollama ps` independently show installed and currently loaded models. Continue with [server selection](settings.md#local-server), [connection recovery](ollama.md#diagnostics), or [answer configuration](answers.md#engines).
 
@@ -275,7 +330,7 @@ Normal shutdown preserves DB data, source files, saved configuration, and browse
 ```bash
 rag-dev down
 # In a later terminal, from the repository root:
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up -d
 ```
 
@@ -419,7 +474,7 @@ and remaining scope before retrying paid embedding.
 ```bash
 rag-alias-delete
 # If the registered command is unavailable:
-./rag_alias.sh --delete
+./rag-alias.sh --delete
 ```
 
 Confirm the shown startup file/checkout. The matching registration line is backed up and removed; other
@@ -502,8 +557,8 @@ A restart or schema check does not repair drift. Preserve the original database 
 use a separate recovery environment when you need a usable empty runtime:
 
 ```bash
-uv run python -m scripts.schema_status check
-uv run python -m scripts.schema_status recover --return-stage index
+uv run python -m scripts.schema check
+uv run python -m scripts.schema recover --return-stage index
 # Optional: --parent /existing/directory (outside the original checkout)
 ```
 
@@ -522,7 +577,7 @@ succeed does it print **Recovery ready** and a URL returning to the requested Bu
 step. Supported stages: filings, index, embeddings, lexical, ask, answer_model, evaluate.
 This is a new empty environment; the original incompatible schema is not repaired.
 
-Use the printed `cd` command and `source ./rag_alias.sh` in a separate terminal to
+Use the printed `cd` command and `source ./rag-alias.sh` in a separate terminal to
 select that recovery environment's CLI. Its schema output includes the local DB
 target. Re-check the destination in the web UI, then prepare missing data in order.
 Do not run commands from the original directory expecting them to target recovery.
@@ -552,7 +607,7 @@ only an empty DB; it never discards existing data. For first-time setup or users
 understand the consequences, the preparation notice also offers this dangerous option:
 
 ```bash
-uv run python -m scripts.schema_status recreate
+uv run python -m scripts.schema recreate
 ```
 
 This deletes ORM-owned tables and all their rows in the verified local DEV database,
@@ -581,7 +636,7 @@ status/navigation/dismiss buttons retain their behavior.
 
 | Command | Cleared | Preserved / next step |
 | --- | --- | --- |
-| `uv run python -m scripts.schema_status recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
+| `uv run python -m scripts.schema recreate` | ORM tables/data and downloaded raw SEC/DART sources/manifest source entries | Code, `.env`, evaluation exports, unrelated tables, DB volume; empty Filings draft |
 | Same command with `--sample` | Same clean start | Server-persisted NVDA/AMD FY2023–2024 draft; press Download yourself |
 | Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `RECREATE <checkout-name>` |
 | `rag-fresh-start` | Broader environment reset, including evaluation results, local model settings and database volume | Follow its independent exact preview and confirmation |

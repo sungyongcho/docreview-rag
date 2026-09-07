@@ -52,7 +52,7 @@ describe("diagnosePreparation", () => {
     const diagnosis = diagnosePreparation("index", snapshot("index", "action"), { ...HEALTHY, schemaStatus: "drifted" });
     expect(diagnosis.returnTo).toBe("setup");
     expect(diagnosis.detail).toContain("cannot repair");
-    expect(diagnosis.terminalSteps.map((step) => step.command)).toEqual(["uv run python -m scripts.schema_status check", "uv run python -m scripts.schema_status recover --return-stage index", "uv run python -m scripts.schema_status recreate"]);
+    expect(diagnosis.terminalSteps.map((step) => step.command)).toEqual(["uv run python -m scripts.schema check", "uv run python -m scripts.schema recover --return-stage index", "uv run python -m scripts.schema recreate"]);
   });
 
   it("permits source acquisition during schema drift only with reachable job storage and writable files", () => {
@@ -67,7 +67,7 @@ describe("diagnosePreparation", () => {
   it("prepares an empty schema without claiming that it was prepared", () => {
     const diagnosis = diagnosePreparation("index", snapshot("index", "action"), { ...HEALTHY, schemaStatus: "empty" });
     expect(diagnosis.state).toBe("blocked");
-    expect(diagnosis.terminalSteps[0].command).toBe("uv run python -m scripts.schema_status prepare");
+    expect(diagnosis.terminalSteps[0].command).toBe("uv run python -m scripts.schema prepare");
   });
 
   it("does not trust stale completion when database health is unavailable", () => {

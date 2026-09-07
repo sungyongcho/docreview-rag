@@ -10,7 +10,7 @@ import { localEngineStatus } from "@/lib/local-models";
 import "./local-connection-settings.css";
 
 const ADD_SERVER = "__add_server__";
-const DIAGNOSE_COMMAND = "source ./rag_alias.sh\nrag-ollama-check";
+const DIAGNOSE_COMMAND = "source ./rag-alias.sh\nrag-ollama-check";
 const CONNECTION_SOURCES: Record<LocalLLMConnection["source"], string> = {
   default: "Application defaults", environment: "Environment defaults", dotenv: ".env file",
   saved: "Saved connection", disabled: "Disconnected", invalid: "Invalid saved settings",

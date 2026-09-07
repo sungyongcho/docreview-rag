@@ -211,7 +211,7 @@ rag-ollama-check --setup
 
 로그와 실제 실행 측정은 [실행과 측정](runtime.md#local-models)에서 이어갑니다. 진단 명령의 상세 정의는 [CLI 안내](cli.md#로컬-모델-연결-진단)에 있습니다.
 
-`rag-ollama-check`와 달리 `.venv/bin/python -m scripts.benchmark_local_grade --api-url http://127.0.0.1:8001`은 모델을 로드하고 실행합니다. `/retrieve`로 워크플로의 grade 프롬프트를 만들어 thinking 켬/끔과 출력 상한별로 구조화 출력 스키마와 함께 Ollama를 호출하고, 프롬프트 토큰·초당 토큰·숨은 추론 길이·JSON 유효성을 보고합니다. 격리된 스택에서만 실행하며 운영 모드에서는 거부합니다. [지원하는 로컬 구성](#configurations) 표는 이 스크립트로 얻었습니다.
+`rag-ollama-check`와 달리 `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001`은 모델을 로드하고 실행합니다. `/retrieve`로 워크플로의 grade 프롬프트를 만들어 thinking 켬/끔과 출력 상한별로 구조화 출력 스키마와 함께 Ollama를 호출하고, 프롬프트 토큰·초당 토큰·숨은 추론 길이·JSON 유효성을 보고합니다. 격리된 스택에서만 실행하며 운영 모드에서는 거부합니다. [지원하는 로컬 구성](#configurations) 표는 이 스크립트로 얻었습니다.
 
 <!-- capture:24-connection-diagnostics -->
 

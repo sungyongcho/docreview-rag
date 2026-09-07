@@ -217,7 +217,7 @@ describe("BuildPipeline", () => {
 
 it("keeps empty-schema setup explicit and rechecks after terminal work", () => {
   const handlers = renderPipeline(liveInput(), { schemaStatus: "empty", databaseConnected: true, focusStage: "filings" });
-  expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("uv run python -m scripts.schema_status prepare");
+  expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("uv run python -m scripts.schema prepare");
   expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
   expect(handlers.onDownload).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();

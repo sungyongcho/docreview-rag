@@ -13,16 +13,15 @@ web container; this path does not require their installation on the host.
 ```bash
 git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
-./rag_alias.sh
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-help
 rag-quickstart
 ```
 
-Choose Y to install the helper startup registration; N leaves it unchanged. Then source the file as shown to use the commands immediately without restarting your shell.
+Source is the one-command install and activation path. Choose Y to save startup registration or N to load only this session; the commands are available in the same terminal immediately.
 
-The Helper is included in the clone. `source` registers this terminal; see
-[permanent shell registration](cli.md) for an optional startup entry.
+The Helper is included in the clone. `rag-alias update` refreshes it when the checkout changes.
+See [helper installation and updates](cli.md) for moved paths and the optional default-No login-shell offer after executed installation.
 The first run creates `.env` only if absent. Edit it locally and rerun `rag-quickstart`:
 
 ```dotenv
@@ -55,10 +54,10 @@ without a health check is not proof of server readiness. Existing healthy servic
 are reported before Compose reconciles the development configuration.
 
 If configuration blocks progress, edit the printed `.env` path and correct or unset
-conflicting shell exports, then rerun `rag-quickstart` (or `bash scripts/quickstart.sh`).
+conflicting shell exports, then rerun `rag-quickstart` (or `bash scripts/stack/quickstart.sh`).
 That invocation has not started services; any existing services remain unchanged.
 For startup failures, use `rag-dev ps -a` and `rag-dev logs --tail 50` before retrying.
-For incompatible schemas, run `.venv/bin/python -m scripts.schema_status check`;
+For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart uses the local `DB_PORT`, not an external `DATABASE_URL`. Safe target-selection
 recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).
 Do not reset your database to resolve this setup stop.

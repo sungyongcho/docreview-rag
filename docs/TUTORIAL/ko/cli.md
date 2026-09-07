@@ -3,7 +3,7 @@
 > [!DEV]
 > 이 명령들은 로컬 저장소와 서비스를 관리하는 운영자를 위한 안내입니다. 공개 화면의 방문자가 실행하는 기능이 아닙니다.
 
-`rag_alias.sh`는 이 저장소를 실행·종료하고 상태를 확인하는 명령을 현재 셸에 등록합니다.
+`rag-alias.sh`는 이 저장소를 실행·종료하고 상태를 확인하는 명령을 현재 셸에 등록합니다.
 아래 명령은 Bash 또는 Zsh에서 사용합니다. 화면을 따라 실습하려면
 [DocReview RAG v2 개요](overview.md)의 12단계 경로에서 시작합니다.
 아래 명령과 함께 [환경 준비](environment.md#step-1), [원문 수집](acquisition.md#step-3),
@@ -17,23 +17,30 @@
 저장소 루트에서 다음을 실행합니다.
 
 ```bash
-./rag_alias.sh
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-help
 ```
 
-`./rag_alias.sh`는 현재 체크아웃의 자동 등록과 Helper 파일을 확인합니다. 미설치 상태에서 Y를 선택하면 설치하고 N이면 변경하지 않습니다. 이미 정상 설치됐다면 재설치 질문 없이 검증 결과를 표시합니다. 출력된 `source` 명령과 `rag-help`를 실행하면 셸 재시작 없이 바로 사용할 수 있습니다. Helper 등록은 앱 의존성 설치와 별개입니다.
-처음 실행한다면 아래 설치·설정도 완료합니다.
+대화형 Bash/Zsh 터미널에서는 `source ./rag-alias.sh` 한 명령으로 설치와 현재 셸 활성화를
+진행합니다. Y를 선택하면 자동 등록을 저장하고, 같은 source 실행에서 바로 명령을 사용할 수
+있습니다. No는 시작 파일을 보존하고 이번 셸에만 명령을 불러옵니다. 시작 파일의 자동 로드,
+검증·update 재로드, 비대화형 또는 출력이 리다이렉트된 source는 설치 질문을 하지 않습니다.
+Helper 등록은 앱 의존성 설치와 별개입니다.
+
+`./rag-alias.sh`로 실행했다면 설치·검증 후 대화형 터미널에서 기본값 No인 로그인 셸 선택을
+제공합니다. 동의하면 설치기 프로세스를 감지된 Bash/Zsh 로그인 셸로 바꿉니다. 부모 셸에 함수를
+주입하거나 부모 프로세스를 대체하는 동작은 아니며, 새 셸을 종료하면 원래 셸로 돌아옵니다.
+로그인 설정에 따라 파일을 읽으므로 Bash profile이 `.bashrc`를 불러오지 않으면 출력된 source
+명령을 사용하세요. 거절·EOF에서는 셸을 시작하지 않습니다. 기본 활성화 경로는 source입니다.
 
 셸과 웹은 저장소에 있는 같은 Small ASCII 워드마크를 사용합니다. 80열 터미널에는 전체 이름을,
-좁은 터미널에는 DR 모노그램이나 일반 제품명 한 줄을 표시합니다. `NO_COLOR`, dumb 터미널,
-파일로 보낸 출력에는 색상 이스케이프가 남지 않습니다. 배너 출력에는 언어 런타임이나 네트워크가 필요하지 않습니다.
+좁은 터미널에는 DR 모노그램이나 일반 제품명 한 줄을 표시합니다. 모든 터미널과 파일로 보낸 출력에는 색상 이스케이프가 남지 않습니다. 배너 출력에는 언어 런타임이나 네트워크가 필요하지 않습니다.
 
 설치기는 기존 내용을 백업·보존하면서 `.bashrc` 또는 `${ZDOTDIR:-$HOME}/.zshrc`에 한 줄만 추가합니다. 새 터미널에서는 자동으로 로드됩니다. 수동으로 등록할 때 사용하는 동일한 줄은 다음과 같습니다.
 
 ```bash
 # /실제/저장소/경로를 본인 체크아웃의 절대경로로 바꿉니다.
-source /실제/저장소/경로/rag_alias.sh >/dev/null
+source /실제/저장소/경로/rag-alias.sh >/dev/null
 ```
 
 등록된 `rag-*` 명령은 어느 디렉터리에서도 등록 당시 저장소를 대상으로 합니다.
@@ -55,8 +62,51 @@ Python CLI·파일 조회·직접 Docker 명령은 **저장소 루트**에서 �
 | 모델 진단 | `rag-ollama-check` | DocReview부터 Ollama까지 연결 확인 |
 
 `rag-dev`, `rag-prod`는 인자가 없으면 `up -d`를 실행합니다.
-`rag-dev-up/down`, `rag-prod-up/down`은 같은 시작·종료의 단축 명령입니다.
-별칭 없이 실행하려면 `bash scripts/run_local.sh dev up -d`처럼 사용합니다.
+별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
+`rag-help`는 Quick Start 명령 하나와 출력된 URL을 여는 안내로 시작합니다. 초기화·복구는
+별도 `[RESET]` 영역에 두고, 간결한 명령 안내를 두 열로 정렬합니다. 색상 터미널에서도 ANSI 색상이나
+이스케이프를 출력하지 않습니다. 모든 명령은 `--help`를
+지원합니다. 작업별 설명은 `rag-corpus --help`, 스키마 옵션은 `rag-schema --help`에서 확인합니다.
+
+### 명령 통합
+
+이미 불러온 Helper는 `rag-alias update`, 첫 활성화는 `source ./rag-alias.sh`를 사용하세요. 현재 체크아웃의 이전 밑줄 파일명으로 자동 등록된
+경로가 있으면 정확한 경로를 표시하고, 백업한 뒤 새 이름으로 바꿀지 묻습니다. 거절하면 기존
+등록을 보존하며, 호환 파일이나 심볼릭 링크는 만들지 않습니다. 명시적인 삭제 시에는 이
+체크아웃의 이전 등록도 함께 확인하여 제거합니다. 이전 등록을 옮긴 후 새 셸에서 새 Helper를 불러오세요. 아래 단축 명령은 더 이상 등록되지 않으므로
+대체 명령을 사용합니다. 기존 셸에 남은 정의는 해당 셸이 종료될 때까지 유지됩니다.
+
+| 제거된 단축 명령 | 대체 명령 |
+|---|---|
+| `rag-dev-up` | `rag-dev up -d` |
+| `rag-dev-down` | `rag-dev down` |
+| `rag-prod-up` | `rag-prod up -d` |
+| `rag-prod-down` | `rag-prod down` |
+| `rag-diagnose` | `rag-ollama-check` |
+
+DEV 재빌드·시작은 `rag-up`, 스키마 관리는 `rag-schema check|prepare|recover|recreate`를 사용합니다.
+Helper를 등록하지 않았다면 `uv run python -m scripts.schema <action>`으로 실행합니다.
+짧은 메뉴에도 일반·extreme·스키마 초기화 경고를 각각 유지합니다. 실제 삭제 전에는 전체
+미리보기와 해당 명령의 도움말을 읽고 확인하세요.
+
+### 현재 셸의 Helper 갱신
+
+```bash
+rag-alias --check-updates
+rag-alias update
+# 체크아웃이 이동했다면 새 디렉터리 또는 정식 helper 파일 경로를 지정합니다.
+rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+```
+
+현재 불러온 경로·설치된 SHA-256과 체크아웃 파일의 경로·hash를 함께 표시합니다. 조회는
+업데이트 유무와 무관하게 성공하는 읽기 전용 동작입니다. Update는 변경된 Helper 소유 명령을
+현재 셸에 다시 불러오고 직접 수정한 함수는 보존합니다. 기존 소유 등록 줄을 같은 위치에서
+수정하며, 이동·이름 변경이나 중복 등록은 새 경로 한 줄로 맞춥니다. 무관한 줄과 순서는 보존하고
+이미 올바른 줄은 다시 쓰지 않습니다. 소유 등록이 없으면 이번 셸만 갱신하고 그 사실을 알립니다.
+자동 등록은 source 설치 경로로 진행하세요. 호환 파일은 만들지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: sourced helper installation, loaded/check-out hash update and default-No login offer; locale=ko; plain terminal; show isolated startup registration and unchanged/moved update, without credentials. Preserve historical installer assets. -->
 
 ## 설치와 초기 설정
 
@@ -221,7 +271,7 @@ rag-ollama-check --web-url http://localhost:18080
 | `--setup` | 서비스에 접속하거나 변경하지 않고 수동 준비 안내 출력 |
 | `--web-url` | Ollama 주소가 아닌 **DocReview 프런트엔드 주소** 지정 |
 
-`rag-diagnose`도 같은 진단을 실행합니다. 진단은 설치, 모델 다운로드·로드, 서비스 시작, 설정 저장, 답변 생성을 수행하지 않습니다. 설정·백엔드 연결·답변 모델 검사를 나누어 읽습니다. 목록을 확인하지 못하면 미확인이며, 설치됐지만 로드되지 않은 모델은 정상 대기입니다.
+진단은 설치, 모델 다운로드·로드, 서비스 시작, 설정 저장, 답변 생성을 수행하지 않습니다. 설정·백엔드 연결·답변 모델 검사를 나누어 읽습니다. 목록을 확인하지 못하면 미확인이며, 설치됐지만 로드되지 않은 모델은 정상 대기입니다.
 
 공유 진단 route가 없는 이전 API에서는 읽기 전용 호환 진단으로 전환했음을 명시합니다. `ollama list`와 `ollama ps`는 설치 모델·현재 로드된 모델을 별도로 확인합니다. [서버 선택](settings.md#local-server), [연결 복구](ollama.md#diagnostics), [답변 구성](answers.md#engines)에서 이어갑니다.
 
@@ -288,7 +338,7 @@ uv run python -m app.cli retrieve --help
 ```bash
 rag-dev down
 # 나중에 새 터미널에서 저장소 루트로 이동한 뒤
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up -d
 ```
 
@@ -469,7 +519,7 @@ job의 `queued`·`running`은 진행 중, `succeeded`·`failed`·`cancelled`는 
 ```bash
 rag-alias-delete
 # 등록된 명령을 사용할 수 없다면
-./rag_alias.sh --delete
+./rag-alias.sh --delete
 ```
 
 확인 후 이 체크아웃의 정확한 시작 파일 등록 줄을 백업하고 제거합니다. 다른 프로젝트의 등록이나
@@ -515,8 +565,8 @@ extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-qui
 재시작이나 스키마 확인은 드리프트를 고치지 않습니다. 기존 DB를 보존하면서 사용 가능한 빈 환경을 만들려면 다음 순서로 진행하세요.
 
 ```bash
-uv run python -m scripts.schema_status check
-uv run python -m scripts.schema_status recover --return-stage index
+uv run python -m scripts.schema check
+uv run python -m scripts.schema recover --return-stage index
 # 선택 사항: --parent /existing/directory (원래 체크아웃 밖의 기존 디렉터리)
 ```
 
@@ -524,7 +574,7 @@ uv run python -m scripts.schema_status recover --return-stage index
 
 잠긴 의존성 설치 → 새 DB 시작 → 빈 스키마 준비 → DEV 시작 → CLI와 웹 경유 API의 스키마 확인을 수행합니다. 공시 수집이나 모델 호출은 하지 않습니다. 두 확인이 모두 성공해야 **Recovery ready**와 원래 요청한 Build 단계로 이동하는 URL을 출력합니다. 단계는 filings·index·embeddings·lexical·ask·answer_model·evaluate 중 선택합니다. 새 빈 환경을 준비한 것이며 원래 호환되지 않는 스키마를 고친 것이 아닙니다.
 
-별도 터미널에서 출력된 `cd`와 `source ./rag_alias.sh`를 실행해 복구 환경 CLI를 선택하세요. 스키마 출력에는 로컬 DB 대상이 포함됩니다. 웹에서도 도착한 단계의 상태를 다시 확인하고 필요한 데이터를 순서대로 준비하세요. 원래 디렉터리의 명령이 복구 환경을 가리킨다고 생각하면 안 됩니다.
+별도 터미널에서 출력된 `cd`와 `source ./rag-alias.sh`를 실행해 복구 환경 CLI를 선택하세요. 스키마 출력에는 로컬 DB 대상이 포함됩니다. 웹에서도 도착한 단계의 상태를 다시 확인하고 필요한 데이터를 순서대로 준비하세요. 원래 디렉터리의 명령이 복구 환경을 가리킨다고 생각하면 안 됩니다.
 
 설치·시작·준비 확인 실패 시 복구 디렉터리를 보존하고 재개 명령을 출력합니다. 해당 환경의 로그와 상태를 확인하세요. 실패나 알 수 없는 상태를 완료로 표시하지 않으며, 기존 DB 초기화·마이그레이션·유료 재처리는 하지 않습니다. 복구 디렉터리에서 `rag-dev down`을 실행하면 그 프로젝트만 중지하고 볼륨은 보존합니다.
 
@@ -540,7 +590,7 @@ uv run python -m scripts.schema_status recover --return-stage index
 `rag-up`은 `rag-dev up --build -d`의 단축 명령이며 `rag-quickstart` 또는 `uv sync --locked`로 준비한 Python 환경을 사용합니다. 자동 시작은 빈 DB만 준비하며 기존 데이터를 버리지 않습니다. 준비 안내에는 처음 프로젝트를 사용하거나 작업의 영향을 이해하는 사용자에게 다음 위험한 선택도 제공합니다.
 
 ```bash
-uv run python -m scripts.schema_status recreate
+uv run python -m scripts.schema recreate
 ```
 
 확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 기본 명령은 다운로드된 원문과 manifest 원문 항목도 지웁니다. 대상, 테이블별 행 수, 원문 경로와 수를 확인하고 전체 삭제에 동의할 때만 `RECREATE <체크아웃 이름> AND SOURCES`를 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
@@ -557,7 +607,7 @@ DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접
 
 | 명령 | 지우는 범위 | 보존 항목 / 다음 단계 |
 | --- | --- | --- |
-| `uv run python -m scripts.schema_status recreate` | ORM 테이블/데이터와 다운로드된 SEC/DART 원문, manifest 원문 항목 | 코드, `.env`, 평가 내보내기, 무관한 테이블, DB 볼륨 보존. 빈 원문 초안으로 시작 |
+| `uv run python -m scripts.schema recreate` | ORM 테이블/데이터와 다운로드된 SEC/DART 원문, manifest 원문 항목 | 코드, `.env`, 평가 내보내기, 무관한 테이블, DB 볼륨 보존. 빈 원문 초안으로 시작 |
 | 위 명령 + `--sample` | 동일한 초기화 | 서버에 NVDA/AMD FY2023–2024 초안 저장. 다운로드는 직접 실행 |
 | 위 명령 + `--keep-sources` | ORM 테이블/데이터만 | 원문 파일 보존. 확인 문구는 `RECREATE <checkout-name>` |
 | `rag-fresh-start` | 평가 결과·로컬 모델 설정·DB 볼륨까지 포함한 더 넓은 환경 초기화 | 별도 미리보기와 정확한 확인 절차 적용 |

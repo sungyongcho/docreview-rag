@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+: "${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}"
+
+cd "${repo_root}/web"
+npm ci
+NEXT_PUBLIC_API_BASE_URL="https://sungyongcho.com/docreview-rag-agent/api" \
+NEXT_PUBLIC_ADMIN_MODE="canned" \
+npm run build
+
+source_dir="${repo_root}/web/out"
+public_root="${repo_root}/deploy/firebase/public"
+target_dir="${public_root}/docreview-rag-agent"
+
+if [[ ! -f "${source_dir}/index.html" ]]; then
+  echo "web/out is missing; run npm run build in web/ first" >&2
+  exit 1
+fi
+
+rm -rf -- "${target_dir}"
+mkdir -p -- "${target_dir}"
+cp -a -- "${source_dir}/." "${target_dir}/"
+echo "staged ${target_dir}"
+cd "${repo_root}/deploy/firebase"
+npx firebase-tools deploy --only hosting --project "${FIREBASE_PROJECT_ID}"

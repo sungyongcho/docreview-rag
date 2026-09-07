@@ -211,7 +211,7 @@ Read failures by layer rather than repeating installation:
 
 For logs and measured execution, continue with [runtime](runtime.md#local-models). The [CLI reference](cli.md#diagnose-local-model-connectivity) owns the full diagnostic-command details.
 
-Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.benchmark_local_grade --api-url http://127.0.0.1:8001` loads and runs the model: it builds the workflow's grade prompt from `/retrieve`, calls Ollama with the structured-output schema across thinking on/off and output ceilings, and reports prompt tokens, tokens per second, hidden-reasoning length and JSON validity. Run it only against an isolated stack; it refuses to run in production mode. The [supported configurations](#configurations) table comes from it.
+Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001` loads and runs the model: it builds the workflow's grade prompt from `/retrieve`, calls Ollama with the structured-output schema across thinking on/off and output ceilings, and reports prompt tokens, tokens per second, hidden-reasoning length and JSON validity. Run it only against an isolated stack; it refuses to run in production mode. The [supported configurations](#configurations) table comes from it.
 
 <!-- capture:24-connection-diagnostics -->
 

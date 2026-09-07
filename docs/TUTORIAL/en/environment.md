@@ -5,7 +5,7 @@
 Build shows database schema status separately from source storage permissions. A schema mismatch does not mean `data/` is unwritable. Use **Check schema** to reload its reported state. When **Run in terminal** appears, copy its command, run it from this checkout, then return to the same step and select **Check updated status**. An unchanged blocker remains visible; clicking the button alone does not repair it.
 
 ```bash
-uv run python -m scripts.schema_status check
+uv run python -m scripts.schema check
 ```
 
 Normal Compose startup now prepares an empty database automatically after DB health succeeds.
@@ -18,10 +18,10 @@ the gate. Source acquisition and indexing remain separate prerequisites.
 If you started only the DB, you can still prepare an empty local database manually:
 
 ```bash
-uv run python -m scripts.schema_status prepare
+uv run python -m scripts.schema prepare
 ```
 
-Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing. If you deliberately choose to discard the local DEV database, use the separately confirmed `scripts.schema_status recreate` path in the CLI guide; it is never automatic. Service and actual storage-permission blockers display their own terminal command and expected result.
+Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing. If you deliberately choose to discard the local DEV database, use the separately confirmed `scripts.schema recreate` path in the CLI guide; it is never automatic. Service and actual storage-permission blockers display their own terminal command and expected result.
 
 An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
 
@@ -50,13 +50,13 @@ inputs to this documentation page.
 From the repository root, register this checkout's commands and start development:
 
 ```bash
-source ./rag_alias.sh
+source ./rag-alias.sh
 rag-dev up --build -d
 ```
 
 Use this startup command when preparing the environment. If the same development
 stack is already running, open it and inspect its status instead of restarting it.
-`rag-help` lists the registered commands. Executing `./rag_alias.sh` displays setup
+`rag-help` lists the registered commands. Executing `./rag-alias.sh` displays setup
 instructions; sourcing it registers commands in the current Bash or Zsh shell.
 
 Open [the local service](http://localhost:8000/docreview-rag-agent/). If you configured
