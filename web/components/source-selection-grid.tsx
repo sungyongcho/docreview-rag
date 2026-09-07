@@ -24,7 +24,7 @@ export function SourceSelectionGrid({ sources, pairs, companies, disabled, selec
   return <div className="source-selection-grid">{sourceSelectionRows(sources, pairs, companies, selectedOnly).map(({ registry, rows }) => {
     if (!rows.length) return null;
     const years = [...new Set(rows.flatMap((row) => row.cells.map((cell) => cell.pair.year)))].sort((a, b) => a - b);
-    const columns = years.length <= 8;
+    const columns = years.length <= 6;
     return <section key={registry} className="source-matrix-registry" aria-label={registry.toUpperCase()}>
       <h4>{registry.toUpperCase()}</h4>
       {(expanded[registry] ? rows : rows.slice(0, 8)).map((row) => {
