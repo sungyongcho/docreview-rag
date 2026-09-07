@@ -1,4 +1,6 @@
 "use client";
+import { BrowserStorageSupport } from "@/components/browser-storage";
+import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -48,7 +50,7 @@ import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
 import { ProductionPreviewFrame } from "@/components/production-preview-frame";
 import { ThemeSwitch } from "@/components/theme-switch";
-import { browserStorage, enterProductionPreview, exitProductionPreview, previewState } from "@/lib/production-preview";
+import { enterProductionPreview, exitProductionPreview, previewState } from "@/lib/production-preview";
 import { useProductionPreview } from "@/lib/use-production-preview";
 import {
   ApiError,
@@ -111,6 +113,11 @@ export function ServiceShell({ publicPreview = false }: { publicPreview?: boolea
     <div ref={dev}><RetainedPanel active={preview.mode !== "host"}><NotificationProvider><ServiceSession sessionActive={preview.mode !== "host"} onPreview={openPreview} previewBlocked={preview.pendingMutations > 0} /></NotificationProvider></RetainedPanel></div>
     {preview.mode === "host" && <ProductionPreviewFrame frameRef={frame} onExit={closePreview} />}
   </>;
+}
+
+/** Restored requests cannot resume themselves after a reload or browser import. */
+function restoreInterruptedConversations(saved: Conversation[], t: (key: string) => string): Conversation[] {
+  return saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
 }
 
 function ServiceSession({ publicPreview = false, sessionActive = true, onPreview, previewBlocked = false }: { publicPreview?: boolean; sessionActive?: boolean; onPreview?: () => void; previewBlocked?: boolean }) {
@@ -179,6 +186,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
   const helpCapabilities = useMemo(() => permissions ? { ...permissions, can_use_operations: Boolean(operationsAvailable), can_configure_local_llm: Boolean(localAllowed), can_change_custom_retrieval: Boolean(adminLive && permissions.can_change_custom_retrieval), can_edit_run_limits: Boolean(adminLive && permissions.can_edit_run_limits) } : null, [permissions, operationsAvailable, localAllowed, adminLive]);
   const initialized = useRef(false);
+  const tourInitialized = useRef(false);
   const { notify, dismissNotice } = useNotifications();
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check, sessionActive);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
@@ -191,12 +199,16 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
 
   useEffect(() => {
-    const shouldOpenTour = !publicPreview && browserStorage().getItem(ONBOARDING_KEY) !== "done";
+    if (tourInitialized.current || (!environment && !publicPreview) || (environment === "prod" && !publicPreview && !productionBrowserStorageEnabled())) return;
+    tourInitialized.current = true;
+    let savedTour: string | null = null;
+    try { savedTour = browserStorage().getItem(ONBOARDING_KEY); } catch { /* PROD recovery starts after capabilities identify the environment. */ }
+    const shouldOpenTour = !publicPreview && savedTour !== "done";
     setTourOpen(shouldOpenTour);
     // The tour owns the screen on a first visit; a persisted open Help state waits until it is dismissed.
     setHelpOpen(!shouldOpenTour && loadHelpOpen());
     if (window.innerWidth <= 560) setSidebarOpen(shouldOpenTour);
-  }, []);
+  }, [environment, capabilities, publicPreview]);
 
   useEffect(() => () => reviewAbort.current?.abort(), []);
   useEffect(() => {
@@ -205,14 +217,16 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     void getCapabilities().then((value) => {
       if (cancelled) return;
       if (!["dev", "prod"].includes(value.environment)) { setCapabilities(null); return; }
+      configureBrowserStorage(publicPreview ? undefined : value.environment);
       if (!initialized.current) {
         initialized.current = true;
         const saved = loadConversations();
-        const restored = saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
-        const initial = restored.length ? restored : [newConversation(adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
+        const restored = restoreInterruptedConversations(saved, t);
+        const initial = restored.length ? restored : [newConversation(value.environment === "prod" && !publicPreview || adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
         setConversations(saved.some((conversation) => conversation.messages.some((message) => message.pending)) ? saveConversations(initial) : initial);
-        const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), initial[0].id);
-        const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? initial[0] : initial[0];
+        const remembered = initial.find(item => item.id === loadActiveConversation()) ?? initial[0];
+        const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), remembered.id);
+        const selected = target?.view === "review" ? initial.find((item) => item.id === target.conversationId) ?? remembered : remembered;
         setActiveId(selected.id);
         setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
         const position = window.history.state?.docreviewNavigation?.position;
@@ -244,6 +258,15 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   useEffect(() => {
     if (publicPreview && capabilities && capabilities.environment !== "dev") window.parent.postMessage({ type: "docreview-preview-unavailable" }, window.location.origin);
   }, [publicPreview, capabilities]);
+
+  useEffect(() => { if (initialized.current && sessionActive && !publicPreview) saveActiveConversation(activeId); }, [activeId, sessionActive, publicPreview]);
+  useEffect(() => subscribeStorageRestored(() => {
+    if (!initialized.current || !productionBrowserStorageEnabled()) return;
+    const loaded = restoreInterruptedConversations(loadConversations(), t);
+    const next = loaded.length ? loaded : [newConversation(loadDefaultProfile())];
+    const selected = next.find(item => item.id === loadActiveConversation()) ?? next[0];
+    setConversations(next); setActiveId(selected.id); setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
+  }), []);
 
   const active = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
@@ -920,7 +943,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
             <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
           </div>
-          <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "Inspect the public interface without changing the DEV backend.")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
 
         <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
@@ -1056,7 +1079,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           onTabChange={(tab) => navigate({ view: "system", tab })}
         /></RetainedPanel>
       </section>
-      <SettingsModal open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
+      <BrowserStorageSupport enabled={!publicPreview && environment === "prod" && productionBrowserStorageEnabled()} />
+      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
       <RunDetailsPanel stageRequest={runDetailsStage} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />

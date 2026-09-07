@@ -126,3 +126,7 @@ Locale/theme parameters, the application base path and tutorial links remain int
 ### SCREENSHOT NEEDED
 
 <!-- Feature: bidirectional header navigation and history list; locale=en; light mode; show Back/current location/Forward with the current list entry marked, including narrow-screen sheet. Preserve existing assets. -->
+
+## Browser storage {#browser-storage}
+
+PROD keeps conversations, defaults, filters, presets, language/theme and help preferences in this browser and origin only. They are not synced and may disappear when site data or a private session is cleared. Use **Settings → Data & help → Browser storage** to inspect usage and export/import a backup before clearing. The first-visit ⚠️ notice links to the [complete inventory, recovery and clearing guide](settings.md#browser-storage). DEV and its memory-only production preview retain their existing behavior.

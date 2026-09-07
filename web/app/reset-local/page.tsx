@@ -1,4 +1,5 @@
 "use client";
+import { browserResetStores } from "@/lib/storage";
 
 import { useState } from "react";
 import { acknowledgeWipeBrowser, getWipeStatus, operatorAvailable } from "@/lib/operator-api";
@@ -15,7 +16,7 @@ export default function ResetLocalPage() {
       if (!id || status.id !== id || !status.extreme || status.status !== "running" || status.stage !== "awaiting_browser") {
         throw new Error("No matching extreme reset is waiting. Return to the terminal; do not start another reset.");
       }
-      clearExtremeBrowserData(localStorage, sessionStorage);
+      clearExtremeBrowserData(...browserResetStores());
       const receipt = await acknowledgeWipeBrowser(id);
       if (!receipt.acknowledged || receipt.id !== id) throw new Error("Acknowledgement mismatch");
       setMessage(`DocReview browser data deleted for ${window.location.origin}. The terminal received acknowledgement. Other browsers and origins are unchanged. Close this page; services will stop.`);
