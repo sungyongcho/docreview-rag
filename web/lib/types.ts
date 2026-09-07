@@ -119,6 +119,7 @@ export interface LocalModelInfo {
   quantization_level: string | null;
   capabilities: string[] | null;
   loaded: boolean | null;
+  cpu_performance?: { tokens_per_second: number; measured_at: string } | null;
 }
 
 /** One entry of `/ready.review_engines`: what an engine is, and why it is not serving. */

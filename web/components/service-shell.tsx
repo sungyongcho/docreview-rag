@@ -8,7 +8,7 @@ import { GuidesNavigation } from "@/components/guides-navigation";
 import { RunDetailsPanel } from "@/components/run-details-panel";
 import { EvidenceCandidates } from "@/components/evidence-candidates";
 import { LanguageSwitch } from "@/lib/i18n";
-import { localModelIssue, selectedLocalModel } from "@/lib/local-models";
+import { localCpuWarning, localModelIssue, selectedLocalModel, SLOW_LOCAL_CPU_TOKENS_PER_SECOND } from "@/lib/local-models";
 
 import {
   Activity,
@@ -263,6 +263,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
+  const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
   const sendBlocked = publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "vector" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
@@ -644,6 +645,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         evidenceLabel: "Retrieved candidates — answer not generated",
       });
     } finally {
+      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
       setBusy(false);
       setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
@@ -773,6 +775,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       noteDailyBudget(reason);
       notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review");
     } finally {
+      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
       setBusy(false);
       setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
@@ -981,6 +984,11 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
+            {localCpuSpeed !== null && !publicPreview && <div className="notice warning" role="status" aria-label={t("Slow local CPU model")}>
+              <p>{t("{model} is running on CPU. Its recent generation speed was {speed} tok/s, below the {threshold} tok/s warning threshold. Before sending, allow more time in Run limits or reduce Evidence. Sending remains available.", { model: localModel ?? "", speed: localCpuSpeed.toLocaleString(locale, { maximumFractionDigits: 1 }), threshold: SLOW_LOCAL_CPU_TOKENS_PER_SECOND })}</p>
+              <button className="inline-link" type="button" onClick={() => openSettings("limits")}>{t("Run limits")}</button>{" · "}
+              <button className="inline-link" type="button" onClick={() => openConversationSettings("evidence")}>{t("Evidence")}</button>
+            </div>}
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
