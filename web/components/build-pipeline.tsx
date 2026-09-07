@@ -63,7 +63,7 @@ export interface BuildPipelineProps {
   operationsAvailable?: boolean;
   onRunOperation?: (commandId: string) => void;
   onCancelJob: (jobId: string) => void;
-  onDownload: () => void;
+  onDownload: (next?: AcquisitionForm) => void;
   onIngestAll: () => void;
   onIngest: (manifestName: string, selectionId: string) => void;
   onBackfill: () => void;
@@ -210,6 +210,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             readOnly={pipeline.readOnly}
             busy={props.busy}
             handler={handler}
+            onDownload={props.onDownload}
             disabled={disabled}
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
@@ -334,6 +335,7 @@ interface StageCardProps {
   isNext: boolean;
   readOnly: boolean;
   handler: (kind: StageActionKind) => () => void;
+  onDownload: (next?: AcquisitionForm) => void;
   disabled: (kind: StageActionKind) => boolean;
   acquisition: AcquisitionForm;
   documents: CorpusDocument[];
@@ -362,7 +364,7 @@ function manifestSummary(manifest: ManifestSummary, registryCounts: Record<strin
   return parts.join(" · ");
 }
 
-function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ onDownload, busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -384,7 +386,7 @@ function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, reco
               {stage.numbers.map((item, index) => <Fragment key={`${index}:${t(item)}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}
             </p>
           )}
-          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={handler("acquire")} downloadDisabled={disabled("acquire") || sourceState.missingPairs.length === 0} />}
+          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} />}
           {job && (
             <div className="stage-job">
               <JobProgress job={job} />

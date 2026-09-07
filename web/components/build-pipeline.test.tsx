@@ -170,7 +170,7 @@ describe("BuildPipeline", () => {
 
     expect(document.querySelector(".pipeline-guidance")).toBeInTheDocument();
     expect(screen.getByText("Read-only portfolio · stored snapshots + live retrieval")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Embeddings" }));
     expect(screen.getByRole("button", { name: "Backfill embeddings" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
@@ -219,7 +219,7 @@ describe("BuildPipeline", () => {
 it("keeps empty-schema setup explicit and rechecks after terminal work", () => {
   const handlers = renderPipeline(liveInput(), { schemaStatus: "empty", databaseConnected: true, focusStage: "filings" });
   expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("uv run python -m scripts.schema prepare");
-  expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   expect(handlers.onDownload).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
 });
@@ -267,13 +267,13 @@ it("names missing company years, blocks the default ingest, and keeps Advanced a
   const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true }] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2023");
-  expect(screen.queryByRole("textbox", { name: "Tickers / stock codes" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "Search/add company or year" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
   fireEvent.click(screen.getByText("Advanced"));
   fireEvent.click(screen.getByRole("button", { name: "Ingest manifest.json / sec-evaluation" }));
   expect(handlers.onIngest).toHaveBeenCalledWith("manifest.json", "sec-evaluation");
   fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
-  expect(screen.getByRole("textbox", { name: "Tickers / stock codes" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Search/add company or year" })).toBeInTheDocument();
 });
 
 it.each(["en", "ko"] as const)("keeps the developer guide aligned with actual Filings and parsing controls (%s)", (locale) => {
