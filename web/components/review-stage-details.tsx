@@ -1,11 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useI18n } from "@/lib/i18n";
 import type { ReviewExecution } from "@/lib/types";
+import { RecordedTable, RecordedValue, type CompanyLabels, type RecordedColumn, type ValueKind } from "./review-stage-value";
 import "./review-stage-details.css";
 
 export type DisclosureStage = "path" | "gate" | "retrieve" | "grade" | "check" | "report";
+interface Field { label: string; value: unknown; kind?: ValueKind; wide?: boolean; count?: boolean }
+interface Section { fields: Field[]; candidates?: Record<string, unknown>[]; pass?: number }
 
 /** Accept only object records from optional historical execution fields. */
 function record(value: unknown): Record<string, unknown> {
@@ -17,86 +19,68 @@ function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item) => item !== null && typeof item === "object" && !Array.isArray(item)).map(record) : [];
 }
 
-/** Render recorded values while distinguishing missing measurements from zero and empty sets. */
-export function ReviewStageDetails({ stage, state, performance, finalLabel, onOpenDetails, onShowEvidence }: {
-  stage: DisclosureStage;
-  state: ReviewExecution;
-  performance?: Record<string, unknown>;
-  finalLabel?: string;
-  onOpenDetails?: () => void;
-  onShowEvidence?: () => void;
+const TIMING_COLUMNS: RecordedColumn[] = [{ key: "node", label: "Stage" }, { key: "status", label: "Status", kind: "status" }, { key: "elapsed_ms", label: "Elapsed (ms)", kind: "duration" }];
+const CALL_COLUMNS: RecordedColumn[] = [{ key: "model", label: "Model" }, { key: "attempts", label: "Attempts" }, { key: "elapsed_ms", label: "Elapsed (ms)", kind: "duration" }, { key: "input_tokens", label: "Input tokens" }, { key: "output_tokens", label: "Output tokens" }, { key: "error", label: "Error" }];
+const CANDIDATE_COLUMNS: RecordedColumn[] = [{ key: "rank", label: "Rank" }, { key: "citation", label: "Citation", kind: "citation" }, { key: "doc_id", label: "Document ID" }, { key: "chunk_id", label: "Chunk ID" }, { key: "score", label: "Score" }];
+
+/** Render compact recorded facts, preserving empty collections and consolidating absent fields. */
+export function ReviewStageDetails({ stage, state, performance, finalLabel, companyLabels = {}, onOpenDetails, onShowEvidence }: {
+  stage: DisclosureStage; state: ReviewExecution; performance?: Record<string, unknown>; finalLabel?: string;
+  companyLabels?: CompanyLabels; onOpenDetails?: () => void; onShowEvidence?: () => void;
 }) {
   const { t } = useI18n();
-  const missing = t("Not recorded for this run");
   const nodes = stage === "path" ? ["gate"] : stage === "gate" ? ["gate", "route"] : stage === "report" && state.pathDecision?.intent === "casual_chat" ? ["chat", "report"] : [stage];
   const results = records(performance?.stage_results).filter((item) => nodes.includes(String(item.node)));
-  const calls = records(performance?.model_calls).filter((item) => nodes.includes(String(item.node)));
-  const timings = records(performance?.stages ?? state.stageTimings).filter((item) => nodes.includes(String(item.node)) && item.phase !== "start");
+  const calls = Array.isArray(performance?.model_calls) ? records(performance.model_calls).filter((item) => nodes.includes(String(item.node))) : undefined;
+  const timingSource = performance?.stages ?? state.stageTimings;
+  const timings = Array.isArray(timingSource) ? records(timingSource).filter((item) => nodes.includes(String(item.node)) && item.phase !== "start") : undefined;
   const path = record(performance?.path_decision ?? state.pathDecision);
   const settings = record(performance?.effective_settings);
   const scope = record(path.resolved_scope ?? performance?.resolved_scope ?? state.resolvedScope);
   const filters = record(scope.filters);
+  const registries = Array.isArray(filters.registries) ? filters.registries.map(String) : [];
   const requested = record(settings.requested_profile ?? performance?.requested_profile);
   const retrieval = record(settings.retrieval);
   const resolved = record(settings.resolved_profile ?? performance?.resolved_profile);
-  /** Keep raw server decisions inspectable; translate only stable presentation labels. */
-  const value = (item: unknown): ReactNode => item === undefined || item === null ? missing : typeof item === "object" ? <pre>{JSON.stringify(item, null, 2)}</pre> : String(item);
-  /** Pair each measurement with its own missing-field marker. */
-  const field = (label: string, item: unknown) => <div key={label}><dt>{t(label)}</dt><dd>{value(item)}</dd></div>;
-  /** Show a numeric count only when the server actually recorded the set. */
-  const ids = (label: string, item: unknown) => <div key={label}><dt>{t(label)}</dt><dd>{Array.isArray(item) ? `${item.length} · ${item.join(", ") || "[]"}` : missing}</dd></div>;
   const skip = state.pathDecision?.intent === "casual_chat" && ["retrieve", "grade", "check"].includes(stage) ? "Skipped: conversation reply without retrieval" : stage === "check" && state.skippedNodes?.check ? "Skipped: relevance threshold not met" : null;
-
-  const stageFields = stage === "path" || stage === "gate"
-    ? [path.selected_scope ?? state.selectedScope, filters.registries, filters.issuers, filters.fiscal_years, path.rationale ?? scope.source, path.matched_rule, path.history_turns, path.intent, path.source, path.routing_queries ?? performance?.routing_queries, path.retrieval_query, path.stopping_reason]
-    : stage === "retrieve" ? [retrieval.preset ?? requested.retrieval_preset ?? settings.retrieval_preset, retrieval.k ?? resolved.k, ...results.map((result) => result.candidates)]
-    : stage === "grade" ? results.flatMap((result) => [result.kept_chunk_ids, result.rejected_chunk_ids])
-    : stage === "check" ? results.flatMap((result) => [result.decision, result.reasons])
-    : [finalLabel, performance?.total_elapsed_ms ?? state.elapsedMs, ...results.flatMap((result) => [record(result.decision).label, result.reasons])];
-  const hasRecordedFields = Boolean(skip) || timings.length > 0 || Array.isArray(performance?.model_calls)
-    || [...stageFields, ...results.map((result) => result.failure)].some((item) => item !== undefined && item !== null);
+  const sections: Section[] = [];
+  if (stage === "path" || stage === "gate") sections.push({ fields: [
+    { label: "Selected corpus", value: path.selected_scope ?? state.selectedScope },
+    { label: "Source", value: filters.registries, kind: "registry" }, { label: "Company", value: filters.issuers, kind: "issuer" }, { label: "Fiscal year", value: filters.fiscal_years, kind: "year" },
+    { label: "Routing reason", value: path.rationale ?? scope.source, wide: true },
+    { label: "Deterministic rule", value: path.matched_rule }, { label: "History turns considered", value: path.history_turns },
+    { label: "Path decision", value: path.intent }, { label: "Decision source", value: path.source },
+    { label: "Routing queries", value: path.routing_queries ?? performance?.routing_queries, wide: true },
+    { label: "Retrieval query", value: path.retrieval_query, wide: true }, { label: "Stopping reason", value: path.stopping_reason },
+  ] });
+  if (stage === "retrieve") sections.push({ fields: [{ label: "Search preset", value: retrieval.preset ?? requested.retrieval_preset ?? settings.retrieval_preset }, { label: "Retrieval k", value: retrieval.k ?? resolved.k }] });
+  if (!["path", "gate"].includes(stage)) for (const [index, result] of (results.length ? results : [{}]).entries()) {
+    const fields: Field[] = [];
+    if (stage === "retrieve") fields.push({ label: "Candidate count", value: Array.isArray(result.candidates) ? result.candidates.length : undefined });
+    if (stage === "grade") fields.push({ label: "Kept candidate IDs", value: result.kept_chunk_ids, count: true }, { label: "Rejected candidate IDs", value: result.rejected_chunk_ids, count: true });
+    if (stage === "check") fields.push({ label: "Verification decision", value: result.decision, wide: true }, { label: "Reasons", value: result.reasons, wide: true });
+    if (stage === "report") fields.push({ label: "Final label", value: finalLabel ? t(finalLabel) : record(result.decision).label }, { label: "Reasons", value: result.reasons, wide: true }, { label: "Request time", value: performance?.total_elapsed_ms ?? state.elapsedMs, kind: "duration" });
+    fields.push({ label: "Failure", value: result.failure, wide: true });
+    sections.push({ fields, candidates: stage === "retrieve" && Array.isArray(result.candidates) ? records(result.candidates) : undefined, pass: results.length > 1 ? index + 1 : undefined });
+  }
+  const missing = new Set(sections.flatMap((section) => section.fields.filter((field) => field.value === undefined || field.value === null).map((field) => `${section.pass ? `${t("Recorded pass")} ${section.pass} · ` : ""}${t(field.label)}`)));
+  if (!timings) missing.add(t("Stage timings"));
+  if (!calls) missing.add(t("Model calls / attempts"));
+  const hasRecordedFields = Boolean(skip) || calls !== undefined || timings !== undefined || sections.some((section) => section.fields.some((field) => field.value !== undefined && field.value !== null));
   if (!hasRecordedFields) return <div className="review-stage-details"><p className="review-stage-empty">{t("This stage was not recorded for this run.")}</p></div>;
-
   return <div className="review-stage-details">
     {skip && <p className="review-stage-skip">{t(skip)}</p>}
-    {(stage === "path" || stage === "gate") && <dl>
-      {field("Selected corpus", path.selected_scope ?? state.selectedScope)}
-      {field("Source", filters.registries)}{field("Company", filters.issuers)}{field("Fiscal year", filters.fiscal_years)}
-      {field("Routing reason", path.rationale ?? scope.source)}
-      {field("Deterministic rule", path.matched_rule)}{field("History turns considered", path.history_turns)}
-      {field("Path decision", path.intent)}{field("Decision source", path.source)}
-      {field("Routing queries", path.routing_queries ?? performance?.routing_queries)}
-      {field("Retrieval query", path.retrieval_query)}{field("Stopping reason", path.stopping_reason)}
-    </dl>}
-    {stage === "retrieve" && <dl>
-      {field("Search preset", retrieval.preset ?? requested.retrieval_preset ?? settings.retrieval_preset)}
-      {field("Retrieval k", retrieval.k ?? resolved.k)}
-    </dl>}
-    {!["path", "gate"].includes(stage) && (results.length ? results : [{}]).map((result, index) => <section key={index}>
-      {results.length > 1 && <h4>{t("Recorded pass")} {index + 1}</h4>}
-      {stage === "retrieve" && <>
-        <dl>{field("Candidate count", Array.isArray(result.candidates) ? result.candidates.length : undefined)}</dl>
-        {!Array.isArray(result.candidates) && <p>{t("Ranked candidates")}: {missing}</p>}
-        {Array.isArray(result.candidates) && result.candidates.length > 0 && <table>
-          <caption>{t("Ranked candidates")}</caption>
-          <thead><tr><th>{t("Rank")}</th><th>{t("Citation")}</th><th>{t("Score")}</th></tr></thead>
-          <tbody>{records(result.candidates).map((candidate, candidateIndex) => <tr key={candidateIndex}><td>{value(candidate.rank)}</td><td>{value(candidate.citation)}<br /><code>{value(candidate.doc_id)} / {value(candidate.chunk_id)}</code></td><td>{value(candidate.score)}</td></tr>)}</tbody>
-        </table>}
-      </>}
-      {stage === "grade" && <dl>{ids("Kept candidate IDs", result.kept_chunk_ids)}{ids("Rejected candidate IDs", result.rejected_chunk_ids)}</dl>}
-      {stage === "check" && <dl>{field("Verification decision", result.decision)}{field("Reasons", result.reasons)}</dl>}
-      {stage === "report" && <dl>{field("Final label", finalLabel ? t(finalLabel) : record(result.decision).label)}{field("Reasons", result.reasons)}{field("Request time", performance?.total_elapsed_ms ?? state.elapsedMs)}</dl>}
-      <dl>{field("Failure", result.failure)}</dl>
+    {sections.map((section, index) => <section key={index}>
+      {section.pass && <h4>{t("Recorded pass")} {section.pass}</h4>}
+      <dl className="review-stage-fields">{section.fields.filter((field) => field.value !== undefined && field.value !== null).map((field) => <div key={field.label} className={field.wide ? "review-field-wide" : undefined}><dt>{t(field.label)}</dt><dd>{field.count && Array.isArray(field.value) && <span>{field.value.length} · </span>}<RecordedValue value={field.value} kind={field.kind} companyLabels={companyLabels} registries={registries} /></dd></div>)}</dl>
+      {section.candidates && <RecordedTable label="Ranked candidates" rows={section.candidates} columns={CANDIDATE_COLUMNS} />}
     </section>)}
-    <dl>{field("Stage timings", timings.length ? timings.map((item) => ({ node: item.node, status: item.status, elapsed_ms: item.elapsed_ms ?? missing })) : undefined)}</dl>
-    <h4>{t("Model calls / attempts")}</h4>
-    {calls.length ? calls.map((call, index) => <dl key={index}>
-      {field("Model", call.model)}{field("Attempts", call.attempts)}{field("Elapsed (ms)", call.elapsed_ms)}
-      {field("Input tokens", call.input_tokens)}{field("Output tokens", call.output_tokens)}{field("Error", call.error)}
-    </dl>) : <p>{Array.isArray(performance?.model_calls) ? "0" : missing}</p>}
-    {stage === "report" && <div className="review-stage-actions">
-      <button type="button" onClick={onShowEvidence} disabled={!onShowEvidence}>{t("Show evidence")}</button>
+    {timings && <section><RecordedTable label="Stage timings" rows={timings} columns={TIMING_COLUMNS} /></section>}
+    {calls && <section><RecordedTable label="Model calls / attempts" rows={calls} columns={CALL_COLUMNS} /></section>}
+    {missing.size > 0 && <p className="review-unrecorded">{t("Not recorded for this run")}: {[...missing].join(" · ")}</p>}
+    <div className="review-stage-actions">
+      {stage === "report" && <button type="button" onClick={onShowEvidence} disabled={!onShowEvidence}>{t("Show evidence")}</button>}
       <button type="button" onClick={onOpenDetails} disabled={!onOpenDetails}>{t("Open run details")}</button>
-    </div>}
+    </div>
   </div>;
 }
