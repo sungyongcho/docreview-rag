@@ -1,9 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { loadConversations, loadExperimentDefaults, loadOperationsFilter, newConversation, resetExperimentDefaults, saveConversations, saveExperimentDefaults, saveOperationsFilter } from "./storage";
+import { loadConversations, loadExperimentDefaults, loadOperationsFilter, loadOperationsTargetFilter, newConversation, resetExperimentDefaults, saveConversations, saveExperimentDefaults, saveOperationsFilter, saveOperationsTargetFilter } from "./storage";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE } from "./types";
 
 describe("conversation storage", () => {
+  it("stores the Operations target independently and rejects an unknown saved target", () => {
+    saveOperationsFilter("verify");
+    saveOperationsTargetFilter("database");
+    expect(loadOperationsFilter()).toBe("verify");
+    expect(loadOperationsTargetFilter()).toBe("database");
+    window.localStorage.setItem("docreview:operations-target-filter:v1", "future-target");
+    expect(loadOperationsTargetFilter()).toBe("all");
+    expect(loadOperationsFilter()).toBe("verify");
+    saveOperationsTargetFilter("web");
+    saveOperationsTargetFilter("all");
+    expect(window.localStorage.getItem("docreview:operations-target-filter:v1")).toBeNull();
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     vi.stubGlobal("crypto", { randomUUID: () => "conversation-id" });

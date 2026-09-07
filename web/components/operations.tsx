@@ -11,11 +11,13 @@ import {
   getOperatorJobs,
   OPERATION_CATEGORIES,
   type OperationsFilter,
+  type OperationsTargetFilter,
+  type OperatorTarget,
   type OperatorCommand,
   type OperatorJob,
   startOperatorJob,
 } from "@/lib/operator-api";
-import { loadOperationsFilter, saveOperationsFilter } from "@/lib/storage";
+import { loadOperationsFilter, saveOperationsFilter, loadOperationsTargetFilter, saveOperationsTargetFilter } from "@/lib/storage";
 import { useNotifications } from "@/components/notifications";
 import { Segmented } from "@/components/segmented";
 
@@ -31,6 +33,15 @@ const FILTER_OPTIONS: Array<{ value: OperationsFilter; label: string }> = [
   { value: "inspect", label: "Inspect" },
   { value: "verify", label: "Verify" },
   { value: "service", label: "Service" },
+];
+
+const TARGET_LABELS: Record<OperatorTarget, string> = { python: "Python", web: "Web", database: "Database", app: "App" };
+const TARGET_FILTER_OPTIONS: Array<{ value: OperationsTargetFilter; label: string }> = [
+  { value: "all", label: "All targets" },
+  { value: "python", label: "Python" },
+  { value: "web", label: "Web" },
+  { value: "database", label: "Database" },
+  { value: "app", label: "App" },
 ];
 
 export interface CommandGroup {
@@ -69,16 +80,26 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
   const { notify, dismissNotice } = useNotifications();
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<OperationsFilter>("all");
+  const [targetFilter, setTargetFilter] = useState<OperationsTargetFilter>("all");
   const active = useMemo(() => jobs.find((job) => job.status === "running") ?? null, [jobs]);
   const groups = useMemo(() => groupCommands(commands), [commands]);
-  const visibleGroups = filter === "all" ? groups : groups.filter((group) => group.category === filter);
+  const visibleGroups = groups
+    .filter((group) => filter === "all" || group.category === filter)
+    .map((group) => ({ ...group, commands: group.commands.filter((command) => targetFilter === "all" || command.target === targetFilter) }))
+    .filter((group) => group.commands.length > 0);
 
   // Read the remembered filter after mount so server and first client render agree.
-  useEffect(() => setFilter(loadOperationsFilter()), []);
+  useEffect(() => { setFilter(loadOperationsFilter()); setTargetFilter(loadOperationsTargetFilter()); }, []);
 
   function changeFilter(next: OperationsFilter) {
     setFilter(next);
     saveOperationsFilter(next);
+  }
+
+  /** Combine the target with the category while leaving execution independent of presentation. */
+  function changeTargetFilter(next: OperationsTargetFilter) {
+    setTargetFilter(next);
+    saveOperationsTargetFilter(next);
   }
 
   async function refresh() {
@@ -169,7 +190,9 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
           </header>}
       <div className="chip-group command-filter">
         <Segmented<OperationsFilter> label="Command category" options={FILTER_OPTIONS} value={filter} onChange={changeFilter} />
+        <Segmented<OperationsTargetFilter> label="Command target" options={TARGET_FILTER_OPTIONS} value={targetFilter} onChange={changeTargetFilter} />
       </div>
+      {!loading && commands.length > 0 && visibleGroups.length === 0 && <p className="helper" role="status">{t("No commands match these filters.")}</p>}
       {visibleGroups.map((group) => (
         <section className="command-group" key={group.category}>
           <h3 className="command-group-heading">{t(CATEGORY_LABELS[group.category] ?? group.category)}</h3>
@@ -180,6 +203,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
                   <TerminalSquare size={16} />
                   <span className="command-badges">
                     <span className={`command-kind ${command.category}`}>{t(command.category)}</span>
+                    <span className="command-kind target">{t(TARGET_LABELS[command.target] ?? "Target not reported")}</span>
                     {command.confirmation && <span className="command-kind confirmation" title={command.confirmation}><TriangleAlert size={11} aria-hidden="true" />{t("Confirmation required")}</span>}
                   </span>
                 </div>

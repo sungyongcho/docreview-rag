@@ -1,0 +1,607 @@
+{
+  "components": {
+    "schemas": {
+      "BrowserClearedRequest": {
+        "additionalProperties": false,
+        "description": "Identify the exact reset acknowledged by the browser after storage deletion.",
+        "properties": {
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id"
+        ],
+        "title": "BrowserClearedRequest",
+        "type": "object"
+      },
+      "CommandResource": {
+        "additionalProperties": false,
+        "description": "Public command metadata without an editable argv surface.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CommandTarget"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "command_id",
+          "label",
+          "description",
+          "category",
+          "target",
+          "confirmation",
+          "timeout_seconds"
+        ],
+        "title": "CommandResource",
+        "type": "object"
+      },
+      "CommandTarget": {
+        "enum": [
+          "python",
+          "web",
+          "database",
+          "app"
+        ],
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JobResource": {
+        "additionalProperties": false,
+        "description": "Bounded command execution state returned to the browser.",
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "output": {
+            "title": "Output",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        },
+        "required": [
+          "job_id",
+          "command_id",
+          "label",
+          "status",
+          "output",
+          "exit_code",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "JobResource",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "timed_out"
+        ],
+        "type": "string"
+      },
+      "StartJobRequest": {
+        "additionalProperties": false,
+        "description": "Select one command by its immutable registry identifier.",
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id"
+        ],
+        "title": "StartJobRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WipePreviewRequest": {
+        "additionalProperties": false,
+        "description": "Select the explicit reset mode; ordinary browser requests remain unchanged.",
+        "properties": {
+          "extreme": {
+            "default": false,
+            "title": "Extreme",
+            "type": "boolean"
+          }
+        },
+        "title": "WipePreviewRequest",
+        "type": "object"
+      },
+      "WipeStartRequest": {
+        "additionalProperties": false,
+        "description": "Bind destructive execution to one verified preview and exact confirmation.",
+        "properties": {
+          "backup_confirmed": {
+            "default": false,
+            "title": "Backup Confirmed",
+            "type": "boolean"
+          },
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "confirmation"
+        ],
+        "title": "WipeStartRequest",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "DocReview Local Operations",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/commands": {
+      "get": {
+        "description": "List fixed operations without exposing an editable argv.",
+        "operationId": "commands_commands_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CommandResource"
+                  },
+                  "title": "Response Commands Commands Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Commands"
+      }
+    },
+    "/jobs": {
+      "get": {
+        "description": "List recent local operations newest first.",
+        "operationId": "jobs_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobResource"
+                  },
+                  "title": "Response Jobs Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Jobs"
+      },
+      "post": {
+        "description": "Start one allowlisted command by identifier.",
+        "operationId": "start_job_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Job"
+      }
+    },
+    "/jobs/{job_id}": {
+      "get": {
+        "description": "Return one operation or a typed not-found response.",
+        "operationId": "job_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job"
+      }
+    },
+    "/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "Cancel one running command process group.",
+        "operationId": "cancel_job_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job"
+      }
+    },
+    "/wipe": {
+      "get": {
+        "description": "Return reset progress independently of application or database availability.",
+        "operationId": "wipe_status_wipe_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Wipe Status Wipe Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Wipe Status"
+      },
+      "post": {
+        "description": "Start the exact confirmed reset while keeping its operator UI available.",
+        "operationId": "start_wipe_wipe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WipeStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Wipe"
+      }
+    },
+    "/wipe/browser-cleared": {
+      "post": {
+        "description": "Record a same-operation browser acknowledgement through existing local auth.",
+        "operationId": "browser_cleared_wipe_browser_cleared_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserClearedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browser Cleared"
+      }
+    },
+    "/wipe/capability": {
+      "get": {
+        "description": "Verify all preview prerequisites without acquiring a hold or issuing a token.",
+        "operationId": "wipe_capability_wipe_capability_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Wipe Capability Wipe Capability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Wipe Capability"
+      }
+    },
+    "/wipe/preview": {
+      "post": {
+        "description": "Inspect a local-only reset without changing runtime data.",
+        "operationId": "wipe_preview_wipe_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WipePreviewRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Wipe Preview"
+      }
+    },
+    "/wipe/recover": {
+      "post": {
+        "description": "Release a recorded request hold without resuming an interrupted reset.",
+        "operationId": "recover_wipe_wipe_recover_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recover Wipe"
+      }
+    }
+  }
+}

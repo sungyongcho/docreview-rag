@@ -1,4 +1,11 @@
 export const KO: Record<string, string> = {
+  "Python": "Python",
+  "App": "앱",
+  "Web": "웹",
+  "Command target": "명령 대상",
+  "All targets": "모든 대상",
+  "Target not reported": "대상 정보 없음",
+  "No commands match these filters.": "선택한 필터에 해당하는 명령이 없습니다.",
   "Find company": "회사 찾기",
   "Enter SEC tickers or DART stock codes": "SEC 티커 또는 DART 종목 코드를 입력하세요",
   "Indexing stopped after {count} queued jobs. Check Jobs before retrying.": "파싱·청킹 작업 {count}개 등록 후 중단됐습니다. 다시 시도하기 전에 작업 목록을 확인하세요.",

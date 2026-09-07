@@ -11,8 +11,8 @@
     "pretest": "node scripts/prepare-tutorial.mjs",
     "pretypecheck": "node scripts/prepare-tutorial.mjs",
     "prebuild": "node scripts/prepare-tutorial.mjs",
-    "generate:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts",
-    "check:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts --check"
+    "generate:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts && openapi-typescript ../schemas/operator.openapi.json -o lib/operator-api-generated.ts",
+    "check:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts --check && openapi-typescript ../schemas/operator.openapi.json -o lib/operator-api-generated.ts --check"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

@@ -539,22 +539,22 @@ Linux의 host-owned `data/`는 앱의 쓰기를 위해 host data group의 write 
 스크립트는 DB reset·볼륨 삭제·배포·Git stage/commit을 자동 실행하지 않습니다.
 
 <!-- operator-commands:start -->
-| ID | Command | Purpose | Confirmation |
-|---|---|---|---|
-| `git-status` | `git status --short --branch` | Show branch plus staged, unstaged, and untracked paths. | no |
-| `python-lint` | `.venv/bin/ruff check app tests scripts` | Check application, tests, and scripts without rewriting files. | no |
-| `python-format-check` | `.venv/bin/ruff format --check app tests` | Report files Ruff would reformat without changing them. | no |
-| `python-tests-offline` | `.venv/bin/pytest -q -m not live_postgres` | Run the suite without live PostgreSQL cases or provider requests. | no |
-| `python-tests-postgres` | `.venv/bin/pytest -q -m live_postgres --require-live-postgres` | Require the live PostgreSQL marker instead of silently skipping it. | no |
-| `web-tests` | `npm test` | Run the Vitest component and client-contract suite. | no |
-| `web-typecheck` | `npm run typecheck` | Run TypeScript without emitting build output. | no |
-| `web-build` | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
-| `schema-check` | `.venv/bin/python -m scripts.schema_status check` | Inspect this checkout's local database schema without changing data. | no |
-| `schema-prepare` | `.venv/bin/python -m scripts.schema_status prepare` | Create schema objects only in an empty local database; preserve existing data. | required |
-| `db-start` | `docker compose --project-directory . -f docker/docker-compose.yml up -d db` | Start the local pgvector service and retain its existing volume. | required |
-| `db-stop` | `docker compose --project-directory . -f docker/docker-compose.yml stop db` | Stop the local database without deleting its volume. | required |
-| `app-start` | `docker compose --project-directory . -f docker/docker-compose.yml up --build -d app` | Build the local image and start the app with its database dependency. | required |
-| `app-stop` | `docker compose --project-directory . -f docker/docker-compose.yml stop app` | Stop the local app container while leaving PostgreSQL unchanged. | required |
+| ID | Target | Command | Purpose | Confirmation |
+|---|---|---|---|---|
+| `git-status` | App | `git status --short --branch` | Show branch plus staged, unstaged, and untracked paths. | no |
+| `python-lint` | Python | `.venv/bin/ruff check app tests scripts` | Check application, tests, and scripts without rewriting files. | no |
+| `python-format-check` | Python | `.venv/bin/ruff format --check app tests` | Report files Ruff would reformat without changing them. | no |
+| `python-tests-offline` | Python | `.venv/bin/pytest -q -m not live_postgres` | Run the suite without live PostgreSQL cases or provider requests. | no |
+| `python-tests-postgres` | Database | `.venv/bin/pytest -q -m live_postgres --require-live-postgres` | Require the live PostgreSQL marker instead of silently skipping it. | no |
+| `web-tests` | Web | `npm test` | Run the Vitest component and client-contract suite. | no |
+| `web-typecheck` | Web | `npm run typecheck` | Run TypeScript without emitting build output. | no |
+| `web-build` | Web | `.venv/bin/python scripts/check_web_build.py` | Build the current static Next source in an isolated temporary checkout. | no |
+| `schema-check` | Database | `.venv/bin/python -m scripts.schema_status check` | Inspect this checkout's local database schema without changing data. | no |
+| `schema-prepare` | Database | `.venv/bin/python -m scripts.schema_status prepare` | Create schema objects only in an empty local database; preserve existing data. | required |
+| `db-start` | Database | `docker compose --project-directory . -f docker/docker-compose.yml up -d db` | Start the local pgvector service and retain its existing volume. | required |
+| `db-stop` | Database | `docker compose --project-directory . -f docker/docker-compose.yml stop db` | Stop the local database without deleting its volume. | required |
+| `app-start` | App | `docker compose --project-directory . -f docker/docker-compose.yml up --build -d app` | Build the local image and start the app with its database dependency. | required |
+| `app-stop` | App | `docker compose --project-directory . -f docker/docker-compose.yml stop app` | Stop the local app container while leaving PostgreSQL unchanged. | required |
 <!-- operator-commands:end -->
 
 ## 데이터와 corpus 관리

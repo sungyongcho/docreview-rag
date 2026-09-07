@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
 type CommandCategory = Literal["inspect", "verify", "service"]
+type CommandTarget = Literal["python", "web", "database", "app"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +22,7 @@ class OperatorCommand:
     cwd: Path
     timeout_seconds: int
     category: CommandCategory
+    target: CommandTarget = field(kw_only=True)
     confirmation: str | None = None
     environment: tuple[tuple[str, str], ...] = ()
 
@@ -37,6 +39,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 30,
                 "inspect",
+                target="app",
             ),
             OperatorCommand(
                 "python-lint",
@@ -46,6 +49,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 300,
                 "verify",
+                target="python",
             ),
             OperatorCommand(
                 "python-format-check",
@@ -55,6 +59,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 300,
                 "verify",
+                target="python",
             ),
             OperatorCommand(
                 "python-tests-offline",
@@ -64,6 +69,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 1_800,
                 "verify",
+                target="python",
             ),
             OperatorCommand(
                 "python-tests-postgres",
@@ -79,6 +85,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 1_800,
                 "verify",
+                target="database",
             ),
             OperatorCommand(
                 "web-tests",
@@ -88,6 +95,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("web"),
                 600,
                 "verify",
+                target="web",
             ),
             OperatorCommand(
                 "web-typecheck",
@@ -97,6 +105,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("web"),
                 600,
                 "verify",
+                target="web",
             ),
             OperatorCommand(
                 "web-build",
@@ -106,6 +115,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 1_200,
                 "verify",
+                target="web",
             ),
             OperatorCommand(
                 "schema-check",
@@ -115,6 +125,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 Path("."),
                 60,
                 "verify",
+                target="database",
             ),
             OperatorCommand(
                 "schema-prepare",
@@ -126,6 +137,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 "service",
                 "Create the current schema only if the local database is empty. "
                 "Existing data is never reset.",
+                target="database",
             ),
             OperatorCommand(
                 "db-start",
@@ -146,6 +158,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 300,
                 "service",
                 "Start the local PostgreSQL container. Existing volume data is retained.",
+                target="database",
             ),
             OperatorCommand(
                 "db-stop",
@@ -165,6 +178,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 300,
                 "service",
                 "Stop PostgreSQL. Running API and tests may become unavailable.",
+                target="database",
             ),
             OperatorCommand(
                 "app-start",
@@ -186,6 +200,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 1_800,
                 "service",
                 "Build and start the local app container. This may use substantial CPU and time.",
+                target="app",
             ),
             OperatorCommand(
                 "app-stop",
@@ -205,6 +220,7 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
                 300,
                 "service",
                 "Stop the local app API. The host Operations page remains available.",
+                target="app",
             ),
         )
     }
@@ -214,13 +230,14 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
 def render_commands_markdown() -> str:
     """Render the README command table from the executable registry."""
     lines = [
-        "| ID | Command | Purpose | Confirmation |",
-        "|---|---|---|---|",
+        "| ID | Target | Command | Purpose | Confirmation |",
+        "|---|---|---|---|---|",
     ]
     for command in COMMANDS.values():
         argv = " ".join(command.argv).replace("|", "\\|")
         confirmation = "required" if command.confirmation else "no"
         lines.append(
-            f"| `{command.command_id}` | `{argv}` | {command.description} | {confirmation} |"
+            f"| `{command.command_id}` | {command.target.capitalize()} | `{argv}` | "
+            f"{command.description} | {confirmation} |"
         )
     return "\n".join(lines)

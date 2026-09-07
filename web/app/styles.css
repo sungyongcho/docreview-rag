@@ -350,6 +350,7 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 .command-card h4 { margin: 13px 0 5px; font-size: 15px; }
 .command-card p { flex: 1; margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .command-filter { margin: 0 0 12px; }
+.command-filter .segmented { max-width: 100%; flex-wrap: wrap; }
 .command-group + .command-group { margin-top: 18px; }
 .command-group-heading { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 580; letter-spacing: .08em; text-transform: uppercase; }
 .command-badges { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }

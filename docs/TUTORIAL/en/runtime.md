@@ -90,9 +90,11 @@ Installed, loaded, and answer-capable are separate facts. An installed model can
 
 **System → Operations** lists the registered local commands as cards grouped by category. **Inspect** reads state (Git status), **Verify** runs lint, tests, typecheck and the production build without changing files, and **Service** starts or stops PostgreSQL and the app or prepares an empty schema. Inside a group read-only commands come first and commands that ask for confirmation come last, each marked with a **Confirmation required** badge in its header. The **All · Inspect · Verify · Service** filter above the cards narrows the view and is remembered per browser. **Run** starts one command at a time; **Latest run** streams its output and offers **Cancel** while it is running.
 
+The **Command target** filter narrows each category to **Python**, **Web**, **Database** or **App**; **All targets** restores every target. It combines with the category filter and is remembered independently in this browser. App includes checkout and app-service operations; PostgreSQL checks and schema operations target Database. Target badges come from the operator registry, not from command-name guesses. An older running operator without this field is marked **Target not reported**. Selecting filters does not execute commands.
+
 ### SCREENSHOT NEEDED
 
-<!-- SCREENSHOT NEEDED: feature=operations-category-groups-and-filter; locale=en; theme=light; capture=operations-tab-grouped-cards-with-verify-filter-selected-and-confirmation-required-badge; issue=81; preserve-existing-assets=true -->
+<!-- SCREENSHOT NEEDED: feature=operations-category-and-target-filters; locale=en; theme=light; capture=operations-tab-with-category-and-target-filters-target-badges-and-confirmation-required-badge; issue=106; preserve-existing-assets=true -->
 
 **Screenshot pending for the grouped Operations cards with the category filter and the confirmation badge. Existing screenshots remain unchanged.**
 
