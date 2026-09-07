@@ -51,24 +51,60 @@ User directions and higher-priority instructions still prevail.
   self-review is disallowed. Neither approval label applies to unfinished work or a pending
   required check.
 
-### Automation identity setup — in progress
+### Automation identity setup
 
-- Setup status: `IN_PROGRESS`. The planned automation actor is `sungyongcho-ops`
-  (`ops@sungyongcho.com`) for authorized commits, pushes and scoped GitHub work.
-  This setup status is separate from an implementation PR's review readiness.
-- Verified host setup: the account has collaborator write access to
-  `sungyongcho/docreview-rag-agent` and `sungyongcho/dither-fm`. Plain `gh` uses the
-  personal `sungyongcho` profile; `gh-ops` uses `$HOME/.config/gh-ops`. Both CLI
-  identities were verified, and credentials are stored in the system keyring.
-- `gh-ops` selects the GitHub CLI identity only. It does not set Git author/committer
-  name/email or the credentials used by `git push`; those checks remain pending.
-  Keep an active assignment's established identity until its transition is configured.
-- At an authorized bot publication checkpoint, verify `gh-ops api user --jq .login`
-  returns `sungyongcho-ops`. If unavailable or different, report the setup blocker;
-  never silently fall back to the personal account or switch shared authentication.
-- Complete the rollout only after scoped Git attribution and push routing are verified
-  in an isolated worker worktree. This notice does not authorize global Git changes,
-  history rewriting, ownership transfer, additional repositories or maintainer actions.
+- Setup status: `IN_PROGRESS`. `sungyongcho-ops` uses
+  `OPS | Sungyong Cho <ops@sungyongcho.com>` for authorized automation in
+  `sungyongcho/docreview-rag-agent` and `sungyongcho/dither-fm` only. Repository role
+  rules still govern every action; machine authentication is not maintainer authority.
+- The public profile, verified email, collaborator write access and separate CLI
+  profiles are configured. Authenticator-app 2FA is enabled. Dedicated SSH authentication
+  and signing keys and isolated Git configuration are prepared locally; GitHub key
+  registration, passkey enrollment and remote delivery verification remain pending.
+- Plain `gh` keeps the personal `sungyongcho` profile. Use `gh-ops` for authorized
+  bot API/PR/review operations, with an explicit `--repo`. It removes inherited
+  `GH_TOKEN`/`GITHUB_TOKEN` and selects `$HOME/.config/gh-ops`; credentials remain in
+  the system keyring. It does not configure Git authorship or transport.
+- Configure only a new or explicitly transitioned owned worktree. Do not change global
+  identity, shared `origin` URLs, personal checkouts or another worker's configuration.
+  Existing assignments retain their identity until their owner completes the transition.
+  A clone must already enable `extensions.worktreeConfig`; inspect shared Git settings
+  and obtain setup authorization before enabling it in an unconfigured clone.
+- On this configured host, set the following with `git config --worktree`:
+
+  | Setting | Value |
+  | --- | --- |
+  | `user.name` | `OPS \| Sungyong Cho` |
+  | `user.email` | `ops@sungyongcho.com` |
+  | `gpg.format` | `ssh` |
+  | `user.signingkey` | `$HOME/.ssh/id_ed25519_ops_sign` (expand the path) |
+  | `commit.gpgsign` | `true` |
+  | `gpg.ssh.allowedSignersFile` | `$HOME/.config/gh-ops/allowed_signers` (expand the path) |
+  | `remote.ops.url` | `git@github-ops:sungyongcho/docreview-rag-agent.git` |
+  | `remote.ops.fetch` | `+refs/heads/*:refs/remotes/ops/*` |
+  | `remote.pushDefault` | `ops` |
+
+  Reset the inherited HTTPS helper list in that worktree, then add the bot helper:
+
+  ```sh
+  git config --worktree --replace-all credential.https://github.com.helper ''
+  git config --worktree --add credential.https://github.com.helper '!gh-ops auth git-credential'
+  ```
+
+- `github-ops` selects the dedicated authentication key with `IdentitiesOnly yes`,
+  batch mode and strict checking against the pinned GitHub host key. Fetch from `origin`
+  and push the owned branch explicitly with `git push -u ops <branch>`. Confirm the
+  effective push URL; an inherited `remote.ops.pushurl` must not redirect it. Never
+  silently fall back to personal credentials or regenerate missing keys during delivery.
+- At a publication checkpoint verify the CLI actor (`gh-ops api user --jq .login`),
+  actual author/committer (`git var GIT_AUTHOR_IDENT` / `GIT_COMMITTER_IDENT`), SSH
+  greeting (`ssh -T github-ops`) and local signature (`git verify-commit HEAD`). GitHub's
+  successful SSH greeting normally exits 1. Verify the published commit's author,
+  committer and signature and the PR/comment actor through GitHub. Reuse unchanged
+  evidence within the same checkpoint; report a mismatch as a blocker.
+- Preserve the named Worker ID and exact review labels. Keep private keys, tokens and
+  recovery material outside repositories and logs. This setup does not authorize history
+  rewriting, extra repositories, ownership transfer, merge or local-main integration.
 
 ### Assigned ownership and work state
 

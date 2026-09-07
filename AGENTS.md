@@ -48,10 +48,10 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
   synchronizing a checkout must never be inferred for a worker from the general
   maintainer workflow. Workers may maintain only their assigned ownership/status
   comments under WORKER.md; this exception does not authorize issue-body edits.
-- Automation identity setup is `IN_PROGRESS`. `sungyongcho-ops`
-  (`ops@sungyongcho.com`) is the planned account for authorized automated commits,
-  pushes and GitHub delivery. CLI access is configured; Git author/committer attribution
-  and push authentication still require verification. See WORKER.md for the setup state.
+- Automation identity setup is `IN_PROGRESS`. `sungyongcho-ops` uses
+  `OPS | Sungyong Cho <ops@sungyongcho.com>`. Separate CLI access and per-worktree
+  Git authorship, SSH signing and push routing are configured locally; remote delivery
+  verification is pending. Follow WORKER.md for the setup state and scoped configuration.
 - This announcement does not switch existing assignments or expand their authority.
   `sungyongcho` remains the personal maintainer; worker/maintainer boundaries still apply.
 - Destructive user-data actions, credentials, deployment, protection changes, meaningful
