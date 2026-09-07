@@ -126,7 +126,7 @@ Open **System → System status** and click **Refresh**. Confirm DEV, database c
 
 ### 2. Download NVIDIA SEC FY2024 {#qs-web-2}
 
-Open **Build → Pipeline → Filings** and use **Clear selection** to limit this exercise. Select the `NVDA` / `2024` year chip in the company/year matrix. If that pair is absent, enter the code under **Tickers / stock codes** and the year under **Fiscal years**, then choose **Add to selection**. Adding an existing pair only focuses its chip; select that chip explicitly. Confirm the download plan contains only the intended missing pair, choose **Download missing filings**, and wait for success in **Build → Jobs**.
+Open **Build → Pipeline → Filings** and use **Clear selection** to limit this exercise. In **Search/add company or year**, search for `NVDA`, choose NVIDIA, then check `2024`. An on-disk pair enters the selection immediately; a missing pair appears under **To be added**. Confirm that only the intended pair is pending, choose **Sync selection**, and wait for success in **Build → Jobs**.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: current filings-matrix-and-exact-year-selection; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
@@ -143,7 +143,7 @@ Open **Build → Pipeline → Filings** and use **Clear selection** to limit thi
 
 ### 3. Download Samsung DART FY2024 {#qs-web-3}
 
-Return to **Filings** and keep the downloaded NVIDIA pair selected. Select the `005930` / `2024` chip, or add an absent pair with **Tickers / stock codes**, **Fiscal years** and **Add to selection**. Select a focused existing chip explicitly. Confirm the download plan now lists only the missing Samsung pair, choose **Download missing filings**, and wait for its DART job to succeed in **Jobs**.
+Return to **Filings** and keep the downloaded NVIDIA pair selected. Use **Change company**, then **Search/add company or year** to choose `005930` and check `2024`. Confirm **To be added** lists only the missing Samsung pair, choose **Sync selection**, and wait for its DART job in **Jobs**. Ready pairs remain selected without another download.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: current filings-matrix-and-exact-year-selection; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->

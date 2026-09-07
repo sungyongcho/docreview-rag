@@ -1,11 +1,12 @@
 import type { CorpusSnapshot } from "@/lib/types";
 import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeline";
+import type { AcquisitionCompany } from "./acquisition-catalog";
 import { acquisitionRegistry } from "./acquisition-catalog";
 
 export type SourceInventory = NonNullable<CorpusSnapshot["sources"]>[number];
 
 /** Keep registry and exact company/year identity distinct across draft operations. */
-function pairKey(pair: AcquisitionPair): string {
+export function pairKey(pair: AcquisitionPair): string {
   return `${pair.registry}:${pair.issuer.toUpperCase()}:${pair.year}`;
 }
 
@@ -63,4 +64,30 @@ export function selectedSourceState(sources: SourceInventory[], draft: Acquisiti
   const present = selected.filter((row) => row.on_disk);
   const excluded = unique.filter((row) => row.on_disk && !selected.includes(row));
   return { pairs, selected, present, excluded, missingPairs, missing: missingPairs.map((pair) => `${pair.issuer} FY${pair.year}`), complete: pairs.length > 0 && present.length > 0 && missingPairs.length === 0 };
+}
+
+/** Group unique documents into registry/company rows shared by both preparation steps. */
+export function sourceSelectionRows(sources: SourceInventory[], pairs: AcquisitionPair[], companies: AcquisitionCompany[], selectedOnly = false) {
+  const unique = [...new Map(sources.map((source) => [`${source.registry}:${source.document_id}`, source])).values()];
+  const selected = new Set(pairs.map(pairKey));
+  const cells = new Map<string, { pair: AcquisitionPair; documents: SourceInventory[] }>();
+  for (const source of unique) {
+    const pair = { registry: source.registry, issuer: source.issuer.toUpperCase(), year: source.fiscal_year };
+    const key = pairKey(pair);
+    if (selectedOnly && !selected.has(key)) continue;
+    if (!cells.has(key)) cells.set(key, { pair, documents: [] });
+    cells.get(key)!.documents.push(source);
+  }
+  for (const pair of pairs) if (!cells.has(pairKey(pair))) cells.set(pairKey(pair), { pair, documents: [] });
+  return (["sec", "dart"] as const).map((registry) => {
+    const registryCells = [...cells.values()].filter((cell) => cell.pair.registry === registry);
+    const issuers = [...new Set(registryCells.map((cell) => cell.pair.issuer))].sort();
+    return { registry, rows: issuers.map((issuer) => {
+      const names = new Map<string, number>();
+      for (const source of unique) if (source.registry === registry && source.issuer.toUpperCase() === issuer && source.name?.trim()) names.set(source.name.trim(), (names.get(source.name.trim()) ?? 0) + 1);
+      const name = companies.find((company) => company.registry === registry && company.issuer.toUpperCase() === issuer)?.name?.trim()
+        || [...names.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "";
+      return { issuer, label: `${issuer}${name && name !== issuer ? ` · ${name}` : ""}`, cells: registryCells.filter((cell) => cell.pair.issuer === issuer).sort((a, b) => a.pair.year - b.pair.year) };
+    }) };
+  });
 }

@@ -10,9 +10,11 @@ import { Activity, ArrowDown, ArrowRight, Check, RefreshCw } from "lucide-react"
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { JobProgress } from "@/components/job-center";
+import { SourceSelectionGrid } from "@/components/source-selection-grid";
+import "./index-selection.css";
 import { SourceMatrix } from "@/components/source-matrix";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
-import { selectedSourceState, type SourceInventory } from "@/lib/source-selection";
+import { acquisitionDraft, pairKey, selectedSourceState, type SourceInventory } from "@/lib/source-selection";
 import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeline";
 import { diagnosePreparation } from "@/lib/preparation-diagnostics";
 import type { Diagnosis } from "@/lib/preparation-diagnostics";
@@ -63,7 +65,7 @@ export interface BuildPipelineProps {
   operationsAvailable?: boolean;
   onRunOperation?: (commandId: string) => void;
   onCancelJob: (jobId: string) => void;
-  onDownload: () => void;
+  onDownload: (next?: AcquisitionForm) => void;
   onIngestAll: () => void;
   onIngest: (manifestName: string, selectionId: string) => void;
   onBackfill: () => void;
@@ -210,6 +212,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             readOnly={pipeline.readOnly}
             busy={props.busy}
             handler={handler}
+            onDownload={props.onDownload}
             disabled={disabled}
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
@@ -334,6 +337,7 @@ interface StageCardProps {
   isNext: boolean;
   readOnly: boolean;
   handler: (kind: StageActionKind) => () => void;
+  onDownload: (next?: AcquisitionForm) => void;
   disabled: (kind: StageActionKind) => boolean;
   acquisition: AcquisitionForm;
   documents: CorpusDocument[];
@@ -362,12 +366,19 @@ function manifestSummary(manifest: ManifestSummary, registryCounts: Record<strin
   return parts.join(" · ");
 }
 
-function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ onDownload, busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
   const readOnlyNote = readOnly && OPERATOR_STAGES.has(stage.id);
   const sourceState = selectedSourceState(sources, acquisition);
+  const activeJob = job && (job.status === "running" || job.status === "queued");
+  const selectedKeys = new Set(sourceState.selected.map((source) => pairKey({ registry: source.registry, issuer: source.issuer, year: source.fiscal_year })));
+  const absentCount = sourceState.pairs.filter((pair) => !selectedKeys.has(pairKey(pair))).length;
+  const documentCount = sourceState.selected.length + absentCount;
+  const companyCount = new Set(sourceState.pairs.map((pair) => `${pair.registry}:${pair.issuer}`)).size;
+  const yearCount = new Set(sourceState.pairs.map((pair) => pair.year)).size;
+  const missingCount = documentCount - sourceState.present.length;
 
   return (
     <li>
@@ -384,8 +395,8 @@ function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, reco
               {stage.numbers.map((item, index) => <Fragment key={`${index}:${t(item)}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}
             </p>
           )}
-          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={handler("acquire")} downloadDisabled={disabled("acquire") || sourceState.missingPairs.length === 0} />}
-          {job && (
+          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} />}
+          {job && !(stage.id === "index" && activeJob) && (
             <div className="stage-job">
               <JobProgress job={job} />
             </div>
@@ -394,19 +405,24 @@ function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, reco
           {recovery}
           {readOnlyNote && <p className="stage-note">{t(READ_ONLY_NOTE)}</p>}
           <p className="stage-why"><strong>{t("Why it matters:")}</strong> {t(stage.why)}</p>
-          {stage.id === "index" && <section aria-label={t("Selected documents")}>
-            <h3>{t("Selected documents")}</h3>
-            <p role="status">{t("Selected documents: {count}", { count: sourceState.present.length })}</p>
-            <p>{sourceState.pairs.map((pair) => `${pair.registry.toUpperCase()} · ${pair.issuer} FY${pair.year}`).join(", ") || t("no tickers")}</p>
-            <ul>{sourceState.selected.map((row) => <li key={`${row.registry}:${row.document_id}`}>{row.registry.toUpperCase()} · {row.issuer} · FY{row.fiscal_year} · {row.document_id} · {t(row.on_disk ? "On disk" : "Missing source")}</li>)}</ul>
-            {sourceState.missing.length > 0 && <p role="alert">{t("To download: {sources}", { sources: sourceState.missing.join(", ") })}</p>}
-            <button className="button ghost" type="button" onClick={onChangeFilings}>{t("Change selection in Filings")}</button>
+          {stage.id === "index" && <section className="index-selection" aria-label={t("Selected documents")}>
+            <header className="index-selection-heading">
+              <h3>{t("Selected documents")}</h3>
+              <button className="button" type="button" onClick={onChangeFilings}><RefreshCw size={14} aria-hidden="true" />{t("Change selection in Filings")}</button>
+            </header>
+            <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length, missing: missingCount })}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
+            <SourceSelectionGrid sources={sources} pairs={sourceState.pairs} companies={companies} selectedOnly disabled={readOnly || busy || Boolean(activeJob)} onToggle={(changed) => {
+              const removed = new Set(changed.map(pairKey));
+              onAcquisitionChange(acquisitionDraft(sourceState.pairs.filter((pair) => !removed.has(pairKey(pair)))));
+            }} />
+            {!sourceState.pairs.length && <p className="helper">{t("Select sources in Filings to start parsing.")}</p>}
+            {missingCount > 0 && <p role="alert" id="index-selection-missing" className="index-selection-missing">{t("{count} sources missing → download in Filings before parsing.", { count: missingCount })}</p>}
+            {sourceState.pairs.length > 0 && <p className="helper">{t("Select a year to remove it, or change the selection in Filings.")}</p>}
           </section>}
           {stage.id === "index" && (
-            <details className="stage-advanced">
+            <details className="stage-advanced index-advanced">
               <summary>{t("Advanced")}</summary>
               <div>
-                <p role="status">{t("Selected documents: {count}", { count: selectedDocumentCount })}</p>
                 {manifests.map((manifest) => (
                   <div className="manifest-row" key={manifest.name}>
                     <span>{manifest.name} · {manifest.registries.join(" / ").toUpperCase()} · {manifestSummary(manifest, registryCounts, locale)}</span>
@@ -422,13 +438,20 @@ function StageCard({ busy, onIngestAdvanced, sources = [], onChangeFilings, reco
               </div>
             </details>
           )}
-          <div className="stage-actions">
+          {stage.id === "index" ? <div className="index-action-bar" aria-label={t("Parsing actions")} role="group">
+            {activeJob ? <>
+              <div className="index-action-progress"><JobProgress job={job} /></div>
+              {job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
+            </> : <button className="button primary" type="button" aria-label={t("Parse & chunk selected sources")} aria-describedby={missingCount ? "index-selection-missing" : undefined} disabled={disabled("ingest_all") || !sourceState.complete} onClick={handler("ingest_all")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></button>}
+            <button className="button" type="button" onClick={onOpenDocuments}>{t("Open Documents")}</button>
+            <button className="button ghost" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button>
+          </div> : <div className="stage-actions">
             {job && job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
-            {stage.action && stage.id !== "filings" && <ActionButton stage={stage.id === "index" ? { ...stage, action: { kind: "ingest_all", label: "Parse & chunk selected sources" } } : stage} primary={isNext} handler={handler} disabled={(kind) => disabled(kind) || (kind === "ingest_all" && !sourceState.complete)} />}
-            {stage.id === "index" && <button className="button ghost" type="button" onClick={onOpenDocuments}>{t("Open Documents")}</button>}
+            {stage.action && stage.id !== "filings" && <ActionButton stage={stage} primary={isNext} handler={handler} disabled={disabled} />}
             {stage.id === "answer_model" && stage.status !== "readonly" && <button className="button ghost" type="button" onClick={onOpenStatus}>{t("Open System status")}</button>}
             {job && <button className="button ghost" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button>}
-          </div>
+          </div>}
+
         </div>
       </article>
     </li>

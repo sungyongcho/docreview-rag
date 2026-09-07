@@ -6,17 +6,24 @@ The initial selection uses the exact company/year pairs actually on disk, withou
 cross-company combinations. With no sources it is empty; `rag-schema recreate --sample`
 explicitly presets **NVDA, AMD**, FY**2023, 2024**, without downloading.
 
-The company × year matrix is both the inventory and the selector. SEC and DART have separate
-sections, companies are sorted by code, and year chips are ascending. Filled chips are on disk;
-outlined chips need sources. The selection border and `aria-pressed` state identify selected years.
-A row checkbox selects or clears that company's years. Large sections offer **Show all companies**.
-Catalog names take precedence; otherwise one consistent name comes from the source records.
+The compact matrix groups SEC and DART companies with single-line fiscal-year tokens. A check
+icon and filled background mean all sources for that year are on disk; `!` and a dashed outline
+mark missing sources. A stronger border marks selection. Row checkboxes support partial selection;
+**Select everything on disk**, **Clear selection**, and **Show all companies** retain their scope.
+Names come from the catalog or a consistent source-record name. Document IDs remain in chip details.
 
-The summary counts selected documents on disk, selected years needing downloads and on-disk
-unselected documents. A year with multiple source documents shows its ready/total count.
-Use **Select everything on disk** or **Clear selection** to change the draft explicitly; neither
-removes files. Enter a company code and year/range under the add controls for a new combination.
-An existing combination is focused instead of duplicated; use its chip to change selection.
+Use **Search/add company or year** to find a code or name, then select the company and check its
+years. Company suggestions show the registry and on-disk year count. Arrow Down/Up move through
+suggestions; Enter or Space toggles a focused year, and Escape closes the list. The same input
+accepts unknown SEC tickers or six-digit DART codes, then years or ranges such as `2023-2025`.
+Choose **Change company** to add another company to the same pending list.
+
+On-disk choices join the shared selection immediately. Missing pairs enter **To be added**,
+grouped by registry with the required source credentials. **Remove** or **Clear pending** drops
+requests without deleting files. **Sync selection** applies all pending pairs and downloads only
+missing sources, using that exact draft even on the first click. Matrix-selected missing years
+appear in this same list. Invalid input stays visible; correct it before syncing. Simply leaving
+the search field does not add its unfinished text.
 
 Source acquisition can proceed while schema drift blocks indexing, provided source storage and
 tracked-job storage are available. After downloading, Parse & chunk receives the same exact
@@ -25,7 +32,7 @@ extra combinations are processed.
 
 ### SCREENSHOT NEEDED
 
-<!-- SCREENSHOT NEEDED: feature=company-year-inventory-selector; locale=en; theme=light; capture=selected-and-unselected-ready-and-missing-chips-row-checkboxes-download-plan; issue=94; preserve-existing-assets=true -->
+<!-- SCREENSHOT NEEDED: feature=company-year-inventory-selector; locale=en; theme=light; capture=32-document-compact-grid-search-year-checkboxes-staged-pairs-and-sync; issue=131; preserve-existing-assets=true -->
 
 **Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
 
@@ -44,17 +51,16 @@ environment does not need another download.
 - **Screen:** Build → Pipeline → Filings → company/year matrix.
 - **Inputs:** choose `NVDA` and `2024`, or `005930` and `2024` for a Korean report. Both sources can be selected together.
   The year is the report's fiscal year, not necessarily its publication year.
-- **Primary action:** toggle year chips or company checkboxes; use the add controls for absent pairs.
-- **Visible result:** selected chips are highlighted, and the download plan lists only selected missing years.
+- **Primary action:** toggle year chips or company checkboxes; search a company and check years for absent pairs.
+- **Visible result:** selected chips are highlighted, and **To be added** lists selected missing years and staged pairs.
 - **Completion:** companies and years describe the intended source, with no invalid draft left.
-- **Recovery:** correct invalid add-control text, then select **Add to selection**. For source
+- **Recovery:** correct invalid search text, press Enter, then **Sync selection**. For source
   credentials or unavailable reports, see [acquisition failures](troubleshooting.md).
 - **Next:** [download missing sources](#step-4), or [parse existing sources](indexing.md#step-5).
 
-The stable company code is always visible. Add controls accept SEC tickers and six-digit DART
-codes, including several codes separated by commas. Enter four-digit years or an ascending range
-such as `2023-2025` (up to 50 years). Invalid text stays visible and prevents acquisition until fixed.
-Existing chips remain the primary selector; typing an existing company/year does not select it.
+The stable company code is always visible. Free entry supports comma-separated codes and
+ascending ranges of up to 50 years. Ready years are selected immediately; missing years are
+applied only when you sync. Parsing receives the same exact selected pairs.
 
 <!-- capture:04-sec-inputs -->
 
@@ -67,9 +73,9 @@ Existing chips remain the primary selector; typing an existing company/year does
 - **Goal:** make the required original files available for parsing.
 - **Prerequisites:** valid selections from step 3 and the [source credentials](#sources).
 - **Screen:** Build → Pipeline → Filings, selected-stage execution panel.
-- **Inputs:** recheck **Download plan**, grouped by SEC/DART. Only selected missing years are submitted.
+- **Inputs:** recheck **To be added**, grouped by SEC/DART. Only missing years are submitted.
   Credential notes appear only for registries with missing selections; the button is disabled when none are missing.
-- **Primary action:** **Download missing filings**.
+- **Primary action:** **Sync selection**.
 - **Visible result:** a queued or running job appears. Open Build → Jobs to read progress and the actual result.
   Preparation status updates automatically when the job finishes; no manual refresh is needed.
 - **Completion:** the job succeeds and the sources in the returned processing selection are present.

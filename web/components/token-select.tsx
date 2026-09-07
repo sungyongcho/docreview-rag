@@ -26,10 +26,15 @@ interface Props {
   quickOptions?: TokenOption[];
   onValidityChange?: (valid: boolean) => void;
   overlayOptions?: boolean;
+  /** Checkable choices remain visible for repeated multi-selection. */
+  checkable?: boolean;
+  hideValues?: boolean;
+  commitOnBlur?: boolean;
+  autoFocus?: boolean;
 }
 
 /** Keep editing text separate from committed filters and expose keyboard-friendly choices. */
-export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false }: Props) {
+export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false, checkable = false, hideValues = false, commitOnBlur = true, autoFocus = false }: Props) {
   const { t } = useI18n();
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -39,7 +44,7 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
   const [expanded, setExpanded] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const query = draft.trim().toLocaleLowerCase();
-  const suggestions = options.filter((option) => !values.includes(option.value) && `${option.value} ${option.label}`.toLocaleLowerCase().includes(query));
+  const suggestions = options.filter((option) => (checkable || !values.includes(option.value)) && `${option.value} ${option.label}`.toLocaleLowerCase().includes(query));
 
   /** Prefer actual labels and codes before parsing independent pasted tokens. */
   function resolve(text: string): string[] | null {
@@ -78,7 +83,7 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
 
   /** Add a known choice and return focus for another search. */
   function choose(option: TokenOption) {
-    onChange([...new Set([...values, option.value])]);
+    onChange(checkable && values.includes(option.value) ? values.filter((value) => value !== option.value) : [...new Set([...values, option.value])]);
     setDraft("");
     setAttempted(false);
     setExpanded(true);
@@ -95,16 +100,16 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
       if (event.key === "Escape" || (event.key === "ArrowUp" && index === 0)) { input.current?.focus(); if (event.key === "Escape") setExpanded(false); }
       else buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
     }}>
-      {suggestions.length ? suggestions.map((option) => <button type="button" key={option.value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><span className="token-option-label">{option.label}{option.badge && <span className={`token-badge token-badge-${option.badge.tone}`}>{option.badge.label}</span>}</span><Plus size={13} aria-hidden="true" /></button>) : <p className="token-hint">{t("No matching choices in this scope.")}</p>}
+      {suggestions.length ? suggestions.map((option) => <button type="button" key={option.value} role={checkable ? "checkbox" : undefined} aria-checked={checkable ? values.includes(option.value) : undefined} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><span className="token-option-label">{option.label}{" "}{option.badge && <span className={`token-badge token-badge-${option.badge.tone}`}>{option.badge.label}</span>}</span><span aria-hidden="true">{checkable ? (values.includes(option.value) ? "☑" : "☐") : <Plus size={13} />}</span></button>) : <p className="token-hint">{t("No matching choices in this scope.")}</p>}
     </div>);
 
   return <div className={`token-select${overlayOptions ? " token-select-overlay" : ""}`} onBlur={(event) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     setExpanded(false);
-    commit();
+    if (commitOnBlur) commit();
   }}>
     <label className="token-select-label" htmlFor={id}>{label}</label>
-    {values.length > 0 && <ul className="token-selection" aria-label={t("Selected {field}", { field: label })}>
+    {!hideValues && values.length > 0 && <ul className="token-selection" aria-label={t("Selected {field}", { field: label })}>
       {values.map((value) => {
         const option = options.find((option) => option.value === value);
         const caption = option?.label ?? value;
@@ -117,7 +122,7 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
       })}
     </ul>}
     <div className="token-search-row">
-      <input ref={input} id={id} value={draft} placeholder={placeholder} disabled={disabled} autoComplete="off"
+      <input ref={input} id={id} value={draft} autoFocus={autoFocus} aria-expanded={expanded && !disabled} aria-controls={expanded && !disabled ? `${id}-choices` : undefined} placeholder={placeholder} disabled={disabled} autoComplete="off"
         aria-invalid={showError || invalidValues.length > 0}
         aria-describedby={`${id}-hint${showError ? ` ${id}-error` : ""}`}
         onFocus={() => setExpanded(true)}

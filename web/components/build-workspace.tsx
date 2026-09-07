@@ -257,12 +257,13 @@ export function BuildWorkspace({ live, readiness, healthKind, profile, jobBoard,
     } finally { setBusy(false); }
   }
 
-  async function downloadFilings() {
+  /** Queue only missing pairs from the exact draft submitted by the picker. */
+  async function downloadFilings(next: AcquisitionForm = acquisition) {
     if (!live) return;
     setBusy(true);
     let queued = 0;
     try {
-      const missing = selectedSourceState(corpus?.sources ?? [], acquisition).missingPairs;
+      const missing = selectedSourceState(corpus?.sources ?? [], next).missingPairs;
       for (const group of acquisitionBatches(missing)) {
         await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years: group.years });
         queued += 1;

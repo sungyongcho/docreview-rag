@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,7 +93,7 @@ describe("Build workspace", () => {
     render(<Harness live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
   });
@@ -264,7 +264,7 @@ describe("Build workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     const ingestButtons = screen.getAllByRole("button", { name: "Parse & chunk selected sources" });
     for (const button of ingestButtons) expect(button).toBeEnabled();
-    expect(screen.getByText("Selected documents: 4")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 4 ready · 0 to download");
     fireEvent.click(ingestButtons[0]);
 
     await waitFor(() => {
@@ -399,7 +399,7 @@ describe("preparation refresh after corpus jobs", () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/documents/facets"))).toHaveLength(2);
   });
 
-  it("counts overlapping selected document identities once", async () => {
+  it("keeps manual manifest choices separate from the compact default selection", async () => {
     const manifest = CANNED_CORPUS.manifests[0];
     const selection = manifest.selections[0];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -411,7 +411,9 @@ describe("preparation refresh after corpus jobs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: /sec-evaluation/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /overlap/ }));
-    expect(screen.getByText("Selected documents: 20")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /sec-evaluation/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /overlap/ })).toBeChecked();
+    expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 0 ready · 4 to download");
   });
 });
 
@@ -430,8 +432,8 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   await screen.findByText("0 / 4 filings on disk");
   fireEvent.click(screen.getByRole("checkbox", { name: /^Select all years for AMD/ }));
   fireEvent.click(screen.getByRole("button", { name: /^NVDA FY2023/ }));
-  const years = screen.getByRole("textbox", { name: "Fiscal years" });
-  const download = screen.getByRole("button", { name: "Download missing filings" });
+  const years = screen.getByRole("textbox", { name: "Search/add company or year" });
+  const download = screen.getByRole("button", { name: "Sync selection" });
   fireEvent.focus(years);
   fireEvent.mouseDown(download);
   fireEvent.blur(years, { relatedTarget: download });
@@ -454,7 +456,7 @@ it("keeps source acquisition available during schema drift and exposes terminal 
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Download missing filings" })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: "Sync selection" })).toBeEnabled());
   expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("This step is ready to run");
   expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema recover --return-stage filings");
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
@@ -477,10 +479,11 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
   }));
   render(<NotificationProvider><Harness live ready={false} /></NotificationProvider>);
   await screen.findByText("0 / 4 filings on disk");
-  fireEvent.change(screen.getByRole("textbox", { name: "Tickers / stock codes" }), { target: { value: "005930,000660" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Fiscal years" }), { target: { value: "2023-2024" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add to selection" }));
-  fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Search/add company or year" }), { target: { value: "005930,000660" } });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Search/add company or year" }), { key: "Enter" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Search/add company or year" }), { target: { value: "2023-2024" } });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Search/add company or year" }), { key: "Enter" });
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toHaveLength(2));
   expect(submitted).toEqual([
     { kind: "acquire_edgar", identifiers: ["AMD", "NVDA"], years: [2023, 2024] },
@@ -505,7 +508,7 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   await screen.findByText("No sources yet. Add a company and fiscal year below.");
   expect(screen.queryByRole("button", { name: /^NVDA FY/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   preset = { identifiers: ["NVDA", "AMD"], years: [2023, 2024] };
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByRole("checkbox", { name: /^Select all years for NVDA/ });
@@ -518,9 +521,9 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   expect(screen.getByText(/On disk not selected: 2/)).toBeInTheDocument();
   sources = sourceRows.filter((row) => row.document_id !== "NVDA-FY2023");
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2023/ })).toHaveTextContent("Missing source"));
+  await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2023/ })).toHaveAccessibleName("NVDA FY2023 · Missing source"));
   expect(screen.getByRole("checkbox", { name: /^Select all years for AMD/ })).not.toBeChecked();
-  expect(screen.getByRole("region", { name: "Download plan" })).toHaveTextContent("NVDA FY2023");
+  expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2023");
   fireEvent.click(screen.getByRole("button", { name: "Select everything on disk" }));
   expect(screen.getByRole("checkbox", { name: /^Select all years for AMD/ })).toBeChecked();
   expect(screen.queryByRole("button", { name: "Sync draft with downloaded sources" })).not.toBeInTheDocument();
@@ -689,12 +692,12 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
   fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
   fireEvent.click(screen.getByRole("button", { name: /^AMD FY2023/ }));
   fireEvent.click(screen.getByRole("button", { name: /^NVDA FY2024/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Download missing filings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toEqual([{ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] }]));
   await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
   sources.find((row) => row.issuer === "NVDA" && row.fiscal_year === 2024)!.on_disk = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2024/ })).toHaveTextContent("On disk"));
+  await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2024/ })).toHaveAccessibleName("NVDA FY2024 · On disk"));
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
   await waitFor(() => expect(submitted.slice(1)).toEqual([

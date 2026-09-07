@@ -20,98 +20,131 @@ function Harness({ sources = inventory, initialPairs = [] as AcquisitionPair[], 
   return <SourceMatrix sources={sources} companies={companies} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} disabled={disabled} onDownload={download} downloadDisabled={false} />;
 }
 
-/** Add codes and year/range syntax through the actual add-only controls. */
-function add(codes: string, years: string) {
-  fireEvent.change(screen.getByLabelText("Tickers / stock codes"), { target: { value: codes } });
-  fireEvent.change(screen.getByLabelText("Fiscal years"), { target: { value: years } });
-  fireEvent.click(screen.getByRole("button", { name: "Add to selection" }));
+/** Enter through the one search box, committing company context before fiscal years. */
+function enter(value: string) {
+  const input = screen.getByLabelText("Search/add company or year");
+  fireEvent.change(input, { target: { value } });
+  fireEvent.keyDown(input, { key: "Enter" });
 }
 
 describe("company and year source matrix", () => {
-  it("focuses an existing company without requiring a year or selecting extra cells", () => {
-    const changed = vi.fn(); render(<Harness changed={changed} />);
-    fireEvent.change(screen.getByLabelText("Tickers / stock codes"), { target: { value: "NVDA" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find company" }));
-    expect(screen.getByRole("button", { name: "NVDA FY2022 · On disk" })).toHaveFocus();
-    expect(changed).not.toHaveBeenCalled();
-  });
-
-  it("sorts registry/company/year rows and uses one catalog-first display name", () => {
-    render(<Harness sources={[...inventory, source("INTC", 2021, true, "Intel"), source("INTC", 2022, true, "Intel"), source("INTC", 2024, true, "INTEL CORP")]} companies={[{ registry: "sec", issuer: "INTC", name: "Intel Corporation" }]} />);
-    const sections = screen.getAllByRole("region").filter((section) => ["SEC", "DART"].includes(section.getAttribute("aria-label") ?? ""));
-    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["SEC", "DART"]);
-    expect(within(sections[0]).getAllByRole("group").map((row) => row.getAttribute("aria-label"))).toEqual(["AMD", "INTC · Intel Corporation", "NVDA"]);
-    expect(within(screen.getByRole("group", { name: "NVDA" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["FY2022On disk", "FY2024On disk"]);
-    expect(screen.queryByText(/Available companies/)).toBeNull();
+  it("sorts compact rows, keeps registry/name identity and exposes readiness without captions", () => {
+    render(<Harness companies={[{ registry: "sec", issuer: "NVDA", name: "NVIDIA" }]} />);
+    const sec = screen.getByRole("region", { name: "SEC" });
+    expect(within(sec).getAllByRole("group").map((row) => row.getAttribute("aria-label"))).toEqual(["AMD", "NVDA · NVIDIA"]);
+    const chips = within(screen.getByRole("group", { name: "NVDA · NVIDIA" })).getAllByRole("button");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["✓FY2022", "✓FY2024"]);
+    expect(chips[1]).toHaveAccessibleName("NVDA FY2024 · On disk");
+    expect(screen.getByRole("button", { name: "005930 FY2023 · Missing source" })).toHaveClass("missing");
   });
   it("uses deduplicated document-name frequency when the catalog has no name", () => {
     const uncommon = source("INTC", 2024, true, "INTEL CORP");
-    render(<Harness sources={[source("INTC", 2021, true, "Intel"), source("INTC", 2022, true, "Intel"), uncommon, { ...uncommon, manifest: "other.json" }, { ...uncommon, manifest: "third.json" }]} />);
+    render(<Harness sources={[source("INTC", 2021, true, "Intel"), source("INTC", 2022, true, "Intel"), uncommon, { ...uncommon, manifest: "other.json" }]} />);
     expect(screen.getByRole("group", { name: "INTC · Intel" })).toBeVisible();
   });
-  it("toggles sparse cells and row selection without adding a Cartesian product", () => {
+  it("toggles sparse cells and indeterminate rows without adding a Cartesian product", () => {
     const changed = vi.fn(); render(<Harness changed={changed} />);
     fireEvent.click(screen.getByRole("button", { name: "NVDA FY2024 · On disk" }));
     fireEvent.click(screen.getByRole("button", { name: "AMD FY2023 · On disk" }));
-    expect(changed.mock.calls.at(-1)![0].pairs).toHaveLength(2);
-    expect(changed.mock.calls.at(-1)![0].pairs).toEqual(expect.arrayContaining([{ registry: "sec", issuer: "AMD", year: 2023 }, { registry: "sec", issuer: "NVDA", year: 2024 }]));
-    expect(screen.queryByRole("button", { name: /AMD FY2024/ })).toBeNull();
+    expect(changed.mock.calls.at(-1)![0].pairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "AMD", year: 2023 }]);
+    expect(screen.getByRole("checkbox", { name: "Select all years for NVDA" })).toHaveProperty("indeterminate", true);
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all years for NVDA" }));
     expect(screen.getByRole("button", { name: "NVDA FY2022 · On disk" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select all years for NVDA" }));
-    expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: /AMD FY2024/ })).toBeNull();
   });
-  it("focuses existing pairs and adds only genuinely new years with range syntax", () => {
-    const changed = vi.fn(); render(<Harness changed={changed} />);
-    add("NVDA", "2024");
-    expect(changed).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveFocus();
-    add("NVDA", "2024-2025");
-    expect(changed.mock.calls.at(-1)![0].pairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2025 }]);
-    expect(screen.getByRole("button", { name: "NVDA FY2025 · Missing source" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getAllByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveLength(1);
+  it("searches company names and navigates to checkable years using the keyboard", () => {
+    render(<Harness companies={[{ registry: "sec", issuer: "NVDA", name: "NVIDIA" }]} />);
+    const input = screen.getByLabelText("Search/add company or year");
+    fireEvent.change(input, { target: { value: "NVIDIA" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const company = screen.getByRole("button", { name: "NVDA · NVIDIA · 2 years on disk SEC" });
+    expect(company).toHaveFocus(); fireEvent.click(company);
+    const years = screen.getByLabelText("Search/add company or year");
+    expect(years).toHaveFocus();
+    fireEvent.keyDown(years, { key: "ArrowDown" });
+    const firstYear = screen.getAllByRole("checkbox", { name: /^FY/ })[0];
+    expect(firstYear).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(screen.getAllByRole("checkbox", { name: /^FY/ })[1]).toHaveFocus();
+    fireEvent.click(screen.getByRole("checkbox", { name: "FY2022" }));
+    expect(screen.getByRole("checkbox", { name: "FY2022" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("button", { name: "NVDA FY2022 · On disk" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(years, { key: "Escape" });
+    expect(screen.queryByRole("checkbox", { name: "FY2022" })).toBeNull();
   });
-  it("shows only selected missing pairs and their registry credential notes in the plan", () => {
-    const download = vi.fn(); render(<Harness download={download} />);
-    expect(screen.getByRole("button", { name: "Download missing filings" })).toBeDisabled();
-    expect(screen.queryByText("DART downloads need DART_API_KEY in .env.")).toBeNull();
+  it("stages only missing pairs and synchronizes the exact next draft without stale state", () => {
+    const changed = vi.fn(); const download = vi.fn(); render(<Harness changed={changed} download={download} />);
+    enter("NVDA"); enter("2024-2025");
+    expect(changed.mock.calls.at(-1)![0].pairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024 }]);
+    expect(within(screen.getByRole("region", { name: "To be added" })).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Remove NVDA FY2025" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+    expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "NVDA", year: 2025 }]));
+    expect(changed.mock.calls.at(-1)![0]).toEqual(download.mock.calls[0][0]);
+  });
+  it("supports repeated checks, removes pending entries and keeps downloaded selection", () => {
+    render(<Harness />); enter("NVDA"); enter("2024-2025");
+    fireEvent.click(screen.getByRole("checkbox", { name: "FY2025" }));
+    expect(screen.queryByRole("button", { name: "Remove NVDA FY2025" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "FY2025" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove NVDA FY2025" }));
+    expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+    enter("2023,2025");
+    fireEvent.click(screen.getByRole("button", { name: "Clear pending" }));
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+  });
+  it("merges selected missing pairs into the pending plan with registry prerequisites", () => {
+    render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: "005930 FY2023 · Missing source" }));
-    const plan = screen.getByRole("region", { name: "Download plan" });
-    expect(within(plan).getByText(/005930 FY2023/)).toBeVisible();
-    expect(within(plan).getByText("DART downloads need DART_API_KEY in .env.")).toBeVisible();
+    expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("DART downloads need DART_API_KEY in .env.");
     expect(screen.queryByText("EDGAR downloads need SEC_USER_AGENT in .env.")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Download missing filings" })); expect(download).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "Select everything on disk" }));
     expect(screen.getByRole("button", { name: "005930 FY2023 · Missing source" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
     expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "false");
   });
-  it("collapses large registry groups and reveals an existing typed row", () => {
-    render(<Harness sources={Array.from({ length: 10 }, (_, index) => source(`C${index}`, 2024))} />);
-    expect(screen.getAllByRole("group")).toHaveLength(8);
-    expect(screen.getByRole("button", { name: "Show all companies (10)" })).toHaveAttribute("aria-expanded", "false");
-    add("C9", "2024");
-    expect(screen.getAllByRole("group")).toHaveLength(10);
-    expect(screen.getByRole("button", { name: "C9 FY2024 · On disk" })).toHaveFocus();
-  });
-  it("preserves the edited draft when new source inventory arrives", () => {
-    const changed = vi.fn(); const { rerender } = render(<Harness changed={changed} />);
-    fireEvent.click(screen.getByRole("button", { name: "AMD FY2023 · On disk" }));
-    rerender(<Harness changed={changed} sources={[...inventory, source("MSFT", 2024)]} />);
-    expect(changed).toHaveBeenCalledOnce();
-    expect(screen.getByRole("button", { name: "AMD FY2023 · On disk" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "MSFT FY2024 · On disk" })).toHaveAttribute("aria-pressed", "false");
-  });
-  it("keeps read-only controls disabled and invalid ranges out of the draft", () => {
-    const changed = vi.fn(); const { rerender } = render(<Harness changed={changed} disabled />);
-    expect(screen.getByRole("button", { name: "AMD FY2023 · On disk" })).toBeDisabled();
-    expect(screen.getByLabelText("Fiscal years")).toBeDisabled();
-    rerender(<Harness changed={changed} />);
-    fireEvent.change(screen.getByLabelText("Tickers / stock codes"), { target: { value: "NVDA" } });
-    fireEvent.change(screen.getByLabelText("Fiscal years"), { target: { value: "2025-2024" } });
-    expect(screen.getByRole("button", { name: "Add to selection" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Use a four-digit year");
+  it("accepts unknown mixed codes and bounded year ranges without selecting them before sync", () => {
+    const changed = vi.fn(); const download = vi.fn(); render(<Harness changed={changed} download={download} />);
+    enter("MSFT,000660"); enter("2023-2024");
     expect(changed).not.toHaveBeenCalled();
+    expect(within(screen.getByRole("region", { name: "To be added" })).getAllByRole("listitem")).toHaveLength(4);
+    fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+    expect(download.mock.calls[0][0].pairs).toEqual([{ registry: "sec", issuer: "MSFT", year: 2023 }, { registry: "sec", issuer: "MSFT", year: 2024 }, { registry: "dart", issuer: "000660", year: 2023 }, { registry: "dart", issuer: "000660", year: 2024 }]);
+  });
+  it("does not commit search text on blur and blocks invalid input until corrected", () => {
+    const changed = vi.fn(); render(<Harness changed={changed} />);
+    const input = screen.getByLabelText("Search/add company or year");
+    fireEvent.change(input, { target: { value: "???" } }); fireEvent.blur(input);
+    expect(input).toHaveValue("???"); expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent("Use a SEC ticker");
+    enter("NVDA"); enter("2025-2024");
+    expect(screen.getByRole("alert")).toHaveTextContent("Use a four-digit year");
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+    expect(changed).not.toHaveBeenCalled();
+  });
+  it("deduplicates repeated staging and keeps partial multi-document years pending", () => {
+    render(<Harness sources={[source("NVDA", 2024), { ...source("NVDA", 2024, false), document_id: "second" }]} />);
+    enter("NVDA"); enter("2024"); enter("2024");
+    expect(within(screen.getByRole("region", { name: "To be added" })).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveTextContent("1/2");
+  });
+  it("collapses large groups and preserves a sparse selection on inventory refresh", () => {
+    const changed = vi.fn(); const sources = Array.from({ length: 10 }, (_, index) => source(`C${index}`, 2024));
+    const { rerender } = render(<Harness sources={sources} changed={changed} />);
+    expect(screen.getAllByRole("group")).toHaveLength(8);
+    fireEvent.click(screen.getByRole("button", { name: "Show all companies (10)" }));
+    fireEvent.click(screen.getByRole("button", { name: "C9 FY2024 · On disk" }));
+    rerender(<Harness sources={[...sources, source("MSFT", 2024)]} changed={changed} />);
+    expect(screen.getByRole("button", { name: "C9 FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "MSFT FY2024 · On disk" })).toHaveAttribute("aria-pressed", "false");
+    expect(changed).toHaveBeenCalledOnce();
+  });
+  it("disables selection, search, pending removal and synchronization in read-only mode", () => {
+    render(<Harness disabled initialPairs={[{ registry: "dart", issuer: "005930", year: 2023 }]} />);
+    expect(screen.getByRole("button", { name: "AMD FY2023 · On disk" })).toBeDisabled();
+    expect(screen.getByLabelText("Search/add company or year")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove 005930 FY2023" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   });
 });
