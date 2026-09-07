@@ -62,6 +62,7 @@ the command offers one confirmed, volume-preserving down/build/start recovery.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: guided Quick Start configuration repair; locale=en; plain ASCII/no-color; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
+
 For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart uses the local `DB_PORT`, not an external `DATABASE_URL`. Safe target-selection
 recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).

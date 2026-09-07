@@ -232,10 +232,10 @@ def test_fresh_start_help_and_registration(shell):
     )
     assert "scripts.stack.commands fresh-start" in result.stdout
     assert "scripts.stack.commands corpus" in result.stdout
-    assert "rag-fresh-start [--status|--extreme]" in result.stdout
-    assert "WARNING ordinary reset: deletes DB" in result.stdout
+    assert "rag-fresh-start [--keep-sources|--sample|--status|--extreme]" in result.stdout
+    assert "WARNING ordinary reset: deletes ORM data and sources" in result.stdout
     assert "WARNING extreme reset: also deletes" in result.stdout
-    assert "preserves code, .env and host Ollama" in result.stdout
+    assert "preserves .env, exports, settings and DB volume" in result.stdout
 
 
 @pytest.mark.parametrize("existing", [False, True])
