@@ -35,18 +35,21 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 
 ### Authority and delivery
 
-- Worker implementation ends with PR delivery and its review result; maintainers own
-  merging. Neither successful review label authorizes merge, deployment or local-main integration.
+- Ordinary worker implementation ends with PR delivery and its review result. An explicitly
+  user-designated `conflict-resolver` may fix, verify and squash-merge only its authorized PR
+  set through the sequence protocol in WORKER.md. A review label alone grants no merge,
+  deployment or local-main authority.
 - Successful review comments must start with exactly `Self-review: LGTM` for work the
-  reviewer authored or `Review: LGTM` for another worker's work. These are the only
-  approval labels; do not use bare `OK`, bare `LGTM`, or other variants. Account
-  authorship alone does not distinguish workers sharing a GitHub account.
+  reviewer authored or `Review: LGTM` for another worker's work. Authorized conflict resolution
+  uses `Conflict resolution: LGTM`, bound to head/base/tree and sequence revision/order.
+  These are the only approval headings; preserve original authors and actual worker IDs.
+  Conflict approval is not independent human review or authorization by itself.
 - Non-worker maintainers follow the user-authorized commit-it tracking/delivery flow.
   Scoped implementation authorization covers issue tracking, commit, ordinary push,
   PR, verified squash merge and checkout synchronization only for that maintainer role.
 - Creating/deleting issues, changing issue scope, assigning people, merging or
-  synchronizing a checkout must never be inferred for a worker from the general
-  maintainer workflow. Workers may maintain only their assigned ownership/status
+  synchronizing a checkout must never be inferred for an ordinary worker from the general
+  maintainer workflow. Ordinary workers may maintain only their assigned ownership/status
   comments under WORKER.md; this exception does not authorize issue-body edits.
 - For the maintainer's configured automation, code/configuration commits use
   `Sungyong Cho <dev@sungyongcho.com>` as both author and committer; development
@@ -69,7 +72,8 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
   issue-free documentation PR may use `docs/<description>`; do not invent an issue.
   Use release tags, not product-version prefixes on ordinary branches.
 - Commit/PR titles use English Conventional Commits: `<type>(<scope>): <outcome>`.
-  Commit bodies contain Summary, Changes, Verification and applicable `Refs`.
+  Commit bodies contain Summary, Changes, Verification and applicable `Refs`. Conflict
+  resolution commits and squash messages also preserve the sequence metadata in WORKER.md.
   No internal assembly-stage labels, unsolicited breaking-change markers or attribution
   footers. Stage explicit paths and use files for multiline commit/PR text.
 - Link every delivered issue. `Closes` means its full scope is complete; use `Refs` for

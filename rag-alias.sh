@@ -501,6 +501,7 @@ rag-help() {
         'rag-schema recreate [--keep-sources|--sample]' 'Reset local data' \
         'rag-fresh-start [--keep-sources|--sample|--status|--extreme]' 'Reset project runtime'
     _docreview_line 'WARNING ordinary reset: deletes ORM data and sources; preserves .env, exports, settings and DB volume; typed confirmation required.'
+    _docreview_line 'Reset preflight checks host write access; legacy container-owned paths need the printed sudo repair. After failure: rag-dev up -d.'
     _docreview_line 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
     _docreview_line 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
     printf '\n'

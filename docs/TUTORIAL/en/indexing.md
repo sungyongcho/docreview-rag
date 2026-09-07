@@ -103,7 +103,7 @@ The primary action records one immutable manifest/selection reference for exactl
 ### SCREENSHOT NEEDED
 <!-- Feature: step 2 selected NVDA/AMD FY2023–2024 documents, one primary parse action, missing-source return link and collapsed Advanced; locale=en; light mode; preserve existing assets. -->
 
-## Job progress and evaluation queue
+## Job progress and evaluation queue {#job-progress}
 
 The step card and running badge show reported overall job progress. The execution panel shows the
 overall bar and current-stage bar separately, with their elapsed times. Overall completion uses stage

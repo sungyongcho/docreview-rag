@@ -105,7 +105,7 @@ BM25 재계산은 답변 모델이나 OpenAI를 호출하지 않습니다. 하�
 ### SCREENSHOT NEEDED
 <!-- Feature: step 2 selected NVDA/AMD FY2023–2024 documents, one primary parse action, missing-source return link and collapsed Advanced; locale=ko; light mode; preserve existing assets. -->
 
-## 작업 진행률과 평가 대기열
+## 작업 진행률과 평가 대기열 {#job-progress}
 
 전체 진행률은 단계별 완료 비중이며 남은 시간의 추정치가 아닙니다.
 

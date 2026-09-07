@@ -950,6 +950,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                 <ReviewMessage
                   key={message.id}
                   message={message}
+                  catalogMode={adminLive ? "live" : "published"}
                   latestEvidence={message.id === latestEvidenceId}
                   busy={busy || sendBlocked}
                   onStop={message.pending && activeReview?.conversationId === active?.id && activeReview.messageId === message.id ? () => reviewAbort.current?.abort() : undefined}
@@ -1075,6 +1076,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
 interface ReviewMessageProps {
   message: ChatMessage;
+  catalogMode?: "live" | "published";
   onStop?: () => void;
   onSwitchScope?: () => void;
   onOpenDetails?: () => void;
@@ -1096,7 +1098,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails }: ReviewMessageProps) {
+function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails }: ReviewMessageProps) {
   const { t, locale } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
@@ -1117,7 +1119,7 @@ function ReviewMessage({ message, latestEvidence, busy, onStop, onSwitchScope, o
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
         {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
-        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details></>}
+        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details></>}
         {message.evidence?.length ? (
           <>
             {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}

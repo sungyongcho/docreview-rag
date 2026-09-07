@@ -1,4 +1,13 @@
 export const KO: Record<string, string> = {
+  "Reason": "이유",
+  "Code": "코드",
+  "Chunk ID": "청크 ID",
+  "Show more recorded rows ({count})": "기록 더 보기 ({count}개)",
+  "Company names are unavailable. Original company codes are shown.": "회사 이름을 불러올 수 없어 원래 회사 코드를 표시합니다.",
+  "Citation chunk IDs": "인용 청크 ID",
+  "Removed chunk IDs": "제외된 청크 ID",
+
+  "This stage was not recorded for this run.": "이 단계는 이 실행에서 기록되지 않았습니다",
   "Compute BM25": "BM25 계산",
   "Recompute BM25": "BM25 재계산",
   "Compute keyword statistics for exact terms, tickers, numbers and Korean tokens after each parse and chunk operation.": "파싱·청킹을 마칠 때마다 정확한 용어, 티커, 숫자, 한국어 토큰의 키워드 통계를 계산합니다.",

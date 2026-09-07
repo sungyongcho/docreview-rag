@@ -234,6 +234,8 @@ def test_fresh_start_help_and_registration(shell):
     assert "scripts.stack.commands corpus" in result.stdout
     assert "rag-fresh-start [--keep-sources|--sample|--status|--extreme]" in result.stdout
     assert "WARNING ordinary reset: deletes ORM data and sources" in result.stdout
+    assert "Reset preflight checks host write access" in result.stdout
+    assert "After failure: rag-dev up -d" in result.stdout
     assert "WARNING extreme reset: also deletes" in result.stdout
     assert "preserves .env, exports, settings and DB volume" in result.stdout
 
