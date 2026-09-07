@@ -7,6 +7,10 @@ adding model-specific rituals or generic checklists.
 
 - Assigned issue implementers are workers: read [WORKER.md](WORKER.md) first. Its role
   rules govern delivery, queue management, staffing, integration and PR reviews.
+- Workers and models are replaceable; project continuity lives in assignments, issues,
+  PRs, preserved commits and reproducible tests, not a surviving conversation. Successors
+  preserve verified evidence and improve outcomes through affected tests. A different model
+  or a new conversation alone proves neither progress nor independent review.
 - Complete the approved outcome with the smallest reliable diff. Preserve foreign
   staged, unstaged, untracked and ignored work. No unsolicited cleanup or refactoring.
 - Inspect the named behavior, its definitions, direct callers and relevant tests.
@@ -50,13 +54,17 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 - Creating/deleting issues, changing issue scope, assigning people, merging or
   synchronizing a checkout must never be inferred for an ordinary worker from the general
   maintainer workflow. Ordinary workers may maintain only their assigned ownership/status
-  comments under WORKER.md; this exception does not authorize issue-body edits.
+  comments and their managed labels under WORKER.md; this exception does not authorize
+  issue-body edits. Explicit user-approved takeover also authorizes recording that scoped
+  ownership transfer without another approval or a reply from the previous worker.
 - For the maintainer's configured automation, code/configuration commits use
   `Sungyong Cho <dev@sungyongcho.com>` as both author and committer; development
   pushes and PR creation authenticate as `sungyongcho`.
-- `sungyongcho-ops` records authorized intake, status, commit tracking, coordination
-  and automated COMMENT reviews. Use the central OPS policy and guarded commands
-  described in WORKER.md. Account separation does not expand worker authority.
+- `sungyongcho-ops` records authorized intake, ownership and handoffs, status, actual pushed
+  commit SHAs and PR links, managed labels, and automated COMMENT reviews. Use the central
+  OPS policy and guarded commands described in WORKER.md. DEV/OPS classify work purpose;
+  OCCUPIED/REVIEW_READY mirror verified state across issues and PRs. Preserve unrelated
+  labels. Account separation does not expand worker authority.
 - Preserve existing history and active assignments. External contributors retain
   their own identities; do not switch global credentials or foreign worktrees.
 - Destructive user-data actions, credentials, deployment, protection changes, meaningful
