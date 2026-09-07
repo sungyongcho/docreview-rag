@@ -563,10 +563,10 @@ describe("derivePipeline", () => {
   });
 
   // Case 10: static public build with no API at all; the portfolio fixture stands in.
-  it("renders the portfolio fixture read-only when neither live nor readiness is available", () => {
+  it("preserves the intentional portfolio fixture when the public connection is confirmed", () => {
     const pipeline = derivePipeline({
       live: false,
-      healthKind: "checking",
+      healthKind: "healthy",
       readiness: null,
       corpus: null,
       manifests: [],
@@ -816,4 +816,61 @@ it("explains a refusal made before the call from the projected prompt size", asy
   expect(report.fix?.category).toBe("runtime");
   expect(failureReport({ ...refused, budget_source: "run_limits" }).fix?.category).toBe("limits");
   expect(translate("ko", report.text)).toBe("모델 호출을 시작하기 전에 거절했습니다: 프롬프트가 약 2521 입력 토큰인데 한도 2000 중 2000만 남아 있습니다. 중단 단계: grade.");
+});
+
+
+it.each([true, false])("keeps initial connection checks neutral for live=%s without trusting fixture data", (live) => {
+  const pipeline = derivePipeline(liveInput({ live, healthKind: "checking", readiness: null, corpus: null, manifests: [], registryCounts: {} }));
+  expect(pipeline.corpusReady).toBe(false);
+  expect(pipeline.next).toBeNull();
+  for (const item of pipeline.stages) {
+    expect(item.status).toBe("unknown");
+    expect(item.statusDetail).toBe("Checking…");
+    expect(item.action).toBeNull();
+    expect(item.numbers).toEqual([]);
+    expect(item.blockedBy).toBeNull();
+  }
+});
+
+it("clears retained readiness while retrying or unavailable and restores it only after confirmation", () => {
+  const input = liveInput();
+  expect(derivePipeline(input).corpusReady).toBe(true);
+  const transitions = [
+    { healthKind: "healthy", connectionPending: true, label: "Checking…" },
+    { healthKind: "api_down", connectionPending: true, label: "API unavailable" },
+    { healthKind: "api_down", connectionPending: false, label: "API unavailable" },
+    { healthKind: "checking", connectionPending: false, label: "Checking…" },
+  ] as const;
+  for (const transition of transitions) {
+    const pipeline = derivePipeline({ ...input, ...transition });
+    expect(pipeline.corpusReady).toBe(false);
+    expect(pipeline.next).toBeNull();
+    for (const item of pipeline.stages) {
+      expect(item.status).toBe("unknown");
+      expect(item.statusDetail).toBe(transition.label);
+      expect(item.action).toBeNull();
+      expect(item.job).toBeNull();
+      expect(item.numbers).toEqual([]);
+      expect(item.hint).toBe("");
+      expect(item.blockedBy).toBeNull();
+    }
+  }
+  const recovered = derivePipeline({ ...input, healthKind: "healthy", connectionPending: false });
+  expect(recovered.corpusReady).toBe(true);
+  expect(stage(recovered, "ask").statusDetail).toBe("hybrid ready");
+  expect(recovered).toEqual(derivePipeline(input));
+});
+
+it.each(["running", "queued", "failed"] as const)("hides stale %s jobs and blocked dependencies during a connection retry", (status) => {
+  const retained = liveInput({ corpus: fullCorpus({ pending_embeddings: 12, bm25_ready: false }), jobs: [job({ kind: "backfill_embeddings", status, overall_current: 50, overall_total: 100 })] });
+  for (const transition of [{ healthKind: "checking" as const }, { connectionPending: true }]) {
+    const pipeline = derivePipeline({ ...retained, ...transition });
+    for (const item of pipeline.stages) {
+      expect(item.status).toBe("unknown");
+      expect(item.job).toBeNull();
+      expect(item.progress).toBeNull();
+      expect(item.blockedBy).toBeNull();
+    }
+  }
+  expect(stage(derivePipeline(retained), "embeddings").status).toBe(status);
 });

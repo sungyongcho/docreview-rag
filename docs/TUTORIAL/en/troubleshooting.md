@@ -148,3 +148,14 @@ document filters, evaluation runs and snapshots time out after 15 seconds with "
 timed out"; writes are never timed out or retried. **Build → Pipeline** refreshes its four
 reads independently, keeps the last known state for any read that fails and shows an inline
 notice for it, and raises a toast only when you pressed Refresh yourself.
+
+## Connection state and notifications {#connection-feedback}
+
+API connection checking is a status, not an environment. DEV/PROD badges appear only when the server has reported that environment; an unconfirmed first load does not invent a third mode. During connection checking or delayed retries, Build uses neutral unconfirmed states and disables execution. Previously green readiness is not proof of a current connection. After recovery, readiness returns only from confirmed API/index state; public demonstration data remains explicitly labelled.
+
+Connection delay appears in a compact in-flow status row with **Retry connection**, rather than a persistent floating toast over the question. Save and job feedback use reserved notification space under the workspace header, or inside the active settings dialog/run inspector. Feedback does not cover input or buttons. At narrow/keyboard-reduced heights the rail scrolls within a bounded height; long messages can be expanded deliberately.
+
+Repeated identical keyed events keep one notice without restarting its timer. Hover, keyboard focus and explicit expansion pause dismissal until all reading interactions end. Close a notice with its dismiss button; persistent warnings remain until dismissed or resolved. Backend retries and job delivery rules are unchanged.
+
+### SCREENSHOT NEEDED
+<!-- Feature: unconfirmed Build readiness, separate connection-status row, reserved notification rail in main workspace and active dialog; locale=en; light mode; show multiple notices and mobile keyboard layout. Preserve existing assets. -->

@@ -46,6 +46,8 @@ export interface Pipeline {
 export interface PipelineInput {
   live: boolean;
   healthKind: RuntimeHealthKind;
+  /** A failed connection check is retrying while last-known readiness is retained. */
+  connectionPending?: boolean;
   readiness: Readiness | null;
   /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness or the fixture. */
   corpus: CorpusCounts | null;
@@ -213,6 +215,7 @@ interface Draft {
  * testable without rendering.
  */
 export function derivePipeline(input: PipelineInput): Pipeline {
+  const connectionUnconfirmed = input.healthKind === "checking" || input.connectionPending === true;
   const readOnly = !input.live || input.readiness?.mode === "canned";
   const readinessCorpus = input.readiness && input.readiness.corpus.availability !== "not_applicable"
     ? input.readiness.corpus
@@ -373,9 +376,9 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       }
     }
 
-    if (input.healthKind === "api_down") {
+    if (input.healthKind === "api_down" || connectionUnconfirmed) {
       status = "unknown";
-      statusDetail = "API unavailable";
+      statusDetail = input.healthKind === "api_down" ? "API unavailable" : "Checking…";
       hint = "";
       action = null;
       numbers = [];
@@ -397,7 +400,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       jobKinds: copy.jobKinds,
       job,
       progress,
-      blockedBy: draft.blockedBy ?? null,
+      blockedBy: input.healthKind === "api_down" || connectionUnconfirmed ? null : draft.blockedBy ?? null,
     };
   });
 

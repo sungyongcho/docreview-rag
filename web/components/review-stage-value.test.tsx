@@ -20,7 +20,8 @@ it.each(["en", "ko"] as const)("maps nested structured values and empty/missing 
   localStorage.setItem(LOCALE_KEY, locale);
   render(<I18nProvider><RecordedValue value={{ registries: ["sec"], issuers: ["NVDA"], fiscal_years: [2024], empty: [], absent: null, elapsed_ms: 1.87 }} companyLabels={{ "sec:NVDA": "NVDA · NVIDIA" }} registries={["sec"]} /></I18nProvider>);
   expect(screen.getByText("SEC")).toBeVisible(); expect(screen.getByText("FY2024")).toBeVisible();
-  expect(screen.getByText("NVDA · NVIDIA")).toBeVisible(); expect(screen.getByText("1.9")).toBeVisible();
+  expect(screen.getByText("NVDA · NVIDIA")).toBeVisible(); expect(screen.getByText("1.87ms")).toBeVisible();
+  expect(screen.getByText("1.87ms")).toHaveAttribute("title", "1.87ms");
   expect(screen.getByText(locale === "en" ? "None" : "없음")).toBeVisible();
   expect(screen.getByLabelText(locale === "en" ? "Not recorded for this run" : "이 실행에서 기록되지 않음")).toHaveTextContent("—");
   expect(document.querySelector("pre")).toBeNull();
