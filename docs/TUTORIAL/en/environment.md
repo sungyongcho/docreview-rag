@@ -1,67 +1,62 @@
 # Environment setup
 
-## Recover a blocked preparation step
+This page is for people who clone DocReview RAG from GitHub and run it locally from scratch. Follow Part 1 below to reach a running service and open Build. If you only want to try an existing instance, use [Quick Start](quickstart.md).
 
-Build shows database schema status separately from source storage permissions. A schema mismatch does not mean `data/` is unwritable. Use **Check schema** to reload its reported state. When **Run in terminal** appears, copy its command, run it from this checkout, then return to the same step and select **Check updated status**. An unchanged blocker remains visible; clicking the button alone does not repair it.
+## Part 1: Setup {#qs-setup}
 
-```bash
-uv run python -m scripts.schema check
-```
+### Prerequisites {#prerequisites}
 
-Normal Compose startup now prepares an empty database automatically after DB health succeeds.
-The image entrypoint inspects an existing database without schema changes and refuses to launch
-the API on drift. This applies to dev, prod preview and the deployment Compose using this image.
-The web container may still open while the API is blocked; inspect `rag-dev logs --tail 80 app`
-for the schema diagnosis and local `check`/`recover` commands. Database-free canned images skip
-the gate. Source acquisition and indexing remain separate prerequisites.
-
-If you started only the DB, you can still prepare an empty local database manually:
+Use Bash or Zsh with uv and Docker Engine / Compose 2.24.4+. Node and npm run in the
+web container; this path does not require their installation on the host.
 
 ```bash
-uv run python -m scripts.schema prepare
+git clone https://github.com/sungyongcho/docreview-rag-agent.git
+cd docreview-rag-agent
+source ./rag-alias.sh
+rag-help
+rag-quickstart
 ```
 
-Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing. If you deliberately choose to discard the local DEV database, use the separately confirmed `scripts.schema recreate` path in the CLI guide; it is never automatic. Service and actual storage-permission blockers display their own terminal command and expected result.
+Source is the one-command install and activation path. Choose Y to save startup registration or N to load only this session; the commands are available in the same terminal immediately.
 
-An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
+The Helper is included in the clone. `rag-alias update` refreshes it when the checkout changes. Use `source` for shell registration.
+See [helper installation and updates](cli.md) for moved paths and the optional default-No login-shell offer after executed installation.
+The first run creates `.env` only if absent. Edit it locally and rerun `rag-quickstart`:
+
+```dotenv
+SEC_USER_AGENT=Your Real Name your-real-contact@example.org
+DART_API_KEY=<your-own-dart-key>
+OPENAI_API_KEY_LOCAL=<your-own-openai-development-key>
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=text-embedding-3-large
+```
+
+Replace every placeholder. DEV reads only `OPENAI_API_KEY_LOCAL`; production reads
+only `OPENAI_API_KEY_PROD`. Never paste keys into this page or capture them in screenshots.
+The repository uses 384 embedding dimensions. Deterministic embeddings do not satisfy
+this tutorial. Downloading filings needs valid SEC contact details and a DART key;
+generating embeddings incurs OpenAI usage. The first-run command does neither.
+
+The command creates a schema only in an empty database, preserves a compatible
+existing database, and reports schema drift without resetting it. Fix missing tools
+or configuration and rerun the same command; do not use `rag-fresh-start` to repair
+installation. Open the printed URL, normally `http://localhost:8000/docreview-rag-agent/`.
+
+The setup command reports five stages: prerequisites, local configuration, project
+service state/startup, schema preparation, and DEV server readiness. It identifies
+`db`, `app`, and `web` as stopped, starting, unhealthy, or running; a running container
+without a health check is not proof of server readiness. Existing healthy services
+are reported before Compose reconciles the development configuration.
+
+If configuration blocks progress, each key shows its `.env` line, shell value and effective
+source, with credentials hidden. Choose `[f]` to ignore failing exports for this invocation,
+`[e]` to save the two public embedding settings, or edit the named file and choose `[r]` to resume
+at the same step. `[q]` cancels. The parent shell is unchanged; use the printed `unset KEY` there
+for future invocations. For startup/readiness failures, existing read-only diagnostics run and
+the command offers one confirmed, volume-preserving down/build/start recovery.
 
 ### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=schema-and-terminal-handoff-recheck; locale=en; theme=light; capture=blocked-and-resolved-states; issue=17; preserve-existing-assets=true -->
-
-**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
-
-
-Start by separating four questions: can the browser reach the API, can the API use the
-database, is the schema compatible, and does this environment permit the operation?
-Corpus readiness and answer-model availability are additional checks, not substitutes
-for those connections.
-
-## Before opening the service {#prerequisites}
-
-> [!DEV]
-> Installing dependencies, configuring credentials, and starting this local stack are operator setup tasks. Reading the deployed application does not require these changes.
-
-For a first installation, follow [installation and configuration](cli.md#installation-and-configuration)
-and [initial schema setup](cli.md#initial-schema-setup). Reuse an existing compatible
-database. Keep credentials in the local configuration described there; they are not
-inputs to this documentation page.
-
-From the repository root, register this checkout's commands and start development:
-
-```bash
-source ./rag-alias.sh
-rag-dev up --build -d
-```
-
-Use this startup command when preparing the environment. If the same development
-stack is already running, open it and inspect its status instead of restarting it.
-`rag-help` lists the registered commands. Executing `./rag-alias.sh` displays setup
-instructions; sourcing it registers commands in the current Bash or Zsh shell.
-
-Open [the local service](http://localhost:8000/docreview-rag-agent/). If you configured
-a different `APP_PORT`, use that port. The normal entry is the service on port 8000,
-not a separate development-server tab on port 3000.
+<!-- Feature: guided Quick Start configuration repair; locale=en; plain ASCII/no-color; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
 
 ## 1. Open and verify the environment {#step-1}
 
@@ -116,7 +111,53 @@ remain unresolved and should not be counted as passed.
 for the recorded symptom, apply the relevant fix, and repeat Refresh. For a fresh DB,
 use the linked schema setup. A schema-drift error is not a reason to delete an existing DB.
 
-**Next:** open [step 2: inspect existing documents](documents.md#step-2).
+**Next:** open Build and continue with the developer preparation guide below.
+
+## Open Build and continue {#open-build}
+
+Open the printed application URL and select **Build → Pipeline**. Confirm that you can inspect the preparation graph and the selected step. Opening Build does not download a filing or run a model.
+
+**Service ready is not data ready.** Continue with [Quick Start — DEV ONLY](quickstart-dev.md#qs-web-1): choose CLI or Web to verify the environment, acquire the two example reports, parse and chunk them, prepare embeddings and BM25, and check readiness before asking. Reuse completed work. The existing [twelve-step learning path](overview.md#learning-path) then covers questions, settings, and evaluation.
+
+### SCREENSHOT NEEDED
+<!-- Feature: fresh-clone environment setup handoff; locale=en; light mode; show successful redacted service readiness and Build → Pipeline open before acquiring sources, with separate API/database/schema facts and the DEV Quick Start continuation. Preserve existing assets. -->
+
+## Recover a blocked preparation step {#schema-recovery}
+
+Build shows database schema status separately from source storage permissions. A schema mismatch does not mean `data/` is unwritable. Use **Check schema** to reload its reported state. When **Run in terminal** appears, copy its command, run it from this checkout, then return to the same step and select **Check updated status**. An unchanged blocker remains visible; clicking the button alone does not repair it.
+
+```bash
+uv run python -m scripts.schema check
+```
+
+Normal Compose startup now prepares an empty database automatically after DB health succeeds.
+The image entrypoint inspects an existing database without schema changes and refuses to launch
+the API on drift. This applies to dev, prod preview and the deployment Compose using this image.
+The web container may still open while the API is blocked; inspect `rag-dev logs --tail 80 app`
+for the schema diagnosis and local `check`/`recover` commands. Database-free canned images skip
+the gate. Source acquisition and indexing remain separate prerequisites.
+
+If you started only the DB, you can still prepare an empty local database manually:
+
+```bash
+uv run python -m scripts.schema prepare
+```
+
+Existing incompatible databases are preserved and preparation refuses to change them. Rebuilding images or restarting services does not repair an incompatible database layout. Select a compatible or empty local database before indexing. If you deliberately choose to discard the local DEV database, use the separately confirmed `scripts.schema recreate` path in the CLI guide; it is never automatic. Service and actual storage-permission blockers display their own terminal command and expected result.
+
+An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=schema-and-terminal-handoff-recheck; locale=en; theme=light; capture=blocked-and-resolved-states; issue=17; preserve-existing-assets=true -->
+
+**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
+
+
+For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
+Quickstart ignores an external `DATABASE_URL` and uses the local `DB_PORT`. Safe target-selection
+recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).
+Do not reset your database to resolve this setup stop.
 
 ## Keep the environment and work separate {#environment-boundaries}
 

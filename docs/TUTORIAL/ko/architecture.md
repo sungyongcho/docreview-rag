@@ -1,6 +1,6 @@
 # 구조
 
-DocReview는 SEC와 DART 공시를 원문을 보존하는 하나의 처리 경로로 준비합니다. [Quick Start](quickstart.md)에서 첫 보고서 두 개를 준비하고, [검색 테스트](retrieval.md)로 근거를 확인한 뒤 [첫 답변](answers.md)으로 이어갑니다.
+DocReview는 SEC와 DART 공시를 원문을 보존하는 하나의 처리 경로로 준비합니다. [Quick Start — DEV ONLY](quickstart-dev.md)에서 첫 보고서 두 개를 준비하고, [검색 테스트](retrieval.md)로 근거를 확인한 뒤 [첫 답변](answers.md)으로 이어갑니다.
 
 ## 공통 코퍼스 계약 {#contracts}
 

@@ -1,6 +1,6 @@
 # DocReview RAG guide
 
-For a fresh clone, start with [Quick Start](quickstart.md) and choose CLI or Web to prepare your data.
+To try the running app quickly, open [Quick Start](quickstart.md). If you cloned the repository and are setting up locally from zero, start with [Environment setup](environment.md#qs-setup).
 
 All manual pages are available in both DEV and production; the DEV badge only marks where an operation can be executed.
 
@@ -13,13 +13,13 @@ These guides follow the actual interface. They separate source acquisition, pars
 index preparation, retrieval, answering, and evaluation so that you can reuse work
 already completed in the same environment.
 
-## Choose your starting point {#start}
+## Where to start {#start}
 
 | What you have | Where to begin | What to reuse |
 |---|---|---|
-| An existing local corpus | Verify the [environment](environment.md#step-1), then inspect [Documents](documents.md#step-2). | Downloaded originals, parsed chunks, compatible embeddings, and a ready BM25 index. |
-| An empty local database | Complete environment setup, confirm the empty catalog, then choose [acquisition inputs](acquisition.md#step-3). | Existing source files when their identity and manifest scope match. |
-| Access to a public instance | Browse its published Documents and available [snapshots](snapshots.md). | Only the publicly available corpus; administrator preparation actions require a development environment. |
+| An existing local corpus | Inspect [Documents](documents.md#step-2); use [Quick Start — DEV ONLY](quickstart-dev.md) for missing preparation. | Downloaded originals, parsed chunks, compatible embeddings, and a ready BM25 index. |
+| A fresh clone or empty local database | Complete [Environment setup](environment.md#qs-setup), then [Quick Start — DEV ONLY](quickstart-dev.md). | Existing source files when their identity and manifest scope match. |
+| Access to a running public instance | Follow [Quick Start](quickstart.md) to ask a question, inspect evidence, and browse published documents and [snapshots](snapshots.md). | Only the publicly available corpus; administrator preparation actions require a development environment. |
 
 Do not infer an empty database from a filtered list with no matches, or from a public
 catalog with no published documents. [Document visibility](documents.md#visibility)
@@ -30,10 +30,12 @@ directory, and effective configuration. Inspect the completed result before star
 another download, ingest, index build, or model call. A CLI operation can be absent
 from Jobs because it did not use the Web queue.
 
+### SCREENSHOT NEEDED
+<!-- Feature: guide entry routing and portfolio navigation; locale=en; light mode; Overview shows the two reader paths and navigation begins Overview, Environment setup, Quick Start, Quick Start — DEV ONLY, with the wrench only on the last entry. Preserve existing assets. -->
+
 ## Twelve-step learning path {#learning-path}
 
-Follow the steps in order the first time. On later visits, inspect each prerequisite
-and skip work that is already complete.
+This is the full local learning path. Its step numbers stay in procedure order even though the navigation groups usage before preparation. Begin with [Part 1: Setup](environment.md#qs-setup); for Part 2, use the [DEV preparation guide](quickstart-dev.md) and the usage pages. On later visits, skip completed work.
 
 <!-- tutorial-steps -->
 
@@ -102,7 +104,7 @@ read the recorded evidence, apply the relevant remedy, and verify the result. Fo
 implementation context, use [Architecture](architecture.md). Detailed commands and
 their environment belong in the [CLI reference](cli.md).
 
-Continue with [step 1: verify the environment](environment.md#step-1).
+Continue with [Quick Start](quickstart.md) to try the app, or [Environment setup](environment.md#qs-setup) to run a fresh clone.
 
 ### Back, forward and shared locations
 

@@ -260,10 +260,13 @@ def handoff(bindings: dict[str, str]) -> None:
     """Print the verified application and exact bilingual tutorial continuation."""
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
     print(f"Service ready: {origin}/docreview-rag-agent/")
-    print(f"Quick Start: {origin}/docreview-rag-agent/docs/en/quickstart/#qs-web-1")
-    print(f"Korean Quick Start: {origin}/docreview-rag-agent/docs/ko/quickstart/#qs-web-1")
+    print(f"Quick Start - DEV ONLY: {origin}/docreview-rag-agent/docs/en/quickstart-dev/#qs-web-1")
     print(
-        "Continue in the web: Quick Start, Web path, step 1: verify the environment; "
+        "Korean Quick Start - DEV ONLY: "
+        f"{origin}/docreview-rag-agent/docs/ko/quickstart-dev/#qs-web-1"
+    )
+    print(
+        "Continue in the web: Quick Start - DEV ONLY, Web path, step 1: verify the environment; "
         "then follow the filing acquisition and indexing steps."
     )
     print("No filings were downloaded and no embedding or answer requests were made.")

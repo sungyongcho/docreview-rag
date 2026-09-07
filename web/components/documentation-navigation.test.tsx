@@ -20,7 +20,7 @@ describe("documentation navigation", () => {
     const { container } = render(<DocumentationMenu current="indexing" locale="en" documents={DOCUMENTS.filter((document) => document.locale === "en")} />);
     expect(container.querySelector("details")).not.toHaveAttribute("open");
     const links = screen.getByRole("navigation", { name: "Choose a document" }).querySelectorAll("a");
-    expect(links).toHaveLength(16);
+    expect(links).toHaveLength(17);
     expect(container.querySelectorAll(".docs-nav-group h2")).toHaveLength(5);
     expect(container.querySelector('a[aria-current="page"]')).toHaveTextContent("Indexing");
     expect(container.querySelector('a[aria-current="page"]')?.getAttribute("href")).toMatch(/^\/docs\/en\/indexing\/?$/);
@@ -32,11 +32,26 @@ describe("documentation navigation", () => {
     for (const link of collections.getAllByRole("link")) expect(link).not.toHaveAttribute("target");
   });
 
+  it.each(["en", "ko"] as const)("orders the four starting guides and marks only the developer quick start (%s)", (locale) => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const { container } = render(<DocumentationMenu current="quickstart" locale={locale} documents={DOCUMENTS.filter((document) => document.locale === locale)} />);
+    const links = container.querySelector('[aria-labelledby="docs-group-start"]')!.querySelectorAll("a");
+    expect(Array.from(links, (link) => link.getAttribute("href")?.replace(/\/$/, ""))).toEqual([`/docs/${locale}`, `/docs/${locale}/environment`, `/docs/${locale}/quickstart`, `/docs/${locale}/quickstart-dev`]);
+    expect(Array.from(links, (link) => Boolean(link.querySelector(".development-badge")))).toEqual([false, false, false, true]);
+    expect(links[3]).toHaveTextContent("Quick Start — DEV ONLY");
+  });
+
+  it.each(["qs-setup", "qs-web-4"])("redirects an old Quick Start bookmark %s without changing its checkpoint", (anchor) => {
+    window.history.replaceState({}, "", `/docreview-rag-agent/docs/en/quickstart/#${anchor}`);
+    render(<DocumentationLegacyAnchor locale="en" />);
+    expect(navigation.replace).toHaveBeenCalledWith(`/docs/en/${anchor === "qs-setup" ? "environment" : "quickstart-dev"}/#${anchor}`);
+  });
+
   it("marks the Korean development log without hiding the user guide", () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     render(<DocumentationMenu current="development" locale="ko" documents={DOCUMENTS.filter((document) => document.locale === "ko")} />);
     expect(screen.getByRole("link", { name: "개발 기록" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("navigation", { name: "문서 선택" }).querySelectorAll("a")).toHaveLength(16);
+    expect(screen.getByRole("navigation", { name: "문서 선택" }).querySelectorAll("a")).toHaveLength(17);
   });
 
   it("keeps the desktop outline open and links only second-level sections", () => {

@@ -1,6 +1,6 @@
 # Architecture
 
-DocReview prepares SEC and DART filings through one source-preserving pipeline. The [Quick Start](quickstart.md) prepares its first two reports; [retrieval testing](retrieval.md) checks the evidence before the [first answer](answers.md).
+DocReview prepares SEC and DART filings through one source-preserving pipeline. The [Quick Start — DEV ONLY](quickstart-dev.md) prepares its first two reports; [retrieval testing](retrieval.md) checks the evidence before the [first answer](answers.md).
 
 ## Common corpus contract {#contracts}
 

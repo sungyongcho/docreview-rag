@@ -35,7 +35,7 @@ export function DocumentationRedirect({ documentId }: { documentId: string }) {
   return <main className="docs-shell"><h1>DocReview RAG</h1><p>사용 안내 · Documentation</p><nav aria-label="Language / 언어"><Link href={documentationDocument(documentId, "ko")!.href.replace(DOCUMENTATION_BASE, "")} lang="ko">한국어</Link>{" · "}<Link href={documentationDocument(documentId, "en")!.href.replace(DOCUMENTATION_BASE, "")} lang="en">English</Link></nav></main>;
 }
 
-/** Retain old root-document bookmarks after their sections move to focused pages. */
+/** Retain old overview and Quick Start bookmarks after their sections move to focused pages. */
 export function DocumentationLegacyAnchor({ locale }: { locale: Locale }) {
   const router = useRouter();
   useEffect(() => {
