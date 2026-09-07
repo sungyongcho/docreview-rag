@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import os
 from pathlib import Path
+import time
 from typing import Literal, Protocol, cast
 from uuid import uuid4
 
@@ -172,6 +173,20 @@ class CorpusStatus:
     bm25_ready: bool
     writable: bool
     provider: str
+
+
+@dataclass(frozen=True, slots=True)
+class _StatusProbe:
+    """One schema and count reading with the monotonic time it was taken."""
+
+    schema_status: SchemaStatus
+    schema_message: str
+    tables: frozenset[str]
+    documents: int
+    chunks: int
+    embedded_chunks: int
+    bm25_ready: bool
+    observed_at: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -612,6 +627,8 @@ class RuntimeCorpusAdminService:
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._corpus_root = configured.corpus_dir.resolve()
+        self._status_lock = asyncio.Lock()
+        self._status_cache: _StatusProbe | None = None
         self._queue: asyncio.Queue[AdminJob] = asyncio.Queue(maxsize=MAX_QUEUED_JOBS)
         self._jobs: dict[str, AdminJob] = {}
         self._history: deque[str] = deque(maxlen=MAX_JOB_HISTORY)
@@ -797,6 +814,64 @@ class RuntimeCorpusAdminService:
             for document, chunk_count in rows
         )
 
+    async def _probe_status(self, max_age_s: float) -> _StatusProbe:
+        """Inspect schema state and counts, reusing a reading younger than ``max_age_s``.
+
+        Concurrent callers share one measurement, and every outcome is memoized, so a
+        readiness poll that lands while the database is busy never adds catalog sweeps.
+        """
+        async with self._status_lock:
+            cached = self._status_cache
+            if cached is not None and time.monotonic() - cached.observed_at < max_age_s:
+                return cached
+            schema_status, schema_message, tables = await self._schema_state()
+            documents = chunks = embedded = 0
+            bm25_ready = False
+            if schema_status == "compatible":
+                try:
+                    documents, chunks, embedded, bm25_ready = await self._counts(tables)
+                except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
+                    schema_status = "unavailable"
+                    schema_message = self._redact(type(error).__name__)
+            probe = _StatusProbe(
+                schema_status=schema_status,
+                schema_message=schema_message,
+                tables=frozenset(tables),
+                documents=documents,
+                chunks=chunks,
+                embedded_chunks=embedded,
+                bm25_ready=bm25_ready,
+                observed_at=time.monotonic(),
+            )
+            self._status_cache = probe
+            return probe
+
+    def _status_from(self, probe: _StatusProbe) -> CorpusStatus:
+        """Render one probe as the non-secret status the header and ``/ready`` share."""
+        return CorpusStatus(
+            database_connected=probe.schema_status != "unavailable",
+            schema_status=probe.schema_status,
+            schema_message=probe.schema_message,
+            documents=probe.documents,
+            chunks=probe.chunks,
+            embedded_chunks=probe.embedded_chunks,
+            pending_embeddings=max(probe.chunks - probe.embedded_chunks, 0),
+            bm25_ready=probe.bm25_ready,
+            writable=os.access(self._corpus_root, os.W_OK | os.X_OK),
+            provider=self._settings.embedding_provider,
+        )
+
+    async def status(self, *, max_age_s: float = 0.0) -> CorpusStatus:
+        """Return the operational status alone, without document rows or file scans.
+
+        ``max_age_s`` lets ``/ready`` reuse a recent reading; ``0.0`` always measures.
+        """
+        return self._status_from(await self._probe_status(max_age_s))
+
+    def invalidate_status(self) -> None:
+        """Drop the memoized reading so the next status call measures again."""
+        self._status_cache = None
+
     async def snapshot(
         self,
         *,
@@ -807,14 +882,14 @@ class RuntimeCorpusAdminService:
         parse_status: str = "",
     ) -> CorpusSnapshot:
         """Inspect live state while failing closed on schema drift or database errors."""
-        schema_status, schema_message, tables = await self._schema_state()
-        documents = chunks = embedded = 0
-        bm25_ready = False
+        probe = await self._probe_status(0.0)
+        schema_status, schema_message = probe.schema_status, probe.schema_message
+        documents, chunks, embedded = probe.documents, probe.chunks, probe.embedded_chunks
+        bm25_ready = probe.bm25_ready
         rows: tuple[AdminDocument, ...] = ()
         if schema_status == "compatible":
             try:
-                documents, chunks, embedded, bm25_ready = await self._counts(tables)
-                rows = await self._documents(tables)
+                rows = await self._documents(set(probe.tables))
             except Exception as error:  # noqa: BLE001 - rendered as safe unavailable state
                 schema_status = "unavailable"
                 schema_message = self._redact(type(error).__name__)
@@ -1359,6 +1434,7 @@ class RuntimeCorpusAdminService:
             )
         self._jobs[queued.job_id] = finished
         await self._persister.write_final(queued.job_id)
+        self.invalidate_status()
         self._history.append(queued.job_id)
         self._cancel_events.pop(queued.job_id, None)
 
@@ -1375,6 +1451,7 @@ class RuntimeCorpusAdminService:
                 finished_at=_utc_now(),
             )
             await self._persister.write_final(queued.job_id)
+        self.invalidate_status()
         if queued.job_id not in self._history:
             self._history.append(queued.job_id)
         self._cancel_events.pop(queued.job_id, None)
