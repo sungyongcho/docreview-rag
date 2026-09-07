@@ -1,4 +1,9 @@
 export const KO: Record<string, string> = {
+  "Notifications": "알림",
+  "Expand notification": "알림 펼치기",
+  "Collapse notification": "알림 접기",
+  "Checking API connection…": "API 연결을 확인하고 있습니다…",
+  "Retry connection": "연결 다시 확인",
   "Browser storage": "브라우저 저장소",
   "⚠️ Settings and conversations are saved only in this browser": "⚠️ 설정과 대화는 이 브라우저에만 저장됩니다",
   "They are not synced and can be removed when you clear browser data.": "다른 브라우저와 동기화되지 않으며 브라우저 데이터를 지우면 삭제될 수 있습니다.",

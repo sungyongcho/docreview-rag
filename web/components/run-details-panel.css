@@ -1,4 +1,4 @@
-.run-details-panel { position: fixed; z-index: 36; inset: 68px 16px 16px auto; display: flex; width: min(428px, calc(100vw - 32px)); min-height: 0; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px #0002; }
+.run-details-panel { --run-details-edge-width: 30px; position: fixed; z-index: 36; inset: 68px 16px 16px auto; display: flex; width: min(428px, calc(100vw - 32px)); min-height: 0; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px #0002; }
 .service-shell.run-details-open .workspace { padding-right: 460px; }
 .run-details-body { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: hidden; border-radius: inherit; }
 .run-details-body[hidden], .run-details-content > section[hidden] { display: none; }
@@ -23,7 +23,7 @@
 .run-details-content .run-diagnostics > div { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); padding-block: 10px; border-bottom: 1px solid var(--border); }
 .run-details-content .run-diagnostics dt { color: var(--muted); }
 .run-details-content .run-diagnostics dd { margin: 0; overflow-wrap: anywhere; }
-.run-details-edge { position: absolute; top: 50%; left: -15px; display: grid; place-items: center; width: 30px; height: 52px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; box-shadow: 0 2px 8px #0001; transform: translateY(-50%); }
+.run-details-edge { position: absolute; top: 50%; left: -15px; display: grid; place-items: center; width: var(--run-details-edge-width); height: 52px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; box-shadow: 0 2px 8px #0001; transform: translateY(-50%); }
 .run-details-panel.is-collapsed { width: 44px; }
 .run-details-panel.is-collapsed .run-details-edge { left: 6px; }
 .service-shell.run-details-open:has(.run-details-panel.is-collapsed) .workspace { padding-right: 76px; }
@@ -38,3 +38,6 @@
   .run-details-panel.is-collapsed { inset: 68px 8px 16px auto; height: auto; border: 1px solid var(--border); border-radius: 12px; }
   .service-shell.run-details-open .workspace, .service-shell.run-details-open:has(.run-details-panel.is-collapsed) .workspace { padding-right: 0; padding-bottom: 0; }
 }
+
+/* Reserve the edge control lane rather than layering notifications above or below it. */
+.run-details-body > .notification-outlet:not(:empty) { margin-inline-start: calc(var(--run-details-edge-width) + 8px); }

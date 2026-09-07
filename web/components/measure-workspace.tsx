@@ -1,4 +1,5 @@
 "use client";
+import { NotificationOutlet } from "./notifications";
 import { preparationErrorTarget, preparationTarget, type PreparationTarget } from "@/lib/preparation-navigation";
 import type { Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
@@ -498,7 +499,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     <section className="lab-shell measure-workspace">
       <header className="page-heading">
         <div><p className="eyebrow">{t("Measure")}</p><h1>{t("Measure retrieval before trusting it.")}</h1></div>
-        <div className="page-badges"><span className="mode-badge">{deploymentLabel(environment)}</span><span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span></div>
+        <div className="page-badges">{environment && <span className="mode-badge">{deploymentLabel(environment)}</span>}<span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span></div>
       </header>
       <nav className="lab-tabs workflow-tabs" aria-label={t("Measure sections")}>
         {([["playground", "1. Search trial"], ["golden", "2. Golden dataset"], ["runs", "3. Run evaluation"], ["compare", "4. Compare and save"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={tab === id || (id === "compare" && tab === "snapshots")} onClick={() => changeTab(id)}>{t(label)}</button>)}
@@ -578,6 +579,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
         </section>}
         {active && tab === "runs" && setupOpen && createPortal(<div className="evaluation-setup-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !busy) setSetupOpen(false); }}><section ref={setupRef} className="surface form-stack evaluation-setup" role="dialog" aria-modal="true" aria-labelledby="new-evaluation-heading" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) setSetupOpen(false); } }}>
           <div className="surface-heading"><div><p className="eyebrow">{t("Evaluation setup")}</p><h2 id="new-evaluation-heading">{t("New evaluation")}</h2></div><button className="button icon" type="button" aria-label={t("Close evaluation setup")} disabled={busy} onClick={() => setSetupOpen(false)}><X size={18} /></button></div>
+          <NotificationOutlet priority={50} />
           {suiteSelect("measure.runs.suite")}{revisionSelect("measure.runs.revision")}
           <dl className="evaluation-metadata"><div><dt>{t("Index")}</dt><dd>{t(mode === "quick" ? "Current index" : "Isolated corpus")}</dd></div><div><dt>{t("Readiness")}</dt><dd>{t(ready ? "Ready" : "Not ready")}</dd></div><div><dt>{t("Cases")}</dt><dd>{selectedSuite?.case_count ?? "—"}</dd></div><div><dt>{t("Golden revision")}</dt><dd>{activeGoldenRevision ? `v${activeGoldenRevision.version} · ${t(activeGoldenRevision.status)}` : t("Canonical JSON · read-only")}</dd></div></dl>
           <fieldset className="playground-core" data-help="measure.runs.profile"><legend>{t("Core search settings")}</legend><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.runs" fields="core" /></fieldset>
