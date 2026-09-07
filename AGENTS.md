@@ -44,8 +44,10 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 - Non-worker maintainers follow the user-authorized commit-it tracking/delivery flow.
   Scoped implementation authorization covers issue tracking, commit, ordinary push,
   PR, verified squash merge and checkout synchronization only for that maintainer role.
-- Creating/deleting issues, assigning people, merging or synchronizing a checkout must
-  never be inferred for a worker from the general maintainer workflow.
+- Creating/deleting issues, changing issue scope, assigning people, merging or
+  synchronizing a checkout must never be inferred for a worker from the general
+  maintainer workflow. Workers may maintain only their assigned ownership/status
+  comments under WORKER.md; this exception does not authorize issue-body edits.
 - Destructive user-data actions, credentials, deployment, protection changes, meaningful
   paid work and rewriting published history require their own authorization.
 - Communicate in Korean. Write code, comments, docstrings and GitHub messages in English;
