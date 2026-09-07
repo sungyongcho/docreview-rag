@@ -43,6 +43,11 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
   Code reviews are off by default: the implementing worker must request a review in a
   different conversation/task, strictly within its implementation scope. Ordinary self-review
   requires explicit user approval for that scope; a worker cannot grant its own exception.
+- A requested reviewer in a different task directly fixes clear implementation-scope defects
+  on the same PR by default. Pause the original writer, declare repair scope/files and expected
+  head/base, use Draft/OCCUPIED, commit and ordinarily push personally, and verify the final
+  head before readiness. Record reviewer-as-contributor; its corrections are not independently
+  reviewed. Complex intent or scope ambiguity requires a focused question/change request.
 - Add `MERGE_READY` alongside `REVIEW_READY` only after eligible review and current passing
   checks for the matching head/base. Remove it when edits or changed evidence invalidate it.
   Neither ready label grants merge, deployment or local-main authority.
@@ -52,13 +57,15 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
   authorized PR set through WORKER.md. Preserve authors/history; no global maintainer rights
   or merge authority follows from the role name or a label.
 - Eligible successful reviews start exactly with `Self-review: LGTM` for explicit
-  user-approved self-review or `Review: LGTM` for requested review in a different task.
+  user-approved original-worker self-review or `Review: LGTM` for requested review in a
+  different task, including disclosed bounded repairs. This repair-role exception does not
+  let the original implementation worker waive its own self-review approval.
   Implementation verification alone must not publish an approval heading. Authorized conflict resolution
   uses `Conflict resolution: LGTM`, bound to head/base/tree and sequence revision/order.
   These are the only approval headings; preserve original authors and actual worker IDs.
   Conflict approval is not independent human review or authorization by itself.
 - Non-worker maintainers follow the user-authorized commit-it tracking/delivery flow
-  (installed skill, currently 3.0.0). Reread its current source and references when
+  (installed skill, currently 4.0.0). Reread its current source and references when
   another conversation may have updated it; these repository rules still override it.
   Scoped implementation authorization covers issue tracking, commit, ordinary push,
   PR, verified squash merge and checkout synchronization only for that maintainer role.
@@ -77,6 +84,12 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
   OCCUPIED/REVIEW_READY mirror work state; MERGE_READY additionally records eligible review
   and current verification across issues and PRs. Preserve unrelated
   labels. Account separation does not expand worker authority.
+- Public OPS records use a concise heading and canonical Markdown fields/nested lists,
+  each datum once; never publish JSON fences, giant payload dumps or hidden JSON duplicates.
+  Use strict parsing with no runtime legacy-JSON fallback. Explicit audited migration alone
+  converts verified OPS-generated records in place across the authorized managed registry;
+  preserve IDs/authors/head/base/evidence, exclude human/unmanaged content, and do not rewrite
+  Git commits or history. WORKER.md defines marker and repair-record boundaries.
 - Preserve existing history and active assignments. External contributors retain
   their own identities; do not switch global credentials or foreign worktrees.
 - Destructive user-data actions, credentials, deployment, protection changes, meaningful

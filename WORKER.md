@@ -21,7 +21,9 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - A code review requires the implementing worker's durable request and runs in a different
   conversation/task, strictly within that implementation scope. Ordinary self-review is
   permitted only by explicit user approval for the named scope, never by the worker itself.
-  Judge eligible reviews against agreed outcomes; unrelated ideas do not expand the review.
+  A requested separate reviewer repairs clear in-scope defects on the same PR by default,
+  with contributor disclosure and final-head verification. Complex intent or material scope
+  ambiguity gets a focused question/change request; unrelated ideas never expand the review.
 - Add `MERGE_READY` alongside `REVIEW_READY` only after eligible review and current passing
   checks for the matching head/base. Neither label grants merge authority. A specifically
   granted resolver review follows the additional sequence evidence and permissions below.
@@ -55,7 +57,9 @@ User directions and higher-priority instructions still prevail.
 - Approved implementation includes scoped commits, ordinary pushes and PR publication;
   do not ask again. It does not authorize code reviews by default. A review requires an
   implementing-worker request and a separate task, or explicit user approval for self-review.
-  The requested review may publish its scoped result through OPS. Neither approval headings
+  The requested separate-review role includes bounded same-PR repairs, personal commits and
+  ordinary pushes plus OPS contribution/result records. It does not authorize force-push,
+  issue-scope edits or unrelated implementation. Neither approval headings
   nor ready labels authorize merge, deployment or local-main integration. Resolver exceptions
   below require their own explicit, bounded user grant.
 - Preserve the user's local main, checkout and shared services. Updating that checkout
@@ -91,6 +95,23 @@ User directions and higher-priority instructions still prevail.
   changes, personal/global authentication and backup worktrees. OPS SSH clone access
   is separate from development push identity. Respect personal signing settings;
   never substitute an OPS signing key or silently generate personal credentials.
+- Public OPS-generated bodies use a short human heading and one canonical set of Markdown
+  fields/nested lists using the schema's exact raw keys and types, with two-space nested
+  bullets and explicit empty containers. Keep every semantic datum once, with evidence links
+  instead of raw logs; no JSON fences, hidden duplicates or divergent narrative copies.
+  The readable record is machine-authoritative. Strict parser/renderer validation rejects
+  duplicate/missing required fields, invalid nesting/types and ambiguous markers.
+- Human-readable `commit-it:work-state:v1` remains valid. Former JSON request, handoff,
+  resolver-action, merge-sequence and conflict-approval records migrate to their v2 markers
+  and canonical Markdown. Normal runtime readers do not support a legacy JSON fallback.
+  Explicit audited migration is the only legacy reader; do not retain a permanent dual reader.
+- An authorized public-record migration inventories the full selected managed registry,
+  identifies OPS-generated records by verified author/marker/type/record ID and updates
+  those same records in place. Preserve identifiers, URLs, original authors, event timestamps and
+  semantic head/base/evidence. Exclude human/unmanaged records, quoted examples and surrounding
+  user text. Retain before/after hashes and outcomes, stop on drift, verify round-trips and
+  read-back, and resume uncompleted targets idempotently. Report blocked records rather than
+  silently counting them complete. No Git commit/message/history rewrite or deletion is implied.
 - OPS records actual pushed commit SHAs, PR links, worker identity and verification at
   first publication, subsequent pushes, handoff and verification completion. Update existing
   records at meaningful changes; a local checkpoint is not a remote delivery receipt.
@@ -170,7 +191,22 @@ User directions and higher-priority instructions still prevail.
   that approval, authorship and review receipt; the implementing worker may request review
   but cannot authorize its own exception. A new task cannot make inherited implementation
   independent. Do not create a task unless the runtime's user-authorization requirement is met.
-- Use the guarded OPS request/review operations and verify current eligibility and head/base
+- A requested reviewer may directly repair clear defects within the requested implementation
+  scope on the same PR. Before edits, pause the original writer, declare repair files/scope
+  and expected head/base through OPS, preserve dirty work, set Draft/OCCUPIED and remove
+  MERGE_READY. Re-read the claim and head/base; actual overlap or drift stops the repair.
+- Personal identity commits and ordinarily pushes the smallest verified correction and
+  meaningful regression tests. OPS records the original worker/request, reviewer-as-contributor,
+  temporary repair writer/files, repair commits and final head/base. Preserve source ownership
+  and authorship; do not turn the reviewer into an unrelated implementation successor. Release
+  the temporary claim after verifying its result. Complex intent, material scope changes or
+  unresolved authority require a focused question/change request; do not return clear fixable
+  defects merely as work instructions for the original worker.
+- A separate requested reviewer may publish `Review: LGTM` after its repairs with explicit
+  contributor disclosure: its corrections were not independently reviewed. This role exception
+  does not permit the original implementation worker or an implementation successor to self-review
+  without explicit user approval. Reuse valid tests and verify the final repaired head/base.
+- Use the guarded OPS request/repair/review operations and verify current eligibility and head/base
   before publication. After an eligible review and current passing checks, add MERGE_READY
   alongside REVIEW_READY and synchronize record/mirrors/labels. Remove it on new edits,
   changed head/base, failed required checks or invalidated review; historical reviews remain.
@@ -201,7 +237,9 @@ User directions and higher-priority instructions still prevail.
 - Takeover permits preservation, scoped implementation, checks and the already-approved
   PR delivery, not merge, force-push, deployment, credential changes or local-main updates.
   A successor accepting inherited implementation finishes at REVIEW_READY and may self-review
-  only under explicit user approval; it never claims independence from a new worker ID. A merged PR stays linked as history; only the
+  only under explicit user approval; it never claims independence from a new worker ID.
+  Requested review repair is the separate bounded contributor role above, retaining the
+  original request and implementation provenance rather than replacing it. A merged PR stays linked as history; only the
   coordinator or explicitly authorized resolver reconciles the named delivery.
 - GitHub author identity comes from the authenticated account/App, not the commit
   email. A shared bot still requires the `Worker` field. Account/App/token setup is
@@ -224,10 +262,12 @@ User directions and higher-priority instructions still prevail.
 - Prefer fixing existing PRs in persistent worktrees. Create an integration PR only if the
   current split cannot preserve correct, verifiable intermediate states; retain every source
   PR/issue reference and explain any supersession before closing an original PR.
-- Record one canonical `<!-- commit-it:merge-sequence:v1 -->` comment on the stable first PR.
+- Record one canonical OPS v2 merge-sequence comment, using its configured marker/schema,
+  on the stable first PR.
   It remains authoritative and editable after that PR merges. Mirror sequence ID, revision,
   order/position, resolver and merge status to the other PRs without replacing their prose
-  or original work ownership. Current GitHub state must agree with the record.
+  or original work ownership. Current GitHub state must agree with the record. Link the
+  original approval and retain its hash instead of duplicating the approval body in the sequence.
 - Keep Work status separate from Merge status: `PREPARING`, `MERGE_SEQUENCE_READY`, `MERGING`,
   `BLOCKED`, `MERGED`. Readiness applies to the recorded sequence, not permission to skip
   predecessors. `Ready PR` must equal `Next`; later verification remains explicitly pending.
