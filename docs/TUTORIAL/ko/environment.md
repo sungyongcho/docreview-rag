@@ -1,5 +1,10 @@
 # 환경 준비
 
+저장소를 clone했는데 무엇부터 할지 모르겠다면 `source ./rag-alias.sh` 후
+`rag-start-quick`를 실행하세요. `rag-start-fresh`는 확인된 체크아웃 정리,
+`rag-reset`는 설정·볼륨을 보존하는 ORM 데이터·원문 초기화입니다.
+모든 명령에 `--verbose` (`-vv`)를 붙일 수 있습니다. [CLI 안내](cli.md)를 참고하세요.
+
 이 페이지는 GitHub에서 DocReview RAG를 clone한 뒤 로컬에서 처음부터 실행하는 사람을 위한 안내입니다. 아래 Part 1을 따라 서비스를 준비하고 데이터 준비 화면을 엽니다. 이미 실행 중인 앱을 바로 체험하려면 [Quick Start](quickstart.md)를 보세요.
 
 ## Part 1: 환경 준비 {#qs-setup}
@@ -14,14 +19,14 @@ git clone https://github.com/sungyongcho/docreview-rag-agent.git
 cd docreview-rag-agent
 source ./rag-alias.sh
 rag-help
-rag-quickstart
+rag-start-quick
 ```
 
-source 한 번으로 설치와 현재 셸 활성화를 진행합니다. Y는 자동 등록을 저장하고 N은 이번 셸만 불러옵니다. 같은 터미널에서 바로 명령을 사용할 수 있으며 이후 변경은 `rag-alias update`로 반영합니다.
+source 한 번으로 설치와 활성화를 진행합니다. Y는 자동 등록을 저장하고 로그인 셸로 재시작하며 배너에서 rag-help 입력을 안내합니다. N은 이번 셸만 불러옵니다. 다시 source하면 버전과 등록된 정의를 비교해 [already installed] 또는 [update required]를 표시하며 이후 변경은 `rag-alias update`로 반영합니다.
 
 Helper는 저장소에 포함됩니다. `source`는 현재 터미널에 등록하며,
 선택적인 [영구 등록 방법](cli.md)은 명령 안내를 참고하세요.
-첫 실행은 `.env`가 없을 때만 생성합니다. 파일을 로컬에서 편집하고 `rag-quickstart`를 다시 실행하세요.
+첫 실행은 `.env`가 없을 때만 생성합니다. 파일을 로컬에서 편집하고 `rag-start-quick`를 다시 실행하세요.
 
 ```dotenv
 SEC_USER_AGENT=Your Real Name your-real-contact@example.org
@@ -39,7 +44,7 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 
 빈 DB에만 스키마를 생성하고 기존 정상 DB는 보존합니다. 스키마가 맞지 않으면 자동 초기화하지
 않고 원인을 안내합니다. 설정·도구 누락을 해결한 뒤 같은 명령을 재실행하세요.
-설치 문제를 고치려고 `rag-fresh-start`를 실행하지 마세요.
+설치 문제를 고치려고 `rag-reset`를 실행하지 마세요.
 표시된 주소(기본 `http://localhost:8000/docreview-rag-agent/`)를 엽니다.
 
 설정 명령은 사전 요구사항 → 로컬 설정 → 프로젝트 서비스 상태·시작 → 스키마 준비 → DEV 서버 준비 확인의 다섯 단계를 표시합니다. `db`, `app`, `web` 각각의 중지·시작 중·비정상·실행 상태를 구분합니다. 헬스 체크가 없는 컨테이너가 실행 중이라는 사실만으로 서버 준비 완료를 선언하지 않습니다. 이미 정상 실행 중인 서비스도 Compose가 개발 설정을 적용하기 전에 표시합니다.
@@ -52,7 +57,7 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 종료·빌드·시작 복구를 한 번 제안합니다.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: guided Quick Start configuration repair; locale=ko; plain ASCII/no-color; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
+<!-- Feature: guided Quick Start configuration repair; locale=ko; TTY color/bold or NO_COLOR plain text; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
 
 ## 1. 실행 환경 열고 확인하기 {#step-1}
 

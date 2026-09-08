@@ -267,7 +267,7 @@ it("opens a terminal-initiated completed reset without submitting another wipe",
   expect(await screen.findByRole("button", { name: "Clear browser data and start again" })).toBeEnabled();
   expect(previewWipe).not.toHaveBeenCalled();
   expect(startWipe).not.toHaveBeenCalled();
-  expect(screen.getByText(/run rag-fresh-start/)).toBeInTheDocument();
+  expect(screen.getByText(/run rag-reset/)).toBeInTheDocument();
 });
 
 

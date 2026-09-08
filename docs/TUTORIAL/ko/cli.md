@@ -22,9 +22,11 @@ rag-help
 ```
 
 대화형 Bash/Zsh 터미널에서는 `source ./rag-alias.sh` 한 명령으로 설치와 현재 셸 활성화를
-진행합니다. Y를 선택하면 자동 등록을 저장하고, 같은 source 실행에서 바로 명령을 사용할 수
-있습니다. No는 시작 파일을 보존하고 이번 셸에만 명령을 불러옵니다. 시작 파일의 자동 로드,
+진행합니다. Y를 선택하면 자동 등록을 저장하고 로그인 셸로 재시작합니다. 배너의
+**remember to type rag-help** 안내 후 명령을 사용할 수 있습니다. No는 시작 파일을 보존하고 이번 셸에만 명령을 불러옵니다. 시작 파일의 자동 로드,
 검증·update 재로드, 비대화형 또는 출력이 리다이렉트된 source는 설치 질문을 하지 않습니다.
+다시 source하면 내장 버전과 등록된 정의를 비교합니다. 같으면 [already installed],
+버전·정의·별칭이 바뀌거나 빠졌으면 [update required]를 표시하고 갱신합니다.
 Helper 등록은 앱 의존성 설치와 별개입니다.
 
 `./rag-alias.sh`로 실행했다면 설치·검증 후 대화형 터미널에서 기본값 No인 로그인 셸 선택을
@@ -34,7 +36,7 @@ Helper 등록은 앱 의존성 설치와 별개입니다.
 명령을 사용하세요. 거절·EOF에서는 셸을 시작하지 않습니다. 기본 활성화 경로는 source입니다.
 
 셸과 웹은 저장소에 있는 같은 Small ASCII 워드마크를 사용합니다. 80열 터미널에는 전체 이름을,
-좁은 터미널에는 DR 모노그램이나 일반 제품명 한 줄을 표시합니다. 모든 터미널과 파일로 보낸 출력에는 색상 이스케이프가 남지 않습니다. 배너 출력에는 언어 런타임이나 네트워크가 필요하지 않습니다.
+좁은 터미널에는 DR 모노그램이나 일반 제품명 한 줄을 표시합니다. 워드마크는 일반 텍스트이며 도움말은 TTY이고 NO_COLOR가 없을 때만 색상과 굵은 글씨를 사용합니다. 배너 출력에는 언어 런타임이나 네트워크가 필요하지 않습니다.
 
 설치기는 기존 내용을 백업·보존하면서 `.bashrc` 또는 `${ZDOTDIR:-$HOME}/.zshrc`에 한 줄만 추가합니다. 새 터미널에서는 자동으로 로드됩니다. 수동으로 등록할 때 사용하는 동일한 줄은 다음과 같습니다.
 
@@ -63,9 +65,9 @@ Python CLI·파일 조회·직접 Docker 명령은 **저장소 루트**에서 �
 
 `rag-dev`, `rag-prod`는 인자가 없으면 `up -d`를 실행합니다.
 별칭 없이 실행하려면 저장소 루트에서 `.venv/bin/python -m scripts.stack dev up -d`를 사용합니다.
-`rag-help`는 Quick Start 명령 하나와 출력된 URL을 여는 안내로 시작합니다. 초기화·복구는
-별도 `[RESET]` 영역에 두고, 간결한 명령 안내를 두 열로 정렬합니다. 색상 터미널에서도 ANSI 색상이나
-이스케이프를 출력하지 않습니다. 모든 명령은 `--help`를
+`rag-help`는 Quick Start에서 빠른 준비와 새 clone 정리를 순서대로 보여 주고 데이터 초기화는
+별도 `[RESET]`에 둡니다. 명령은 굵게, 제목은 색상, 보조문은 흐리게, 주의는 노란색으로 표시합니다.
+NO_COLOR나 리다이렉트 출력은 일반 텍스트입니다. 모든 명령은 `--help`와 `--verbose` (`-vv`)를
 지원합니다. 작업별 설명은 `rag-corpus --help`, 스키마 옵션은 `rag-schema --help`에서 확인합니다.
 
 ### 명령 통합
@@ -74,7 +76,7 @@ Python CLI·파일 조회·직접 Docker 명령은 **저장소 루트**에서 �
 경로가 있으면 정확한 경로를 표시하고, 백업한 뒤 새 이름으로 바꿀지 묻습니다. 거절하면 기존
 등록을 보존하며, 호환 파일이나 심볼릭 링크는 만들지 않습니다. 명시적인 삭제 시에는 이
 체크아웃의 이전 등록도 함께 확인하여 제거합니다. 이전 등록을 옮긴 후 새 셸에서 새 Helper를 불러오세요. 아래 단축 명령은 더 이상 등록되지 않으므로
-대체 명령을 사용합니다. 기존 셸에 남은 정의는 해당 셸이 종료될 때까지 유지됩니다.
+대체 명령을 사용합니다. 다시 source하면 이전 Helper가 소유했던 정의와 일치하는 제거 대상 명령만 해제합니다.
 
 | 제거된 단축 명령 | 대체 명령 |
 |---|---|
@@ -168,7 +170,7 @@ Compose가 내부 서비스 이름 `db`로 지정합니다.
 ## 초기 schema 준비
 
 ```bash
-rag-quickstart
+rag-start-quick
 ```
 
 Python 환경과 설정을 확인하고, 비어 있는 데이터베이스에 스키마를 준비한 뒤 개발 서비스를 시작합니다. 호환되는 기존 데이터는 보존합니다. 스키마가 맞지 않으면 중단하므로 기존 DB를 유지하고 비어 있는 별도 DB나 호환 DB를 선택하세요. 설치 오류를 복구하기 위해 초기화를 실행하지 않습니다.
@@ -309,7 +311,7 @@ Python CLI도 웹과 같은 서버 작업을 요청합니다.
 uv run python -m app.cli ingest --manifest manifest.json --selection SELECTION_ID
 ```
 
-수집 결과의 선택 ID를 사용합니다. 개발 주소가 기본값과 다르면 `--api-url`로 지정합니다. 스키마 준비는 `rag-quickstart`, 전체 초기화는 `rag-fresh-start`의 역할입니다.
+수집 결과의 선택 ID를 사용합니다. 개발 주소가 기본값과 다르면 `--api-url`로 지정합니다. 스키마 준비는 `rag-start-quick`, 전체 초기화는 `rag-reset`의 역할입니다.
 
 ### Embedding과 검색
 
@@ -542,89 +544,92 @@ rag-alias-delete
 [명령 등록과 도움말](#명령-등록과-도움말)을 따릅니다.
 
 
-## 일반 초기화와 extreme 초기화
+## Quick Start와 데이터 초기화
 
-`rag-fresh-start`는 host에서 진행하는 단계별 clean start입니다. 도구·설정을 확인하고 해당
-체크아웃의 DB를 시작한 뒤 ORM 데이터와 원문을 미리 보여 줍니다. 정확한 확인 문구를 입력해야
-초기화하며, 일반 경로에는 실행 중인 웹이나 operator가 필요하지 않습니다. 다섯 단계는 색상
-이스케이프 없는 ASCII 제목으로 표시합니다.
+저장소를 clone했는데 무엇부터 할지 모르겠다면 **`rag-start-quick`**를 실행하세요.
+Python 의존성, 없을 때만 `.env` 생성, 설정 검사, DEV 시작, 빈 스키마 준비,
+readiness 확인과 웹 Quick Start 주소 안내까지 진행합니다. 기존 데이터는 보존하며
+원문 다운로드·임베딩·모델 요청은 실행하지 않습니다.
+
+모든 명령에 `--verbose` (`-vv`)를 붙일 수 있습니다. 준비·빌드 명령은 기본적으로
+단계 상태와 소요 시간만 표시하고, verbose에서는 실제 출력도 보여 줍니다.
+실패 시 마지막 20줄과 재실행 명령을 표시합니다. TTY이고 `NO_COLOR`가 없을 때만
+색과 굵은 글씨를 사용하며, 파일로 출력하면 `[ OK ]` / `[FAIL]` 텍스트를 사용합니다.
+`rag-help`의 명령·설명 열은 정렬되고 주의 사항은 해당 명령 아래에 들여씁니다.
+
+### 새 clone 상태로 시작
 
 ```bash
-rag-fresh-start
-rag-fresh-start --keep-sources
-rag-fresh-start --sample
+rag-start-fresh
+rag-start-fresh --no-start
+rag-start-fresh --extreme
+rag-start-fresh --status
 ```
 
-기본·sample 경로는 `RECREATE <checkout-name> AND SOURCES`, 원문 보존은
-`RECREATE <checkout-name>`을 요구합니다. 미리보기는 5분 뒤 만료되며 실행 전 다시 확인합니다.
-취소하면 앱 시작으로 넘어가지 않습니다. 완료된 초기화는 코드·`.env`·평가 내보내기·저장된 모델
-설정·무관한 테이블·DB 볼륨·호스트 Ollama를 보존합니다. `--keep-sources`는 원문도 보존하고,
-`--sample`은 다운로드 없이 NVDA/AMD FY2023–2024 초안만 지정합니다. 두 옵션은 함께 쓸 수 없습니다.
+변경 전에 번호가 있는 미리보기가 최상위 경로별 파일 수·크기, 복원할 추적 파일,
+해당 체크아웃의 컨테이너·볼륨·로컬 빌드 이미지를 보여 줍니다. `data/`의 원문·내보내기,
+`.venv`, `web/node_modules`, `.next` 등 추적되지 않은 파일과 캐시를 삭제합니다.
+`data/`의 추적 파일 수정은 HEAD로 복원하며, 그 밖의 추적 파일 수정은 중단 사유입니다.
+그 수정까지 버리기로 명시적으로 결정했을 때만 `--discard-tracked`를 사용하세요.
+백업은 생성하지 않습니다.
 
-확인 문구를 받거나 API를 중지하기 전에 원문 읽기 권한과 원문 부모 디렉터리,
-`data/corpus`, 저널을 만드는 `data`의 쓰기·탐색 권한을 검사합니다. 컨테이너가 만든
-디렉터리는 읽을 수 있어도 파일 이동이 막힐 수 있습니다. 차단된 디렉터리를 모두 나열하고
-경로를 안전하게 인용한 `sudo setfacl -R -m u:<host-uid>:rwX -- <경로들>` 명령을
-보여 줍니다. 정확한 경로를 확인해 권한을 복구한 뒤 검사를 한 번 다시 시도할 수 있습니다.
-CLI는 ACL을 자동 적용하거나 삭제를 자동 재시도하지 않습니다. `--keep-sources`에는
-원문 디렉터리의 쓰기 권한이 필요하지 않습니다.
+Git 메타데이터·히스토리, `.env*`, `.claude/`, `.agents/`, `.codex/`, `.vscode/`,
+`.idea/`, `.freshstart-keep`와 그 목록의 경로, Ollama 모델 볼륨은 보존합니다.
+보존 목록에는 체크아웃 상대 경로를 한 줄에 하나씩 적습니다. 빈 줄·`#` 주석은 무시하며
+절대 경로와 `..`는 거부합니다. data 아래 심볼릭 링크와 중첩 Git 저장소는 작업을 막습니다.
+다른 Docker 프로젝트·공유 자원·builder cache는 삭제하지 않습니다.
+추적된 `.env.example`은 extreme에서도 다음 설정의 템플릿으로 남습니다.
 
-API 중지 이후 실패하면 DB·원문이 그대로인지 또는 복원됐는지, 복구 결과가 불확실한지를
-구분하고, 빌드를 요청하지 않고 API를 복구하는 `rag-dev up -d`를 출력합니다. 컨테이너 ID만
-출력하지 않습니다. 저널이 남거나 DB 결과가 불확실하면
-`data/.schema-recreate-journal/journal.json`을 보존하고 `rag-schema check`로
-해당 경계를 확인한 뒤 다시 초기화하세요. 이미 커밋된 DB 초기화를 변경 없음으로 안내하지 않습니다.
+삭제 확인은 모두 `(Y/n)`을 표시하지만 **대문자 한 글자 `Y`만 승인**합니다.
+`y`, `yes`, Enter, 공백, EOF는 “nothing changed”와 함께 취소합니다.
+미리보기는 5분 뒤 만료하며 대상이 바뀌면 다시 확인해야 합니다. extreme은 `.env*`를
+명시해 두 번째로 묻고, 개인 `.env*` 파일과 프로젝트 Ollama 모델 볼륨도 삭제합니다.
+자동 재시작하지 않습니다.
 
+권한은 실제 삭제를 먼저 시도한 뒤 실패한 경로만 한 번 모아 알립니다.
+`sudo chown -R "$(id -u):$(id -g)" -- <경로들>` 명령을 사용자가 적용한 후
+실패한 삭제만 한 번 재시도할 수 있습니다. 명령이 sudo를 직접 실행하지 않습니다.
+삭제 도중 실패하면 부분 완료 기록을 남기므로 `rag-start-fresh --status`로 먼저 확인하세요.
 
-### SCREENSHOT NEEDED
-<!-- Feature: fresh-start host write-permission preflight before confirmation, exact sudo repair paths, and post-stop rollback/restart guidance; locale=ko; theme=light; preserve existing screenshot assets. -->
+일반 정리는 의존성 재설치를 포함하는 `rag-start-quick`로 이어집니다.
+`--no-start`는 정리 후 멈추고, extreme은 새 `.env`를 만들 `rag-start-quick` 실행을
+안내합니다. 브라우저 저장소는 그대로이므로 **설정 → 데이터와 도움말**에서 별도로
+지우세요. 기존 웹 wipe 기능과 브라우저 확인 절차는 웹 UI에 유지됩니다.
 
-초기화가 완료돼야 `rag-dev up --build -d`와 readiness 확인을 실행하고 앱 주소와 양쪽 언어의
-[Quick Start — DEV ONLY, Web 1단계](quickstart-dev.md#qs-web-1)를 출력합니다. 빌드·준비 확인 실패 시 기존
-`rag-ollama-check` 진단을 재사용하고, 확인 후 볼륨을 보존하는 `rag-dev down` →
-`rag-dev up --build -d` 복구를 한 번 제안합니다. 불완전한 초기화에서는 재시작하지 않습니다.
-일반 clean start는 브라우저 대화를 삭제하지 않습니다.
+### 데이터만 초기화
+
+```bash
+rag-reset
+rag-reset --keep-sources
+rag-reset --sample
+rag-reset --status
+```
+
+`rag-reset`는 ORM DB 데이터·다운로드 원문을 미리 보여 주고 `Y` 확인 후 초기화하며,
+DEV 재빌드·readiness 확인까지 진행합니다. `.env`, 모델 설정, 평가 내보내기,
+무관한 테이블, 이미지·볼륨은 보존합니다. `--keep-sources`는 원문을 보존하고,
+`--sample`은 다운로드 없이 NVDA/AMD FY2023–2024 초안을 준비합니다. 두 옵션은 동시에
+사용할 수 없습니다. `--extreme`은 이 명령의 옵션이 아닙니다.
+
+기존 원문 권한 사전 검사와 복구 저널을 유지합니다. 오류 시 표시되는 정확한 권한 복구
+안내를 따르세요. DB 결과가 불확실하면 `data/.schema-recreate-journal/journal.json`을
+보존하고 `rag-schema check`와 완료 단계를 확인한 뒤 재시도하세요. 불완전한 초기화는
+빌드로 이어지지 않습니다. 성공 후 앱 주소와 양쪽 언어의
+[Quick Start — DEV ONLY, Web 1단계](quickstart-dev.md#qs-web-1)를 안내합니다.
+
+각 명령은 Git 메타데이터 아래 자기 실행 기록을 남깁니다.
+`rag-start-quick --status`, `rag-start-fresh --status`, `rag-reset --status`로 읽습니다.
+reset 상태는 기존 operator가 연결될 때 이전 웹/extreme 증거도 읽으며 삭제를 재요청하지 않습니다.
 
 ### 현재 단계에서 설정 복구
 
-`rag-quickstart`와 일반 `rag-fresh-start`는 잘못된 각 키의 `.env` 줄과 shell 값, 실제 적용
-출처를 표시합니다. 인증 정보·연락처 값은 숨깁니다. 임베딩 설정 충돌에서는 `[f]`로 이번 실행의
-잘못된 shell override를 제외하거나, `[e]`로 필요한 공개 임베딩 설정 두 개를 저장할 수 있습니다.
-파일을 로컬에서 편집한 뒤 `[r]`로 다시 확인하거나 `[q]`로 취소합니다. 의존성 설치부터 반복하지
-않고 같은 설정 단계에서 이어집니다. 부모 셸은 바꾸지 않으므로 이후 실행에도 적용하려면 출력된
-`unset KEY`를 부모 셸에서 실행하세요. 어떤 선택도 키를 기록하거나 모델·임베딩 요청을 하지 않습니다.
-비대화형 실행은 같은 복구 안내와 함께 실패를 반환합니다.
+`rag-start-quick`와 `rag-reset`는 잘못된 키의 `.env` 줄과 실제 shell/file 출처를
+알리고 인증 값은 숨깁니다. `[f]`는 이번 실행의 잘못된 shell export 제외,
+`[e]`는 두 공개 임베딩 설정 저장, `[r]`은 로컬 수정 후 재검사, `[q]`는 취소입니다.
+부모 셸은 변경하지 않으며 시작 실패 시 볼륨을 보존하는 확인된 복구를 제안합니다.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: guided terminal clean start and source-aware configuration repair; locale=ko; plain ASCII/no-color; show redacted file/shell conflict, exact reset preview and successful readiness URL to qs-web-1 using disposable data. Preserve existing screenshots. -->
-
-### Extreme 초기화
-
-`rag-fresh-start --extreme`만 기존 DEV operator(`rag-dev up -d`)를 요구합니다. 더 넓은
-웹/operator 삭제 범위와 브라우저 확인 절차는 별도로 유지합니다.
-
-```bash
-rag-fresh-start --extreme
-```
-
-extreme은 정확한 삭제 목록을 먼저 표시합니다. `.env`·대화·사용자 코퍼스 백업 여부에 동의한 뒤, 복원 불가능한 삭제에 동의하려면 `EXTREME <체크아웃 이름>`을 입력해야 합니다. 두 단계 모두 기본값은 거절이며 Enter·No·EOF·비대화형 입력은 삭제를 승인하지 않습니다. 대상 변경이나 미리보기 만료도 실행을 막습니다. 백업은 생성되지 않으며 앱이 삭제한 데이터를 복구할 수 없습니다.
-
-새 clone 상태의 **런타임 콘텐츠** 범위는 다음과 같습니다.
-
-- `data/corpus`의 사용자 PDF·JSON을 포함해 `data/eval_runs`, `data/local-settings`, `build`, `dist`, `web/.next`, `web/out`, `web/.tutorial`, `web/public/tutorial-assets`, `.pytest_cache`, `.ruff_cache` 아래의 추적되지 않은 파일과 루트의 추적되지 않은 `.env*` 파일을 삭제합니다. 빈 디렉터리는 남을 수 있습니다.
-- 해당 체크아웃 소유로 확인된 `db`·`app`·`web` 컨테이너와 로컬 Compose `pg_data`·`web_next`·`web_node_modules` 볼륨만 삭제합니다. 외부·공유 볼륨, 예상 밖 컨테이너, 심볼릭 링크가 있으면 중단합니다.
-- Git 추적 파일과 수정 내용·히스토리, 호스트 `.venv`·`node_modules`, 그 밖의 개인 파일, 다른 Docker 프로젝트, 호스트 Ollama·외부 자격증명·초기화 감사 기록은 보존합니다. 전체 `git clean`이나 호스트 초기화가 아닙니다.
-
-터미널에서 두 번 확인한 뒤 다른 DocReview 탭을 닫고, 대화가 저장된 브라우저로 출력된 `/reset-local/#<operation-id>` URL을 여세요. 페이지가 해당 주소의 DocReview local/session storage를 삭제·검증하고 같은 작업 ID로 인증된 확인 응답을 보내야 로컬 삭제가 진행됩니다. CLI는 그 확인을 받은 브라우저·주소에 한해 삭제 완료를 표시합니다. 다른 프로필·기기·포트와 localhost/127.0.0.1 주소는 별개입니다. 메모리에 대화가 남은 이전 탭을 다시 열지 마세요. 확인이 만료되면 로컬 삭제는 시작하지 않지만 브라우저 삭제는 이미 발생했을 수 있으므로 상태를 먼저 확인하세요.
-
-extreme 성공 후에도 서비스는 중지 상태로 유지합니다. `rag-quickstart`로 새 `.env`를 준비하고 로컬에서 설정한 다음 [Quick Start — DEV ONLY](quickstart-dev.md)를 따라 데이터를 다시 준비하세요. 부분 실패는 완료된 단계를 확인하세요. 자동 재시작이나 삭제 재시도는 하지 않습니다.
-
-### SCREENSHOT NEEDED
-<!-- Feature: extreme CLI browser acknowledgement. State: matching waiting operation on reset-local, then acknowledged deletion. Capture en and ko in light mode using disposable data only; no credentials. -->
-브라우저 확인 페이지의 새 스크린샷 증거는 아직 없습니다.
-
-
-`rag-fresh-start --status`는 extreme 삭제로 `.env`가 없어지거나 웹 컨테이너가 중지돼도 기존 로컬 operator 연결로 마지막 extreme/웹 초기화 상태를 읽습니다. 일반 host 초기화의 스키마 상태는 `rag-schema check`로 확인합니다. 삭제를 재요청하지 않습니다. 코드를 업데이트한 뒤에는 `rag-dev down`, `rag-dev up -d` 순서로 로컬 operator를 재시작한 후 새 옵션을 사용하세요. 이 명령들은 데이터 볼륨을 보존합니다.
+<!-- Feature: styled rag-help and three separate start/reset paths; locale=ko; light mode; actual terminal preview counts, uppercase Y gates, quiet completed build/readiness, verbose failure tail, and preserved environment; disposable checkout only. Existing screenshot assets are preserved. -->
 
 
 ## 호환되지 않는 로컬 스키마 복구
@@ -654,13 +659,13 @@ uv run python -m scripts.schema recover --return-stage index
 
 ## 명시적 로컬 DB 재생성
 
-`rag-up`은 `rag-dev up --build -d`의 단축 명령이며 `rag-quickstart` 또는 `uv sync --locked`로 준비한 Python 환경을 사용합니다. 자동 시작은 빈 DB만 준비하며 기존 데이터를 버리지 않습니다. 준비 안내에는 처음 프로젝트를 사용하거나 작업의 영향을 이해하는 사용자에게 다음 위험한 선택도 제공합니다.
+`rag-up`은 `rag-dev up --build -d`의 단축 명령이며 `rag-start-quick` 또는 `uv sync --locked`로 준비한 Python 환경을 사용합니다. 자동 시작은 빈 DB만 준비하며 기존 데이터를 버리지 않습니다. 준비 안내에는 처음 프로젝트를 사용하거나 작업의 영향을 이해하는 사용자에게 다음 위험한 선택도 제공합니다.
 
 ```bash
 uv run python -m scripts.schema recreate
 ```
 
-확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 기본 명령은 다운로드된 원문과 manifest 원문 항목도 지웁니다. 대상, 테이블별 행 수, 원문 경로와 수를 확인하고 전체 삭제에 동의할 때만 `RECREATE <체크아웃 이름> AND SOURCES`를 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
+확인된 로컬 DEV DB의 ORM 소유 테이블과 모든 행을 삭제하고 현재 모델로 스키마를 다시 생성합니다. 기본 명령은 다운로드된 원문과 manifest 원문 항목도 지웁니다. 대상, 테이블별 행 수, 원문 경로와 수를 확인하고 전체 삭제에 동의할 때만 `Y`를 입력하세요. Enter·틀린 문구·EOF·비대화형 입력은 승인되지 않으며 미리보기는 5분 후 만료됩니다. 앱은 확인 후에만 중지합니다. 다른 DB 클라이언트를 닫아야 하며 공유 볼륨과 로컬이 아닌 대상은 거부합니다.
 
 코드·`.env`·평가 내보내기 파일·DB 볼륨·무관한 테이블·호스트 Ollama는 보존합니다. 백업은 만들지 않습니다. 알 수 없는 외래키 의존성이 있으면 연쇄 삭제 대신 트랜잭션을 롤백합니다. 실패 후 API는 중지된 상태일 수 있으므로 재시도 전에 스키마를 확인하세요. 성공 후 `rag-up`으로 시작하고 Build를 다시 확인한 뒤 파싱·임베딩·BM25를 명시적으로 다시 준비합니다. 유료 임베딩은 재생성 명령이 실행하지 않습니다.
 
@@ -676,8 +681,8 @@ DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접
 | --- | --- | --- |
 | `uv run python -m scripts.schema recreate` | ORM 테이블/데이터와 다운로드된 SEC/DART 원문, manifest 원문 항목 | 코드, `.env`, 평가 내보내기, 무관한 테이블, DB 볼륨 보존. 빈 원문 초안으로 시작 |
 | 위 명령 + `--sample` | 동일한 초기화 | 서버에 NVDA/AMD FY2023–2024 초안 저장. 다운로드는 직접 실행 |
-| 위 명령 + `--keep-sources` | ORM 테이블/데이터만 | 원문 파일 보존. 확인 문구는 `RECREATE <checkout-name>` |
-| `rag-fresh-start` | 스키마 재생성과 같은 ORM/원문 범위. `--keep-sources`·`--sample` 지원 | 설정·내보내기·볼륨 보존. DEV 시작·준비 확인 후 웹으로 안내 |
-| `rag-fresh-start --extreme` | 미리 확인한 설정·runtime 파일/cache·볼륨 | 두 확인 단계와 브라우저 삭제 확인. 자동 재시작 없음 |
+| 위 명령 + `--keep-sources` | ORM 테이블/데이터만 | 원문 파일 보존. 확인 문구는 `Y` |
+| `rag-reset` | 스키마 재생성과 같은 ORM/원문 범위. `--keep-sources`·`--sample` 지원 | 설정·내보내기·볼륨 보존. DEV 시작·준비 확인 후 웹으로 안내 |
+| `rag-start-fresh --extreme` | 미리 확인한 설정·runtime 파일/cache·볼륨 | 대문자 Y 두 번 확인. 브라우저 저장소 보존, 자동 재시작 없음 |
 
-기본 및 `--sample`은 테이블 행 수와 원문 파일 경로/수를 함께 확인한 뒤 `RECREATE <checkout-name> AND SOURCES`를 입력합니다. 두 옵션은 동시에 사용할 수 없습니다. CLI 수집은 식별자와 연도를 명시합니다. 원문은 DB 커밋 전까지 `data/.schema-recreate-journal`에 격리되며 DB 실패 시 원문 복구를 시도합니다. 연결이 끊겼다면 DB 결과가 불확실할 수 있으므로 먼저 스키마를 확인하세요. 중단이나 정리 실패로 남은 `journal.json`은 경로·단계를 기록하고 다음 초기화를 차단합니다. 저널과 백업을 보존하고 원인을 확인하세요. DB 커밋 뒤 파일 정리가 실패한 경우에도 명령은 실패를 반환하고 부분 완료 상태를 알립니다. 확인을 마친 뒤 `rag-up`으로 API를 다시 시작하세요.
+기본 및 `--sample`은 테이블 행 수와 원문 파일 경로/수를 함께 확인한 뒤 `Y`를 입력합니다. 두 옵션은 동시에 사용할 수 없습니다. CLI 수집은 식별자와 연도를 명시합니다. 원문은 DB 커밋 전까지 `data/.schema-recreate-journal`에 격리되며 DB 실패 시 원문 복구를 시도합니다. 연결이 끊겼다면 DB 결과가 불확실할 수 있으므로 먼저 스키마를 확인하세요. 중단이나 정리 실패로 남은 `journal.json`은 경로·단계를 기록하고 다음 초기화를 차단합니다. 저널과 백업을 보존하고 원인을 확인하세요. DB 커밋 뒤 파일 정리가 실패한 경우에도 명령은 실패를 반환하고 부분 완료 상태를 알립니다. 확인을 마친 뒤 `rag-up`으로 API를 다시 시작하세요.

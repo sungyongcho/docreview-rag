@@ -1,5 +1,10 @@
 # Quick Start — DEV ONLY
 
+Cloned the repository and unsure what to do? Run `source ./rag-alias.sh`, then
+`rag-start-quick`. Use `rag-start-fresh` only for a separately confirmed checkout cleanup;
+`rag-reset` resets ORM data/sources while preserving configuration and volumes.
+All commands accept `--verbose` (`-vv`); see [CLI setup/reset](cli.md).
+
 This guide prepares filings and search indexes in a running local DEV instance. First complete [Environment setup](environment.md#qs-setup) and open Build. No downloaded filings, database rows, chunks, or embeddings are assumed; the tracked manifest alone does not mean a source is on disk.
 
 Choose CLI or Web for the same seven preparation steps. Switching tabs does not execute work. Service readiness and data readiness are separate; reuse anything already complete in the same environment.

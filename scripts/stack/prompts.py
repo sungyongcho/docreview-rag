@@ -2,15 +2,19 @@
 
 import sys
 
+from scripts.stack.terminal import colors
+
 
 class SetupCancelledError(RuntimeError):
     """The user stopped setup before the next action was submitted."""
 
 
 def step(number: int, total: int, title: str, intent: str) -> None:
-    """Explain an action before running it using an ASCII-only, color-free header."""
-    print(f"\n+-- [{number}/{total}] {title} --+", flush=True)
-    print(intent, flush=True)
+    """Explain the next action in a single compact terminal-aware line."""
+    label = f"[{number}/{total}] {title}"
+    if colors():
+        label = f"\033[36;1m{label}\033[0m"
+    print(f"\n{label}: {intent}", flush=True)
 
 
 def confirm(message: str) -> bool:
@@ -18,6 +22,6 @@ def confirm(message: str) -> bool:
     if not sys.stdin.isatty():
         return False
     try:
-        return input(message + " [y/N] ").strip().lower() in {"y", "yes"}
+        return input(message + " (Y/n) ") == "Y"
     except EOFError:
         return False

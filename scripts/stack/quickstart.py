@@ -22,7 +22,9 @@ from scripts.schema.recreate import run as recreate_schema
 from scripts.schema.status import prepare_schema
 from scripts.stack.__main__ import compose_command, compose_environment, run
 from scripts.stack.environment import load_local_environment
+from scripts.stack.fresh import write_receipt
 from scripts.stack.prompts import SetupCancelledError, confirm, step
+from scripts.stack.terminal import activity, run_step
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -220,11 +222,11 @@ def ensure_database(root: Path, bindings: dict[str, str]) -> None:
     """Start only the selected local database and wait for its declared health check."""
     environment = compose_environment("dev", bindings)
     report_services(root, environment)
-    subprocess.run(
+    run_step(
+        "Start database and wait for health",
         compose_command(root, "dev", ["up", "-d", "--wait", "--wait-timeout", "120", "db"]),
         cwd=root,
         env=environment,
-        check=True,
     )
 
 
@@ -233,11 +235,12 @@ def start_ready(root: Path, bindings: dict[str, str], *, timeout: float = 180) -
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
     for attempt in range(2):
         try:
-            result = run("dev", ["up", "--build", "-d"], root=root)
+            result = run("dev", ["up", "--build", "-d"], root=root, quiet=True)
             if result:
                 raise RuntimeError(f"DEV startup command exited with status {result}.")
             report_services(root, compose_environment("dev", bindings))
-            wait_ready(origin, timeout=timeout)
+            with activity("Verify server readiness"):
+                wait_ready(origin, timeout=timeout)
             return
         except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as error:
             print(f"Startup/readiness blocked: {error}", flush=True)
@@ -272,7 +275,7 @@ def handoff(bindings: dict[str, str]) -> None:
     print("No filings were downloaded and no embedding or answer requests were made.")
 
 
-def quickstart(
+def _prepare(
     root: Path,
     *,
     reset: bool = False,
@@ -316,7 +319,7 @@ def quickstart(
         4,
         5,
         "Reset preview" if reset else "Schema",
-        "Preview ORM data and selected source scope; deletion requires the exact typed phrase."
+        "Preview ORM data and selected source scope; deletion requires uppercase Y."
         if reset
         else "Inspect compatibility; create schema only in an empty database.",
     )
@@ -325,6 +328,7 @@ def quickstart(
             root, keep_sources=keep_sources, sample=sample, restart_planned=True
         )
         if outcome != "succeeded":
+            write_receipt(root, "reset", status=outcome)
             return 0 if outcome == "cancelled" else 1
     else:
         for attempt in range(2):
@@ -358,11 +362,54 @@ def quickstart(
     )
     start_ready(root, bindings, timeout=timeout)
     handoff(bindings)
+    write_receipt(
+        root,
+        "reset" if reset else "start-quick",
+        status="succeeded",
+        completed=["configuration", "database", "schema", "readiness"],
+    )
     return 0
+
+
+def quickstart(
+    root: Path,
+    *,
+    reset: bool = False,
+    keep_sources: bool = False,
+    sample: bool = False,
+    timeout: float = 180,
+) -> int:
+    """Retain one command receipt across success, cancellation, failure and interruption."""
+    name = "reset" if reset else "start-quick"
+    write_receipt(root, name, status="running", completed=[])
+    try:
+        return _prepare(
+            root, reset=reset, keep_sources=keep_sources, sample=sample, timeout=timeout
+        )
+    except (Exception, KeyboardInterrupt) as error:
+        write_receipt(
+            root,
+            name,
+            status="interrupted" if isinstance(error, KeyboardInterrupt) else "failed",
+            error=type(error).__name__,
+        )
+        raise
 
 
 def main() -> int:
     """Report setup failures without dumping configuration or provider credentials."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--verbose", "-vv", action="store_true")
+    parser.add_argument("--status", action="store_true")
+    args = parser.parse_args()
+    if args.verbose:
+        os.environ["DOCREVIEW_VERBOSE"] = "1"
+    if args.status:
+        from scripts.stack.fresh import status
+
+        return status(ROOT, "start-quick")
     try:
         return quickstart(ROOT)
     except SetupCancelledError as error:
@@ -372,7 +419,7 @@ def main() -> int:
         print(str(error), file=sys.stderr)
     except OSError, subprocess.CalledProcessError, SQLAlchemyError:
         print(
-            "A local setup command failed. Check Docker/database access and rerun rag-quickstart. "
+            "A local setup command failed. Check Docker/database access and rerun rag-start-quick. "
             "No database was reset.",
             file=sys.stderr,
         )

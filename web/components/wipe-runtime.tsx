@@ -193,7 +193,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
       <div className="wipe-disclosure-body">
         <p>{t("Start over by clearing this local runtime. Source files and credentials are preserved.")}</p>
         <p>{t("After reset, download SEC/DART filings again, ingest them, generate embeddings, rebuild BM25, and configure your answer model in Build.")}</p>
-        <p>{t("For a terminal reset followed by a full rebuild and restart, run rag-fresh-start. Run rag-help for the equivalent corpus commands.")}</p>
+        <p>{t("For a terminal reset followed by a full rebuild and restart, run rag-reset. Run rag-help for the equivalent corpus commands.")}</p>
         <button className="button danger-button" type="button" disabled={!canPreview || busy || checking || Boolean(preview)} onClick={() => void inspect()}>{t("Wipe everything")}</button>
         {!connected && <p>{t("Start the development stack with rag-dev to enable Local Operations.")}</p>}
         {connected && <>

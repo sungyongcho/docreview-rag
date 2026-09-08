@@ -10,6 +10,7 @@ import sys
 
 from scripts.stack.environment import LocalEnvironmentError, load_local_environment
 from scripts.stack.operator import LocalOperator, OperatorLifecycleError
+from scripts.stack.terminal import run_step
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -59,7 +60,7 @@ def compose_command(root: Path, mode: str, arguments: list[str]) -> list[str]:
     ]
 
 
-def run(mode: str, arguments: list[str], *, root: Path = ROOT) -> int:
+def run(mode: str, arguments: list[str], *, root: Path = ROOT, quiet: bool = False) -> int:
     """Coordinate up/down with authenticated Operations, preserving user data."""
     arguments = arguments or ["up", "-d"]
     action = arguments[0]
@@ -84,9 +85,20 @@ def run(mode: str, arguments: list[str], *, root: Path = ROOT) -> int:
             environment.update(operator.environment())
     detached = any(value in {"-d", "--detach"} for value in arguments[1:])
     try:
-        result = subprocess.run(
-            compose_command(root, mode, arguments), cwd=root, env=environment, check=False
-        )
+        if quiet:
+            try:
+                result = run_step(
+                    "Build images and start services",
+                    compose_command(root, mode, arguments),
+                    cwd=root,
+                    env=environment,
+                )
+            except subprocess.CalledProcessError as error:
+                result = subprocess.CompletedProcess(error.cmd, error.returncode)
+        else:
+            result = subprocess.run(
+                compose_command(root, mode, arguments), cwd=root, env=environment, check=False
+            )
     except KeyboardInterrupt:
         if newly_started and detached:
             operator.stop()

@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from scripts.stack import commands as commands
+from scripts.stack import commands as commands, fresh
 
 
 class FakeClient:
@@ -48,7 +48,7 @@ def reset(monkeypatch):
     monkeypatch.setattr(
         "builtins.input", lambda prompt: "yes" if prompt.startswith("Have you") else "WIPE test"
     )
-    monkeypatch.setattr(commands.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(commands, "receipt_path", lambda root, command: root / "receipt.json")
     monkeypatch.setattr(commands, "quickstart", lambda root, **options: builds.append(options) or 0)
     return client, builds
 
@@ -56,56 +56,54 @@ def reset(monkeypatch):
 def test_normal_clean_start_uses_host_scope_without_web_preview(reset, tmp_path):
     """The default command bypasses the broader web preview that produced HTTP 409."""
     client, starts = reset
-    assert commands.fresh_start(tmp_path, sample=True) == 0
+    assert commands.reset(tmp_path, sample=True) == 0
     assert client.calls == []
     assert starts == [{"reset": True, "keep_sources": False, "sample": True, "timeout": 1800}]
 
 
-@pytest.mark.parametrize("answer", ["", "yes", "WIPE another-checkout"])
-def test_wrong_confirmation_never_starts_reset(reset, tmp_path, monkeypatch, answer):
-    """Only the exact web confirmation authorizes destructive execution."""
-    client, builds = reset
-    monkeypatch.setattr(
-        "builtins.input", lambda prompt: "yes" if prompt.startswith("Have you") else answer
-    )
-    assert commands.fresh_start(tmp_path, extreme=True) == 0
-    assert client.calls == [("/wipe/preview", {"extreme": True})]
-    assert builds == []
+def test_wrong_confirmation_never_starts_reset(fresh_io, tmp_path, monkeypatch):
+    """The new host cleaner cancels without submitting a Docker operation."""
+    monkeypatch.setattr("builtins.input", lambda prompt: "yes")
+    assert fresh.start_fresh(tmp_path, extreme=True) == 0
+    fresh_io.assert_not_called()
 
 
 def test_noninteractive_reset_does_not_request_preview(reset, tmp_path, monkeypatch):
-    """Piped input cannot bypass target review."""
+    """Piped input cannot bypass reset target review."""
     client, builds = reset
     monkeypatch.setattr(commands.sys.stdin, "isatty", lambda: False)
     with pytest.raises(commands.RuntimeCommandError, match="interactively"):
-        commands.fresh_start(tmp_path, extreme=True)
+        commands.reset(tmp_path)
     assert not client.calls and not builds
 
 
-def test_expired_preview_does_not_start_reset(reset, tmp_path):
-    """An expired token requires another preview and confirmation."""
-    client, builds = reset
-    client.expired = True
-    with pytest.raises(commands.RuntimeCommandError, match="expired"):
-        commands.fresh_start(tmp_path, extreme=True)
-    assert len(client.calls) == 1 and not builds
+def test_expired_preview_does_not_start_reset(fresh_io, tmp_path, monkeypatch):
+    """A host preview expires before any resource removal is accepted."""
+    times = iter([0, 301])
+    monkeypatch.setattr(fresh.time, "monotonic", lambda: next(times))
+    with pytest.raises(ValueError, match="expired"):
+        fresh.start_fresh(tmp_path, extreme=True)
+    fresh_io.assert_not_called()
 
 
-@pytest.mark.parametrize("status", ["failed", "interrupted", "running"])
-def test_incomplete_reset_never_builds(reset, tmp_path, status):
-    """Failures and wait expiry leave recovery to the existing web controls."""
-    client, builds = reset
-    client.status = status
-    with pytest.raises(commands.RuntimeCommandError):
-        commands.fresh_start(tmp_path, extreme=True, timeout=-1 if status == "running" else 10)
-    assert not builds
+@pytest.mark.parametrize("failure", [RuntimeError, PermissionError])
+def test_incomplete_reset_never_builds(fresh_io, tmp_path, monkeypatch, failure):
+    """Partial cleanup errors never proceed into the bootstrap subprocess."""
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(fresh, "remove_files", Mock(side_effect=failure("fixture failure")))
+    bootstrap = Mock()
+    monkeypatch.setattr(fresh.subprocess, "run", bootstrap)
+    with pytest.raises(failure):
+        fresh.start_fresh(tmp_path)
+    bootstrap.assert_not_called()
 
 
 def test_host_setup_failure_is_not_reported_as_success(reset, tmp_path, monkeypatch):
     """A failed guided setup keeps its failure code and never falls back to web deletion."""
     client, _ = reset
     monkeypatch.setattr(commands, "quickstart", lambda root, **options: 7)
-    assert commands.fresh_start(tmp_path) == 7
+    assert commands.reset(tmp_path) == 7
     assert not client.calls
 
 
@@ -139,22 +137,18 @@ def test_corpus_submits_the_web_job_contract(tmp_path, monkeypatch):
     ]
 
 
-def test_changed_reset_identity_stops_rebuild(reset, tmp_path, monkeypatch):
-    """Do not mistake another terminal's reset for this command's completed operation."""
-    client, builds = reset
-    original = client.request
-
-    def changed(path, body=None):
-        """Replace only the polled operation identity."""
-        result = original(path, body)
-        if path == "/wipe" and body is None:
-            result["id"] = "another-reset"
-        return result
-
-    monkeypatch.setattr(client, "request", changed)
-    with pytest.raises(commands.RuntimeCommandError, match="identity changed"):
-        commands.fresh_start(tmp_path, extreme=True)
-    assert not builds
+def test_changed_reset_identity_stops_rebuild(fresh_io, tmp_path, monkeypatch):
+    """Changed resource IDs invalidate a confirmed preview before deletion."""
+    values = iter(
+        [
+            {"docker": ["docker"], "containers": [], "volumes": [], "images": []},
+            {"docker": ["docker"], "containers": ["new-container"], "volumes": [], "images": []},
+        ]
+    )
+    monkeypatch.setattr(fresh, "docker_inventory", lambda *a, **k: next(values))
+    with pytest.raises(ValueError, match="Preview changed"):
+        fresh.start_fresh(tmp_path)
+    fresh_io.assert_not_called()
 
 
 def test_client_preserves_web_auth_and_does_not_retry_errors(monkeypatch):
@@ -236,55 +230,37 @@ def test_rejection_uses_only_allowlisted_diagnostics(monkeypatch, payload):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("answers", [[""], ["no"], ["yes", ""], ["yes", "no"]])
-def test_extreme_confirmation_cancellation_never_submits(reset, tmp_path, monkeypatch, answers):
-    """Either default-No gate cancels before any wipe request or build."""
-    client, builds = reset
+@pytest.mark.parametrize("answers", [[""], ["no"], ["Y", ""], ["Y", "no"]])
+def test_extreme_confirmation_cancellation_never_submits(fresh_io, tmp_path, monkeypatch, answers):
+    """Either host extreme gate cancels before any mutation."""
     replies = iter(answers)
     monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
-    assert commands.fresh_start(tmp_path, extreme=True) == 0
-    assert client.calls == [("/wipe/preview", {"extreme": True})]
-    assert not builds
+    assert fresh.start_fresh(tmp_path, extreme=True) == 0
+    fresh_io.assert_not_called()
 
 
-def test_extreme_completion_requires_browser_evidence(reset, tmp_path, monkeypatch):
-    """Never claim browser deletion merely because the server returned succeeded."""
-    client, builds = reset
-    client.origin = "http://127.0.0.1:8000"
-    replies = iter(["yes", "WIPE test"])
-    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
-    with pytest.raises(commands.RuntimeCommandError, match="unverified"):
-        commands.fresh_start(tmp_path, extreme=True)
-    assert not builds
+def test_extreme_completion_does_not_claim_browser_deletion(fresh_io, tmp_path, capsys):
+    """Host extreme completion explicitly leaves browser storage to the user."""
+    assert fresh.start_fresh(tmp_path, extreme=True) == 0
+    output = capsys.readouterr().out
+    assert "localStorage is unchanged" in output
+    assert "설정 › 데이터와 도움말" in output
 
 
-def test_extreme_success_reports_scope_without_restart(reset, tmp_path, monkeypatch, capsys):
-    """Browser acknowledgement and completed deletion are required before reporting success."""
-    client, builds = reset
-    client.origin = "http://127.0.0.1:8000"
-    original = client.request
+def test_extreme_success_reports_scope_without_restart(fresh_io, tmp_path, monkeypatch, capsys):
+    """Verified host cleanup ends with a quick-start instruction and no automatic restart."""
+    from unittest.mock import Mock
 
-    def request(path, body=None):
-        """Supply verified completion of the exact operation."""
-        result = original(path, body)
-        if path == "/wipe" and body is None:
-            result.update(browser_cleared=True, browser_origin=client.origin)
-            result["completed"].append("extreme_complete")
-        return result
-
-    monkeypatch.setattr(client, "request", request)
-    replies = iter(["yes", "WIPE test"])
-    monkeypatch.setattr("builtins.input", lambda prompt: next(replies))
-    assert commands.fresh_start(tmp_path, extreme=True) == 0
-    assert not builds
-    assert client.calls[1][1]["backup_confirmed"] is True
-    assert "Browser DocReview data deleted and acknowledged" in capsys.readouterr().out
+    bootstrap = Mock()
+    monkeypatch.setattr(fresh.subprocess, "run", bootstrap)
+    assert fresh.start_fresh(tmp_path, extreme=True) == 0
+    bootstrap.assert_not_called()
+    assert "Run rag-start-quick" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("gate", [1, 2])
-def test_extreme_eof_before_both_gates_never_submits(reset, tmp_path, monkeypatch, gate):
-    """EOF at either gate leaves deletion unsubmitted."""
-    client, builds = reset
+def test_extreme_eof_before_both_gates_never_submits(fresh_io, tmp_path, monkeypatch, gate):
+    """EOF at either host confirmation leaves deletion unsubmitted."""
     count = 0
 
     def answer(prompt):
@@ -293,26 +269,21 @@ def test_extreme_eof_before_both_gates_never_submits(reset, tmp_path, monkeypatc
         count += 1
         if count == gate:
             raise EOFError
-        return "yes"
+        return "Y"
 
     monkeypatch.setattr("builtins.input", answer)
-    with pytest.raises(EOFError):
-        commands.fresh_start(tmp_path, extreme=True)
-    assert client.calls == [("/wipe/preview", {"extreme": True})]
-    assert not builds
+    assert fresh.start_fresh(tmp_path, extreme=True) == 0
+    fresh_io.assert_not_called()
 
 
-def test_extreme_plain_warning_and_noninteractive_guard(reset, tmp_path, monkeypatch, capsys):
-    """Plain output retains the irreversible warning and cannot authorize deletion."""
-    client, builds = reset
+def test_extreme_plain_warning_and_noninteractive_guard(fresh_io, tmp_path, monkeypatch, capsys):
+    """A noninteractive extreme command cannot authorize a host cleanup."""
     monkeypatch.setenv("NO_COLOR", "1")
-    monkeypatch.setattr(commands.sys.stdin, "isatty", lambda: False)
-    with pytest.raises(commands.RuntimeCommandError, match="interactively"):
-        commands.fresh_start(tmp_path, extreme=True)
-    output = capsys.readouterr().out
-    assert "EXTREME RESET: NO BACKUP. IRREVERSIBLE DELETION." in output
-    assert "\033[" not in output
-    assert not client.calls and not builds
+    monkeypatch.setattr(fresh.sys.stdin, "isatty", lambda: False)
+    with pytest.raises(ValueError, match="interactively"):
+        fresh.start_fresh(tmp_path, extreme=True)
+    assert "\033[" not in capsys.readouterr().out
+    fresh_io.assert_not_called()
 
 
 def test_status_is_read_only_without_configuration(reset, tmp_path, capsys):
@@ -351,7 +322,7 @@ def test_host_database_failure_is_reported_without_sql_disclosure(reset, monkeyp
         "SELECT private-sql-marker", {"key": "private-parameter"}, Exception("private-db-detail")
     )
     monkeypatch.setattr(commands, "quickstart", Mock(side_effect=error))
-    monkeypatch.setattr("sys.argv", ["commands", "fresh-start"])
+    monkeypatch.setattr("sys.argv", ["commands", "reset"])
     assert commands.main() == 1
     output = capsys.readouterr()
     for private in ("private-sql-marker", "private-parameter", "private-db-detail"):
@@ -367,10 +338,39 @@ def test_host_interruption_points_to_schema_state_without_claiming_operator_evid
     from unittest.mock import Mock
 
     monkeypatch.setattr(commands, "quickstart", Mock(side_effect=interruption))
-    monkeypatch.setattr("sys.argv", ["commands", "fresh-start"])
+    monkeypatch.setattr("sys.argv", ["commands", "reset"])
     assert commands.main() == 130
     output = capsys.readouterr().err
     assert "data/.schema-recreate-journal" in output
     assert "rag-schema check" in output
-    assert "rag-fresh-start --status" not in output
+    assert "rag-reset --status" not in output
     assert "No automatic retry or restart" in output
+
+
+@pytest.fixture
+def fresh_io(monkeypatch):
+    """Keep orchestration checks isolated; real filesystem guards run in test_fresh."""
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(fresh.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "Y")
+    monkeypatch.setattr(
+        fresh, "inventory", lambda *a, **k: {"files": {}, "directories": [], "revert": []}
+    )
+    monkeypatch.setattr(
+        fresh,
+        "docker_inventory",
+        lambda *a, **k: {"docker": ["docker"], "containers": [], "volumes": [], "images": []},
+    )
+    monkeypatch.setattr(fresh, "write_receipt", lambda *a, **k: None)
+    monkeypatch.setattr(fresh, "LocalOperator", lambda root: Mock())
+    execution = Mock()
+    monkeypatch.setattr(fresh, "run_step", execution)
+    return execution
+
+
+def test_host_receipt_failure_is_not_overridden_by_older_web_success(reset, tmp_path, monkeypatch):
+    """The reset command's own receipt determines its status when older web evidence differs."""
+    (tmp_path / "receipt.json").write_text("{}")
+    monkeypatch.setattr(commands, "fresh_status", lambda root, command: 1)
+    assert commands.reset_status(tmp_path) == 1

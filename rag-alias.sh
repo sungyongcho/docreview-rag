@@ -1,5 +1,36 @@
 #!/usr/bin/env bash
 # DocReview helper protocol: 1
+# Bump this version on every helper change.
+_DOCREVIEW_PREVIOUS_HASH="${DOCREVIEW_HELPER_SHA256:-}"
+_DOCREVIEW_PREVIOUS_VERSION="${DOCREVIEW_ALIAS_VERSION:-}"
+DOCREVIEW_ALIAS_VERSION="2.0.0"
+typeset -ga _DOCREVIEW_COMMAND_NAMES
+typeset -gA _DOCREVIEW_OWNED_FUNCTIONS
+_DOCREVIEW_INSTALL_STATE=install
+# Retire only previously owned registrations absent from this version's public command set.
+for _DOCREVIEW_OLD_NAME in "${_DOCREVIEW_COMMAND_NAMES[@]}"; do
+    [ -n "${_DOCREVIEW_OLD_NAME}" ] || continue
+    case " rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-start-quick rag-start-fresh rag-reset rag-corpus rag-schema rag-help rag-alias-delete " in
+        *" ${_DOCREVIEW_OLD_NAME} "*) ;;
+        *)
+            if [ "$(typeset -f "${_DOCREVIEW_OLD_NAME}")" = "${_DOCREVIEW_OWNED_FUNCTIONS[$_DOCREVIEW_OLD_NAME]-}" ]; then
+                unset -f "${_DOCREVIEW_OLD_NAME}"
+            fi ;;
+    esac
+done
+if [ -n "${_DOCREVIEW_PREVIOUS_VERSION}" ] || typeset -f rag-help >/dev/null 2>&1; then
+    _DOCREVIEW_INSTALL_STATE='already installed'
+    [ "${_DOCREVIEW_PREVIOUS_VERSION}" = "${DOCREVIEW_ALIAS_VERSION}" ] || _DOCREVIEW_INSTALL_STATE='update required'
+    for _DOCREVIEW_NAME in rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-start-quick rag-start-fresh rag-reset rag-corpus rag-schema rag-help rag-alias-delete; do
+        if ! typeset -f "${_DOCREVIEW_NAME}" >/dev/null 2>&1 || [ "$(typeset -f "${_DOCREVIEW_NAME}")" != "${_DOCREVIEW_OWNED_FUNCTIONS[$_DOCREVIEW_NAME]-}" ]; then
+            _DOCREVIEW_INSTALL_STATE='update required'
+        fi
+        if alias "${_DOCREVIEW_NAME}" >/dev/null 2>&1; then
+            _DOCREVIEW_INSTALL_STATE='update required'
+            unalias "${_DOCREVIEW_NAME}"
+        fi
+    done
+fi
 # Source interactively to install and activate; execute for installation and optional login shell.
 _DOCREVIEW_EXECUTED=0
 _DOCREVIEW_FROM_STARTUP=0
@@ -22,8 +53,47 @@ else
     printf '%s\n' 'DocReview aliases require Bash or Zsh.' >&2
     return 1 2>/dev/null || exit 1
 fi
-# Keep helper output readable in every terminal without color or escape sequences.
+# Decorate only a real terminal; redirected and NO_COLOR output stay plain.
+_docreview_color() {
+    [ -t 1 ] && [ -z "${NO_COLOR+x}" ] && [ "${TERM:-}" != dumb ]
+}
+_docreview_heading() {
+    if _docreview_color; then printf '\033[36;1m%s\033[0m\n' "$*"; else printf '%s\n' "$*"; fi
+}
+_docreview_row() {
+    if _docreview_color; then printf '  \033[1m%-52s\033[0m  %s\n' "$1" "$2"; else printf '  %-52s  %s\n' "$1" "$2"; fi
+}
+_docreview_reminder() {
+    if _docreview_color; then printf '\033[1mremember to type rag-help\033[0m\n'; else printf '%s\n' 'remember to type rag-help'; fi
+}
+# Filter the same optional verbosity flag for every public helper command.
+_docreview_options() {
+    _DOCREVIEW_ARGS=()
+    local _option
+    for _option in "$@"; do
+        case "${_option}" in
+            --verbose|-vv) DOCREVIEW_VERBOSE=1 ;;
+            *) _DOCREVIEW_ARGS+=("${_option}") ;;
+        esac
+    done
+    export DOCREVIEW_VERBOSE
+}
+_docreview_runtime() {
+    if _docreview_color; then
+        env -u FORCE_COLOR PYTHON_COLORS=1 "$@"
+    else
+        env -u FORCE_COLOR NO_COLOR=1 PYTHON_COLORS=0 "$@"
+    fi
+}
+# Keep helper output readable in every terminal.
 _docreview_line() {
+    if _docreview_color; then
+        case "$*" in
+            '    No backup.'*|'    Deletes ORM data/sources;'*|'    Preserves .env'*)
+                printf '\033[33m%s\033[0m\n' "$*"; return ;;
+            '    '*) printf '\033[2m%s\033[0m\n' "$*"; return ;;
+        esac
+    fi
     printf '%s\n' "$*"
 }
 
@@ -181,7 +251,7 @@ _docreview_uninstall() {
     else
         # Preserve any command the user replaced after registration.
         local name
-        for name in rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-fresh-start rag-corpus rag-schema rag-quickstart rag-help rag-alias-delete; do
+        for name in rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-reset rag-corpus rag-schema rag-start-quick rag-start-fresh rag-help rag-alias-delete; do
             if [ "$(typeset -f "$name")" = "${_DOCREVIEW_OWNED_FUNCTIONS[$name]}" ]; then
                 unset -f "$name"
             fi
@@ -256,6 +326,7 @@ _docreview_offer_login() {
         *) printf '%s\n' 'Login shell not started; current session preserved.'; return 0 ;;
     esac
     _login_shell="$(command -v "${_DOCREVIEW_PARENT_SHELL}")" || return 1
+    _docreview_reminder
     exec "${_login_shell}" -l
 }
 
@@ -303,7 +374,7 @@ _docreview_install() {
     fi
     _docreview_line "[SETUP] Install DocReview helper for ${_DOCREVIEW_PARENT_SHELL}"
     printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
-    printf '%s\n' 'Registers rag-help and the helper commands; run rag-quickstart separately for application setup.'
+    printf '%s\n' 'Registers rag-help and the helper commands; run rag-start-quick separately for application setup.'
     printf 'Install this checkout registration? [y/N] '
     IFS= read -r _DOCREVIEW_ANSWER || _DOCREVIEW_ANSWER=n
     case "${_DOCREVIEW_ANSWER}" in
@@ -422,6 +493,10 @@ _docreview_update() {
 }
 
 rag-alias() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
     case "${1:-}" in
         update|--check-updates)
             [ "$#" -le 2 ] || { printf '%s\n' 'Usage: rag-alias update [PATH]' >&2; return 2; }
@@ -436,6 +511,10 @@ rag-alias() {
 
 # Remove only this checkout's registration and unchanged owned commands.
 rag-alias-delete() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
     if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
         printf '%s\n' 'Usage: rag-alias-delete' 'Confirm removal of this checkout registration; keep project files.'
     else
@@ -444,8 +523,12 @@ rag-alias-delete() {
 }
 
 rag-up() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
     if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-        printf '%s\n' 'Usage: rag-up [COMPOSE_UP_ARGS...]' 'Build/start DEV and prepare an empty DB; existing data is never reset.' 'Requires Python setup from rag-quickstart or uv sync --locked.'
+        printf '%s\n' 'Usage: rag-up [COMPOSE_UP_ARGS...]' 'Build/start DEV and prepare an empty DB; existing data is never reset.' 'Requires Python setup from rag-start-quick or uv sync --locked.'
     else
         rag-dev up --build -d "$@"
     fi
@@ -453,12 +536,16 @@ rag-up() {
 # Run the selected module in the checkout that registered these commands.
 _docreview_python() {
     if [ ! -x "${_DOCREVIEW_ROOT}/.venv/bin/python" ]; then
-        printf '%s\n' '[FAIL] Project Python is missing. Run rag-quickstart or uv sync --locked first.' >&2
+        printf '%s\n' '[FAIL] Project Python is missing. Run rag-start-quick or uv sync --locked first.' >&2
         return 2
     fi
-    (cd "${_DOCREVIEW_ROOT}" && env -u FORCE_COLOR NO_COLOR=1 PYTHON_COLORS=0 .venv/bin/python -m "$@")
+    (cd "${_DOCREVIEW_ROOT}" && _docreview_runtime .venv/bin/python -m "$@")
 }
 rag-dev() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
     if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
         printf '%s\n' 'Usage: rag-dev [COMPOSE_ARGS...]' 'Manage the development stack; default: up -d.' 'Examples: rag-dev ps; rag-dev logs -f app; rag-dev down.'
     else
@@ -466,57 +553,96 @@ rag-dev() {
     fi
 }
 rag-prod() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
     if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
         printf '%s\n' 'Usage: rag-prod [COMPOSE_ARGS...]' 'Manage the local public preview; default: up -d.' 'Examples: rag-prod ps; rag-prod logs -f web; rag-prod down.'
     else
         _docreview_python scripts.stack prod "$@"
     fi
 }
-rag-ollama-check() { _docreview_python scripts.diagnostics.ollama "$@"; }
-rag-quickstart() { env -u FORCE_COLOR NO_COLOR=1 PYTHON_COLORS=0 bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "$@"; }
-rag-fresh-start() { _docreview_python scripts.stack.commands fresh-start "$@"; }
-rag-corpus() { _docreview_python scripts.stack.commands corpus "$@"; }
-rag-schema() { _docreview_python scripts.schema "$@"; }
+rag-ollama-check() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+ _docreview_python scripts.diagnostics.ollama "$@"; }
+rag-start-quick() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+ _docreview_runtime bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "$@"; }
+rag-start-fresh() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
+    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+        printf '%s\n' 'Usage: rag-start-fresh [--extreme] [--no-start] [--discard-tracked] [--status] [--verbose|-vv]' \
+            'Preview and clean this checkout, preserving .env and local tool settings; then run quick setup.' \
+            'Only uppercase Y confirms (Y/n); --extreme asks twice, removes .env and Ollama models, and stops.'
+    else
+        local _fresh_python
+        _fresh_python="$(uv python find --no-python-downloads 3.14)" || {
+            printf '%s\n' 'Python 3.14 is required. Run uv python install 3.14, then rag-start-fresh. Nothing changed.' >&2
+            return 2
+        }
+        (cd "${_DOCREVIEW_ROOT}" && _docreview_runtime "${_fresh_python}" -m scripts.stack.fresh "$@")
+    fi
+}
+rag-reset() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+ _docreview_python scripts.stack.commands reset "$@"; }
+rag-corpus() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+ _docreview_python scripts.stack.commands corpus "$@"; }
+rag-schema() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+ _docreview_python scripts.schema "$@"; }
 rag-help() {
+    local -a _DOCREVIEW_ARGS
+    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
+    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+
     _docreview_banner
-    _docreview_line '[QUICK START]'
-    printf '  %-62s  %s\n' 'rag-quickstart' 'Prepare first run'
-    printf '%s\n' '  Then open the printed URL. Acquire, parse/chunk, embeddings, compute BM25.' ''
-    _docreview_line '[STACK]'
-    printf '  %-62s  %s\n' \
-        'rag-up [COMPOSE_UP_ARGS...]' 'Build DEV stack' \
-        'rag-dev [COMPOSE_ARGS...]' 'Manage DEV stack' \
-        'rag-prod [COMPOSE_ARGS...]' 'Manage public preview'
-    printf '\n'
-    _docreview_line '[DATA AND DIAGNOSTICS]'
-    printf '  %-62s  %s\n' \
-        'rag-ollama-check [--setup|--details|--web-url URL]' 'Check model connection' \
-        'rag-schema check|prepare' 'Inspect local schema' \
-        'rag-corpus status|inspect|readiness|acquire_edgar|acquire_dart|ingest_manifest|backfill_embeddings|rebuild_bm25' 'Manage corpus jobs'
-    printf '%s\n' '  Example: rag-corpus acquire_edgar --identifier NVDA --year 2024' \
-        '  ingest_manifest only parses/chunks; run backfill_embeddings and rebuild_bm25 separately.' ''
-    _docreview_line '[RESET]'
-    printf '  %-62s  %s\n' \
-        'rag-schema recover [--parent DIR]' 'Recover separate stack' \
-        'rag-schema recreate [--keep-sources|--sample]' 'Reset local data' \
-        'rag-fresh-start [--keep-sources|--sample|--status|--extreme]' 'Reset project runtime'
-    _docreview_line 'WARNING ordinary reset: deletes ORM data and sources; preserves .env, exports, settings and DB volume; typed confirmation required.'
-    _docreview_line 'Reset preflight checks host write access; legacy container-owned paths need the printed sudo repair. After failure: rag-dev up -d.'
-    _docreview_line 'WARNING extreme reset: also deletes previewed config, caches and acknowledged browser data; two confirmations, no restart.'
-    _docreview_line 'WARNING schema recreate: deletes ORM data and sources; --keep-sources preserves sources, --sample presets the sample selection.'
-    printf '\n'
-    _docreview_line '[HELP]'
-    printf '  %-62s  %s\n' \
-        'rag-help' 'Show command summary' \
-        'rag-alias update [PATH]' 'Refresh loaded helper' \
-        'rag-alias-delete' 'Remove helper registration'
-    printf '\n'
+    _docreview_line 'Every command accepts --verbose (-vv). 모든 명령에 --verbose (-vv)를 붙일 수 있습니다'
+    _docreview_heading '[QUICK START]'
+    _docreview_row 'rag-start-quick' 'Prepare first run'
+    _docreview_line '    Cloned and unsure what to do? Run rag-start-quick.'
+    _docreview_row 'rag-start-fresh [--no-start|--extreme]' 'Clean checkout and start'
+    _docreview_line '    Preserves .env and Ollama models; --extreme deletes both, then stops.'
+    _docreview_line '    Then open the printed URL. Acquire, parse/chunk, embeddings, compute BM25.'
+    _docreview_heading '[STACK]'
+    _docreview_row 'rag-up [COMPOSE_UP_ARGS...]' 'Build DEV stack'
+    _docreview_row 'rag-dev [COMPOSE_ARGS...]' 'Manage DEV stack'
+    _docreview_row 'rag-prod [COMPOSE_ARGS...]' 'Manage public preview'
+    _docreview_heading '[DATA AND DIAGNOSTICS]'
+    _docreview_row 'rag-ollama-check [--setup|--details|--web-url URL]' 'Check model connection'
+    _docreview_row 'rag-schema check|prepare|recover' 'Inspect/recover local schema'
+    _docreview_row 'rag-corpus KIND [OPTIONS...]' 'Manage corpus jobs'
+    _docreview_line '    Example: rag-corpus acquire_edgar --identifier NVDA --year 2024'
+    _docreview_heading '[RESET]'
+    _docreview_row 'rag-reset [--keep-sources|--sample|--status]' 'Reset data and rebuild'
+    _docreview_line '    Deletes ORM data/sources; preserves .env, settings, exports and volumes.'
+    _docreview_row 'rag-schema recreate [--keep-sources|--sample]' 'Reset data; stay stopped'
+    _docreview_line '    No backup. Review preview; only uppercase Y confirms (Y/n).'
+    _docreview_heading '[HELP]'
+    _docreview_row 'rag-help' 'Show command summary'
+    _docreview_row 'rag-alias update [PATH]' 'Refresh loaded helper'
+    _docreview_row 'rag-alias-delete' 'Remove helper registration'
     _docreview_line 'Every command accepts --help for options and examples.'
     _docreview_line "Checkout: ${_DOCREVIEW_ROOT}"
 }
 
 typeset -ga _DOCREVIEW_COMMAND_NAMES
-_DOCREVIEW_COMMAND_NAMES=(rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-fresh-start rag-corpus rag-schema rag-quickstart rag-help rag-alias-delete)
+_DOCREVIEW_COMMAND_NAMES=(rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-reset rag-corpus rag-schema rag-start-quick rag-start-fresh rag-help rag-alias-delete)
 typeset -gA _DOCREVIEW_OWNED_FUNCTIONS
 _DOCREVIEW_OWNED_FUNCTIONS=()
 for _DOCREVIEW_COMMAND in "${_DOCREVIEW_COMMAND_NAMES[@]}"; do
@@ -531,8 +657,11 @@ export DOCREVIEW_HELPER_PATH="${_DOCREVIEW_ROOT}/${_DOCREVIEW_ALIAS_FILE##*/}"
 DOCREVIEW_HELPER_SHA256="$(_docreview_hash "${DOCREVIEW_HELPER_PATH}")" || { return 1 2>/dev/null || exit 1; }
 export DOCREVIEW_HELPER_SHA256
 
-_docreview_banner
+if [ "${_DOCREVIEW_INSTALL_STATE}" = 'already installed' ] && [ "${_DOCREVIEW_PREVIOUS_HASH:-${DOCREVIEW_HELPER_SHA256}}" != "${DOCREVIEW_HELPER_SHA256}" ]; then
+    _DOCREVIEW_INSTALL_STATE='update required'
+fi
 if [ "${_DOCREVIEW_EXECUTED}" = 1 ]; then
+    _docreview_banner
     case "${1:-}" in
         --delete|--uninstall) _docreview_uninstall; exit $? ;;
         --help|-h) _docreview_activation; exit 0 ;;
@@ -543,10 +672,20 @@ if [ "${_DOCREVIEW_EXECUTED}" = 1 ]; then
     if [ "${_DOCREVIEW_INSTALL_READY}" = 1 ]; then _docreview_offer_login; fi
     exit $?
 fi
-if [ "${_DOCREVIEW_INTERACTIVE}" = 1 ] && [ "${_DOCREVIEW_FROM_STARTUP}" = 0 ] && [ "${_DOCREVIEW_RELOADING:-0}" != 1 ] && [ "${DOCREVIEW_VERIFY_ONLY:-0}" != 1 ] && [ -t 0 ] && [ -t 1 ]; then
-    _docreview_install || return $?
+if [ "${_DOCREVIEW_RELOADING:-0}" != 1 ] && [ "${DOCREVIEW_VERIFY_ONLY:-0}" != 1 ] && [ "${_DOCREVIEW_FROM_STARTUP}" = 0 ]; then
+    if [ "${_DOCREVIEW_INSTALL_STATE}" = install ]; then
+        if [ "${_DOCREVIEW_INTERACTIVE}" = 1 ] && [ -t 0 ] && [ -t 1 ]; then
+            _docreview_install || return $?
+            if [ "${_DOCREVIEW_INSTALL_READY}" = 1 ]; then
+                _docreview_reminder
+                exec "$(command -v "${_DOCREVIEW_PARENT_SHELL}")" -l
+            fi
+        else
+            _docreview_line '[install] DocReview commands registered in this shell.'
+            _docreview_reminder
+        fi
+    else
+        _docreview_line "[${_DOCREVIEW_INSTALL_STATE}]"
+    fi
 fi
-_docreview_line '[OK] DocReview commands registered and verified in this shell.'
-_docreview_line "Checkout: ${_DOCREVIEW_ROOT}"
-_docreview_line 'Run rag-help for help; rag-alias update refreshes this loaded helper.'
 unset _DOCREVIEW_EXECUTED _DOCREVIEW_ALIAS_FILE _DOCREVIEW_FROM_STARTUP _DOCREVIEW_INTERACTIVE

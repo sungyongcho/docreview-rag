@@ -75,7 +75,7 @@ def test_command_preserves_sources_on_database_failure(tmp_path, monkeypatch, ke
     monkeypatch.setattr(
         recreate, "recreate", AsyncMock(side_effect=[{}, ValueError("fixture failure")])
     )
-    phrase = f"RECREATE {tmp_path.name}" + ("" if keep_sources else " AND SOURCES")
+    phrase = "Y"
     monkeypatch.setattr("builtins.input", lambda _: phrase)
     with pytest.raises(ValueError, match="fixture failure"):
         recreate.run(tmp_path, keep_sources=keep_sources)
@@ -92,7 +92,7 @@ def test_cleanup_failure_reports_database_commit_and_retains_journal(
     monkeypatch.setattr(recreate.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(recreate, "local_target", lambda root: (target, {}))
     monkeypatch.setattr(recreate, "recreate", AsyncMock(return_value={}))
-    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    monkeypatch.setattr("builtins.input", lambda _: "Y")
     import scripts.schema.sources as reset_module
 
     def refuse_cleanup(path):
@@ -140,7 +140,7 @@ def test_uncertain_database_outcome_retains_durable_recovery_evidence(
     monkeypatch.setattr(
         recreate, "recreate", AsyncMock(side_effect=[{}, SQLAlchemyError("connection lost")])
     )
-    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    monkeypatch.setattr("builtins.input", lambda _: "Y")
     with pytest.raises(SQLAlchemyError):
         recreate.run(tmp_path)
     output = capsys.readouterr().err
@@ -239,7 +239,7 @@ def test_failed_source_rollback_preserves_journal_and_reports_unconfirmed_recove
     monkeypatch.setattr(
         recreate, "recreate", AsyncMock(side_effect=[{}, ValueError("rollback DB")])
     )
-    monkeypatch.setattr("builtins.input", lambda _: f"RECREATE {tmp_path.name} AND SOURCES")
+    monkeypatch.setattr("builtins.input", lambda _: "Y")
 
     def fail_restore(self, **options):
         """Model a filesystem error while leaving the real staging journal intact."""

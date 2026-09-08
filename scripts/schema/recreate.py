@@ -256,8 +256,7 @@ def run(
         else "The local API will stop after confirmation and is not restarted automatically."
     )
     expires = time.monotonic() + 300
-    phrase = f"RECREATE {root.name}" if keep_sources else f"RECREATE {root.name} AND SOURCES"
-    if input(f"Type {phrase} to confirm this entire irreversible preview (default No): ") != phrase:
+    if not confirm("Confirm this entire irreversible preview?"):
         print("Cancelled; nothing changed.")
         return "cancelled"
     if time.monotonic() >= expires:

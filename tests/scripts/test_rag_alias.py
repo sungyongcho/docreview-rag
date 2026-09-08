@@ -106,14 +106,17 @@ def test_banner_needs_only_standard_tools(shell, tmp_path):
 
 
 @pytest.mark.parametrize("environment", [{}, {"NO_COLOR": ""}, {"TERM": "dumb"}])
-def test_help_is_always_escape_free(shell, environment):
-    """The complete menu stays plain even on a color-capable TTY without an opt-out."""
+def test_help_color_policy_and_alignment(shell, environment):
+    """TTY help uses aligned bold columns; NO_COLOR and dumb terminals stay plain."""
     args = [shell, "--noprofile", "--norc"] if Path(shell).name == "bash" else [shell, "-f"]
+    settings = {**os.environ, "TERM": "xterm-256color", "COLUMNS": "80"}
+    settings.pop("NO_COLOR", None)
+    settings.update(environment)
     master, slave = pty.openpty()
     try:
         subprocess.run(
             [*args, "-c", 'source "$1" >/dev/null; rag-help', "test", str(SCRIPT)],
-            env={**os.environ, "TERM": "xterm-256color", "COLUMNS": "80", **environment},
+            env=settings,
             stdin=subprocess.DEVNULL,
             stdout=slave,
             stderr=subprocess.PIPE,
@@ -121,14 +124,20 @@ def test_help_is_always_escape_free(shell, environment):
         )
         output = os.read(master, 4096).decode()
         assert "DocReview RAG v2" in output
-        assert "\x1b" not in output
+        if environment:
+            assert "\x1b" not in output
+        else:
+            assert "\x1b[1m" in output and "\x1b[36;1m[QUICK START]" in output
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
+        rows = [line for line in plain.splitlines() if line.startswith("  rag-")]
+        assert len({re.search(r"\S.*?\s{2,}(\S)", line).start(1) for line in rows}) == 1
     finally:
         os.close(slave)
         os.close(master)
 
 
-def test_python_help_is_escape_free_on_a_forced_color_tty(shell, tmp_path):
-    """Argparse help stays plain without changing the calling shell or invoking services."""
+def test_python_help_matches_color_policy_without_mutating_parent(shell, tmp_path):
+    """TTY argparse help uses color without changing the parent shell or invoking services."""
     helper, _legacy, _startup, settings = helper_checkout(tmp_path, shell)
     (helper.parent / ".venv").symlink_to(sys.prefix, target_is_directory=True)
     (helper.parent / ".env").write_text("DB_PORT=1\n")
@@ -172,7 +181,7 @@ def test_python_help_is_escape_free_on_a_forced_color_tty(shell, tmp_path):
         output = os.read(master, 8192).decode()
         assert "usage:" in output.lower()
         assert "{check,prepare,recover,recreate}" in output
-        assert "\x1b" not in output
+        assert "\x1b" in output
         assert not called.exists()
     finally:
         os.close(slave)
@@ -212,7 +221,7 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
         "alias rag-prod-up='printf foreign-alias'; "
         "rag-alias-delete; rag-dev; alias rag-prod-up; "
         "if typeset -f rag-help >/dev/null; then exit 7; fi; "
-        "if typeset -f rag-fresh-start >/dev/null; then exit 8; fi; "
+        "if typeset -f rag-reset >/dev/null; then exit 8; fi; "
         "if typeset -f rag-corpus >/dev/null; then exit 9; fi",
         env={"TEST_STARTUP": str(startup)},
         input="y\n",
@@ -226,18 +235,19 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
 
 
 def test_fresh_start_help_and_registration(shell):
-    """Both shells advertise the warning and register reset and corpus wrappers."""
+    """Both shells expose separate quick/fresh/reset commands and indented safety notes."""
     result = run_shell(
-        shell, 'source "$1" >/dev/null; typeset -f rag-fresh-start; typeset -f rag-corpus; rag-help'
+        shell,
+        'source "$1" >/dev/null; typeset -f rag-reset; typeset -f rag-start-fresh; '
+        "typeset -f rag-corpus; rag-help",
     )
-    assert "scripts.stack.commands fresh-start" in result.stdout
+    assert "scripts.stack.commands reset" in result.stdout
+    assert "scripts.stack.fresh" in result.stdout
     assert "scripts.stack.commands corpus" in result.stdout
-    assert "rag-fresh-start [--keep-sources|--sample|--status|--extreme]" in result.stdout
-    assert "WARNING ordinary reset: deletes ORM data and sources" in result.stdout
-    assert "Reset preflight checks host write access" in result.stdout
-    assert "After failure: rag-dev up -d" in result.stdout
-    assert "WARNING extreme reset: also deletes" in result.stdout
-    assert "preserves .env, exports, settings and DB volume" in result.stdout
+    assert "rag-reset [--keep-sources|--sample|--status]" in result.stdout
+    assert "    Deletes ORM data/sources; preserves .env" in result.stdout
+    assert "only uppercase Y confirms (Y/n)" in result.stdout
+    assert "[STACK]" in result.stdout
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -364,7 +374,7 @@ def test_help_lists_unique_commands_with_compact_descriptions(shell):
         invocations.append(invocation)
         assert 1 <= len(description.split()) <= 4, row
     assert len(invocations) == len(set(invocations))
-    assert commands.count("rag-schema") == 3
+    assert commands.count("rag-schema") == 2
     assert "rag-schema" in commands
     assert "rag-ollama-check" in commands
     assert "--help" not in "\n".join(rows)
@@ -441,16 +451,17 @@ def test_quickstart_is_first_and_reset_commands_have_their_own_block(shell):
     menu = run_shell(shell, 'source "$1" >/dev/null; rag-help').stdout
     quick = menu.split("[QUICK START]", 1)[1].split("[STACK]", 1)[0]
     assert [line.split()[0] for line in quick.splitlines() if line.startswith("  rag-")] == [
-        "rag-quickstart"
+        "rag-start-quick",
+        "rag-start-fresh",
     ]
     assert "Then open the printed URL." in quick
     reset = menu.split("[RESET]", 1)[1].split("[HELP]", 1)[0]
-    assert "rag-schema recover" in reset
+    assert "rag-schema check|prepare|recover" in menu
     assert "rag-schema recreate" in reset
-    assert "rag-fresh-start" in reset
-    assert "WARNING ordinary reset:" in reset
-    assert "WARNING extreme reset:" in reset
-    assert "WARNING schema recreate:" in reset
+    assert "rag-reset" in reset
+    assert "    Deletes ORM data/sources" in reset
+    assert "--extreme deletes both" in quick
+    assert "    No backup." in reset
     assert 10 <= sum(line.startswith("  rag-") for line in menu.splitlines()) <= 15
 
 
@@ -740,14 +751,19 @@ def test_interactive_source_activates_immediately_and_persists_only_with_consent
     startup.write_text(original)
     result = run_lifecycle_tty(
         shell,
-        'source "$HELPER"; typeset -f rag-alias >/dev/null; rag-up --help',
+        'exec() { printf "RESTART:%s\\n" "$*"; }; source "$HELPER"; '
+        "typeset -f rag-alias >/dev/null; rag-up --help",
         environment,
         answers=answer,
     )
     assert result.returncode == 0, result.stdout
     assert "fixture-version-one" in result.stdout
     assert "[y/N]" in result.stdout
-    assert "\x1b" not in result.stdout
+    if installed:
+        assert "remember to type rag-help" in result.stdout
+        assert "RESTART:" in result.stdout
+        if "NO_COLOR" not in os.environ:
+            assert "\x1b[1mremember to type rag-help" in result.stdout
     if installed:
         assert startup.read_text().count(str(helper)) == 1
         backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
@@ -962,3 +978,51 @@ def test_unchanged_update_deduplicates_owned_lines_in_place(shell, tmp_path):
     backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
     assert len(backups) == 1 and backups[0].read_text() == original
     assert not legacy.exists()
+
+
+@pytest.mark.parametrize("change", ["none", "function", "alias", "missing", "version"])
+def test_source_detects_registered_definition_and_version_states(shell, change):
+    """Re-sourcing refreshes stale/custom commands and reports precisely one install state."""
+    mutation = {
+        "none": "",
+        "function": "rag-up() { echo custom; };",
+        "alias": "alias rag-up='echo custom';",
+        "missing": "unset -f rag-up;",
+        "version": "DOCREVIEW_ALIAS_VERSION=0.0.0;",
+    }[change]
+    result = run_shell(
+        shell, 'source "$1" >/dev/null; ' + mutation + ' source "$1"; typeset -f rag-up >/dev/null'
+    )
+    expected = "[already installed]" if change == "none" else "[update required]"
+    assert result.stdout.strip() == expected
+
+
+def test_version_bumped_and_all_commands_accept_verbose_help(shell):
+    """The helper embeds a newer protocol version and filters both verbosity spellings."""
+    current = re.search(
+        r'^DOCREVIEW_ALIAS_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"', SCRIPT.read_text(), re.M
+    )
+    assert current
+    old = subprocess.check_output(["git", "show", "HEAD:rag-alias.sh"], cwd=ROOT, text=True)
+    previous = re.search(r'^DOCREVIEW_ALIAS_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"', old, re.M)
+    if previous and old != SCRIPT.read_text():
+        assert tuple(map(int, current[1].split("."))) > tuple(map(int, previous[1].split(".")))
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; rag-help --verbose; rag-help -vv; '
+        "rag-alias --verbose --help; rag-alias -vv --help",
+    )
+    assert result.stdout.count("Every command accepts --verbose (-vv)") == 2
+    assert result.stderr == ""
+
+
+def test_source_retires_previous_owned_command_names(shell):
+    """Renaming a registered public helper never leaves the old owned entry callable."""
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; rag-obsolete() { echo old; }; '
+        "_DOCREVIEW_COMMAND_NAMES+=(rag-obsolete); "
+        '_DOCREVIEW_OWNED_FUNCTIONS[rag-obsolete]="$(typeset -f rag-obsolete)"; '
+        'source "$1"; if typeset -f rag-obsolete >/dev/null; then exit 7; fi',
+    )
+    assert result.stderr == ""
