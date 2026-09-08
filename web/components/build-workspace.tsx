@@ -53,6 +53,7 @@ export interface BuildWorkspaceProps {
   live: boolean;
   ready: boolean;
   readiness: Readiness | null;
+  localModel?: string | null;
   healthKind: RuntimeHealthKind;
   /** Retained readiness is unconfirmed while a failed connection check retries. */
   connectionPending?: boolean;
@@ -98,7 +99,7 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -396,6 +397,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         manifests={manifests}
         answerModel={answerModelLabel}
         readiness={connectionConfirmed ? readiness : null}
+        localModel={localModel}
         onOpenLocalSettings={onOpenLocalSettings}
         onCancelJob={onCancelJob}
         operationsAvailable={operationsAvailable}
