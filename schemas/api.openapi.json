@@ -12,6 +12,19 @@
             "title": "Identifiers",
             "type": "array"
           },
+          "pairs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionPairResource"
+            },
+            "title": "Pairs",
+            "type": "array"
+          },
+          "revision": {
+            "default": "default-v1",
+            "title": "Revision",
+            "type": "string"
+          },
           "years": {
             "items": {
               "type": "integer"
@@ -25,6 +38,35 @@
           "years"
         ],
         "title": "AcquisitionDraftResource",
+        "type": "object"
+      },
+      "AcquisitionPairResource": {
+        "additionalProperties": false,
+        "description": "Preserve an exact intended filing without a mixed-registry cross product.",
+        "properties": {
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "registry": {
+            "enum": [
+              "sec",
+              "dart"
+            ],
+            "title": "Registry",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registry",
+          "issuer",
+          "year"
+        ],
+        "title": "AcquisitionPairResource",
         "type": "object"
       },
       "AdminDocumentResource": {
@@ -893,6 +935,14 @@
         "additionalProperties": false,
         "description": "Atomic typed preparation state with explicit source selections.",
         "properties": {
+          "acquisition_companies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManifestIssuerResource"
+            },
+            "title": "Acquisition Companies",
+            "type": "array"
+          },
           "acquisition_draft": {
             "anyOf": [
               {
@@ -6144,6 +6194,17 @@
         "additionalProperties": false,
         "description": "Downloaded source identity independent of database rows.",
         "properties": {
+          "blocker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocker"
+          },
           "document_id": {
             "title": "Document Id",
             "type": "string"
@@ -6166,6 +6227,11 @@
           },
           "on_disk": {
             "title": "On Disk",
+            "type": "boolean"
+          },
+          "ready": {
+            "default": false,
+            "title": "Ready",
             "type": "boolean"
           },
           "registry": {

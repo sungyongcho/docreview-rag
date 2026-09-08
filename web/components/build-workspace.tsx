@@ -24,7 +24,7 @@ import {
 import { CANNED_CORPUS, CANNED_JOB } from "@/lib/canned";
 import { deploymentLabel } from "@/lib/deployment";
 import { derivePipeline } from "@/lib/pipeline";
-import { acquisitionBatches, acquisitionDraft, selectedSourceState } from "@/lib/source-selection";
+import { acquisitionBatches, acquisitionDraft, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState } from "@/lib/source-selection";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type {
   CorpusDocument,
@@ -107,13 +107,12 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
   const connectionConfirmed = healthKind !== "checking" && healthKind !== "api_down" && !connectionPending;
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
   // Fixtures seed only the public build; a live build waits for the administrator API.
-  const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS, sources: [] }));
+  const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS, sources: [], acquisition_companies: [] }));
   /** True once `/admin/corpus` replaced the portfolio fixture. */
   const [adminLoaded, setAdminLoaded] = useState(false);
   const [registryCounts, setRegistryCounts] = useState<Record<string, number>>({});
   const [jobs, setJobs] = useState<EvaluationJob[]>(() => (live ? [] : [CANNED_JOB]));
   const [snapshotCount, setSnapshotCount] = useState(0);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const completedJobs = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [historyWarning, setHistoryWarning] = useState("");
@@ -122,21 +121,23 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
   const [duplicateEvaluation, setDuplicateEvaluation] = useState(false);
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
-  const draftInitialized = useRef(false);
-  const draftDirty = useRef(false);
+  const draftRevision = useRef<string | null>(null);
   const serverDraft = useMemo<AcquisitionForm>(() => {
-    const present = (corpus?.sources ?? []).filter((row) => row.on_disk);
     const draft = corpus?.acquisition_draft;
-    if (present.length) return acquisitionDraft(present.map((row) => ({ registry: row.registry, issuer: row.issuer, year: row.fiscal_year })));
-    return draft ? { identifiers: draft.identifiers.join(" "), years: draft.years.join(" ") } : acquisitionDraft([]);
+    return draft ? acquisitionDraft(draft.pairs ?? []) : acquisitionDraft([]);
   }, [corpus]);
+  const revision = corpus?.acquisition_draft?.revision ?? "default-v1";
   useEffect(() => {
-    if (!corpus) return;
-    if (!draftInitialized.current || !draftDirty.current) {
-      setAcquisition(serverDraft);
-      draftInitialized.current = true;
-    }
-  }, [corpus, serverDraft]);
+    if (!corpus || (live && !adminLoaded) || draftRevision.current === revision) return;
+    setAcquisition(loadAcquisitionDraft(revision) ?? serverDraft);
+    draftRevision.current = revision;
+  }, [corpus, adminLoaded, live, revision, serverDraft]);
+
+  /** Persist the exact edited pairs without treating a later inventory refresh as a new selection. */
+  function changeAcquisition(next: AcquisitionForm) {
+    setAcquisition(next);
+    saveAcquisitionDraft(revision, next);
+  }
 
   useEffect(() => {
     setExperimentDefaults(loadExperimentDefaults());
@@ -226,7 +227,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
   async function ingestAllManifests() {
     if (!live) return;
     const selection = selectedSourceState(corpus?.sources ?? [], acquisition);
-    if (!selection.complete) { notify(t("Download missing sources in Filings first."), "warning", "corpus-operation"); return; }
+    if (!selection.complete) { notify(selection.blocked[0]?.blocker ?? t("Download missing sources in Filings first."), "warning", "corpus-operation"); return; }
     const ordered = acquisitionBatches(selection.pairs);
     if (!ordered.length) { notify(t("Select processing sources first."), "warning", "corpus-operation"); return; }
     setBusy(true);
@@ -243,22 +244,6 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     } finally {
       setBusy(false);
     }
-  }
-
-  /** Preserve explicit Advanced selection batching independently of the Filings draft. */
-  async function ingestAdvanced() {
-    if (!live) return;
-    setBusy(true);
-    try {
-      for (const manifest of manifests.filter((row) => row.valid)) {
-        for (const selection of manifest.selections.filter((row) => selectedSources.includes(`${manifest.name}:${row.selection_id}`))) {
-          await queueCorpusOperation({ kind: "ingest_manifest", manifest: manifest.name, selection_id: selection.selection_id, identifiers: [], years: [] });
-          onRefreshJobs();
-        }
-      }
-    } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
-    } finally { setBusy(false); }
   }
 
   /** Queue only missing pairs from the exact draft submitted by the picker. */
@@ -331,8 +316,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     if (!live) return CANNED_CORPUS.documents;
     return corpus?.documents ?? [];
   }, [live, corpus]);
-  const referenceCompanies = manifests.flatMap((manifest) => manifest.issuers ?? []);
-  const selectedDocumentCount = new Set(manifests.flatMap((manifest) => manifest.selections.filter((selection) => selectedSources.includes(`${manifest.name}:${selection.selection_id}`)).flatMap((selection) => selection.document_ids))).size;
+  const referenceCompanies = corpus?.acquisition_companies ?? [];
   const evaluationResults = jobs.filter((job) => job.status === "succeeded" && job.result_id !== null).length;
   const pipeline = useMemo(() => derivePipeline({
     live,
@@ -407,13 +391,9 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         evaluationBlockedReason={evaluationBlockedReason}
         acquisition={acquisition}
         companies={referenceCompanies}
-        onAcquisitionChange={(next) => { draftDirty.current = true; setAcquisition(next); }}
+        onAcquisitionChange={changeAcquisition}
         sources={corpus?.sources ?? []}
         manifests={manifests}
-        selectedSources={selectedSources}
-        selectedDocumentCount={selectedDocumentCount}
-        onToggleSource={(key) => setSelectedSources((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])}
-        registryCounts={registryCounts}
         answerModel={answerModelLabel}
         readiness={connectionConfirmed ? readiness : null}
         onOpenLocalSettings={onOpenLocalSettings}
@@ -426,8 +406,6 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         writable={runtimeCounts?.writable ?? null}
         onDownload={downloadFilings}
         onIngestAll={() => void ingestAllManifests()}
-        onIngestAdvanced={() => void ingestAdvanced()}
-        onIngest={(name, selectionId) => void queueCorpus({ kind: "ingest_manifest", manifest: name, selection_id: selectionId, identifiers: [], years: [] })}
         onBackfill={() => void queueCorpus({ kind: "backfill_embeddings", identifiers: [], years: [] })}
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}
         onAsk={() => onNavigate({ view: "review" })}

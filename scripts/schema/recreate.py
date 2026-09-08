@@ -239,7 +239,12 @@ def run(
         print("Downloaded source files to delete (path: SHA256):")
         print(json.dumps(sources, indent=2))
         print(
-            "Acquisition draft: " + ("NVDA AMD / FY2023 FY2024; no download" if sample else "empty")
+            "Acquisition draft: "
+            + (
+                "NVDA AMD / FY2023 FY2024; no download"
+                if sample
+                else "NVDA AMD / FY2019-FY2024; 005930 000660 / FY2022-FY2024; no download"
+            )
         )
     print(
         (

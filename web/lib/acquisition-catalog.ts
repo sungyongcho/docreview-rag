@@ -2,7 +2,7 @@ import type { ManifestSummary } from "@/lib/types";
 
 export type AcquisitionCompany = NonNullable<ManifestSummary["issuers"]>[number];
 
-export const ACQUISITION_YEARS = [2020, 2021, 2022, 2023, 2024];
+export const ACQUISITION_YEARS = [2019, 2020, 2021, 2022, 2023, 2024];
 
 /** Use known source metadata, with the supported ticker/stock-code syntax for new issuers. */
 export function acquisitionRegistry(identifier: string, companies: readonly AcquisitionCompany[] = []): "sec" | "dart" {

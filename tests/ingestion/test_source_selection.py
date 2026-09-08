@@ -45,21 +45,89 @@ def test_missing_selected_sources_never_create_partial_selection(tmp_path, failu
     assert not list(tmp_path.glob("selected-*.json"))
 
 
-def test_draft_uses_disk_then_persisted_sample_without_download(tmp_path):
-    """No hidden sample defaults exist; a sample preset alone creates no source files."""
-    assert acquisition_draft(tmp_path, ()) == {"identifiers": [], "years": []}
-    (tmp_path / "acquisition-draft.json").write_text(
-        json.dumps({"identifiers": ["NVDA", "AMD"], "years": [2023, 2024]})
-    )
-    assert acquisition_draft(tmp_path, ())["identifiers"] == ["NVDA", "AMD"]
+def test_default_pairs_are_exact_and_independent_of_disk(tmp_path):
+    """Ordinary fresh start selects eighteen intended pairs, never a registry cross product."""
+    draft = acquisition_draft(tmp_path, ())
+    expected = {
+        ("sec", issuer, year) for issuer in ("NVDA", "AMD") for year in range(2019, 2025)
+    } | {("dart", issuer, year) for issuer in ("005930", "000660") for year in range(2022, 2025)}
+    assert {(p["registry"], p["issuer"], p["year"]) for p in draft["pairs"]} == expected
+    assert len(draft["pairs"]) == 18
+    write_selection_catalog(tmp_path)
+    assert acquisition_draft(tmp_path, source_inventory(tmp_path)) == draft
+    path = tmp_path / "acquisition-draft.json"
+    path.write_text(json.dumps({"identifiers": ["NVDA", "AMD"], "years": [2023, 2024]}))
+    sample = acquisition_draft(tmp_path, ())
+    assert len(sample["pairs"]) == 4
+    assert sample["revision"] != draft["revision"]
+    path.write_text(json.dumps({"identifiers": [], "years": []}))
+    assert acquisition_draft(tmp_path, ())["pairs"] == draft["pairs"]
+
+
+def test_equivalent_duplicate_primaries_are_ready_and_recorded_once(tmp_path):
+    """The reported legacy/download duplicate with the same exact bytes safely collapses."""
     catalog = write_selection_catalog(tmp_path)
-    for artifact in catalog.artifacts:
-        if artifact.document_id != "NVDA-FY2024":
-            (tmp_path / artifact.path).unlink()
-    assert acquisition_draft(tmp_path, source_inventory(tmp_path)) == {
-        "identifiers": ["NVDA"],
-        "years": [2024],
-    }
+    primary = catalog.artifacts[0]
+    duplicate = primary.model_copy(
+        update={"artifact_id": primary.artifact_id + "-download", "path": "duplicate.html"}
+    )
+    (tmp_path / duplicate.path).write_bytes(primary.read_bytes(tmp_path))
+    catalog.model_copy(update={"artifacts": (*catalog.artifacts, duplicate)}).write(
+        tmp_path / "manifest.json"
+    )
+    before = (tmp_path / "manifest.json").read_bytes()
+    assert all(row.ready for row in source_inventory(tmp_path))
+    name, selection = record_selection(tmp_path, ("NVDA", "AMD"), (2023, 2024))
+    assert len(Manifest.read(tmp_path / name).selected_sources(selection, tmp_path)) == 4
+    assert (tmp_path / "manifest.json").read_bytes() == before
+
+
+def test_conflicting_primary_blocks_readiness_and_execution(tmp_path):
+    """Different valid bytes cannot be chosen by catalog order or queued silently."""
+    import hashlib
+
+    catalog = write_selection_catalog(tmp_path)
+    primary = catalog.artifacts[0]
+    raw = b"different valid primary bytes"
+    duplicate = primary.model_copy(
+        update={
+            "artifact_id": primary.artifact_id + "-conflict",
+            "path": "conflict.html",
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "byte_length": len(raw),
+        }
+    )
+    (tmp_path / duplicate.path).write_bytes(raw)
+    catalog.model_copy(update={"artifacts": (*catalog.artifacts, duplicate)}).write(
+        tmp_path / "manifest.json"
+    )
+    blocked = next(
+        row for row in source_inventory(tmp_path) if row.document_id == primary.document_id
+    )
+    assert blocked.on_disk and not blocked.ready
+    assert "Conflicting primary sources" in blocked.blocker
+    with pytest.raises(ValueError, match="Conflicting primary sources"):
+        record_selection(tmp_path, (blocked.issuer,), (blocked.fiscal_year,))
+    assert not list(tmp_path.glob("selected-*.json"))
+
+
+def test_selection_never_scans_other_catalogs(tmp_path):
+    """Invalid or overlapping evaluation catalogs do not leak into Build processing."""
+    catalog = write_selection_catalog(tmp_path)
+    (tmp_path / "evaluation-manifest.json").write_text("invalid unrelated fixture")
+    name, _ = record_selection(tmp_path, ("NVDA",), (2024,))
+    assert len(Manifest.read(tmp_path / name).documents) == 1
+    assert len(source_inventory(tmp_path)) == len(catalog.documents)
+
+
+@pytest.mark.parametrize(
+    "kind,issuer",
+    [("acquire_edgar", "MSFT"), ("acquire_dart", "123456"), ("acquire_edgar", "005930")],
+)
+def test_unknown_acquisition_company_is_rejected_before_queue(kind, issuer):
+    """The administrator endpoint cannot bypass the bounded company picker."""
+    with pytest.raises(ValueError, match="supported acquisition catalog"):
+        AdminCommand(kind, identifiers=(issuer,), years=(2024,))
 
 
 def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
@@ -109,7 +177,8 @@ def test_source_snapshot_accepts_the_strict_api_resource(tmp_path):
     snapshot = asyncio.run(service.snapshot())
     resource = CorpusSnapshotResource.model_validate(asdict(snapshot))
     assert len(resource.sources) == 4
-    assert resource.acquisition_draft.identifiers == ("AMD", "NVDA")
+    assert len(resource.acquisition_draft.pairs) == 18
+    assert len(resource.acquisition_companies) == 7
 
 
 def test_updated_document_metadata_creates_new_immutable_job_selection(tmp_path):
@@ -124,3 +193,41 @@ def test_updated_document_metadata_creates_new_immutable_job_selection(tmp_path)
     second_name, _ = record_selection(tmp_path, ("NVDA",), (2024,))
     assert first_name != second_name
     assert Manifest.read(tmp_path / first_name).documents[0].aliases != ("Updated company name",)
+
+
+def test_duplicate_filing_identities_block_inventory_and_queue(tmp_path):
+    """Multiple filings for one picker pair require a decision before any job starts."""
+    catalog = write_selection_catalog(tmp_path)
+    original = catalog.documents[0]
+    filing_id = original.filing_id[:-6] + "999999"
+    duplicate = original.model_copy(
+        update={
+            "document_id": original.document_id + "-other",
+            "filing_id": filing_id,
+            "sec": original.sec.model_copy(update={"accession": filing_id}),
+        }
+    )
+    artifact = next(a for a in catalog.artifacts if a.document_id == original.document_id)
+    alternate = artifact.model_copy(
+        update={
+            "document_id": duplicate.document_id,
+            "artifact_id": artifact.artifact_id + "-other",
+            "path": "other-filing.html",
+        }
+    )
+    (tmp_path / alternate.path).write_bytes(artifact.read_bytes(tmp_path))
+    catalog.model_copy(
+        update={
+            "documents": (*catalog.documents, duplicate),
+            "artifacts": (*catalog.artifacts, alternate),
+        }
+    ).write(tmp_path / "manifest.json")
+    rows = [
+        row
+        for row in source_inventory(tmp_path)
+        if row.issuer == original.issuer and row.fiscal_year == original.fiscal_year
+    ]
+    assert len(rows) == 2 and all(not row.ready for row in rows)
+    with pytest.raises(ValueError, match="Ambiguous filing identity"):
+        record_selection(tmp_path, (original.issuer,), (original.fiscal_year,))
+    assert not list(tmp_path.glob("selected-*.json"))

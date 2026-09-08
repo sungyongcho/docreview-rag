@@ -10,12 +10,12 @@ afterEach(cleanup);
 
 /** Build one distinct source document without hiding registry or disk state. */
 function source(issuer: string, year: number, onDisk = true, name = issuer): SourceInventory {
-  return { document_id: `${issuer}-${year}`, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, on_disk: onDisk, name, manifest: "manifest.json" };
+  return { document_id: `${issuer}-${year}`, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json" };
 }
 const inventory = [source("NVDA", 2024), source("005930", 2023, false, "Samsung"), source("AMD", 2023), source("NVDA", 2022)];
 
 /** Keep the matrix controlled and expose the exact sparse selection used by downstream steps. */
-function Harness({ sources = inventory, initialPairs = [] as AcquisitionPair[], companies = [] as AcquisitionCompany[], changed = vi.fn(), download = vi.fn(), disabled = false }) {
+function Harness({ sources = inventory, initialPairs = [] as AcquisitionPair[], companies = [{ registry: "sec", issuer: "NVDA", name: "NVDA" }, { registry: "sec", issuer: "AMD", name: "AMD" }, { registry: "dart", issuer: "000660", name: "000660" }] as AcquisitionCompany[], changed = vi.fn(), download = vi.fn(), disabled = false }) {
   const [draft, setDraft] = useState<AcquisitionForm>(acquisitionDraft(initialPairs));
   return <SourceMatrix sources={sources} companies={companies} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} disabled={disabled} onDownload={download} downloadDisabled={false} />;
 }
@@ -104,20 +104,20 @@ describe("company and year source matrix", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
     expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "false");
   });
-  it("accepts unknown mixed codes and bounded year ranges without selecting them before sync", () => {
-    const changed = vi.fn(); const download = vi.fn(); render(<Harness changed={changed} download={download} />);
-    enter("MSFT,000660"); enter("2023-2024");
+  it("accepts supported mixed codes and bounded year ranges without selecting them before sync", () => {
+    const changed = vi.fn(); const download = vi.fn(); render(<Harness sources={[]} changed={changed} download={download} />);
+    enter("AMD,000660"); enter("2023-2024");
     expect(changed).not.toHaveBeenCalled();
     expect(within(screen.getByRole("region", { name: "To be added" })).getAllByRole("listitem")).toHaveLength(4);
     fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
-    expect(download.mock.calls[0][0].pairs).toEqual([{ registry: "sec", issuer: "MSFT", year: 2023 }, { registry: "sec", issuer: "MSFT", year: 2024 }, { registry: "dart", issuer: "000660", year: 2023 }, { registry: "dart", issuer: "000660", year: 2024 }]);
+    expect(download.mock.calls[0][0].pairs).toEqual([{ registry: "sec", issuer: "AMD", year: 2023 }, { registry: "sec", issuer: "AMD", year: 2024 }, { registry: "dart", issuer: "000660", year: 2023 }, { registry: "dart", issuer: "000660", year: 2024 }]);
   });
   it("does not commit search text on blur and blocks invalid input until corrected", () => {
     const changed = vi.fn(); render(<Harness changed={changed} />);
     const input = screen.getByLabelText("Search/add company or year");
     fireEvent.change(input, { target: { value: "???" } }); fireEvent.blur(input);
     expect(input).toHaveValue("???"); expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByRole("alert")).toHaveTextContent("Use a SEC ticker");
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose a company from the supported catalog.");
     enter("NVDA"); enter("2025-2024");
     expect(screen.getByRole("alert")).toHaveTextContent("Use a four-digit year");
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
@@ -147,4 +147,15 @@ describe("company and year source matrix", () => {
     expect(screen.getByRole("button", { name: "Remove 005930 FY2023" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   });
+});
+
+
+it("rejects unsupported codes even when local source rows contain that issuer", () => {
+  const download = vi.fn();
+  render(<Harness sources={[source("MSFT", 2024)]} download={download} />);
+  enter("MSFT");
+  expect(screen.getByLabelText("Search/add company or year")).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByText("Choose a company from the supported catalog.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+  expect(download).not.toHaveBeenCalled();
 });

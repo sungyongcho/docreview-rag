@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeline";
-import { acquisitionRegistry, type AcquisitionCompany } from "@/lib/acquisition-catalog";
+import { type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
 import { TokenSelect, type TokenOption } from "./token-select";
@@ -18,12 +18,6 @@ interface SourceMatrixProps {
   onValidityChange?: (valid: boolean) => void;
   onDownload: (next: AcquisitionForm) => void;
   downloadDisabled: boolean;
-}
-
-/** Use the acquisition form's existing company-code syntax for add-only controls. */
-function companyCodes(input: string): string[] | null {
-  const codes = [...new Set(input.toUpperCase().split(/[\s,]+/).filter(Boolean))];
-  return codes.length && codes.every((code) => /^[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*$/.test(code) || /^\d{6}$/.test(code)) ? codes : null;
 }
 
 /** Expand explicit years and bounded ascending ranges without changing invalid text. */
@@ -57,7 +51,7 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
   const rows = sourceSelectionRows(sources, pairs, companies);
   const catalog = new Map<string, TokenOption>();
   for (const company of companies) catalog.set(`${company.registry}:${company.issuer.toUpperCase()}`, { value: `${company.registry}:${company.issuer.toUpperCase()}`, label: `${company.issuer.toUpperCase()}${company.name ? ` · ${company.name}` : ""} · ${t("{count} years on disk", { count: 0 })}`, badge: { label: company.registry.toUpperCase(), tone: company.registry === "sec" ? "blue" : "amber" } });
-  for (const { registry, rows: group } of rows) for (const row of group) catalog.set(`${registry}:${row.issuer}`, { value: `${registry}:${row.issuer}`, label: `${row.label} · ${t("{count} years on disk", { count: row.cells.filter((cell) => cell.documents.length && cell.documents.every((source) => source.on_disk)).length })}`, badge: { label: registry.toUpperCase(), tone: registry === "sec" ? "blue" : "amber" } });
+  for (const { registry, rows: group } of rows) for (const row of group) if (catalog.has(`${registry}:${row.issuer}`)) catalog.set(`${registry}:${row.issuer}`, { value: `${registry}:${row.issuer}`, label: `${row.label} · ${t("{count} years on disk", { count: row.cells.filter((cell) => cell.documents.length && cell.documents.every((source) => source.on_disk)).length })}`, badge: { label: registry.toUpperCase(), tone: registry === "sec" ? "blue" : "amber" } });
   const yearChoices = [...new Set([
     ...sources.filter((source) => chosen.some((company) => source.registry === company.registry && source.issuer.toUpperCase() === company.issuer)).map((source) => source.fiscal_year),
     ...merged.filter((pair) => chosen.some((company) => pair.registry === company.registry && pair.issuer === company.issuer)).map((pair) => pair.year),
@@ -71,13 +65,19 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
     for (const pair of changed) if (include) next.set(pairKey(pair), pair); else next.delete(pairKey(pair));
     onChange(acquisitionDraft([...next.values()]));
   }
-  /** Known choices preserve their registry; free entries use the existing code convention. */
+  /** Accept only catalog identities, including pasted exact supported codes. */
   function chooseCompanies(values: string[]) {
-    setChosen(values.map((value) => {
-      const [registry, issuer] = value.split(":");
-      return issuer ? { registry: registry as "sec" | "dart", issuer } : { registry: acquisitionRegistry(value, companies), issuer: value };
+    setChosen(values.flatMap((value) => {
+      const company = companies.find((item) => `${item.registry}:${item.issuer.toUpperCase()}` === value);
+      return company ? [{ registry: company.registry, issuer: company.issuer.toUpperCase() }] : [];
     }));
     setPickerValid(true);
+  }
+  /** Resolve known issuer codes without opening a free-form acquisition route. */
+  function knownCodes(value: string): string[] | null {
+    const tokens = value.toUpperCase().split(/[\s,]+/).filter(Boolean);
+    const matched = tokens.map((token) => companies.find((company) => company.issuer.toUpperCase() === token));
+    return matched.length && matched.every(Boolean) ? matched.map((company) => `${company!.registry}:${company!.issuer.toUpperCase()}`) : null;
   }
   /** On-disk choices select immediately; absent or partial years await explicit synchronization. */
   function chooseYears(values: string[]) {
@@ -117,9 +117,9 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
       <TokenSelect key={chosen.map((company) => `${company.registry}:${company.issuer}`).join(",") || "companies"}
         label={t("Search/add company or year")} placeholder={t(chosen.length ? "Add a year or range, for example 2023-2025" : "Enter SEC tickers or DART stock codes")}
         values={chosen.length ? checkedYears : []} options={chosen.length ? yearChoices.map((year) => ({ value: String(year), label: `FY${year}` })) : [...catalog.values()].sort((a, b) => a.value.localeCompare(b.value))}
-        onChange={chosen.length ? chooseYears : chooseCompanies} parseCustom={chosen.length ? (value) => fiscalYears(value)?.map(String) ?? null : companyCodes}
-        invalidMessage={t(chosen.length ? "Use a four-digit year or an ascending range of up to 50 years." : "Use a SEC ticker such as NVDA or a six-digit DART stock code such as 005930.")}
-        hint={t(chosen.length ? "Check years to stage missing sources. On-disk years join the selection immediately." : "Search a company, then check its fiscal years. Unknown codes can be entered directly.")}
+        onChange={chosen.length ? chooseYears : chooseCompanies} parseCustom={chosen.length ? (value) => fiscalYears(value)?.map(String) ?? null : knownCodes}
+        invalidMessage={t(chosen.length ? "Use a four-digit year or an ascending range of up to 50 years." : "Choose a company from the supported catalog.")}
+        hint={t(chosen.length ? "Check years to stage missing sources. On-disk years join the selection immediately." : "Search the supported company catalog, then select its fiscal years.")}
         disabled={disabled} onValidityChange={setPickerValid} checkable={chosen.length > 0} hideValues commitOnBlur={false} autoFocus={chosen.length > 0} overlayOptions />
     </div>
     <section className="source-matrix-plan" aria-label={t("To be added")}>
