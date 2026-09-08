@@ -172,3 +172,9 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 
 ### SCREENSHOT NEEDED
 <!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=ko; light mode; preserve existing assets. -->
+
+
+Manifest 범위 정보 오류는 실제 실패한 단계에 표시됩니다. 경로 결정 전에는 0단계, 결정 뒤 범위 해석 중에는 1단계입니다. DEV에서는 원인·파일·복구 동작 하나를 제공합니다. [Manifest 진단](troubleshooting.md#manifest-scope)을 참고하세요. 원래 기술 상세는 **실행 상세 → 트레이스**에 남습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: failed-answer manifest diagnosis and stage-zero attribution; locale=ko; light mode; show localized headline, diagnosis and stages 1-5 not run. -->

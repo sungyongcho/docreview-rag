@@ -29,7 +29,7 @@ interface RunDetailsPanelProps {
   stageRequest?: { stage: DisclosureStage | null };
 
   onClose: () => void;
-  onOpenFix?: (category: "limits" | "runtime") => void;
+  onOpenFix?: (category: NonNullable<ChatMessage["failureFix"]>["category"]) => void;
 }
 
 /** Inspect one message beside its conversation, preserving its last selected section. */

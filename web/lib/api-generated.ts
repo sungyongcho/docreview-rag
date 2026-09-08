@@ -1095,15 +1095,27 @@ export interface components {
          * @description Machine-readable HTTP failure shared by all routes.
          */
         ApiError: {
+            /** Cause */
+            cause?: ("missing_file" | "invalid_json" | "invalid_manifest" | "alias_conflict" | "permission") | null;
             /** Code */
             code: string;
+            /** Corpus Job */
+            corpus_job?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Detail */
+            detail?: string | null;
             /**
              * Details
              * @default []
              */
             details: components["schemas"]["ValidationIssue"][];
+            /** Failed Stage */
+            failed_stage?: ("path" | "gate") | null;
             /** Message */
             message: string;
+            /** Path */
+            path?: string | null;
             /** Path Decision */
             path_decision?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -3522,6 +3534,8 @@ export interface components {
          * @description One measured stage transition; an active stage has no completed duration.
          */
         StageEvent: {
+            /** Display Stage */
+            display_stage?: "path" | null;
             /** Elapsed Ms */
             elapsed_ms?: number | null;
             /**

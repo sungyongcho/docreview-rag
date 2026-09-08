@@ -35,6 +35,10 @@ function advanceProgress(node: ReviewNode, evidence: number, relevant: number, s
 }
 
 export function reviewProgressFromEvent(event: ReviewProgress, previous?: ReviewProgressState): ReviewProgressState {
+  if (event.display_stage === "path") {
+    const state = previous ?? initialReviewProgress();
+    return { ...state, pathStatus: event.phase === "start" ? "current" : event.status === "failed" ? "failed" : "done", pathDecision: event.path_decision ?? state.pathDecision, lastEventAt: Date.now(), outcome: event.status === "failed" ? "failed" : "running" };
+  }
   const next = advanceProgress(event.node, event.evidence_count ?? previous?.evidence ?? 0, event.relevant_count ?? previous?.relevant ?? 0, event.step_count ?? previous?.steps ?? 0, previous);
   const phase = currentStepIndex(event.node);
   const repeated = previous && phase < currentStepIndex(previous.node);
@@ -48,7 +52,7 @@ export function reviewProgressFromEvent(event: ReviewProgress, previous?: Review
 }
 
 export function initialReviewProgress(revalidating = false, evidence = 0, selectedScope?: CorpusScope): ReviewProgressState {
-  return { node: "waiting", selectedScope, evidence, relevant: 0, steps: 0, observed: [], outcome: "running", revalidating, retries: 0, startedAt: Date.now(), activeNode: null, completedNodes: [] };
+  return { node: "waiting", pathStatus: "waiting", selectedScope, evidence, relevant: 0, steps: 0, observed: [], outcome: "running", revalidating, retries: 0, startedAt: Date.now(), activeNode: null, completedNodes: [] };
 }
 
 export function candidateProgress(previous: ReviewProgressState, evidence: number, resolvedScope?: unknown, pathDecision?: ReviewPathDecision | null): ReviewProgressState {
@@ -59,6 +63,7 @@ export function candidateProgress(previous: ReviewProgressState, evidence: numbe
 /** Only actual observed phases become complete; skipped phases stay explicit. */
 export function phaseStatus(state: ReviewProgressState, index: number): string {
   const current = currentStepIndex(state.node);
+  if (state.pathStatus === "failed" || state.pathStatus === "cancelled") return "not-run";
   if (state.skippedNodes?.[REVIEW_STEPS[index]?.node]) return "skipped";
   if ((state.pathDecision?.intent === "casual_chat" || (state.observed ?? []).includes("chat")) && ["retrieve", "grade", "check"].includes(REVIEW_STEPS[index]?.node)) return "skipped";
   const stopped = state.outcome === "failed" || state.outcome === "cancelled";
@@ -88,10 +93,10 @@ export function finishReviewProgress(state: ReviewProgressState, outcome: "compl
   const stages = Array.isArray(data?.stages) ? data.stages.map(objectRecord).filter((value) => value && ["gate", "route", "retrieve", "chat", "grade", "check", "report"].includes(String(value.node)) && value.phase !== "start" && ["completed", "failed"].includes(String(value.status))) : [];
   if (stages.length) {
     let recorded: ReviewProgressState = { ...state, node: "waiting", observed: [], completedNodes: [], activeNode: null, retries: 0 };
-    for (const stage of stages) recorded = reviewProgressFromEvent({ node: stage!.node as ReviewProgress["node"], phase: "end", status: stage!.status as "completed" | "failed", evidence_count: recorded.evidence, relevant_count: recorded.relevant, step_count: recorded.steps }, recorded);
-    state = { ...state, node: recorded.node, observed: recorded.observed, completedNodes: recorded.completedNodes, activeNode: null, retries: recorded.retries };
+    for (const stage of stages) recorded = reviewProgressFromEvent({ display_stage: stage!.display_stage === "path" ? "path" : undefined, node: stage!.node as ReviewProgress["node"], phase: "end", status: stage!.status as "completed" | "failed", evidence_count: recorded.evidence, relevant_count: recorded.relevant, step_count: recorded.steps }, recorded);
+    state = { ...state, pathStatus: recorded.pathStatus, node: recorded.node, observed: recorded.observed, completedNodes: recorded.completedNodes, activeNode: null, retries: recorded.retries };
   }
-  if (outcome !== "completed") return { ...state, outcome, elapsedMs };
+  if (outcome !== "completed") return { ...state, pathStatus: !state.pathDecision && state.node === "waiting" ? outcome : state.pathStatus, outcome, elapsedMs };
   const result = objectRecord(report);
   const results = Array.isArray(data?.stage_results) ? data.stage_results.map(objectRecord).filter((value) => value !== undefined) : [];
   const reported = results.filter((value) => value?.node === "report").at(-1);
@@ -168,7 +173,7 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState<DisclosureStage | null>(null);
   const disclosureId = useId();
-  const pathPhase = state.pathDecision ? state.pathDecision.stopping_reason ? "failed" : "done" : (state.outcome ?? "running") === "running" ? "waiting" : "not-run";
+  const pathPhase = state.pathStatus === "failed" || state.pathStatus === "cancelled" ? state.pathStatus : state.pathDecision ? "done" : state.pathStatus ?? ((state.outcome ?? "running") === "running" ? "waiting" : "not-run");
   const phases = Object.fromEntries(REVIEW_STEPS.map((step, index) => [step.node, phaseStatus(state, index)]));
   /** Waiting and unobserved phases cannot expose a stage panel. */
   const selectable = (phase: string) => ["done", "current", "failed", "cancelled", "skipped"].includes(phase);

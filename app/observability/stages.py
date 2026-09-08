@@ -9,6 +9,8 @@ from functools import wraps
 import time
 from typing import Literal
 
+from pydantic import Field
+
 from app.llm.schemas import NonNegativeFloat, ProviderMetadata, StrictSchema
 from app.observability.types import JsonObject, WorkflowNode
 from app.observability.usage import provider_identity
@@ -18,6 +20,9 @@ class StageEvent(StrictSchema):
     """One measured stage transition; an active stage has no completed duration."""
 
     node: WorkflowNode
+    display_stage: Literal["path"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     phase: Literal["start", "end"]
     status: Literal["running", "completed", "failed"]
     started_at: str
@@ -116,7 +121,9 @@ def record_model_call(metadata: ProviderMetadata) -> None:
 
 
 @asynccontextmanager
-async def stage(node: WorkflowNode) -> AsyncIterator[StageMeasurement]:
+async def stage(
+    node: WorkflowNode, *, display_stage: Literal["path"] | None = None
+) -> AsyncIterator[StageMeasurement]:
     """Emit a start before work and a measured end for success, failure, or cancellation."""
     recorder = _ACTIVE.get()
     measurement = StageMeasurement()
@@ -127,6 +134,7 @@ async def stage(node: WorkflowNode) -> AsyncIterator[StageMeasurement]:
     started_at = datetime.now(UTC).isoformat()
     initial = StageEvent(
         node=node,
+        display_stage=display_stage,
         phase="start",
         status="running",
         started_at=started_at,
@@ -145,6 +153,7 @@ async def stage(node: WorkflowNode) -> AsyncIterator[StageMeasurement]:
         ended = time.perf_counter()
         event = StageEvent(
             node=node,
+            display_stage=display_stage,
             phase="end",
             status="failed" if measurement.failed else "completed",
             resolved_scope=measurement.resolved_scope,

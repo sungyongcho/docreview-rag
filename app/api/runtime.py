@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 import secrets
@@ -43,6 +44,7 @@ from app.api.schemas import (
     SnapshotComparisonResponse,
     SnapshotResource,
 )
+from app.api.scope_diagnostics import manifest_problem
 from app.config import (
     DEFAULT_BM25_B,
     DEFAULT_BM25_IDF,
@@ -86,6 +88,7 @@ from app.observability.trace import step_trace_from_provider_result
 from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNode, build_run_report
 from app.observability.usage import provider_identity
 from app.openai_models import resolve_openai_model
+from app.operator.jobs import JobStore
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
     EmbeddingProvider,
@@ -439,11 +442,56 @@ class RuntimeApiServices(ApiServices):
             try:
                 self._scope_index = ManifestScopeIndex.from_paths(paths)
             except (OSError, ValueError, TypeError) as error:
-                raise unavailable(
-                    "query_scope_unavailable",
-                    f"Query scope metadata is unavailable ({type(error).__name__}).",
+                logging.getLogger(__name__).error(
+                    "Manifest scope index could not be loaded", exc_info=True
+                )
+                raise manifest_problem(
+                    error,
+                    root,
+                    developer=self._allow_custom_prompt_policy,
+                    secret_values=self._secret_values,
                 ) from error
         return self._scope_index
+
+    async def _scope_index_for_decision(self) -> ManifestScopeIndex:
+        """Attach stage-zero attribution and optional recent acquisition context on failure."""
+        try:
+            return self._manifest_scope_index()
+        except ApiProblemError as error:
+            job = None
+            if self._allow_custom_prompt_policy:
+                try:
+                    jobs = await asyncio.wait_for(
+                        JobStore(session_factory=self._session_factory).list(
+                            domain="corpus", limit=100
+                        ),
+                        timeout=0.5,
+                    )
+                    recent = max(
+                        (
+                            row
+                            for row in jobs
+                            if row.kind in {"acquire_edgar", "acquire_dart"}
+                            and (
+                                row.status in {"queued", "running"}
+                                or row.result_refs.get("manifest") == "manifest.json"
+                            )
+                        ),
+                        key=lambda row: (row.status in {"queued", "running"}, row.updated_at),
+                        default=None,
+                    )
+                    if recent is not None:
+                        job = {
+                            "job_id": recent.job_id,
+                            "kind": recent.kind,
+                            "status": recent.status,
+                        }
+                except Exception as job_error:  # noqa: BLE001 - preserve the original manifest failure
+                    logging.getLogger(__name__).info(
+                        "Recent corpus-job context unavailable (%s)", type(job_error).__name__
+                    )
+            error.error = error.error.model_copy(update={"failed_stage": "path", "corpus_job": job})
+            raise
 
     def _resolved_request(
         self,
@@ -525,11 +573,12 @@ class RuntimeApiServices(ApiServices):
             return ConversationDecision.model_validate(saved["decision"]), dict(
                 cast("JsonObject", saved["path"])
             )
-        async with stage("gate") as measurement:
+        async with stage("gate", display_stage="path") as measurement:
+            scope_index = await self._scope_index_for_decision()
             prior, query = self._followup_query(request)
             decision = deterministic_decision(
                 request.query,
-                has_issuer_alias=bool(self._manifest_scope_index().match(request.query)),
+                has_issuer_alias=bool(scope_index.match(request.query)),
                 prior_filing_query=prior,
             )
             if decision is None and prior:

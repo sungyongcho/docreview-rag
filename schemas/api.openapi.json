@@ -199,10 +199,53 @@
         "additionalProperties": false,
         "description": "Machine-readable HTTP failure shared by all routes.",
         "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing_file",
+                  "invalid_json",
+                  "invalid_manifest",
+                  "alias_conflict",
+                  "permission"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
           "code": {
             "pattern": "^[a-z][a-z0-9_]*$",
             "title": "Code",
             "type": "string"
+          },
+          "corpus_job": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Job"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
           },
           "details": {
             "default": [],
@@ -212,9 +255,35 @@
             "title": "Details",
             "type": "array"
           },
+          "failed_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "path",
+                  "gate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Stage"
+          },
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           },
           "path_decision": {
             "anyOf": [
@@ -6270,6 +6339,18 @@
         "additionalProperties": false,
         "description": "One measured stage transition; an active stage has no completed duration.",
         "properties": {
+          "display_stage": {
+            "anyOf": [
+              {
+                "const": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Stage"
+          },
           "elapsed_ms": {
             "anyOf": [
               {

@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator, Mapping, Sequence
 import contextlib
 import logging
+from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -28,13 +29,29 @@ class ApiProblemError(Exception):
         message: str,
         details: Sequence[ValidationIssue] = (),
         path_decision: JsonObject | None = None,
+        detail: str | None = None,
+        path: str | None = None,
+        cause: Literal[
+            "missing_file", "invalid_json", "invalid_manifest", "alias_conflict", "permission"
+        ]
+        | None = None,
+        corpus_job: JsonObject | None = None,
+        failed_stage: Literal["path", "gate"] | None = None,
     ) -> None:
         super().__init__(message)
         if not 400 <= status_code <= 599:
             raise ValueError("API problem status must be between 400 and 599")
         self.status_code = status_code
         self.error = ApiError(
-            code=code, message=message, details=tuple(details), path_decision=path_decision
+            code=code,
+            message=message,
+            details=tuple(details),
+            path_decision=path_decision,
+            detail=detail,
+            path=path,
+            cause=cause,
+            corpus_job=corpus_job,
+            failed_stage=failed_stage,
         )
 
 

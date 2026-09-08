@@ -467,7 +467,7 @@ function answerModelDraft(readiness: Readiness | null): Draft {
 /** A settings destination that would let the reader change the limit they just hit. */
 export interface FailureFix {
   label: string;
-  category: "limits" | "runtime";
+  category: "limits" | "runtime" | "documents" | "jobs";
 }
 
 export interface FailureReport {
@@ -489,7 +489,19 @@ const RUN_LIMITS: FailureFix = { label: "Open run limits", category: "limits" };
  * the provider text after it is not one. Advice an operator alone can act on, and the
  * Settings categories a public build does not render, are withheld from that build.
  */
-export function failureReport(failure: Record<string, unknown>): FailureReport {
+export function failureReport(failure: Record<string, unknown>, developer = LOCAL_ENGINE_VISIBLE): FailureReport {
+  if (failure.code === "query_scope_unavailable") {
+    if (!developer) return { text: "Corpus metadata is unavailable. Try again later." };
+    const causes: Record<string, string> = {
+      missing_file: "The corpus manifest file is missing.",
+      invalid_json: "The corpus manifest is not valid JSON.",
+      invalid_manifest: "The corpus manifest does not satisfy its data contract.",
+      alias_conflict: "Company aliases conflict in the corpus manifest.",
+      permission: "The API cannot read the corpus manifest because access was denied.",
+    };
+    const job = failure.corpus_job && typeof failure.corpus_job === "object" ? failure.corpus_job as Record<string, unknown> : null;
+    return { text: causes[String(failure.cause)] ?? "Corpus metadata is unavailable. Inspect the manifest.", fix: job?.job_id ? { label: "Open Jobs", category: "jobs" } : { label: "Open Documents", category: "documents" } };
+  }
   const detail = JSON.stringify(failure);
   if (/AuthenticationError|token_invalidated|invalidated/i.test(detail)) {
     return { text: "OpenAI API authentication failed. Update the server-side API key and retry." };

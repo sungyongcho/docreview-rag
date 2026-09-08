@@ -41,6 +41,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly pathDecision?: ReviewPathDecision,
+    public readonly failure?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -81,6 +82,7 @@ async function request<T>(path: string, init?: PresentationInit): Promise<T> {
       String(error.code ?? "request_failed"),
       details.length ? `${message} ${details.join(" · ")}` : message,
       error.path_decision as ReviewPathDecision | undefined,
+      error,
     );
   }
   return payload as T;
@@ -103,6 +105,7 @@ export async function retrieveEvidence(query: string, sessionProfile: ReviewSess
 }
 
 export interface ReviewProgress {
+  display_stage?: "path";
   path_decision?: ReviewPathDecision | null;
   node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
   evidence_count: number;
@@ -167,6 +170,7 @@ export async function streamReview(
       String(error.code ?? "stream_failed"),
       details.length ? `${message} ${details.join(" · ")}` : message,
       error.path_decision as ReviewPathDecision | undefined,
+      error,
     );
   }
   const reader = response.body.getReader();
@@ -195,7 +199,7 @@ export async function streamReview(
     if (frame.event === "error") {
       if (terminal) throw new Error("Review stream emitted more than one terminal event.");
       const error = (payload.error ?? {}) as Record<string, unknown>;
-      throw new ApiError(503, String(error.code ?? "stream_error"), String(error.message ?? "Review failed."), error.path_decision as ReviewPathDecision | undefined);
+      throw new ApiError(503, String(error.code ?? "stream_error"), String(error.message ?? "Review failed."), error.path_decision as ReviewPathDecision | undefined, error);
     }
     if (frame.event === "done") {
       done = true;
