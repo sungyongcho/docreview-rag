@@ -122,7 +122,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const { confirm, confirmationDialog } = useConfirmation();
   const { t, locale } = useI18n();
   const sourceJsonId = useId();
-  const goldenSplit = useMasterDetail({ storageKey: "docreview:golden-list-width", defaultListWidth: 520, active: active && tab === "golden", minDetailWidth: 320, collapseBelow: 800 });
+  const goldenSplit = useMasterDetail({ storageKey: "docreview:layout:golden-list-width", defaultListWidth: 520, active: active && tab === "golden", minDetailWidth: 320, collapseBelow: 800 });
   const [goldenDetailOpen, setGoldenDetailOpen] = useState(false);
   const [draftFormOpen, setDraftFormOpen] = useState(false);
   const [draftFilename, setDraftFilename] = useState("");

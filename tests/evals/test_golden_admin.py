@@ -190,3 +190,14 @@ def test_multiple_blank_drafts_are_saved_without_duplicate_question_errors(servi
         assert all(item.completion.values())
 
     asyncio.run(exercise())
+
+
+def test_listing_skips_stray_files_and_get_reports_them(service, tmp_path):
+    """A malformed user file never hides valid datasets; opening it still fails loudly."""
+    (tmp_path / "notes.json").write_text('{"format": "something-else"}')
+    (tmp_path / "broken.json").write_text("{not json")
+    draft = asyncio.run(service.create_draft("sec-en", filename="my-eval.json"))
+    listed = asyncio.run(service.list("sec-en"))
+    assert [row.filename for row in listed] == [draft.filename]
+    with pytest.raises(ValueError):
+        service.get(service._identity("notes.json"))

@@ -150,11 +150,16 @@ class GoldenAdminService:
     async def list(self, suite_id: GoldenSuiteId) -> tuple[GoldenRevisionResource, ...]:
         """Discover independent user files for the selected source/language configuration."""
         builtins = {definition.golden_name for definition in SUITES.values()}
-        rows = [
-            self._read_user(path)
-            for path in sorted(self._golden_dir.glob("*.json"))
-            if path.name not in builtins
-        ]
+        rows: list[GoldenRevisionResource] = []
+        for path in sorted(self._golden_dir.glob("*.json")):
+            if path.name in builtins:
+                continue
+            try:
+                rows.append(self._read_user(path))
+            except GoldenDataError, ValueError:
+                # A stray or malformed file must not hide every valid dataset; `get`
+                # still reports the exact problem when that file is opened directly.
+                continue
         return tuple(row for row in rows if row.suite_id == suite_id)
 
     def get(self, identity: int) -> GoldenRevisionResource:

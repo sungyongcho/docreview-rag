@@ -543,8 +543,14 @@ export function applyFreshStartReset(resetId: string | null | undefined): boolea
   if (!resetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resetId) || typeof window === "undefined") return false;
   const [local, session] = browserResetStores();
   const resetLocal = local.getItem(FRESH_START_RECEIPT_KEY) !== resetId;
-  const resetSession = session.getItem(FRESH_START_RECEIPT_KEY) !== resetId;
-  if (!resetLocal && !resetSession) return false;
+  const sessionReceipt = session.getItem(FRESH_START_RECEIPT_KEY);
+  // A tab opened after the reset was acknowledged holds nothing stale; record the receipt
+  // without a reset so its deep link survives.
+  const resetSession = sessionReceipt !== resetId && (resetLocal || sessionReceipt !== null);
+  if (!resetLocal && !resetSession) {
+    if (sessionReceipt === null) session.setItem(FRESH_START_RECEIPT_KEY, resetId);
+    return false;
+  }
   for (const store of resetLocal ? [local, session] : [session]) {
     const keys = Array.from({ length: store.length }, (_, index) => store.key(index)).filter((key): key is string => key !== null && ownedStorageKey(key));
     for (const key of keys) store.removeItem(key);

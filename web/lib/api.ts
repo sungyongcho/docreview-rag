@@ -282,7 +282,7 @@ export async function getProductionPreviewReadiness(signal?: AbortSignal): Promi
 
 export async function checkEvaluationPreparation(requestBody: import("./types").EvaluationRequest, signal?: AbortSignal): Promise<import("./types").EvaluationPreparation> {
   const result = await request<import("./types").EvaluationPreparation>("/admin/evaluations/preparation", { method: "POST", body: JSON.stringify(requestBody), signal });
-  if (!result || !["ready", "source_missing", "source_invalid", "parsing_required", "index_update_required", "unavailable"].includes(result.state) || !Array.isArray(result.source_checks) || !Array.isArray(result.blockers)) throw new ApiError(502, "invalid_preparation_response", "Evaluation preparation status is unavailable.");
+  if (!result || !["ready", "source_missing", "source_invalid", "draft_incomplete", "parsing_required", "index_update_required", "unavailable"].includes(result.state) || !Array.isArray(result.source_checks) || !Array.isArray(result.blockers)) throw new ApiError(502, "invalid_preparation_response", "Evaluation preparation status is unavailable.");
   return result;
 }
 

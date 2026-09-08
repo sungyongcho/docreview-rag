@@ -48,6 +48,16 @@ it("clears a stale tab's session without erasing settings created after another 
 });
 
 
+it("records the receipt in a tab opened after the reset without resetting it again", () => {
+  localStorage.setItem(FRESH_START_RECEIPT_KEY, first);
+  localStorage.setItem("docreview:theme", "light");
+  sessionStorage.setItem("docreview:cached", "fresh");
+  expect(applyFreshStartReset(first)).toBe(false);
+  expect(sessionStorage.getItem(FRESH_START_RECEIPT_KEY)).toBe(first);
+  expect(sessionStorage.getItem("docreview:cached")).toBe("fresh");
+  expect(localStorage.getItem("docreview:theme")).toBe("light");
+});
+
 it("returns the basket and conversation defaults to their unsaved state", () => {
   saveAcquisitionDraft("default-v1", acquisitionDraft([{ registry: "dart", issuer: "000660", year: 2025 }]));
   expect(loadAcquisitionDraft("default-v1")?.pairs).toHaveLength(1);
