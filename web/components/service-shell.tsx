@@ -242,7 +242,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         if (target) {
           firstRunRouted.current = true;
           setView(target.view);
-          if (target.view === "build") { setBuildTab(target.tab ?? "pipeline"); setBuildStage(target.stage); if (target.stage !== undefined) setPendingStage(target.stage); }
+          if (target.view === "build") { setBuildTab(target.tab ?? "pipeline"); setBuildJobId(target.jobId); setBuildStage(target.stage); if (target.stage !== undefined) setPendingStage(target.stage); }
           if (target.view === "measure") { setMeasureTab(target.tab ?? "playground"); setMeasureResultId(target.resultId ?? null); }
           if (target.view === "system") setSystemTab(!adminBuild || publicPreview ? "status" : target.tab ?? "status");
         }
@@ -390,7 +390,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   useEffect(() => {
     if (!initialized.current || !sessionActive || !active?.id) return;
     writeNavigation(currentTarget(), true);
-  }, [view, buildTab, buildStage, measureTab, measureResultId, systemTab, active?.id, sessionActive]);
+  }, [view, buildTab, buildJobId, buildStage, measureTab, measureResultId, systemTab, active?.id, sessionActive]);
 
   useEffect(() => {
     if (!initialized.current || !sessionActive || !active?.id) return;
@@ -432,7 +432,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     };
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
-  }, [view, buildTab, buildStage, measureTab, measureResultId, systemTab, activeId, active, conversations, query, conversationTab, navigationHistory, navigationForward, unsavedGolden, sessionActive, adminBuild, publicPreview]);
+  }, [view, buildTab, buildJobId, buildStage, measureTab, measureResultId, systemTab, activeId, active, conversations, query, conversationTab, navigationHistory, navigationForward, unsavedGolden, sessionActive, adminBuild, publicPreview]);
 
   useLayoutEffect(() => {
     const entry = pendingReturn.current;

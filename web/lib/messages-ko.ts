@@ -4,8 +4,6 @@ export const KO: Record<string, string> = {
   "Local Operations": "로컬 작업",
   "Notification details": "알림 상세",
   "Delete": "삭제",
-  "Copy JSON": "JSON 복사",
-  "Saving…": "저장 중…",
   "Review cancelled.": "답변 요청이 취소됐습니다.",
   "Review cancelled": "답변 요청 취소",
   "The corpus manifest file is missing.": "문서 목록 manifest 파일이 없습니다.",
