@@ -554,12 +554,12 @@ describe("derivePipeline", () => {
     expect(failureReport({ status: "schema_rejected", attempts: 1 }).text).not.toContain("attempts");
   });
 
-  it("still says something when a public bundle suppresses the only enabled engine", () => {
+  it("blocks when a public bundle suppresses the only enabled engine", () => {
     const readiness = baseReadiness({
       review_engines: { local: { enabled: true, model: "qwen3" } },
       active_review_model: null,
     });
-    expect(stage(derivePipeline(liveInput({ readiness })), "answer_model").numbers).toEqual(["Configured"]);
+    expect(stage(derivePipeline(liveInput({ readiness })), "answer_model").status).toBe("blocked");
   });
 
   // Case 10: static public build with no API at all; the portfolio fixture stands in.

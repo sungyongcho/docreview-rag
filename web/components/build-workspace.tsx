@@ -71,6 +71,7 @@ export interface BuildWorkspaceProps {
   tab: BuildTab;
   onTabChange: (tab: BuildTab) => void;
   focusStep?: number | "setup" | null;
+  onOpenLocalSettings?: () => void;
   onNavigate: (target: BuildNavigationTarget) => void;
 }
 
@@ -97,7 +98,7 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, focusStep }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -414,6 +415,8 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         onToggleSource={(key) => setSelectedSources((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])}
         registryCounts={registryCounts}
         answerModel={answerModelLabel}
+        readiness={connectionConfirmed ? readiness : null}
+        onOpenLocalSettings={onOpenLocalSettings}
         onCancelJob={onCancelJob}
         operationsAvailable={operationsAvailable}
         onRunOperation={onRunOperation}
