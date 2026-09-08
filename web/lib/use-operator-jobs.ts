@@ -1,5 +1,5 @@
 "use client";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -56,13 +56,13 @@ export function useOperatorJobs(
             ? "error"
             : job.status === "cancelled"
               ? "warning"
-              : "info";
+              : "job";
         const resultId = job.result_refs.result_id;
         notify(job.message, tone, `job:${job.job_id}`, undefined, {
-          event: "job-status",
+          event: "job-status", update: true, revision: `${job.status}:${job.updated_at}`,
           title: job.status === "succeeded" ? "Job completed" : job.status === "failed" || job.status === "interrupted" ? "Job failed" : job.status === "cancelled" ? "Job cancelled" : job.status === "queued" ? "Job queued" : "Job running",
           jobId: job.job_id,
-          target: job.domain === "evaluation" && typeof resultId === "number" && resultId > 0 ? { view: "measure", tab: "compare", resultId } : { view: "build", tab: "jobs", jobId: job.job_id },
+          target: job.domain === "evaluation" && typeof resultId === "number" && resultId > 0 ? { view: "measure", tab: "runs", resultId } : { view: "build", tab: "jobs", jobId: job.job_id },
           desktop: ["succeeded", "failed", "interrupted", "cancelled"].includes(job.status),
           supersedes: ["corpus-operation", "evaluation-queued"],
         });
@@ -99,7 +99,7 @@ export function useOperatorJobs(
       failures.current += 1;
       setStale(true);
       setLoading(false);
-      if (manual) notify(reason instanceof Error ? reason.message : t("Job activity could not be loaded."), "error", "jobs-refresh", undefined, { event: "jobs-refresh-error", detail: notificationErrorDetail(reason) });
+      if (manual) notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Job activity could not be loaded."), "error", "jobs-refresh", undefined, { event: "jobs-refresh-error", detail: notificationErrorDetail(reason) });
     } finally {
       if (request.current === current) request.current = null;
     }
@@ -147,7 +147,7 @@ export function useOperatorJobs(
       await refresh();
     } catch (reason) {
       if (!mounted.current || !activity.current.active || !activity.current.enabled) return;
-      notify(reason instanceof Error ? reason.message : t("Job retry failed."), "error", `job-retry:${jobId}`, undefined, { event: "job-retry-id-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Job retry failed."), "error", `job-retry:${jobId}`, undefined, { event: "job-retry-id-error", detail: notificationErrorDetail(reason) });
     }
   }, [notify, refresh, t]);
 
@@ -158,7 +158,7 @@ export function useOperatorJobs(
       await refresh();
     } catch (reason) {
       if (!mounted.current || !activity.current.active || !activity.current.enabled) return;
-      notify(reason instanceof Error ? reason.message : t("Job cancellation failed."), "error", `job-cancel:${jobId}`, undefined, { event: "job-cancel-id-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Job cancellation failed."), "error", `job-cancel:${jobId}`, undefined, { event: "job-cancel-id-error", detail: notificationErrorDetail(reason) });
     }
   }, [notify, refresh, t]);
 

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { NotificationProvider } from "@/components/notifications";
 import { ThemeProvider } from "@/components/theme-provider";
 import { THEME_BOOTSTRAP } from "@/lib/theme";
 
@@ -18,7 +17,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="ko" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} /></head>
-      <body><I18nProvider><ThemeProvider><NotificationProvider>{children}</NotificationProvider></ThemeProvider></I18nProvider></body>
+      <body><I18nProvider><ThemeProvider>{children}</ThemeProvider></I18nProvider></body>
     </html>
   );
 }

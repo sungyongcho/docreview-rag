@@ -24,10 +24,11 @@ interface OutletContext extends Notifications {
   markRead: (id: string | null) => void;
   remove: (id: string | null) => void;
   setPanelOpen: (open: boolean) => void;
-  registerSurface: (id: string, surface: string) => () => void;
+  registerSurface: (id: string, surface: string, modal?: boolean) => () => void;
+  modalActive: boolean;
   bindNavigation: (navigate: (target: NotificationTarget) => void) => () => void;
 }
-const Context = createContext<OutletContext>({ notify: () => undefined, dismissNotice: () => undefined, items: [], entries: [], selected: null, register: () => () => undefined, dismiss: () => undefined, expire: () => undefined, markRead: () => undefined, remove: () => undefined, setPanelOpen: () => undefined, registerSurface: () => () => undefined, bindNavigation: () => () => undefined });
+const Context = createContext<OutletContext>({ notify: () => undefined, dismissNotice: () => undefined, items: [], entries: [], selected: null, register: () => () => undefined, dismiss: () => undefined, expire: () => undefined, markRead: () => undefined, remove: () => undefined, setPanelOpen: () => undefined, registerSurface: () => () => undefined, modalActive: false, bindNavigation: () => () => undefined });
 
 /** One event source feeds durable history, the reserved banner outlet and optional desktop mirroring. */
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
@@ -36,7 +37,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [entries, setEntries] = useState<NotificationEntry[]>([]);
   const history = useRef<NotificationEntry[]>([]);
   const [outlets, setOutlets] = useState<Array<{ id: string; priority: number }>>([]);
-  const [surfaces, setSurfaces] = useState<Array<{ id: string; surface: string }>>([]);
+  const [surfaces, setSurfaces] = useState<Array<{ id: string; surface: string; modal: boolean }>>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const navigator = useRef<((target: NotificationTarget) => void) | null>(null);
   const commitHistory = useCallback((next: NotificationEntry[]) => { history.current = next;setEntries(next);saveNotifications(next); }, []);
@@ -75,12 +76,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const duration = options?.duration ?? requestedDuration ?? (tone === "info" || tone === "success" || tone === "job" ? 5000 : 8000);
     const persist = options?.persist ?? spec?.classification === "persistent";
     const now = new Date().toISOString();
-    const candidate: NotificationEntry = { id: crypto.randomUUID(), key, kind: tone, title: options?.title ?? spec?.title ?? "Notification", body: message, target: options?.target ?? spec?.target ?? undefined, detail: options?.detail, jobId: options?.jobId, surface: options?.surface ?? spec?.surface ?? undefined, createdAt: now, updatedAt: now, count: 1 };
+    const candidate: NotificationEntry = { id: crypto.randomUUID(), key, kind: tone, title: options?.title ?? spec?.title ?? "Notification", body: message, target: options?.target ?? spec?.target ?? undefined, detail: options?.detail, revision: options?.revision, jobId: options?.jobId, surface: options?.surface ?? spec?.surface ?? undefined, createdAt: now, updatedAt: now, count: 1 };
     let entry = candidate;
     if (persist) {
-      const prior = history.current.find(item => item.key === key);
-      if (tone !== "error" && prior?.body === message && prior.kind === tone && JSON.stringify(prior.target) === JSON.stringify(candidate.target) && JSON.stringify(prior.detail) === JSON.stringify(candidate.detail)) return;
-      const next = appendNotification(history.current, candidate);entry = next[next.length - 1];commitHistory(next);
+      const prior = history.current.findLast(item => item.key === key);
+      if (prior && options?.revision !== undefined && prior.revision === candidate.revision) return;
+      if (prior && options?.update && tone !== "error" && prior.body === message && prior.kind === tone && JSON.stringify(prior.target) === JSON.stringify(candidate.target) && JSON.stringify(prior.detail) === JSON.stringify(candidate.detail)) return;
+      const next = appendNotification(history.current, candidate, options?.update);entry = next[next.length - 1];commitHistory(next);
     }
     setItems(current => {
       const existing = current.find(item => item.key === key);
@@ -99,23 +101,25 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setOutlets(current => [...current.filter(item => item.id !== id), { id, priority }]);
     return () => setOutlets(current => current.filter(item => item.id !== id));
   }, []);
-  const registerSurface = useCallback((id: string, surface: string) => {
-    setSurfaces(current => [...current.filter(item => item.id !== id), { id, surface }]);
+  const registerSurface = useCallback((id: string, surface: string, modal = false) => {
+    setSurfaces(current => [...current.filter(item => item.id !== id), { id, surface, modal }]);
     return () => setSurfaces(current => current.filter(item => item.id !== id));
   }, []);
   const selected = [...outlets].sort((a, b) => a.priority - b.priority).at(-1)?.id ?? null;
+  const modalActive = surfaces.some(surface => surface.modal);
   const visible = useMemo(() => panelOpen ? [] : items.filter(item => !item.surface || !surfaces.some(owner => owner.surface === item.surface)), [items, surfaces, panelOpen]);
-  const value = useMemo(() => ({ notify, dismissNotice, dismiss, expire, markRead, remove, register, registerSurface, bindNavigation, setPanelOpen, selected, items: visible, entries }), [notify, dismissNotice, dismiss, expire, markRead, remove, register, registerSurface, bindNavigation, selected, visible, entries]);
+  const value = useMemo(() => ({ notify, dismissNotice, dismiss, expire, markRead, remove, register, registerSurface, modalActive, bindNavigation, setPanelOpen, selected, items: visible, entries }), [notify, dismissNotice, dismiss, expire, markRead, remove, register, registerSurface, modalActive, bindNavigation, selected, visible, entries]);
   return <Context.Provider value={value}>{children}{!selected && visible.length > 0 && <NotificationTray items={visible} onDismiss={dismiss} onExpire={expire} />}{panelOpen && <span className="visually-hidden" role="status" aria-live="polite">{entries.at(-1)?.body}</span>}</Context.Provider>;
 }
 
 export function useNotifications(): Notifications { return useContext(Context); }
+/** Read history and actions from the active presentation's notification provider. */
 export function useNotificationCenter() { return useContext(Context); }
 
 /** Let an already-visible card or dialog own its event while preserving its notification history. */
-export function useNotificationSurface(surface: string, active = true): void {
+export function useNotificationSurface(surface: string, active = true, modal = false): void {
   const id = useId();const { registerSurface } = useContext(Context);
-  useEffect(() => active ? registerSurface(id, surface) : undefined, [active, id, surface, registerSurface]);
+  useEffect(() => active ? registerSurface(id, surface, modal) : undefined, [active, id, surface, modal, registerSurface]);
 }
 
 /** A dialog or inspector reserves feedback space without covering controls. */

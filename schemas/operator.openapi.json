@@ -164,6 +164,68 @@
         ],
         "type": "string"
       },
+      "LifecycleReceipt": {
+        "additionalProperties": false,
+        "description": "Expose only the recorded outcome needed by the browser notification center.",
+        "properties": {
+          "command": {
+            "const": "start-fresh",
+            "title": "Command",
+            "type": "string"
+          },
+          "completed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Completed",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "restarted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restarted"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated": {
+            "exclusiveMinimum": 0.0,
+            "title": "Updated",
+            "type": "number"
+          }
+        },
+        "required": [
+          "command",
+          "updated",
+          "status",
+          "completed"
+        ],
+        "title": "LifecycleReceipt",
+        "type": "object"
+      },
       "StartJobRequest": {
         "additionalProperties": false,
         "description": "Select one command by its immutable registry identifier.",
@@ -426,6 +488,29 @@
           }
         },
         "summary": "Cancel Job"
+      }
+    },
+    "/lifecycle/receipts": {
+      "get": {
+        "description": "Expose existing reset receipts through the same authenticated local operator.",
+        "operationId": "read_lifecycle_receipts_lifecycle_receipts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LifecycleReceipt"
+                  },
+                  "title": "Response Read Lifecycle Receipts Lifecycle Receipts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Lifecycle Receipts"
       }
     },
     "/wipe": {

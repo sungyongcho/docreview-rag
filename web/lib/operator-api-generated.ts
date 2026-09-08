@@ -88,6 +88,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lifecycle/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Lifecycle Receipts
+         * @description Expose existing reset receipts through the same authenticated local operator.
+         */
+        get: operations["read_lifecycle_receipts_lifecycle_receipts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/wipe": {
         parameters: {
             query?: never;
@@ -256,6 +276,30 @@ export interface components {
         };
         /** @enum {string} */
         JobStatus: "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
+        /**
+         * LifecycleReceipt
+         * @description Expose only the recorded outcome needed by the browser notification center.
+         */
+        LifecycleReceipt: {
+            /**
+             * Command
+             * @constant
+             */
+            command: "start-fresh";
+            /** Completed */
+            completed: string[];
+            /** Error */
+            error?: string | null;
+            /** Restarted */
+            restarted?: boolean | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed";
+            /** Updated */
+            updated: number;
+        };
         /**
          * StartJobRequest
          * @description Select one command by its immutable registry identifier.
@@ -443,6 +487,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_lifecycle_receipts_lifecycle_receipts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecycleReceipt"][];
                 };
             };
         };

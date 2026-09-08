@@ -2,14 +2,15 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationProvider, useNotifications, useNotificationSurface } from "./notifications";
 import { NotificationCenter } from "./notification-center";
+import type { NotificationTarget } from "@/lib/notification-registry";
 import { loadNotifications } from "@/lib/notification-store";
 import { setDesktopJobNotifications } from "@/lib/storage";
 
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup();vi.useRealTimers();vi.unstubAllGlobals(); });
-function Probe({ modal = false, long = false }: { modal?: boolean; long?: boolean }) {
+function Probe({ modal = false, long = false, target }: { modal?: boolean; long?: boolean; target?: NotificationTarget }) {
   const { notify } = useNotifications();useNotificationSurface("health", modal);
-  return <><button onClick={() => notify(long ? "Original server detail ".repeat(30) : "Original server message.", "error", "health", 1000, { event: "health-transition", detail: { text: "ValueError: original detail", cause: "invalid_json", path: "manifest.json" } })}>Emit</button><button onClick={() => notify("Job complete", "success", "job:1", undefined, { event: "job-status", jobId: "1", desktop: true, target: { view: "build", tab: "jobs", jobId: "1" } })}>Job</button></>;
+  return <><button onClick={() => notify(long ? "Original server detail ".repeat(30) : "Original server message.", "error", "health", 1000, { event: "health-transition", target, detail: { text: "ValueError: original detail", cause: "invalid_json", path: "manifest.json" } })}>Emit</button><button onClick={() => notify("Job complete", "success", "job:1", undefined, { event: "job-status", jobId: "1", desktop: true, target: { view: "build", tab: "jobs", jobId: "1" } })}>Job</button></>;
 }
 function mount(props = {}, navigate = vi.fn()) { return { ...render(<NotificationProvider><Probe {...props} /><NotificationCenter developer onNavigate={navigate} /></NotificationProvider>), navigate }; }
 function open() { fireEvent.click(screen.getByRole("button", { name: /^Notifications ·/ }));return screen.getByRole("dialog", { name: "Notification center" }); }
@@ -53,4 +54,42 @@ describe("notification center", () => {
     mount();fireEvent.click(screen.getByText("Job"));expect(desktop).toHaveBeenCalledOnce();expect(loadNotifications()).toHaveLength(1);
     expect(desktop).toHaveBeenCalledWith("DocReview · Job activity",{body:"Job complete",tag:"job:1"});
   });
+});
+
+
+it.each<NotificationTarget>([
+  { view: "build", tab: "jobs", jobId: "job-1" },
+  { view: "measure", tab: "runs", resultId: 42 },
+  { view: "review", conversationId: "conversation-1" },
+  { view: "settings", category: "local" },
+  { view: "system", tab: "status" },
+])("activates and marks read the exact %j destination", target => {
+  const {navigate}=mount({target});fireEvent.click(screen.getByText("Emit"));const panel=open();
+  fireEvent.click(within(panel).getByRole("button",{name:/Original server message/}));
+  expect(navigate).toHaveBeenCalledWith(target);expect(loadNotifications()[0].readAt).toBeDefined();
+});
+
+
+it("does not repeat an error that already has an authoritative inline notice", () => {
+  function Inline() {
+    const {notify}=useNotifications();
+    return <><p role="alert">Inline source error</p><button onClick={()=>notify("Inline source error","error","build-refresh",undefined,{event:"build-refresh-error"})}>Refresh fixture</button></>;
+  }
+  render(<NotificationProvider><Inline/><NotificationCenter onNavigate={vi.fn()}/></NotificationProvider>);
+  fireEvent.click(screen.getByText("Refresh fixture"));
+  expect(screen.getAllByText("Inline source error")).toHaveLength(1);
+  expect(loadNotifications()).toEqual([]);
+});
+
+
+it("closes the center when an existing child confirmation dialog opens automatically", () => {
+  function OwnedDialog({ active }: { active: boolean }) {
+    useNotificationSurface("reset", active, true);
+    return active ? <div role="dialog" aria-label="Reset confirmation"/> : null;
+  }
+  const view=render(<NotificationProvider><OwnedDialog active={false}/><NotificationCenter onNavigate={vi.fn()}/></NotificationProvider>);
+  open();
+  view.rerender(<NotificationProvider><OwnedDialog active/><NotificationCenter onNavigate={vi.fn()}/></NotificationProvider>);
+  expect(screen.queryByRole("dialog",{name:"Notification center"})).toBeNull();
+  expect(screen.getByRole("dialog",{name:"Reset confirmation"})).toBeInTheDocument();
 });

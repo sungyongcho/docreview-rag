@@ -22,7 +22,7 @@ export function JobHistoryControls({ onChanged }: { onChanged: () => void }) {
   const [backup, setBackup] = useState<string | null>(null);
   const [changed, setChanged] = useState<number | null>(null);
   const visible = open && active;
-  useNotificationSurface("build-jobs", visible);
+  useNotificationSurface("build-jobs", visible, true);
   const terminalCount = summary ? summary.visible + summary.archived : 0;
 
   useEffect(() => {

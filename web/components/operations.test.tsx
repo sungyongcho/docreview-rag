@@ -142,12 +142,12 @@ describe("Operations", () => {
     await flush();
     expect(window.confirm).toHaveBeenCalledWith("Create schema objects?");
     expect(startOperatorJob).toHaveBeenCalledWith("schema-prepare");
-    expect(notifications.notify).toHaveBeenCalledWith("Prepare empty schema started.", "success", "operations-run");
+    expect(notifications.notify).toHaveBeenCalledWith("Prepare empty schema started.", "success", "operations-run", undefined, { event: "operations-run-notice" });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await flush();
     expect(cancelOperatorJob).toHaveBeenCalledWith("job-1");
-    expect(notifications.notify).toHaveBeenCalledWith("Command cancelled.", "success", "operations-cancel");
+    expect(notifications.notify).toHaveBeenCalledWith("Command cancelled.", "success", "operations-cancel", undefined, { event: "operations-cancel-notice" });
   });
 
   it("polls a running job and shows one persistent notice after three failed polls, clearing it on recovery", async () => {
@@ -167,7 +167,7 @@ describe("Operations", () => {
     // Polls at 1 s, 3 s and 7 s fail: the third failure raises the single notice.
     await flush(7_500);
     expect(notifications.notify).toHaveBeenCalledTimes(1);
-    expect(notifications.notify).toHaveBeenCalledWith("Local Operations is not responding. Retrying status checks.", "info", "operations-poll", 0);
+    expect(notifications.notify).toHaveBeenCalledWith("Local Operations is not responding. Retrying status checks.", "info", "operations-poll", 0, { event: "operations-poll-notice" });
     expect(notifications.dismissNotice).not.toHaveBeenCalled();
     expect(screen.getByText(/Python lint · running/)).toBeInTheDocument();
 

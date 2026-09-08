@@ -1,3 +1,4 @@
+import type { ReviewEngineState } from "./types";
 import type { NavigationTarget } from "./navigation";
 
 export type NotificationKind = "info" | "success" | "warning" | "error" | "job";
@@ -7,8 +8,10 @@ export interface NotificationSpec { classification: "persistent" | "transient" |
 
 /** Every production call declares a registered delivery class and its owning surface. */
 export const NOTIFICATION_EVENTS = {
+  "snapshot-comparison-result": { classification: "persistent", title: "Snapshot comparison", target: { view: "measure", tab: "snapshots", resultId: null }, surface: "measure-snapshots" },
+  "notification-target-unavailable": { classification: "transient", title: "Item unavailable", target: null, surface: null },
   "build-refresh-error": {
-    "classification": "persistent",
+    "classification": "inline-replaced",
     "title": "Corpus activity",
     "target": {
       "view": "build",
@@ -113,7 +116,7 @@ export const NOTIFICATION_EVENTS = {
     "surface": "measure-runs"
   },
   "evaluation-detail-error": {
-    "classification": "persistent",
+    "classification": "inline-replaced",
     "title": "Evaluation",
     "target": {
       "view": "measure",
@@ -327,7 +330,8 @@ export const NOTIFICATION_EVENTS = {
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults"
+      "tab": "defaults",
+      "resultId": null
     },
     "surface": "measure-defaults"
   },
@@ -336,7 +340,8 @@ export const NOTIFICATION_EVENTS = {
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults"
+      "tab": "defaults",
+      "resultId": null
     },
     "surface": "measure-defaults"
   },
@@ -345,7 +350,8 @@ export const NOTIFICATION_EVENTS = {
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults"
+      "tab": "defaults",
+      "resultId": null
     },
     "surface": "measure-defaults"
   },
@@ -354,7 +360,8 @@ export const NOTIFICATION_EVENTS = {
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults"
+      "tab": "defaults",
+      "resultId": null
     },
     "surface": "measure-defaults"
   },
@@ -570,7 +577,8 @@ export const NOTIFICATION_EVENTS = {
     "title": "Retrieval presets",
     "target": {
       "view": "measure",
-      "tab": "presets"
+      "tab": "presets",
+      "resultId": null
     },
     "surface": "presets"
   },
@@ -607,6 +615,8 @@ export interface NotifyOptions {
   duration?: number;
   surface?: string;
   supersedes?: string[];
+  revision?: string;
+  update?: boolean;
 }
 
 /** Keep structured API text verbatim; UI chrome explains the stable cause separately. */
@@ -614,10 +624,30 @@ export function notificationErrorDetail(error: unknown): NotificationDetail | un
   if (!error || typeof error !== "object") return undefined;
   const record = error as Record<string, unknown>;
   const payload = record.failure && typeof record.failure === "object" ? record.failure as Record<string, unknown> : record;
-  const text = typeof payload.detail === "string" ? payload.detail : undefined;
+  const text = typeof payload.detail === "string" ? payload.detail : Array.isArray(payload.details) ? payload.details.map(value => typeof value === "string" ? value : JSON.stringify(value, null, 2)).filter(Boolean).join("\n") || undefined : undefined;
   const cause = typeof payload.cause === "string" ? payload.cause : undefined;
   const path = typeof payload.path === "string" ? payload.path : undefined;
   const job = payload.corpus_job && typeof payload.corpus_job === "object" ? payload.corpus_job as Record<string, unknown> : null;
   const fix: NotificationTarget | undefined = cause ? typeof job?.job_id === "string" ? { view: "build", tab: "jobs", jobId: job.job_id } : { view: "build", tab: "documents" } : undefined;
   return text || cause || path ? { text, cause, path, fix } : undefined;
+}
+
+
+/** Prefer the API's original message over client-added validation or Error prefixes. */
+export function notificationErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "failure" in error && error.failure && typeof error.failure === "object" && "message" in error.failure && typeof error.failure.message === "string") return error.failure.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
+  if (error && typeof error === "object" && "detail" in error && typeof error.detail === "string") return error.detail;
+  return error instanceof Error ? error.message : String(error);
+}
+
+
+/** Share one connection-event identity between explicit actions and refreshed server state. */
+export function localConnectionNotice(local: ReviewEngineState) {
+  const reachable = local.enabled === true || local.reason === "no_answer_models";
+  const disconnected = ["disconnected", "not_configured", "disabled_in_prod"].includes(local.reason ?? "");
+  const message = reachable ? "Local model server connected." : disconnected ? "Local model server disconnected." : "Local model server is unavailable.";
+  const kind: NotificationKind = reachable || disconnected ? "success" : "error";
+  const signature = JSON.stringify([reachable, local.reason, local.protocol, local.model]);
+  return { message, kind, signature, revision: `${signature}:${local.checked_at ?? "unrecorded"}` };
 }

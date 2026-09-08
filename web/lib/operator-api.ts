@@ -124,3 +124,9 @@ export function acknowledgeWipeBrowser(operationId: string) {
     method: "POST", body: JSON.stringify({ operation_id: operationId }),
   });
 }
+
+
+/** Read recorded fresh-start outcomes without executing a command or changing its receipt. */
+export function getLifecycleReceipts(signal?: AbortSignal) {
+  return operatorRequest<Array<OperatorComponents["schemas"]["LifecycleReceipt"]>>("/lifecycle/receipts", { cache: "no-store", signal });
+}

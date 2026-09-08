@@ -183,3 +183,12 @@ describe("request deadlines", () => {
     await expect(getCorpusSnapshot()).rejects.toMatchObject({ status: 502, code: "invalid_response" });
   });
 });
+
+
+it("preserves structured API failure details for notification entries", async () => {
+  const failure={code:"query_scope_unavailable",message:"Original API message.",detail:"ValueError: original detail",cause:"invalid_json",path:"manifest.json"};
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({error:failure}),{status:503,headers:{"Content-Type":"application/json"}})));
+  const error=await getCorpusSnapshot().catch(error=>error);
+  expect(error.failure).toEqual(failure);
+  vi.unstubAllGlobals();
+});

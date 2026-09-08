@@ -88,9 +88,9 @@ export function subscribeFilePresets(listener: () => void): () => void {
 function visibilityRefresh() { if (document.visibilityState === "visible") void refreshFilePresets(); }
 
 export function readPresetCatalog() {
-  if (presetStorageKind() === "pending") return { presets: [], builtins: BUILTIN_PRESETS, fileErrors: [], error: null };
-  if (presetStorageKind() === "file") return { presets: catalog?.presets.filter(p => !p.builtin) ?? [], builtins: catalog ? BUILTIN_PRESETS.flatMap(builtin => catalog!.presets.filter(p => p.builtin && p.id === builtin.id)) : BUILTIN_PRESETS, fileErrors: catalog?.errors ?? [], error };
-  return { presets: loadSavedPresets(), builtins: BUILTIN_PRESETS, fileErrors: [], error: null };
+  if (presetStorageKind() === "pending") return { loaded: false, presets: [], builtins: BUILTIN_PRESETS, fileErrors: [], error: null };
+  if (presetStorageKind() === "file") return { loaded: catalog !== null || error !== null, presets: catalog?.presets.filter(p => !p.builtin) ?? [], builtins: catalog ? BUILTIN_PRESETS.flatMap(builtin => catalog!.presets.filter(p => p.builtin && p.id === builtin.id)) : BUILTIN_PRESETS, fileErrors: catalog?.errors ?? [], error };
+  return { loaded: true, presets: loadSavedPresets(), builtins: BUILTIN_PRESETS, fileErrors: [], error: null };
 }
 
 /** Preserve synchronous browser updates and return a completion promise for file writes. */

@@ -82,7 +82,7 @@ describe("operator job polling", () => {
 
     await act(async () => { await result.current.refresh(true); });
     expect(notifications.notify).toHaveBeenCalledTimes(1);
-    expect(notifications.notify).toHaveBeenCalledWith("Failed to fetch", "error", "jobs-refresh");
+    expect(notifications.notify).toHaveBeenCalledWith("Failed to fetch", "error", "jobs-refresh", undefined, { event: "jobs-refresh-error", detail: undefined });
   });
 
   it("keeps board identity when a poll returns an identical board", async () => {

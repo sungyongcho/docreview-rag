@@ -1,5 +1,5 @@
 "use client";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { DefaultRunLimits } from "./default-run-limits";
 import { useI18n } from "@/lib/i18n";
 
@@ -120,9 +120,13 @@ function ApiInspector({ ready }: { ready: boolean }) {
       });
       const payload: unknown = await response.json();
       setRawResponse(JSON.stringify(payload, null, 2));
-      if (!response.ok) notify(t("The API rejected this request."), "error", "raw-request", undefined, { event: "raw-request-error" });
+      if (!response.ok) {
+        const error = payload && typeof payload === "object" && "error" in payload ? payload.error : payload;
+        const message = error && typeof error === "object" && ("message" in error || "detail" in error) ? notificationErrorMessage(error) : t("The API rejected this request.");
+        notify(message, "error", "raw-request", undefined, { event: "raw-request-error", detail: notificationErrorDetail(error) });
+      }
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Invalid JSON request."), "error", "raw-request", undefined, { event: "raw-request-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Invalid JSON request."), "error", "raw-request", undefined, { event: "raw-request-error", detail: notificationErrorDetail(reason) });
     }
   }
 

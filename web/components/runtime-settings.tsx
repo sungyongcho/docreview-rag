@@ -1,5 +1,5 @@
 "use client";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 import { DevelopmentBadge } from "@/components/development-badge";
 
@@ -16,7 +16,7 @@ export function RuntimeSettings({ readiness, live }: { readiness: Readiness | nu
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [limits, setLimits] = useState<ReleaseLimits | null>(null);
-  useEffect(() => { if (!live) void getReleaseLimits().then(setLimits).catch((reason) => notify(reason instanceof Error ? reason.message : String(reason), "error", "limits", undefined, { event: "limits-error", detail: notificationErrorDetail(reason) })); }, [live, notify]);
+  useEffect(() => { if (!live) void getReleaseLimits().then(setLimits).catch((reason) => notify(reason instanceof Error ? notificationErrorMessage(reason) : String(reason), "error", "limits", undefined, { event: "limits-error", detail: notificationErrorDetail(reason) })); }, [live, notify]);
   const apiEndpoint = typeof window === "undefined" ? t("Loading…") : new URL(apiBase() || "/", window.location.origin).toString().replace(/\/$/, "");
   const databaseEndpoint = process.env.NEXT_PUBLIC_DB_ENDPOINT || t("Server-side connection · credentials hidden");
   const operationsEndpoint = operatorBase() || t("Not configured in this build");

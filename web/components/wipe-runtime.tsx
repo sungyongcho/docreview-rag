@@ -47,12 +47,12 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
   const connected = operatorAvailable();
   const { notify } = useNotifications();
   const lastReceipt = useRef<string | null>(null);
-  useNotificationSurface("reset", visible);
+  useNotificationSurface("reset", visible, true);
   useEffect(() => {
     if (!enabled || !result?.id || !["succeeded", "failed", "interrupted"].includes(result.status)) return;
     const key = `${result.id}:${result.status}`;
     if (lastReceipt.current === key) return;lastReceipt.current = key;
-    notify(result.message ?? t("Runtime reset finished."), result.status === "succeeded" ? "success" : "error", `reset:${result.id}`, undefined, { event: "reset-receipt", target: { view: "build", tab: "pipeline", stage: "setup" } });
+    notify(result.message ?? t("Runtime reset finished."), result.status === "succeeded" ? "success" : "error", `reset:${result.id}`, undefined, { event: "reset-receipt", update: true, revision: key, target: { view: "build", tab: "pipeline", stage: "setup" } });
   }, [enabled, result, notify, t]);
   const partial = result?.status === "failed" || result?.status === "interrupted";
   const canPreview = capability?.available === true && result?.status !== "running" && !result?.recovery_required && !(partial && result.retryable === false);

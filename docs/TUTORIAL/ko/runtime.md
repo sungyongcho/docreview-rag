@@ -140,3 +140,17 @@ rag-dev up -d
 
 ### SCREENSHOT NEEDED
 <!-- Feature: provider and credential usage groups with review/embedding roles, reported versus estimated inputs, local zero cost and incomplete external estimates; locale=ko; theme=light; preserve all existing screenshot assets. -->
+
+
+## 알림 센터 {#notification-center}
+
+상단 바의 배포 화면 미리보기·언어 선택 옆 종 모양 버튼을 여세요. 배지는 읽지 않은 알림 수입니다. 최근 알림 100개가 이 브라우저에 남으며, 패널을 닫거나 배너 표시 시간이 끝나도 삭제되지 않습니다. 배너의 닫기 버튼은 해당 알림을 읽음으로 표시합니다. **모두 읽음**은 기록을 보존하며 **삭제**와 **모두 지우기**는 알림 기록만 지웁니다. 대화·원문 파일·작업 결과는 삭제하지 않습니다.
+
+알림을 누르면 읽음으로 표시하고 관련 작업·평가 결과·대화·설정 항목·시스템 상태로 이동합니다. 이동 대상이 없는 알림은 읽음 상태만 바뀝니다. Escape는 패널을 닫고 종 버튼으로 초점을 돌려주며, 방향키는 알림 사이를 이동합니다. 긴 메시지는 원문을 버리지 않고 펼쳐 볼 수 있습니다. 오류는 오류 그림과 강조색으로 구분하며 서버가 원인·파일·복구 동작을 제공하면 **오류 상세**에서 확인할 수 있습니다. 서버가 보낸 문구는 그대로 보존합니다.
+
+한 작업의 상태는 같은 알림에서 갱신하고 별개의 성공 작업은 각자 기록합니다. 반복된 동일 오류는 횟수로 합칩니다. 기존 확인 창과 표시 중인 결과 카드가 해당 사건의 주 화면이며 같은 배너는 억제합니다. 모달이 열리면 알림 패널은 접힙니다. **시스템 → 로컬 작업**의 선택적 데스크톱 작업 알림도 같은 작업 알림을 사용합니다. 알림을 누르는 것은 이동만 수행하며 재시도·초기화·새 모델 요청을 실행하지 않습니다.
+
+실제 연결 상태 변화, 로컬 모델 연결과 느린 CPU 측정, 프리셋 내용 변경, 비교 결과, 확인 가능한 초기화·새 시작 실행 기록도 알립니다. 프리셋 내용이 그대로인 조회나 저장소 전환 중의 임시 로딩 상태는 알림을 만들지 않습니다. 새 시작 기록은 실행된 정리 결과이며 모든 서비스의 준비 완료를 보증하지 않습니다. 계속하기 전에 시스템 상태를 확인하세요.
+
+### SCREENSHOT NEEDED
+<!-- Feature: top-bar notification bell and persistent panel; locale=ko; light mode; 1440px and 720px; show unread badge, error kind icon, expanded original API detail, read/delete actions and a job/result target. Use an actual app state, not a component fixture. -->

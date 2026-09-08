@@ -172,3 +172,9 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 
 ### SCREENSHOT NEEDED
 <!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=ko; light mode; preserve existing assets. -->
+
+
+다른 작업 화면을 보는 동안 답변이 완료되거나 실패하면 원래 대화로 연결되는 종 알림이 생깁니다. 누르면 읽음으로 표시하고 해당 대화로 돌아갑니다. 결과와 실패의 자세한 근거는 기존 실행 요약에서 확인하며 알림 센터를 열어도 요청을 다시 실행하지 않습니다. [알림 센터](runtime.md#notification-center)를 참고하세요.
+
+### SCREENSHOT NEEDED
+<!-- Feature: background review completion/failure notification returning to its original conversation; locale=ko; light mode; show the same persisted message and no repeated request. -->

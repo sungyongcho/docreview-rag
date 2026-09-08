@@ -1,6 +1,6 @@
 "use client";
 import { useNotifications, useNotificationSurface } from "./notifications";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage, localConnectionNotice } from "@/lib/notification-registry";
 
 import { useEffect, useRef, useState } from "react";
 import { Activity, ExternalLink, Plug, RotateCcw, Unplug } from "lucide-react";
@@ -121,11 +121,12 @@ export function LocalConnectionSettings({ readiness, onChanged }: {
         : action === "disconnect" ? "Disconnected. Local answers are disabled until you connect or reset."
         : "Default server restored. Your added servers are kept.");
       onChanged?.(value.local);
-      notify(t(action === "disconnect" ? "Local model server disconnected." : "Local model server connected."), "success", "local-connection", undefined, { event: "local-connection" });
+      const event = localConnectionNotice(value.local);
+      notify(t(event.message), event.kind, "local-connection", undefined, { event: "local-connection", revision: event.revision });
     } catch (reason) {
       if (mounted.current) {
         setError({ detail: reason instanceof Error ? reason.message : "The connection could not be changed.", kept: true });
-        notify(reason instanceof Error ? reason.message : t("The connection could not be changed."), "error", "local-connection", undefined, { event: "local-connection", detail: notificationErrorDetail(reason) });
+        notify(reason instanceof Error ? notificationErrorMessage(reason) : t("The connection could not be changed."), "error", "local-connection", undefined, { event: "local-connection", detail: notificationErrorDetail(reason) });
       }
     } finally {
       if (mounted.current) { setBusy(false); setPendingAction(null); }

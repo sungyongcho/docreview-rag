@@ -1,5 +1,5 @@
 "use client";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -72,6 +72,7 @@ export interface BuildWorkspaceProps {
   tab: BuildTab;
   onTabChange: (tab: BuildTab) => void;
   focusStep?: number | "setup" | null;
+  focusJobId?: string;
   onOpenLocalSettings?: () => void;
   onNavigate: (target: BuildNavigationTarget) => void;
 }
@@ -99,7 +100,7 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep, focusJobId }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -217,7 +218,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
       onRefreshJobs();
       notify(t("Corpus operation queued."), "success", "corpus-operation", undefined, { event: "corpus-operation-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Corpus operation failed."), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }
@@ -240,7 +241,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
       }
       notify(t("Selections queued for ingest: {count}.", { count: ordered.length.toLocaleString(locale) }), "success", "corpus-operation", undefined, { event: "corpus-operation-notice" });
     } catch (reason) {
-      notify(t("Indexing stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
+      notify(t("Indexing stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? notificationErrorMessage(reason) : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }
@@ -258,7 +259,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         }
       }
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Corpus operation failed."), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally { setBusy(false); }
   }
 
@@ -276,7 +277,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
       }
       notify(t("Acquisition jobs queued: {count}.", { count: queued }), "success", "corpus-operation", undefined, { event: "corpus-operation-notice" });
     } catch (reason) {
-      notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
+      notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? notificationErrorMessage(reason) : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally { setBusy(false); }
   }
 
@@ -320,7 +321,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         setDuplicateEvaluation(true);
         notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
         onRefreshJobs();
-      } else notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation", undefined, { event: "evaluation-error", detail: notificationErrorDetail(reason) });
+      } else notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Evaluation failed."), "error", "evaluation", undefined, { event: "evaluation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }
@@ -445,6 +446,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter
+        focusJobId={focusJobId}
             historyEnabled={live}
             onOpenPipeline={(stage) => { setFocusStage(stage); onTabChange("pipeline"); }}
             board={jobBoard}

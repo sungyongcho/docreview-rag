@@ -1,5 +1,5 @@
 "use client";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -16,11 +16,11 @@ export function ExperimentDefaultsForm({ profile, onSaved }: { profile: Retrieva
   const { notify } = useNotifications();
   const [experimentDefaults, setExperimentDefaults] = useState(loadExperimentDefaults);
   const [suites, setSuites] = useState<GoldenSuite[]>([]);
-  useEffect(() => { void getGoldenSuites().then((rows) => setSuites(Array.isArray(rows) ? rows : [])).catch((reason) => notify(reason instanceof Error ? reason.message : String(reason), "error", "defaults-suites", undefined, { event: "defaults-suites-error", detail: notificationErrorDetail(reason) })); }, [notify]);
+  useEffect(() => { void getGoldenSuites().then((rows) => setSuites(Array.isArray(rows) ? rows : [])).catch((reason) => notify(reason instanceof Error ? notificationErrorMessage(reason) : String(reason), "error", "defaults-suites", undefined, { event: "defaults-suites-error", detail: notificationErrorDetail(reason) })); }, [notify]);
   const [experimentSnapshots, setExperimentSnapshots] = useState<PublishedSnapshot[]>([]);
   const [experimentRevisions, setExperimentRevisions] = useState<GoldenRevision[]>([]);
-  useEffect(() => { void getAdminSnapshots().then(setExperimentSnapshots).catch((reason) => notify(reason instanceof Error ? reason.message : String(reason), "error", "defaults-snapshots", undefined, { event: "defaults-snapshots-error", detail: notificationErrorDetail(reason) })); }, [notify]);
-  useEffect(() => { void getGoldenRevisions(experimentDefaults.suite_id).then(setExperimentRevisions).catch((reason) => notify(reason instanceof Error ? reason.message : String(reason), "error", "defaults-revisions", undefined, { event: "defaults-revisions-error", detail: notificationErrorDetail(reason) })); }, [experimentDefaults.suite_id, notify]);
+  useEffect(() => { void getAdminSnapshots().then(setExperimentSnapshots).catch((reason) => notify(reason instanceof Error ? notificationErrorMessage(reason) : String(reason), "error", "defaults-snapshots", undefined, { event: "defaults-snapshots-error", detail: notificationErrorDetail(reason) })); }, [notify]);
+  useEffect(() => { void getGoldenRevisions(experimentDefaults.suite_id).then(setExperimentRevisions).catch((reason) => notify(reason instanceof Error ? notificationErrorMessage(reason) : String(reason), "error", "defaults-revisions", undefined, { event: "defaults-revisions-error", detail: notificationErrorDetail(reason) })); }, [experimentDefaults.suite_id, notify]);
   function patchExperiment(update: Partial<ExperimentDefaults>) { setExperimentDefaults((current) => ({ ...current, ...update })); }
   function persistExperimentDefaults() {
     saveExperimentDefaults(experimentDefaults);

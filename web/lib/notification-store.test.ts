@@ -17,7 +17,7 @@ describe("notification history", () => {
     let rows = appendNotification([], first);rows = readNotification(rows, first.id, "2026-09-08T01:00:00Z");
     rows = appendNotification(rows, { ...first, id: "new-id", updatedAt: "2026-09-08T02:00:00Z" });
     expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({ id: first.id, count: 2 });expect(rows[0].readAt).toBeUndefined();
-    rows = appendNotification(rows, { ...first, kind: "success", body: "Recovered" });
+    rows = appendNotification(rows, { ...first, kind: "success", body: "Recovered" }, true);
     expect(rows[0]).toMatchObject({ id: first.id, count: 1, body: "Recovered" });
   });
   it("marks read without deleting and persists unread state through reload", () => {
@@ -30,4 +30,11 @@ describe("notification history", () => {
     expect(validNotificationTarget({ view: "external", url: "https://example.com" })).toBe(false);
     expect(validNotificationTarget({ view: "measure", resultId: -1 })).toBe(false);
   });
+});
+
+
+it("retains separate successful actions that reused a transient toast key", () => {
+  const first = entry(1, "success");
+  const rows = appendNotification([first], { ...first, id: "another-action", body: "Another case saved" });
+  expect(rows).toHaveLength(2);
 });

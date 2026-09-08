@@ -5,14 +5,14 @@ import { STAGE_ORDER } from "./pipeline";
 
 export type NavigationTarget =
   | { view: "review"; conversationId?: string }
-  | { view: "build"; tab?: BuildTab; stage?: number | "setup" }
+  | { view: "build"; tab?: BuildTab; stage?: number | "setup"; jobId?: string }
   | { view: "measure"; tab?: MeasureTab; resultId?: number | null }
   | { view: "system"; tab?: SystemTab };
 
 const BUILD_TABS: Record<BuildTab, string> = { pipeline: "Pipeline", documents: "Documents", jobs: "Jobs" };
 const MEASURE_TABS: Record<MeasureTab, string> = { playground: "Search trial", golden: "Golden dataset", runs: "Run evaluation", compare: "Compare and save", snapshots: "Snapshots", defaults: "Defaults", presets: "Retrieval presets" };
 const SYSTEM_TABS: Record<SystemTab, string> = { status: "Status", operations: "Operations", api: "API", usage: "Usage" };
-const NAVIGATION_PARAMETERS = ["view", "tab", "stage", "result", "conversation"];
+const NAVIGATION_PARAMETERS = ["view", "tab", "stage", "result", "conversation", "job"];
 
 /** Parse canonical positive integer IDs without accepting exponents, fractions or unsafe values. */
 function positiveInteger(value: string | null): number | undefined {
@@ -31,7 +31,8 @@ export function parseNavigationUrl(url: string, conversationIds: string[], fallb
     const selected = Object.hasOwn(BUILD_TABS, tab) ? tab as BuildTab : "pipeline";
     const stage = params.get("stage");
     const numeric = positiveInteger(stage);
-    return { view, tab: selected, ...(selected === "pipeline" && (stage === "setup" || (numeric !== undefined && numeric <= STAGE_ORDER.length)) ? { stage: stage === "setup" ? "setup" : numeric } : {}) };
+    const job = params.get("job");
+    return { view, tab: selected, ...(selected === "jobs" && job && /^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(job) ? { jobId: job } : {}), ...(selected === "pipeline" && (stage === "setup" || (numeric !== undefined && numeric <= STAGE_ORDER.length)) ? { stage: stage === "setup" ? "setup" : numeric } : {}) };
   }
   if (view === "measure") {
     const resultId = positiveInteger(params.get("result"));
@@ -52,6 +53,7 @@ export function navigationUrl(target: NavigationTarget, currentUrl: string): str
   } else {
     url.searchParams.set("tab", target.tab ?? (target.view === "build" ? "pipeline" : target.view === "measure" ? "playground" : "status"));
     if (target.view === "build" && target.stage !== undefined) url.searchParams.set("stage", String(target.stage));
+    if (target.view === "build" && target.tab === "jobs" && target.jobId) url.searchParams.set("job", target.jobId);
     if (target.view === "measure" && target.resultId != null) url.searchParams.set("result", String(target.resultId));
   }
   return `${url.pathname}${url.search}${url.hash}`;

@@ -1,5 +1,8 @@
 "use client";
-import { notificationErrorDetail } from "@/lib/notification-registry";
+import { NotificationCenter } from "@/components/notification-center";
+import { NotificationSignals } from "@/components/notification-signals";
+import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
+import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -137,6 +140,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const pendingReturn = useRef<NavigationEntry | null>(null);
   const [unsavedGolden, setUnsavedGolden] = useState(false);
   const [buildTab, setBuildTab] = useState<BuildTab>("pipeline");
+  const [buildJobId, setBuildJobId] = useState<string | undefined>();
   const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
   const [systemTab, setSystemTab] = useState<SystemTab>("status");
   const [measureResultId, setMeasureResultId] = useState<number | null>(null);
@@ -196,6 +200,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const initialized = useRef(false);
   const tourInitialized = useRef(false);
   const { notify, dismissNotice } = useNotifications();
+  const notificationView = useRef(view);notificationView.current = view;
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check, sessionActive);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
 
@@ -316,7 +321,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
   /** Return the explicit location represented by the retained workspace controls. */
   function currentTarget(): NavigationTarget {
-    return view === "build" ? { view, tab: buildTab, ...(buildTab === "pipeline" && buildStage !== undefined ? { stage: buildStage } : {}) }
+    return view === "build" ? { view, tab: buildTab, ...(buildTab === "jobs" && buildJobId ? { jobId: buildJobId } : {}), ...(buildTab === "pipeline" && buildStage !== undefined ? { stage: buildStage } : {}) }
       : view === "measure" ? { view, tab: measureTab, resultId: measureResultId }
       : view === "system" ? { view, tab: systemTab } : { view, conversationId: active?.id ?? activeId };
   }
@@ -342,7 +347,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       : target.view === "system" ? { ...target, tab: (!adminBuild || publicPreview) && target.tab !== undefined && target.tab !== "status" ? "status" : target.tab ?? systemTab }
       : { ...target, conversationId: target.conversationId ?? active?.id ?? activeId };
     const changed = normalized.view !== view
-      || (normalized.view === "build" && (normalized.tab !== buildTab || (normalized.stage !== undefined && normalized.stage !== buildStage)))
+      || (normalized.view === "build" && (normalized.tab !== buildTab || normalized.jobId !== buildJobId || (normalized.stage !== undefined && normalized.stage !== buildStage)))
       || (normalized.view === "measure" && (normalized.tab !== measureTab || normalized.resultId !== measureResultId))
       || (normalized.view === "system" && normalized.tab !== systemTab)
       || (normalized.view === "review" && normalized.conversationId !== activeId);
@@ -359,6 +364,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     if (normalized.view === "build") {
       if (normalized.tab) setBuildTab(normalized.tab);
       setBuildStage(normalized.stage);
+      setBuildJobId(normalized.jobId);
       if (normalized.stage !== undefined) setPendingStage(normalized.stage);
     }
     if (normalized.view === "measure") {
@@ -487,6 +493,16 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }, [pendingHelpTarget, view, buildTab, measureTab, systemTab, conversationTab]);
 
   // Saved error actions keep their old category identifiers but open the current owner.
+  /** Keep settings callbacks and guarded workspace history as the only notification destinations. */
+  function openNotification(target: NotificationTarget) {
+    if (target.view === "settings") {
+      if (!adminLive && (target.category === "local" || target.category === "limits")) return navigate({ view: "system", tab: "status" });
+      openSettings(target.category);return;
+    }
+    if (target.view === "review" && target.conversationId && !conversations.some(conversation => conversation.id === target.conversationId)) { notify(t("This conversation no longer exists in this browser."), "info", "notification-target", undefined, { event: "notification-target-unavailable" });return; }
+    navigate(target);
+  }
+
   function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
     if (category === "review") return openConversationSettings("filters");
     if (category === "limits") {
@@ -557,7 +573,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   /** Update one reserved assistant identity without overwriting concurrent profile or evidence edits. */
-  function updateMessage(conversationId: string, messageId: string, patch: Partial<Omit<ChatMessage, "id" | "role">>) {
+  function updateMessage(conversationId: string, messageId: string, patch: Partial<Omit<ChatMessage, "id" | "role">>, notificationDetail?: NotificationDetail) {
+    if (patch.pending === false && notificationView.current !== "review") {
+      const failed = patch.execution?.outcome === "failed";
+      const cancelled = patch.execution?.outcome === "cancelled";
+      notify(failed ? patch.text ?? t("Review failed.") : t(cancelled ? "Review cancelled." : "Review completed."), failed ? "error" : cancelled ? "warning" : "success", `review:${conversationId}:${messageId}`, undefined, { event: "review-result", target: { view: "review", conversationId }, title: failed ? "Review failed" : cancelled ? "Review cancelled" : "Review completed", detail: notificationDetail });
+    }
     setConversations((current) => saveConversations(current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: new Date().toISOString(), messages: conversation.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message) } : conversation)));
   }
 
@@ -634,12 +655,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         pinnedChunkIds: [],
         excludedChunkIds: [],
       };
-      updateMessage(conversationId, assistantId, assistant);
+      updateMessage(conversationId, assistantId, assistant, notificationErrorDetail(terminal.failure));
     } catch (reason) {
       if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       if (isInfrastructureFailure(reason)) {
-        updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") });
+        updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") }, notificationErrorDetail(reason));
         if (currentConversationId.current === conversationId) setQuery((current) => current || question);
         await runtimeHealth.check();
         return;
@@ -672,7 +693,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         execution,
         evidence,
         evidenceLabel: "Retrieved candidates — answer not generated",
-      });
+      }, notificationErrorDetail(reason));
     } finally {
       if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
       setBusy(false);
@@ -726,7 +747,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     };
     updateSessionProfile(next);
     navigate({ view: "review" });
-    notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review", undefined, { event: "snapshot-review-notice" });
+    notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review", undefined, { event: "snapshot-review-notice", target: { view: "review", conversationId: activeId } });
   }
 
   function markEvidence(messageId: string, chunkId: number, mode: "pin" | "exclude") {
@@ -796,13 +817,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         trace: extractTrace(response),
         diagnostics: runDiagnostics(response),
         failureFix: terminalFailureFix(response),
-      });
+      }, notificationErrorDetail(terminal.failure));
     } catch (reason) {
       if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
-      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
+      updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution }, notificationErrorDetail(reason));
       noteDailyBudget(reason);
-      notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
     } finally {
       if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
       setBusy(false);
@@ -894,7 +915,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       await startOperatorJob(command.command_id);
       notify(t("{p0} started. Follow it under System › Operations.", { p0: command.label }), "success", "operations-run", undefined, { event: "operations-run-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run", undefined, { event: "operations-run-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Command could not start."), "error", "operations-run", undefined, { event: "operations-run-error", detail: notificationErrorDetail(reason) });
     }
   }
   const historyEntries = [...navigationHistory.map(({ position, target }) => ({ position, target })), { position: navigationPosition.current, target: currentTarget() }, ...navigationForward.map(({ position, target }) => ({ position, target }))];
@@ -947,7 +968,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel ?? undefined} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
             <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
           </div>
-          <div className="topbar-status">{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-status">{sessionActive && <NotificationCenter developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} />}{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
         {sessionActive && (runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
         <NotificationOutlet active={sessionActive} />
@@ -1030,6 +1051,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
         <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
           focusStep={pendingStage}
+          focusJobId={buildJobId}
           live={adminBuild && permissions?.can_build_snapshot === true}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
@@ -1092,6 +1114,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
 
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
+      <NotificationSignals enabled={sessionActive && !publicPreview && environment !== undefined} healthKind={runtimeHealth.kind} healthMessage={runtimeHealth.readiness?.corpus?.schema_message} checkedAt={runtimeHealth.checkedAt} operations={Boolean(operationsAvailable)} local={runtimeHealth.readiness?.review_engines?.local} model={localModel ?? null} cpuSpeed={localCpuSpeed} conversationId={activeId} reviewVisible={view === "review"} jobsVisible={view === "build" && buildTab === "jobs"} systemVisible={view === "system" && systemTab === "status"} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
         visible={sessionActive && runtimeHealth.modalVisible}
