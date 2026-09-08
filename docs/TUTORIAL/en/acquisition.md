@@ -118,9 +118,11 @@ and past job inputs remain available; this action does not cascade into derived 
 
 Current originals use `sec/<accession>/primary.html`, or `dart/<receipt>/primary.xml` with
 `original.zip`. Metadata retains the official URL and filename. A repeated download replaces the
-same current path and registration. Equivalent legacy copies are consolidated only after verifying
-identity and bytes; conflicting valid copies block automatic selection. Other catalogs and past jobs
-keep referenced inputs. New parse jobs pin verified bytes under `inputs/` before queueing.
+same current path and registration. Each filing requires exactly one primary; DART also requires
+its matching ZIP. Duplicate registrations and paths outside this layout block acquisition and parsing
+until an explicit cleanup or reset. Acquisition never selects, migrates or deletes old copies.
+Other catalogs and past jobs keep referenced inputs. New parse jobs pin verified bytes under
+`inputs/` before queueing.
 
 Inventory refreshes use file existence, size and modification metadata, rechecking content when a
 file changes. Download completion and parse selection still verify the complete bytes. Downloads

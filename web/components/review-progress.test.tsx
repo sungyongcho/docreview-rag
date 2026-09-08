@@ -189,6 +189,27 @@ it("keeps warning text readable in both actual themes and visible in the compact
 
 describe("recorded path decisions", () => {
   const chatDecision = { intent: "casual_chat" as const, source: "classifier" as const, matched_rule: "classifier_chat", rationale: "Greeting", history_turns: 2, selected_scope: "auto" as const, resolved_scope: null, routing_queries: {}, retrieval_query: "Hi", scope_outcome: "not_applicable" as const, stopping_reason: null, suggested_scope: null };
+  it("shows a spinner once path selection starts before a decision is available", () => {
+    const initial = initialReviewProgress();
+    const { rerender } = render(<ReviewProgressSteps state={initial} />);
+    expect(screen.getAllByRole("listitem")[0].querySelector("svg")).toHaveClass("lucide-circle");
+    const state = reviewProgressFromEvent({ ...event("gate", 0), display_stage: "path", phase: "start", status: "running" }, initial);
+    rerender(<ReviewProgressSteps state={state} />);
+    const path = screen.getAllByRole("listitem")[0];
+    expect(path).toHaveClass("current");
+    expect(path.querySelector("svg")).toHaveClass("lucide-loader-circle");
+  });
+  it("shows the failed path icon and leaves later stages unrun without a decision", () => {
+    const state = finishReviewProgress(reviewProgressFromEvent({ ...event("gate", 0), display_stage: "path", phase: "end", status: "failed" }, initialReviewProgress()), "failed", 10);
+    render(<ReviewProgressSteps state={state} />);
+    const [path, ...later] = screen.getAllByRole("listitem");
+    expect(path).toHaveClass("failed");
+    expect(path.querySelector("svg")).toHaveClass("lucide-triangle-alert");
+    for (const row of later) {
+      expect(row).toHaveClass("not-run");
+      expect(row.querySelector("svg")).toHaveClass("lucide-circle");
+    }
+  });
   it("shows the first decision and counts recorded classifier and chat calls", () => {
     const state = finishReviewProgress(initialReviewProgress(), "completed", 200, { path_decision: chatDecision, model_calls: [{ node: "gate" }, { node: "chat" }], stages: ["gate", "chat", "report"].map((node) => ({ node, phase: "end", status: "completed" })) });
     render(<ReviewProgressSteps state={state} />);
@@ -200,9 +221,15 @@ describe("recorded path decisions", () => {
   });
   it("preserves scope stops and their corrective action from stream events", () => {
     const decision = { ...chatDecision, intent: "document_review" as const, selected_scope: "dart" as const, scope_outcome: "conflict" as const, stopping_reason: "NVDA is outside DART", suggested_scope: "auto" as const };
-    const state = finishReviewProgress(reviewProgressFromEvent({ ...event("gate"), status: "failed", path_decision: decision }, initialReviewProgress()), "failed", 200);
+    const selected = reviewProgressFromEvent({ ...event("gate"), display_stage: "path", phase: "end", status: "completed", path_decision: { ...decision, stopping_reason: null, scope_outcome: "resolved" } }, initialReviewProgress());
+    const state = finishReviewProgress(reviewProgressFromEvent({ ...event("route"), phase: "end", status: "failed", path_decision: decision }, selected), "failed", 200);
     const restore = vi.fn();
     render(<ReviewProgressSteps state={state} onSwitchScope={restore} />);
+    const [path, scope] = screen.getAllByRole("listitem");
+    expect(path).toHaveClass("done");
+    expect(path.querySelector("svg")).toHaveClass("lucide-check");
+    expect(scope).toHaveClass("failed");
+    expect(scope.querySelector("svg")).toHaveClass("lucide-triangle-alert");
     fireEvent.click(screen.getByRole("button", { name: "Switch to Auto and restore question" }));
     expect(restore).toHaveBeenCalledOnce();
     expect(screen.getByText(/Scope conflict/)).toBeVisible();

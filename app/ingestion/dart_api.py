@@ -33,7 +33,6 @@ import httpx
 
 from app.ingestion.acquisition import (
     AcquiredFiling,
-    current_primary,
     read_catalog,
     selection_identity,
 )
@@ -46,6 +45,7 @@ from app.ingestion.manifest import (
 )
 from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
 from app.ingestion.source_publication import fixed_path, publish_acquired
+from app.ingestion.source_selection import SourceDownloadRequiredError, resolve_primary
 
 DART_BASE: Final[str] = "https://opendart.fss.or.kr/api"
 DART_VIEWER: Final[str] = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo="
@@ -672,15 +672,13 @@ def archive_document(
     return AcquiredFiling(metadata, (archive, primary), (document.zip_bytes, payload))
 
 
-def read_manifest(path: Path) -> Manifest:
-    """Read only the common corpus manifest."""
-    return read_catalog(path)
-
-
-def write_manifest(path: Path, manifest: Manifest) -> None:
-    """Atomically publish the validated common corpus manifest."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write(path)
+def _dart_source_ready(manifest: Manifest, document_id: str, root: Path) -> bool:
+    """Permit exact-receipt recovery only for an unambiguous incomplete source bundle."""
+    try:
+        resolve_primary(manifest, document_id, root)
+    except SourceDownloadRequiredError:
+        return False
+    return True
 
 
 def pending_dart_targets(
@@ -690,15 +688,17 @@ def pending_dart_targets(
     fiscal_years: Sequence[int],
     corpus_dir: Path,
 ) -> list[tuple[str, int]]:
-    """Find requested issuer-years lacking a verified acquired primary source."""
+    """Find requested issuer-years lacking a verified primary and registered archive."""
     readiness: dict[tuple[str, int], bool] = {}
     for document in existing.documents:
-        if document.registry == "dart":
+        if (
+            document.registry == "dart"
+            and document.issuer in stock_codes
+            and document.fiscal_year in fiscal_years
+        ):
             key = (document.issuer, document.fiscal_year)
-            readiness[key] = (
-                readiness.get(key, True)
-                and current_primary(existing, document.document_id, corpus_dir) is not None
-            )
+            ready = _dart_source_ready(existing, document.document_id, corpus_dir)
+            readiness[key] = readiness.get(key, True) and ready
     return [
         (stock_code, fiscal_year)
         for stock_code in dict.fromkeys(stock_codes)
@@ -739,7 +739,7 @@ async def acquire_dart(
 ) -> DartAcquisitionResult:
     """Download and archive requested DART filings without parsing or ingesting them."""
     manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
-    existing = read_manifest(manifest_path)
+    existing = read_catalog(manifest_path)
     if not stock_codes or not fiscal_years:
         raise ValueError("DART acquisition requires explicit issuers and fiscal years")
     selection_id = selection_identity("dart", stock_codes, fiscal_years)
@@ -830,7 +830,7 @@ async def acquire_dart(
                 if known.registry == "dart"
                 and known.issuer == stock_code
                 and known.fiscal_year == fiscal_year
-                and current_primary(existing, known.document_id, corpus_dir) is None
+                and not _dart_source_ready(existing, known.document_id, corpus_dir)
             ]
             work.extend((stock_code, fiscal_year, known) for known in missing or [None])
         for index, (stock_code, fiscal_year, known_target) in enumerate(work):

@@ -255,6 +255,10 @@ class CorpusOperationRequest(StrictAdminModel):
                 raise ValueError("Deletion targets must come from the confirmed preview.")
         elif self.deletion_token is not None or self.confirm_delete is not None:
             raise ValueError("Deletion confirmation applies only to source deletion.")
+        if self.kind == "ingest_selected" and (
+            not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)
+        ):
+            raise ValueError("ingest_selected requires nonempty unique document_ids")
         if self.kind == "ingest_manifest" and (
             not (self.manifest or "").strip() or not (self.selection_id or "").strip()
         ):
@@ -381,10 +385,11 @@ class SourceInventoryResource(StrictAdminModel):
     issuer: str
     name: str
     fiscal_year: int
-    filing_id: str | None = None
+    filing_id: str
     on_disk: StrictBool
-    ready: StrictBool = False
+    ready: StrictBool
     blocker: str | None = None
+    can_redownload: StrictBool
 
 
 class AcquisitionPairResource(StrictAdminModel):
@@ -398,10 +403,8 @@ class AcquisitionPairResource(StrictAdminModel):
 class AcquisitionDraftResource(StrictAdminModel):
     """Server-provided initial company and fiscal-year selection."""
 
-    pairs: Annotated[
-        tuple[AcquisitionPairResource, ...], BeforeValidator(_tuple_from_json_array)
-    ] = ()
-    revision: str = "default-v1"
+    pairs: Annotated[tuple[AcquisitionPairResource, ...], BeforeValidator(_tuple_from_json_array)]
+    revision: str
 
     identifiers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)]
     years: Annotated[tuple[int, ...], BeforeValidator(_tuple_from_json_array)]

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AcquisitionForm } from "./build-pipeline";
 import { PipelineReference, pipelineReferenceCommand } from "./pipeline-reference";
 
-const ACQUISITION: AcquisitionForm = { identifiers: "NVDA AMD", years: "2023 2024" };
+const ACQUISITION: AcquisitionForm = { identifiers: "NVDA AMD", years: "2023 2024", pairs: ["NVDA", "AMD"].flatMap(issuer => [2023, 2024].map(year => ({ registry: "sec", issuer, year }))) };
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -13,7 +13,7 @@ describe("Pipeline terminal reference", () => {
     expect(pipelineReferenceCommand("filings", { ...ACQUISITION, years: "2023,2024 2023" }, "", null, "")).toBe(
       "rag-corpus acquire_edgar --identifier 'NVDA' --identifier 'AMD' --year 2023 --year 2024",
     );
-    expect(pipelineReferenceCommand("filings", { identifiers: "005930,000660", years: "2023 2024" }, "", null, "")).toBe(
+    expect(pipelineReferenceCommand("filings", { identifiers: "005930,000660", years: "2023 2024", pairs: ["005930", "000660"].flatMap(issuer => [2023, 2024].map(year => ({ registry: "dart", issuer, year }))) }, "", null, "")).toBe(
       "rag-corpus acquire_dart --identifier '005930' --identifier '000660' --year 2023 --year 2024",
     );
   });
@@ -91,6 +91,6 @@ describe("Pipeline terminal reference", () => {
 
 
 it("keeps mixed source commands explicit in one shared selection", () => {
-  const result = pipelineReferenceCommand("filings", { identifiers: "NVDA AMD 005930 000660", years: "2023 2024" }, "", null, "");
+  const result = pipelineReferenceCommand("filings", { identifiers: "NVDA AMD 005930 000660", years: "2023 2024", pairs: [...ACQUISITION.pairs, ...["005930", "000660"].flatMap(issuer => [2023, 2024].map(year => ({ registry: "dart" as const, issuer, year })))] }, "", null, "");
   expect(result).toBe("rag-corpus acquire_edgar --identifier 'NVDA' --identifier 'AMD' --year 2023 --year 2024\nrag-corpus acquire_dart --identifier '005930' --identifier '000660' --year 2023 --year 2024");
 });

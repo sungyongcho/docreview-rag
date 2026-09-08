@@ -150,3 +150,8 @@ OpenAI는 **시스템 상태 열기**, 서버 연결은 **로컬 LLM 설정 열�
 
 ### SCREENSHOT NEEDED
 <!-- Feature: issue 173 answer-model engine rows, CPU placement and measured speed, dual flow-map lights and composer tooltip; state: OpenAI ready plus loaded local CPU model, then unloaded and slow CPU states; locale=ko; light mode; actual runtime evidence required. -->
+
+2단계에서는 물리적으로 없는 파일 수와 **조치 필요** 수를 구분합니다. DART는 현재 XML과 해당 원문에 연결된 ZIP이 모두 필요합니다. 둘 중 하나라도 없거나 손상됐으면 같은 공시를 다시 다운로드한 뒤 파싱합니다. 명시적인 정리나 초기화가 필요한 중복 등록·지원하지 않는 경로도 포함해, 선택된 누락·차단 공시의 정확한 원인을 표시합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: step 2 physical missing count, repair count and non-retryable identity-conflict diagnostics; locale=ko; theme=light; show a present primary with missing registered ZIP and a blocked conflicting source without enabling automatic download. -->

@@ -11,50 +11,36 @@ from app.ingestion.manifest import Manifest
 from app.ingestion.source_publication import publish_acquired
 from app.ingestion.source_selection import record_selection, source_inventory
 from app.ingestion.source_storage import JOURNAL
-from tests.ingestion.support import write_selection_catalog
+from tests.ingestion.support import acquired_filing, filing_document, write_selection_catalog
 
 
-def test_repeated_publication_normalizes_legacy_duplicates_and_pins_inputs(tmp_path):
-    """One current file survives revisions while an already queued input keeps its bytes."""
+def test_repeated_publication_keeps_current_original_and_pinned_inputs(tmp_path):
+    """Revisions keep one fixed current original while queued inputs preserve their exact bytes."""
     catalog = write_selection_catalog(tmp_path)
     document = catalog.documents[0]
-    artifact = next(a for a in catalog.artifacts if a.document_id == document.document_id)
-    raw = artifact.read_bytes(tmp_path)
-    duplicate = artifact.model_copy(
-        update={"artifact_id": artifact.artifact_id + "-copy", "path": "copy.html"}
-    )
-    (tmp_path / duplicate.path).write_bytes(raw)
-    catalog.model_copy(update={"artifacts": (*catalog.artifacts, duplicate)}).write(
-        tmp_path / "manifest.json"
-    )
+    current = next(a for a in catalog.artifacts if a.document_id == document.document_id)
+    raw = current.read_bytes(tmp_path)
     name, selected = record_selection(
         tmp_path, (document.issuer,), (document.fiscal_year,), (document.document_id,)
     )
-    pinned = Manifest.read(tmp_path / name)
-    normalized = publish_acquired(
-        tmp_path / "manifest.json",
-        [],
-        selection_id="download",
-        selected_document_ids=[document.document_id],
-    )
-    current = next(a for a in normalized.artifacts if a.document_id == document.document_id)
-    assert current.path == f"sec/{document.filing_id}/primary.html"
-    assert current.read_bytes(tmp_path) == raw
-    assert not (tmp_path / artifact.path).exists()
-    assert not (tmp_path / duplicate.path).exists()
+    pinned = (tmp_path / name).read_bytes()
     for body in (b"new source", raw):
         updated = current.model_copy(
             update={"sha256": hashlib.sha256(body).hexdigest(), "byte_length": len(body)}
         )
-        normalized = publish_acquired(
+        result = publish_acquired(
             tmp_path / "manifest.json",
             [AcquiredFiling(document, (updated,), (body,))],
             selection_id="download",
             selected_document_ids=[document.document_id],
         )
-        assert len([a for a in normalized.artifacts if a.document_id == document.document_id]) == 1
+        assert len([a for a in result.artifacts if a.document_id == document.document_id]) == 1
         assert (tmp_path / current.path).read_bytes() == body
-        assert pinned.selected_sources(selected, tmp_path)[0].read().encode() == raw
+        assert (tmp_path / name).read_bytes() == pinned
+        assert (
+            Manifest.read(tmp_path / name).selected_sources(selected, tmp_path)[0].read().encode()
+            == raw
+        )
     assert not (tmp_path / JOURNAL).exists()
 
 
@@ -210,3 +196,43 @@ def test_interrupted_process_recovers_before_the_next_publication(tmp_path, monk
         assert current.read_bytes(tmp_path) == original
     assert not (tmp_path / JOURNAL).exists()
     assert Manifest.read(tmp_path / "manifest.json") == old
+
+
+@pytest.mark.parametrize("copy_state", ["valid", "missing", "corrupt"])
+def test_duplicate_archive_is_rejected_without_normalization(tmp_path, copy_state):
+    """Additional ZIP registrations are never selected, normalized or deleted automatically."""
+    filing = acquired_filing(
+        tmp_path,
+        document=filing_document(registry="dart"),
+        payload=b"<DOCUMENT>current DART source</DOCUMENT>",
+    )
+    catalog = publish_acquired(
+        tmp_path / "manifest.json",
+        [filing],
+        selection_id="download",
+        selected_document_ids=[filing.document.document_id],
+    )
+    archive = next(a for a in catalog.artifacts if a.role == "archive")
+    copy = archive.model_copy(
+        update={"artifact_id": "old-copy-archive", "path": "old-original.zip"}
+    )
+    if copy_state != "missing":
+        (tmp_path / copy.path).write_bytes(
+            archive.read_bytes(tmp_path) if copy_state == "valid" else b"foreign damaged copy"
+        )
+    catalog.model_copy(update={"artifacts": (*catalog.artifacts, copy)}).write(
+        tmp_path / "manifest.json"
+    )
+    before = {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    row = source_inventory(tmp_path)[0]
+    assert not row.ready and not row.can_redownload
+    with pytest.raises(ValueError, match="Archive identity"):
+        publish_acquired(
+            tmp_path / "manifest.json",
+            [],
+            selection_id="no-migration",
+            selected_document_ids=[filing.document.document_id],
+        )
+    assert {
+        p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()
+    } == before

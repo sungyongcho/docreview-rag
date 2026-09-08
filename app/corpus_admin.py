@@ -291,6 +291,10 @@ class AdminCommand:
                 raise ValueError("acquisition requires identifiers and fiscal years")
             if any(year < 1900 or year > 2100 for year in self.years):
                 raise ValueError("fiscal years must be between 1900 and 2100")
+        if self.kind == "ingest_selected" and (
+            not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)
+        ):
+            raise ValueError("ingest_selected requires nonempty unique document_ids")
         if self.kind == "ingest_manifest" and (
             not (self.manifest or "").strip() or not (self.selection_id or "").strip()
         ):
@@ -1000,7 +1004,7 @@ class RuntimeCorpusAdminService:
             ),
             manifests=self._manifest_summaries(),
             sources=sources,
-            acquisition_draft=acquisition_draft(self._corpus_root, sources),
+            acquisition_draft=acquisition_draft(self._corpus_root),
             documents=filtered,
         )
 
@@ -1122,6 +1126,7 @@ class RuntimeCorpusAdminService:
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one operation and start the persistent single worker lazily."""
         if command.kind == "ingest_selected":
+            assert command.document_ids is not None
             manifest, selection_id = record_selection(
                 self._corpus_root, command.identifiers, command.years, command.document_ids
             )

@@ -77,10 +77,10 @@ def test_changed_expired_or_replayed_approvals_cannot_delete(tmp_path, monkeypat
     assert (tmp_path / target.path).read_bytes() == before
 
 
-def test_shared_legacy_input_is_retained_and_only_current_registration_is_removed(tmp_path):
-    """A legacy job manifest retains its exact original path when clearing current sources."""
+def test_shared_current_input_is_retained_and_only_current_registration_is_removed(tmp_path):
+    """Another registered catalog retains its current input when clearing acquisition records."""
     catalog = write_selection_catalog(tmp_path)
-    catalog.write(tmp_path / "selected-legacy-manifest.json")
+    catalog.write(tmp_path / "snapshot-manifest.json")
     target = catalog.artifacts[0]
     service = SourceDeletion(tmp_path)
     preview = service.preview((target.document_id,))
@@ -115,3 +115,20 @@ def test_queue_requires_fresh_confirmation_and_cannot_retry_deletion(tmp_path):
     asyncio.run(scenario())
     with pytest.raises(ValueError, match="confirmation"):
         AdminCommand("delete_sources")
+
+
+def test_source_deletion_refuses_old_registered_paths(tmp_path):
+    """Deletion cannot reinterpret an old path as a managed current original."""
+    catalog = write_selection_catalog(tmp_path)
+    current = catalog.artifacts[0]
+    old = current.model_copy(update={"path": "old-source.html"})
+    raw = current.read_bytes(tmp_path)
+    (tmp_path / old.path).write_bytes(raw)
+    catalog.model_copy(
+        update={"artifacts": tuple(old if a == current else a for a in catalog.artifacts)}
+    ).write(tmp_path / "manifest.json")
+    before = (tmp_path / "manifest.json").read_bytes()
+    with pytest.raises(ValueError, match="Unsupported current source path"):
+        SourceDeletion(tmp_path).preview((current.document_id,))
+    assert (tmp_path / "manifest.json").read_bytes() == before
+    assert current.read_bytes(tmp_path) == (tmp_path / old.path).read_bytes() == raw

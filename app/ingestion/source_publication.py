@@ -17,6 +17,12 @@ from app.ingestion.source_storage import (
 
 def fixed_path(registry: str, filing_id: str, role: str) -> str:
     """Name current originals by registry and receipt, independent of content revisions."""
+    if (
+        registry not in {"sec", "dart"}
+        or role not in {"primary", "archive"}
+        or (registry == "sec" and role == "archive")
+    ):
+        raise ValueError("Unsupported current source role.")
     if "/" in filing_id or "\\" in filing_id or filing_id in {".", ".."}:
         raise ValueError("Invalid official filing identifier.")
     name = (
@@ -35,7 +41,10 @@ def publish_acquired(
     selected_document_ids: Sequence[str],
 ) -> Manifest:
     """Merge against the latest catalog while holding the cross-process source lock."""
-    from app.ingestion.source_selection import resolve_primary
+    from app.ingestion.source_selection import (
+        SourceDownloadRequiredError,
+        resolve_primary,
+    )
 
     root = path.parent
     with source_lock(root, recover=True):
@@ -46,45 +55,7 @@ def publish_acquired(
         document_remap: dict[str, str] = {}
         changes: dict[str, bytes | None] = {}
         references = external_references(root)
-        filings = list(acquired)
-        downloaded_ids = {f.document.document_id for f in acquired}
-        for document_id in selected_document_ids:
-            if document_id in downloaded_ids or document_id not in documents:
-                continue
-            try:
-                primary = resolve_primary(catalog, document_id, root)
-            except ValueError as error:
-                if str(error).startswith("Conflicting primary sources:"):
-                    raise
-                continue
-            document = documents[document_id]
-            sources = [primary]
-            archives = [
-                a for a in catalog.artifacts if a.document_id == document_id and a.role == "archive"
-            ]
-            if archives:
-                archive = next(
-                    (a for a in archives if a.sha256 == primary.acquisition.archive_sha256), None
-                )
-                if archive is None:
-                    raise ValueError(
-                        "Cannot identify the archive belonging to the current primary."
-                    )
-                sources.insert(0, archive)
-            registered = [
-                a
-                for a in catalog.artifacts
-                if a.document_id == document_id and a.role in {"primary", "archive"}
-            ]
-            if len(registered) != len(sources) or any(
-                a.path != fixed_path(document.registry, document.filing_id, a.role) for a in sources
-            ):
-                filings.append(
-                    AcquiredFiling(
-                        document, tuple(sources), tuple(a.read_bytes(root) for a in sources)
-                    )
-                )
-        for filing in filings:
+        for filing in acquired:
             identity = (filing.document.registry, filing.document.filing_id)
             known = next(
                 (d for d in documents.values() if (d.registry, d.filing_id) == identity), None
@@ -104,13 +75,17 @@ def publish_acquired(
             if known is not None:
                 try:
                     resolve_primary(catalog, document.document_id, root)
-                except ValueError as error:
-                    if str(error).startswith("Conflicting primary sources:"):
-                        raise
+                except SourceDownloadRequiredError:
+                    pass
             documents[document.document_id] = document
             replacements = []
             for index, artifact in enumerate(filing.artifacts):
-                payload = filing.payloads[index] if filing.payloads else artifact.read_bytes(root)
+                relative = fixed_path(document.registry, document.filing_id, artifact.role)
+                if artifact.path != relative:
+                    raise ValueError(
+                        "Unsupported current source path; acquire the filing at its fixed path."
+                    )
+                payload = filing.payloads[index]
                 if (
                     len(payload) != artifact.byte_length
                     or hashlib.sha256(payload).hexdigest() != artifact.sha256
@@ -118,7 +93,6 @@ def publish_acquired(
                     raise ValueError("Downloaded bytes disagree with their acquisition record.")
                 if artifact.encoding is not None:
                     payload.decode(artifact.encoding, errors="strict")
-                relative = fixed_path(document.registry, document.filing_id, artifact.role)
                 destination = confined_path(root, relative)
                 if relative in references and fingerprint(destination) not in {
                     None,
@@ -150,10 +124,6 @@ def publish_acquired(
                 artifacts.pop(artifact.artifact_id)
                 if artifact.role == "primary":
                     remap[artifact.artifact_id] = primary.artifact_id
-                if artifact.path not in references and artifact.path not in changes:
-                    old_path = confined_path(root, artifact.path)
-                    if fingerprint(old_path) == artifact.sha256:
-                        changes[artifact.path] = None
             artifacts.update((a.artifact_id, a) for a in replacements)
         selections = []
         for selection in catalog.selections:
@@ -185,9 +155,8 @@ def publish_acquired(
             elif document_id in documents:
                 try:
                     chosen.append(resolve_primary(catalog, document_id, root).artifact_id)
-                except ValueError as error:
-                    if str(error).startswith("Conflicting primary sources:"):
-                        raise
+                except SourceDownloadRequiredError:
+                    pass
         if chosen:
             selections.append(
                 ProcessingSelection(selection_id=selection_id, artifact_ids=tuple(chosen))

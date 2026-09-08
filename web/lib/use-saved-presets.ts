@@ -1,20 +1,25 @@
 "use client";
-import { useEffect, useState } from "react";
-import { loadSavedPresets, PRESETS_CHANGED, type SavedPreset } from "./saved-presets";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { PRESETS_CHANGED } from "./saved-presets";
+import { presetStorageKind, readPresetCatalog, serverPresetStorageKind, subscribeFilePresets, subscribePresetStorage } from "./preset-storage";
+import { previewState, serverPreviewState, subscribePreview } from "./production-preview";
+import { BUILTIN_PRESETS } from "./types";
 
-/** Refresh saved names in every selector after a local save or another tab's update. */
+/** Keep every selector on the same storage adapter and directory version. */
 export function useSavedPresets() {
-  const [presets, setPresets] = useState<SavedPreset[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const preview = useSyncExternalStore(subscribePreview, previewState, serverPreviewState);
+  const storageKind = useSyncExternalStore(subscribePresetStorage, presetStorageKind, serverPresetStorageKind);
+  const [state, setState] = useState<ReturnType<typeof readPresetCatalog>>({ presets: [], builtins: BUILTIN_PRESETS, fileErrors: [], error: null });
   useEffect(() => {
     function refresh() {
-      try { setPresets(loadSavedPresets()); setError(null); }
-      catch { setError("Saved presets could not be read."); }
+      try { setState(readPresetCatalog()); }
+      catch (reason) { setState(old => ({ ...old, error: reason instanceof Error ? reason.message : "Saved presets could not be read." })); }
     }
     refresh();
+    const unsubscribe = storageKind === "file" ? subscribeFilePresets(refresh) : () => {};
     window.addEventListener(PRESETS_CHANGED, refresh);
     window.addEventListener("storage", refresh);
-    return () => { window.removeEventListener(PRESETS_CHANGED, refresh); window.removeEventListener("storage", refresh); };
-  }, []);
-  return { presets, error };
+    return () => { unsubscribe(); window.removeEventListener(PRESETS_CHANGED, refresh); window.removeEventListener("storage", refresh); };
+  }, [preview.mode, storageKind]);
+  return { ...state, storageKind };
 }

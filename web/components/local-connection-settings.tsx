@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Activity, ExternalLink, Plug, RotateCcw, Unplug } from "lucide-react";
+import { Activity, ArrowRight, ExternalLink, Plug, RotateCcw, Unplug } from "lucide-react";
 import { CodeBlock } from "@/components/code-block";
 import { useI18n } from "@/lib/i18n";
 import { addLocalLLMServer, diagnoseLocalLLM, disconnectLocalLLM, getLocalLLMConnection, selectLocalLLMServer } from "@/lib/api";
 import type { LocalLLMConnection, LocalLLMDiagnostics, LocalLLMServer, Readiness, ReviewEngineState } from "@/lib/types";
+import { answerEngineStates } from "@/lib/answer-engine-state";
 import { localEngineStatus } from "@/lib/local-models";
 import "./local-connection-settings.css";
 
@@ -54,7 +55,10 @@ function validServerUrl(value: string): boolean {
 }
 
 /** Select a named server, checking it before any working connection is replaced. */
-export function LocalConnectionSettings({ readiness, onChanged }: {
+export function LocalConnectionSettings({ readiness, localModel, selectedEngine, onOpenModelSelection, onChanged }: {
+  localModel?: string | null;
+  selectedEngine?: "openai" | "local";
+  onOpenModelSelection?: () => void;
   readiness?: Readiness | null;
   onChanged?: (local: ReviewEngineState) => void;
 }) {
@@ -146,7 +150,27 @@ export function LocalConnectionSettings({ readiness, onChanged }: {
     ?? servers.find((server) => server.base_url === connection?.base_url)?.name;
   const recovery = [...new Set(diagnostics?.checks.flatMap((check) => check.remediation) ?? [])];
 
+  const engine = answerEngineStates(connection ? { review_engines: local ? { local } : undefined } : null, localModel)[1];
+  const canChoose = local?.enabled === true && (answerCount ?? 0) > 0;
+  const nextStep = !reachable
+    ? "Connect a server below. If it is unreachable, run connection diagnostics to find the recovery step."
+    : !canChoose ? "No answer model is available. Follow the setup guide to prepare one, then reconnect."
+    : engine.reason === "Selected model unavailable" ? "The conversation's saved model is unavailable. Choose an installed answer model in the conversation."
+    : selectedEngine !== "local" || !engine.model ? "Open the conversation, choose Local LLM as the answer engine, then select an installed model."
+    : engine.reason === "Model not loaded" || engine.reason === "Model load state unknown"
+      ? "The model is installed but loading is not confirmed. Send your next question in the conversation when ready; first use can load the model."
+      : "Continue in the conversation. After actual model use, return to Build to inspect refreshed placement and measured speed.";
+
   return <div className="local-connection-settings" aria-busy={busy}>
+    {connection && <section className="connection-next-step" aria-labelledby="connection-next-title">
+      <h3 id="connection-next-title">{t("Next step for local answers")}</h3>
+      <p className="connection-next-state">{t("Server connection")}: <strong>{t(reachable ? "Connected" : local?.reason === "unreachable" ? "Unreachable" : "Not confirmed")}</strong>{" · "}{t("Answer models")}: {answerCount ?? t("Not collected")}</p>
+      <p className="connection-next-state">{t("Conversation engine")}: {t(selectedEngine === "local" ? "Local" : "OpenAI")}{" · "}{t("Local model")}: <code>{engine.model ?? t("Choose a model")}</code>{" · "}{t(engine.reason)}</p>
+      <p>{t(nextStep)}</p>
+      {canChoose && onOpenModelSelection ? <button type="button" className="button primary" disabled={busy} onClick={onOpenModelSelection}>{t("Choose or use a model in conversation")}<ArrowRight size={16} aria-hidden="true" /></button>
+        : !canChoose && <a className="button" href={guideHref} target="_blank" rel="noopener noreferrer">{t("Ollama setup and recovery guide")}<ExternalLink size={14} aria-hidden="true" /><span className="visually-hidden">{t("New tab")}</span></a>}
+      <p className="helper">{t("Connection checks only read metadata. Loading, CPU / GPU placement and speed are separate observations; missing measurements stay unknown.")}</p>
+    </section>}
     <div className="connection-intro"><p>{t("Use Ollama on this computer. Choose Default to connect without entering a server address.")}</p>
       <a href={guideHref} target="_blank" rel="noopener noreferrer">{t("Set up Ollama on macOS or Linux")}<ExternalLink size={14} aria-hidden="true" /><span className="visually-hidden">{t("New tab")}</span></a>
     </div>

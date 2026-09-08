@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import type { AnswerEngineState } from "@/lib/answer-engine-state";
 import "./answer-engine-light.css";
@@ -22,6 +23,6 @@ export function AnswerEngineRows({ engines, onOpenStatus, onOpenLocal }: { engin
         <div><dt>{t("CPU / GPU placement")}</dt><dd>{engine.placement === "cpu" ? "CPU" : engine.placement === "gpu" ? "GPU" : engine.placement === "mixed" ? "CPU + GPU" : t("Placement unknown")}</dd></div>
         <div><dt>{t("Last measured speed")}</dt><dd>{engine.speed == null ? t("Not measured") : `${engine.speed.toFixed(1)} tok/s`}</dd></div>
       </>}
-    </dl><button className="button ghost" type="button" onClick={engine.id === "openai" ? onOpenStatus : onOpenLocal} disabled={engine.id === "local" && !onOpenLocal}>{t(engine.id === "openai" ? "Open System status" : "Open Local LLM settings")}</button>
+    </dl><button className="button answer-engine-action" type="button" onClick={engine.id === "openai" ? onOpenStatus : onOpenLocal} disabled={engine.id === "local" && !onOpenLocal}>{t(engine.id === "openai" ? "Open System status" : "Open Local LLM settings")}<ArrowRight size={16} aria-hidden="true" /></button>
   </section>)}</div>;
 }

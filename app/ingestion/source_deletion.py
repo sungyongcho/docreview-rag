@@ -11,6 +11,7 @@ from typing import Any
 
 from app.ingestion.acquisition import read_catalog
 from app.ingestion.manifest import Manifest
+from app.ingestion.source_publication import fixed_path
 from app.ingestion.source_storage import commit_sources, confined_path, fingerprint, source_lock
 
 
@@ -58,14 +59,16 @@ class SourceDeletion:
             references.update(a.path for a in other.artifacts)
             retained_inputs += sum(a.document_id in wanted for a in other.artifacts)
             evidence[path.name] = fingerprint(path)
+        by_id = {document.document_id: document for document in documents}
         files = []
         changes: dict[str, bytes | None] = {}
         for artifact in sorted(targets, key=lambda a: a.path):
-            path = confined_path(self.root, artifact.path)
-            if path.suffix.lower() not in {".html", ".htm", ".xml", ".zip"}:
+            document = by_id[artifact.document_id]
+            if artifact.path != fixed_path(document.registry, document.filing_id, artifact.role):
                 raise ValueError(
-                    "Deletion refuses source paths outside supported original formats."
+                    "Unsupported current source path; legacy files require explicit cleanup."
                 )
+            path = confined_path(self.root, artifact.path)
             evidence[artifact.path] = fingerprint(path)
             if path.exists():
                 retained = artifact.path in references

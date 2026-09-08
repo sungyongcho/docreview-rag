@@ -40,16 +40,16 @@ function fiscalYears(input: string): number[] | null {
   return years.length ? [...new Set(years)].sort((a, b) => a - b) : null;
 }
 
-/** Stage missing pairs separately and submit the exact synchronized draft atomically. */
+/** Stage missing or recoverable pairs and submit the exact synchronized draft atomically. */
 export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs }: SourceMatrixProps) {
   const { t } = useI18n();
   const [chosen, setChosen] = useState<Array<{ registry: "sec" | "dart"; issuer: string }>>([]);
   const [staged, setStaged] = useState<AcquisitionPair[]>([]);
   const [pickerValid, setPickerValid] = useState(true);
-  const pairs = acquisitionPairs(acquisition, sources);
+  const pairs = acquisitionPairs(acquisition);
   const state = selectedSourceState(sources, acquisition);
   const merged = acquisitionPairs(acquisitionDraft([...pairs, ...staged]));
-  const pending = acquisitionPairs(acquisitionDraft([...state.downloadPairs, ...staged]));
+  const pending = selectedSourceState(sources, acquisitionDraft(merged)).downloadPairs;
   const valid = merged.length > 0 && pickerValid;
   useEffect(() => { onValidityChange?.(valid); }, [valid, onValidityChange]);
   const rows = sourceSelectionRows(sources, pairs, companies);

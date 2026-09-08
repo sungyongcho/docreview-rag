@@ -13,7 +13,6 @@
             "type": "array"
           },
           "pairs": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/AcquisitionPairResource"
             },
@@ -21,7 +20,6 @@
             "type": "array"
           },
           "revision": {
-            "default": "default-v1",
             "title": "Revision",
             "type": "string"
           },
@@ -34,6 +32,8 @@
           }
         },
         "required": [
+          "pairs",
+          "revision",
           "identifiers",
           "years"
         ],
@@ -199,10 +199,53 @@
         "additionalProperties": false,
         "description": "Machine-readable HTTP failure shared by all routes.",
         "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing_file",
+                  "invalid_json",
+                  "invalid_manifest",
+                  "alias_conflict",
+                  "permission"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
           "code": {
             "pattern": "^[a-z][a-z0-9_]*$",
             "title": "Code",
             "type": "string"
+          },
+          "corpus_job": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Job"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
           },
           "details": {
             "default": [],
@@ -212,9 +255,35 @@
             "title": "Details",
             "type": "array"
           },
+          "failed_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "path",
+                  "gate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Stage"
+          },
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           },
           "path_decision": {
             "anyOf": [
@@ -4704,6 +4773,60 @@
         "title": "OperatorJobsResponse",
         "type": "object"
       },
+      "PresetCatalog": {
+        "additionalProperties": false,
+        "description": "Versioned directory snapshot; unchanged reads omit the catalog payload.",
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/PresetFileError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/StoredPreset"
+            },
+            "title": "Presets",
+            "type": "array"
+          },
+          "presets_version": {
+            "title": "Presets Version",
+            "type": "string"
+          },
+          "unchanged": {
+            "default": false,
+            "title": "Unchanged",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "presets_version"
+        ],
+        "title": "PresetCatalog",
+        "type": "object"
+      },
+      "PresetFileError": {
+        "additionalProperties": false,
+        "description": "A corrupt filename remains visible while other presets stay usable.",
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "file": {
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "error"
+        ],
+        "title": "PresetFileError",
+        "type": "object"
+      },
       "ProcessingSelectionResource": {
         "additionalProperties": false,
         "description": "One exact document selection available for processing.",
@@ -6375,20 +6498,17 @@
             ],
             "title": "Blocker"
           },
+          "can_redownload": {
+            "title": "Can Redownload",
+            "type": "boolean"
+          },
           "document_id": {
             "title": "Document Id",
             "type": "string"
           },
           "filing_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Filing Id"
+            "title": "Filing Id",
+            "type": "string"
           },
           "fiscal_year": {
             "title": "Fiscal Year",
@@ -6411,7 +6531,6 @@
             "type": "boolean"
           },
           "ready": {
-            "default": false,
             "title": "Ready",
             "type": "boolean"
           },
@@ -6431,7 +6550,10 @@
           "issuer",
           "name",
           "fiscal_year",
-          "on_disk"
+          "filing_id",
+          "on_disk",
+          "ready",
+          "can_redownload"
         ],
         "title": "SourceInventoryResource",
         "type": "object"
@@ -6440,6 +6562,18 @@
         "additionalProperties": false,
         "description": "One measured stage transition; an active stage has no completed duration.",
         "properties": {
+          "display_stage": {
+            "anyOf": [
+              {
+                "const": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Stage"
+          },
           "elapsed_ms": {
             "anyOf": [
               {
@@ -6649,6 +6783,55 @@
           "requests"
         ],
         "title": "StepTrace",
+        "type": "object"
+      },
+      "StoredPreset": {
+        "additionalProperties": false,
+        "description": "One portable preset; its ID must match its safe JSON filename.",
+        "properties": {
+          "builtin": {
+            "default": false,
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "retrieval": {
+            "$ref": "#/components/schemas/CustomRetrievalProfile"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "retrieval"
+        ],
+        "title": "StoredPreset",
         "type": "object"
       },
       "SupportDowngraded": {
@@ -9165,6 +9348,168 @@
           }
         },
         "summary": "Register Local Server",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/presets": {
+      "delete": {
+        "description": "Delete one custom DEV preset after the UI obtains confirmation.",
+        "operationId": "delete_preset_admin_presets_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Delete Preset",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "description": "Read a debounced catalog or return only its unchanged version.",
+        "operationId": "list_presets_admin_presets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "List Presets",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Atomically create or update one custom DEV preset.",
+        "operationId": "put_preset_admin_presets_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoredPreset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredPreset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Put Preset",
         "tags": [
           "admin"
         ]

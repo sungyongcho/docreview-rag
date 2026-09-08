@@ -14,7 +14,7 @@ from scripts.schema.sources import (
     check_source_write_access,
     source_preview,
 )
-from tests.ingestion.support import write_selection_catalog
+from tests.ingestion.support import selected_document_ids, write_selection_catalog
 
 
 @pytest.mark.parametrize("sample", [False, True])
@@ -31,7 +31,7 @@ def test_clean_start_removes_sources_but_preserves_unrelated_paths(tmp_path, sam
     reset.stage()
     assert not Manifest.read(corpus / "manifest.json").artifacts
     assert not source_inventory(corpus)
-    assert len(acquisition_draft(corpus, ())["pairs"]) == (4 if sample else 18)
+    assert len(acquisition_draft(corpus)["pairs"]) == (4 if sample else 18)
     reset.finish()
     assert not reset.journal.exists()
     assert sentinel.read_text() == (tmp_path / ".env").read_text() == "keep"
@@ -261,7 +261,7 @@ def test_reset_clears_managed_inputs_and_preserves_unregistered_html(tmp_path):
 
     corpus = tmp_path / "data/corpus"
     write_selection_catalog(corpus)
-    record_selection(corpus, ("NVDA",), (2024,))
+    record_selection(corpus, ("NVDA",), (2024,), selected_document_ids(corpus, ("NVDA",), (2024,)))
     unrelated = corpus / "notes.html"
     unrelated.write_text("unrelated local report")
     orphan = corpus / "sec/orphan/primary.html"

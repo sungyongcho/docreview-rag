@@ -3,7 +3,7 @@ import { useI18n } from "@/lib/i18n";
 
 
 import { AnswerEngineLight, AnswerEngineRows } from "@/components/answer-engine-light";
-import { answerEngineStates, type AnswerEngineState } from "@/lib/answer-engine-state";
+import { answerEngineStates, answerEngineSummary, type AnswerEngineState } from "@/lib/answer-engine-state";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { TerminalHandoff } from "@/components/terminal-handoff";
 import { PipelineReference } from "@/components/pipeline-reference";
@@ -33,7 +33,7 @@ export interface AcquisitionPair {
 export interface AcquisitionForm {
   identifiers: string;
   years: string;
-  pairs?: AcquisitionPair[];
+  pairs: AcquisitionPair[];
 }
 
 export interface BuildPipelineProps {
@@ -61,6 +61,7 @@ export interface BuildPipelineProps {
   /** "dev key" / "prod key" / "explicit key" / "local" / "off"; `null` while readiness is unknown. */
   answerModel?: string | null;
   readiness?: Readiness | null;
+  localModel?: string | null;
   onOpenLocalSettings?: () => void;
   /** Local Operations reachable from this build; the strip then offers service buttons instead of commands. */
   operationsAvailable?: boolean;
@@ -107,7 +108,7 @@ function isApiDown(pipeline: Pipeline): boolean {
 export function BuildPipeline(props: BuildPipelineProps) {
   const { t, locale } = useI18n();
   const { pipeline } = props;
-  const answerEngines = answerEngineStates(props.readiness ?? null).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
+  const answerEngines = answerEngineStates(props.readiness ?? null, props.localModel).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
   const [acquisitionValid, setAcquisitionValid] = useState(true);
   const [selectedChoice, setSelectedId] = useState<Stage["id"] | null>(null);
   const selectedId = selectedChoice ?? pipeline.stages.find((stage) => stage.status === "running")?.id ?? pipeline.next?.id ?? "filings";
@@ -153,6 +154,10 @@ export function BuildPipeline(props: BuildPipelineProps) {
     writable: props.writable ?? null,
   });
 
+  if (selected.id === "answer_model" && selected.status === "done") {
+    diagnosis.detail = answerEngineSummary(answerEngines);
+  }
+
   function navigatePreparation(target: NonNullable<Diagnosis["returnTo"]>) {
     if (target === "setup") {
       const setup = document.getElementById("pipeline-setup-checks") as HTMLDetailsElement | null;
@@ -184,7 +189,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         <header className="pipeline-map-heading"><h2>{t("Data workflow")}</h2><span>{t("Select a step")}</span></header>
         <div className="pipeline-graph" data-tour="stage-list">
           {pipeline.stages.map((stage) => <button key={stage.id} data-help={`build.stage.${stage.id}`} className={`pipeline-node ${stage.id} ${stage.status}`} type="button" aria-label={t("Select {p0}", { p0: t(stage.title) })} aria-pressed={selectedId === stage.id} aria-controls="pipeline-execution" onClick={() => setSelectedId(stage.id)}>
-            <span className="pipeline-node-number">{stage.order}</span><strong>{t(stage.title)}</strong><small className="pipeline-node-status"><i className="status-beacon" aria-hidden="true" />{t(stage.statusDetail || stageStatusLabel(stage.status))}</small>
+            <span className="pipeline-node-number">{stage.order}</span><strong>{t(stage.title)}</strong><small className="pipeline-node-status"><i className="status-beacon" aria-hidden="true" />{t(stage.id === "answer_model" && stage.status === "done" ? answerEngineSummary(answerEngines) : stage.statusDetail || stageStatusLabel(stage.status))}</small>
             {stage.id === "answer_model" && stage.status !== "readonly" && <span className="answer-engine-lights">{answerEngines.map((engine) => <AnswerEngineLight key={engine.id} engine={engine} />)}</span>}
             <span className="pipeline-dependency">{t(STEP_DEPENDENCIES[stage.id])}</span>
           </button>)}
@@ -371,6 +376,10 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, onDeleteSou
   const companyCount = new Set(sourceState.pairs.map((pair) => `${pair.registry}:${pair.issuer}`)).size;
   const yearCount = new Set(sourceState.pairs.map((pair) => pair.year)).size;
   const missingCount = documentCount - sourceState.present.length;
+  const unreadyPairs = sourceState.pairs.filter((pair) => {
+    const rows = sourceState.selected.filter((source) => source.registry === pair.registry && source.issuer.toUpperCase() === pair.issuer && source.fiscal_year === pair.year);
+    return !rows.length || rows.some((source) => !source.on_disk || source.ready === false);
+  });
 
   return (
     <li>
@@ -378,7 +387,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, onDeleteSou
         <div className={`stage-index ${stage.status}`} aria-hidden="true">{stage.status === "done" ? <Check size={15} /> : stage.order}</div>
         <div className="stage-body">
           <div className="stage-head">
-            <StatusPill status={stage.status} detail={stage.statusDetail} />
+            <StatusPill status={stage.status} detail={stage.id === "answer_model" && stage.status === "done" ? answerEngineSummary(answerEngines) : stage.statusDetail} />
             {OPERATOR_STAGES.has(stage.id) && <DevelopmentBadge locale={locale} compact />}
           </div>
           <p className="stage-description">{t(stage.description)}</p>
@@ -403,18 +412,18 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, onDeleteSou
               <h3>{t("Selected documents")}</h3>
               <button className="button" type="button" onClick={onChangeFilings}><RefreshCw size={14} aria-hidden="true" />{t("Change selection in Filings")}</button>
             </header>
-            <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
+            <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}{sourceState.blocked.length > 0 && <> · {t("Needs repair: {count}", { count: sourceState.blocked.length })}</>}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
             <SourceSelectionGrid eligibleOnly sources={sources} pairs={sourceState.pairs} companies={companies} disabled={readOnly || busy || Boolean(activeJob)} onToggle={(changed, included) => {
               const next = new Map(sourceState.pairs.map((pair) => [pairKey(pair), pair]));
               for (const pair of changed) if (included) next.set(pairKey(pair), pair); else next.delete(pairKey(pair));
               onAcquisitionChange(acquisitionDraft([...next.values()]));
             }} />
-            {sourceState.downloadPairs.length > 0 && <div className="index-selection-missing" role="alert" style={{ overflowWrap: "anywhere" }}>
+            {unreadyPairs.length > 0 && <div className="index-selection-missing" role="alert" style={{ overflowWrap: "anywhere" }}>
               <strong>{t("Selected sources requiring download or repair")}</strong>
-              <ul>{sourceState.downloadPairs.map((pair) => {
+              <ul>{unreadyPairs.map((pair) => {
                 const rows = sourceState.selected.filter((source) => source.registry === pair.registry && source.issuer.toUpperCase() === pair.issuer && source.fiscal_year === pair.year);
                 return <li key={pairKey(pair)}>{pair.registry.toUpperCase()} · {pair.issuer} FY{pair.year}
-                  {rows.length ? <ul>{rows.filter((source) => !source.on_disk || source.ready === false).map((source) => <li key={source.document_id}>{source.filing_id || source.document_id}: {source.blocker || t(source.on_disk ? "Source blocked" : "Missing source")}</li>)}</ul> : `: ${t("Missing source")}`}
+                  {rows.length ? <ul>{rows.filter((source) => !source.on_disk || source.ready === false).map((source) => <li key={source.document_id}>{source.filing_id}: {source.blocker || t(source.on_disk ? "Source blocked" : "Missing source")}</li>)}</ul> : `: ${t("Missing source")}`}
                 </li>;
               })}</ul>
               <p>{t("The entire selected scope is blocked until these originals are downloaded or repaired in Filings.")}</p>

@@ -2,6 +2,16 @@
 
 정확한 화면·작업·오류부터 확인합니다. 보이는 증상과 확인된 원인을 구분하고, 원인을 모르면 모르는 상태로 둡니다. 직접 관련된 상태부터 확인해 해당 문제만 고친 뒤 원래 동작을 다시 검증합니다. 요청 실패의 일반적인 해결책으로 전체 초기화를 사용하지 않습니다.
 
+
+## 질문 범위 정보를 불러올 수 없음 {#manifest-scope}
+
+경로 결정 전에 발생한 `query_scope_unavailable` 오류는 **0. 경로 결정**에 실패로 표시되고 1–5단계는 실행되지 않은 상태로 남습니다. 경로 결정 뒤 범위를 해석하다 실패하면 1단계에 표시됩니다. DEV의 기존 답변 실패 카드에는 파일 없음·JSON 형식 오류·manifest 규칙 위반·별칭 충돌·권한 오류 중 실제 원인, manifest 경로, **문서 목록 열기** 또는 **작업 열기** 동작 하나가 표시됩니다. 최근 원문 수집 작업은 진단 참고 정보이며 오류를 일으켰다는 증거는 아닙니다. 대기·실행 중인 작업이 있으면 완료 후 다시 시도하세요.
+
+표시된 파일을 확인하고 `rag-schema check` / `rag-corpus status`로 점검하세요. 입력을 고친 뒤 질문을 다시 제출하면 됩니다. 실패한 지연 로드는 캐시되지 않으므로 API를 재시작할 필요가 없습니다. 수집은 manifest를 원자적으로 게시하므로 독자는 완전히 기록된 파일을 읽습니다. **실행 상세 → 트레이스**에는 민감 정보를 제거한 원래 예외 문구가 남습니다. PROD에서는 현지화된 제목과 일반적인 재시도 안내만 표시합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: manifest diagnosis and correct stage-zero versus stage-one failure; locale=ko; light mode; show cause, relative path, one fix action and technical detail in Run details. -->
+
 ## 페이지·API·DB에 연결되지 않을 때 {#connection}
 
 > [!DEV]

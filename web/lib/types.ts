@@ -1,4 +1,11 @@
 import type { components } from "./api-generated";
+import balancedPreset from "../../data/presets/balanced.json";
+import koreanPreset from "../../data/presets/korean.json";
+import accuracyPreset from "../../data/presets/accuracy.json";
+
+/** One canonical shipped JSON source is shared with the server. */
+export const BUILTIN_PRESETS = [balancedPreset, koreanPreset, accuracyPreset] as Array<{ id: string; name: string; description: string; builtin: boolean; updated_at: string; retrieval: RetrievalProfile }>;
+
 
 export type Strategy = "vector" | "lexical" | "hybrid";
 export type LexicalRanker = "ts_rank_cd" | "bm25";
@@ -58,6 +65,7 @@ export interface ReviewPathDecision {
   suggested_scope: "auto" | null;
 }
 export interface ReviewExecution {
+  pathStatus?: "waiting" | "current" | "done" | "failed" | "cancelled";
   pathDecision?: ReviewPathDecision;
   node: ReviewEventNode;
   evidence: number;
@@ -96,7 +104,8 @@ export interface ChatMessage {
   /** Run and failure facts for the diagnostic table, in display order. */
   diagnostics?: Array<{ label: string; value: string }>;
   /** Settings destination that would change the outcome, when one exists. */
-  failureFix?: { label: string; category: "limits" | "runtime" };
+  failureFix?: { label: string; category: "limits" | "runtime" | "documents" | "jobs" };
+  scopeFailure?: { causeText: string; path?: string; jobId?: string; jobRunning?: boolean };
   question?: string;
   candidateToken?: string;
   pinnedChunkIds?: number[];
@@ -376,13 +385,7 @@ export function resolvedRetrievalProfile(profile: ReviewSessionProfile): Retriev
   if (profile.retrieval_preset === "custom" && profile.custom_retrieval) {
     return profile.custom_retrieval;
   }
-  if (profile.retrieval_preset === "korean") {
-    return { ...DEFAULT_PROFILE, candidate_k: 30, lexical_ranker: "bm25", route_by_language: true };
-  }
-  if (profile.retrieval_preset === "accuracy") {
-    return { ...DEFAULT_PROFILE, candidate_k: 50, lexical_ranker: "bm25", reranker: "cross_encoder" };
-  }
-  return DEFAULT_PROFILE;
+  return structuredClone(BUILTIN_PRESETS.find(p => p.id === profile.retrieval_preset)?.retrieval ?? BUILTIN_PRESETS[0].retrieval);
 }
 
 export type SourceDeletionPreview = components["schemas"]["SourceDeletionPreviewResource"];

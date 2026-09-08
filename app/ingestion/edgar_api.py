@@ -27,7 +27,6 @@ import httpx
 from app.ingestion.acquisition import (
     AcquiredFiling,
     current_primary,
-    publish_bytes,
     read_catalog,
     selection_identity,
 )
@@ -152,17 +151,6 @@ def parse_years(text: str) -> range:
 
 
 # --- manifest ---
-
-
-def read_manifest(path: Path) -> Manifest:
-    """Read the shared typed corpus catalog."""
-    return read_catalog(path)
-
-
-def write_manifest(path: Path, manifest: Manifest) -> None:
-    """Publish the shared catalog atomically."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write(path)
 
 
 def merge_entries(
@@ -502,11 +490,6 @@ async def discover(
 # --- fetching ---
 
 
-def store_document(corpus_root: Path, relative_path: str, body: bytes) -> Path:
-    """Atomically store a confined source artifact."""
-    return publish_bytes(corpus_root, relative_path, body)
-
-
 def _no_progress(document: DocumentReference) -> AbstractContextManager[ByteProgress | None]:
     """Provide a no-op byte progress scope."""
     return nullcontext(None)
@@ -568,7 +551,7 @@ async def acquire_edgar(
 ) -> EdgarAcquisitionResult:
     """Acquire explicit SEC filing scope into the shared manifest and named selection."""
     declared = require_user_agent(user_agent)
-    catalog = read_manifest(manifest_path)
+    catalog = read_catalog(manifest_path)
     documents = list(catalog.documents)
     added: list[DocumentReference] = []
     wanted = tuple(sorted({ticker.upper() for ticker in tickers})) or tuple(
@@ -683,7 +666,7 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
             wanted = tickers or tuple(
                 dict.fromkeys(
                     entry.issuer
-                    for entry in read_manifest(manifest_path).documents
+                    for entry in read_catalog(manifest_path).documents
                     if entry.registry == "sec"
                 )
             )

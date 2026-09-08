@@ -184,6 +184,13 @@ Select **Run connection diagnostics** first. Its title identifies the candidate 
 
 Return to the conversation and select the installed model in the answer-engine control. A connection check does not submit your draft question. Continue with [answers](answers.md#engines) and [request settings](settings.md#step-10) when you are ready to ask a question.
 
+The **Next step for local answers** card appears at the top of Local LLM settings, including when you open it from Build step 6. **Choose or use a model in conversation** closes settings, returns to the current conversation and focuses the answer-engine selector. Choose **Local LLM**, then an installed answer model. Your existing question stays a draft until you send it.
+
+A reachable server and installed answer models do not establish that a model is loaded or measured. The card names the conversation engine, local model and load state separately. If the saved model disappeared, select an available model; if the server is unreachable or no answer model exists, use the recovery guide or connection diagnostics. First actual use may load a model. After the request, readiness refreshes; Build follows the conversation's local model and shows CPU/GPU placement and recent speed only when reported. Unknown or stale measurements remain unknown. With OpenAI ready and the local model unloaded, the answer stage remains usable and explicitly says that only OpenAI is ready.
+
+### SCREENSHOT NEEDED
+<!-- Local LLM next-action flow: real connected/unloaded state, conversation selection, and Build after actual use; English light mode at 360px, 768px and desktop. Capture current observed metadata and compact navigation controls without synthesizing readiness. -->
+
 ## Run read-only diagnostics {#diagnostics}
 
 After [registering the project commands](cli.md#register-commands-and-open-help), run:

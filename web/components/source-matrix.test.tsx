@@ -10,7 +10,7 @@ afterEach(cleanup);
 
 /** Build one distinct source document without hiding registry or disk state. */
 function source(issuer: string, year: number, onDisk = true, name = issuer): SourceInventory {
-  return { document_id: `${issuer}-${year}`, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json" };
+  return { document_id: `${issuer}-${year}`, filing_id: `${issuer}-${year}`, can_redownload: !onDisk, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json" };
 }
 const inventory = [source("NVDA", 2024), source("005930", 2023, false, "Samsung"), source("AMD", 2023), source("NVDA", 2022)];
 
@@ -160,11 +160,64 @@ it("rejects unsupported codes even when local source rows contain that issuer", 
   expect(download).not.toHaveBeenCalled();
 });
 
+
+it("includes a selected damaged source in Sync and clears recovery after verification", () => {
+  const download = vi.fn();
+  const damaged = { ...source("NVDA", 2024), ready: false, can_redownload: true, blocker: "Download it again in Filings" };
+  const healthy = { ...source("AMD", 2023), can_redownload: false };
+  const initialPairs: AcquisitionPair[] = [
+    { registry: "sec", issuer: "NVDA", year: 2024 },
+    { registry: "sec", issuer: "AMD", year: 2023 },
+  ];
+  const { rerender } = render(<Harness sources={[damaged, healthy]} initialPairs={initialPairs} download={download} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Selected on disk: 2 · To download: 1");
+  const pending = screen.getByRole("region", { name: "To be added" });
+  expect(within(pending).getAllByRole("listitem")).toHaveLength(1);
+  expect(within(pending).getByRole("button", { name: "Remove NVDA FY2024" })).toBeVisible();
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeEnabled();
+  fireEvent.click(sync);
+  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft(initialPairs));
+  rerender(<Harness sources={[{ ...damaged, ready: true, can_redownload: false, blocker: null }, healthy]} initialPairs={initialPairs} download={download} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Selected on disk: 2 · To download: 0");
+  expect(within(pending).queryByRole("listitem")).toBeNull();
+  expect(sync).toBeDisabled();
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it.each([
+  { onDisk: false, staged: false }, { onDisk: false, staged: true },
+  { onDisk: true, staged: false }, { onDisk: true, staged: true },
+])("excludes conflicting sources from Sync with $onDisk on disk and $staged staged", ({ onDisk, staged }) => {
+  const download = vi.fn();
+  const conflict = { ...source("NVDA", 2024, onDisk), ready: false, can_redownload: false, blocker: "Conflicting primary sources" };
+  render(<Harness sources={[conflict]} initialPairs={staged ? [] : [{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
+  if (staged) { enter("NVDA"); enter("2024"); }
+  expect(screen.getByRole("status")).toHaveTextContent("To download: 0");
+  expect(within(screen.getByRole("region", { name: "To be added" })).queryByRole("listitem")).toBeNull();
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeDisabled();
+  fireEvent.click(sync);
+  expect(download).not.toHaveBeenCalled();
+});
+
 it("places invalid on-disk sources in the synchronization plan without calling them absent", () => {
   const download = vi.fn();
-  render(<Harness sources={[{ ...source("NVDA", 2024), ready: false, blocker: "Source bytes changed" }]} initialPairs={[{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
+  render(<Harness sources={[{ ...source("NVDA", 2024), ready: false, can_redownload: true, blocker: "Source bytes changed" }]} initialPairs={[{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
   expect(screen.getByText(/Selected on disk: 1/)).toHaveTextContent("To download: 1");
   expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2024");
   fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]));
+});
+
+
+it("rejects year zero and stages an explicit future year for a supported company", () => {
+  const download = vi.fn();
+  render(<Harness sources={[]} download={download} />);
+  enter("NVDA"); enter("0000");
+  expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+  enter("2099");
+  expect(screen.getByRole("button", { name: "Remove NVDA FY2099" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2099 }]));
 });

@@ -82,3 +82,14 @@
   .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { grid-template-columns: minmax(0, 1fr); }
   .composer-toolbar-aligned .composer-toolbar-actions { padding-top: 0; }
 }
+
+/* Preset catalog follows the workspace list and toolbar hierarchy. */
+.preset-manager-heading { display: flex; align-items: center; gap: .65rem; }
+.preset-manager-heading h3 { margin: 0; }
+.preset-toolbar { flex-wrap: wrap; margin-block: 1rem; }
+.preset-row-content { display: grid; gap: .3rem; flex: 1; text-align: start; min-width: 0; }
+.preset-row-content small { color: var(--muted); font-weight: 400; overflow-wrap: anywhere; }
+.preset-list-row > .mode-badge { flex-shrink: 0; margin-inline: .5rem; }
+.preset-json-editor { font-family: monospace; resize: vertical; min-height: 18rem; }
+.preset-manager fieldset { border: 0; padding: 0; min-width: 0; }
+.preset-manager .notice { overflow-wrap: anywhere; }

@@ -164,29 +164,22 @@ class ResolvedRetrievalProfile(StrictProfileModel):
     reranker: RerankerName | None
 
 
-_BALANCED = CustomRetrievalProfile()
-_KOREAN = CustomRetrievalProfile(
-    candidate_k=30,
-    lexical_ranker="bm25",
-    route_by_language=True,
-)
-_ACCURACY = CustomRetrievalProfile(
-    candidate_k=50,
-    lexical_ranker="bm25",
-    reranker="cross_encoder",
-)
-
-
 def resolve_retrieval_profile(profile: ReviewSessionProfile) -> ResolvedRetrievalProfile:
     """Expand a named preset or validated Custom settings into one exact plan."""
-    selected = {
-        "balanced": _BALANCED,
-        "korean": _KOREAN,
-        "accuracy": _ACCURACY,
-        "custom": profile.custom_retrieval,
-    }[profile.retrieval_preset]
+    from app.api.preset_store import preset_store
+
+    selected = profile.custom_retrieval
+    if profile.retrieval_preset != "custom":
+        selected = next(
+            (
+                preset.retrieval
+                for preset in preset_store.catalog().presets
+                if preset.id == profile.retrieval_preset
+            ),
+            None,
+        )
     if selected is None:
-        raise ValueError("custom retrieval settings are missing")
+        raise ValueError("retrieval preset settings are missing")
     return ResolvedRetrievalProfile(
         preset=profile.retrieval_preset,
         **selected.model_dump(mode="python"),

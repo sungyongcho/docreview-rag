@@ -53,6 +53,7 @@ export interface BuildWorkspaceProps {
   live: boolean;
   ready: boolean;
   readiness: Readiness | null;
+  localModel?: string | null;
   healthKind: RuntimeHealthKind;
   /** Retained readiness is unconfirmed while a failed connection check retries. */
   connectionPending?: boolean;
@@ -81,7 +82,7 @@ const TABS: Array<[BuildTab, string]> = [
   ["jobs", "Jobs"],
 ];
 
-const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "", years: "" };
+const DEFAULT_ACQUISITION = acquisitionDraft([]);
 
 const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: null, schema_message: null, documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: null, writable: null, provider: null };
 
@@ -98,7 +99,7 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -124,7 +125,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
   const draftRevision = useRef<string | null>(null);
   const serverDraft = useMemo<AcquisitionForm>(() => {
     const draft = corpus?.acquisition_draft;
-    return draft ? acquisitionDraft(draft.pairs ?? []) : acquisitionDraft([]);
+    return draft ? acquisitionDraft(draft.pairs) : acquisitionDraft([]);
   }, [corpus]);
   const revision = corpus?.acquisition_draft?.revision ?? "default-v1";
   useEffect(() => {
@@ -247,7 +248,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     }
   }
 
-  /** Queue missing or invalid originals from the exact draft submitted by the picker. */
+  /** Queue missing or recoverable sources from the exact draft submitted by the picker. */
   async function downloadFilings(next: AcquisitionForm = acquisition) {
     if (!live) return;
     setBusy(true);
@@ -407,6 +408,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         manifests={manifests}
         answerModel={answerModelLabel}
         readiness={connectionConfirmed ? readiness : null}
+        localModel={localModel}
         onOpenLocalSettings={onOpenLocalSettings}
         onCancelJob={onCancelJob}
         operationsAvailable={operationsAvailable}

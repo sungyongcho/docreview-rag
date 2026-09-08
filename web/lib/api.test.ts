@@ -183,3 +183,14 @@ describe("request deadlines", () => {
     await expect(getCorpusSnapshot()).rejects.toMatchObject({ status: 502, code: "invalid_response" });
   });
 });
+
+
+it.each(["http", "sse"] as const)("preserves manifest diagnostic fields on %s review errors", async (transport) => {
+  const failure = { code: "query_scope_unavailable", message: "Query scope metadata is unavailable.", detail: "ValueError: invalid JSON", cause: "invalid_json", path: "data/corpus/manifest.json", failed_stage: "path" };
+  const response = transport === "sse" ? streamResponse([`event: error\ndata: ${JSON.stringify({ error: failure })}\n\n`]) : new Response(JSON.stringify({ error: failure }), { status: 503, headers: { "Content-Type": "application/json" } });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+  const error = await streamReview("question", DEFAULT_SESSION_PROFILE, null, [], () => undefined).catch(error => error);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.failure).toEqual(failure);
+  vi.unstubAllGlobals();
+});

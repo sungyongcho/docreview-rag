@@ -2,6 +2,10 @@
 
 ## Editable operating rules
 
+User-designated moderators administer issues under MODERATOR.md; ordinary worker
+permissions remain scoped to implementation. Do not turn routine issue messages or
+image attachments into Git assets, commits, evidence-only PRs or review tasks.
+
 For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused evidence.
 
 - Follow the latest approved PR order; finish running units before replacing their queue unless cancelled. Preserve holds/human verification gates.
@@ -39,7 +43,7 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - Public OPS-generated bodies use a short human heading and one canonical set of Markdown fields/nested lists using the schema's exact raw keys and types, with two-space nested bullets and explicit empty containers. Keep every semantic datum once, with evidence links instead of raw logs; no JSON fences, hidden duplicates or divergent narrative copies. The readable record is machine-authoritative. Strict parser/renderer validation rejects duplicate/missing required fields, invalid nesting/types and ambiguous markers.
 - Human-readable `commit-it:work-state:v1` remains valid. Former JSON request, handoff, resolver-action, merge-sequence and conflict-approval records migrate to their v2 markers and canonical Markdown. Normal runtime readers do not support a legacy JSON fallback. Explicit audited migration is the only legacy reader; do not retain a permanent dual reader.
 - An authorized public-record migration inventories the full selected managed registry, identifies OPS-generated records by verified author/marker/type/record ID and updates those same records in place. Preserve identifiers, URLs, original authors, event timestamps and semantic head/base/evidence. Exclude human/unmanaged records, quoted examples and surrounding user text. Retain before/after hashes and outcomes, stop on drift, verify round-trips and read-back, and resume uncompleted targets idempotently. Report blocked records rather than silently counting them complete. No Git commit/message/history rewrite or deletion is implied.
-- OPS records actual pushed commit SHAs, PR links, worker identity and verification at first publication, subsequent pushes, handoff and verification completion. Update existing records at meaningful changes; a local checkpoint is not a remote delivery receipt.
+- OPS updates actual pushed SHAs, worker identity and verification in the existing work-state record. Do not post per-commit delivery comments. At `REVIEW_READY`, provide `opsctl state --summary-file` with completed PR-wide outcomes and review notes; OPS adds final verification and refreshes one summary after rework. Preserve historical logs/reviews. A summary is not approval, and pushes do not automatically complete issue checklists.
 - Apply exactly one purpose label, DEV or OPS, according to the assigned outcome, not the authenticated account: an OPS-created product issue is DEV; orchestration work is OPS. Apply exactly one active status label, OCCUPIED or REVIEW_READY, from the authoritative record. Preserve unrelated bug, enhancement, documentation and project labels. Never create per-worker labels or use labels as ownership locks. Required managed labels may be created once only within explicit repository setup authorization.
 - Synchronize managed issue/PR labels with work-state mirrors and Draft/Ready state. An issue with multiple assignments remains OCCUPIED if any is queued, active, paused or blocked; mark it REVIEW_READY only when all assigned scopes are ready. Add MERGE_READY alongside REVIEW_READY only when every assigned scope has eligible review and current matching head/base/check evidence. Remove MERGE_READY on edits, changed head/base, failed required checks or invalid review. Record blockers in Verification and reconcile partial writes before claiming readiness; never infer merge completion from a label.
 - Eligible requested reviews keep the exact approved headings, request/exception evidence, task identifiers and reviewed head/base; they are not independent human approval. Only an explicitly authorized resolver runs foreground sequence merges. No background scheduler, App activation, credentials change or product-main checkout synchronization is introduced by this setup.
@@ -92,3 +96,19 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - If the base advances after readiness at a foreground checkpoint, remove MERGE_READY, set Draft/OCCUPIED and reconcile records, then rebase/reverify the affected scope before restoring readiness. Reuse unchanged evidence. This is foreground continuation of the authorized review, not a recurring monitor; published historical reviews remain unchanged.
 - An explicit rebase request permits rebasing authorized active worker branches instead: pause writers, inspect divergence, preserve work, and omit already-merged prerequisites. A local checkpoint may honestly record unfinished checks. Outside the user-requested review lease exception above, rebase alone does not authorize force-pushing published history. It never authorizes changing another active owner's branch without coordination, rebasing completed backups, or touching the user's checkout.
 - Keep completed worktrees as backups. Under disk pressure, retire the oldest only after verifying remote preservation and absence of unique staged/unstaged/untracked/ignored content. Use normal worktree removal; never force it, remove active work or destroy unique data. Retain the backup and report a blocker when safe cleanup is unproven.
+
+<!-- ops:project:WORKER.md:v1 -->
+# Shared worker defaults
+
+Follow AGENTS.md and the assigned issue/PR. Keep one writer for shared files and Git
+publication; preserve prior authors and checkpoints. Reuse unchanged verification.
+REVIEW_READY records completed implementation; a requested review starts separately.
+Keep progress in the existing work-state record. At REVIEW_READY, provide one PR-wide
+summary of completed outcomes, final verification and review notes; refresh it after
+rework instead of adding per-commit logs. Preserve historical evidence and approvals.
+A user-requested separate reviewer may repair clear in-scope defects, verify, commit
+and perform authorized rebase/publication through MERGE_READY. Preserve reviewed
+head/base evidence and disclose corrections. Readiness alone never grants a merge.
+Apply project-specific authority, delivery and verification requirements above all
+generic skill defaults. Report the result and material limitations concisely.
+<!-- /ops:project:WORKER.md -->

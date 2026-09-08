@@ -181,7 +181,10 @@ def _validated_source(root: str, artifact_json: str, metadata: tuple[int, ...]) 
     """Cache integrity results only for one exact artifact and filesystem revision."""
     artifact = SourceArtifact.model_validate_json(artifact_json)
     try:
-        artifact.read(Path(root))
+        if artifact.encoding is None:
+            artifact.read_bytes(Path(root))
+        else:
+            artifact.read(Path(root))
     except (OSError, ValueError, UnicodeError) as error:
         return str(error)
     return None
@@ -191,7 +194,10 @@ def validate_source(artifact: SourceArtifact, root: Path, *, cached: bool = Fals
     """Use cheap stat checks for inventory and full integrity for execution boundaries."""
     path = confined_path(root, artifact.path)
     if not cached:
-        artifact.read(root)
+        if artifact.encoding is None:
+            artifact.read_bytes(root)
+        else:
+            artifact.read(root)
         return
     metadata = path.stat()
     if not stat.S_ISREG(metadata.st_mode):
