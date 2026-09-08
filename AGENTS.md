@@ -40,17 +40,22 @@ to WORKER.md. Higher-priority instructions and explicit user directions still pr
 ### Authority and delivery
 
 - Ordinary worker implementation ends with verified PR delivery at `REVIEW_READY`.
-  Code reviews are off by default: the implementing worker must request a review in a
-  different conversation/task, strictly within its implementation scope. Ordinary self-review
-  requires explicit user approval for that scope; a worker cannot grant its own exception.
-- A requested reviewer in a different task directly fixes clear implementation-scope defects
-  on the same PR by default. Pause the original writer, declare repair scope/files and expected
-  head/base, use Draft/OCCUPIED, commit and ordinarily push personally, and verify the final
-  head before readiness. Record reviewer-as-contributor; its corrections are not independently
-  reviewed. Complex intent or scope ambiguity requires a focused question/change request.
+  This completes implementation; it does not start a review. The user may open a different
+  task and request review of the named PR, or the implementing worker may record a request.
+  Ordinary self-review still requires explicit user approval for that scope.
+- An explicit user review request in a different task authorizes autonomous in-scope review,
+  repair, verification, personal commits, ordinary pushes, guarded rebase/lease publication,
+  and user-visible task/OPS coordination through `MERGE_READY` under WORKER.md. The reviewer
+  may register the user-origin request while retaining original worker/task provenance.
+  Do not require another implementer request or acknowledgement for a ready, paused scope;
+  block actual overlapping writers. Declare repair scope/files and head/base, use Draft/OCCUPIED,
+  and disclose reviewer contributions. Material intent or scope uncertainty requires a question.
+  These standing permissions do not override higher-priority runtime/tool approval policies.
 - Add `MERGE_READY` alongside `REVIEW_READY` only after eligible review and current passing
-  checks for the matching head/base. Remove it when edits or changed evidence invalidate it.
-  Neither ready label grants merge, deployment or local-main authority.
+  checks for the matching head/base. User-requested separate reviews rebase onto the current
+  base before final readiness. At a foreground checkpoint, changed base/head invalidates
+  readiness: reconcile and renew affected evidence under that review's rebase authority. No scheduler is implied. Neither ready label grants merge,
+  deployment, credential changes or local-main authority.
 - An explicitly user-designated commit-error or conflict resolver may close assigned PRs,
   edit assigned issues and self-review only when those actions and targets are explicitly
   granted. A `conflict-resolver` may fix, verify and squash-merge only its separately

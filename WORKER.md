@@ -18,9 +18,9 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - Ordinary implementation and verification end at `REVIEW_READY`, without a code review
   or approval heading. Do not proactively review other workers' PRs at delivery checkpoints.
   Final implementation diff/scope checks remain required; they are not review approval.
-- A code review requires the implementing worker's durable request and runs in a different
-  conversation/task, strictly within that implementation scope. Ordinary self-review is
-  permitted only by explicit user approval for the named scope, never by the worker itself.
+- A code review requires a durable user-origin or implementing-worker request and runs in a
+  different conversation/task, strictly within the named PR's implementation scope. Ordinary
+  self-review requires explicit user approval for the named scope, never the worker's own grant.
   A requested separate reviewer repairs clear in-scope defects on the same PR by default,
   with contributor disclosure and final-head verification. Complex intent or material scope
   ambiguity gets a focused question/change request; unrelated ideas never expand the review.
@@ -55,13 +55,16 @@ User directions and higher-priority instructions still prevail.
   label exception below, including explicitly approved takeover, is narrowly authorized.
 - Follow AGENTS.md branch/message/issue-link rules, including issue-free documentation PRs.
 - Approved implementation includes scoped commits, ordinary pushes and PR publication;
-  do not ask again. It does not authorize code reviews by default. A review requires an
-  implementing-worker request and a separate task, or explicit user approval for self-review.
-  The requested separate-review role includes bounded same-PR repairs, personal commits and
-  ordinary pushes plus OPS contribution/result records. It does not authorize force-push,
-  issue-scope edits or unrelated implementation. Neither approval headings
-  nor ready labels authorize merge, deployment or local-main integration. Resolver exceptions
-  below require their own explicit, bounded user grant.
+  do not ask again. It does not authorize code reviews by default. A review requires a
+  user-origin or implementing-worker request in a separate task, or explicit user approval
+  for self-review. An explicit user review request grants autonomous bounded same-PR repairs,
+  verification, personal commits, ordinary pushes, the guarded rebase and expected-SHA
+  force-with-lease procedure below, and user-visible task/OPS coordination through MERGE_READY.
+  No repeated permission is needed for these actions within that request. Higher-priority
+  runtime/tool approval policies still apply; report an actual restriction rather than
+  claiming this document bypasses it. This grants no blanket force-push, issue-scope edits,
+  unrelated implementation, merge, deployment, credential changes or user-checkout integration.
+  Resolver exceptions below require their own explicit, bounded user grant.
 - Preserve the user's local main, checkout and shared services. Updating that checkout
   requires separate explicit authority; never stash/reset foreign work to make it possible.
 - Shared GitHub authorship is not worker ownership. For an otherwise eligible review,
@@ -179,12 +182,14 @@ User directions and higher-priority instructions still prevail.
 - When scope and required checks are complete and writers have stopped, set
   `REVIEW_READY`, synchronize the issue mirrors and managed labels, and mark the PR Ready
   for review. Do not report readiness until every required update is verified.
-  No automatic review or approval heading follows. Other workers may review only after the
-  implementing worker requests that scope in a different conversation/task; readiness never
-  authorizes review, branch edits or takeover by itself.
-- Record a review request with implementing Worker, Assignment, PR, implementation task,
-  requested scope, exact head/base and existing verification. The reviewing task must be
-  different and its actual worker and task identifiers must be recorded. New worker/model
+  This completes implementation; no automatic review or approval heading follows. The user
+  may open a different task and explicitly request review, or the implementing worker may
+  record a request. Readiness alone never authorizes review, branch edits or takeover.
+- The reviewer may register an explicit user-origin request directly through OPS without
+  an additional implementer request. Preserve the user's request/authorization evidence and
+  origin separately from the implementing Worker, Assignment, PR, implementation task,
+  requested scope, exact head/base and existing verification; never impersonate the implementer.
+  The reviewing task must be different and its actual worker and task identifiers recorded. New worker/model
   names in one task do not satisfy separation. If task identity is unavailable, leave review
   pending; archived/deleted chats still do not block ordinary approved succession.
 - Only explicit user approval permits ordinary self-review of the named scope. Preserve
@@ -192,9 +197,11 @@ User directions and higher-priority instructions still prevail.
   but cannot authorize its own exception. A new task cannot make inherited implementation
   independent. Do not create a task unless the runtime's user-authorization requirement is met.
 - A requested reviewer may directly repair clear defects within the requested implementation
-  scope on the same PR. Before edits, pause the original writer, declare repair files/scope
-  and expected head/base through OPS, preserve dirty work, set Draft/OCCUPIED and remove
-  MERGE_READY. Re-read the claim and head/base; actual overlap or drift stops the repair.
+  scope on the same PR. Before edits, declare repair files/scope and expected head/base through
+  OPS, preserve dirty work, set Draft/OCCUPIED and remove MERGE_READY. A verified ready/paused
+  scope needs no predecessor acknowledgement or further user confirmation. Use the authorized
+  task messages and OPS records to coordinate a pause/resume within this PR's scope; actual
+  overlapping writers block repair. Re-read the claim and head/base; reconcile drift before writing.
 - Personal identity commits and ordinarily pushes the smallest verified correction and
   meaningful regression tests. OPS records the original worker/request, reviewer-as-contributor,
   temporary repair writer/files, repair commits and final head/base. Preserve source ownership
@@ -214,7 +221,7 @@ User directions and higher-priority instructions still prevail.
 - Before further implementation, return the PR to Draft and `OCCUPIED`, then update
   the mirrors and remove MERGE_READY. Previous approvals apply only to their recorded
   head/base. Eligible separate reviewers use `Review: LGTM` or a specific change request;
-  a review does not transfer ownership.
+  a review authorizes only its bounded repair claim, not unrelated ownership.
 - Update the existing marked comment for the exact assignment, preserving issue
   bodies, foreign comments and other assignments. Re-read owner/head before a write;
   duplicate records, conflicting ownership or a partial synchronization require
@@ -315,11 +322,30 @@ User directions and higher-priority instructions still prevail.
   the worker branch, resolve conflicts, and verify main is an ancestor of the head.
   Default to merge with `chore(merge): sync <worker-branch> with main`; rerun only checks
   affected by integration. If main advances, integrate the new delta before publication.
+- Before final MERGE_READY, a user-requested separate reviewer fetches and rebases the named
+  PR branch onto its current target base in an isolated owned worktree. Preserve a recoverable
+  pre-rebase checkpoint, original authors and repair provenance; inspect divergence and include
+  no foreign commits. An already-current branch needs no rewrite. Record old/new head and base,
+  rerun affected checks and review the resulting delta. Recheck the current remote head and
+  target base immediately before publishing readiness.
+- Rebase publication uses an ordinary push when possible. If the reviewed branch was already
+  published, the explicit user review request authorizes only
+  `--force-with-lease=refs/heads/<reviewed-branch>:<expected-remote-head-SHA>` to that exact branch.
+  Capture the full remote head before rebasing and recheck it immediately before pushing.
+  A changed head, overlapping writer, failed lease or branch protection blocks publication;
+  reconcile instead of refreshing the lease to overwrite new work. Never use plain `--force`,
+  an unpinned lease, protected-base rewrites, or bypass protection. Verify the remote result
+  and record OPS receipts. Keep checkpoints; no branch deletion or general history rewrite is granted.
+- If the base advances after readiness at a foreground checkpoint, remove MERGE_READY,
+  set Draft/OCCUPIED and reconcile records, then rebase/reverify the affected scope before
+  restoring readiness. Reuse unchanged evidence. This is foreground continuation of the
+  authorized review, not a recurring monitor; published historical reviews remain unchanged.
 - An explicit rebase request permits rebasing authorized active worker branches instead:
   pause writers, inspect divergence, preserve work, and omit already-merged prerequisites.
-  A local checkpoint may honestly record unfinished checks. Rebase does not authorize
-  force-pushing published history, changing another active owner's branch without
-  coordination, rebasing completed backups, or touching the user's checkout.
+  A local checkpoint may honestly record unfinished checks. Outside the user-requested review
+  lease exception above, rebase alone does not authorize force-pushing published history.
+  It never authorizes changing another active owner's branch without coordination, rebasing
+  completed backups, or touching the user's checkout.
 - Keep completed worktrees as backups. Under disk pressure, retire the oldest only after
   verifying remote preservation and absence of unique staged/unstaged/untracked/ignored
   content. Use normal worktree removal; never force it, remove active work or destroy
