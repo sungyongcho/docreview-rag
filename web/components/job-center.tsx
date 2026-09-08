@@ -8,7 +8,7 @@ import { JobHistoryControls } from "./job-history-controls";
 import { useMasterDetail } from "@/components/use-master-detail";
 import { MasterDetailDivider } from "@/components/master-detail-divider";
 import styles from "./master-detail.module.css";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { OperatorJob, OperatorJobBoard } from "@/lib/types";
 import { overallJobPercent } from "@/lib/pipeline";
@@ -89,12 +89,15 @@ export function JobActivityPanel({ board, loading, onOpenJobs }: { board: Operat
 }
 
 /** Keep job selection explicit and expose only actions supported by its current state. */
-export function JobCenter({ board, loading, stale = false, onRetry, onCancel, onRefresh, onOpenResult, onOpenPipeline, historyEnabled = false }: { board: OperatorJobBoard; loading: boolean; stale?: boolean; onRetry: (jobId: string) => void; onCancel: (jobId: string) => void; onRefresh: () => void; onOpenResult: (resultId: number) => void; onOpenPipeline?: (stage: string) => void; historyEnabled?: boolean }) {
+export function JobCenter({ board, loading, stale = false, onRetry, onCancel, onRefresh, onOpenResult, onOpenPipeline, historyEnabled = false, focusJobId }: { focusJobId?: string; board: OperatorJobBoard; loading: boolean; stale?: boolean; onRetry: (jobId: string) => void; onCancel: (jobId: string) => void; onRefresh: () => void; onOpenResult: (resultId: number) => void; onOpenPipeline?: (stage: string) => void; historyEnabled?: boolean }) {
   const { t, locale } = useI18n();
   const [domain, setDomain] = useState<"all" | OperatorJob["domain"]>("all");
   const [group, setGroup] = useState<"all" | "active" | "queued" | "history" | "failed">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const layout = useMasterDetail({ storageKey: "docreview:layout:jobs" });
+  useEffect(() => {
+    if (!focusJobId) return;setDomain("all");setGroup("all");setSelectedId(focusJobId);layout.openDetail();
+  }, [focusJobId]);
   const visible = board.jobs.filter((job) => {
     if (domain !== "all" && job.domain !== domain) return false;
     if (group === "active" && job.status !== "running") return false;

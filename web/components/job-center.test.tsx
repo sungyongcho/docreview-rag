@@ -183,3 +183,13 @@ describe("explicit job navigation", () => {
     expect(screen.getByRole("button", { name: "Cancel job" })).toBeInTheDocument();
   });
 });
+
+
+it("selects a notification's job and clears filters without requiring a row click", () => {
+  const props = { board: { jobs: [job(), job({ job_id: "job-2", status: "succeeded" })], active_count: 0, queued_count: 0 }, loading: false, onRefresh: vi.fn(), onRetry: vi.fn(), onCancel: vi.fn(), onOpenResult: vi.fn() };
+  const { rerender } = render(<JobCenter {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "queued" }));
+  rerender(<JobCenter {...props} focusJobId="job-1" />);
+  expect(screen.getByRole("button", { name: "Retry as new job" })).toBeVisible();
+  expect(screen.getByRole("button", { name: /Ingest manifest.*failed/ })).toHaveAttribute("aria-pressed", "true");
+});

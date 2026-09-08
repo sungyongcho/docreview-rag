@@ -655,13 +655,15 @@ describe("refresh hygiene", () => {
     await screen.findByText("Document filters could not be loaded: Schema is not ready");
   });
 
-  it("toasts only for a manual refresh", async () => {
+  it("keeps manual refresh failures in one authoritative inline notice", async () => {
     stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Database is busy");
+    await screen.findByText("Corpus status could not be refreshed: Database is busy");
+    expect(screen.getAllByText("Corpus status could not be refreshed: Database is busy")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does not refetch evaluation runs when only a corpus job reports progress", async () => {

@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.observability.persistence import redact_sensitive_text
 from app.operator.commands import COMMANDS, CommandTarget, OperatorCommand
+from app.operator.lifecycle_receipts import LifecycleReceipt, lifecycle_receipts
 from app.operator.wipe import WipeError, WipeService, diagnose_wipe_error
 
 type JobStatus = Literal["running", "succeeded", "failed", "cancelled", "timed_out"]
@@ -360,6 +361,16 @@ def create_operator_app(
     async def wipe_status(_authorized: None = Depends(authorize)) -> dict:
         """Return reset progress independently of application or database availability."""
         return wipe.result()
+
+    @application.get("/lifecycle/receipts", response_model=tuple[LifecycleReceipt, ...])
+    def read_lifecycle_receipts(
+        _authorized: None = Depends(authorize),
+    ) -> tuple[LifecycleReceipt, ...]:
+        """Expose existing reset receipts through the same authenticated local operator."""
+        try:
+            return lifecycle_receipts(root)
+        except (OSError, ValueError) as error:
+            raise HTTPException(503, "Fresh-start receipt could not be read.") from error
 
     @application.get("/commands", response_model=tuple[CommandResource, ...])
     async def commands(_authorized: None = Depends(authorize)) -> tuple[CommandResource, ...]:

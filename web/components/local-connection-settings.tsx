@@ -1,4 +1,6 @@
 "use client";
+import { useNotifications, useNotificationSurface } from "./notifications";
+import { notificationErrorDetail, notificationErrorMessage, localConnectionNotice } from "@/lib/notification-registry";
 
 import { useEffect, useRef, useState } from "react";
 import { Activity, ArrowRight, ExternalLink, Plug, RotateCcw, Unplug } from "lucide-react";
@@ -72,6 +74,8 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
   const [pendingAction, setPendingAction] = useState<"connect" | "disconnect" | "reset" | "diagnose" | null>(null);
   const [error, setError] = useState<{ detail: string; kept?: boolean } | null>(null);
   const [message, setMessage] = useState("");
+  const { notify } = useNotifications();
+  useNotificationSurface("local-model");
   const [diagnostics, setDiagnostics] = useState<LocalLLMDiagnostics | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const mounted = useRef(true);
@@ -121,8 +125,13 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
         : action === "disconnect" ? "Disconnected. Local answers are disabled until you connect or reset."
         : "Default server restored. Your added servers are kept.");
       onChanged?.(value.local);
+      const event = localConnectionNotice(value.local);
+      notify(t(event.message), event.kind, "local-connection", undefined, { event: "local-connection", revision: event.revision });
     } catch (reason) {
-      if (mounted.current) setError({ detail: reason instanceof Error ? reason.message : "The connection could not be changed.", kept: true });
+      if (mounted.current) {
+        setError({ detail: reason instanceof Error ? reason.message : "The connection could not be changed.", kept: true });
+        notify(reason instanceof Error ? notificationErrorMessage(reason) : t("The connection could not be changed."), "error", "local-connection", undefined, { event: "local-connection", detail: notificationErrorDetail(reason) });
+      }
     } finally {
       if (mounted.current) { setBusy(false); setPendingAction(null); }
     }

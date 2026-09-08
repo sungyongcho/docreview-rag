@@ -9,7 +9,7 @@ import { BUILTIN_PRESETS } from "./types";
 export function useSavedPresets() {
   const preview = useSyncExternalStore(subscribePreview, previewState, serverPreviewState);
   const storageKind = useSyncExternalStore(subscribePresetStorage, presetStorageKind, serverPresetStorageKind);
-  const [state, setState] = useState<ReturnType<typeof readPresetCatalog>>({ presets: [], builtins: BUILTIN_PRESETS, fileErrors: [], error: null });
+  const [state, setState] = useState<ReturnType<typeof readPresetCatalog>>({ loaded: false, presets: [], builtins: BUILTIN_PRESETS, fileErrors: [], error: null });
   useEffect(() => {
     function refresh() {
       try { setState(readPresetCatalog()); }

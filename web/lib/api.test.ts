@@ -194,3 +194,11 @@ it.each(["http", "sse"] as const)("preserves manifest diagnostic fields on %s re
   expect(error.failure).toEqual(failure);
   vi.unstubAllGlobals();
 });
+
+it("preserves structured API failure details for notification entries", async () => {
+  const failure={code:"query_scope_unavailable",message:"Original API message.",detail:"ValueError: original detail",cause:"invalid_json",path:"manifest.json"};
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({error:failure}),{status:503,headers:{"Content-Type":"application/json"}})));
+  const error=await getCorpusSnapshot().catch(error=>error);
+  expect(error.failure).toEqual(failure);
+  vi.unstubAllGlobals();
+});

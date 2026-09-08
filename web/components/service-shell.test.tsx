@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
-import type { DocumentFacets, Readiness } from "@/lib/types";
+import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
 import { enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
@@ -1536,4 +1536,23 @@ it("opens default limits from System status", async () => {
   expect(within(dialog).getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).getByLabelText("Maximum wall clock seconds").closest(".settings-form")).toBeNull();
   expect(within(dialog).queryByLabelText("Additional operator instructions")).toBeNull();
+});
+
+/** A notification job URL must survive a fresh shell load and select its actual job. */
+it("restores a notification job destination on fresh load", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus);
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  const wanted: OperatorJob = { job_id: "wanted-job", domain: "corpus", kind: "ingest_manifest", request: {}, status: "succeeded", stage: "done", current: 1, total: 1, detail_current: null, detail_total: null, message: "Requested job result", error_code: null, result_refs: {}, queue_position: null, can_cancel: false, can_retry: false, created_at: "2026-09-08T00:00:00Z", started_at: "2026-09-08T00:00:01Z", finished_at: "2026-09-08T00:00:02Z", updated_at: "2026-09-08T00:00:02Z" };
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith("/admin/jobs") ? Promise.resolve(new Response(JSON.stringify({ jobs: [{ ...wanted, job_id: "other-job", message: "Other job result" }, wanted], active_count: 0, queued_count: 0 }), { status: 200, headers: { "content-type": "application/json" } })) : ordinaryFetch(input, init));
+  window.history.replaceState(null, "", "/?view=build&tab=jobs&job=wanted-job");
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    render(<LiveShell />);
+    await screen.findByRole("heading", { name: "Job Center" });
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("job")).toBe("wanted-job"));
+    expect(await screen.findByText("Requested job result")).toBeVisible();
+    expect(screen.queryByText("Other job result")).toBeNull();
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); localStorage.clear(); }
 });

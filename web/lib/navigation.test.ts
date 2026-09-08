@@ -8,6 +8,7 @@ describe("workspace navigation URLs", () => {
     { view: "build", tab: "pipeline", stage: "setup" },
     { view: "build", tab: "documents" },
     { view: "build", tab: "jobs" },
+    { view: "build", tab: "jobs", jobId: "admin-notification-1" },
     ...["playground", "golden", "runs", "compare", "snapshots", "defaults", "presets"].map((tab) => ({ view: "measure" as const, tab: tab as "runs", resultId: 42 })),
     ...["status", "operations", "api", "usage"].map((tab) => ({ view: "system" as const, tab: tab as "status" })),
   ])("round-trips the complete destination %j", (target) => {

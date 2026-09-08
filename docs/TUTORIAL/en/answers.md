@@ -186,3 +186,8 @@ For manifest metadata failures, the strip marks the actual failing stage: stage 
 
 ### SCREENSHOT NEEDED
 <!-- Feature: failed-answer manifest diagnosis and stage-zero attribution; locale=en; light mode; show localized headline, diagnosis and stages 1-5 not run. -->
+
+A review that finishes or fails while you are on another workspace produces a bell notification linked to its conversation. Opening it marks it read and returns to the original conversation. The existing execution summary remains the place to inspect the failure or result; opening the center does not repeat the request. See the [notification center](runtime.md#notification-center).
+
+### SCREENSHOT NEEDED
+<!-- Feature: background review completion/failure notification returning to its original conversation; locale=en; light mode; show the same persisted message and no repeated request. -->
