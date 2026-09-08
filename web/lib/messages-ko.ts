@@ -1,4 +1,5 @@
 export const KO: Record<string, string> = {
+  "OpenAI": "OpenAI",
   "Source blocked": "원문 확인 필요",
   "Choose a company from the supported catalog.": "지원 목록에 있는 회사를 선택하세요.",
   "Search the supported company catalog, then select its fiscal years.": "지원 회사 목록에서 검색한 뒤 회계연도를 선택하세요.",

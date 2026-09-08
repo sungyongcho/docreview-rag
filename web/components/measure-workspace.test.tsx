@@ -392,3 +392,16 @@ it("separates workflow and management and opens defaults as a tab", async () => 
   expect(within(management).getByRole("button", { name: "Presets" })).toHaveAttribute("aria-pressed", "false");
   expect(screen.getByRole("heading", { name: "Evaluation settings" })).toBeVisible();
 });
+
+/** Preserve browser presets in the management group without exposing DEV defaults. */
+it("keeps the presets tab available in production without DEV defaults", () => {
+  cleanup();
+  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : []);
+  try {
+    render(<Host live={false} initialTab="presets" />);
+    const management = screen.getByRole("group", { name: "Manage" });
+    expect(within(management).getByRole("button", { name: "Presets" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(management).queryByRole("button", { name: "Defaults" })).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getAllByRole("button")).toHaveLength(4);
+  } finally { cleanup(); vi.unstubAllGlobals(); }
+});
