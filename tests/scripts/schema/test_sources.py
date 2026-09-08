@@ -19,7 +19,7 @@ from tests.ingestion.support import write_selection_catalog
 
 @pytest.mark.parametrize("sample", [False, True])
 def test_clean_start_removes_sources_but_preserves_unrelated_paths(tmp_path, sample):
-    """Clean start clears exact source entries and persists an empty or sample draft."""
+    """Clean start preserves unrelated files and stores default or sample pairs."""
     corpus = tmp_path / "data/corpus"
     write_selection_catalog(corpus)
     sentinel = tmp_path / "data/evaluation-export.json"
@@ -31,7 +31,7 @@ def test_clean_start_removes_sources_but_preserves_unrelated_paths(tmp_path, sam
     reset.stage()
     assert not Manifest.read(corpus / "manifest.json").artifacts
     assert not source_inventory(corpus)
-    assert acquisition_draft(corpus, ())["identifiers"] == (["NVDA", "AMD"] if sample else [])
+    assert len(acquisition_draft(corpus, ())["pairs"]) == (4 if sample else 18)
     reset.finish()
     assert not reset.journal.exists()
     assert sentinel.read_text() == (tmp_path / ".env").read_text() == "keep"

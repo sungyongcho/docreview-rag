@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { acquisitionBatches, acquisitionDraft, selectedSourceState, type SourceInventory } from "./source-selection";
+import { acquisitionBatches, acquisitionDraft, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState, type SourceInventory } from "./source-selection";
 
-const rows: SourceInventory[] = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true })));
+const rows: SourceInventory[] = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
 
 describe("current source selection", () => {
   it("resolves four downloaded sources without duplicate manifest memberships", () => {
@@ -49,4 +49,41 @@ it("batches matching year sets while preserving registry and incomplete-year ide
     { registry: "dart", identifiers: ["005930"], years: [2023] },
   ]);
   expect(selectedSourceState(rows, { identifiers: "NVDA", years: "2024", pairs: [] }).selected).toEqual([]);
+});
+
+
+it("persists sparse and empty explicit choices until the server reset revision changes", () => {
+  const draft = acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2019 }, { registry: "dart", issuer: "000660", year: 2022 }]);
+  saveAcquisitionDraft("reset-a", draft);
+  expect(loadAcquisitionDraft("reset-a")).toEqual(draft);
+  expect(loadAcquisitionDraft("reset-b")).toBeNull();
+  saveAcquisitionDraft("reset-a", acquisitionDraft([]));
+  expect(loadAcquisitionDraft("reset-a")?.pairs).toEqual([]);
+});
+
+it("keeps conflicting downloaded primaries distinct from pending downloads", () => {
+  const blocked = { ...rows[0], ready: false, blocker: "Conflicting primary sources" };
+  const state = selectedSourceState([blocked], acquisitionDraft([{ registry: "sec", issuer: blocked.issuer, year: blocked.fiscal_year }]));
+  expect(state.missingPairs).toEqual([]);
+  expect(state.blocked).toEqual([blocked]);
+  expect(state.complete).toBe(false);
+});
+
+
+it("includes recoverable on-disk sources in downloads without labeling them missing", () => {
+  const damaged = { ...rows[0], ready: false, can_redownload: true, blocker: "Download it again in Filings" };
+  const pair = { registry: "sec" as const, issuer: damaged.issuer, year: damaged.fiscal_year };
+  const state = selectedSourceState([damaged, rows[1]], acquisitionDraft([pair, { registry: "sec", issuer: rows[1].issuer, year: rows[1].fiscal_year }]));
+  expect(state.present).toHaveLength(2);
+  expect(state.missingPairs).toEqual([]);
+  expect(state.downloadPairs).toEqual([pair]);
+  expect(state.complete).toBe(false);
+});
+
+it.each([false, true])("never downloads a conflicting filing even when on_disk is %s", (onDisk) => {
+  const conflict = { ...rows[0], on_disk: onDisk, ready: false, can_redownload: false, blocker: "Conflicting primary sources" };
+  const pair = { registry: "sec" as const, issuer: conflict.issuer, year: conflict.fiscal_year };
+  const state = selectedSourceState([conflict], acquisitionDraft([pair]));
+  expect(state.downloadPairs).toEqual([]);
+  expect(state.complete).toBe(false);
 });

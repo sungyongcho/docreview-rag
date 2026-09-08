@@ -8,7 +8,7 @@ import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
 const READY_RUNTIME: Readiness = {
   status: "ready",
@@ -44,7 +44,15 @@ const EMPTY_DOCUMENT_FACETS_FIXTURE = {
   snapshots: [],
 };
 
+const SAMPLE_PAIRS = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ registry: "sec" as const, issuer, year })));
+const SAMPLE_DRAFT = { identifiers: ["NVDA", "AMD"], years: [2023, 2024], pairs: SAMPLE_PAIRS, revision: "sample-v1" };
+const COMPANIES = [{ registry: "sec", issuer: "NVDA", name: "NVIDIA" }, { registry: "sec", issuer: "AMD", name: "Advanced Micro Devices" }, { registry: "dart", issuer: "005930", name: "Samsung Electronics" }, { registry: "dart", issuer: "000660", name: "SK hynix" }];
+
 function jsonResponse(payload: unknown) {
+  if (payload && typeof payload === "object" && "sources" in payload) {
+    const snapshot = payload as Record<string, unknown>;
+    payload = { acquisition_companies: COMPANIES, acquisition_draft: SAMPLE_DRAFT, ...snapshot };
+  }
   return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
 }
 
@@ -376,7 +384,7 @@ describe("Build workspace", () => {
 
 
 describe("preparation refresh after corpus jobs", () => {
-  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
   it.each(["succeeded", "failed", "cancelled", "interrupted"] as const)("refreshes once for %s and ignores repeated polls", async (status: OperatorJobStatus) => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -399,20 +407,19 @@ describe("preparation refresh after corpus jobs", () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/documents/facets"))).toHaveLength(2);
   });
 
-  it("keeps manual manifest choices separate from the compact default selection", async () => {
+  it("does not expose local manifest and evaluation selections in parsing", async () => {
     const manifest = CANNED_CORPUS.manifests[0];
     const selection = manifest.selections[0];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
+      if (String(input).endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
       if (String(input).endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
       return jsonResponse([]);
     }));
     render(<Harness live />);
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: /sec-evaluation/ }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /overlap/ }));
-    expect(screen.getByRole("checkbox", { name: /sec-evaluation/ })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: /overlap/ })).toBeChecked();
+    await screen.findByRole("button", { name: "NVDA FY2024 · Missing source" });
+    expect(screen.queryByRole("checkbox", { name: /sec-evaluation|overlap/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 0 ready · 4 to download");
   });
 });
@@ -423,7 +430,7 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   });
@@ -450,7 +457,7 @@ it("queues exactly the selected company years after changing matrix cells", asyn
 it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   });
@@ -473,7 +480,7 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
       if (failDart && body.kind === "acquire_dart") return new Response(JSON.stringify({ error: { message: "DART submission unavailable" } }), { status: 503, headers: { "Content-Type": "application/json" } });
       return jsonResponse({ job_id: String(submitted.length), status: "queued" });
     }
-    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: { identifiers: ["NVDA", "AMD"], years: [2023, 2024] }, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
   }));
@@ -496,7 +503,7 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
 it("initializes empty, accepts a server sample, and reconciles disk changes without overwriting an edited draft", async () => {
   const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true })));
   let sources: typeof sourceRows = [];
-  let preset: { identifiers: string[]; years: number[] } | null = null;
+  let preset: typeof SAMPLE_DRAFT | null = null;
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
@@ -509,12 +516,11 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   await screen.findByText("No sources yet. Add a company and fiscal year below.");
   expect(screen.queryByRole("button", { name: /^NVDA FY/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
-  preset = { identifiers: ["NVDA", "AMD"], years: [2023, 2024] };
+  preset = SAMPLE_DRAFT;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByRole("checkbox", { name: /^Select all years for NVDA/ });
   expect(screen.getByText("0 / 4 filings on disk")).toBeInTheDocument();
   sources = sourceRows;
-  preset = null;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText("4 / 4 filings on disk");
   fireEvent.click(screen.getByRole("checkbox", { name: /^Select all years for AMD/ }));
@@ -614,7 +620,7 @@ describe("quick evaluation feedback", () => {
 });
 
 describe("refresh hygiene", () => {
-  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
 
   const failure = (code: string, message: string) => new Response(JSON.stringify({ error: { code, message } }), { status: 503, headers: { "content-type": "application/json" } });
 
@@ -716,6 +722,7 @@ describe("connection readiness presentation", () => {
       if (url.endsWith("/admin/corpus")) return jsonResponse({
         ...CANNED_CORPUS,
         status: READY_RUNTIME.corpus,
+        acquisition_draft: { identifiers: ["NVDA"], years: [2024], pairs: [{ registry: "sec", issuer: "NVDA", year: 2024 }], revision: "one-filing" },
         sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true }],
       });
       if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
@@ -766,4 +773,47 @@ describe("connection readiness presentation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
     expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
   });
+});
+
+
+it("queues a staged recoverable source and enables parsing after the verified refresh", async () => {
+  const submitted: { kind: string; identifiers: string[]; years: number[] }[] = [];
+  let recovered = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
+      submitted.push(JSON.parse(String(init.body)));
+      recovered = true;
+      return jsonResponse({ job_id: "reacquisition", status: "queued" });
+    }
+    if (url.endsWith("/admin/corpus")) return jsonResponse({
+      mode: "live", ...CANNED_CORPUS,
+      status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true },
+      acquisition_draft: { identifiers: ["AMD"], years: [2023], pairs: [{ registry: "sec", issuer: "AMD", year: 2023 }], revision: "repair-source" },
+      sources: [
+        { manifest: "manifest.json", document_id: "AMD-FY2023", registry: "sec", issuer: "AMD", name: "AMD", fiscal_year: 2023, on_disk: true, ready: true, can_redownload: false },
+        { manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
+      ],
+    });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Harness live />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  await screen.findByRole("button", { name: "NVDA FY2024 · Source blocked" });
+  const company = screen.getByLabelText("Search/add company or year");
+  fireEvent.change(company, { target: { value: "NVDA" } });
+  fireEvent.keyDown(company, { key: "Enter" });
+  const year = screen.getByLabelText("Search/add company or year");
+  fireEvent.change(year, { target: { value: "2024" } });
+  fireEvent.keyDown(year, { key: "Enter" });
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  await waitFor(() => expect(submitted).toHaveLength(1));
+  expect(submitted[0]).toMatchObject({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled());
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
 });

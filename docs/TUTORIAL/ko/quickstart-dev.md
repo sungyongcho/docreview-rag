@@ -55,6 +55,8 @@ rag-corpus status
 
 **막혔다면:** Jobs 또는 `rag-corpus status`에서 실제 오류를 확인하세요. 인증·누락 원문·provider 설정을 고친 뒤 다시 실행합니다. [문제 해결](troubleshooting.md)을 참고하세요.
 
+일반 초기 시작에서는 NVIDIA·AMD FY2019–FY2024와 삼성전자·SK하이닉스 FY2022–FY2024, 정확히 18개 회사·연도 쌍이 선택됩니다. 다운로드 예정도 선택에 포함되며 원문 보유 상태와 별도로 유지됩니다. 직접 수정하거나 모두 해제한 선택은 새로고침 뒤에도 유지되고 다음 서버 초기화 때 새 기본값을 적용합니다. 회사 입력은 검증된 목록(NVDA, AMD, INTC, MU, 005930, 000660, 035420)으로 제한되며 기본 네 회사가 지원 목록 전체는 아닙니다.
+
 ### 4. 두 보고서 파싱·청킹·저장 {#qs-cli-4}
 
 clone한 저장소에서 실행합니다. 실행 확인에 응답하고 각 작업이 성공한 뒤 다음 명령으로 넘어가세요.
@@ -169,12 +171,14 @@ DART는 먼저 기업 고유번호 목록을 내려받습니다. 이 API는 응�
 
 **막혔다면:** Jobs 또는 `rag-corpus status`에서 실제 오류를 확인하세요. 인증·누락 원문·provider 설정을 고친 뒤 다시 실행합니다. [문제 해결](troubleshooting.md)을 참고하세요.
 
+일반 초기 시작에서는 NVIDIA·AMD FY2019–FY2024와 삼성전자·SK하이닉스 FY2022–FY2024, 정확히 18개 회사·연도 쌍이 선택됩니다. 다운로드 예정도 선택에 포함되며 원문 보유 상태와 별도로 유지됩니다. 직접 수정하거나 모두 해제한 선택은 새로고침 뒤에도 유지되고 다음 서버 초기화 때 새 기본값을 적용합니다. 회사 입력은 검증된 목록(NVDA, AMD, INTC, MU, 005930, 000660, 035420)으로 제한되며 기본 네 회사가 지원 목록 전체는 아닙니다.
+
 ### 4. 두 보고서 파싱·청킹·저장 {#qs-web-4}
 
-**다운로드가 완료되면 준비 상태가 자동으로 갱신됩니다.** **파싱·청킹**을 열고 **선택한 문서**에 의도한 두 보고서의 원문이 준비됐는지 확인한 뒤 **선택한 원문 파싱 및 청크 생성**을 한 번 누릅니다. 적재 작업이 성공할 때까지 기다리세요. 선택별 수동 적재를 하려면 **고급**을 열어 `manifest.json`의 NVIDIA 선택 `sec-08b5f645cc174083`와 삼성전자 선택 `dart-1a4f24de25a92617`의 원문을 확인하고 각각 **DB 적재**를 실행합니다. 이 경우 주 동작까지 중복 실행하지 않습니다.
+**다운로드가 완료되면 준비 상태가 자동으로 갱신됩니다.** **파싱·청킹**을 열고 **선택한 문서**에 의도한 두 보고서의 원문이 준비됐는지 확인한 뒤 **선택한 원문 파싱 및 청크 생성**을 한 번 누릅니다. 적재 작업이 성공할 때까지 기다리세요. 이 단계에서 다운로드한 연도를 해제하고 다시 선택할 수 있으며 해제한 항목도 계속 표시됩니다. 1단계에서 수집한 공시만 이 흐름의 대상입니다. 같은 바이트의 중복 원문은 검증 후 선택하고, 서로 다른 원문이 충돌하면 manifest 확인 안내와 함께 파싱을 차단합니다.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: current shared-parse-action-and-manual-advanced-alternative; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
+<!-- Feature: bounded parsing with downloaded-year deselection and reselection; locale=ko; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 공통 목록에는 다른 보고서도 있을 수 있습니다. 이 실습의 완료 여부는 선택한 보고서와 원문 수를 기준으로 확인합니다.
 

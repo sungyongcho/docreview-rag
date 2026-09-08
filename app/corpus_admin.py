@@ -35,6 +35,7 @@ from app.ingestion.edgar_api import DEFAULT_MANIFEST, acquire_edgar
 from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
 from app.ingestion.seed import load_seed_batch, persist_seed_batch
+from app.ingestion.source_catalog import ACQUISITION_COMPANIES, AcquisitionCompany, approved_company
 from app.ingestion.source_selection import (
     SourceInventory,
     acquisition_draft,
@@ -260,7 +261,8 @@ class CorpusSnapshot:
     manifests: tuple[ManifestSummary, ...]
     documents: tuple[AdminDocument, ...]
     sources: tuple[SourceInventory, ...] = ()
-    acquisition_draft: dict[str, list] | None = None
+    acquisition_draft: dict[str, object] | None = None
+    acquisition_companies: tuple[AcquisitionCompany, ...] = ACQUISITION_COMPANIES
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +279,9 @@ class AdminCommand:
     def __post_init__(self) -> None:
         """Reject unsupported or structurally unsafe command arguments."""
         if self.kind in {"acquire_edgar", "acquire_dart"}:
+            registry = "sec" if self.kind == "acquire_edgar" else "dart"
+            if any(not approved_company(registry, value) for value in self.identifiers):
+                raise ValueError("Choose a company from the supported acquisition catalog.")
             if not self.identifiers or not self.years:
                 raise ValueError("acquisition requires identifiers and fiscal years")
             if any(year < 1900 or year > 2100 for year in self.years):

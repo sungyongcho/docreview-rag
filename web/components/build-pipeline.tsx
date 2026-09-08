@@ -1,5 +1,5 @@
 "use client";
-import { translate, useI18n, type Locale } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 
 
 import { AnswerEngineLight, AnswerEngineRows } from "@/components/answer-engine-light";
@@ -51,12 +51,6 @@ export interface BuildPipelineProps {
   manifests: ManifestSummary[];
   sources?: SourceInventory[];
   onChangeFilings?: () => void;
-  onIngestAdvanced?: () => void;
-  selectedSources?: string[];
-  selectedDocumentCount?: number;
-  onToggleSource?: (key: string) => void;
-  /** Ingested documents per registry, used for the per-manifest "ingested" count. */
-  registryCounts?: Record<string, number>;
   /** Runtime flags for the strip; `null` or `undefined` means "not known yet". */
   databaseConnected?: boolean | null;
   schemaStatus?: string | null;
@@ -72,7 +66,6 @@ export interface BuildPipelineProps {
   onCancelJob: (jobId: string) => void;
   onDownload: (next?: AcquisitionForm) => void;
   onIngestAll: () => void;
-  onIngest: (manifestName: string, selectionId: string) => void;
   onBackfill: () => void;
   onRebuildBm25: () => void;
   onAsk: () => void;
@@ -232,12 +225,6 @@ export function BuildPipeline(props: BuildPipelineProps) {
             manifests={props.manifests}
             sources={props.sources}
             onChangeFilings={() => setSelectedId("filings")}
-            onIngestAdvanced={props.onIngestAdvanced}
-            selectedSources={props.selectedSources}
-            selectedDocumentCount={props.selectedDocumentCount}
-            onToggleSource={props.onToggleSource}
-            registryCounts={props.registryCounts ?? {}}
-            onIngest={props.onIngest}
             onOpenDocuments={props.onOpenDocuments}
             onOpenJobs={props.onOpenJobs}
             onOpenStatus={props.onOpenStatus}
@@ -359,26 +346,13 @@ interface StageCardProps {
   manifests: ManifestSummary[];
   sources?: SourceInventory[];
   onChangeFilings?: () => void;
-  onIngestAdvanced?: () => void;
-  selectedSources?: string[];
-  selectedDocumentCount?: number;
-  onToggleSource?: (key: string) => void;
-  registryCounts: Record<string, number>;
-  onIngest: (manifestName: string, selectionId: string) => void;
   onOpenDocuments: () => void;
   onOpenJobs: () => void;
   onOpenStatus: () => void;
   onCancelJob: (jobId: string) => void;
 }
 
-function manifestSummary(manifest: ManifestSummary, registryCounts: Record<string, number>, locale: Locale): string {
-  if (!manifest.valid) return translate(locale, "invalid manifest");
-  const parts = [translate(locale, "{count} entries", { count: (manifest.documents ?? 0).toLocaleString(locale) }), translate(locale, "{count} on disk", { count: (manifest.sources_present ?? 0).toLocaleString(locale) })];
-
-  return parts.join(" · ");
-}
-
-function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -423,34 +397,17 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, onIng
               <h3>{t("Selected documents")}</h3>
               <button className="button" type="button" onClick={onChangeFilings}><RefreshCw size={14} aria-hidden="true" />{t("Change selection in Filings")}</button>
             </header>
-            <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length, missing: missingCount })}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
-            <SourceSelectionGrid sources={sources} pairs={sourceState.pairs} companies={companies} selectedOnly disabled={readOnly || busy || Boolean(activeJob)} onToggle={(changed) => {
-              const removed = new Set(changed.map(pairKey));
-              onAcquisitionChange(acquisitionDraft(sourceState.pairs.filter((pair) => !removed.has(pairKey(pair)))));
+            <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
+            <SourceSelectionGrid sources={sources} pairs={sourceState.pairs} companies={companies} disabled={readOnly || busy || Boolean(activeJob)} onToggle={(changed, included) => {
+              const next = new Map(sourceState.pairs.map((pair) => [pairKey(pair), pair]));
+              for (const pair of changed) if (included) next.set(pairKey(pair), pair); else next.delete(pairKey(pair));
+              onAcquisitionChange(acquisitionDraft([...next.values()]));
             }} />
+            {sourceState.blocked.map((source) => <p role="alert" className="index-selection-missing" key={source.document_id}>{source.blocker}</p>)}
             {!sourceState.pairs.length && <p className="helper">{t("Select sources in Filings to start parsing.")}</p>}
             {missingCount > 0 && <p role="alert" id="index-selection-missing" className="index-selection-missing">{t("{count} sources missing → download in Filings before parsing.", { count: missingCount })}</p>}
-            {sourceState.pairs.length > 0 && <p className="helper">{t("Select a year to remove it, or change the selection in Filings.")}</p>}
+            {sourceState.pairs.length > 0 && <p className="helper">{t("Select or clear downloaded years here. Add missing filings in step 1.")}</p>}
           </section>}
-          {stage.id === "index" && (
-            <details className="stage-advanced index-advanced">
-              <summary>{t("Advanced")}</summary>
-              <div>
-                {manifests.map((manifest) => (
-                  <div className="manifest-row" key={manifest.name}>
-                    <span>{manifest.name} · {manifest.registries.join(" / ").toUpperCase()} · {manifestSummary(manifest, registryCounts, locale)}</span>
-                    {manifest.selections.map((selection) => {
-                      const key = `${manifest.name}:${selection.selection_id}`;
-                      return <div key={key}><label><input type="checkbox" checked={selectedSources.includes(key)} onChange={() => onToggleSource?.(key)} disabled={!manifest.valid || disabled("ingest_all")} />{selection.selection_id} · {selection.document_ids.length} {t("documents")}</label><button className="button" type="button" aria-label={t("Ingest {p0}", { p0: `${manifest.name} / ${selection.selection_id}` })} disabled={!manifest.valid || disabled("ingest_all")} onClick={() => onIngest(manifest.name, selection.selection_id)}>{t("Ingest")}</button></div>;
-                    })}
-                  </div>
-                ))}
-                {onIngestAdvanced && <button className="button" type="button" disabled={disabled("ingest_all") || !selectedSources.length} onClick={onIngestAdvanced}>{t("Ingest advanced selections")}</button>}
-                {!manifests.length && <p className="helper">{t("No manifests found in data/corpus.")}</p>}
-                <p className="helper">{t("Ingest stores documents and chunks. Run Backfill embeddings (step 3) and Compute BM25 (step 4) afterwards.")}</p>
-              </div>
-            </details>
-          )}
           {stage.id === "index" ? <div className="index-action-bar" aria-label={t("Parsing actions")} role="group">
             {activeJob ? <>
               <div className="index-action-progress"><JobProgress job={job} /></div>

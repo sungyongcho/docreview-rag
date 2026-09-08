@@ -37,8 +37,9 @@ export function SourceSelectionGrid({ sources, pairs, companies, disabled, selec
           </label>
           <div className={`source-matrix-years${columns ? " aligned" : ""}`} style={{ "--year-columns": years.length } as CSSProperties}>{row.cells.map((cell) => {
             const key = pairKey(cell.pair); const onDisk = ready.includes(cell); const included = selected.has(key);
-            const label = `${row.issuer} FY${cell.pair.year} · ${t(onDisk ? "On disk" : "Missing source")}`;
-            const title = `${label}${cell.documents.length ? ` · ${cell.documents.map((source) => source.document_id).join(", ")}` : ""}`;
+            const blocked = cell.documents.some((source) => source.on_disk && source.ready === false);
+            const label = `${row.issuer} FY${cell.pair.year} · ${t(blocked ? "Source blocked" : onDisk ? "On disk" : "Missing source")}`;
+            const title = `${cell.documents.find((source) => source.blocker)?.blocker ?? label}${cell.documents.length ? ` · ${cell.documents.map((source) => source.document_id).join(", ")}` : ""}`;
             const style = columns ? { gridColumn: years.indexOf(cell.pair.year) + 1 } : undefined;
             const content = <><span aria-hidden="true">{onDisk ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}</>;
             const className = `source-matrix-year ${onDisk ? "on-disk" : "missing"}${included ? " selected" : ""}`;

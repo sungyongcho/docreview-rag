@@ -82,7 +82,6 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
     onAcquisitionChange: vi.fn(),
     onDownload: vi.fn(),
     onIngestAll: vi.fn(),
-    onIngest: vi.fn(),
     onBackfill: vi.fn(),
     onRebuildBm25: vi.fn(),
     onAsk: vi.fn(),
@@ -191,7 +190,7 @@ describe("BuildPipeline", () => {
 
 
   it("points at the next stage and wires its primary action", () => {
-    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true }))) });
+    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))) });
 
     expect(screen.getByText("Recommended next step")).toBeInTheDocument();
     expect(document.querySelector(".pipeline-guidance button")).toHaveTextContent("Parse & chunk");
@@ -304,16 +303,15 @@ it("links schema-blocked downstream selection back to step 2", () => {
 });
 
 
-it("names missing company years, blocks the default ingest, and keeps Advanced actions", () => {
-  const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true }] });
+it("names missing company years, blocks the default ingest, and removes the Advanced bypass", () => {
+  const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, on_disk: true }] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("4 documents · 1 ready · 3 to download");
   expect(screen.getByRole("button", { name: "NVDA FY2023 · Missing source" })).toBeVisible();
   expect(screen.queryByRole("textbox", { name: "Search/add company or year" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
-  fireEvent.click(screen.getByText("Advanced"));
-  fireEvent.click(screen.getByRole("button", { name: "Ingest manifest.json / sec-evaluation" }));
-  expect(handlers.onIngest).toHaveBeenCalledWith("manifest.json", "sec-evaluation");
+  expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Ingest manifest/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
   expect(screen.getByRole("textbox", { name: "Search/add company or year" })).toBeInTheDocument();
 });
@@ -336,13 +334,12 @@ it.each(["en", "ko"] as const)("keeps the developer guide aligned with actual Fi
   fireEvent.click(screen.getByRole("button", { name: translate(locale, "Select {p0}", { p0: translate(locale, "Parse & chunk") }) }));
   expect(screen.getByRole("button", { name: translate(locale, "Parse & chunk selected sources") })).toBeVisible();
   expect(guide).toContain(`**${translate(locale, "Parse & chunk selected sources")}**`);
-  expect(guide).toContain(`**${translate(locale, "Advanced")}**`);
-  expect(guide).toContain(`**${translate(locale, "Ingest")}**`);
+  expect(screen.queryByText(translate(locale, "Advanced"))).not.toBeInTheDocument();
 });
 
 /** Keep source identities distinct from human-facing company/year labels. */
 function selectionSource(issuer: string, year: number, onDisk = true): SourceInventory {
-  return { registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, document_id: `raw-${issuer}-${year}`, name: issuer === "NVDA" ? "NVIDIA" : issuer, on_disk: onDisk, manifest: "manifest.json" };
+  return { registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, document_id: `raw-${issuer}-${year}`, name: issuer === "NVDA" ? "NVIDIA" : issuer, ready: onDisk, on_disk: onDisk, manifest: "manifest.json" };
 }
 
 it.each(["en", "ko"] as const)("summarizes 32 documents once with a shared compact grid (%s)", (locale) => {
@@ -403,7 +400,7 @@ function SelectionRoundTrip() {
   const sources = [selectionSource("NVDA", 2024), selectionSource("AMD", 2023)];
   const [draft, setDraft] = useState<AcquisitionForm>(acquisitionDraft(sources.map((row) => ({ registry: row.registry, issuer: row.issuer, year: row.fiscal_year }))));
   const noop = () => undefined;
-  return <BuildPipeline pipeline={derivePipeline(liveInput())} focusStage="index" live busy={false} canOperateCorpus acquisition={draft} onAcquisitionChange={setDraft} sources={sources} manifests={[]} onCancelJob={noop} onDownload={noop} onIngestAll={noop} onIngest={noop} onBackfill={noop} onRebuildBm25={noop} onAsk={noop} onRecheck={noop} onEvaluate={noop} onCompareSnapshots={noop} onOpenDocuments={noop} onOpenJobs={noop} onOpenStatus={noop} onRefresh={noop} />;
+  return <BuildPipeline pipeline={derivePipeline(liveInput())} focusStage="index" live busy={false} canOperateCorpus acquisition={draft} onAcquisitionChange={setDraft} sources={sources} manifests={[]} onCancelJob={noop} onDownload={noop} onIngestAll={noop} onBackfill={noop} onRebuildBm25={noop} onAsk={noop} onRecheck={noop} onEvaluate={noop} onCompareSnapshots={noop} onOpenDocuments={noop} onOpenJobs={noop} onOpenStatus={noop} onRefresh={noop} />;
 }
 
 it("returns to Filings with step 2 deselection preserved in the same sparse draft", () => {
@@ -414,7 +411,11 @@ it("returns to Filings with step 2 deselection preserved in the same sparse draf
   expect(screen.getByRole("button", { name: "AMD FY2023 · On disk" })).toHaveAttribute("aria-pressed", "false");
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-  expect(screen.queryByRole("button", { name: "AMD FY2023 · On disk" })).toBeNull();
+  const year = screen.getByRole("button", { name: "AMD FY2023 · On disk" });
+  expect(year).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(year);
+  expect(year).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
 });
 
 

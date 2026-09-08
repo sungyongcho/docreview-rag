@@ -1015,8 +1015,33 @@ export interface components {
         AcquisitionDraftResource: {
             /** Identifiers */
             identifiers: string[];
+            /**
+             * Pairs
+             * @default []
+             */
+            pairs: components["schemas"]["AcquisitionPairResource"][];
+            /**
+             * Revision
+             * @default default-v1
+             */
+            revision: string;
             /** Years */
             years: number[];
+        };
+        /**
+         * AcquisitionPairResource
+         * @description Preserve an exact intended filing without a mixed-registry cross product.
+         */
+        AcquisitionPairResource: {
+            /** Issuer */
+            issuer: string;
+            /**
+             * Registry
+             * @enum {string}
+             */
+            registry: "sec" | "dart";
+            /** Year */
+            year: number;
         };
         /**
          * AdminDocumentResource
@@ -1370,6 +1395,11 @@ export interface components {
          * @description Atomic typed preparation state with explicit source selections.
          */
         CorpusSnapshotResource: {
+            /**
+             * Acquisition Companies
+             * @default []
+             */
+            acquisition_companies: components["schemas"]["ManifestIssuerResource"][];
             acquisition_draft?: components["schemas"]["AcquisitionDraftResource"] | null;
             /** Documents */
             documents: components["schemas"]["CorpusDocumentResource"][];
@@ -3460,6 +3490,10 @@ export interface components {
          * @description Downloaded source identity independent of database rows.
          */
         SourceInventoryResource: {
+            /** Blocker */
+            blocker?: string | null;
+            /** Can Redownload */
+            can_redownload?: boolean | null;
             /** Document Id */
             document_id: string;
             /** Fiscal Year */
@@ -3472,6 +3506,11 @@ export interface components {
             name: string;
             /** On Disk */
             on_disk: boolean;
+            /**
+             * Ready
+             * @default false
+             */
+            ready: boolean;
             /**
              * Registry
              * @enum {string}

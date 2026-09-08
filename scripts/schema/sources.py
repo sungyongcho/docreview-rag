@@ -11,6 +11,7 @@ import shutil
 import stat
 
 from app.ingestion.manifest import Manifest
+from app.ingestion.source_catalog import default_acquisition_draft
 from app.ingestion.source_selection import DRAFT_NAME
 
 JOURNAL_NAME = ".schema-recreate-journal"
@@ -207,15 +208,7 @@ class SourceReset:
                     "New manifest appeared during reset; inspect the retained journal."
                 )
             empty.write(self.corpus / name)
-        payload = (
-            json.dumps(
-                {
-                    "identifiers": ["NVDA", "AMD"] if self.sample else [],
-                    "years": [2023, 2024] if self.sample else [],
-                }
-            )
-            + "\n"
-        )
+        payload = json.dumps(default_acquisition_draft(sample=self.sample)) + "\n"
         self.state["created"][DRAFT_NAME] = hashlib.sha256(payload.encode()).hexdigest()
         self.save("staging")
         with (self.corpus / DRAFT_NAME).open("x") as output:

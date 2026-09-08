@@ -681,7 +681,7 @@ def test_acquisition_returns_common_manifest_selection(tmp_path, monkeypatch, re
         service._run_operation(
             AdminCommand(
                 "acquire_edgar" if registry == "sec" else "acquire_dart",
-                identifiers=("NVDA",),
+                identifiers=("NVDA" if registry == "sec" else "005930",),
                 years=(2024,),
             ),
             lambda progress: None,
