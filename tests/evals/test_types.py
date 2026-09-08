@@ -68,11 +68,10 @@ def test_answer_span_rejects_invalid_hashes_offsets_and_coercion(field, value):
 
 
 def test_contract_rejects_unknown_fields_and_duplicate_members():
-    """Reject extra fields, duplicate tags, and duplicate answer spans."""
+    """Reject extra fields and duplicate answer spans; collapse repeated tags in order."""
     with pytest.raises(ValueError):
         _answer(chunk_id=7)
-    with pytest.raises(ValueError, match="tags must be unique"):
-        _case(tags=["demo-hero", "demo-hero"])
+    assert _case(tags=["demo-hero", "demo-hero", "dart"]).tags == ("demo-hero", "dart")
     answer = _answer()
     with pytest.raises(ValueError, match="answer spans must be unique"):
         _case(answers=[answer, answer])

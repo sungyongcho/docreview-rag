@@ -116,7 +116,7 @@ class GoldenCase(BaseModel):
     @field_validator("tags", mode="after")
     @classmethod
     def reject_duplicate_tags(cls, tags: tuple[str, ...]) -> tuple[str, ...]:
-        """Keep tag membership unambiguous without silently rewriting input."""
+        """Collapse repeated tags in first-seen order so membership stays unambiguous."""
         if len(tags) != len(set(tags)):
             return tuple(dict.fromkeys(tags))
         return tags

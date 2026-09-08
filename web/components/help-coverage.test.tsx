@@ -193,7 +193,7 @@ describe("help topic coverage", () => {
     render(<MeasureHost initialTab="runs" />);
 
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
-    await screen.findByRole("heading", { name: "Result details · #16" });
+    await screen.findByRole("heading", { name: "Result details" });
     expectPresent(["measure.snapshots.freeze"]);
     fireEvent.click(screen.getByRole("button", { name: "New evaluation" }));
     expect(coverage("measure.runs").missing).toEqual([]);
