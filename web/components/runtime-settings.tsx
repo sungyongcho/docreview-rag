@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 import { DevelopmentBadge } from "@/components/development-badge";
 
@@ -15,7 +16,7 @@ export function RuntimeSettings({ readiness, live }: { readiness: Readiness | nu
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [limits, setLimits] = useState<ReleaseLimits | null>(null);
-  useEffect(() => { if (!live) void getReleaseLimits().then(setLimits).catch((reason) => notify(String(reason), "error", "limits")); }, [live, notify]);
+  useEffect(() => { if (!live) void getReleaseLimits().then(setLimits).catch((reason) => notify(reason instanceof Error ? reason.message : String(reason), "error", "limits", undefined, { event: "limits-error", detail: notificationErrorDetail(reason) })); }, [live, notify]);
   const apiEndpoint = typeof window === "undefined" ? t("Loading…") : new URL(apiBase() || "/", window.location.origin).toString().replace(/\/$/, "");
   const databaseEndpoint = process.env.NEXT_PUBLIC_DB_ENDPOINT || t("Server-side connection · credentials hidden");
   const operationsEndpoint = operatorBase() || t("Not configured in this build");
@@ -33,22 +34,18 @@ export function DesktopJobNotifications() {
     if (desktopNotifications) {
       setDesktopJobNotifications(false);
       setDesktopNotifications(false);
-      notify(t("Desktop job notifications disabled."), "success", "desktop-notifications");
+      notify(t("Desktop job notifications disabled."), "success", "desktop-notifications", undefined, { event: "desktop-notifications-notice" });
       return;
     }
     if (typeof Notification === "undefined") {
-      notify(t("This browser does not support desktop notifications."), "warning", "desktop-notifications");
+      notify(t("This browser does not support desktop notifications."), "warning", "desktop-notifications", undefined, { event: "desktop-notifications-warning" });
       return;
     }
     const permission = await Notification.requestPermission();
     const enabled = permission === "granted";
     setDesktopJobNotifications(enabled);
     setDesktopNotifications(enabled);
-    notify(
-      enabled ? t("Desktop job notifications enabled.") : t("Desktop notification permission was not granted."),
-      enabled ? "success" : "warning",
-      "desktop-notifications",
-    );
+    notify(enabled ? t("Desktop job notifications enabled.") : t("Desktop notification permission was not granted."), enabled ? "success" : "warning", "desktop-notifications", undefined, { event: "desktop-notifications-notice" });
   }
 
   return <section className="surface"><h2>{t("Job notifications")}</h2><Metric label={t("Desktop job notifications")} value={t(desktopNotifications ? "Enabled" : typeof Notification !== "undefined" && Notification.permission === "denied" ? "Blocked by browser" : "Disabled")} /><button className="button" type="button" onClick={() => void toggleDesktopNotifications()}>{desktopNotifications ? t("Disable desktop job notifications") : t("Enable desktop job notifications")}</button></section>;

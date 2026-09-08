@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -108,7 +109,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
       setCommands(nextCommands);
       setJobs(nextJobs);
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Operations refresh failed."), "error", "operations-refresh");
+      notify(reason instanceof Error ? reason.message : t("Operations refresh failed."), "error", "operations-refresh", undefined, { event: "operations-refresh-error", detail: notificationErrorDetail(reason) });
     } finally {
       setLoading(false);
     }
@@ -142,7 +143,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
         if (stopped || current.signal.aborted) return;
         failures += 1;
         if (failures === POLL_NOTICE_AFTER_FAILURES) {
-          notify(t("Local Operations is not responding. Retrying status checks."), "info", "operations-poll", 0);
+          notify(t("Local Operations is not responding. Retrying status checks."), "info", "operations-poll", 0, { event: "operations-poll-notice" });
           noticed = true;
         }
       }
@@ -162,9 +163,9 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
     try {
       const job = await startOperatorJob(command.command_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
-      notify(t("{p0} started.", { p0: t(command.label) }), "success", "operations-run");
+      notify(t("{p0} started.", { p0: t(command.label) }), "success", "operations-run", undefined, { event: "operations-run-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run");
+      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run", undefined, { event: "operations-run-error", detail: notificationErrorDetail(reason) });
     }
   }
 
@@ -173,9 +174,9 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
     try {
       const job = await cancelOperatorJob(active.job_id);
       setJobs((current) => current.map((item) => item.job_id === job.job_id ? job : item));
-      notify(t("Command cancelled."), "success", "operations-cancel");
+      notify(t("Command cancelled."), "success", "operations-cancel", undefined, { event: "operations-cancel-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Command could not be cancelled."), "error", "operations-cancel");
+      notify(reason instanceof Error ? reason.message : t("Command could not be cancelled."), "error", "operations-cancel", undefined, { event: "operations-cancel-error", detail: notificationErrorDetail(reason) });
     }
   }
 

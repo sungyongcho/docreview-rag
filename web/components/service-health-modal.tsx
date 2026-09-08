@@ -1,5 +1,5 @@
 "use client";
-import { NotificationOutlet } from "./notifications";
+import { NotificationOutlet, useNotificationSurface } from "./notifications";
 import { useI18n } from "@/lib/i18n";
 import { DatabaseZap, Layers, RefreshCw, RotateCw, ServerCrash, X } from "lucide-react";
 

@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -438,7 +439,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
   function navigateHelpTopic(id: string) {
     if (!adminLive && (id === "review.evidence-policy" || id === "review.run-limits" || id.startsWith("review.retrieval"))) {
-      notify(t(PROD_LOCKED_MESSAGE), "warning", "help-locked");
+      notify(t(PROD_LOCKED_MESSAGE), "warning", "help-locked", undefined, { event: "help-locked-warning" });
       return;
     }
     const owner = helpTopicScreen(id);
@@ -720,7 +721,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     };
     updateSessionProfile(next);
     navigate({ view: "review" });
-    notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review");
+    notify(t("Snapshot {p0} applied to this review.", { p0: snapshot.label }), "success", "snapshot-review", undefined, { event: "snapshot-review-notice" });
   }
 
   function markEvidence(messageId: string, chunkId: number, mode: "pin" | "exclude") {
@@ -796,7 +797,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
       updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
       noteDailyBudget(reason);
-      notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review");
+      notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
     } finally {
       if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
       setBusy(false);
@@ -886,9 +887,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       if (!command) throw new Error(`Operations does not offer ${commandId}.`);
       if (command.confirmation && !window.confirm(command.confirmation)) return;
       await startOperatorJob(command.command_id);
-      notify(t("{p0} started. Follow it under System › Operations.", { p0: command.label }), "success", "operations-run");
+      notify(t("{p0} started. Follow it under System › Operations.", { p0: command.label }), "success", "operations-run", undefined, { event: "operations-run-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run");
+      notify(reason instanceof Error ? reason.message : t("Command could not start."), "error", "operations-run", undefined, { event: "operations-run-error", detail: notificationErrorDetail(reason) });
     }
   }
   const historyEntries = [...navigationHistory.map(({ position, target }) => ({ position, target })), { position: navigationPosition.current, target: currentTarget() }, ...navigationForward.map(({ position, target }) => ({ position, target }))];
@@ -999,7 +1000,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               profile={activeSessionProfile}
               onChange={updateSessionProfile}
               canUseCustom={adminBuild && permissions?.can_change_custom_retrieval === true}
-              onLocked={() => notify(PROD_LOCKED_MESSAGE, "warning", "prod-locked")}
+              onLocked={() => notify(t(PROD_LOCKED_MESSAGE), "warning", "prod-locked", undefined, { event: "prod-locked-warning" })}
               onOpenSettings={() => openConversationSettings("filters")}
               onOpenCustom={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }}
               readiness={readiness}
@@ -1081,7 +1082,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         /></RetainedPanel>
       </section>
       <BrowserStorageSupport enabled={!publicPreview && environment === "prod" && productionBrowserStorageEnabled()} />
-      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
+      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success", "local-conversations-cleared", undefined, { event: "local-conversations-cleared-notice" }); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
       <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
 

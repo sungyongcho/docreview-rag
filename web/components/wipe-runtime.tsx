@@ -1,4 +1,5 @@
 "use client";
+import { useNotifications, useNotificationSurface } from "./notifications";
 import { NotificationOutlet } from "./notifications";
 import { browserResetStores } from "@/lib/storage";
 import { LOCALE_KEY, useI18n } from "@/lib/i18n";
@@ -44,6 +45,15 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
   const [diagnosis, setDiagnosis] = useState<WipeDiagnosis | null>(null);
   const [checkVersion, setCheckVersion] = useState(0);
   const connected = operatorAvailable();
+  const { notify } = useNotifications();
+  const lastReceipt = useRef<string | null>(null);
+  useNotificationSurface("reset", visible);
+  useEffect(() => {
+    if (!enabled || !result?.id || !["succeeded", "failed", "interrupted"].includes(result.status)) return;
+    const key = `${result.id}:${result.status}`;
+    if (lastReceipt.current === key) return;lastReceipt.current = key;
+    notify(result.message ?? t("Runtime reset finished."), result.status === "succeeded" ? "success" : "error", `reset:${result.id}`, undefined, { event: "reset-receipt", target: { view: "build", tab: "pipeline", stage: "setup" } });
+  }, [enabled, result, notify, t]);
   const partial = result?.status === "failed" || result?.status === "interrupted";
   const canPreview = capability?.available === true && result?.status !== "running" && !result?.recovery_required && !(partial && result.retryable === false);
   useEffect(() => {

@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -114,7 +115,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
       if (!isDocumentFacets(facets)) throw new Error("Invalid document filter response");
       if (current) setDocumentFacets(facets);
     }).catch((reason) => {
-      if (current) { setFacetError(String(reason)); notify(String(reason), "error", "document-facets"); }
+      if (current) { setFacetError(String(reason)); notify(reason instanceof Error ? reason.message : String(reason), "error", "document-facets", undefined, { event: "document-facets-error", detail: notificationErrorDetail(reason) }); }
     });
     return () => { current = false; };
   }, [live, notify, facetRefresh]);

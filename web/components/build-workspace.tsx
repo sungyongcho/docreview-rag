@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -178,7 +179,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     if (jobRows.status === "rejected" || snapshotRows.status === "rejected") {
       setHistoryWarning(t("Some history could not be loaded. Corpus status is shown separately."));
     }
-    if (mode === "manual" && failures.length) notify(failures[0], "error", "build-refresh");
+    if (mode === "manual" && failures.length) notify(failures[0], "error", "build-refresh", undefined, { event: "build-refresh-error" });
     return failures.length === 0;
   }
 
@@ -214,9 +215,9 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     try {
       await queueCorpusOperation(body);
       onRefreshJobs();
-      notify(t("Corpus operation queued."), "success", "corpus-operation");
+      notify(t("Corpus operation queued."), "success", "corpus-operation", undefined, { event: "corpus-operation-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
+      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }
@@ -226,9 +227,9 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
   async function ingestAllManifests() {
     if (!live) return;
     const selection = selectedSourceState(corpus?.sources ?? [], acquisition);
-    if (!selection.complete) { notify(t("Download missing sources in Filings first."), "warning", "corpus-operation"); return; }
+    if (!selection.complete) { notify(t("Download missing sources in Filings first."), "warning", "corpus-operation", undefined, { event: "corpus-operation-warning" }); return; }
     const ordered = acquisitionBatches(selection.pairs);
-    if (!ordered.length) { notify(t("Select processing sources first."), "warning", "corpus-operation"); return; }
+    if (!ordered.length) { notify(t("Select processing sources first."), "warning", "corpus-operation", undefined, { event: "corpus-operation-warning" }); return; }
     setBusy(true);
     let queued = 0;
     try {
@@ -237,9 +238,9 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         queued += 1;
         onRefreshJobs();
       }
-      notify(t("Selections queued for ingest: {count}.", { count: ordered.length.toLocaleString(locale) }), "success", "corpus-operation");
+      notify(t("Selections queued for ingest: {count}.", { count: ordered.length.toLocaleString(locale) }), "success", "corpus-operation", undefined, { event: "corpus-operation-notice" });
     } catch (reason) {
-      notify(t("Indexing stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation");
+      notify(t("Indexing stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }
@@ -257,7 +258,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         }
       }
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation");
+      notify(reason instanceof Error ? reason.message : t("Corpus operation failed."), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally { setBusy(false); }
   }
 
@@ -273,15 +274,15 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         queued += 1;
         onRefreshJobs();
       }
-      notify(t("Acquisition jobs queued: {count}.", { count: queued }), "success", "corpus-operation");
+      notify(t("Acquisition jobs queued: {count}.", { count: queued }), "success", "corpus-operation", undefined, { event: "corpus-operation-notice" });
     } catch (reason) {
-      notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation");
+      notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation", undefined, { event: "corpus-operation-error", detail: notificationErrorDetail(reason) });
     } finally { setBusy(false); }
   }
 
   async function runQuickEvaluation() {
-    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval"); return; }
-    if (evaluationBlockedReason) { notify(t(evaluationBlockedReason), "warning", "evaluation"); return; }
+    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
+    if (evaluationBlockedReason) { notify(t(evaluationBlockedReason), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
     setDuplicateEvaluation(false);
     setBusy(true);
     try {
@@ -302,7 +303,7 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
       const activeEvaluations = [...jobBoard.jobs.filter((job) => job.domain === "evaluation"), ...jobs];
       if (activeEvaluations.some((job) => ["queued", "running"].includes(job.status) && sameEvaluationRequest(job.request, request))) {
         setDuplicateEvaluation(true);
-        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate");
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
         return;
       }
       const job = await queueEvaluation(request);
@@ -312,14 +313,14 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         ? waitingCorpusJob.kind === "backfill_embeddings"
           ? t("Embedding is in progress. The evaluation was added to the job queue and starts when embedding finishes.")
           : t("{kind} is in progress. The evaluation was added to the job queue and starts when it finishes.", { kind: t(jobCopy(waitingCorpusJob).label) })
-        : t("Evaluation queued."), "success", "evaluation-queued");
+        : t("Evaluation queued."), "success", "evaluation-queued", undefined, { event: "evaluation-queued-notice" });
       onTabChange("jobs");
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === "evaluation_already_queued") {
         setDuplicateEvaluation(true);
-        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate");
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
         onRefreshJobs();
-      } else notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation");
+      } else notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation", undefined, { event: "evaluation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }

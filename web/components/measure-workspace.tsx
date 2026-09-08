@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { NotificationOutlet } from "./notifications";
 import { preparationErrorTarget, preparationTarget, type PreparationTarget } from "@/lib/preparation-navigation";
 import type { Readiness } from "@/lib/types";
@@ -240,7 +241,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       setSuites(Array.isArray(suiteRows) ? suiteRows : []);
       setSnapshots(Array.isArray(snapshotRows) ? snapshotRows : []);
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Refresh failed."), "error", "measure-refresh");
+      notify(reason instanceof Error ? reason.message : t("Refresh failed."), "error", "measure-refresh", undefined, { event: "measure-refresh-error", detail: notificationErrorDetail(reason) });
     }
   }
 
@@ -276,7 +277,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       setSelectedGoldenCase("");
       setGoldenCaseJson("");
       setSavedGoldenJson("");
-    }).catch((reason) => { if (active) notify(String(reason), "error", "golden-revisions"); });
+    }).catch((reason) => { if (active) notify(reason instanceof Error ? reason.message : String(reason), "error", "golden-revisions", undefined, { event: "golden-revisions-error", detail: notificationErrorDetail(reason) }); });
     return () => { active = false; };
   }, [live, suiteId, notify, experimentDefaults.golden_revision_id]);
   useEffect(() => {
@@ -293,7 +294,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   }
 
   async function runEvaluation() {
-    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval"); return; }
+    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
     if (!canRun || busy) return;
     setBusy(true);
     setSubmissionError("");
@@ -303,10 +304,10 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       setSelectedJobId(job.job_id);
       selectResult(null); setResultDetail(null); setSetupOpen(false);
       onRefreshJobs();
-      notify(t("Evaluation queued."), "success", "evaluation-queued");
+      notify(t("Evaluation queued."), "success", "evaluation-queued", undefined, { event: "evaluation-queued-notice" });
     } catch (reason) {
       setSubmissionError(reason instanceof Error ? reason.message : t("Evaluation failed."));
-      notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation");
+      notify(reason instanceof Error ? reason.message : t("Evaluation failed."), "error", "evaluation", undefined, { event: "evaluation-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(false);
     }
@@ -319,9 +320,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       setComparison(null);
       setCompareIds([baseline, candidate]);
       const loaded = await compareEvaluations(candidate, baseline);
-      if (requestId === comparisonRequestRef.current) { setComparison(loaded); changeTab("compare"); }
+      if (requestId === comparisonRequestRef.current) { setComparison(loaded); changeTab("compare"); notify(t("Evaluation comparison ready."), "success", `comparison:${baseline}:${candidate}`, undefined, { event: "evaluation-comparison", target: { view: "measure", tab: "compare", resultId: candidate } }); }
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Comparison failed."), "error", "comparison");
+      notify(reason instanceof Error ? reason.message : t("Comparison failed."), "error", "comparison", undefined, { event: "comparison-error", detail: notificationErrorDetail(reason) });
     }
   }
 
@@ -337,7 +338,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       if (requestId !== resultRequestRef.current) return;
       const message = reason instanceof Error ? reason.message : t("Evaluation detail could not be loaded.");
       setResultError(message);
-      notify(message, "error", "evaluation-detail");
+      notify(message, "error", "evaluation-detail", undefined, { event: "evaluation-detail-error" });
     }
   }
 
@@ -356,9 +357,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       setGoldenRevisions((current) => [created, ...current]);
       setSelectedGoldenRevision(created.revision_id);
       resetGoldenSelection();
-      notify(t("Golden draft v{p0} created.", { p0: created.version }), "success", "golden-draft");
+      notify(t("Golden draft v{p0} created.", { p0: created.version }), "success", "golden-draft", undefined, { event: "golden-draft-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Golden draft could not be created."), "error", "golden-draft");
+      notify(reason instanceof Error ? reason.message : t("Golden draft could not be created."), "error", "golden-draft", undefined, { event: "golden-draft-error", detail: notificationErrorDetail(reason) });
     } finally { setGoldenBusy(false); }
   }
 
@@ -401,10 +402,10 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       const updated = await saveGoldenCase(revision.revision_id, selectedGoldenCase, revision.sha256, value);
       setGoldenRevisions((current) => current.map((item) => item.revision_id === updated.revision_id ? updated : item));
       setSavedGoldenJson(goldenCaseJson); setGoldenError("");
-      notify(t("Golden case saved."), "success", "golden-save");
+      notify(t("Golden case saved."), "success", "golden-save", undefined, { event: "golden-save-notice" });
     } catch (reason) {
       setGoldenError(reason instanceof Error ? reason.message : t("Golden case could not be saved."));
-      notify(reason instanceof Error ? reason.message : t("Golden case could not be saved."), "error", "golden-save");
+      notify(reason instanceof Error ? reason.message : t("Golden case could not be saved."), "error", "golden-save", undefined, { event: "golden-save-error", detail: notificationErrorDetail(reason) });
     } finally { setGoldenBusy(false); }
   }
 
@@ -415,10 +416,10 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     try {
       const updated = await transitionGoldenRevision(revision.revision_id, action, revision.sha256);
       setGoldenRevisions((current) => current.map((item) => item.revision_id === updated.revision_id ? updated : item));
-      notify(t(action === "validate" ? "Golden revision validated." : "Golden revision published."), "success", `golden-${action}`);
+      notify(t(action === "validate" ? "Golden revision validated." : "Golden revision published."), "success", `golden-${action}`, undefined, { event: "golden-action-notice" });
     } catch (reason) {
       setGoldenError(reason instanceof Error ? reason.message : String(reason));
-      notify(reason instanceof Error ? reason.message : t(action === "validate" ? "Golden revision could not be validated." : "Golden revision could not be published."), "error", `golden-${action}`);
+      notify(reason instanceof Error ? reason.message : t(action === "validate" ? "Golden revision could not be validated." : "Golden revision could not be published."), "error", `golden-${action}`, undefined, { event: "golden-action-error", detail: notificationErrorDetail(reason) });
     } finally { setGoldenBusy(false); }
   }
 
@@ -431,9 +432,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       const created = await createSnapshot({ label: snapshotLabel.trim(), eval_result_id: selectedResultId, golden_revision_id: revision?.status === "published" ? revision.revision_id : null, public: false });
       setSnapshots((current) => [created, ...current]);
       setSnapshotLabel("");
-      notify(t("Evaluation snapshot created."), "success", "snapshot-create");
+      notify(t("Evaluation snapshot created."), "success", "snapshot-create", undefined, { event: "snapshot-create-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Snapshot could not be created."), "error", "snapshot-create");
+      notify(reason instanceof Error ? reason.message : t("Snapshot could not be created."), "error", "snapshot-create", undefined, { event: "snapshot-create-error", detail: notificationErrorDetail(reason) });
     }
   }
 
@@ -445,7 +446,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
       const loaded = await compareSnapshots(snapshotIds[0], snapshotIds[1], live);
       if (requestId === snapshotComparisonRequestRef.current) setSnapshotComparison(loaded);
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Snapshots could not be compared."), "error", "snapshot-compare");
+      notify(reason instanceof Error ? reason.message : t("Snapshots could not be compared."), "error", "snapshot-compare", undefined, { event: "snapshot-compare-error", detail: notificationErrorDetail(reason) });
     }
   }
 
@@ -454,9 +455,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     try {
       const updated = await setSnapshotVisibility(snapshot.snapshot_id, !snapshot.public);
       setSnapshots((current) => current.map((item) => item.snapshot_id === updated.snapshot_id ? updated : item));
-      notify(updated.public ? t("Snapshot published.") : t("Snapshot hidden."), "success", "snapshot-visibility");
+      notify(updated.public ? t("Snapshot published.") : t("Snapshot hidden."), "success", "snapshot-visibility", undefined, { event: "snapshot-visibility-notice" });
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Snapshot visibility could not change."), "error", "snapshot-visibility");
+      notify(reason instanceof Error ? reason.message : t("Snapshot visibility could not change."), "error", "snapshot-visibility", undefined, { event: "snapshot-visibility-error", detail: notificationErrorDetail(reason) });
     }
   }
 
@@ -489,7 +490,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   async function cancelSelectedJob() {
     if (!selectedOperatorJob?.can_cancel) return;
     try { await cancelOperatorJob(selectedOperatorJob.job_id); onRefreshJobs(); }
-    catch (reason) { notify(String(reason), "error", "evaluation-cancel"); }
+    catch (reason) { notify(reason instanceof Error ? reason.message : String(reason), "error", "evaluation-cancel", undefined, { event: "evaluation-cancel-error", detail: notificationErrorDetail(reason) }); }
   }
 
   const suiteSelect = (helpId: string) => <label data-help={helpId}>{t("Golden suite")}<select disabled={goldenBusy} value={suiteId} onChange={(event) => selectSuite(event.target.value as SuiteId)}>{suites.map((suite) => <option key={suite.suite_id} value={suite.suite_id}>{suite.label}</option>)}</select></label>;

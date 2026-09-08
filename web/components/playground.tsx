@@ -1,4 +1,5 @@
 "use client";
+import { notificationErrorDetail } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -118,7 +119,7 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
       setRetrieval(toRetrievalPreview(await previewRetrieval(question.trim(), profile) as unknown as Record<string, unknown>));
       setShown("retrieval");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Retrieval preview failed."), "error", "playground-retrieval");
+      notify(reason instanceof Error ? reason.message : t("Retrieval preview failed."), "error", "playground-retrieval", undefined, { event: "playground-retrieval-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(null);
     }
@@ -131,7 +132,7 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
       setReview(toReviewSummary(await previewReview(question.trim(), profile)));
       setShown("review");
     } catch (reason) {
-      notify(reason instanceof Error ? reason.message : t("Review preview failed."), "error", "playground-review");
+      notify(reason instanceof Error ? reason.message : t("Review preview failed."), "error", "playground-review", undefined, { event: "playground-review-error", detail: notificationErrorDetail(reason) });
     } finally {
       setBusy(null);
     }

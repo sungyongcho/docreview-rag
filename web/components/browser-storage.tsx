@@ -23,7 +23,7 @@ export function BrowserStorageSupport({ enabled }: { enabled: boolean }) {
       const message = reason === "quota" ? "Browser storage is full. Changes remain available in this tab; export a backup before closing it."
         : reason === "unavailable" ? "Browser storage is unavailable. Changes remain available in this tab only."
           : "Some saved browser data could not be read. The original data is preserved for export; defaults are used for this session.";
-      notify(t(message), "warning", "browser-storage-warning", 0);
+      notify(t(message), "warning", "browser-storage-warning", 0, { event: "browser-storage-warning-warning" });
     });
     return () => { unsubscribe(); window.removeEventListener(OPEN_NOTICE, reopen); };
   }, [enabled, notify, t]);
@@ -55,6 +55,7 @@ export function BrowserStorageSettings({ disabled = false, onShowNotice }: { dis
     const url = URL.createObjectURL(new Blob([exportBrowserSettings()], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = "docreview-browser-settings.json";
     link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    notify(t("Browser settings exported."), "success", "browser-export", undefined, { event: "browser-export" });
   }
   /** Reject malformed files before asking permission or touching any stored entry. */
   async function restore(file?: File) {
@@ -65,8 +66,8 @@ export function BrowserStorageSettings({ disabled = false, onShowNotice }: { dis
       if (!window.confirm(t("Replace this browser's DocReview settings and conversations with this file?"))) return;
       const persisted = importBrowserSettings(text, true);
       setRevision(value => value + 1);
-      if (persisted) notify(t("Browser settings imported."), "success", "browser-storage-import");
-    } catch { notify(t("This browser settings file is invalid or unsupported. Nothing was imported."), "error", "browser-storage-import"); }
+      if (persisted) notify(t("Browser settings imported."), "success", "browser-storage-import", undefined, { event: "browser-storage-import-notice" });
+    } catch { notify(t("This browser settings file is invalid or unsupported. Nothing was imported."), "error", "browser-storage-import", undefined, { event: "browser-storage-import-error" }); }
     finally { setWorking(false); if (input.current) input.current.value = ""; }
   }
   return <section className="browser-storage-settings" aria-label={t("Browser storage")} data-revision={revision}>
