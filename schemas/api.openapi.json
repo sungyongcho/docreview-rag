@@ -6205,6 +6205,17 @@
             ],
             "title": "Blocker"
           },
+          "can_redownload": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Redownload"
+          },
           "document_id": {
             "title": "Document Id",
             "type": "string"

@@ -7,6 +7,7 @@ from app.api.admin_schemas import (
     EvaluationRunRequest,
     RetrievalPreviewResponse,
     RetrievalProfile,
+    SourceInventoryResource,
 )
 from app.retrieval.service import ComponentRankings
 
@@ -66,3 +67,23 @@ def test_retrieval_preview_carries_per_language_component_rankings() -> None:
 
     assert response.component_rankings["vector"] == (1, 2)
     assert response.component_rankings["lexical_by_language"] == {"ko": (3,), "en": (2, 1)}
+
+
+@pytest.mark.parametrize("can_redownload", [False, True])
+def test_source_download_recovery_is_a_strict_boolean(can_redownload):
+    """Expose recovery independently of physical presence without accepting truthy strings."""
+    values = {
+        "manifest": "manifest.json",
+        "document_id": "NVDA-FY2024",
+        "registry": "sec",
+        "issuer": "NVDA",
+        "name": "NVIDIA",
+        "fiscal_year": 2024,
+        "on_disk": True,
+        "ready": False,
+        "can_redownload": can_redownload,
+    }
+    resource = SourceInventoryResource.model_validate(values)
+    assert resource.on_disk and resource.can_redownload is can_redownload
+    with pytest.raises(ValidationError):
+        SourceInventoryResource.model_validate({**values, "can_redownload": str(can_redownload)})

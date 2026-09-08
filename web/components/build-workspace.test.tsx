@@ -774,3 +774,46 @@ describe("connection readiness presentation", () => {
     expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
   });
 });
+
+
+it("queues a staged recoverable source and enables parsing after the verified refresh", async () => {
+  const submitted: { kind: string; identifiers: string[]; years: number[] }[] = [];
+  let recovered = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
+      submitted.push(JSON.parse(String(init.body)));
+      recovered = true;
+      return jsonResponse({ job_id: "reacquisition", status: "queued" });
+    }
+    if (url.endsWith("/admin/corpus")) return jsonResponse({
+      mode: "live", ...CANNED_CORPUS,
+      status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true },
+      acquisition_draft: { identifiers: ["AMD"], years: [2023], pairs: [{ registry: "sec", issuer: "AMD", year: 2023 }], revision: "repair-source" },
+      sources: [
+        { manifest: "manifest.json", document_id: "AMD-FY2023", registry: "sec", issuer: "AMD", name: "AMD", fiscal_year: 2023, on_disk: true, ready: true, can_redownload: false },
+        { manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
+      ],
+    });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    return jsonResponse([]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Harness live />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  await screen.findByRole("button", { name: "NVDA FY2024 · Source blocked" });
+  const company = screen.getByLabelText("Search/add company or year");
+  fireEvent.change(company, { target: { value: "NVDA" } });
+  fireEvent.keyDown(company, { key: "Enter" });
+  const year = screen.getByLabelText("Search/add company or year");
+  fireEvent.change(year, { target: { value: "2024" } });
+  fireEvent.keyDown(year, { key: "Enter" });
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  await waitFor(() => expect(submitted).toHaveLength(1));
+  expect(submitted[0]).toMatchObject({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled());
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+});

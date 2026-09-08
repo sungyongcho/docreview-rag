@@ -68,3 +68,22 @@ it("keeps conflicting downloaded primaries distinct from pending downloads", () 
   expect(state.blocked).toEqual([blocked]);
   expect(state.complete).toBe(false);
 });
+
+
+it("includes recoverable on-disk sources in downloads without labeling them missing", () => {
+  const damaged = { ...rows[0], ready: false, can_redownload: true, blocker: "Download it again in Filings" };
+  const pair = { registry: "sec" as const, issuer: damaged.issuer, year: damaged.fiscal_year };
+  const state = selectedSourceState([damaged, rows[1]], acquisitionDraft([pair, { registry: "sec", issuer: rows[1].issuer, year: rows[1].fiscal_year }]));
+  expect(state.present).toHaveLength(2);
+  expect(state.missingPairs).toEqual([]);
+  expect(state.downloadPairs).toEqual([pair]);
+  expect(state.complete).toBe(false);
+});
+
+it.each([false, true])("never downloads a conflicting filing even when on_disk is %s", (onDisk) => {
+  const conflict = { ...rows[0], on_disk: onDisk, ready: false, can_redownload: false, blocker: "Conflicting primary sources" };
+  const pair = { registry: "sec" as const, issuer: conflict.issuer, year: conflict.fiscal_year };
+  const state = selectedSourceState([conflict], acquisitionDraft([pair]));
+  expect(state.downloadPairs).toEqual([]);
+  expect(state.complete).toBe(false);
+});

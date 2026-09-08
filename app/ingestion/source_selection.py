@@ -28,6 +28,7 @@ class SourceInventory:
     on_disk: bool
     ready: bool = False
     blocker: str | None = None
+    can_redownload: bool = False
 
 
 def catalogs(root: Path, *, strict: bool = True) -> tuple[tuple[Path, Manifest], ...]:
@@ -58,11 +59,24 @@ def acquired_catalog(root: Path) -> Manifest | None:
     return Manifest.read(path) if path.exists() else None
 
 
+class SourceDownloadRequiredError(ValueError):
+    """Identify a missing or invalid source that acquisition can download again."""
+
+
 def resolve_primary(manifest: Manifest, document_id: str, root: Path) -> SourceArtifact:
-    """Collapse byte-equivalent primaries; block conflicting valid bytes before queueing."""
+    """Collapse equivalent primaries without hiding a missing or damaged conflicting revision."""
     candidates = [
         a for a in manifest.artifacts if a.document_id == document_id and a.role == "primary"
     ]
+    label = next(d for d in manifest.documents if d.document_id == document_id)
+    scope = f"{label.issuer} FY{label.fiscal_year}"
+    identities = {(a.sha256, a.byte_length, a.encoding) for a in candidates}
+    if len(identities) > 1:
+        raise ValueError(
+            f"Conflicting primary sources: {scope}. Inspect manifest.json and reacquire "
+            "the intended filing before parsing. Artifacts: "
+            + ", ".join(sorted(a.artifact_id for a in candidates))
+        )
     valid = []
     failures = []
     for artifact in candidates:
@@ -72,17 +86,10 @@ def resolve_primary(manifest: Manifest, document_id: str, root: Path) -> SourceA
             failures.append(str(error))
         else:
             valid.append(artifact)
-    label = next(d for d in manifest.documents if d.document_id == document_id)
-    scope = f"{label.issuer} FY{label.fiscal_year}"
     if not valid:
         reason = failures[0] if failures else "No primary artifact is registered."
-        raise ValueError(f"Source is not ready: {scope}. Download it again in Filings. {reason}")
-    identities = {(a.sha256, a.byte_length, a.encoding) for a in valid}
-    if len(identities) != 1:
-        raise ValueError(
-            f"Conflicting primary sources: {scope}. Inspect manifest.json and reacquire "
-            "the intended filing before parsing. Artifacts: "
-            + ", ".join(sorted(a.artifact_id for a in valid))
+        raise SourceDownloadRequiredError(
+            f"Source is not ready: {scope}. Download it again in Filings. {reason}"
         )
     return min(valid, key=lambda a: (a.path, a.artifact_id))
 
@@ -113,11 +120,14 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
             for a in primaries
         )
         blocker = None
+        can_redownload = False
         try:
             resolve_primary(manifest, document.document_id, root)
         except ValueError as error:
             blocker = str(error)
+            can_redownload = isinstance(error, SourceDownloadRequiredError)
         if pair_counts[(document.registry, document.issuer.upper(), document.fiscal_year)] > 1:
+            can_redownload = False
             blocker = (
                 f"Ambiguous filing identity: {document.issuer} FY{document.fiscal_year}. "
                 "Inspect manifest.json before parsing."
@@ -133,6 +143,7 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
                 present,
                 blocker is None,
                 blocker,
+                can_redownload,
             )
         )
     return tuple(rows)

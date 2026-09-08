@@ -3492,6 +3492,8 @@ export interface components {
         SourceInventoryResource: {
             /** Blocker */
             blocker?: string | null;
+            /** Can Redownload */
+            can_redownload?: boolean | null;
             /** Document Id */
             document_id: string;
             /** Fiscal Year */

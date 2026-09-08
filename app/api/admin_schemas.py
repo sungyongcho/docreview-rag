@@ -326,6 +326,7 @@ class SourceInventoryResource(StrictAdminModel):
     on_disk: StrictBool
     ready: StrictBool = False
     blocker: str | None = None
+    can_redownload: StrictBool | None = None
 
 
 class AcquisitionPairResource(StrictAdminModel):

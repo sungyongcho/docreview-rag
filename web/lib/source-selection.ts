@@ -62,10 +62,15 @@ export function selectedSourceState(sources: SourceInventory[], draft: Acquisiti
     const rows = selected.filter((row) => row.registry === pair.registry && row.issuer.toUpperCase() === pair.issuer && row.fiscal_year === pair.year);
     return !rows.length || rows.some((row) => !row.on_disk);
   });
+  const downloadPairs = pairs.filter((pair) => {
+    const rows = selected.filter((row) => row.registry === pair.registry && row.issuer.toUpperCase() === pair.issuer && row.fiscal_year === pair.year);
+    return (!rows.length || rows.some((row) => !row.on_disk || row.can_redownload === true))
+      && !rows.some((row) => row.ready === false && row.can_redownload === false);
+  });
   const present = selected.filter((row) => row.on_disk);
   const excluded = unique.filter((row) => row.on_disk && !selected.includes(row));
   const blocked = selected.filter((row) => row.on_disk && row.ready === false);
-  return { pairs, selected, present, excluded, blocked, missingPairs, missing: missingPairs.map((pair) => `${pair.issuer} FY${pair.year}`), complete: pairs.length > 0 && present.length > 0 && missingPairs.length === 0 && blocked.length === 0 };
+  return { pairs, selected, present, excluded, blocked, downloadPairs, missingPairs, missing: missingPairs.map((pair) => `${pair.issuer} FY${pair.year}`), complete: pairs.length > 0 && present.length > 0 && missingPairs.length === 0 && blocked.length === 0 };
 }
 
 /** Group unique documents into registry/company rows shared by both preparation steps. */

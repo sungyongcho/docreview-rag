@@ -246,13 +246,13 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     }
   }
 
-  /** Queue only missing pairs from the exact draft submitted by the picker. */
+  /** Queue missing or recoverable sources from the exact draft submitted by the picker. */
   async function downloadFilings(next: AcquisitionForm = acquisition) {
     if (!live) return;
     setBusy(true);
     let queued = 0;
     try {
-      const missing = selectedSourceState(corpus?.sources ?? [], next).missingPairs;
+      const missing = selectedSourceState(corpus?.sources ?? [], next).downloadPairs;
       for (const group of acquisitionBatches(missing)) {
         await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years: group.years });
         queued += 1;
