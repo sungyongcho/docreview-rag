@@ -15,6 +15,8 @@ export const KO: Record<string, string> = {
   "Continue in the conversation. After actual model use, return to Build to inspect refreshed placement and measured speed.": "대화에서 모델을 사용하세요. 실제 사용 후 구축 화면으로 돌아오면 갱신된 CPU·GPU 배치와 측정 속도를 확인할 수 있습니다.",
   "Connection checks only read metadata. Loading, CPU / GPU placement and speed are separate observations; missing measurements stay unknown.": "연결 확인은 메타데이터만 읽습니다. 적재 여부, CPU·GPU 배치, 속도는 각각 별도 관측 정보이며 측정하지 않은 값은 미확인으로 유지됩니다.",
 
+  "characters": "자",
+  "New conversation defaults": "새 대화 기본 한도",
   "Local": "로컬",
   "Ready to answer": "답변 준비",
   "No API key": "API 키 없음",

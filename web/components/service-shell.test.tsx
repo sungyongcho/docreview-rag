@@ -1522,3 +1522,18 @@ it("opens model selection from Build without submitting or changing the engine",
     expect(row).toHaveTextContent("Model not loaded");
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
 });
+
+/** The status link opens global defaults, preserving conversation overrides. */
+it("opens default limits from System status", async () => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  stubLiveApi(READY_RUNTIME.corpus);
+  window.history.replaceState(null, "", "/?view=system&tab=status");
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  render(<LiveShell />);
+  fireEvent.click(await screen.findByRole("button", { name: "Edit default limits" }));
+  const dialog = await screen.findByRole("dialog", { name: "Run limits" });
+  expect(within(dialog).getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByLabelText("Maximum wall clock seconds").closest(".settings-form")).toBeNull();
+  expect(within(dialog).queryByLabelText("Additional operator instructions")).toBeNull();
+});

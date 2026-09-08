@@ -135,7 +135,7 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 
 ### 저장한 실행 기본값
 
-**설정 → 프롬프트 → 새 대화의 실행 한도 및 근거**에서 기본 실행 한도와 근거 크기를 편집하고 명시적으로 저장합니다. 시스템 상태에는 요약과 편집 화면 링크가 있습니다. 기존 대화는 자신의 값을 유지하며 기본 보기에는 저장한 기본값과 다른 설정 수가 표시됩니다. 대화의 **설정 기본값 복원**은 저장한 검색·추가 지침·근거·한도를 복사하고 문서 필터는 유지합니다. 기본값 편집기의 **한도 기본값 복원**은 앱 최초 값을 준비하며, 이후 새 대화에 쓰려면 저장 버튼을 눌러야 합니다.
+**설정 → 실행 한도**에서 기본 실행 한도와 근거 크기를 편집하고 명시적으로 저장합니다. 시스템 상태에는 요약과 편집 화면 링크가 있습니다. 기존 대화는 자신의 값을 유지하며 기본 보기에는 저장한 기본값과 다른 설정 수가 표시됩니다. 대화의 **설정 기본값 복원**은 저장한 검색·추가 지침·근거·한도를 복사하고 문서 필터는 유지합니다. 기본값 편집기의 **한도 기본값 복원**은 앱 최초 값을 준비하며, 이후 새 대화에 쓰려면 저장 버튼을 눌러야 합니다.
 
 ### SCREENSHOT NEEDED
 <!-- Default limits editor and System status summary; ko; light mode; show saved values and a conversation override. Preserve existing assets. -->
@@ -158,3 +158,8 @@ PROD 첫 방문에 **⚠️ 설정과 대화는 이 브라우저에만 저장됩
 
 ### SCREENSHOT NEEDED
 <!-- Feature: PROD browser-storage notice, Data & help per-key usage, export/import confirmation and reminder; locale=ko; light mode; show real deployed state. Preserve existing assets. -->
+
+기본값 편집기와 **대화 설정 → 고급 → 실행 한도**는 프리셋 행, 한도·근거 입력, 안내 블록을 공유합니다. 데스크톱에서는 두 열, 720px 이하에서는 한 열로 표시하며 저장 결과는 저장·복원 버튼 옆에 표시됩니다. 작성 영역의 기본 한도 링크와 시스템 상태 요약은 **설정 → 실행 한도**를 열고, CPU 권장 안내는 현재 대화의 한도 편집을 엽니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: Run limits category, shared conversation limits and System summary; locale=ko; theme=light; widths=1440,720; show aligned units, hints, save feedback and keyboard focus. -->
