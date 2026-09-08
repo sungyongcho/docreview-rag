@@ -20,6 +20,8 @@ export const KO: Record<string, string> = {
   "Review recommended limits in settings": "설정에서 추천 한도 확인",
   "Open settings to compare and apply changes. Opening the editor does not change values or send the question.": "설정 화면에서 변경값을 확인하고 적용하세요. 화면을 여는 것만으로 값이 바뀌거나 질문이 전송되지는 않습니다.",
   "Recommended limits": "추천 실행 한도",
+  "CPU starting point: {characters} evidence characters. Less evidence can reduce answer coverage.": "CPU 시작값은 근거 {characters}자입니다. 근거를 줄이면 답변 범위가 좁아질 수 있습니다.",
+  "Your evidence limit is already at or below this starting point. No further reduction is suggested; you can still adjust it manually.": "현재 근거 한도가 이미 시작값 이하입니다. 추가 축소는 권하지 않습니다. 필요하면 직접 조절하세요.",
   "Reducing evidence can reduce answer coverage. Review the limit before applying it.": "근거를 줄이면 답변 범위가 줄어들 수 있습니다. 변경할 한도를 확인한 뒤 적용하세요.",
   "Limit preset": "한도 프리셋",
   "Choose limits to apply…": "적용할 한도 선택…",
