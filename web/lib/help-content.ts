@@ -483,7 +483,7 @@ const GOLDEN: HelpTopic[] = [
     id: "measure.golden.revision", capability: "can_edit_golden",
     title: "Golden revision",
     body: [
-      "Selects which revision the table and a queued run use; the empty choice is the canonical file. Only a draft is editable.",
+      "The selected dataset file is the revision the table and a queued run use. Built-in files are read-only; create a draft to edit questions.",
     ],
     seeAlso: ["measure.runs.revision"],
     optional: true,
