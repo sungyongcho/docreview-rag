@@ -106,6 +106,8 @@ export const KO: Record<string, string> = {
   "Saved in this browser. Saving a preset does not change existing conversations; select it to apply its values.": "이 브라우저에 저장됩니다. 저장만으로 기존 대화가 바뀌지 않으며, 대화에서 선택할 때 적용됩니다.",
   "Built-in": "기본 제공",
   "copy": "복사본",
+  "Copy JSON": "JSON 복사",
+  "Saving…": "저장 중…",
   "Copy and edit": "복사하여 편집",
   "Back to presets": "프리셋 목록으로",
   "Preset name": "프리셋 이름",
