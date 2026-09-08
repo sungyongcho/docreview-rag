@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 
@@ -9,6 +10,8 @@ export default function nextConfig(phase: string): NextConfig {
   const upstream = process.env.DOCREVIEW_API_UPSTREAM ?? "http://127.0.0.1:8000";
   return {
     agentRules: false,
+    // Canonical retrieval JSON is shared with the API outside the web directory.
+    turbopack: { root: resolve(process.cwd(), "..") },
     allowedDevOrigins: [...new Set([localHost, "localhost", "127.0.0.1"])],
     basePath,
     ...(developmentServer

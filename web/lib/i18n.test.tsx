@@ -42,7 +42,8 @@ describe("Korean and English UI", () => {
       const tree = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       function visit(node: ts.Node) {
         if (ts.isPropertyAssignment(node) && ["label", "title", "description", "mechanism", "tradeoff"].includes(node.name.getText(tree)) && ts.isStringLiteral(node.initializer)) {
-          if (!(node.initializer.text in KO)) missing.add(node.initializer.text);
+          // An empty initial form value is metadata, not a translatable UI message.
+          if (node.initializer.text && !(node.initializer.text in KO)) missing.add(node.initializer.text);
         }
         if (ts.isCallExpression(node) && node.expression.getText(tree) === "t" && node.arguments[0]) {
           function inspect(argument: ts.Node) {

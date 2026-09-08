@@ -26,3 +26,9 @@ web/out
 deploy/firebase/public
 
 web/public/tutorial-assets
+
+# Never bundle custom local presets into a deployment image.
+data/presets/*.json
+!data/presets/balanced.json
+!data/presets/korean.json
+!data/presets/accuracy.json

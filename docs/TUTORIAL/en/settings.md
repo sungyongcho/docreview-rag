@@ -58,7 +58,7 @@ The following values come from the current preset definitions. All three built-i
 | Accuracy | 50 | BM25 | Cross encoder | Off |
 | Custom | Your saved values | Your saved values | Your saved values | Your saved values |
 
-Balanced provides the default starting point. Korean enables language-aware retrieval without forcing the corpus scope to DART. Accuracy reranks a larger pool. In DEV, **Manage presets…** opens **Measure → Retrieval presets**. Expand a built-in row and choose **Copy and edit**, or save the current search settings. Named presets are stored in this browser and appear in the composer selector. Saving or editing a preset does not change existing conversations; selecting it copies only retrieval values. Custom remains the label for unsaved values. Advanced search settings remain editable in the conversation drawer.
+Balanced provides the default starting point. Korean enables language-aware retrieval without forcing the corpus scope to DART. Accuracy reranks a larger pool. In DEV, **Manage presets…** opens **Measure → Retrieval presets**. Expand a built-in row and choose **Copy and edit**, or save the current search settings. In DEV, named presets are stored as JSON files in `data/presets/` and appear in the composer selector; PROD management stores them in the browser. Saving or editing a preset does not change existing conversations; selecting it copies only retrieval values. Custom remains the label for unsaved values. Advanced search settings remain editable in the conversation drawer.
 
 <!-- capture:30-preset-help -->
 
@@ -70,7 +70,7 @@ Balanced provides the default starting point. Korean enables language-aware retr
 
 ## Scoped filters and unfinished input {#filters}
 
-**Settings and preview** opens a right-side drawer on desktop and a full-screen dialog on mobile. **Basic** shows preset selection, document filters, limits and the count of settings differing from defaults. **Advanced** exposes the existing search/evidence/run-limit sections and additional instructions, plus an explicit defaults reset. **Preview** shows the next question, readable policy values and expandable request JSON. The execution-details panel also has a **Preview** tab; its **Server settings** tab continues to describe the selected historical run. Public mode hides Advanced and local preset management. Keyboard focus stays inside the settings dialog and Escape returns it to the opener.
+**Settings and preview** opens a right-side drawer on desktop and a full-screen dialog on mobile. **Basic** shows preset selection, document filters, limits and the count of settings differing from defaults. **Advanced** exposes the existing search/evidence/run-limit sections and additional instructions, plus an explicit defaults reset. **Preview** shows the next question, readable policy values and expandable request JSON. The execution-details panel also has a **Preview** tab; its **Server settings** tab continues to describe the selected historical run. Public mode hides Advanced; **Measure → Retrieval presets** manages browser presets subject to server application permissions. Keyboard focus stays inside the settings dialog and Escape returns it to the opener.
 
 ### SCREENSHOT NEEDED
 
@@ -163,3 +163,14 @@ The defaults editor and **Conversation settings → Advanced → Run limits** sh
 
 ### SCREENSHOT NEEDED
 <!-- Feature: Run limits category, shared conversation limits and System summary; locale=en; theme=light; widths=1440,720; show aligned units, hints, save feedback and keyboard focus. -->
+
+### Retrieval preset files and JSON editing
+
+Open **Measure → Retrieval presets**. DEV uses `data/presets/<id>.json`, next to other runtime data and included in the existing Compose data mount. The three shipped files (`balanced`, `korean`, `accuracy`) are the canonical source for both server and web; copy them to edit. Custom preset files are ignored by Git. A visible selector shares a lightweight version refresh every three seconds; the server scans metadata, debounces changes and rereads only changed files. A corrupt file appears with its filename and error while valid presets remain usable. Fix the file to restore it without restarting.
+
+Use **Save current search as a preset** or **Register new preset** (Balanced defaults). The same editor supports a name, description, search fields, and a **JSON** view with inline validation and **Copy JSON**. Import one JSON file to edit a new copy; export a saved row with **Export preset JSON**. Each saved row offers explicit selection, copy, edit and confirmed deletion. Saving or deleting does not change existing conversations. Selection remains subject to the current server's custom-retrieval permission.
+
+PROD stores presets through the versioned browser settings module; it exposes no file API. Browser settings export/import includes these presets. In **Production preview**, the page explains its memory-only storage and disables save, register and other write actions; actual deployment saves to that browser.
+
+### SCREENSHOT NEEDED
+<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and production-preview notice; locale en. Capture after implementation. -->
