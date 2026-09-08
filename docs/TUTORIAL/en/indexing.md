@@ -136,3 +136,12 @@ A missing BM25 index requires step 4; queueing an evaluation never computes it a
 <!-- Feature: explicit BM25 Compute/Recompute after ingest, overall plus current-stage progress with an indeterminate schema stage, and evaluation waiting/duplicate notices; locale=en; light mode; preserve existing assets. -->
 
 Existing screenshots above predate the separate BM25 step and the new progress display.
+
+## Answer model (Build step 6)
+
+Build shows separate **OpenAI** and **Local** rows. Green means ready to answer, amber means configured with a limitation (missing key, unloaded model, slow CPU below 15 tok/s, or a server problem), and grey means not configured. The step is complete when at least one visible engine is green; both lights also appear on the flow map. Each row names its current model; OpenAI shows the key slot and Local shows the server protocol, reported CPU/GPU placement and last measured generation speed. Missing placement or timing is labelled unknown/unmeasured. CPU measurements expire after 15 minutes and are shown only while the measured model is loaded.
+
+Use **Open System status** for OpenAI or **Open Local LLM settings** to connect a server. Select a model beside the conversation input. The composer uses the same lights and reason tooltips; amber choices remain selectable, while the existing request validation still explains unavailable models or connections. A fresh start refreshes the preserved Ollama inventory through normal status polling. If the models volume was removed, the local row reports **Model download required** once the empty server is reachable.
+
+### SCREENSHOT NEEDED
+<!-- Feature: issue 173 answer-model engine rows, CPU placement and measured speed, dual flow-map lights and composer tooltip; state: OpenAI ready plus loaded local CPU model, then unloaded and slow CPU states; locale=en; light mode; actual runtime evidence required. -->

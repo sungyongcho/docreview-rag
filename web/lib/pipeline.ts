@@ -1,3 +1,4 @@
+import { answerEngineStates, answerEngineSummary } from "./answer-engine-state";
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import { CANNED_CORPUS } from "./canned";
 import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness, RetrievalProfile } from "./types";
@@ -443,13 +444,14 @@ function answerModelDraft(readiness: Readiness | null): Draft {
   if (readiness.mode === "canned") {
     return { status: "readonly", statusDetail: "Public demo", numbers: ["Public demo replays stored answers; no provider is called."], action: null };
   }
-  if (readiness.review_enabled) {
+  const states = answerEngineStates(readiness).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
+  if (states.some((engine) => engine.light === "green")) {
     const numbers: string[] = [];
     if (openai.enabled) numbers.push(`OpenAI · ${openai.model ?? readiness.active_review_model ?? "configured"}${openai.key_slot ? ` · ${openai.key_slot} key` : ""}`);
     if (LOCAL_ENGINE_VISIBLE && local.enabled) numbers.push(`Local · ${local.model ?? "configured"}`);
     // A public build suppresses the local row, so say something rather than nothing.
     if (!numbers.length) numbers.push("Configured");
-    return { status: "done", numbers, action: null };
+    return { status: "done", statusDetail: answerEngineSummary(states), numbers, action: null };
   }
   return {
     status: "blocked",

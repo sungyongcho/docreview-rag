@@ -34,6 +34,13 @@ function persistLocale(locale: Locale) {
 /** Translate app-generated summaries while keeping identifiers and server details intact. */
 function runtimeKorean(source: string): string | undefined {
   const known = (value: string) => KO[value] ?? value;
+  if (/^(OpenAI|Local)(: | (?:only )?ready)/.test(source)) {
+    return source.split(" · ").map((part) => {
+      const match = part.match(/^(OpenAI|Local)(?:: (.+)| (only )?ready)$/);
+      if (!match) return part;
+      return `${known(match[1])}${match[2] ? `: ${known(match[2])}` : match[3] ? "만 준비" : " 준비"}`;
+    }).join(" · ");
+  }
   const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
     [/^Open (.+) and inspect its current state\.$/, (stage) => `${translate("ko", stage)} 단계로 이동해 현재 상태를 확인하세요.`],
     [/^Next step · (.+)$/, (stage) => `다음 단계 · ${known(stage)}`],

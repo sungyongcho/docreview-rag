@@ -224,3 +224,32 @@ it("hides a retained drawer without losing drafts, refetching facets, or handlin
   expect(api.getDocumentFacets).toHaveBeenCalledTimes(1);
   expect(onValidityChange).toHaveBeenLastCalledWith(false);
 });
+
+
+it("offers one stable evidence reduction without repeatedly halving the applied limit", () => {
+  const onChange = vi.fn();
+  const profile = structuredClone(DEFAULT_SESSION_PROFILE);
+  const props = { editable: true, speed: 10.2, onChange, onTabChange: vi.fn(), onClose: vi.fn() };
+  const { rerender } = render(<ConversationSettings {...props} tab="evidence" profile={profile} />);
+  fireEvent.click(screen.getByRole("button", { name: "Reduce evidence: 12000 → 8000 characters" }));
+  expect(onChange).toHaveBeenCalledExactlyOnceWith({ prompt_policy: { ...profile.prompt_policy, max_context_chars: 8000 } });
+  const applied = { ...profile, prompt_policy: { ...profile.prompt_policy, max_context_chars: 8000 } };
+  rerender(<ConversationSettings {...props} tab="evidence" profile={applied} />);
+  expect(screen.queryByRole("button", { name: /Reduce evidence:/ })).toBeNull();
+  expect(screen.getByRole("status")).toHaveTextContent("No further reduction is suggested");
+  rerender(<ConversationSettings {...props} tab="limits" profile={applied} />);
+  rerender(<ConversationSettings {...props} tab="evidence" profile={applied} />);
+  expect(screen.queryByRole("button", { name: /Reduce evidence:/ })).toBeNull();
+  expect(onChange).toHaveBeenCalledOnce();
+});
+
+it("preserves a smaller evidence limit and leaves manual changes available", () => {
+  const profile = { ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, max_context_chars: 1000 } };
+  const onChange = vi.fn();
+  render(<ConversationSettings tab="evidence" editable speed={10.2} profile={profile} onChange={onChange} onTabChange={vi.fn()} onClose={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: /Reduce evidence:/ })).toBeNull();
+  expect(screen.getByLabelText("Maximum evidence characters")).toHaveValue(1000);
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Maximum evidence characters"), { target: { value: "6000" } });
+  expect(onChange).toHaveBeenCalledExactlyOnceWith({ prompt_policy: { ...profile.prompt_policy, max_context_chars: 6000 } });
+});

@@ -119,6 +119,7 @@ export interface LocalModelInfo {
   quantization_level: string | null;
   capabilities: string[] | null;
   loaded: boolean | null;
+  placement?: "cpu" | "gpu" | "mixed" | null;
   cpu_performance?: { tokens_per_second: number; measured_at: string } | null;
 }
 
