@@ -23,6 +23,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="docreview-web-build-") as temporary:
         target = Path(temporary) / "web"
         shutil.copytree(source, target, ignore=ignored)
+        # Copy only shipped import inputs; user-created DEV presets stay outside the build.
+        presets = Path(temporary) / "data" / "presets"
+        presets.mkdir(parents=True)
+        for name in ("balanced.json", "korean.json", "accuracy.json"):
+            shutil.copyfile(root / "data" / "presets" / name, presets / name)
         tutorial = Path(temporary) / "docs" / "TUTORIAL"
         tutorial.mkdir(parents=True)
         shutil.copyfile(

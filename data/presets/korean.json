@@ -1,0 +1,19 @@
+{
+  "id": "korean",
+  "name": "Korean",
+  "builtin": true,
+  "description": "",
+  "retrieval": {
+    "strategy": "hybrid",
+    "k": 5,
+    "candidate_k": 30,
+    "rrf_k": 60,
+    "lexical_ranker": "bm25",
+    "bm25_k1": 1.2,
+    "bm25_b": 0.75,
+    "bm25_idf": "lucene",
+    "route_by_language": true,
+    "reranker": null
+  },
+  "updated_at": "2026-09-08T00:00:00Z"
+}

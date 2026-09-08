@@ -1,7 +1,7 @@
 import { readStoredValue, writeStoredValue } from "./storage";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type RetrievalProfile, type ReviewSessionDraft } from "./types";
 
-export interface SavedPreset { id: string; name: string; retrieval: RetrievalProfile }
+export interface SavedPreset { id: string; name: string; retrieval: RetrievalProfile; description?: string; builtin?: boolean; updated_at?: string | null }
 const KEY = "docreview:retrieval-presets:v1";
 export const PRESETS_CHANGED = "docreview:retrieval-presets-changed";
 
@@ -39,13 +39,13 @@ export function sameRetrieval(a: RetrievalProfile, b: RetrievalProfile): boolean
 export function loadSavedPresets(): SavedPreset[] {
   if (typeof window === "undefined") return [];
   const value: unknown = JSON.parse(readStoredValue(KEY) ?? "[]");
-  if (!Array.isArray(value) || value.some(p => !p || typeof p.id !== "string" || typeof p.name !== "string" || !p.name.trim() || retrievalError(p.retrieval))) throw new Error("Saved presets could not be read.");
+  if (!Array.isArray(value) || value.some(p => presetError(p))) throw new Error("Saved presets could not be read.");
   return value;
 }
 
 /** Read the latest store before updating one preset, preserving other saved entries. */
 export function savePreset(preset: SavedPreset): void {
-  const error = retrievalError(preset.retrieval);
+  const error = presetError(preset);
   if (error) throw new Error(error);
   const entries = loadSavedPresets();
   const name = preset.name.trim();
@@ -53,5 +53,37 @@ export function savePreset(preset: SavedPreset): void {
   if (entries.some(p => p.id !== preset.id && p.name.toLocaleLowerCase() === name.toLocaleLowerCase())) throw new Error("A preset with this name already exists.");
   const saved = { ...preset, name };
   writeStoredValue(KEY, JSON.stringify(entries.some(p => p.id === preset.id) ? entries.map(p => p.id === preset.id ? saved : p) : [...entries, saved]));
+  window.dispatchEvent(new Event(PRESETS_CHANGED));
+}
+
+/** Validate portable JSON without coercion or silently discarding unknown fields. */
+export function presetError(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "Enter a preset JSON object.";
+  const p = value as SavedPreset;
+  if (Object.keys(p).some(key => !["id", "name", "description", "retrieval", "builtin", "updated_at"].includes(key))) return "Unknown preset field.";
+  if (typeof p.id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(p.id)) return "Use a valid preset ID.";
+  if (typeof p.name !== "string" || !p.name.trim() || p.name.length > 80) return "Use a preset name of 1–80 characters.";
+  if (p.description !== undefined && (typeof p.description !== "string" || p.description.length > 2000)) return "Description must be at most 2000 characters.";
+  if (p.builtin !== undefined && typeof p.builtin !== "boolean") return "Built-in must be a boolean.";
+  if (p.updated_at != null && typeof p.updated_at !== "string") return "Updated time must be text.";
+  if (!!p.builtin !== ["balanced", "korean", "accuracy"].includes(p.id)) return "Built-in preset identities are reserved.";
+  const keys = Object.keys(resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE));
+  if (!p.retrieval || typeof p.retrieval !== "object" || Array.isArray(p.retrieval) || Object.keys(p.retrieval).some(key => !keys.includes(key)) || keys.some(key => !(key in p.retrieval))) return "Include all retrieval fields and no unknown fields.";
+  return retrievalError(p.retrieval);
+}
+
+/** Parse direct edits and imports through the same contract as the form. */
+export function parsePresetJSON(text: string): SavedPreset {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { throw new Error("Enter valid JSON."); }
+  const error = presetError(value);
+  if (error) throw new Error(error);
+  return value as SavedPreset;
+}
+
+/** Delete only one browser preset, preserving the latest state of other tabs. */
+export function deletePreset(id: string): void {
+  if (["balanced", "korean", "accuracy"].includes(id)) throw new Error("Built-in presets can only be copied.");
+  writeStoredValue(KEY, JSON.stringify(loadSavedPresets().filter(p => p.id !== id)));
   window.dispatchEvent(new Event(PRESETS_CHANGED));
 }
