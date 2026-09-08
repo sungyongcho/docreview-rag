@@ -79,3 +79,17 @@ it("restores limits explicitly and clears saved feedback after edits", () => {
   fireEvent.change(screen.getByLabelText("Maximum evidence characters"), { target: { value: "9000" } });
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+/** CPU preset changes invalidate saved feedback without persisting an unsaved draft. */
+it("clears saved feedback when the CPU starting preset changes the draft", () => {
+  render(<DefaultRunLimits />);
+  fireEvent.click(screen.getByRole("button", { name: "Save default limits" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Default limits saved");
+  fireEvent.change(screen.getByLabelText("Limit preset"), { target: { value: "cpu-start" } });
+  expect(screen.getByLabelText("Maximum wall clock seconds")).toHaveValue(300);
+  expect(loadDefaultProfile().prompt_policy.workflow_budget.max_wall_clock_s).toBe(120);
+  expect(screen.queryByRole("status")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Save default limits" }));
+  expect(loadDefaultProfile().prompt_policy.workflow_budget.max_wall_clock_s).toBe(300);
+  expect(screen.getByRole("status")).toHaveTextContent("Default limits saved");
+});
