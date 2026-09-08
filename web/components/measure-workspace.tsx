@@ -61,12 +61,13 @@ import { useNotifications } from "@/components/notifications";
 export type MeasureTab = "playground" | "golden" | "runs" | "compare" | "snapshots" | "defaults" | "presets";
 
 export const MEASURE_TABS: Array<[MeasureTab, string]> = [
-  ["playground", "Playground"],
-  ["golden", "Golden Tests"],
-  ["runs", "Runs"],
-  ["compare", "Compare"],
+  ["playground", "Search trial"],
+  ["golden", "Golden dataset"],
+  ["runs", "Run evaluation"],
+  ["compare", "Compare results"],
   ["snapshots", "Snapshots"],
   ["defaults", "Defaults"],
+  ["presets", "Presets"],
 ];
 
 export interface MeasureWorkspaceProps {
@@ -502,12 +503,17 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
         <div><p className="eyebrow">{t("Measure")}</p><h1>{t("Measure retrieval before trusting it.")}</h1></div>
         <div className="page-badges">{environment && <span className="mode-badge">{deploymentLabel(environment)}</span>}<span className={`mode-badge ${live ? "live" : ""}`}>{live ? t("Local operator") : t("Read-only portfolio")}</span></div>
       </header>
-      <nav className="lab-tabs workflow-tabs" aria-label={t("Measure sections")}>
-        {([["playground", "1. Search trial"], ["golden", "2. Golden dataset"], ["runs", "3. Run evaluation"], ["compare", "4. Compare and save"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={tab === id || (id === "compare" && tab === "snapshots")} onClick={() => changeTab(id)}>{t(label)}</button>)}
-        {live && <button type="button" aria-pressed={tab === "presets"} onClick={() => changeTab("presets")}>{t("Retrieval presets")}</button>}
-        {live && <button type="button" className="workflow-settings" aria-pressed={tab === "defaults"} title={locale === "ko" ? "개발 모드 전용" : "DEV only"} onClick={() => changeTab("defaults")}>{t("Evaluation settings")}<span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span></button>}
+      <nav className="lab-tabs workflow-tabs measure-tab-strip" aria-label={t("Measure sections")}>
+        <div className="measure-tab-group measure-workflow-group" role="group" aria-label={t("Evaluation workflow")}>
+          {([["playground", "Search trial"], ["golden", "Golden dataset"], ["runs", "Run evaluation"], ["compare", "Compare results"]] as const).map(([id, label], index) => <button key={id} type="button" aria-pressed={tab === id || (id === "compare" && tab === "snapshots")} onClick={() => changeTab(id)}><span className="measure-step-chip" aria-hidden="true">{index + 1}</span>{t(label)}</button>)}
+        </div>
+        {live && <div className="measure-tab-group measure-management-group" role="group" aria-label={t("Manage")}>
+          <span className="measure-management-caption" aria-hidden="true">{t("Manage")}</span>
+          <button type="button" aria-pressed={tab === "presets"} onClick={() => changeTab("presets")}>{t("Presets")}</button>
+          <button type="button" aria-pressed={tab === "defaults"} title={locale === "ko" ? "개발 모드 전용" : "DEV only"} onClick={() => changeTab("defaults")}>{t("Defaults")}<span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span></button>
+        </div>}
       </nav>
-      <div className="workflow-section-heading"><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "defaults" ? t("Evaluation settings") : tab === "snapshots" ? t("Saved search snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs", "defaults"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp screen={`measure.${tab === "presets" ? "defaults" : tab}`} capabilities={capabilities} publicPreview={publicPreview} /></div>
+      <div className="workflow-section-heading" data-help={tab === "presets" ? "measure.presets.manage" : undefined}><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "defaults" ? t("Evaluation settings") : tab === "snapshots" ? t("Saved search snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs", "defaults"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp screen={`measure.${tab}`} capabilities={capabilities} publicPreview={publicPreview} /></div>
       <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : "Read-only workspace · published snapshots come from the server")}</p>
       <p className="workflow-intro">{tab === "presets" ? t("Create reusable search settings in this browser, then select them in a conversation.") : tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t("Select a question to inspect it. Create a draft to edit, save your changes, then validate before publishing.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "defaults" ? t("Defaults apply to the next new evaluation. Existing conversations and results are unchanged.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Read how evidence hits, rank, and latency changed before saving a snapshot.")}</p>
       {(tab === "compare" || tab === "snapshots") && <nav className="result-tabs"><button type="button" aria-pressed={tab === "compare"} onClick={() => changeTab("compare")}>{t("Compare results")}</button><button type="button" aria-pressed={tab === "snapshots"} onClick={() => changeTab("snapshots")}>{t("Saved snapshots")}</button></nav>}

@@ -91,3 +91,10 @@ Suite ID는 고정된 데이터셋 식별자입니다. `_v2_astra` 접미사는 
 | 지연 시간 | 기록된 검색 시간입니다. 품질·실제 설정과 함께 판단합니다. |
 
 평균 점수만 보지 말고 문항별 변화도 읽습니다. **선택 설정 적용**은 결과의 검색 설정을 대화에 적용하며 새 답변을 생성하지 않습니다. 결과와 검색 데이터를 보존하고 비교하는 방법은 [스냅샷](snapshots.md)에서 이어집니다.
+
+## 검증 단계와 관리 탭
+
+작은 번호 표시가 붙은 네 단계는 **검색 테스트 → 데이터셋 → 평가 실행 → 결과 비교**입니다. 구분선 뒤의 **관리**에는 **프리셋**과 **기본 설정 DEV**가 있습니다. 기본 설정은 다음 평가의 초기값이며 저장만으로 실행하지 않습니다. 두 그룹은 항상 보이며 720px 이하에서는 각각 별도 행에 놓입니다. `?view=measure&tab=presets`, `tab=defaults`, `tab=snapshots`를 포함한 기존 링크와 브라우저 방문 기록을 유지합니다. 각 관리 탭에는 자체 도움말이 있습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: Measure workflow and Manage groups, active presets/defaults and page help; locale=ko; theme=light; widths=1440,720; show numbered chips, divider, caption and DEV badge. Preserve existing assets. -->

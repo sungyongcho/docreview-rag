@@ -21,6 +21,7 @@ export type HelpScreen =
   | "measure.runs"
   | "measure.compare"
   | "measure.defaults"
+  | "measure.presets"
   | "measure.snapshots"
   | "system";
 
@@ -77,6 +78,7 @@ export const HELP_SCREEN_TITLES: Record<HelpScreen, string> = {
   "measure.compare": "Measure · Compare",
   "measure.snapshots": "Measure · Snapshots",
   "measure.defaults": "Measure · Defaults",
+  "measure.presets": "Measure · Presets",
   system: "System",
 };
 
@@ -717,11 +719,12 @@ export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
   "measure.runs": restrictedTopics(RUNS, "can_run_evaluation"),
   "measure.compare": restrictedTopics(COMPARE, "can_run_evaluation"),
   "measure.snapshots": SNAPSHOTS,
+  "measure.presets": [{ id: "measure.presets.manage", title: "Retrieval presets", body: ["Manage reusable search settings separately from the four evaluation steps. Select a preset in a conversation to apply it; saving a preset does not start an evaluation."] }],
   "measure.defaults": [{ id: "measure.defaults.form", capability: "can_run_evaluation", title: "Experiment defaults", body: ["Save the golden suite and revision, run mode, snapshots and new-conversation retrieval preset here. Saving does not start a run or replace prompt defaults."] }],
   system: SYSTEM.filter((topic) => LOCAL_ENGINE_VISIBLE || topic.id !== "system.local-policy"),
 };
 
-const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "runs", "compare", "snapshots", "defaults"]);
+const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "runs", "compare", "snapshots", "defaults", "presets"]);
 
 /** Map the shell's view and tab to a help screen; null where no topics exist (Build › Documents and Jobs). */
 export function helpScreen(view: "review" | "build" | "measure" | "system", tab: string): HelpScreen | null {
