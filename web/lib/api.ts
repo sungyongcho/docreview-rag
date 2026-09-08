@@ -482,3 +482,16 @@ export function manageJobHistory(payload: Omit<components["schemas"]["JobHistory
 export function jobHistoryBackupUrl(id: string): string {
   return `${API_BASE}/admin/jobs/history/backups/${encodeURIComponent(id)}`;
 }
+
+/** Read the low-cost preset version; unchanged catalogs omit file contents. */
+export function getFilePresets(version?: string) {
+  return request<import("./preset-storage").PresetCatalog>(`/admin/presets${version ? `?version=${encodeURIComponent(version)}` : ""}`);
+}
+
+export function putFilePreset(preset: import("./saved-presets").SavedPreset) {
+  return request<import("./saved-presets").SavedPreset>("/admin/presets", { method: "PUT", body: JSON.stringify(preset) });
+}
+
+export function deleteFilePreset(id: string) {
+  return request<import("./preset-storage").PresetCatalog>(`/admin/presets?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}
