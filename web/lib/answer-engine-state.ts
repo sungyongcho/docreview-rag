@@ -14,7 +14,7 @@ export interface AnswerEngineState {
 }
 
 /** Derive display readiness; a null conversation choice requires selection when several models exist. */
-export function answerEngineStates(readiness: Readiness | null, localModel?: string | null, now = Date.now()): AnswerEngineState[] {
+export function answerEngineStates(readiness: Partial<Pick<Readiness, "review_engines" | "review_enabled" | "active_review_model">> | null, localModel?: string | null, now = Date.now()): AnswerEngineState[] {
   const engines = readiness?.review_engines;
   const openai = engines?.openai;
   // Older readiness snapshots omitted per-engine metadata.
@@ -40,7 +40,7 @@ export function answerEngineStates(readiness: Readiness | null, localModel?: str
   const second: AnswerEngineState = {
     id: "local", label: "Local", light: "grey", reason: "Not configured", model: name,
     server: local?.protocol === "ollama" ? "Ollama" : local?.protocol === "openai_responses" ? "OpenAI-compatible server" : undefined,
-    placement: model?.placement, speed,
+    placement: model?.loaded === true ? model.placement : undefined, speed,
   };
   if (!readiness) second.reason = "Checking…";
   else if (local?.enabled) {
@@ -48,6 +48,7 @@ export function answerEngineStates(readiness: Readiness | null, localModel?: str
     if (!name) { second.light = "amber"; second.reason = "Choose a model"; }
     else if (localModel && !model) { second.light = "amber"; second.reason = "Selected model unavailable"; }
     else if (model?.loaded === false) { second.light = "amber"; second.reason = "Model not loaded"; }
+    else if (model?.loaded !== true) { second.light = "amber"; second.reason = "Model load state unknown"; }
     else if (localCpuWarning({ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: name }, local, now) !== null) {
       second.light = "amber"; second.reason = "Slow CPU (below 15 tok/s)";
     }

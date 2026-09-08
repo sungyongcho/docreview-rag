@@ -3,6 +3,8 @@ import { NotificationCenter } from "@/components/notification-center";
 import { NotificationSignals } from "@/components/notification-signals";
 import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
+import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure } from "@/lib/scope-failure";
+import { ScopeFailureSummary } from "@/components/scope-failure-summary";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -503,10 +505,16 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     navigate(target);
   }
 
+  /** Route existing failure actions through the history-aware workspace navigator. */
+  function openFailureFix(category: NonNullable<ChatMessage["failureFix"]>["category"]) {
+    if (category === "documents" || category === "jobs") return navigate({ view: "build", tab: category });
+    openSettings(category);
+  }
+
   function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
     if (category === "review") return openConversationSettings("filters");
     if (category === "limits") {
-      if (adminLive) return openConversationSettings("limits");
+      if (adminLive) { setSettingsCategory("limits"); setSettingsOpen(true); return; }
       return navigate({ view: "system", tab: "status" });
     }
     if (category === "runtime") return navigate({ view: "system", tab: "status" });
@@ -657,8 +665,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       };
       updateMessage(conversationId, assistantId, assistant, notificationErrorDetail(terminal.failure));
     } catch (reason) {
-      if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
+      execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
+      const scopeFailure = scopeFailurePatch(reason, adminLive);
+      if (scopeFailure && !controller.signal.aborted) {
+        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
+        return;
+      }
       if (isInfrastructureFailure(reason)) {
         updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") }, notificationErrorDetail(reason));
         if (currentConversationId.current === conversationId) setQuery((current) => current || question);
@@ -695,7 +708,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         evidenceLabel: "Retrieved candidates — answer not generated",
       }, notificationErrorDetail(reason));
     } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
+      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
       setBusy(false);
       setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
@@ -819,13 +832,18 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         failureFix: terminalFailureFix(response),
       }, notificationErrorDetail(terminal.failure));
     } catch (reason) {
-      if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
+      execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
+      const scopeFailure = scopeFailurePatch(reason, adminLive);
+      if (scopeFailure && !controller.signal.aborted) {
+        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution }, notificationErrorDetail(reason));
+        return;
+      }
       updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution }, notificationErrorDetail(reason));
       noteDailyBudget(reason);
       notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Selected evidence review failed."), "error", "evidence-review", undefined, { event: "evidence-review-error", detail: notificationErrorDetail(reason) });
     } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
+      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
       setBusy(false);
       setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
@@ -1011,6 +1029,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
                   onOpenDetails={(stage) => openRunDetails(message.id, stage)}
+                  onOpenFix={openFailureFix}
                 />
               ))}
 
@@ -1038,7 +1057,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
-            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
+            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
 
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
@@ -1050,6 +1069,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         </RetainedPanel>
 
         <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
+          localModel={activeSessionProfile.local_model}
           focusStep={pendingStage}
           focusJobId={buildJobId}
           live={adminBuild && permissions?.can_build_snapshot === true}
@@ -1095,7 +1115,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           helpTarget={pendingHelpTarget}
         /></RetainedPanel>
         <RetainedPanel active={view === "system"} className="retained-workspace" workspace="system"><SystemWorkspace
-          onOpenLimitDefaults={() => openSettings("prompt")}
+          onOpenLimitDefaults={() => openSettings("limits")}
           live={adminLive}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
@@ -1109,9 +1129,14 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         /></RetainedPanel>
       </section>
       <BrowserStorageSupport enabled={!publicPreview && environment === "prod" && productionBrowserStorageEnabled()} />
-      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success", "local-conversations-cleared", undefined, { event: "local-conversations-cleared-notice" }); }} />
+      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onOpenModelSelection={() => {
+        if (!navigate({ view: "review" })) return;
+        setSettingsOpen(false);
+        if (window.innerWidth <= 560) setSidebarOpen(false);
+        window.requestAnimationFrame(() => document.querySelector<HTMLSelectElement>("[data-answer-engine-select]")?.focus());
+      }} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success", "local-conversations-cleared", undefined, { event: "local-conversations-cleared-notice" }); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
+      <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={publicScopeFailure(runDetailsMessage, adminLive)} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openFailureFix} />
 
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <NotificationSignals enabled={sessionActive && !publicPreview && environment !== undefined} healthKind={runtimeHealth.kind} healthMessage={runtimeHealth.readiness?.corpus?.schema_message} checkedAt={runtimeHealth.checkedAt} operations={Boolean(operationsAvailable)} local={runtimeHealth.readiness?.review_engines?.local} model={localModel ?? null} cpuSpeed={localCpuSpeed} conversationId={activeId} reviewVisible={view === "review"} jobsVisible={view === "build" && buildTab === "jobs"} systemVisible={view === "system" && systemTab === "status"} />
@@ -1133,6 +1158,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 }
 
 interface ReviewMessageProps {
+  onOpenFix?: (category: NonNullable<ChatMessage["failureFix"]>["category"]) => void;
   message: ChatMessage;
   catalogMode?: "live" | "published";
   onStop?: () => void;
@@ -1156,7 +1182,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails }: ReviewMessageProps) {
+function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails, onOpenFix }: ReviewMessageProps) {
   const { t, locale } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
@@ -1176,7 +1202,8 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
-        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.scopeFailure ? t("Query scope metadata is unavailable.") : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
         {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details></>}
         {message.evidence?.length ? (
           <>

@@ -1,3 +1,4 @@
+import { readStoredValue, writeStoredValue } from "./storage";
 import type { CorpusSnapshot } from "@/lib/types";
 import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeline";
 import type { AcquisitionCompany } from "./acquisition-catalog";
@@ -61,9 +62,15 @@ export function selectedSourceState(sources: SourceInventory[], draft: Acquisiti
     const rows = selected.filter((row) => row.registry === pair.registry && row.issuer.toUpperCase() === pair.issuer && row.fiscal_year === pair.year);
     return !rows.length || rows.some((row) => !row.on_disk);
   });
+  const downloadPairs = pairs.filter((pair) => {
+    const rows = selected.filter((row) => row.registry === pair.registry && row.issuer.toUpperCase() === pair.issuer && row.fiscal_year === pair.year);
+    return (!rows.length || rows.some((row) => !row.on_disk || row.can_redownload === true))
+      && !rows.some((row) => row.ready === false && row.can_redownload === false);
+  });
   const present = selected.filter((row) => row.on_disk);
   const excluded = unique.filter((row) => row.on_disk && !selected.includes(row));
-  return { pairs, selected, present, excluded, missingPairs, missing: missingPairs.map((pair) => `${pair.issuer} FY${pair.year}`), complete: pairs.length > 0 && present.length > 0 && missingPairs.length === 0 };
+  const blocked = selected.filter((row) => row.on_disk && row.ready === false);
+  return { pairs, selected, present, excluded, blocked, downloadPairs, missingPairs, missing: missingPairs.map((pair) => `${pair.issuer} FY${pair.year}`), complete: pairs.length > 0 && present.length > 0 && missingPairs.length === 0 && blocked.length === 0 };
 }
 
 /** Group unique documents into registry/company rows shared by both preparation steps. */
@@ -90,4 +97,25 @@ export function sourceSelectionRows(sources: SourceInventory[], pairs: Acquisiti
       return { issuer, label: `${issuer}${name && name !== issuer ? ` · ${name}` : ""}`, cells: registryCells.filter((cell) => cell.pair.issuer === issuer).sort((a, b) => a.pair.year - b.pair.year) };
     }) };
   });
+}
+
+
+const ACQUISITION_DRAFT_KEY = "docreview:acquisition-draft:v1";
+
+/** Restore explicit choices only within the same server reset revision, including an empty choice. */
+export function loadAcquisitionDraft(revision: string): AcquisitionForm | null {
+  const raw = readStoredValue(ACQUISITION_DRAFT_KEY);
+  if (!raw) return null;
+  try {
+    const saved: unknown = JSON.parse(raw);
+    if (!saved || typeof saved !== "object" || !("revision" in saved) || saved.revision !== revision || !("pairs" in saved) || !Array.isArray(saved.pairs)) return null;
+    const pairs = saved.pairs;
+    if (!pairs.every((p) => p && typeof p === "object" && ["sec", "dart"].includes(p.registry) && typeof p.issuer === "string" && Number.isInteger(p.year) && p.year >= 1900 && p.year <= 2100)) return null;
+    return acquisitionDraft(pairs);
+  } catch { return null; }
+}
+
+/** Keep pending and downloaded choices independent of inventory refreshes. */
+export function saveAcquisitionDraft(revision: string, draft: AcquisitionForm): void {
+  writeStoredValue(ACQUISITION_DRAFT_KEY, JSON.stringify({ revision, pairs: acquisitionPairs(draft) }));
 }

@@ -35,8 +35,33 @@
 .settings-preview-content .request-facts dd { overflow-wrap: anywhere; }
 
 .slow-cpu-notice .button { margin: 4px 8px 8px 0; white-space: normal; text-align: left; }
-.default-run-limits { margin-top: 20px; }
-.default-run-limits > .button { margin: 12px 8px 0 0; }
+.default-run-limits { width: 100%; min-width: 0; margin-top: 20px; }
+.settings-content > .default-run-limits { margin-top: 0; }
+.default-run-limits-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; }
+.default-run-limits-summary :is(h3, p) { margin: 0; }
+.default-run-limits-summary p { flex: 1; color: var(--muted); font-size: 13px; }
+.run-limit-editor { width: 100%; min-width: 0; display: grid; gap: 20px; }
+.run-limit-preset { display: grid; gap: 8px; font-size: 13px; font-weight: 600; }
+.run-limit-preset select { width: 100%; min-height: 44px; }
+.run-limit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 24px; }
+.run-limit-grid > label { min-width: 0; display: grid; align-content: start; gap: 8px; font-size: 13px; font-weight: 600; }
+.run-limit-input { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.run-limit-input input { width: 100%; min-width: 0; min-height: 44px; flex: 1; }
+.run-limit-input > span { color: var(--muted); font-size: 12px; font-weight: 400; flex: none; }
+.run-limit-grid small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.run-limit-help { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.65; }
+.run-limit-help p { margin: 0 0 10px; }
+.run-limit-help > :last-child, .run-limit-help p:last-child { margin-bottom: 0; }
+.run-limit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.run-limit-actions .button { min-height: 44px; }
+.run-limit-actions p { margin: 0; font-size: 13px; }
+.run-limit-actions [role="alert"] { color: var(--danger, #b42318); }
+.run-limit-editor :is(button, input, select):focus-visible, .default-run-limits .button:focus-visible { outline: 2px solid var(--focus, var(--text)); outline-offset: 3px; }
+@media (max-width: 720px) {
+  .run-limit-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .default-run-limits-summary { align-items: flex-start; }
+  .default-run-limits-summary p { flex-basis: 100%; }
+}
 
 .limit-recommendation { grid-column: 1 / -1; padding: 16px; border-radius: 10px; }
 .limit-recommendation .button { white-space: normal; }

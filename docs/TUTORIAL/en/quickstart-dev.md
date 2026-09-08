@@ -55,6 +55,8 @@ rag-corpus status
 
 **If blocked:** inspect the job error in Jobs or `rag-corpus status`; correct credentials, missing sources, or provider configuration before retrying. See [troubleshooting](troubleshooting.md).
 
+Ordinary fresh start selects NVIDIA and AMD FY2019–FY2024 plus Samsung Electronics and SK hynix FY2022–FY2024 (18 exact company/year pairs). Selection includes pending downloads and is independent of the source inventory. Explicit choices, including clearing the selection, survive reload until the next server reset. The company picker accepts only the tested catalog (NVDA, AMD, INTC, MU, 005930, 000660, 035420); the four default companies are not the entire supported catalog.
+
 ### 4. Parse, chunk, and store both reports {#qs-cli-4}
 
 Run from the cloned repository. Confirm prompted operations and wait for each job before the next command.
@@ -169,12 +171,14 @@ DART first downloads its issuer-code index. This endpoint can be slow: watch the
 
 **If blocked:** inspect the job error in Jobs or `rag-corpus status`; correct credentials, missing sources, or provider configuration before retrying. See [troubleshooting](troubleshooting.md).
 
+Ordinary fresh start selects NVIDIA and AMD FY2019–FY2024 plus Samsung Electronics and SK hynix FY2022–FY2024 (18 exact company/year pairs). Selection includes pending downloads and is independent of the source inventory. Explicit choices, including clearing the selection, survive reload until the next server reset. The company picker accepts only the tested catalog (NVDA, AMD, INTC, MU, 005930, 000660, 035420); the four default companies are not the entire supported catalog.
+
 ### 4. Parse, chunk, and store both reports {#qs-web-4}
 
-After each download completes, preparation state refreshes automatically. Open **Parse & chunk**, confirm that both intended downloaded reports appear under **Selected documents**, and choose **Parse & chunk selected sources** once. Wait for the ingest job to succeed. For manual per-selection ingestion, open **Advanced**, find the two selections under `manifest.json` (`sec-08b5f645cc174083` for NVIDIA and `dart-1a4f24de25a92617` for Samsung), verify their sources, and use **Ingest** for each instead of also running the primary action.
+After each download completes, preparation state refreshes automatically. Open **Parse & chunk**, confirm that both intended downloaded reports appear under **Selected documents**, and choose **Parse & chunk selected sources** once. Wait for the ingest job to succeed. You can clear and reselect downloaded years directly in this step; the choices remain visible. Only filings acquired in step 1 enter this flow. Equivalent duplicate primary artifacts are resolved by their verified bytes; conflicting originals block parsing with an actionable manifest message.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: current shared-parse-action-and-manual-advanced-alternative; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
+<!-- Feature: bounded parsing with downloaded-year deselection and reselection; locale=en; light mode; show the exact controls and selected report pairs described above. Existing acquisition/ingest captures remain historical evidence; preserve assets. -->
 
 The catalog can describe other reports. The selected document and source counts determine completion for this exercise.
 

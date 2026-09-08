@@ -292,7 +292,7 @@ describe("service shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Search trial" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
     expect(screen.getByRole("heading", { name: "Runtime readiness" })).toBeInTheDocument();
@@ -422,7 +422,7 @@ describe("service shell", () => {
     render(<ServiceShell />);
     await screen.findByText("Corpus total · 29 filings");
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
-    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
     await screen.findByRole("option", { name: "v1 · draft" });
     fireEvent.change(screen.getByLabelText("Golden revision"), { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: "draft-01" }));
@@ -435,7 +435,7 @@ describe("service shell", () => {
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockReturnValue(true);
     await traverseHistory("Back");
-    expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Search trial" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockRestore();
   });
@@ -465,7 +465,7 @@ describe("service shell", () => {
     render(<ServiceShell />);
     await screen.findByText("Corpus total · 29 filings");
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
-    fireEvent.click(screen.getByRole("button", { name: "3. Run evaluation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
     await screen.findByRole("heading", { name: "Result details · #16" });
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
@@ -478,7 +478,7 @@ describe("service shell", () => {
     expect(request).toHaveValue('{"suite_id":"sec-ko"}');
     await traverseHistory("Back");
     await traverseHistory("Back");
-    expect(screen.getByRole("button", { name: "3. Run evaluation" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Run evaluation" })).toHaveAttribute("aria-pressed", "true");
     // Result detail intentionally replaces the run list while preserving the selected result.
     expect(screen.queryByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to evaluations" })).toBeVisible();
@@ -1434,12 +1434,12 @@ describe("browser navigation history", () => {
     window.history.replaceState(null, "", "/docreview-rag-agent/?view=measure&tab=snapshots&locale=ko#saved");
     render(<ServiceShell />);
     await screen.findByRole("button", { name: "System · healthy" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "4. Compare and save" })).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" })).toHaveAttribute("aria-pressed", "true"));
     expect(window.location.pathname).toBe("/docreview-rag-agent/");
     expect(new URLSearchParams(window.location.search).get("locale")).toBe("ko");
     expect(window.location.hash).toBe("#saved");
     cleanup(); render(<ServiceShell />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "4. Compare and save" })).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" })).toHaveAttribute("aria-pressed", "true"));
   });
 
   it("falls back to a saved conversation when a shared URL names an unknown local id", async () => {
@@ -1488,6 +1488,54 @@ it.each(["en", "ko"] as const)("shows the measured CPU warning before sending an
     await act(async () => { window.dispatchEvent(new Event("online")); });
     await waitFor(() => expect(screen.queryByRole("status", { name: t("Slow local CPU model") })).toBeNull());
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
+});
+
+it("opens model selection from Build without submitting or changing the engine", async () => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const model = { name: "answer", selectable: true, loaded: false, size_bytes: 100, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"] };
+  const local = { enabled: true, protocol: "ollama", models: [model] };
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { openai: { enabled: true }, local } }));
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input) => String(input).endsWith("/admin/local-llm/connection")
+    ? new Response(JSON.stringify({ base_url: "http://ollama:11434", initial_base_url: "http://ollama:11434", protocol: "auto", source: "environment", local }), { headers: { "content-type": "application/json" } })
+    : originalFetch(input));
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    render(<LiveShell />);
+    const engine = await screen.findByLabelText("Answer engine");
+    fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Select Answer model" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Local LLM settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose or use a model in conversation" }));
+    await waitFor(() => expect(engine).toHaveFocus());
+    expect(screen.queryByRole("dialog", { name: "Local LLM" })).not.toBeInTheDocument();
+    expect(engine).toHaveValue("openai");
+    expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toHaveValue("Keep my draft");
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/review/stream"))).toBe(true);
+    fireEvent.change(engine, { target: { value: "local" } });
+    expect(screen.getByLabelText("Local model")).toHaveValue("answer");
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    const row = await screen.findByRole("region", { name: "Local" });
+    expect(row).toHaveTextContent("answer");
+    expect(row).toHaveTextContent("Model not loaded");
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
+});
+
+/** The status link opens global defaults, preserving conversation overrides. */
+it("opens default limits from System status", async () => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  stubLiveApi(READY_RUNTIME.corpus);
+  window.history.replaceState(null, "", "/?view=system&tab=status");
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  render(<LiveShell />);
+  fireEvent.click(await screen.findByRole("button", { name: "Edit default limits" }));
+  const dialog = await screen.findByRole("dialog", { name: "Run limits" });
+  expect(within(dialog).getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByLabelText("Maximum wall clock seconds").closest(".settings-form")).toBeNull();
+  expect(within(dialog).queryByLabelText("Additional operator instructions")).toBeNull();
 });
 
 /** A notification job URL must survive a fresh shell load and select its actual job. */

@@ -460,6 +460,7 @@ DB 연결을 확인하고 기존 데이터를 보존한 상태에서 운영자�
 기본 복구는 기존 데이터를 보존합니다. `uv run python -m scripts.schema recreate`는
 ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대상·행 수·원문 경로를 확인한 뒤
 `Y`로 승인합니다. `--keep-sources`는 원문을 보존하며,
+일반 초기화는 NVDA/AMD FY2019–2024와 삼성전자/SK하이닉스 FY2022–2024의 18개 선택을 준비합니다.
 `--sample`은 동일한 초기화 뒤 NVDA/AMD FY2023–2024 초안만 저장하고 다운로드하지 않습니다.
 코드·`.env`·평가 내보내기·무관한 테이블·DB 볼륨은 보존합니다. 완료 후 `rag-up`으로 시작하세요.
 `rag-reset`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Quick Start — DEV ONLY의 Web 1단계 안내까지 이어갑니다.

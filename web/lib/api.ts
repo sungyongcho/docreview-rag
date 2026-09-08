@@ -105,6 +105,7 @@ export async function retrieveEvidence(query: string, sessionProfile: ReviewSess
 }
 
 export interface ReviewProgress {
+  display_stage?: "path";
   path_decision?: ReviewPathDecision | null;
   node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
   evidence_count: number;

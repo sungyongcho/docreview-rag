@@ -184,6 +184,13 @@ DocReview는 모든 로컬 호출을 숨은 추론을 끈 채(`think: false`) �
 
 대화창으로 돌아가 답변 엔진 선택기에서 설치된 모델을 선택합니다. 연결 확인은 작성 중인 질문을 전송하지 않습니다. 질문할 준비가 되면 [답변](answers.md#engines)과 [요청 설정](settings.md#step-10)을 이어갑니다.
 
+로컬 LLM 설정 상단의 **로컬 답변을 위한 다음 단계** 카드는 구축 6단계에서 설정을 열어도 바로 표시됩니다. **대화에서 모델 선택·사용하기**를 누르면 설정을 닫고 현재 대화의 답변 엔진 선택기로 이동합니다. **로컬 LLM**을 고른 뒤 설치된 답변 모델을 선택하세요. 작성 중인 질문은 직접 전송하기 전까지 초안으로 유지됩니다.
+
+서버에 연결되고 답변 모델이 설치되어 있어도 적재 여부나 속도 측정까지 확인된 것은 아닙니다. 카드에는 대화의 답변 엔진, 로컬 모델, 적재 상태가 따로 표시됩니다. 저장된 모델이 사라졌다면 사용 가능한 모델을 다시 선택하고, 서버에 접근할 수 없거나 답변 모델이 없다면 복구 가이드나 연결 진단을 이용하세요. 실제로 처음 사용할 때 모델이 적재될 수 있습니다. 요청이 끝나면 준비 상태를 새로 확인합니다. 구축 화면은 현재 대화의 로컬 모델을 표시하며, CPU·GPU 배치와 최근 속도는 서버에서 확인된 경우에만 보여줍니다. 없거나 오래된 측정값은 미확인으로 남습니다. OpenAI가 준비되고 로컬 모델이 미적재인 경우에도 답변 단계는 사용할 수 있으며 OpenAI만 준비되었다고 명시합니다.
+
+### SCREENSHOT NEEDED
+<!-- Local LLM next-action flow: real connected/unloaded state, conversation selection, and Build after actual use; Korean light mode at 360px, 768px and desktop. Capture current observed metadata and compact navigation controls without synthesizing readiness. -->
+
 ## 읽기 전용 진단 실행하기 {#diagnostics}
 
 [프로젝트 명령 등록](cli.md#명령-등록과-도움말)을 마친 뒤 실행합니다.

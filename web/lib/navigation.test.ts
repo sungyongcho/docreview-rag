@@ -9,7 +9,7 @@ describe("workspace navigation URLs", () => {
     { view: "build", tab: "documents" },
     { view: "build", tab: "jobs" },
     { view: "build", tab: "jobs", jobId: "admin-notification-1" },
-    ...["playground", "golden", "runs", "compare", "snapshots", "defaults"].map((tab) => ({ view: "measure" as const, tab: tab as "runs", resultId: 42 })),
+    ...["playground", "golden", "runs", "compare", "snapshots", "defaults", "presets"].map((tab) => ({ view: "measure" as const, tab: tab as "runs", resultId: 42 })),
     ...["status", "operations", "api", "usage"].map((tab) => ({ view: "system" as const, tab: tab as "status" })),
   ])("round-trips the complete destination %j", (target) => {
     const url = navigationUrl(target, "/docreview-rag-agent/?locale=ko&theme=light&help=review.scope#inspection");

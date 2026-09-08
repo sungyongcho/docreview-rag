@@ -88,3 +88,27 @@ it("links to both guides in the same tab without changing the current conversati
   expect(onChange).not.toHaveBeenCalled();
   expect(onClear).not.toHaveBeenCalled();
 });
+
+/** Keep the dedicated limits category outside the prompt grid. */
+it("opens the limits category separately from prompt settings", () => {
+  renderSettings(DEV);
+  expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
+  const tab = screen.getByRole("button", { name: "Run limits" });
+  expect(tab).toHaveAttribute("title", "DEV only");
+  fireEvent.click(tab);
+  expect(tab).toHaveAttribute("aria-pressed", "true");
+  const input = screen.getByLabelText("Maximum wall clock seconds");
+  expect(input.closest(".settings-form")).toBeNull();
+  expect(input.closest(".run-limit-grid")).not.toBeNull();
+  expect(screen.getByLabelText("Maximum evidence characters").closest(".run-limit-grid")).toBe(input.closest(".run-limit-grid"));
+  expect(screen.getByRole("button", { name: "Save default limits" }).closest(".run-limit-actions")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+  expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
+});
+
+/** Deep links require the independent DEV limit capability. */
+it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", (environment, can_edit_run_limits, visible) => {
+  render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={vi.fn()} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
+  expect(!!screen.queryByLabelText("Maximum wall clock seconds")).toBe(visible);
+  expect(!!screen.queryByRole("button", { name: "Run limits" })).toBe(visible);
+});

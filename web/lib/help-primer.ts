@@ -357,7 +357,7 @@ function clusterFor(topic: HelpTopic): string {
   if (topic.id.startsWith("measure.golden.")) return "golden";
   if (topic.id.startsWith("measure.runs.")) return "runs";
   if (topic.id.startsWith("measure.compare.") || topic.id.startsWith("measure.snapshots.")) return "snapshots";
-  if (topic.id.startsWith("measure.defaults.")) return "defaults";
+  if (topic.id.startsWith("measure.defaults.") || topic.id.startsWith("measure.presets.")) return "defaults";
   return topic.id === "system.local-policy" ? "connection" : "status";
 }
 

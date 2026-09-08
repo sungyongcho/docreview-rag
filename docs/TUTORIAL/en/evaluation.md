@@ -91,3 +91,10 @@ Quick uses the current index. **Matrix · isolated corpus** tests configured chu
 | Latency | Recorded search time; judge it alongside quality and the effective configuration. |
 
 Follow per-case changes rather than only the aggregate score. **Use selected set** applies a selected result's search settings to the conversation; it does not generate a new answer. [Snapshots](snapshots.md) explain how to preserve and compare the result with its search data.
+
+## Workflow and management tabs
+
+The four steps are **Search trial → Golden dataset → Run evaluation → Compare results**, each with a small numbered chip. The separate **Manage** group contains **Presets** and **Defaults DEV**. Defaults apply to future evaluations and do not start a run. Both groups stay visible; at 720 px and below they use separate rows. Existing links including `?view=measure&tab=presets`, `tab=defaults` and `tab=snapshots` preserve browser history. Each management tab has its own page help.
+
+### SCREENSHOT NEEDED
+<!-- Feature: Measure workflow and Manage groups, active presets/defaults and page help; locale=en; theme=light; widths=1440,720; show numbered chips, divider, caption and DEV badge. Preserve existing assets. -->

@@ -12,6 +12,19 @@
             "title": "Identifiers",
             "type": "array"
           },
+          "pairs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionPairResource"
+            },
+            "title": "Pairs",
+            "type": "array"
+          },
+          "revision": {
+            "default": "default-v1",
+            "title": "Revision",
+            "type": "string"
+          },
           "years": {
             "items": {
               "type": "integer"
@@ -25,6 +38,35 @@
           "years"
         ],
         "title": "AcquisitionDraftResource",
+        "type": "object"
+      },
+      "AcquisitionPairResource": {
+        "additionalProperties": false,
+        "description": "Preserve an exact intended filing without a mixed-registry cross product.",
+        "properties": {
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "registry": {
+            "enum": [
+              "sec",
+              "dart"
+            ],
+            "title": "Registry",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registry",
+          "issuer",
+          "year"
+        ],
+        "title": "AcquisitionPairResource",
         "type": "object"
       },
       "AdminDocumentResource": {
@@ -157,10 +199,53 @@
         "additionalProperties": false,
         "description": "Machine-readable HTTP failure shared by all routes.",
         "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing_file",
+                  "invalid_json",
+                  "invalid_manifest",
+                  "alias_conflict",
+                  "permission"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
           "code": {
             "pattern": "^[a-z][a-z0-9_]*$",
             "title": "Code",
             "type": "string"
+          },
+          "corpus_job": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Job"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
           },
           "details": {
             "default": [],
@@ -170,9 +255,35 @@
             "title": "Details",
             "type": "array"
           },
+          "failed_stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "path",
+                  "gate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Stage"
+          },
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           },
           "path_decision": {
             "anyOf": [
@@ -893,6 +1004,14 @@
         "additionalProperties": false,
         "description": "Atomic typed preparation state with explicit source selections.",
         "properties": {
+          "acquisition_companies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManifestIssuerResource"
+            },
+            "title": "Acquisition Companies",
+            "type": "array"
+          },
           "acquisition_draft": {
             "anyOf": [
               {
@@ -6198,6 +6317,28 @@
         "additionalProperties": false,
         "description": "Downloaded source identity independent of database rows.",
         "properties": {
+          "blocker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocker"
+          },
+          "can_redownload": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Redownload"
+          },
           "document_id": {
             "title": "Document Id",
             "type": "string"
@@ -6220,6 +6361,11 @@
           },
           "on_disk": {
             "title": "On Disk",
+            "type": "boolean"
+          },
+          "ready": {
+            "default": false,
+            "title": "Ready",
             "type": "boolean"
           },
           "registry": {
@@ -6247,6 +6393,18 @@
         "additionalProperties": false,
         "description": "One measured stage transition; an active stage has no completed duration.",
         "properties": {
+          "display_stage": {
+            "anyOf": [
+              {
+                "const": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Stage"
+          },
           "elapsed_ms": {
             "anyOf": [
               {

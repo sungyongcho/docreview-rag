@@ -10,7 +10,7 @@ export type NavigationTarget =
   | { view: "system"; tab?: SystemTab };
 
 const BUILD_TABS: Record<BuildTab, string> = { pipeline: "Pipeline", documents: "Documents", jobs: "Jobs" };
-const MEASURE_TABS: Record<MeasureTab, string> = { playground: "Search trial", golden: "Golden dataset", runs: "Run evaluation", compare: "Compare and save", snapshots: "Snapshots", defaults: "Defaults", presets: "Retrieval presets" };
+const MEASURE_TABS: Record<MeasureTab, string> = { playground: "Search trial", golden: "Golden dataset", runs: "Run evaluation", compare: "Compare results", snapshots: "Snapshots", defaults: "Defaults", presets: "Retrieval presets" };
 const SYSTEM_TABS: Record<SystemTab, string> = { status: "Status", operations: "Operations", api: "API", usage: "Usage" };
 const NAVIGATION_PARAMETERS = ["view", "tab", "stage", "result", "conversation", "job"];
 

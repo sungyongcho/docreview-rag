@@ -182,6 +182,11 @@ appear only when recorded.
 <!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=en; light mode; preserve existing assets. -->
 
 
+For manifest metadata failures, the strip marks the actual failing stage: stage 0 before a path decision, stage 1 during subsequent scope resolution. DEV provides the cause, file and one recovery action; see [manifest diagnosis](troubleshooting.md#manifest-scope). The original technical detail stays in **Run details → Trace**.
+
+### SCREENSHOT NEEDED
+<!-- Feature: failed-answer manifest diagnosis and stage-zero attribution; locale=en; light mode; show localized headline, diagnosis and stages 1-5 not run. -->
+
 A review that finishes or fails while you are on another workspace produces a bell notification linked to its conversation. Opening it marks it read and returns to the original conversation. The existing execution summary remains the place to inspect the failure or result; opening the center does not repeat the request. See the [notification center](runtime.md#notification-center).
 
 ### SCREENSHOT NEEDED

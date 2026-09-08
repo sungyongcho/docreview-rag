@@ -9,3 +9,9 @@
 .answer-engine-row dt { font-size: .75rem; color: var(--muted); }
 .answer-engine-row dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
 .answer-engine-row button { justify-self: start; }
+
+.answer-engine-row { min-width: 0; align-content: start; }
+.answer-engine-row .answer-engine-action { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; height: auto; width: fit-content; max-width: 100%; padding: .55rem .85rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface-2); color: var(--text); font-weight: 600; white-space: normal; text-align: start; }
+.answer-engine-row .answer-engine-action svg { flex: none; }
+.answer-engine-row .answer-engine-action:hover:not(:disabled) { border-color: var(--text); background: var(--surface); }
+.answer-engine-row .answer-engine-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

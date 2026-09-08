@@ -292,3 +292,27 @@ it("classifies an empty compatible corpus as preparation needed and preserves re
   expect(result.current.modalVisible).toBe(true);
   unmount(); vi.unstubAllGlobals();
 });
+
+it("refreshes measured model use while an older unloaded-model poll is pending", async () => {
+  let resolveOld!: (value: Response) => void;
+  let reads = 0;
+  const model = { name: "answer", selectable: true, loaded: false, placement: null, cpu_performance: null, size_bytes: 100, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"] };
+  const observed = { ...model, loaded: true, placement: "cpu", cpu_performance: { tokens_per_second: 18, measured_at: new Date().toISOString() } };
+  const snapshot = (value: typeof model | typeof observed) => ({ ...READY, review_engines: { local: { enabled: true, protocol: "ollama", models: [value] } } });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/health")) return response({ status: "ok" });
+    reads += 1;
+    if (reads === 2) return new Promise<Response>((resolve) => { resolveOld = resolve; });
+    return response(snapshot(reads === 1 ? model : observed));
+  }));
+  try {
+    const { result } = renderHook(() => useRuntimeHealth());
+    await waitFor(() => expect(result.current.kind).toBe("healthy"));
+    act(() => { void result.current.check(); });
+    await waitFor(() => expect(reads).toBe(2));
+    act(() => { void result.current.check(true); });
+    await waitFor(() => expect(result.current.readiness?.review_engines?.local.models?.[0]).toEqual(observed));
+    await act(async () => resolveOld(response(snapshot(model))));
+    expect(result.current.readiness?.review_engines?.local.models?.[0]).toEqual(observed);
+  } finally { cleanup(); vi.unstubAllGlobals(); }
+});

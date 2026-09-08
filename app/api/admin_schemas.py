@@ -324,10 +324,26 @@ class SourceInventoryResource(StrictAdminModel):
     name: str
     fiscal_year: int
     on_disk: StrictBool
+    ready: StrictBool = False
+    blocker: str | None = None
+    can_redownload: StrictBool | None = None
+
+
+class AcquisitionPairResource(StrictAdminModel):
+    """Preserve an exact intended filing without a mixed-registry cross product."""
+
+    registry: Literal["sec", "dart"]
+    issuer: str
+    year: StrictInt
 
 
 class AcquisitionDraftResource(StrictAdminModel):
     """Server-provided initial company and fiscal-year selection."""
+
+    pairs: Annotated[
+        tuple[AcquisitionPairResource, ...], BeforeValidator(_tuple_from_json_array)
+    ] = ()
+    revision: str = "default-v1"
 
     identifiers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)]
     years: Annotated[tuple[int, ...], BeforeValidator(_tuple_from_json_array)]
@@ -342,6 +358,7 @@ class CorpusSnapshotResource(StrictAdminModel):
     documents: tuple[CorpusDocumentResource, ...]
     sources: tuple[SourceInventoryResource, ...] = ()
     acquisition_draft: AcquisitionDraftResource | None = None
+    acquisition_companies: tuple[ManifestIssuerResource, ...] = ()
 
 
 class CorpusJobResource(StrictAdminModel):
