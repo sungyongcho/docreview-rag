@@ -47,7 +47,9 @@ from app.api.admin_schemas import (
     UsageResponse,
 )
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
+from app.api.preset_store import PresetCatalog, StoredPreset, preset_store
 from app.api.schemas import ErrorResponse, SnapshotComparisonResponse, SnapshotResource
+from app.config import get_settings
 from app.operator.job_history import HistoryConflictError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -501,3 +503,47 @@ async def reset_local_llm(services: AdminServices) -> dict[str, Any]:
     """Restore the endpoint selected by environment, dotenv, or startup defaults."""
     async with translate_runtime_errors():
         return await services.update_local_connection("reset")
+
+
+def _require_preset_dev() -> None:
+    """Keep file resources unavailable even if admin composition is enabled in PROD."""
+    if get_settings().environment == "prod":
+        raise not_found("presets", "directory")
+
+
+@router.get("/presets", response_model=PresetCatalog)
+def list_presets(services: AdminServices, version: str | None = None) -> PresetCatalog:
+    """Read a debounced catalog or return only its unchanged version."""
+    _require_preset_dev()
+    return preset_store.catalog(version)
+
+
+@router.put("/presets", response_model=StoredPreset)
+def put_preset(preset: StoredPreset, services: AdminServices) -> StoredPreset:
+    """Atomically create or update one custom DEV preset."""
+    _require_preset_dev()
+    try:
+        return preset_store.save(preset)
+    except ValueError as error:
+        raise ApiProblemError(status_code=400, code="invalid_preset", message=str(error)) from error
+    except OSError as error:
+        raise ApiProblemError(
+            status_code=503, code="preset_write_failed", message="Could not write the preset file."
+        ) from error
+
+
+@router.delete("/presets", response_model=PresetCatalog)
+def delete_preset(services: AdminServices, id: str = Query(min_length=1)) -> PresetCatalog:
+    """Delete one custom DEV preset after the UI obtains confirmation."""
+    _require_preset_dev()
+    try:
+        preset_store.delete(id)
+    except ValueError as error:
+        raise ApiProblemError(status_code=400, code="invalid_preset", message=str(error)) from error
+    except FileNotFoundError as error:
+        raise not_found("preset", id) from error
+    except OSError as error:
+        raise ApiProblemError(
+            status_code=503, code="preset_write_failed", message="Could not delete the preset file."
+        ) from error
+    return preset_store.catalog()

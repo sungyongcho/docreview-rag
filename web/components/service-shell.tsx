@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n";
 
 
 import { conversationSettingsError } from "@/lib/saved-presets";
+import { configurePresetStorage } from "@/lib/preset-storage";
 import { SlowCpuNotice } from "./slow-cpu-notice";
 import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
@@ -185,6 +186,10 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const modeLabel = environment ? `${environment.toUpperCase()} MODE` : null;
   const adminLive = adminBuild && permissions?.can_edit_prompt_policy === true;
   const localAllowed = LOCAL_ENGINE_VISIBLE && permissions?.environment === "dev" && permissions.can_configure_local_llm;
+  useEffect(() => {
+    configurePresetStorage(sessionActive && !publicPreview ? permissions : null);
+    return () => configurePresetStorage(null);
+  }, [permissions?.environment, permissions?.can_change_custom_retrieval, sessionActive, publicPreview]);
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
   const helpCapabilities = useMemo(() => permissions ? { ...permissions, can_use_operations: Boolean(operationsAvailable), can_configure_local_llm: Boolean(localAllowed), can_change_custom_retrieval: Boolean(adminLive && permissions.can_change_custom_retrieval), can_edit_run_limits: Boolean(adminLive && permissions.can_edit_run_limits) } : null, [permissions, operationsAvailable, localAllowed, adminLive]);
   const initialized = useRef(false);

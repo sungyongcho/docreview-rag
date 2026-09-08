@@ -600,6 +600,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Presets
+         * @description Read a debounced catalog or return only its unchanged version.
+         */
+        get: operations["list_presets_admin_presets_get"];
+        /**
+         * Put Preset
+         * @description Atomically create or update one custom DEV preset.
+         */
+        put: operations["put_preset_admin_presets_put"];
+        post?: never;
+        /**
+         * Delete Preset
+         * @description Delete one custom DEV preset after the UI obtains confirmation.
+         */
+        delete: operations["delete_preset_admin_presets_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/retrieval/preview": {
         parameters: {
             query?: never;
@@ -2832,6 +2860,33 @@ export interface components {
             queued_count: number;
         };
         /**
+         * PresetCatalog
+         * @description Versioned directory snapshot; unchanged reads omit the catalog payload.
+         */
+        PresetCatalog: {
+            /** Errors */
+            errors?: components["schemas"]["PresetFileError"][];
+            /** Presets */
+            presets?: components["schemas"]["StoredPreset"][];
+            /** Presets Version */
+            presets_version: string;
+            /**
+             * Unchanged
+             * @default false
+             */
+            unchanged: boolean;
+        };
+        /**
+         * PresetFileError
+         * @description A corrupt filename remains visible while other presets stay usable.
+         */
+        PresetFileError: {
+            /** Error */
+            error: string;
+            /** File */
+            file: string;
+        };
+        /**
          * ProcessingSelectionResource
          * @description One exact document selection available for processing.
          */
@@ -3565,6 +3620,29 @@ export interface components {
             retries: number;
             /** Step */
             step: number;
+        };
+        /**
+         * StoredPreset
+         * @description One portable preset; its ID must match its safe JSON filename.
+         */
+        StoredPreset: {
+            /**
+             * Builtin
+             * @default false
+             */
+            builtin: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            retrieval: components["schemas"]["CustomRetrievalProfile"];
+            /** Updated At */
+            updated_at?: string | null;
         };
         /**
          * SupportDowngraded
@@ -5163,6 +5241,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalConnectionResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_presets_admin_presets_get: {
+        parameters: {
+            query?: {
+                version?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresetCatalog"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    put_preset_admin_presets_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoredPreset"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredPreset"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_preset_admin_presets_delete: {
+        parameters: {
+            query: {
+                id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresetCatalog"];
                 };
             };
             /** @description Request validation failed. */

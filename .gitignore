@@ -62,3 +62,9 @@ web/.tutorial/
 
 # Runtime acquisition scopes for parsing only downloaded reports.
 data/corpus/acquired-*-manifest.json
+
+# Custom DEV presets are user data; ship only canonical built-ins.
+data/presets/*.json
+!data/presets/balanced.json
+!data/presets/korean.json
+!data/presets/accuracy.json

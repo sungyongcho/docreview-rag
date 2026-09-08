@@ -4,6 +4,7 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web ./
+COPY data/presets /data/presets
 COPY docs/TUTORIAL /docs/TUTORIAL
 COPY docs/DEVELOPMENT_STORY_OUTLINE.md /docs/DEVELOPMENT_STORY_OUTLINE.md
 # FastAPI serves API routes at the origin root beside the static web base path.
