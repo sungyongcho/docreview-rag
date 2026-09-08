@@ -137,3 +137,12 @@ BM25 재계산은 답변 모델이나 OpenAI를 호출하지 않습니다. 하�
 <!-- Feature: explicit BM25 Compute/Recompute after ingest, overall plus current-stage progress with an indeterminate schema stage, and evaluation waiting/duplicate notices; locale=ko; light mode; preserve existing assets. -->
 
 위의 기존 스크린샷은 BM25 분리와 새 진행률 표시 이전의 기록입니다.
+
+## 답변 모델 (Build 6단계)
+
+Build는 **OpenAI**와 **로컬**을 별도 행으로 표시합니다. 초록색은 답변 준비, 주황색은 설정됐지만 제한이 있는 상태(API 키 없음, 모델 미적재, 15 tok/s 미만의 느린 CPU, 서버 문제), 회색은 미설정을 뜻합니다. 표시된 엔진 중 하나라도 초록색이면 단계는 완료이며, 흐름도에서도 두 상태등을 확인할 수 있습니다. 각 행은 현재 모델을 표시합니다. OpenAI는 키 슬롯, 로컬은 서버 프로토콜·보고된 CPU/GPU 배치·마지막 생성 속도 측정값을 표시합니다. 배치나 측정값이 없으면 정보 없음으로 안내합니다. CPU 측정값은 측정한 모델이 적재된 동안만 표시하며 15분 후 만료됩니다.
+
+OpenAI는 **시스템 상태 열기**, 서버 연결은 **로컬 LLM 설정 열기**를 사용합니다. 모델은 대화 입력창 옆에서 선택합니다. 작성창도 같은 상태등과 사유 툴팁을 사용합니다. 주황색도 선택 가능하지만, 모델이나 연결을 사용할 수 없으면 기존 요청 검증이 이유를 안내합니다. 새 시작 후에는 일반 상태 갱신으로 보존된 Ollama 모델 목록을 확인합니다. 모델 볼륨까지 삭제했다면 빈 서버에 연결된 뒤 **모델 다운로드 필요**를 표시합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: issue 173 answer-model engine rows, CPU placement and measured speed, dual flow-map lights and composer tooltip; state: OpenAI ready plus loaded local CPU model, then unloaded and slow CPU states; locale=ko; light mode; actual runtime evidence required. -->

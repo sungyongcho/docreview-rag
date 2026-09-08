@@ -2,6 +2,9 @@
 import { translate, useI18n, type Locale } from "@/lib/i18n";
 
 
+import { AnswerEngineLight, AnswerEngineRows } from "@/components/answer-engine-light";
+import { answerEngineStates, type AnswerEngineState } from "@/lib/answer-engine-state";
+import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { TerminalHandoff } from "@/components/terminal-handoff";
 import { PipelineReference } from "@/components/pipeline-reference";
 import { DevelopmentBadge } from "@/components/development-badge";
@@ -19,7 +22,7 @@ import type { Pipeline, Stage, StageActionKind, StageStatus } from "@/lib/pipeli
 import { diagnosePreparation } from "@/lib/preparation-diagnostics";
 import type { Diagnosis } from "@/lib/preparation-diagnostics";
 import { stageStatusLabel } from "@/lib/pipeline";
-import type { CorpusDocument, ManifestSummary } from "@/lib/types";
+import type { CorpusDocument, ManifestSummary, Readiness } from "@/lib/types";
 
 export interface AcquisitionPair {
   registry: "sec" | "dart";
@@ -61,6 +64,8 @@ export interface BuildPipelineProps {
   writable?: boolean | null;
   /** "dev key" / "prod key" / "explicit key" / "local" / "off"; `null` while readiness is unknown. */
   answerModel?: string | null;
+  readiness?: Readiness | null;
+  onOpenLocalSettings?: () => void;
   /** Local Operations reachable from this build; the strip then offers service buttons instead of commands. */
   operationsAvailable?: boolean;
   onRunOperation?: (commandId: string) => void;
@@ -107,6 +112,7 @@ function isApiDown(pipeline: Pipeline): boolean {
 export function BuildPipeline(props: BuildPipelineProps) {
   const { t, locale } = useI18n();
   const { pipeline } = props;
+  const answerEngines = answerEngineStates(props.readiness ?? null).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
   const [acquisitionValid, setAcquisitionValid] = useState(true);
   const [selectedChoice, setSelectedId] = useState<Stage["id"] | null>(null);
   const selectedId = selectedChoice ?? pipeline.stages.find((stage) => stage.status === "running")?.id ?? pipeline.next?.id ?? "filings";
@@ -184,6 +190,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         <div className="pipeline-graph" data-tour="stage-list">
           {pipeline.stages.map((stage) => <button key={stage.id} data-help={`build.stage.${stage.id}`} className={`pipeline-node ${stage.id} ${stage.status}`} type="button" aria-label={t("Select {p0}", { p0: t(stage.title) })} aria-pressed={selectedId === stage.id} aria-controls="pipeline-execution" onClick={() => setSelectedId(stage.id)}>
             <span className="pipeline-node-number">{stage.order}</span><strong>{t(stage.title)}</strong><small className="pipeline-node-status"><i className="status-beacon" aria-hidden="true" />{t(stage.statusDetail || stageStatusLabel(stage.status))}</small>
+            {stage.id === "answer_model" && stage.status !== "readonly" && <span className="answer-engine-lights">{answerEngines.map((engine) => <AnswerEngineLight key={engine.id} engine={engine} />)}</span>}
             <span className="pipeline-dependency">{t(STEP_DEPENDENCIES[stage.id])}</span>
           </button>)}
           <span className="pipeline-flow-link source-link" aria-hidden="true"><ArrowDown size={16} /></span>
@@ -208,6 +215,8 @@ export function BuildPipeline(props: BuildPipelineProps) {
           <StageCard
             key={stage.id}
             stage={stage}
+            answerEngines={answerEngines}
+            onOpenLocalSettings={props.onOpenLocalSettings}
             recovery={props.live && !pipeline.readOnly ? <TerminalHandoff diagnosis={diagnosis} technicalDetail={props.schemaStatus === "drifted" && selected.id !== "filings" && selected.id !== "answer_model" ? props.schemaMessage : null} steps={diagnosis.terminalSteps} blocking={diagnosis.state === "blocked"} onNavigate={diagnosis.returnTo !== selected.id ? navigatePreparation : undefined} onRefresh={props.onRefresh} /> : null}
             isNext={pipeline.next?.id === stage.id}
             readOnly={pipeline.readOnly}
@@ -332,6 +341,8 @@ function StatusPill({ status, detail }: { status: StageStatus; detail: string })
 }
 
 interface StageCardProps {
+  answerEngines: AnswerEngineState[];
+  onOpenLocalSettings?: () => void;
   busy: boolean;
   recovery?: ReactNode;
   stage: Stage;
@@ -367,7 +378,7 @@ function manifestSummary(manifest: ManifestSummary, registryCounts: Record<strin
   return parts.join(" · ");
 }
 
-function StageCard({ onDownload, busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, onIngestAdvanced, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, selectedSources = [], selectedDocumentCount = 0, onToggleSource, registryCounts, onIngest, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -391,7 +402,8 @@ function StageCard({ onDownload, busy, onIngestAdvanced, sources = [], onChangeF
             {OPERATOR_STAGES.has(stage.id) && <DevelopmentBadge locale={locale} compact />}
           </div>
           <p className="stage-description">{t(stage.description)}</p>
-          {stage.numbers.length > 0 && (
+          {stage.id === "answer_model" && stage.status !== "readonly" && <AnswerEngineRows engines={answerEngines} onOpenStatus={onOpenStatus} onOpenLocal={onOpenLocalSettings} />}
+          {stage.numbers.length > 0 && (stage.id !== "answer_model" || stage.status === "readonly") && (
             <p className="stage-numbers">
               {stage.numbers.map((item, index) => <Fragment key={`${index}:${t(item)}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}
             </p>
@@ -449,7 +461,6 @@ function StageCard({ onDownload, busy, onIngestAdvanced, sources = [], onChangeF
           </div> : <div className="stage-actions">
             {job && job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
             {stage.action && stage.id !== "filings" && <ActionButton stage={stage} primary={isNext} handler={handler} disabled={disabled} />}
-            {stage.id === "answer_model" && stage.status !== "readonly" && <button className="button ghost" type="button" onClick={onOpenStatus}>{t("Open System status")}</button>}
             {job && <button className="button ghost" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button>}
           </div>}
 

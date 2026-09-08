@@ -37,6 +37,7 @@ class LocalModelInfo:
     quantization_level: str | None = None
     capabilities: tuple[str, ...] | None = None
     loaded: bool | None = None
+    placement: str | None = None
     cpu_performance: LocalCpuPerformance | None = None
 
 
@@ -86,6 +87,16 @@ def _models(payload: object, key: str, name_key: str) -> list[dict[str, Any]]:
 def _text(value: object) -> str | None:
     """Keep optional metadata only when the server supplied nonblank text."""
     return value if isinstance(value, str) and value.strip() else None
+
+
+def _placement(row: dict[str, Any] | None) -> str | None:
+    """Classify current Ollama memory metadata without guessing missing values."""
+    if row is None:
+        return None
+    size, vram = row.get("size"), row.get("size_vram")
+    if type(size) is not int or size <= 0 or type(vram) is not int or vram < 0:
+        return None
+    return "cpu" if vram == 0 else "gpu" if vram >= size else "mixed"
 
 
 class LocalModelInventory:
@@ -295,6 +306,7 @@ class LocalModelInventory:
                     model,
                     loaded=model.name in loaded if loaded is not None else None,
                     cpu_performance=self._cpu_performance(model, loaded),
+                    placement=_placement(loaded.get(model.name) if loaded is not None else None),
                 )
                 for model in models
             )

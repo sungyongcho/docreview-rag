@@ -375,3 +375,39 @@ def test_cpu_measurement_requires_a_known_matching_run_digest(measured_cpu_inven
         model_digest=run_digest,
     )
     assert asyncio.run(inventory.snapshot()).models[0].cpu_performance is None
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (None, None),
+        ({"size": 100, "size_vram": 0}, "cpu"),
+        ({"size": 100, "size_vram": 100}, "gpu"),
+        ({"size": 100, "size_vram": 50}, "mixed"),
+        ({"size": 100}, None),
+        ({"size": 0, "size_vram": 0}, None),
+        ({"size": 100, "size_vram": False}, None),
+    ],
+)
+def test_inventory_publishes_current_placement(row, expected) -> None:
+    """Expose optional placement from the existing discovery probe, without inference."""
+    calls = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        """Serve one model and record the bounded read-only request set."""
+        calls.append(request.url.path)
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "answer", "digest": "v1"}]})
+        if request.url.path == "/api/ps":
+            return httpx.Response(
+                200, json={"models": [] if row is None else [{"name": "answer", **row}]}
+            )
+        assert request.url.path == "/api/show"
+        return httpx.Response(200, json={"capabilities": ["completion"]})
+
+    inventory = LocalModelInventory(
+        base_url="http://localhost:11434", transport=httpx.MockTransport(respond)
+    )
+    snapshot = asyncio.run(inventory.snapshot())
+    assert snapshot.public_state()["models"][0]["placement"] == expected
+    assert sorted(calls) == ["/api/ps", "/api/show", "/api/tags"]
