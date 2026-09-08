@@ -8,6 +8,8 @@ import "./token-select.css";
 export interface TokenOption {
   value: string;
   label: string;
+  meta?: string;
+  downloaded?: boolean;
   badge?: { label: string; tone: "blue" | "amber" };
 }
 
@@ -32,10 +34,12 @@ interface Props {
   commitOnBlur?: boolean;
   autoFocus?: boolean;
   showDropdown?: boolean;
+  /** Keep a plus control inside the search field that opens choices without committing. */
+  integratedAdd?: boolean;
 }
 
 /** Keep editing text separate from committed filters and expose keyboard-friendly choices. */
-export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false, checkable = false, hideValues = false, commitOnBlur = true, autoFocus = false, showDropdown = false }: Props) {
+export function TokenSelect({ label, values, options, onChange, placeholder, hint, disabled, parseCustom, invalidMessage, invalidValues = [], quickOptions, onValidityChange, overlayOptions = false, checkable = false, hideValues = false, commitOnBlur = true, autoFocus = false, showDropdown = false, integratedAdd = false }: Props) {
   const { t } = useI18n();
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -91,7 +95,7 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
     input.current?.focus();
   }
 
-  const showError = (attempted || draft.trim().length > 0) && parsed === null;
+  const showError = (attempted || draft.trim().length > 0) && parsed === null && (!integratedAdd || !suggestions.length);
   const suggestionPanel = (expanded && !disabled && <div id={`${id}-choices`} className="token-options" ref={choices} role="group" aria-label={t("{field} suggestions", { field: label })} onKeyDown={(event) => {
       if (!["ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
       event.preventDefault();
@@ -101,10 +105,10 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
       if (event.key === "Escape" || (event.key === "ArrowUp" && index === 0)) { input.current?.focus(); if (event.key === "Escape") setExpanded(false); }
       else buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
     }}>
-      {suggestions.length ? suggestions.map((option) => <button type="button" key={option.value} role={checkable ? "checkbox" : undefined} aria-checked={checkable ? values.includes(option.value) : undefined} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><span className="token-option-label">{option.label}{" "}{option.badge && <span className={`token-badge token-badge-${option.badge.tone}`}>{option.badge.label}</span>}</span><span aria-hidden="true">{checkable ? (values.includes(option.value) ? "☑" : "☐") : <Plus size={13} />}</span></button>) : <p className="token-hint">{t("No matching choices in this scope.")}</p>}
+      {suggestions.length ? suggestions.map((option) => <button type="button" key={option.value} className={option.downloaded ? "token-option-downloaded" : undefined} aria-description={option.downloaded ? t("Downloaded") : undefined} role={checkable ? "checkbox" : undefined} aria-checked={checkable ? values.includes(option.value) : undefined} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)}><span className="token-option-label">{option.downloaded && <span className="year-downloaded-mark" aria-hidden="true">✓</span>}{option.label}{" "}{option.badge && <span className={`token-badge token-badge-${option.badge.tone}`}>{option.badge.label}</span>}</span>{" "}{option.meta && <small className="token-option-meta">{option.meta}</small>}<span aria-hidden="true">{checkable ? (values.includes(option.value) ? "☑" : "☐") : <Plus size={13} />}</span></button>) : <p className="token-hint">{t("No matching choices in this scope.")}</p>}
     </div>);
 
-  return <div className={`token-select${overlayOptions ? " token-select-overlay" : ""}`} onBlur={(event) => {
+  return <div className={`token-select${integratedAdd ? " token-select-integrated" : ""}${overlayOptions ? " token-select-overlay" : ""}`} onBlur={(event) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     setExpanded(false);
     if (commitOnBlur) commit();
@@ -155,8 +159,9 @@ export function TokenSelect({ label, values, options, onChange, placeholder, hin
           }
           if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); setExpanded(false); }
         }} />
+      {integratedAdd && <button className="token-add" type="button" disabled={disabled} aria-label={t("Show {field} choices", { field: label })} aria-expanded={expanded && !disabled} onMouseDown={event => event.preventDefault()} onClick={() => { setExpanded(true); input.current?.focus(); }}><Plus size={16} aria-hidden="true" /></button>}
       {showDropdown && <button className="token-add token-dropdown" type="button" disabled={disabled} aria-label={t("Show {field} choices", { field: label })} aria-expanded={expanded && !disabled} aria-controls={expanded && !disabled ? `${id}-choices` : undefined} onMouseDown={event => event.preventDefault()} onClick={() => setExpanded(value => !value)}><ChevronDown size={16} aria-hidden="true" /></button>}
-      {parseCustom && <button className="token-add" type="button" disabled={disabled || !draft.trim() || parsed === null} aria-label={t("Add {field}", { field: label })} onClick={() => { commit(); input.current?.focus(); }}><Plus size={16} aria-hidden="true" /></button>}
+      {parseCustom && !integratedAdd && <button className="token-add" type="button" disabled={disabled || !draft.trim() || parsed === null} aria-label={t("Add {field}", { field: label })} onClick={() => { commit(); input.current?.focus(); }}><Plus size={16} aria-hidden="true" /></button>}
       {overlayOptions && suggestionPanel}
     </div>
     <p className="token-hint" id={`${id}-hint`}>{hint ?? t("Search and choose. Remove a chip to undo.")}</p>

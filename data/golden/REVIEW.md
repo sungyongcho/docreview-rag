@@ -1,4 +1,82 @@
-# M3 golden-set review queue
+# Built-in golden set review
+
+## Integration update — 2026-09-08
+
+The evaluator now binds required official filing identities through
+`requirements/sources.json`, verifies unchanged source hashes and spans, and maps runtime
+answer IDs to current acquisition IDs without editing golden JSON. Shared preflight runs
+before job admission and again before execution. Missing sources and stale parsed/index
+inputs are preparation states. Built-in and user-revision provenance remain separate from
+human review; no approval flags were upgraded. The audit snapshot below predates this fix.
+
+## Current audit — 2026-09-08
+
+“Built-in golden set” describes bundled evaluation questions and reference evidence. It does
+not mean human-approved ground truth or readiness against every locally acquired corpus.
+All seven currently registered suites remain `agent-curated`, `pending-author-approval`,
+and `human_verified: false`.
+
+### Dataset structure
+
+All 172 cases passed the current `GoldenCase` schema and `validate_unique_cases` checks,
+including question/ID/span uniqueness within each suite and positive/absent contracts.
+There are 150 positive cases and 22 absent cases across the seven language/version files;
+these totals include parallel language versions, not 172 distinct questions.
+
+| File | Cases | Positive | Absent | Referenced documents |
+|---|---:|---:|---:|---:|
+| `retrieval.json` | 28 | 24 | 4 | 20 |
+| `retrieval_ko.json` | 28 | 24 | 4 | 20 |
+| `sec_en_v2_astra.json` | 20 | 18 | 2 | 16 |
+| `sec_ko_v2_astra.json` | 20 | 18 | 2 | 16 |
+| `sec_mixed_v2_astra.json` | 20 | 18 | 2 | 16 |
+| `dart_retrieval.json` | 28 | 24 | 4 | 2 |
+| `dart_retrieval_ko.json` | 28 | 24 | 4 | 2 |
+
+### Current corpus compatibility
+
+The inspected local manifest contains six SK hynix annual reports for FY2020–FY2025.
+It has no SEC reports and no Samsung Electronics FY2024 report. Its selection IDs are
+acquisition-generated DART identifiers, not `sec-evaluation` or `dart-evaluation`.
+The evaluation service still requires these fixed selection names. Consequently, no
+complete bundled suite is currently executable through the existing loader.
+
+The DART suites each require SK hynix FY2024 and Samsung Electronics FY2024. For SK hynix:
+
+- Golden document identity: `000660-FY2024`.
+- Current acquired identity: `dart-20250319000665`.
+- Exact decoded-source SHA-256 matches all 12 referenced spans in each language file:
+  `bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20`.
+- All 12 intervals are within the current source. The Korean questions and reference
+  answers were compared with the extracted intervals; no unsupported answer claim was
+  identified in that bounded agent review.
+- This verifies 12 shared source intervals, not 24 independent pieces of evidence, and
+  does not establish human approval or corpus-wide answer uniqueness.
+
+The missing Samsung and SEC sources were not downloaded. Their source hashes, intervals,
+and answer claims were not revalidated in this audit. Absent-case correctness also remains
+unverified against the intended full evaluation corpus; a smaller local corpus cannot prove
+that an answer is absent from the benchmark corpus.
+
+### Required updates before runnable evaluation
+
+1. Replace the evaluator's dependency on acquisition selection names with explicit,
+   versioned evaluation-source requirements. Bind official filing identity and exact
+   source hash; reconcile document identity consistently in both cases and retrieval.
+2. Expose required-versus-present sources per built-in suite, and validate parsing and
+   the chosen retrieval index before queueing a job. Report missing data as preparation
+   requirements rather than discovering it after the job starts.
+3. Obtain and verify missing sources before changing reference answers, hashes, or offsets.
+   Do not fabricate aliases, remove inconvenient cases, or relabel unreviewed data as approved.
+4. Record the evaluated corpus scope and golden-set version in each result. Revalidate
+   absent cases if the corpus scope changes.
+
+No golden JSON, raw source, database, approval flag, or evaluation result was modified by
+this audit. The historical SEC-only notes below are retained as prior evidence; their old
+source-validation claims do not establish readiness for today's local corpus. In particular,
+the current base SEC files reference 19 documents, whereas those notes describe 20.
+
+## Historical SEC-only review
 
 ## Status
 

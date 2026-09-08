@@ -64,7 +64,9 @@ class SourceDeletion:
         changes: dict[str, bytes | None] = {}
         for artifact in sorted(targets, key=lambda a: a.path):
             document = by_id[artifact.document_id]
-            if artifact.path != fixed_path(document.registry, document.filing_id, artifact.role):
+            if artifact.path != fixed_path(
+                document.registry, document.issuer, document.filing_id, artifact.role
+            ):
                 raise ValueError(
                     "Unsupported current source path; legacy files require explicit cleanup."
                 )

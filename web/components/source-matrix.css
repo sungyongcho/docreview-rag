@@ -1,5 +1,8 @@
 .source-matrix, .source-selection-grid { display: grid; gap: 10px; min-width: 0; }
-.source-matrix-summary { margin: 0; font-size: 12px; color: var(--muted); }
+.source-matrix-summary { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); font-variant-numeric: tabular-nums; }
+.source-matrix-summary > span { white-space: nowrap; }
+.source-matrix-summary > span:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.source-basket > .source-matrix-summary { margin-top: -6px; }
 .source-matrix-actions, .source-picker-context, .source-matrix-plan header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .source-matrix-registry { container-type: inline-size; border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-width: 0; }
 .source-matrix-registry h4, .source-matrix-plan h4 { margin: 0 0 6px; font-size: 12px; }
@@ -26,3 +29,91 @@
 .source-matrix button:disabled { cursor: default; opacity: .55; }
 @container (max-width: 560px) { .source-matrix-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }.source-matrix-years { grid-column: 1 / -1; grid-row: 2; }.source-matrix-row-summary { grid-column: 2; grid-row: 1; } }
 @container (max-width: 420px) { .source-matrix-years.aligned { display: flex; flex-wrap: wrap; } }
+
+
+.source-company-search { order: -1; }
+.source-company-search .token-search-row { position: relative; }
+.source-company-search .token-search-row input { padding-right: 44px; }
+.source-company-search .token-search-row > .token-add { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border: 0; background: transparent; }
+.source-company-search .token-options { max-height: 230px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.source-basket { display: grid; gap: 12px; border: 1px solid var(--border); padding: 14px; border-radius: 10px; min-width: 0; }
+.source-basket > header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.source-basket > header h4 { margin: 0; font-size: 14px; }
+.source-basket > header span { color: var(--muted); font-size: 12px; }
+.source-basket-companies { display: flex; flex-wrap: wrap; gap: 6px; }
+.source-basket-companies > button { border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 7px 10px; font-size: 12px; }
+.source-basket-companies > button[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); }
+.source-basket .source-matrix-add { padding-top: 10px; border-top: 1px solid var(--border); }
+.source-basket .token-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 5px; max-height: 180px; overflow-y: auto; }
+.source-basket .token-options > button { border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.source-basket .token-options > button[aria-checked="true"] { background: var(--surface-2); border-color: var(--accent); }
+.source-company-search .token-options > button { padding: 8px 10px; min-height: 36px; gap: 10px; font-size: 12px; }
+.source-company-search .token-option-label { flex: 1; min-width: 0; gap: 6px; text-align: left; }
+.source-company-search .token-option-meta { flex: none; margin-left: auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.source-company-search .token-badge { border-radius: 3px; padding: 1px 4px; font-size: 9px; font-weight: 500; letter-spacing: .03em; border-color: color-mix(in srgb, currentColor 20%, transparent); background: transparent; }
+.source-company-search .token-badge-blue { color: light-dark(#365878, #a6bcd2); }
+.source-company-search .token-badge-amber { color: light-dark(#765f38, #c8b68d); }
+.source-company-search .token-search-row > .token-options { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20; margin: 0; box-shadow: 0 8px 24px #0003; }
+
+.source-basket-tools { display: flex; align-items: center; gap: 6px; }
+.source-basket-tool { position: relative; display: inline-flex; }
+.source-basket-tool > button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 1px solid color-mix(in srgb, var(--text) 12%, transparent); border-radius: 6px; background: transparent; color: var(--muted); }
+.source-basket-tool > button:hover { color: var(--text); background: var(--surface-2); }
+.source-basket-tool > [role="tooltip"] { display: none; position: absolute; right: 0; top: calc(100% + 5px); z-index: 25; width: max-content; max-width: 220px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); box-shadow: 0 4px 14px #0003; font-size: 11px; }
+.source-basket-tool:hover > [role="tooltip"], .source-basket-tool:focus-within > [role="tooltip"] { display: block; }
+
+/* Match saved-source and editable year controls without stretching year chips. */
+.source-basket .source-matrix-row { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; padding: 8px 0; }
+.source-basket .source-matrix-company { grid-column: 1; font-size: 12px; }
+.source-basket .source-matrix-row-summary { grid-column: 2; grid-row: 1; }
+.source-basket .source-matrix-years, .source-basket .source-matrix-years.aligned { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 5px; }
+.source-basket .source-selection-grid .source-matrix-year { min-height: 28px; min-width: 70px; width: auto; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); border-radius: 5px; font-size: 11px; box-shadow: none; }
+.source-basket .source-selection-grid .source-matrix-year.selected { border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: var(--surface-2); box-shadow: none; }
+.year-downloaded-mark { color: light-dark(#23794b, #79c99b); font-weight: 700; }
+.year-missing-mark { color: var(--muted); }
+.source-basket .source-matrix-add .token-options { display: flex; flex-direction: row; flex-wrap: wrap; gap: 5px; padding: 6px 0; border: 0; background: transparent; max-height: 160px; }
+.source-basket .source-matrix-add .token-options > button { flex: none; width: auto; min-height: 28px; min-width: 70px; padding: 4px 8px; gap: 7px; border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); font-size: 11px; }
+.source-basket .source-matrix-add .token-options > button[aria-checked="true"] { border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: var(--surface-2); }
+.source-basket .source-matrix-add .token-option-label { gap: 4px; }
+.source-basket .source-matrix-add .token-search-row { max-width: 350px; }
+.source-basket .source-matrix-add .token-search-row input { min-height: 32px; height: 32px; padding: 5px 9px; font-size: 12px; }
+.source-basket .source-matrix-add .token-add { min-height: 30px; height: 30px; width: 30px; padding: 0; }
+
+.source-year-legend { margin: -4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.source-basket .source-matrix-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.source-basket .source-matrix-row-summary { grid-column: 2; grid-row: 1; }
+.source-company-controls { grid-column: 3; grid-row: 1; display: flex; gap: 4px; }
+.source-company-controls > button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 1px solid color-mix(in srgb, var(--text) 12%, transparent); border-radius: 5px; background: transparent; color: var(--muted); }
+.source-company-controls > button:hover { color: var(--text); background: var(--surface-2); }
+.source-basket .source-matrix-row > .source-matrix-add { grid-column: 1 / -1; grid-row: 3; margin-top: 2px; padding-top: 8px; }
+
+.source-year-candidates { display: flex; flex-wrap: wrap; gap: 5px; }
+.source-year-candidates > button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 27px; padding: 4px 8px; border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); border-radius: 5px; background: transparent; color: var(--muted); font-size: 11px; }
+.source-year-candidates > button:hover { color: var(--text); border-style: solid; background: var(--surface-2); }
+.source-basket .source-selection-grid .source-matrix-year.missing.selected { color: light-dark(#96520e, #e9b976); border-color: color-mix(in srgb, #d69a48 55%, var(--border)); background: color-mix(in srgb, #d69a48 9%, var(--surface)); }
+.source-basket .source-matrix-year.missing.selected .year-missing-mark { color: inherit; }
+.source-year-pending { color: light-dark(#96520e, #e9b976); }
+
+.source-year-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 14px; }
+.source-year-legend > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.source-year-legend .source-year-pending { font-weight: 700; }
+.source-year-selected-key { display: inline-block; width: 11px; height: 11px; border: 1px solid var(--accent); border-radius: 3px; background: var(--surface-2); }
+
+.source-basket { position: relative; }
+.source-basket-title { display: inline-flex; align-items: center; gap: 5px; }
+.source-scope-trigger { display: inline-flex; }
+.source-scope-trigger > button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--muted); }
+.source-scope-trigger > button:hover, .source-scope-trigger > button:focus-visible { color: var(--text); }
+.source-scope-tooltip { position: absolute; top: 46px; left: 12px; z-index: 30; box-sizing: border-box; width: 330px; max-width: calc(100% - 24px); padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 8px 24px #0003; font-size: 11px; line-height: 1.5; }
+.source-scope-tooltip::before { content: ""; position: absolute; left: 0; right: 0; top: -15px; height: 15px; }
+.source-scope-tooltip > strong { font-size: 12px; }
+.source-scope-tooltip p { margin: 5px 0; color: var(--muted); }
+.source-scope-tooltip dl { margin: 8px 0; }
+.source-scope-tooltip dl > div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 7px; padding: 4px 0; }
+.source-scope-tooltip dt { font-weight: 600; }
+.source-scope-tooltip dd { margin: 0; overflow-wrap: anywhere; }
+
+.source-basket > .source-matrix-plan { padding-top: 9px; }
+.source-sync-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap; }
+.source-sync-actions > p { margin: 0; color: var(--muted); font-size: 11px; }
+.source-sync-actions > .button { min-height: 32px; padding: 6px 12px; font-size: 12px; }

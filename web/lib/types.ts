@@ -20,10 +20,8 @@ export type RetrievalPreset = "balanced" | "korean" | "accuracy" | "custom";
 export interface ExperimentDefaults {
   suite_id: SuiteId;
   golden_revision_id: number | null;
-  snapshot_id: number | null;
   mode: "quick" | "matrix";
-  baseline_snapshot_id: number | null;
-  retrieval_preset: RetrievalPreset;
+
 }
 
 export interface WorkflowBudget {
@@ -164,6 +162,7 @@ export interface Readiness {
     pending_embeddings: number | null;
     bm25_ready: boolean | null;
     bm25_rebuild_recorded?: boolean | null;
+    updating?: boolean;
     writable: boolean | null;
   };
 }
@@ -181,6 +180,7 @@ export interface Conversation {
   profile: ReviewSessionDraft | null;
 }
 
+export type EvaluationPreparation = components["schemas"]["EvaluationPreparationResource"];
 export type GoldenSuite = components["schemas"]["GoldenSuiteResource"];
 
 export type EvaluationRequest = components["schemas"]["EvaluationRunRequest"] & Required<Pick<components["schemas"]["EvaluationRunRequest"], "profile">>;
@@ -274,10 +274,8 @@ export const DEFAULT_PROFILE: RetrievalProfile = {
 export const DEFAULT_EXPERIMENT_DEFAULTS: ExperimentDefaults = {
   suite_id: "sec-en",
   golden_revision_id: null,
-  snapshot_id: null,
   mode: "quick",
-  baseline_snapshot_id: null,
-  retrieval_preset: "balanced",
+
 };
 
 export const DEFAULT_SESSION_PROFILE: ReviewSessionDraft = {
@@ -312,6 +310,7 @@ export const DEFAULT_SESSION_PROFILE: ReviewSessionDraft = {
 };
 
 export interface Capabilities {
+  browser_reset_id?: string | null;
   environment: "dev" | "prod";
   can_configure_local_llm: boolean;
   can_edit_prompt_policy: boolean;

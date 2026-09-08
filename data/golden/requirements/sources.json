@@ -1,0 +1,134 @@
+{
+  "000660-FY2024": {
+    "filing_id": "20250319000665",
+    "fiscal_year": 2024,
+    "issuer": "000660",
+    "registry": "dart"
+  },
+  "005930-FY2024": {
+    "filing_id": "20250311001085",
+    "fiscal_year": 2024,
+    "issuer": "005930",
+    "registry": "dart"
+  },
+  "AMD-FY2019": {
+    "filing_id": "0000002488-20-000008",
+    "fiscal_year": 2019,
+    "issuer": "AMD",
+    "registry": "sec"
+  },
+  "AMD-FY2020": {
+    "filing_id": "0001628280-21-001185",
+    "fiscal_year": 2020,
+    "issuer": "AMD",
+    "registry": "sec"
+  },
+  "AMD-FY2021": {
+    "filing_id": "0000002488-22-000016",
+    "fiscal_year": 2021,
+    "issuer": "AMD",
+    "registry": "sec"
+  },
+  "AMD-FY2022": {
+    "filing_id": "0000002488-23-000047",
+    "fiscal_year": 2022,
+    "issuer": "AMD",
+    "registry": "sec"
+  },
+  "AMD-FY2023": {
+    "filing_id": "0000002488-24-000012",
+    "fiscal_year": 2023,
+    "issuer": "AMD",
+    "registry": "sec"
+  },
+  "INTC-FY2019": {
+    "filing_id": "0000050863-20-000011",
+    "fiscal_year": 2019,
+    "issuer": "INTC",
+    "registry": "sec"
+  },
+  "INTC-FY2020": {
+    "filing_id": "0000050863-21-000010",
+    "fiscal_year": 2020,
+    "issuer": "INTC",
+    "registry": "sec"
+  },
+  "INTC-FY2021": {
+    "filing_id": "0000050863-22-000007",
+    "fiscal_year": 2021,
+    "issuer": "INTC",
+    "registry": "sec"
+  },
+  "INTC-FY2022": {
+    "filing_id": "0000050863-23-000006",
+    "fiscal_year": 2022,
+    "issuer": "INTC",
+    "registry": "sec"
+  },
+  "INTC-FY2023": {
+    "filing_id": "0000050863-24-000010",
+    "fiscal_year": 2023,
+    "issuer": "INTC",
+    "registry": "sec"
+  },
+  "MU-FY2020": {
+    "filing_id": "0000723125-20-000082",
+    "fiscal_year": 2020,
+    "issuer": "MU",
+    "registry": "sec"
+  },
+  "MU-FY2021": {
+    "filing_id": "0000723125-21-000065",
+    "fiscal_year": 2021,
+    "issuer": "MU",
+    "registry": "sec"
+  },
+  "MU-FY2022": {
+    "filing_id": "0000723125-22-000048",
+    "fiscal_year": 2022,
+    "issuer": "MU",
+    "registry": "sec"
+  },
+  "MU-FY2023": {
+    "filing_id": "0000723125-23-000054",
+    "fiscal_year": 2023,
+    "issuer": "MU",
+    "registry": "sec"
+  },
+  "MU-FY2024": {
+    "filing_id": "0000723125-24-000027",
+    "fiscal_year": 2024,
+    "issuer": "MU",
+    "registry": "sec"
+  },
+  "NVDA-FY2020": {
+    "filing_id": "0001045810-20-000010",
+    "fiscal_year": 2020,
+    "issuer": "NVDA",
+    "registry": "sec"
+  },
+  "NVDA-FY2021": {
+    "filing_id": "0001045810-21-000010",
+    "fiscal_year": 2021,
+    "issuer": "NVDA",
+    "registry": "sec"
+  },
+  "NVDA-FY2022": {
+    "filing_id": "0001045810-22-000036",
+    "fiscal_year": 2022,
+    "issuer": "NVDA",
+    "registry": "sec"
+  },
+  "NVDA-FY2023": {
+    "filing_id": "0001045810-23-000017",
+    "fiscal_year": 2023,
+    "issuer": "NVDA",
+    "registry": "sec"
+  },
+  "NVDA-FY2024": {
+    "filing_id": "0001045810-24-000029",
+    "fiscal_year": 2024,
+    "issuer": "NVDA",
+    "registry": "sec"
+  }
+}

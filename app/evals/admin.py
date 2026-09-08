@@ -15,6 +15,7 @@ from typing import Any, Final, Literal, Protocol
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_schemas import (
@@ -24,6 +25,7 @@ from app.api.admin_schemas import (
     EvaluationJobResource,
     EvaluationJobsResponse,
     EvaluationMetricDelta,
+    EvaluationPreparationResource,
     EvaluationResultDetailResponse,
     EvaluationRunRequest,
     GoldenSuiteId,
@@ -32,18 +34,16 @@ from app.api.admin_schemas import (
 )
 from app.config import Settings, get_settings
 from app.corpus_admin import CorpusStatus
-from app.db.models import EvalResult, GoldenRevision
+from app.db.models import Chunk, EvalResult
 from app.evals.arms import Retriever, make_retriever
 from app.evals.artifacts import read_strict_json
+from app.evals.drafts import DraftInputError, executable_cases
 from app.evals.identity import artifact_filename
 from app.evals.index_identity import index_fingerprint
 from app.evals.loader import (
     GOLDEN_CASES,
     GoldenDataError,
-    SourceMissingError,
     encode_golden_payload,
-    load_golden_cases,
-    validate_golden_payload,
 )
 from app.evals.retrieval_eval import (
     evaluate_retriever,
@@ -51,6 +51,7 @@ from app.evals.retrieval_eval import (
     write_evaluation_artifact,
 )
 from app.evals.run import _run_cli, arguments
+from app.evals.source_binding import BoundGolden, bind_golden, matrix_scope
 from app.evals.types import GoldenCase
 from app.operator.jobs import (
     JobExecutionCoordinator,
@@ -93,11 +94,6 @@ class GoldenSuiteDefinition:
     corpus_language: Literal["en", "ko"]
     golden_name: str
     manifest_name: str
-
-    @property
-    def selection_id(self) -> str:
-        """Bind the suite to its committed registry evaluation selection."""
-        return f"{self.registry}-evaluation"
 
 
 SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
@@ -170,6 +166,14 @@ class EvaluationAlreadyQueuedError(ValueError):
         super().__init__(f"The same evaluation is already queued: {job_id}. Open Jobs to view it.")
 
 
+class EvaluationNotReadyError(ValueError):
+    """Reject a request before creating any job when its evaluation inputs are not prepared."""
+
+    def __init__(self, preparation: EvaluationPreparationResource) -> None:
+        self.preparation = preparation
+        super().__init__("; ".join(preparation.blockers) or preparation.state)
+
+
 class EvaluationAdminService:
     """Run golden evaluations serially and retain bounded in-process job state."""
 
@@ -230,19 +234,32 @@ class EvaluationAdminService:
             source_ready = True
             source_error = None
             source_error_code = None
+            checks = ()
             try:
-                load_golden_cases(
-                    golden_path, manifest_path=manifest_path, selection_id=definition.selection_id
+                bound = await asyncio.to_thread(
+                    bind_golden, payload, manifest_path, definition.registry
                 )
-            except (GoldenDataError, OSError) as error:
+                checks = bound.sources
+                source_ready = bound.ready
+                failed = [source for source in checks if source.state != "ready"]
+                if failed:
+                    source_error_code = (
+                        "source_invalid"
+                        if any(source.state == "source_invalid" for source in failed)
+                        else "source_missing"
+                    )
+                    source_error = "; ".join(
+                        f"{source.issuer} FY{source.fiscal_year}: {source.detail}"
+                        for source in failed
+                    )
+            except (GoldenDataError, OSError, ValueError) as error:
                 source_ready = False
                 source_error = str(error)
-                source_error_code = (
-                    "source_missing" if isinstance(error, SourceMissingError) else "source_invalid"
-                )
+                source_error_code = "source_invalid"
             positive = sum(bool(case.answers) for case in cases)
             resources.append(
                 GoldenSuiteResource(
+                    filename=golden_path.name,
                     suite_id=definition.suite_id,
                     label=definition.label,
                     registry=definition.registry,
@@ -256,11 +273,182 @@ class EvaluationAdminService:
                     human_verified=False,
                     golden_sha256=self._golden_sha256(golden_path),
                     source_ready=source_ready,
+                    source_checks=checks,
                     source_error=source_error,
                     source_error_code=source_error_code,
                 )
             )
         return tuple(resources)
+
+    async def _bound_golden(self, request: EvaluationRunRequest) -> tuple[BoundGolden, str]:
+        """Bind the exact canonical file or selected user revision to current official sources."""
+        golden_path, manifest_path = self._suite_paths(request.suite_id)
+        if request.golden_revision_id is None:
+            payload = read_strict_json(golden_path, error=GoldenDataError)
+            digest = self._golden_sha256(golden_path)
+        else:
+            payload, digest = await self._golden_revision_payload(request)
+        if not payload:
+            raise GoldenDataError("Add at least one question before evaluating")
+        bound = await asyncio.to_thread(
+            bind_golden, payload, manifest_path, self._definition(request.suite_id).registry
+        )
+        return bound, digest
+
+    async def preparation(self, request: EvaluationRunRequest) -> EvaluationPreparationResource:
+        """Check sources, exact parsed-source identities, and only the requested search indexes."""
+        base: dict[str, Any] = {
+            "suite_id": request.suite_id,
+            "kind": "builtin" if request.golden_revision_id is None else "user",
+        }
+        try:
+            bound, digest = await self._bound_golden(request)
+        except DraftInputError as error:
+            return EvaluationPreparationResource(
+                **base,
+                state="draft_incomplete",
+                blockers=tuple(issue.message for issue in error.issues),
+            )
+        except (OSError, ValueError) as error:
+            return EvaluationPreparationResource(
+                **base, state="source_invalid", next_step="filings", blockers=(str(error),)
+            )
+        except SQLAlchemyError:
+            return EvaluationPreparationResource(
+                **base,
+                state="unavailable",
+                next_step="setup",
+                blockers=("Evaluation preparation status is unavailable.",),
+            )
+        base.update(source_checks=bound.sources, golden_sha256=digest)
+        failed = [source for source in bound.sources if source.state != "ready"]
+        if failed:
+            return EvaluationPreparationResource(
+                **base,
+                state="source_invalid"
+                if any(source.state == "source_invalid" for source in failed)
+                else "source_missing",
+                next_step="filings",
+                blockers=tuple(
+                    f"{source.issuer} FY{source.fiscal_year}: {source.detail}" for source in failed
+                ),
+            )
+        # Matrix builds its own indexes but still requires verified source bytes.
+        if request.mode == "matrix":
+            if self._corpus_status is None:
+                return EvaluationPreparationResource(
+                    **base,
+                    state="unavailable",
+                    next_step="setup",
+                    blockers=("Evaluation preparation status is unavailable.",),
+                )
+            try:
+                matrix_status = await self._corpus_status()
+                if (
+                    not matrix_status.database_connected
+                    or matrix_status.schema_status != "compatible"
+                    or not matrix_status.writable
+                ):
+                    return EvaluationPreparationResource(
+                        **base,
+                        state="unavailable",
+                        next_step="setup",
+                        blockers=(
+                            "Evaluation requires a compatible database "
+                            "and writable source storage.",
+                        ),
+                    )
+                await asyncio.to_thread(
+                    matrix_scope,
+                    self._suite_paths(request.suite_id)[1],
+                    self._definition(request.suite_id).registry,
+                )
+            except (OSError, ValueError) as error:
+                return EvaluationPreparationResource(
+                    **base, state="source_invalid", next_step="filings", blockers=(str(error),)
+                )
+            except SQLAlchemyError:
+                return EvaluationPreparationResource(
+                    **base,
+                    state="unavailable",
+                    next_step="setup",
+                    blockers=("Evaluation preparation status is unavailable.",),
+                )
+            return EvaluationPreparationResource(**base, state="ready")
+        if self._corpus_status is None:
+            return EvaluationPreparationResource(
+                **base,
+                state="unavailable",
+                next_step="setup",
+                blockers=("Evaluation preparation status is unavailable.",),
+            )
+        status = None
+        try:
+            status = await self._corpus_status()
+            if not status.database_connected or status.schema_status != "compatible":
+                return EvaluationPreparationResource(
+                    **base,
+                    state="unavailable",
+                    next_step="setup",
+                    blockers=("Evaluation requires a compatible database.",),
+                )
+            if not status.chunks:
+                return EvaluationPreparationResource(
+                    **base,
+                    state="parsing_required",
+                    next_step="index",
+                    blockers=("Parse and chunk the required originals before evaluation.",),
+                )
+            missing = await self._missing_parsed_sources(bound.cases)
+            if missing:
+                return EvaluationPreparationResource(
+                    **base,
+                    state="parsing_required",
+                    next_step="index",
+                    blockers=tuple(
+                        f"Parse and chunk the required original: {doc_id}"
+                        for doc_id, _ in sorted(missing)
+                    ),
+                )
+            await self._require_preparation(request, allow_pending=False)
+        except ValueError as error:
+            if status is None:
+                return EvaluationPreparationResource(
+                    **base,
+                    state="unavailable",
+                    next_step="setup",
+                    blockers=("Evaluation preparation status is unavailable.",),
+                )
+            return EvaluationPreparationResource(
+                **base, state="index_update_required", blockers=(str(error),)
+            )
+        except SQLAlchemyError, OSError:
+            return EvaluationPreparationResource(
+                **base,
+                state="unavailable",
+                next_step="setup",
+                blockers=("Evaluation preparation status is unavailable.",),
+            )
+        return EvaluationPreparationResource(**base, state="ready")
+
+    async def _missing_parsed_sources(self, cases: tuple[GoldenCase, ...]) -> set[tuple[str, str]]:
+        """Require indexed chunks of each exact evidence-document source version."""
+        expected = {
+            (answer.doc_id, str(answer.source_sha256)) for case in cases for answer in case.answers
+        }
+        if not expected:
+            return set()
+        async with self._session_factory() as session:
+            found = set(
+                (
+                    await session.execute(
+                        select(Chunk.doc_id, Chunk.source_sha256)
+                        .where(Chunk.doc_id.in_({doc_id for doc_id, _ in expected}))
+                        .distinct()
+                    )
+                ).all()
+            )
+        return expected - found
 
     async def enqueue(
         self, request: EvaluationRunRequest, *, retry_of: str | None = None
@@ -291,7 +479,11 @@ class EvaluationAdminService:
             needed.append(
                 ("backfill_embeddings", "Complete embeddings before evaluation (step 3).")
             )
-        if request.profile.strategy in {"hybrid", "lexical"} and not status.bm25_ready:
+        if (
+            request.profile.strategy in {"hybrid", "lexical"}
+            and request.profile.lexical_ranker == "bm25"
+            and not status.bm25_ready
+        ):
             needed.append(("rebuild_bm25", "Compute BM25 before evaluation (step 4)."))
         for kind, message in needed:
             if not (allow_pending and self._execution_coordinator.has_kind(kind)):
@@ -322,7 +514,9 @@ class EvaluationAdminService:
                     and set(other.strategies) == set(request.strategies)
                 ):
                     raise EvaluationAlreadyQueuedError(existing.job_id)
-        await self._require_preparation(request, allow_pending=True)
+        preparation = await self.preparation(request)
+        if preparation.state != "ready":
+            raise EvaluationNotReadyError(preparation)
         if self._queue.full():
             raise RuntimeError("evaluation queue is full")
         job_id = f"eval-{uuid4().hex}"
@@ -587,41 +781,55 @@ class EvaluationAdminService:
                 return row
         return None
 
+    def _dataset_provenance(self, request: EvaluationRunRequest, digest: str) -> dict[str, Any]:
+        """Freeze the filename and content identity used by this evaluation."""
+        from app.evals.golden_admin import GoldenAdminService
+
+        filename = (
+            self._definition(request.suite_id).golden_name
+            if request.golden_revision_id is None
+            else GoldenAdminService(golden_dir=self._golden_dir)
+            .get(request.golden_revision_id)
+            .filename
+        )
+        return {
+            "filename": filename,
+            "dataset_id": f"builtin:{request.suite_id}"
+            if request.golden_revision_id is None
+            else f"file:{request.golden_revision_id}",
+            "kind": "builtin" if request.golden_revision_id is None else "user",
+            "verification_status": "pending_review",
+            "golden_sha256": digest,
+            "golden_revision_id": request.golden_revision_id,
+        }
+
     async def _golden_revision_payload(
         self, request: EvaluationRunRequest
     ) -> tuple[list[dict[str, object]], str]:
-        """Load one exact DB revision after binding it to the requested suite."""
+        """Load one exact user dataset file bound to the requested suite."""
         assert request.golden_revision_id is not None
-        async with self._session_factory() as session:
-            revision = await session.get(GoldenRevision, request.golden_revision_id)
-        if revision is None:
-            raise ValueError("golden revision does not exist")
+        from app.evals.golden_admin import GoldenAdminService
+
+        revision = GoldenAdminService(golden_dir=self._golden_dir).get(request.golden_revision_id)
         if revision.suite_id != request.suite_id:
             raise ValueError("golden revision does not belong to the requested suite")
+        executable_cases(revision.payload)
         return [dict(item) for item in revision.payload], revision.sha256
 
     async def _evaluation_cases(
         self, request: EvaluationRunRequest
     ) -> tuple[list[GoldenCase], str]:
-        """Resolve canonical or DB-revision cases and their exact byte identity."""
-        golden_path, manifest_path = self._suite_paths(request.suite_id)
-        if request.golden_revision_id is None:
-            cases = await asyncio.to_thread(
-                load_golden_cases,
-                golden_path,
-                manifest_path=manifest_path,
-                selection_id=self._definition(request.suite_id).selection_id,
+        """Resolve built-in or user-file cases and their exact content identity."""
+        bound, digest = await self._bound_golden(request)
+        if not bound.ready:
+            raise GoldenDataError(
+                "; ".join(
+                    source.detail or source.state
+                    for source in bound.sources
+                    if source.state != "ready"
+                )
             )
-            return cases, self._golden_sha256(golden_path)
-        payload, sha256 = await self._golden_revision_payload(request)
-        cases = await asyncio.to_thread(
-            validate_golden_payload,
-            payload,
-            manifest_path=manifest_path,
-            selection_id=self._definition(request.suite_id).selection_id,
-            label=f"golden revision {request.golden_revision_id}",
-        )
-        return cases, sha256
+        return list(bound.cases), digest
 
     async def _quick(
         self, job_id: str, request: EvaluationRunRequest
@@ -632,7 +840,9 @@ class EvaluationAdminService:
             job_id, stage="golden", message="Validating golden sources", current=0, total=4
         )
         cases, golden_sha256 = await self._evaluation_cases(request)
-        filters = RetrievalFilters(languages=(definition.corpus_language,))
+        filters = RetrievalFilters(
+            registries=(definition.registry,), languages=(definition.corpus_language,)
+        )
         recorded_at = datetime.now(UTC)
         async with self._session_factory() as session:
             corpus_fingerprint = await self._corpus_fingerprint(session)
@@ -657,6 +867,15 @@ class EvaluationAdminService:
                         "golden_revision_id": request.golden_revision_id,
                         "corpus_fingerprint": corpus_fingerprint,
                     },
+                    "golden_provenance": self._dataset_provenance(request, golden_sha256),
+                    "search_scope": {
+                        "registry": definition.registry,
+                        "language": definition.corpus_language,
+                        "scope": "current-index",
+                    },
+                    "evidence_document_ids": sorted(
+                        {answer.doc_id for case in cases for answer in case.answers}
+                    ),
                     "retrieval_profile": request.profile.model_dump(mode="json"),
                     "embedding": asdict(self._provider.identity),
                 },
@@ -685,38 +904,34 @@ class EvaluationAdminService:
     async def _matrix(self, request: EvaluationRunRequest) -> dict[str, Any]:
         """Run the existing isolated corpus matrix through its in-process boundary."""
         definition = self._definition(request.suite_id)
-        golden_path, manifest_path = self._suite_paths(request.suite_id)
-        temporary_path: Path | None = None
-        if request.golden_revision_id is not None:
-            payload, _sha256 = await self._golden_revision_payload(request)
-            await asyncio.to_thread(
-                validate_golden_payload,
-                payload,
-                manifest_path=manifest_path,
-                selection_id=self._definition(request.suite_id).selection_id,
-                label=f"golden revision {request.golden_revision_id}",
+        _golden_path, manifest_path = self._suite_paths(request.suite_id)
+        cases, _golden_sha = await self._evaluation_cases(request)
+        scope = await asyncio.to_thread(matrix_scope, manifest_path, definition.registry)
+        self._artifact_dir.mkdir(parents=True, exist_ok=True)
+        with (
+            tempfile.NamedTemporaryFile(
+                mode="w", prefix=".evaluation-scope-", suffix=".json", dir=manifest_path.parent
+            ) as scope_file,
+            tempfile.NamedTemporaryFile(
+                mode="wb", prefix=".golden-bound-", suffix=".json", dir=self._artifact_dir
+            ) as golden_file,
+        ):
+            scope_file.write(scope.model_dump_json())
+            scope_file.flush()
+            golden_file.write(
+                encode_golden_payload([case.model_dump(mode="json") for case in cases])
             )
-            self._artifact_dir.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                prefix=".golden-revision-",
-                suffix=".json",
-                dir=self._artifact_dir,
-                delete=False,
-            ) as temporary:
-                temporary.write(encode_golden_payload(payload))
-                temporary_path = Path(temporary.name)
-            golden_path = temporary_path
-        try:
+            golden_file.flush()
+            golden_path = Path(golden_file.name)
             argv = [
                 "--suite",
                 request.suite_id,
                 "--golden",
                 str(golden_path),
                 "--manifest-name",
-                definition.manifest_name,
+                scope_file.name,
                 "--selection-id",
-                definition.selection_id,
+                "evaluation-scope",
                 "--artifact-dir",
                 str(self._artifact_dir),
                 "--provider",
@@ -742,10 +957,15 @@ class EvaluationAdminService:
                 "--persist-results",
             ]
             parsed: argparse.Namespace = arguments(argv)
+            parsed.admin_metadata = {
+                "golden_provenance": self._dataset_provenance(request, _golden_sha),
+                "search_scope": {
+                    "registry": definition.registry,
+                    "document_ids": sorted(document.document_id for document in scope.documents),
+                    "manifest_sha256": hashlib.sha256(scope.model_dump_json().encode()).hexdigest(),
+                },
+            }
             return await _run_cli(parsed)
-        finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
 
     async def _execute_job(self, job_id: str) -> None:
         """Execute one evaluation while the shared operator lock is held."""
@@ -762,6 +982,9 @@ class EvaluationAdminService:
             self._persister.schedule(job_id)
         error_code = None
         try:
+            preparation = await self.preparation(job.request)
+            if preparation.state != "ready":
+                raise EvaluationNotReadyError(preparation)
             if job.request.mode == "quick":
                 await self._require_preparation(job.request, allow_pending=False)
                 result_id, baseline_id, artifact_path = await self._quick(job_id, job.request)

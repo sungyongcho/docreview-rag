@@ -1,4 +1,5 @@
 "use client";
+import { useConfirmation } from "./use-confirmation";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
@@ -75,6 +76,7 @@ export function pollDelay(failures: number, visible: boolean): number {
 
 /** `embedded` drops the page heading so a host workspace keeps the only h1; `helpId` is the Help mode hook. */
 export function Operations({ embedded = false, helpId }: { embedded?: boolean; helpId?: string } = {}) {
+  const { confirm, confirmationDialog } = useConfirmation();
   const { t } = useI18n();
   const [commands, setCommands] = useState<OperatorCommand[]>([]);
   const [jobs, setJobs] = useState<OperatorJob[]>([]);
@@ -159,7 +161,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
   }, [active?.job_id, notify, dismissNotice, t]);
 
   async function run(command: OperatorCommand) {
-    if (command.confirmation && !window.confirm(command.confirmation)) return;
+    if (command.confirmation && !await confirm(command.confirmation)) return;
     try {
       const job = await startOperatorJob(command.command_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
@@ -182,7 +184,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
 
   const latest = jobs[0] ?? null;
   return (
-    <section className={`operations-page${embedded ? " embedded" : ""}`} data-help={helpId}>
+    <section className={`operations-page${embedded ? " embedded" : ""}`} data-help={helpId}>{confirmationDialog}
       {embedded
         ? <div className="surface-heading"><div><h2>{t("Operations")}</h2><p className="helper">{t("Local checkout only. Run fixed verification and service commands without exposing a shell.")}</p></div><button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{t("Refresh")}</button></div>
         : <header className="page-heading">

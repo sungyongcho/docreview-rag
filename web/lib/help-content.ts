@@ -20,7 +20,6 @@ export type HelpScreen =
   | "measure.golden"
   | "measure.runs"
   | "measure.compare"
-  | "measure.defaults"
   | "measure.presets"
   | "measure.snapshots"
   | "system";
@@ -77,7 +76,6 @@ export const HELP_SCREEN_TITLES: Record<HelpScreen, string> = {
   "measure.runs": "Measure · Runs",
   "measure.compare": "Measure · Compare",
   "measure.snapshots": "Measure · Snapshots",
-  "measure.defaults": "Measure · Defaults",
   "measure.presets": "Measure · Presets",
   system: "System",
 };
@@ -604,7 +602,7 @@ const SNAPSHOTS: HelpTopic[] = [
     title: "Save result as snapshot",
     body: [
       "In Result details, enter a snapshot label and choose Save result as snapshot. It freezes current documents, chunks, embeddings and BM25 with the selected result for later reuse.",
-      "A golden revision is attached only when it is published. Snapshots start private; Publish exposes them to the public build.",
+      "Snapshots preserve the recorded dataset identity and search settings in this database. They start private and are removed by an execution data reset.",
     ],
     seeAlso: ["measure.runs.results", "measure.snapshots.list"],
     optional: true,
@@ -613,7 +611,7 @@ const SNAPSHOTS: HelpTopic[] = [
     id: "measure.snapshots.list", publicContent: {"capabilities": ["can_build_snapshot", "can_query_snapshot", "can_run_evaluation"], "body": ["Browse published snapshots and inspect their labels, document counts, datasets, and recorded results."], "guide": {"summary": "Browse published snapshots and inspect their labels, document counts, datasets, and recorded results.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Snapshots",
     body: [
-      "Every stored snapshot with its label, document count, suite and result id. Use for review makes the active session query the snapshot instead of the live corpus; Publish or Hide toggles public visibility.",
+      "Filter snapshots by dataset file and search by filename or snapshot name. Each row shows recorded settings and creation time; View source evaluation opens its original run. Use for review selects its saved search state.",
     ],
     seeAlso: ["review.snapshot", "measure.snapshots.compare"],
   },
@@ -720,11 +718,10 @@ export const HELP_TOPICS: Record<HelpScreen, readonly HelpTopic[]> = {
   "measure.compare": restrictedTopics(COMPARE, "can_run_evaluation"),
   "measure.snapshots": SNAPSHOTS,
   "measure.presets": [{ id: "measure.presets.manage", title: "Retrieval presets", body: ["Manage reusable search settings separately from the four evaluation steps. Select a preset in a conversation to apply it; saving a preset does not start an evaluation."] }],
-  "measure.defaults": [{ id: "measure.defaults.form", capability: "can_run_evaluation", title: "Experiment defaults", body: ["Save the golden suite and revision, run mode, snapshots and new-conversation retrieval preset here. Saving does not start a run or replace prompt defaults."] }],
   system: SYSTEM.filter((topic) => LOCAL_ENGINE_VISIBLE || topic.id !== "system.local-policy"),
 };
 
-const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "runs", "compare", "snapshots", "defaults", "presets"]);
+const MEASURE_SCREENS: ReadonlySet<string> = new Set(["playground", "golden", "runs", "compare", "snapshots", "presets"]);
 
 /** Map the shell's view and tab to a help screen; null where no topics exist (Build › Documents and Jobs). */
 export function helpScreen(view: "review" | "build" | "measure" | "system", tab: string): HelpScreen | null {

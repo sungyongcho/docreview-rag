@@ -76,6 +76,7 @@ services:
     ports:
       - "${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${APP_PORT:-8000}:3000"
     volumes:
+      - ./data/presets:/data/presets:ro
       - ./web:/web
       - ./docs/TUTORIAL:/docs/TUTORIAL:ro
       - ./docs:/docs:ro

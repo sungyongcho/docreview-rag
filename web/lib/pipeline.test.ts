@@ -141,6 +141,12 @@ describe("derivePipeline", () => {
     const pipeline = derivePipeline(liveInput({ corpus: fullCorpus({ bm25_ready: false, bm25_rebuild_recorded: true }) }));
     expect(stage(pipeline, "lexical").status).toBe("action");
     expect(stage(pipeline, "lexical").action?.label).toBe("Recompute BM25");
+    expect(stage(pipeline, "lexical").statusDetail).toBe("Update required");
+    expect(stage(pipeline, "lexical").numbers).toEqual(["Keyword index update required"]);
+    expect(stage(pipeline, "lexical").hint).toBe("Update the keyword index to match the parsing and chunking results.");
+    const fresh = derivePipeline(liveInput({ corpus: fullCorpus({ bm25_ready: false, bm25_rebuild_recorded: false }) }));
+    expect(stage(fresh, "lexical").numbers).toEqual(["BM25 not built"]);
+    expect(stage(derivePipeline(liveInput()), "lexical").numbers).toEqual(["BM25 ready"]);
     expect(stage(derivePipeline(liveInput()), "lexical").action?.label).toBe("Recompute BM25");
   });
 
@@ -264,8 +270,8 @@ describe("derivePipeline", () => {
 
     const index = stage(pipeline, "index");
     expect(index.status).toBe("action");
-    expect(index.numbers).toEqual(["Nothing ingested yet."]);
-    expect(index.hint).toContain("Parse & chunk selected sources");
+    expect(index.numbers).toEqual(["No parsed and chunked documents have been stored in the database yet."]);
+    expect(index.hint).toBe("Run parsing and chunking for the selected sources.");
     expect(index.action).toEqual({ label: "Ingest selected sources", kind: "ingest_all" });
 
     for (const id of ["embeddings", "lexical"] as const) {
@@ -873,4 +879,18 @@ it.each(["running", "queued", "failed"] as const)("hides stale %s jobs and block
     }
   }
   expect(stage(derivePipeline(retained), "embeddings").status).toBe(status);
+});
+
+it("retains completed parsing while flagging newly downloaded originals in a mixed manifest", () => {
+  const rows = [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `dart-${year}`, filing_id: `receipt-${year}`, registry: "dart" as const, issuer: "000660", name: "SK hynix", fiscal_year: year, on_disk: true, ready: true, can_redownload: false }));
+  const input = liveInput({ corpus: fullCorpus({ documents: 1, chunks: 10 }), registryCounts: { dart: 1 }, sourceInventory: rows });
+  const index = stage(derivePipeline(input), "index");
+  expect(index.status).toBe("done");
+  expect(index.statusDetail).toBe("Complete · new originals available");
+  expect(index.hint).toContain("New downloaded originals");
+  const unavailable = stage(derivePipeline({ ...input, sourceInventory: [rows[0], { ...rows[1], on_disk: false, ready: false }] }), "index");
+  expect(unavailable.statusDetail).not.toBe("Complete · new originals available");
+  const processed = stage(derivePipeline({ ...input, corpus: fullCorpus({ documents: 2, chunks: 20 }), registryCounts: { dart: 2 } }), "index");
+  expect(processed.status).toBe("done");
+  expect(processed.statusDetail).not.toBe("Complete · new originals available");
 });

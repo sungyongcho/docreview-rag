@@ -1,5 +1,7 @@
 # Turn sources into searchable evidence
 
+When verified downloaded originals outnumber ingested documents in a registry, Parse & chunk retains completion for existing data and displays **Complete · new originals available**. Select the new originals to process them. Running jobs still show their actual progress; the additional-source notice clears after the current counts agree.
+
 ## Return from terminal preparation
 
 When a prerequisite needs terminal work, the selected preparation step displays its diagnosis, terminal instructions, a copyable command and the expected result. Complete that command in this checkout, return to the same step, and click **Check updated status**. Continue only when the reported prerequisite has actually changed; the refresh button does not execute setup or fabricate completion.
@@ -154,3 +156,22 @@ Step 2 keeps physical missing-file counts separate from **Needs repair**. DART r
 
 ### SCREENSHOT NEEDED
 <!-- Feature: step 2 physical missing count, repair count and non-retryable identity-conflict diagnostics; locale=en; theme=light; show a present primary with missing registered ZIP and a blocked conflicting source without enabling automatic download. -->
+
+### Updating while using the local web app
+
+Parsing/chunking, embedding, and BM25 jobs wait for active questions to finish before
+changing search data. New questions pause during that interval; the composer keeps
+your draft and shows a short update notice. Downloading originals alone does not
+pause search. Each live retrieval reads its readiness checks and candidate lists
+from one repeatable-read database transaction.
+
+After an update, the server checks the selected retrieval strategy before calling
+an embedding model: vector search needs current embeddings; BM25 search needs
+current keyword statistics; hybrid BM25 search needs both. Complete the indicated
+pipeline step before retrying. There is no new database snapshot selector.
+
+This coordination covers the single-process web API and its corpus jobs. Run
+standalone ingestion/indexing CLI commands while web questions are stopped; those
+separate processes do not participate in the web job admission gate.
+
+During web updates, the header beside Notifications shows a blue animated search-pause indicator. Hover or focus to read the job and reported percentage; click for details and View jobs. Missing percentages remain indeterminate. Job progress updates in place inside Notifications. A green check briefly confirms search readiness; orange means another preparation step is required and red indicates a failed update. The pipeline shows its status once beside the stage title.

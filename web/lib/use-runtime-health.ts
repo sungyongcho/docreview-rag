@@ -148,7 +148,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
   }, [check, active]);
 
   const currentIssue = useMemo(() => issueKey(state), [state]);
-  const modalVisible = active && (state.kind === "api_down"
+  const modalVisible = active && !state.readiness?.corpus.updating && (state.kind === "api_down"
     || ((state.kind === "db_degraded" || state.kind === "preparation_needed") && dismissedIssue !== currentIssue));
 
   return {

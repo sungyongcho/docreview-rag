@@ -1137,3 +1137,29 @@ def test_current_ingestion_commands_preserve_explicit_source_modes():
     assert selected.document_ids == ("filing-a",)
     manifest = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selection-a")
     assert manifest.document_ids is None
+
+
+def test_corpus_job_waits_for_search_before_running(tmp_path: Path) -> None:
+    """The actual job worker drains an admitted search before starting an index update."""
+
+    async def exercise():
+        called = asyncio.Event()
+
+        async def runner(command, publish):
+            """Observe when the worker is permitted to mutate the index."""
+            called.set()
+            return OperationOutcome("indexed")
+
+        service = RuntimeCorpusAdminService(
+            settings=Settings(corpus_dir=tmp_path), operation_runner=runner
+        )
+        async with service.corpus_access.search():
+            await service.enqueue(AdminCommand("rebuild_bm25"))
+            await asyncio.sleep(0)
+            assert service.corpus_access.updating
+            assert not called.is_set()
+        await asyncio.wait_for(service._queue.join(), 1)
+        assert called.is_set()
+        assert not service.corpus_access.updating
+
+    asyncio.run(exercise())

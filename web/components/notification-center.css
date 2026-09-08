@@ -22,3 +22,5 @@
 @media(max-width:720px) { .notification-center-panel { position:fixed;left:12px;right:12px;top:65px;width:auto;max-height:calc(100dvh - 85px); }.notification-center-panel button { min-height:32px; } }
 
 .notification-body-collapsed { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden; }.notification-expand { background:none;border:0;font:inherit;color:var(--muted);font-size:11px;padding:5px 0;cursor:pointer; }
+
+.notification-actions .notification-recovery { width:auto; flex-shrink:0; display:inline-flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; white-space:nowrap; }

@@ -45,6 +45,7 @@ from app.api.schemas import (
     SnapshotResource,
 )
 from app.api.scope_diagnostics import manifest_problem
+from app.api.search_consistency import consistent_retrieve
 from app.config import (
     DEFAULT_BM25_B,
     DEFAULT_BM25_IDF,
@@ -88,6 +89,7 @@ from app.observability.trace import step_trace_from_provider_result
 from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNode, build_run_report
 from app.observability.usage import provider_identity
 from app.openai_models import resolve_openai_model
+from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
 from app.operator.jobs import JobStore
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
@@ -102,7 +104,7 @@ from app.retrieval.scope import (
     ResolvedQueryScope,
     resolve_query_scope,
 )
-from app.retrieval.service import ComponentRankings, RetrievalResult, RetrievalStrategy, retrieve
+from app.retrieval.service import ComponentRankings, RetrievalResult, RetrievalStrategy
 from app.retrieval.translate import QueryTranslationError, route_query
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
@@ -270,7 +272,7 @@ class RuntimeApiServices(ApiServices):
         local_connection: LocalConnectionManager | None = None,
         allow_local_engine: bool = True,
         local_timeout_s: float = DEFAULT_LOCAL_TIMEOUT_S,
-        retrieval_service: RetrievalService = retrieve,
+        retrieval_service: RetrievalService = consistent_retrieve,
         workflow_service: WorkflowService = run_workflow,
         run_persister: RunPersister = persist_run_records,
         run_id_factory: Callable[[], str] | None = None,
@@ -294,6 +296,7 @@ class RuntimeApiServices(ApiServices):
             raise ValueError("llm_provider and provider_budget must be configured together")
         if (llm_providers is None) != (provider_budgets is None):
             raise ValueError("llm provider and budget registries must be configured together")
+        self.corpus_access = CorpusAccess()
         self._session_factory = session_factory
         self._database_engine = database_engine
         self._embedding_provider = embedding_provider
@@ -365,11 +368,21 @@ class RuntimeApiServices(ApiServices):
         context = _LocalRequest(self.local_inventory)
         token = self._local_request.set(context)
         try:
-            yield
+            async with self.search_access():
+                yield
         finally:
             self._local_request.reset(token)
             if context.provider is not None:
                 await context.provider.aclose()
+
+    @asynccontextmanager
+    async def search_access(self) -> AsyncIterator[None]:
+        """Expose a typed admission failure shared by public and administrator searches."""
+        try:
+            async with self.corpus_access.search():
+                yield
+        except CorpusUpdatingError as error:
+            raise unavailable("corpus_updating", str(error)) from error
 
     def _validate_session_profile(self, profile: ReviewSessionProfile) -> None:
         """Reject developer controls before either retrieval or any model classification."""
@@ -911,7 +924,7 @@ class RuntimeApiServices(ApiServices):
         except ManifestError as error:
             raise bad_request(error.code, error.message) from error
 
-        async with translate_runtime_errors():
+        async with translate_runtime_errors(), self.corpus_access.update():
             if request.create_schema:
                 database_engine = (
                     self._database_engine

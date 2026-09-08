@@ -300,7 +300,7 @@ async def _run_cli(
                         cases,
                         retriever,
                         suite=args.suite,
-                        config=config.to_dict(),
+                        config=config.to_dict() | getattr(args, "admin_metadata", {}),
                         k=config.k,
                         recorded_at=recorded_at,
                         on_progress=publish_case if on_progress is not None else None,

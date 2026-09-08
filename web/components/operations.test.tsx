@@ -130,7 +130,6 @@ describe("Operations", () => {
   });
 
   it("runs a command after confirmation and cancels the running job", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(startOperatorJob).mockResolvedValue(RUNNING);
     vi.mocked(cancelOperatorJob).mockResolvedValue(job("cancelled"));
     render(<Operations embedded />);
@@ -140,7 +139,10 @@ describe("Operations", () => {
     if (!card) throw new Error("card missing");
     fireEvent.click(within(card).getByRole("button", { name: "Run" }));
     await flush();
-    expect(window.confirm).toHaveBeenCalledWith("Create schema objects?");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Create schema objects?");
+    expect(startOperatorJob).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await flush();
     expect(startOperatorJob).toHaveBeenCalledWith("schema-prepare");
     expect(notifications.notify).toHaveBeenCalledWith("Prepare empty schema started.", "success", "operations-run", undefined, { event: "operations-run-notice" });
 

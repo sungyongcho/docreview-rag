@@ -15,3 +15,18 @@
 .answer-engine-row .answer-engine-action svg { flex: none; }
 .answer-engine-row .answer-engine-action:hover:not(:disabled) { border-color: var(--text); background: var(--surface); }
 .answer-engine-row .answer-engine-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Align actions without remounting an in-flight model preparation control. */
+.answer-engine-row:has(> .model-prepare-control) { grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; }
+.answer-engine-row:has(> .model-prepare-control) > strong,
+.answer-engine-row:has(> .model-prepare-control) > span,
+.answer-engine-row:has(> .model-prepare-control) > dl { grid-column: 1 / -1; }
+.answer-engine-row > .model-prepare-control { grid-column: 1; grid-row: 4; min-width: 0; }
+.answer-engine-row:has(> .model-prepare-control) > .answer-engine-action { grid-column: 2; grid-row: 4; align-self: start; }
+.answer-engine-row .model-prepare-control > .button,
+.answer-engine-row:has(> .model-prepare-control) > .answer-engine-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 11px; font-size: 12px; line-height: 20px; border-radius: 6px; }
+.answer-engine-row .model-prepare-control > p { max-width: 240px; margin: 6px 0 0; font-size: 11px; }
+@media (max-width: 480px) {
+  .answer-engine-row:has(> .model-prepare-control) { grid-template-columns: minmax(0, 1fr); }
+  .answer-engine-row:has(> .model-prepare-control) > .answer-engine-action { grid-column: 1; grid-row: 5; }
+}

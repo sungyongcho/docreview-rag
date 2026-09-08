@@ -285,7 +285,9 @@ def test_distinct_filings_require_explicit_document_ids(tmp_path):
         update={
             "document_id": duplicate.document_id,
             "artifact_id": artifact.artifact_id + "-other",
-            "path": fixed_path(duplicate.registry, duplicate.filing_id, "primary"),
+            "path": fixed_path(
+                duplicate.registry, duplicate.issuer, duplicate.filing_id, "primary"
+            ),
         }
     )
     (tmp_path / alternate.path).parent.mkdir(parents=True, exist_ok=True)
@@ -386,7 +388,7 @@ def test_existing_acquisition_repairs_a_corrupt_source_at_its_stable_path(tmp_pa
         if a.document_id == document.document_id and a.role == "primary"
     ]
     assert len(current) == 1
-    assert current[0].path == f"sec/{document.filing_id}/primary.html"
+    assert current[0].path == f"sec/{document.issuer}/{document.filing_id}/primary.html"
     assert current[0].sha256 == artifact.sha256
 
 

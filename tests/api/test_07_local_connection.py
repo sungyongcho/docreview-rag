@@ -310,3 +310,32 @@ def test_new_server_routes_remain_private_and_disabled_in_production(
         assert client.post(f"/admin/local-llm/{endpoint}", json=payload).status_code == 403
     assert not dev_manager.path.exists()
     assert prod_manager.current.inventory is None
+
+
+def test_prepare_route_requires_a_model_and_developer_access(tmp_path, monkeypatch):
+    """Validate explicit model input and reject preparation on production surfaces."""
+    app, manager = connection_app(tmp_path)
+    calls = []
+
+    async def prepare(model):
+        """Return a local fixture without loading an actual server model."""
+        calls.append(model)
+        return await manager.state()
+
+    monkeypatch.setattr(manager, "prepare_model", prepare)
+    with TestClient(app) as client:
+        assert client.post("/admin/local-llm/prepare", json={"model": "answer"}).status_code == 200
+        assert calls == ["answer"]
+        assert client.post("/admin/local-llm/prepare", json={"model": ""}).status_code == 422
+        assert (
+            client.post(
+                "/admin/local-llm/prepare", json={"model": "answer", "base_url": "http://other"}
+            ).status_code
+            == 422
+        )
+    production, _ = connection_app(tmp_path / "prod", environment="prod")
+    with TestClient(production) as client:
+        assert client.post("/admin/local-llm/prepare", json={"model": "answer"}).status_code in {
+            403,
+            404,
+        }

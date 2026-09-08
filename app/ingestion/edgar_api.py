@@ -475,15 +475,21 @@ async def discover(
     tickers: Sequence[str],
     years: Collection[int],
     user_agent: str,
+    on_progress: OperationProgressCallback | None = None,
 ) -> list[DocumentReference]:
-    """Return manifest entries for every requested issuer's 10-K filings in range."""
+    """Return filings while reporting the company and requested years being searched."""
     ciks = await resolve_ciks(client, tickers, user_agent=user_agent)
     entries: list[DocumentReference] = []
     for position, (ticker, cik) in enumerate(ciks.items()):
         if position:
             await asyncio.sleep(REQUEST_INTERVAL_SECONDS)
+        label = f"{ticker} · " + ", ".join(f"FY{year}" for year in sorted(years))
+        if on_progress is not None:
+            on_progress(OperationProgress("discover", position, len(ciks), label))
         rows = await fetch_filing_rows(client, cik, user_agent=user_agent)
         entries.extend(annual_reports(rows, ticker=ticker, cik=cik, years=years))
+        if on_progress is not None:
+            on_progress(OperationProgress("discover", position + 1, len(ciks), label))
     return entries
 
 
@@ -514,7 +520,7 @@ async def download_pending(
             )
         body.decode("utf-8", errors="strict")
         digest = hashlib.sha256(body).hexdigest()
-        path = fixed_path("sec", document.filing_id, "primary")
+        path = fixed_path("sec", document.issuer, document.filing_id, "primary")
         artifact = SourceArtifact(
             artifact_id=f"{document.document_id}:primary:{digest}",
             document_id=document.document_id,
@@ -563,7 +569,9 @@ async def acquire_edgar(
         if on_progress is not None:
             on_progress(OperationProgress("discover", 0, len(wanted), "Discovering EDGAR filings"))
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            discovered = await discover(client, tickers=wanted, years=years, user_agent=declared)
+            discovered = await discover(
+                client, tickers=wanted, years=years, user_agent=declared, on_progress=on_progress
+            )
         documents, added = merge_entries(documents, discovered)
     selected = [
         document

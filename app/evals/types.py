@@ -3,6 +3,7 @@
 from typing import Annotated, Literal, Self
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -22,7 +23,23 @@ ExpectedLabel = Literal["SUPPORTED", "NOT_IN_DOCS"]
 # golden file uses is suite policy, checked next to that suite's other expectations.
 SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 GoldenCaseId = Annotated[StrictStr, Field(pattern=SLUG_PATTERN)]
-GoldenTag = Annotated[StrictStr, Field(pattern=SLUG_PATTERN)]
+
+
+def normalize_golden_tag(value: str) -> str:
+    """Keep readable multilingual labels and reject empty or control-character tags."""
+    import unicodedata
+
+    value = unicodedata.normalize("NFC", value).strip()
+    if (
+        not value
+        or len(value) > 64
+        or any(unicodedata.category(char).startswith("C") for char in value)
+    ):
+        raise ValueError("Tags must contain 1–64 printable characters")
+    return value
+
+
+GoldenTag = Annotated[StrictStr, AfterValidator(normalize_golden_tag)]
 
 
 class GoldenSpan(BaseModel):
@@ -76,7 +93,7 @@ class GoldenCase(BaseModel):
     expected_label: ExpectedLabel
     reference_answer: Annotated[StrictStr, Field(min_length=1)]
     note: Annotated[StrictStr, Field(min_length=1)]
-    curation_status: Literal["agent-curated"]
+    curation_status: Literal["agent-curated", "user-authored"]
     approval_status: Literal["pending-author-approval"]
     human_verified: Literal[False]
 
@@ -101,7 +118,7 @@ class GoldenCase(BaseModel):
     def reject_duplicate_tags(cls, tags: tuple[str, ...]) -> tuple[str, ...]:
         """Keep tag membership unambiguous without silently rewriting input."""
         if len(tags) != len(set(tags)):
-            raise ValueError("tags must be unique")
+            return tuple(dict.fromkeys(tags))
         return tags
 
     @model_validator(mode="after")

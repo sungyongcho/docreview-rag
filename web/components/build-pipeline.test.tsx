@@ -113,8 +113,8 @@ describe("BuildPipeline", () => {
   it.each(["en", "ko"] as const)("keeps the embedding duration note visible and inert across stage states (%s)", (locale) => {
     localStorage.setItem(LOCALE_KEY, locale);
     const message = locale === "en"
-      ? "Embedding a fresh clone, an enlarged corpus or an empty index can take a long time."
-      : "처음 clone한 뒤, 데이터를 늘린 뒤, 또는 비어 있는 상태에서 임베딩을 돌리면 시간이 오래 걸릴 수 있습니다.";
+      ? "Initial embedding or a large number of new chunks can take time."
+      : "첫 임베딩이거나 새 청크가 많으면 처리에 시간이 걸릴 수 있습니다.";
     const statuses: StageStatus[] = ["action", "running", "queued", "done", "failed", "blocked", "readonly", "unknown"];
     for (const status of statuses) {
       const input = liveInput({ jobs: status === "running" ? [RUNNING_JOB] : [] });
@@ -134,7 +134,7 @@ describe("BuildPipeline", () => {
       fireEvent.keyDown(note, { key: "Enter" });
       fireEvent.keyDown(note, { key: " " });
       expect(note).not.toHaveFocus();
-      expect(screen.getByRole("heading", { name: locale === "en" ? "3. Embeddings" : "3. 임베딩" })).toBeVisible();
+      expect(screen.getByRole("heading", { name: locale === "en" ? "1-3. Embeddings" : "1-3. 임베딩" })).toBeVisible();
       for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();
       cleanup();
     }
@@ -150,9 +150,9 @@ describe("BuildPipeline", () => {
 
   it("marks operator execution stages without marking the public question path", () => {
     renderPipeline(liveInput(), { focusStage: "filings" });
-    expect(document.querySelector(".stage-head .development-badge")).toHaveAttribute("title", "DEV only");
+    expect(document.querySelector(".pipeline-header-dev .development-badge")).toHaveAttribute("title", "DEV only");
     fireEvent.click(screen.getByRole("button", { name: "Select Ask" }));
-    expect(document.querySelector(".stage-head .development-badge")).toBeNull();
+    expect(document.querySelector(".pipeline-header-dev .development-badge")).toBeNull();
   });
 
   it("distinguishes a ready corpus from an unmeasured evaluation without blocking questions", () => {
@@ -180,7 +180,7 @@ describe("BuildPipeline", () => {
       const node = screen.getByRole("button", { name: `Select ${title}` });
       expect(node).toBeVisible();
       fireEvent.click(node);
-      expect(screen.getByRole("heading", { name: `${index + 1}. ${title}` })).toBeVisible();
+      expect(screen.getByRole("heading", { name: `${["1-1", "1-2", "1-3", "1-4", "3-1", "2", "3-2"][index]}. ${title}` })).toBeVisible();
       expect(screen.getByText("Why it matters:")).toBeVisible();
       expect(document.querySelectorAll("ol.stage-list article.stage-card")).toHaveLength(1);
     });
@@ -231,7 +231,7 @@ describe("BuildPipeline", () => {
       jobs: [RUNNING_JOB],
     }));
 
-    expect(screen.getByRole("heading", { name: "3. Embeddings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "1-3. Embeddings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(screen.getAllByText("50 / 100 · 50%")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "View all jobs" }));
@@ -307,8 +307,8 @@ it("names missing company years, blocks the default ingest, and removes the Adva
   const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("4 documents · 1 ready · 3 to download");
-  expect(screen.queryByRole("button", { name: "NVDA FY2023 · Missing source" })).toBeNull();
-  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2023: Missing source");
+  expect(screen.getByRole("button", { name: "NVDA FY2023 · Missing source" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("alert")).toHaveTextContent("3 company-years need download or repair");
   expect(screen.queryByRole("textbox", { name: "Search/add company or year" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
   expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
@@ -362,9 +362,9 @@ it("counts partial and absent source identities and explains disabled parsing", 
   expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("3 documents · 1 ready · 2 to download");
   const primary = screen.getByRole("button", { name: "Parse & chunk selected sources" });
   expect(primary).toBeDisabled();
-  expect(primary).toHaveAccessibleDescription("2 sources missing → download in Filings before parsing.");
-  expect(screen.queryByRole("button", { name: "NVDA FY2024 · Missing source" })).toBeNull();
-  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("0001045810-24-000030: Missing source");
+  expect(primary).toHaveAccessibleDescription("2 company-years need download or repair in step 1 before parsing.");
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveTextContent("1/2");
 });
 
 it.each(["running", "queued"] as const)("replaces parsing with shared progress and cancel while %s", (status) => {
@@ -375,7 +375,7 @@ it.each(["running", "queued"] as const)("replaces parsing with shared progress a
   const handlers = renderPipeline(input, { pipeline, focusStage: "index", sources: [selectionSource("NVDA", 2024)], acquisition: acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]) });
   const actions = screen.getByRole("group", { name: "Parsing actions" });
   expect(within(actions).getByRole("progressbar", { name: "Overall progress" })).toHaveAttribute("value", "25");
-  expect(within(actions).getByRole("progressbar", { name: "Current stage" })).toHaveAttribute("value", "50");
+  expect(within(actions).queryByRole("progressbar", { name: "Current stage" })).not.toBeInTheDocument();
   expect(within(actions).getByText("Stage 2 / 4 · 25%")).toBeVisible();
   expect(document.querySelectorAll(".job-progress")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Parse & chunk selected sources" })).toBeNull();
@@ -383,7 +383,9 @@ it.each(["running", "queued"] as const)("replaces parsing with shared progress a
   expect(handlers.onCancelJob).toHaveBeenCalledWith(job.job_id);
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toBeDisabled();
   fireEvent.click(within(actions).getByRole("button", { name: "Open Documents" }));
-  fireEvent.click(within(actions).getByRole("button", { name: "View all jobs" }));
+  const viewJobs = screen.getByRole("button", { name: "View all jobs" });
+  expect(viewJobs.closest("header")).not.toBeNull();
+  fireEvent.click(viewJobs);
   expect(handlers.onOpenDocuments).toHaveBeenCalledOnce(); expect(handlers.onOpenJobs).toHaveBeenCalledOnce();
 });
 
@@ -413,10 +415,11 @@ it("returns to Filings with step 2 deselection preserved in the same sparse draf
   expect(screen.getByRole("button", { name: "AMD FY2023 · On disk" })).toHaveAttribute("aria-pressed", "false");
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-  const year = screen.getByRole("button", { name: "AMD FY2023 · On disk" });
-  expect(year).toHaveAttribute("aria-pressed", "false");
-  fireEvent.click(year);
-  expect(year).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByRole("button", { name: "AMD FY2023 · On disk" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
+  fireEvent.click(screen.getByRole("button", { name: "AMD FY2023 · On disk" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  expect(screen.getByRole("button", { name: "AMD FY2023 · On disk" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled();
 });
 
@@ -444,7 +447,7 @@ it.each(["en", "ko"] as const)("shows matching dual engine lights, details and r
   expect(screen.getByText("20.0 tok/s")).toBeVisible();
   expect(screen.getByText("CPU")).toBeVisible();
   expect(screen.getByText("Ollama")).toBeVisible();
-  expect(screen.getAllByText(locale === "en" ? "OpenAI ready · Local ready" : "OpenAI 준비 · 로컬 준비")).toHaveLength(3);
+  expect(document.querySelector(".stage-body .stage-status")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: locale === "en" ? "Open System status" : "시스템 상태 열기" }));
   fireEvent.click(screen.getByRole("button", { name: locale === "en" ? "Open Local LLM settings" : "로컬 LLM 설정 열기" }));
   expect(onOpenStatus).toHaveBeenCalledOnce();
@@ -455,10 +458,12 @@ it.each(["en", "ko"] as const)("shows matching dual engine lights, details and r
   const localRow = screen.getByRole("region", { name: translate(locale, "Local") });
   expect(localRow).toHaveTextContent("selected");
   expect(localRow).toHaveTextContent(translate(locale, "Model not loaded"));
-  expect(screen.getByRole("region", { name: translate(locale, "Terminal preparation") })).toHaveTextContent(translate(locale, "OpenAI only ready · Local: Model not loaded"));
+  fireEvent.mouseEnter(screen.getByRole("region", { name: translate(locale, "Terminal preparation") }).querySelector(".preparation-state")!);
+  expect(screen.getByRole("tooltip")).toHaveTextContent(translate(locale, "OpenAI only ready · Local: Model not loaded"));
+  fireEvent.mouseLeave(screen.getByRole("region", { name: translate(locale, "Terminal preparation") }).querySelector(".terminal-handoff-heading")!);
   expect(map.querySelectorAll('[data-light="green"]')).toHaveLength(1);
   expect(screen.queryByText("20.0 tok/s")).not.toBeInTheDocument();
-  expect(screen.getAllByText(locale === "en" ? "OpenAI only ready · Local: Model not loaded" : "OpenAI만 준비 · 로컬: 모델 미적재")).toHaveLength(3);
+  expect(screen.queryByText(locale === "en" ? "OpenAI only ready · Local: Model not loaded" : "OpenAI만 준비 · 로컬: 모델 미적재")).not.toBeInTheDocument();
   vi.unstubAllEnvs();
   vi.resetModules();
 });
@@ -468,10 +473,10 @@ it("offers only fully eligible years and keeps every intended invalid or absent 
   const sources = [changed, selectionSource("AMD", 2023), selectionSource("INTC", 2023, false), selectionSource("MU", 2023)];
   const acquisition = acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "AMD", year: 2023 }, { registry: "sec", issuer: "MSFT", year: 2022 }]);
   const handlers = renderPipeline(liveInput(), { focusStage: "index", sources, acquisition });
-  expect(screen.queryByRole("button", { name: /^NVDA FY/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /^NVDA FY/ })).toHaveClass("source-blocked");
   expect(screen.queryByRole("button", { name: /^INTC FY/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: /^MSFT FY/ })).toBeNull();
-  expect(screen.getByRole("button", { name: "MU FY2023 · On disk" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByRole("button", { name: /^MSFT FY/ })).toHaveClass("missing");
+  expect(screen.queryByRole("button", { name: "MU FY2023 · On disk" })).toBeNull();
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2024");
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("0001045810-24-000029: Source bytes changed");
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("MSFT FY2022: Missing source");
@@ -507,4 +512,15 @@ it.each([true, false])("shows non-retryable source conflicts with on_disk=%s", o
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   const sync = screen.getByRole("button", { name: "Sync selection" });
   expect(sync).toBeDisabled(); fireEvent.click(sync); expect(handlers.onDownload).not.toHaveBeenCalled();
+});
+
+it("groups only the left map while retaining the existing execution panel", () => {
+  renderPipeline(liveInput());
+  const map = screen.getByRole("region", { name: "Data workflow" });
+  expect(within(map).getByRole("region", { name: "Data preparation" })).toBeVisible();
+  expect(within(map).getByRole("region", { name: "Answer preparation" })).toBeVisible();
+  expect(within(map).getByRole("region", { name: "Use and evaluation" })).toBeVisible();
+  expect([...map.querySelectorAll(".pipeline-node-number")].map((node) => node.textContent)).toEqual(["1-1", "1-2", "1-3", "1-4", "3-1", "3-2"]);
+  fireEvent.click(within(map).getByRole("button", { name: "Select Answer model" }));
+  expect(screen.getByRole("heading", { name: "2. Answer model" })).toBeVisible();
 });

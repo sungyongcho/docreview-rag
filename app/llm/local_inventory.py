@@ -145,6 +145,10 @@ class LocalModelInventory:
             self._expires_at = monotonic() + CACHE_TTL_S
             return self._cached
 
+    def invalidate(self) -> None:
+        """Require fresh metadata after an explicit model preparation request."""
+        self._expires_at = 0.0
+
     def model_digest(self, model_name: str) -> str | None:
         """Capture the discovered digest before a run can outlive its model tag."""
         return next((digest for name, digest in self._details if name == model_name), None)

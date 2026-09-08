@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Circle, LoaderCircle, RotateCcw, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, Check, Circle, FileSearch, LoaderCircle, RotateCcw, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useStageCompanyLabels, type CompanyCatalogMode } from "@/lib/use-stage-company-labels";
 import { useI18n } from "@/lib/i18n";
@@ -144,18 +144,18 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
   const waiting = state.outcome === "running" && state.selectedScope !== undefined;
   return <div className="review-routing">
     {decision && <>
-      <p><strong>{t(decision.intent === "casual_chat" ? "Conversation reply" : "Document review")}</strong> · {t(decision.source === "classifier" ? "Classifier" : "Deterministic rule")}: <code>{decision.matched_rule}</code> · {t("History turns considered")}: {decision.history_turns}</p>
-      <p>{t(decision.rationale)}</p>
+      <p className="review-routing-meta"><span><strong>{t(decision.intent === "casual_chat" ? "Conversation reply" : "Document review")}</strong> · {t(decision.source === "classifier" ? "Classifier" : "Deterministic rule")}: <code>{decision.matched_rule}</code></span><span>{t("History turns considered")}: {decision.history_turns}</span></p>
+      <p className="review-routing-rationale">{t(decision.rationale)}</p>
     </>}
-    {selected && <p>{t("Selected corpus")}: <strong>{t(selected === "auto" ? "Auto" : selected.toUpperCase())}</strong></p>}
+    {selected && <p className="review-routing-selected">{t("Selected corpus")}: <strong>{t(selected === "auto" ? "Auto" : selected.toUpperCase())}</strong></p>}
     {decision && <p className="review-scope-outcome"><strong>{t("Scope outcome")}: {t(decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved")}</strong>{resolved && <> · {t(selected === "auto" ? "Auto" : "Pinned")} → {resolved.filters.registries.join(" / ").toUpperCase()} / {resolved.filters.issuers.join(", ") || t("No company restriction")}</>}</p>}
     {decision?.stopping_reason && <p>{t("Stopping reason")}: {t(decision.stopping_reason)}</p>}
-    {decision?.intent === "document_review" && <p>{t("Retrieval query")}: {decision.retrieval_query}</p>}
+    {decision?.intent === "document_review" && <p className="review-routing-query">{t("Retrieval query")}: {decision.retrieval_query}</p>}
     {decision?.suggested_scope === "auto" && <><p>{t("Switch the document scope to Auto above the composer and send the question again.")}</p>{onSwitchScope && <button type="button" className="button ghost" onClick={onSwitchScope}>{t("Switch to Auto and restore question")}</button>}</>}
     {decision?.intent === "document_review" && Object.entries(decision.routing_queries).length > 0 && <details><summary>{t("Routing queries")}</summary>{Object.entries(decision.routing_queries).map(([registry, query]) => <p key={registry}><strong>{registry.toUpperCase()}</strong>: {query}</p>)}</details>}
     {resolved ? <>
-      <p><strong>{t("Server-confirmed scope")}</strong>: {t("Source")}: {resolved.filters.registries.length ? resolved.filters.registries.map((registry) => registry.toUpperCase()).join(", ") : t("No source restriction")} · {t("Company")}: {resolved.filters.issuers.join(", ") || t("No company restriction")} · {t("Fiscal year")}: {resolved.filters.fiscal_years.join(", ") || t("No year restriction")}</p>
-      <p>{t("Routing reason")}: {t(reason)}</p>
+      <p className="review-routing-confirmed"><strong>{t("Server-confirmed scope")}</strong>: {t("Source")}: {resolved.filters.registries.length ? resolved.filters.registries.map((registry) => registry.toUpperCase()).join(", ") : t("No source restriction")} · {t("Company")}: {resolved.filters.issuers.join(", ") || t("No company restriction")} · {t("Fiscal year")}: {resolved.filters.fiscal_years.join(", ") || t("No year restriction")}</p>
+      <p className="review-routing-reason">{t("Routing reason")}: {t(reason)}</p>
     </> : chat ? <p>{t("No retrieval")}</p> : <p>{t(waiting ? "Waiting for server-confirmed routing" : "Routing details not collected")}</p>}
   </div>;
 }
@@ -168,7 +168,7 @@ export function WaitingGlyph() {
   return <span className="waiting-glyph" aria-hidden="true">◐</span>;
 }
 
-export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLabel, catalogMode, onOpenDetails, onShowEvidence }: { catalogMode?: CompanyCatalogMode; state: ReviewProgressState; onSwitchScope?: () => void; performance?: Record<string, unknown>; finalLabel?: string; onOpenDetails?: (stage?: DisclosureStage) => void; onShowEvidence?: () => void }) {
+export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLabel, catalogMode, onOpenDetails, onShowEvidence, showDetailsAction = true }: { showDetailsAction?: boolean; catalogMode?: CompanyCatalogMode; state: ReviewProgressState; onSwitchScope?: () => void; performance?: Record<string, unknown>; finalLabel?: string; onOpenDetails?: (stage?: DisclosureStage) => void; onShowEvidence?: () => void }) {
   const { t, locale } = useI18n();
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState<DisclosureStage | null>(null);
@@ -197,7 +197,7 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const status = state.outcome ?? "running";
   const announcement = status === "completed" ? "Execution complete" : status === "failed" ? "Stopped after the last reported step" : status === "cancelled" ? "Request cancelled" : state.node === "waiting" ? "Waiting for the server" : chat ? "Replying…" : REVIEW_STEPS[current]?.label ?? "Waiting for the server";
   return <div className={`review-progress ${status}`} role="status" aria-live="polite">
-    <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}<div className="review-stage-actions">{onShowEvidence && <button type="button" onClick={onShowEvidence}>{t("Show evidence")}</button>}{onOpenDetails && <button type="button" data-run-details-open onClick={() => onOpenDetails(openStage ?? undefined)}>{t("Open run details")}</button>}</div></div>
+    <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}<div className="review-stage-actions">{onShowEvidence && <button className="button review-summary-action" type="button" onClick={onShowEvidence}><FileSearch size={14} aria-hidden="true" />{t("Show evidence")}</button>}{onOpenDetails && showDetailsAction && <button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails(openStage ?? undefined)}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button>}</div></div>
     <ol className="review-progress-steps" aria-label={t("Evidence review progress")}>
       <li className={stageClass("path", pathPhase)}>
         {toggle("path", "Path decision", pathPhase)}

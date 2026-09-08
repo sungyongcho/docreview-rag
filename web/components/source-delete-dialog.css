@@ -5,3 +5,9 @@
 .source-delete-targets span { display: block; font-size: 12px; }
 .source-delete-targets code { white-space: normal; overflow-wrap: anywhere; }
 .source-delete-dialog .wipe-dialog-actions .button { max-width: 100%; white-space: normal; }
+
+.source-delete-trigger { position: relative; display: inline-flex; }
+.source-basket .source-delete-trigger > .danger-button { display: inline-flex; align-items: center; min-height: 30px; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--bad, #e07878) 55%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--bad, #e07878) 12%, var(--surface)); color: var(--bad, #e07878); font-size: 11px; }
+.source-delete-trigger > [role="tooltip"] { display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 25; width: 230px; max-width: calc(100vw - 48px); padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; box-shadow: 0 4px 14px #0003; }
+.source-delete-trigger:hover > [role="tooltip"], .source-delete-trigger:focus-within > [role="tooltip"] { display: block; }
+.source-basket-tools { flex-wrap: wrap; justify-content: flex-end; }

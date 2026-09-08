@@ -330,40 +330,40 @@ export const NOTIFICATION_EVENTS = {
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults",
+      "tab": "runs",
       "resultId": null
     },
-    "surface": "measure-defaults"
+    "surface": "measure-runs"
   },
   "defaults-snapshots-error": {
     "classification": "persistent",
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults",
+      "tab": "runs",
       "resultId": null
     },
-    "surface": "measure-defaults"
+    "surface": "measure-runs"
   },
   "defaults-revisions-error": {
     "classification": "persistent",
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults",
+      "tab": "runs",
       "resultId": null
     },
-    "surface": "measure-defaults"
+    "surface": "measure-runs"
   },
   "experiment-defaults-notice": {
     "classification": "transient",
     "title": "Experiment defaults",
     "target": {
       "view": "measure",
-      "tab": "defaults",
+      "tab": "runs",
       "resultId": null
     },
-    "surface": "measure-defaults"
+    "surface": "measure-runs"
   },
   "profile-defaults-notice": {
     "classification": "transient",
@@ -603,6 +603,8 @@ export const NOTIFICATION_EVENTS = {
 } as const satisfies Record<string, NotificationSpec>;
 export type NotificationEvent = keyof typeof NOTIFICATION_EVENTS;
 export interface NotifyOptions {
+  /** Optional recovery navigation shown directly inside the live banner. */
+  actionLabel?: string;
   event: NotificationEvent;
   kind?: NotificationKind;
   key?: string;

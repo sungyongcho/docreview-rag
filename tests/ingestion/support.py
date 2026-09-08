@@ -100,7 +100,7 @@ def write_selection_catalog(root):
             continue
         raw = f"synthetic fixture {artifact.document_id}".encode()
         document = ids[artifact.document_id]
-        relative = fixed_path(document.registry, document.filing_id, "primary")
+        relative = fixed_path(document.registry, document.issuer, document.filing_id, "primary")
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(raw)
@@ -155,7 +155,7 @@ def acquired_filing(root, *, document=None, payload=b"synthetic source"):
         artifact_id=f"{document.document_id}:primary:{digest}",
         document_id=document.document_id,
         role="primary",
-        path=fixed_path(document.registry, document.filing_id, "primary"),
+        path=fixed_path(document.registry, document.issuer, document.filing_id, "primary"),
         sha256=digest,
         byte_length=len(payload),
         encoding="utf-8",

@@ -174,3 +174,9 @@ PROD에서는 버전이 지정된 브라우저 설정 모듈로 저장하며 파
 
 ### SCREENSHOT NEEDED
 <!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and production-preview notice; locale ko. Capture after implementation. -->
+
+### 새 대화 검색 기본값
+
+대화 설정의 기본 프리셋 영역 또는 고급 검색에서 **새 대화 검색 기본값으로 저장**과 **새 대화 검색 기본값 초기화**를 사용할 수 있습니다. 이후 새로 생성하는 대화의 검색 프리셋만 바꾸며 기존 대화·프롬프트·필터·실행 한도 기본값은 유지합니다. 평가 기본값은 새 평가 창에서 관리하며 스냅샷 비교 대상은 전역 기본값으로 저장하지 않습니다.
+
+문항 변경·설정 초기화·백업 가져오기·운영 명령의 확인창은 앱 내부에 표시됩니다. 취소 또는 Escape는 현재 상태를 유지하며 계속을 누르면 해당 작업을 진행합니다. 탭 닫기 경고와 알림 권한 요청은 브라우저가 직접 표시합니다.

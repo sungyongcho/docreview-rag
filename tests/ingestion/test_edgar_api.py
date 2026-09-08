@@ -676,3 +676,38 @@ def test_year_scope_does_not_download_other_catalog_years(tmp_path, monkeypatch)
     assert [
         source.document for source in catalog.selected_sources(result.selection_id, tmp_path)
     ] == [current]
+
+
+def test_discovery_reports_company_years_before_and_after_lookup(monkeypatch):
+    """Expose each company lookup without reporting it complete before the response."""
+    updates = []
+
+    async def resolve(*args, **kwargs):
+        """Provide two resolved companies without an external request."""
+        return {"NVDA": 1045810, "AMD": 2488}
+
+    async def rows(client, cik, **kwargs):
+        """Verify the in-flight company was reported before fetching its filings."""
+        expected = "NVDA" if cik == 1045810 else "AMD"
+        assert updates[-1].message == f"{expected} · FY2023, FY2024"
+        return []
+
+    monkeypatch.setattr(edgar_api, "resolve_ciks", resolve)
+    monkeypatch.setattr(edgar_api, "fetch_filing_rows", rows)
+    monkeypatch.setattr(edgar_api, "REQUEST_INTERVAL_SECONDS", 0)
+    result = run(
+        edgar_api.discover(
+            client_returning(lambda request: httpx.Response(500)),
+            tickers=("NVDA", "AMD"),
+            years=(2024, 2023),
+            user_agent=USER_AGENT,
+            on_progress=updates.append,
+        )
+    )
+    assert result == []
+    assert [(p.stage, p.current, p.total) for p in updates] == [
+        ("discover", 0, 2),
+        ("discover", 1, 2),
+        ("discover", 1, 2),
+        ("discover", 2, 2),
+    ]

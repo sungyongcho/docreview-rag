@@ -8,10 +8,19 @@ import pytest
 
 from app.ingestion.acquisition import AcquiredFiling
 from app.ingestion.manifest import Manifest
-from app.ingestion.source_publication import publish_acquired
+from app.ingestion.source_publication import fixed_path, publish_acquired
 from app.ingestion.source_selection import record_selection, source_inventory
 from app.ingestion.source_storage import JOURNAL
 from tests.ingestion.support import acquired_filing, filing_document, write_selection_catalog
+
+
+@pytest.mark.parametrize(
+    "issuer", ["", " ", ".", "..", "../NVDA", "NVDA/other", "NVDA\\other", "NVDA:other", "NVDA\x00"]
+)
+def test_fixed_path_rejects_unsafe_company_components(issuer):
+    """Company grouping cannot escape or introduce extra directory components."""
+    with pytest.raises(ValueError):
+        fixed_path("sec", issuer, "0001045810-24-000029", "primary")
 
 
 def test_repeated_publication_keeps_current_original_and_pinned_inputs(tmp_path):

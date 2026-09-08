@@ -9,7 +9,7 @@ import "./notification-center.css";
 
 type Tone = NotificationKind;
 interface Timing { remaining: number; runningSince: number | null; }
-interface Notice { id: string; key: string; tone: Tone; message: string; duration: number; timing: Timing; entryId?: string; surface?: string; }
+interface Notice { actionLabel?: string; onAction?: () => void; id: string; key: string; tone: Tone; message: string; duration: number; timing: Timing; entryId?: string; surface?: string; }
 interface Notifications {
   notify: (message: string, tone?: Tone | NotifyOptions, key?: string, duration?: number, options?: NotifyOptions) => void;
   dismissNotice: (key: string) => void;
@@ -87,7 +87,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setItems(current => {
       const existing = current.find(item => item.key === key);
       if (!persist && existing?.message === message && existing.tone === tone && existing.duration === duration) return current;
-      const next = [...current.filter(item => item.key !== key && !options?.supersedes?.includes(item.key)), { id: persist ? entry.id : existing?.id ?? entry.id, key, tone, message, duration, timing: { remaining: duration, runningSince: null }, entryId: persist ? entry.id : undefined, surface: entry.surface }];
+      const next = [...current.filter(item => item.key !== key && !options?.supersedes?.includes(item.key)), { id: persist ? entry.id : existing?.id ?? entry.id, key, tone, message, duration, timing: { remaining: duration, runningSince: null }, entryId: persist ? entry.id : undefined, surface: entry.surface, actionLabel: options?.actionLabel, onAction: options?.actionLabel && entry.target ? () => { navigator.current?.(entry.target!); } : undefined }];
       const pinned = next.filter(item => item.duration === 0).slice(-3);
       const slots = 3 - pinned.length;
       return [...pinned, ...(slots ? next.filter(item => item.duration !== 0).slice(-slots) : [])];
@@ -177,6 +177,7 @@ function NotificationCard({ item, onDismiss, onExpire }: { item: Notice; onDismi
   return <div className={`notification ${item.tone}${expanded ? " is-expanded" : ""}`} role={item.tone === "error" || item.tone === "warning" ? "alert" : "status"}
     onMouseEnter={() => pause("hover")} onMouseLeave={() => resume("hover")} onFocus={() => pause("focus")} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) resume("focus"); }}>
     <NotificationIcon kind={item.tone} /><span ref={message} className="notification-message">{item.message}</span><div className="notification-actions">
+      {item.actionLabel && item.onAction && <button className="notification-recovery" type="button" onClick={item.onAction}>{t(item.actionLabel)} <span aria-hidden="true">→</span></button>}
       {(truncated || expanded) && <button type="button" aria-label={t(expanded ? "Collapse notification" : "Expand notification")} aria-expanded={expanded} onClick={() => { const next = !expanded; setExpanded(next); if (next) pause("expanded"); else resume("expanded"); }}>{expanded ? "−" : "+"}</button>}
       <button type="button" aria-label={t("Dismiss notification")} onClick={() => onDismiss(item.id)}>×</button>
     </div>

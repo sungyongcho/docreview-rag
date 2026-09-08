@@ -10,7 +10,7 @@ export type NavigationTarget =
   | { view: "system"; tab?: SystemTab };
 
 const BUILD_TABS: Record<BuildTab, string> = { pipeline: "Pipeline", documents: "Documents", jobs: "Jobs" };
-const MEASURE_TABS: Record<MeasureTab, string> = { playground: "Search trial", golden: "Golden dataset", runs: "Run evaluation", compare: "Compare results", snapshots: "Snapshots", defaults: "Defaults", presets: "Retrieval presets" };
+const MEASURE_TABS: Record<MeasureTab, string> = { playground: "Search trial", golden: "Golden dataset", runs: "Run evaluation", compare: "Compare & snapshots", snapshots: "Snapshot management", presets: "Retrieval presets" };
 const SYSTEM_TABS: Record<SystemTab, string> = { status: "Status", operations: "Operations", api: "API", usage: "Usage" };
 const NAVIGATION_PARAMETERS = ["view", "tab", "stage", "result", "conversation", "job"];
 
@@ -61,8 +61,8 @@ export function navigationUrl(target: NavigationTarget, currentUrl: string): str
 
 /** Name the complete destination for the current header, history options and arrow tooltips. */
 export function navigationLabel(target: NavigationTarget, titles: Record<string, string>, t: (key: string) => string): string {
-  if (target.view === "review") return `${t("Conversation")} · ${titles[target.conversationId ?? ""] || t("New review")}`;
+  if (target.view === "review") return `${t("Conversation")} · ${titles[target.conversationId ?? ""] || t("New chat")}`;
   if (target.view === "build") return [t("Build"), t(BUILD_TABS[target.tab ?? "pipeline"]), ...(target.stage === undefined ? [] : [target.stage === "setup" ? t("Setup") : `${t("Step")} ${target.stage}`])].join(" · ");
-  if (target.view === "measure") return [t("Measure"), t(MEASURE_TABS[target.tab ?? "playground"]), ...(target.resultId == null ? [] : [`${t("Result")} ${target.resultId}`])].join(" · ");
+  if (target.view === "measure") return [t("Measure"), t(MEASURE_TABS[target.tab ?? "playground"]), ...(target.resultId == null ? [] : [t("Result details")])].join(" · ");
   return `${t("System")} · ${t(SYSTEM_TABS[target.tab ?? "status"])}`;
 }

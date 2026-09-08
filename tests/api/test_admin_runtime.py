@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.runtime import RuntimeApiServices
 from app.corpus_admin import CorpusStatus
@@ -139,3 +141,132 @@ def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
     service._corpus = SimpleNamespace(enqueue=enqueue)
     result = asyncio.run(service.enqueue_corpus(request))
     assert result["command"]["kind"] == "acquire_edgar"
+
+
+@pytest.mark.live_postgres
+def test_evaluation_jobs_expose_each_recorded_result_configuration():
+    """Read distinct matrix-arm metadata from real PostgreSQL without reading artifact files."""
+    import asyncio
+    import os
+    from types import SimpleNamespace
+
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.api.admin_schemas import (
+        EvaluationJobResource,
+        EvaluationJobsResponse,
+        EvaluationRunRequest,
+    )
+    from app.db.bootstrap import bootstrap_schema
+    from app.db.models import EvalResult
+    from tests.live_postgres import live_postgres_unavailable
+
+    dsn = os.getenv("EVAL_IDENTITY_TEST_DSN")
+    if not dsn:
+        live_postgres_unavailable("EVAL_IDENTITY_TEST_DSN is not configured")
+    url = make_url(dsn)
+    assert url.host in {"localhost", "127.0.0.1"} and url.database.startswith("pipeline_test_")
+
+    async def exercise():
+        """Compose only the read boundary against an explicitly disposable database."""
+        engine = create_async_engine(url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            await bootstrap_schema(engine)
+            async with factory.begin() as session:
+                rows = [
+                    EvalResult(
+                        suite="dart-en",
+                        config={
+                            "golden_provenance": {
+                                "filename": "recorded.json",
+                                "golden_sha256": "a" * 64,
+                            },
+                            "strategy": strategy,
+                            "k": 5,
+                        },
+                        metrics={},
+                        raw_artifact_path="not-read.json",
+                    )
+                    for strategy in ["lexical", "hybrid"]
+                ]
+                session.add_all(rows)
+            board = EvaluationJobsResponse(
+                jobs=(
+                    EvaluationJobResource(
+                        job_id="matrix-fixture",
+                        request=EvaluationRunRequest(suite_id="dart-en", mode="matrix"),
+                        status="succeeded",
+                        stage="done",
+                        message="Done",
+                        created_at=rows[0].created_at,
+                        result_id=rows[0].id,
+                        result_ids=tuple(row.id for row in rows),
+                    ),
+                )
+            )
+            service = object.__new__(RuntimeAdminApiServices)
+            service._runtime = SimpleNamespace(session_factory=factory)
+            service._evaluations = SimpleNamespace(jobs=AsyncMock(return_value=board))
+            result = await service.evaluation_jobs()
+            assert [item.config["strategy"] for item in result.jobs[0].result_summaries] == [
+                "lexical",
+                "hybrid",
+            ]
+            assert all(
+                item.config["golden_provenance"]["filename"] == "recorded.json"
+                for item in result.jobs[0].result_summaries
+            )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.live_postgres
+def test_golden_evidence_pages_preserve_exact_source_coordinates():
+    """A separate PostgreSQL fixture proves chunk paging, search, and original spans."""
+    import os
+
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.db.bootstrap import bootstrap_schema
+    from app.ingestion.seed import persist_seed_batch
+    from tests.ingestion.seed.support import sample_batch
+    from tests.live_postgres import live_postgres_unavailable
+
+    dsn = os.getenv("GOLDEN_EVIDENCE_TEST_DSN")
+    if not dsn:
+        live_postgres_unavailable("GOLDEN_EVIDENCE_TEST_DSN is not configured")
+    url = make_url(dsn)
+    assert url.host in {"localhost", "127.0.0.1"} and url.database.startswith("pipeline_test_")
+
+    async def exercise():
+        """Use real seeded source identities and leave the user database untouched."""
+        engine = create_async_engine(url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            await bootstrap_schema(engine)
+            batch = sample_batch()
+            async with factory() as session:
+                await persist_seed_batch(session, batch)
+            service = object.__new__(RuntimeAdminApiServices)
+            service._runtime = SimpleNamespace(session_factory=factory)
+            first = await service.golden_evidence_chunks("NVDA-FY2024", "", 0, 1)
+            second = await service.golden_evidence_chunks("NVDA-FY2024", "", first.next_after, 1)
+            assert len(first.chunks) == len(second.chunks) == 1
+            assert first.chunks[0].chunk_id != second.chunks[0].chunk_id
+            assert second.next_after is None
+            chunk = first.chunks[0]
+            assert chunk.source_sha256 == "a" * 64
+            assert (chunk.start_char, chunk.end_char) == (10, 40)
+            assert chunk.body == "Source-derived narrative."
+            search = await service.golden_evidence_chunks("NVDA-FY2024", "narrative", 0, 20)
+            assert [row.chunk_id for row in search.chunks] == [chunk.chunk_id]
+            assert not (await service.golden_evidence_chunks("missing", "", 0, 20)).chunks
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())

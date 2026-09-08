@@ -68,3 +68,23 @@ data/presets/*.json
 !data/presets/balanced.json
 !data/presets/korean.json
 !data/presets/accuracy.json
+
+# Emitted only after an explicitly confirmed fresh-start cleanup.
+data/browser-reset.json
+data/browser-reset.tmp
+
+# Runtime locks, evaluation scopes and processing selections written by the running stack.
+data/corpus/.source-lock
+data/corpus/.evaluation-scope-*.json
+data/corpus/selected-*-manifest.json
+data/golden/.datasets.lock
+
+# User golden revisions are local data; ship only the built-in suites.
+data/golden/*.json
+!data/golden/retrieval.json
+!data/golden/retrieval_ko.json
+!data/golden/dart_retrieval.json
+!data/golden/dart_retrieval_ko.json
+!data/golden/sec_en_v2_astra.json
+!data/golden/sec_ko_v2_astra.json
+!data/golden/sec_mixed_v2_astra.json

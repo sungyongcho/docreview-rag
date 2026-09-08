@@ -2,7 +2,7 @@
 import { NotificationOutlet } from "./notifications";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { RequestPreviewContent } from "./request-preview";
 import type { ReviewSessionDraft } from "@/lib/types";
 
@@ -32,8 +32,8 @@ interface RunDetailsPanelProps {
   onOpenFix?: (category: NonNullable<ChatMessage["failureFix"]>["category"]) => void;
 }
 
-/** Inspect one message beside its conversation, preserving its last selected section. */
-export function RunDetailsPanel({ message, onClose, onOpenFix, draftProfile, draftQuery = "", stageRequest }: RunDetailsPanelProps) {
+/** Inspect one message over its conversation, preserving its last selected section. */
+export function RunDetailsPanel({ message: incomingMessage, onClose, onOpenFix, draftProfile, draftQuery = "", stageRequest }: RunDetailsPanelProps) {
 
   const { t } = useI18n();
   const uid = useId();
@@ -44,10 +44,27 @@ export function RunDetailsPanel({ message, onClose, onOpenFix, draftProfile, dra
   const close = useRef(onClose);
   close.current = onClose;
   const [sections, setSections] = useState<Record<string, Section>>({});
-  const [collapsed, setCollapsed] = useState(false);
+  const [retainedMessage, setRetainedMessage] = useState<ChatMessage | null>(incomingMessage);
+  const message = incomingMessage ?? retainedMessage;
+  const leaving = incomingMessage === null && retainedMessage !== null;
+  useEffect(() => {
+    if (incomingMessage) { setRetainedMessage(incomingMessage); return; }
+    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(() => setRetainedMessage(null), reduced ? 0 : 180);
+    return () => window.clearTimeout(timer);
+  }, [incomingMessage]);
   const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
-  const open = message !== null;
+  const open = incomingMessage !== null;
   const section = message ? sections[message.id] ?? "performance" : "performance";
+
+  useEffect(() => {
+    if (!open) return;
+    const conversation = document.querySelector<HTMLElement>(".review-workspace");
+    if (!conversation || conversation.contains(panel.current)) return;
+    const previous = conversation.inert;
+    conversation.inert = true;
+    return () => { conversation.inert = previous; };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -82,11 +99,12 @@ export function RunDetailsPanel({ message, onClose, onOpenFix, draftProfile, dra
     };
   }, [open]);
 
+
+
   useEffect(() => {
     if (!message) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && !panel.current?.contains(active)) opener.current = active;
-    setCollapsed(false);
     setExpandedQuestion(null);
     panel.current?.focus({ preventScroll: true });
   }, [message?.id]);
@@ -98,7 +116,6 @@ export function RunDetailsPanel({ message, onClose, onOpenFix, draftProfile, dra
   useEffect(() => {
     if (!message || !stageRequest?.stage) return;
     setSections((previous) => ({ ...previous, [message.id]: "performance" }));
-    setCollapsed(false);
   }, [message?.id, stageRequest]);
 
   /** Activate and focus a neighboring section using the standard tab keyboard pattern. */
@@ -115,15 +132,14 @@ export function RunDetailsPanel({ message, onClose, onOpenFix, draftProfile, dra
   const settings = message.performance?.effective_settings as Record<string, unknown> | null | undefined;
   const fullQuestion = expandedQuestion === message.id;
 
-  return <aside ref={panel} className={`run-details-panel${collapsed ? " is-collapsed" : ""}`} role="dialog" aria-modal="false" aria-label={t("Run details")} tabIndex={-1}>
-    <button className="run-details-edge" type="button" aria-label={t(collapsed ? "Expand run details" : "Collapse run details")} aria-expanded={!collapsed} aria-controls={`${uid}-body`} onClick={() => setCollapsed(!collapsed)}>{collapsed ? <ChevronLeft size={18} aria-hidden="true" /> : <ChevronRight size={18} aria-hidden="true" />}</button>
-    <div id={`${uid}-body`} className="run-details-body" hidden={collapsed}>
+  return <aside ref={panel} className={`run-details-panel${leaving ? " is-leaving" : ""}`} inert={leaving} aria-hidden={leaving || undefined} role="dialog" aria-modal="false" aria-label={t("Run details")} tabIndex={-1}>
+    <div id={`${uid}-body`} className="run-details-body">
       <header className="run-details-header">
         <div className="run-details-toolbar"><p>{t("Run details")}</p><button className="run-details-close" type="button" aria-label={t("Close run details")} onClick={onClose}><X size={21} aria-hidden="true" /></button></div>
         <div className="run-details-question-line"><h2 className={fullQuestion ? "is-expanded" : ""} title={`Q. ${question}`}>Q. {question}</h2><code className="run-details-message-id" title={message.id}>{message.id.slice(0, 8)}</code></div>
         <button className="run-details-question-toggle" type="button" aria-expanded={fullQuestion} onClick={() => setExpandedQuestion(fullQuestion ? null : message.id)}>{t(fullQuestion ? "Collapse question" : "Show full question")}</button>
         <div className="run-details-tabs" role="tablist" aria-label={t("Run detail sections")}>{SECTIONS.map((item, index) => <button key={item.id} id={`${uid}-${item.id}-tab`} role="tab" type="button" aria-selected={section === item.id} aria-controls={`${uid}-${item.id}`} tabIndex={section === item.id ? 0 : -1} onClick={() => setSections((previous) => ({ ...previous, [message.id]: item.id }))} onKeyDown={(event) => moveTab(event, index)}>{t(item.label)}</button>)}</div>
-      </header><NotificationOutlet priority={20} active={!collapsed} />
+      </header><NotificationOutlet priority={20} active={!leaving} />
       <div className="run-details-content" ref={content}>
         <section id={`${uid}-preview`} role="tabpanel" aria-labelledby={`${uid}-preview-tab`} hidden={section !== "preview"} tabIndex={0}>{section === "preview" && (draftProfile ? <RequestPreviewContent profile={draftProfile} query={draftQuery} /> : <p>{t("No next-request settings available.")}</p>)}</section>
         <section id={`${uid}-performance`} role="tabpanel" aria-labelledby={`${uid}-performance-tab`} hidden={section !== "performance"} tabIndex={0}>

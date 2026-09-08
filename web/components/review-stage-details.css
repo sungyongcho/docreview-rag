@@ -43,3 +43,16 @@
 .review-stage-details .review-recorded-pager button { display: inline-flex; }
 .review-stage-details .review-recorded-disclosure > summary, .review-stage-details .review-timing-groups summary { cursor: pointer; }
 .review-stage-details .review-recorded-disclosure > summary { margin-bottom: 6px; font-weight: 600; }
+
+.review-progress-heading .review-stage-actions { align-items: center; gap: 6px; }
+.review-stage-actions > .review-summary-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 11px; line-height: 1.3; white-space: nowrap; }
+.review-stage-actions > .review-summary-action:hover { background: var(--surface-2); border-color: var(--muted); }
+.review-stage-actions > .review-summary-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.review-summary-action > svg { flex: none; color: var(--muted); }
+
+.review-execution-wrap { position: relative; margin: 16px 0; }
+.review-execution-wrap > .review-execution-summary { margin: 0; }
+.review-execution-wrap > .review-execution-summary > summary { min-height: 32px; align-content: center; }
+.review-execution-wrap:has(> .review-stage-actions) > .review-execution-summary > summary { padding-right: 160px; }
+.review-execution-wrap > .review-stage-actions { position: absolute; top: 12px; right: 12px; margin: 0; }
+.message.pending .review-execution-wrap { margin-top: 0; }

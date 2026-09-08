@@ -174,3 +174,9 @@ PROD stores presets through the versioned browser settings module; it exposes no
 
 ### SCREENSHOT NEEDED
 <!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and production-preview notice; locale en. Capture after implementation. -->
+
+### Default search settings for new chats
+
+In Conversation settings, the Basic preset section and Advanced Search provide **Save as new-chat search defaults** and **Reset new-chat search defaults**. These affect only the search preset of subsequently created conversations. Existing conversations, prompts, filters, and run-limit defaults are preserved. Evaluation defaults live in New evaluation; snapshot comparison selections are not global defaults.
+
+Confirmations for draft changes, settings resets, backup imports, and operator commands appear inside the app. Cancel or Escape preserves the current state; Continue performs the requested action. Browser-controlled tab-close warnings and notification permission requests remain native.

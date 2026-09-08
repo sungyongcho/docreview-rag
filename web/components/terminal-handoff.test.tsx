@@ -38,3 +38,45 @@ it("uses observed diagnosis after recheck and navigates to its prerequisite", as
   fireEvent.click(screen.getByRole("button", { name: "Go to prerequisite step" }));
   expect(navigate).toHaveBeenCalledWith("index");
 });
+
+it("shows compact running status with an accessible refresh control and failure feedback", async () => {
+  const diagnosis = { state: "running" as const, title: "This step is running", detail: "Follow the existing job.", returnTo: null, terminalSteps: [] };
+  render(<TerminalHandoff compact blocking={false} diagnosis={diagnosis} steps={[]} onRefresh={vi.fn().mockResolvedValue(false)} />);
+  expect(screen.getByText("Running")).not.toHaveAttribute("title");
+  expect(screen.queryByText(diagnosis.title)).not.toBeInTheDocument();
+  const refresh = screen.getByRole("button", { name: "Check updated status" });
+  expect(refresh).toHaveTextContent("");
+  fireEvent.click(refresh);
+  expect(await screen.findByText("Could not refresh status. Check the connection and try again.")).toBeVisible();
+});
+
+it("acknowledges a compact refresh in the button without adding a status text row", async () => {
+  const refresh = vi.fn().mockResolvedValue(true);
+  const diagnosis = { state: "running" as const, title: "This step is running", detail: "Follow the existing job.", returnTo: null, terminalSteps: [] };
+  render(<TerminalHandoff compact blocking={false} diagnosis={diagnosis} steps={[]} onRefresh={refresh} />);
+  fireEvent.click(screen.getByRole("button", { name: "Check updated status" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled());
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(screen.queryByText("Preparation state updated")).not.toBeInTheDocument();
+  expect(screen.getByText("Running")).toBeVisible();
+  expect(screen.getByRole("status")).toBeEmptyDOMElement();
+});
+
+
+it("opens a custom hint on hover or focus and dismisses it on leave or Escape", () => {
+  const diagnosis = { state: "running" as const, title: "This step is running", detail: "Follow the existing job.", returnTo: null, terminalSteps: [] };
+  render(<TerminalHandoff compact diagnosis={diagnosis} steps={[]} onRefresh={vi.fn()} />);
+  const state = screen.getByText("Running");
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.mouseEnter(state);
+  expect(screen.getByRole("tooltip")).toHaveTextContent(diagnosis.detail);
+  expect(state).toHaveAttribute("aria-describedby", screen.getByRole("tooltip").id);
+  fireEvent.mouseLeave(state.closest(".terminal-handoff-heading")!);
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.focus(state);
+  expect(screen.getByRole("tooltip")).toBeVisible();
+  fireEvent.keyDown(state, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.mouseEnter(screen.getByRole("button", { name: "Check updated status" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Check updated status");
+});

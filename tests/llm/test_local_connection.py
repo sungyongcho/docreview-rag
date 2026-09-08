@@ -432,3 +432,80 @@ def test_saved_connection_is_readable_by_the_configured_host_group(tmp_path) -> 
     asyncio.run(manager.connect("http://replacement:11435"))
     assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert json.loads(path.read_text())["selected_server_id"]
+
+
+@pytest.mark.parametrize("loaded_after_request", [True, False])
+def test_prepare_model_checks_installed_identity_and_verifies_residency(
+    tmp_path, loaded_after_request
+):
+    """Empty-prompt preparation must be explicit and confirmed by fresh /api/ps metadata."""
+    loads = []
+
+    def server(request):
+        """Model an installed but initially unloaded answer model."""
+        if request.url.path == "/api/generate":
+            loads.append(json.loads(request.content))
+            return httpx.Response(200, json={"done": True})
+        if request.url.path == "/api/ps":
+            return httpx.Response(
+                200, json={"models": [{"name": "answer"}] if loads and loaded_after_request else []}
+            )
+        return metadata_server(request)
+
+    manager = LocalConnectionManager(
+        initial_base_url="http://initial:11434",
+        path=tmp_path / "settings.json",
+        transport=httpx.MockTransport(server),
+    )
+
+    async def exercise():
+        """Reject uninstalled models, prepare once, and check fresh inventory."""
+        with pytest.raises(LocalConnectionError, match="installed answer model"):
+            await manager.prepare_model("not-installed")
+        assert loads == []
+        if loaded_after_request:
+            result = await manager.prepare_model("answer")
+            assert result["local"]["models"][0]["loaded"] is True
+            await manager.prepare_model("answer")
+        else:
+            with pytest.raises(LocalConnectionError, match="could not be confirmed"):
+                await manager.prepare_model("answer")
+        assert loads == [{"model": "answer", "prompt": "", "stream": False, "keep_alive": "5m"}]
+        assert not manager.path.exists()
+
+    asyncio.run(exercise())
+
+
+def test_prepare_model_is_disabled_in_production(tmp_path):
+    """A production manager must reject loading before any network request."""
+    manager = LocalConnectionManager(
+        enabled=False,
+        path=tmp_path / "settings.json",
+        transport=httpx.MockTransport(metadata_server),
+    )
+    with pytest.raises(LocalConnectionError, match="disabled in production"):
+        asyncio.run(manager.prepare_model("answer"))
+
+
+def test_prepare_model_reports_load_failure_without_changing_connection(tmp_path):
+    """Provider load failures stay explicit and do not rewrite saved connection state."""
+
+    def server(request):
+        """Return a failed load after successful metadata discovery."""
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": []})
+        if request.url.path == "/api/generate":
+            return httpx.Response(500, json={"error": "private provider detail"})
+        return metadata_server(request)
+
+    manager = LocalConnectionManager(
+        initial_base_url="http://initial:11434",
+        path=tmp_path / "settings.json",
+        transport=httpx.MockTransport(server),
+    )
+    previous = manager.current
+    with pytest.raises(LocalConnectionError, match="Model preparation failed") as error:
+        asyncio.run(manager.prepare_model("answer"))
+    assert "private provider detail" not in str(error.value)
+    assert manager.current is previous
+    assert not manager.path.exists()

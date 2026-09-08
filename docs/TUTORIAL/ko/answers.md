@@ -183,3 +183,15 @@ Manifest 범위 정보 오류는 실제 실패한 단계에 표시됩니다. 경
 
 ### SCREENSHOT NEEDED
 <!-- Feature: background review completion/failure notification returning to its original conversation; locale=ko; light mode; show the same persisted message and no repeated request. -->
+
+### 실행 상세 확인
+
+**실행 요약** 오른쪽의 **실행 상세 열기**는 요약을 접어도 사용할 수 있습니다.
+상세 패널은 대화와 입력창의 폭을 줄이지 않고 그 위에 겹쳐 열립니다. 덮인 영역에는
+연한 회색 배경을 표시하고 잠시 조작을 막습니다. 닫기, 회색 배경 클릭, Escape로
+돌아가 대화와 입력창을 다시 사용할 수 있습니다.
+작성 중인 질문과 대화 내용은 유지됩니다.
+
+첫 메시지를 보내기 전에는 최근 대화 목록 대신 맨 위 **새 대화**가 선택됩니다.
+반복해서 눌러도 사용 가능한 빈 초안을 재사용합니다. 첫 메시지를 보낸 뒤부터
+최근 대화 목록에 표시되고 휴지통 버튼도 나타납니다.

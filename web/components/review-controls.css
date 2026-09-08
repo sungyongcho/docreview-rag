@@ -93,3 +93,17 @@
 .preset-json-editor { font-family: monospace; resize: vertical; min-height: 18rem; }
 .preset-manager fieldset { border: 0; padding: 0; min-width: 0; }
 .preset-manager .notice { overflow-wrap: anywhere; }
+
+/* Keep routing facts compact without hiding diagnostic content. */
+.review-progress { container-type: inline-size; }
+.review-routing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 18px; padding-block: 4px; }
+.review-routing > * { grid-column: 1 / -1; min-width: 0; order: 5; }
+.review-routing > p { margin: 0; overflow-wrap: anywhere; }
+.review-routing > .review-routing-meta { order: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; }
+.review-routing-meta > span { min-width: 0; }
+.review-routing > .review-routing-selected, .review-routing > .review-scope-outcome { grid-column: auto; order: 1; }
+.review-routing > .review-routing-confirmed { order: 2; }
+.review-routing > .review-routing-rationale, .review-routing > .review-routing-reason { grid-column: auto; order: 3; }
+.review-routing > .review-routing-query { order: 4; }
+
+@container (max-width: 560px) { .review-routing { grid-template-columns: minmax(0, 1fr); } }

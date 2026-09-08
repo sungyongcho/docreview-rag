@@ -41,7 +41,7 @@ it("uses the API candidate and conversation fusion limits for custom retrieval",
 
 it("translates every conversation settings tab in the Korean interface", () => {
   render(<I18nProvider><ConversationSettings tab="limits" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} /></I18nProvider>);
-  for (const name of ["필터", "검색", "근거", "실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
+  for (const name of ["필터", "검색", "근거", "질문·답변 실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
 });
 
 it("keeps allowed filters but hides developer controls in public mode", async () => {
@@ -252,4 +252,22 @@ it("preserves a smaller evidence limit and leaves manual changes available", () 
   expect(onChange).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Maximum evidence characters"), { target: { value: "6000" } });
   expect(onChange).toHaveBeenCalledExactlyOnceWith({ prompt_policy: { ...profile.prompt_policy, max_context_chars: 6000 } });
+});
+
+
+it("saves and resets only future chat search defaults without modifying the active conversation", async () => {
+  const { loadDefaultProfile, saveDefaultProfile } = await import("@/lib/storage");
+  window.localStorage.clear();
+  const original = { ...DEFAULT_SESSION_PROFILE, prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, additional_instructions: "Keep my policy" } };
+  saveDefaultProfile(original);
+  const onChange = vi.fn();
+  render(<ConversationSettings tab="retrieval" editable profile={{ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: { ...DEFAULT_PROFILE, k: 9 } }} onChange={onChange} onTabChange={vi.fn()} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Save as new-chat search defaults" }));
+  expect(loadDefaultProfile().custom_retrieval?.k).toBe(9);
+  expect(loadDefaultProfile().prompt_policy).toEqual(original.prompt_policy);
+  expect(onChange).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Reset new-chat search defaults" }));
+  expect(loadDefaultProfile().retrieval_preset).toBe("balanced");
+  expect(loadDefaultProfile().prompt_policy).toEqual(original.prompt_policy);
+  expect(onChange).not.toHaveBeenCalled();
 });

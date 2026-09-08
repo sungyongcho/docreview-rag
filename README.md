@@ -466,7 +466,7 @@ ORM 데이터와 다운로드 원문·manifest 원문 항목을 지우므로 대
 `rag-reset`는 같은 ORM·원문 범위의 확인된 초기화 뒤 DEV 시작·readiness 확인·Quick Start — DEV ONLY의 Web 1단계 안내까지 이어갑니다.
 `--keep-sources`·`--sample`을 지원하며 설정·내보내기·DB 볼륨은 보존합니다. 권한 오류는 소유자에게 요청할
 정확한 명령과 한 번의 검사 재시도를 제공합니다. 더 넓은 삭제는 `rag-start-fresh`이며,
-`rag-start-fresh --extreme`은 대문자 `Y` 두 번 확인 후 `.env*`와 프로젝트 Ollama 모델 볼륨도 지우고 멈춥니다. 브라우저 데이터는 설정 → 데이터와 도움말에서 별도로 지우세요.
+`rag-start-fresh --extreme`은 대문자 `Y` 두 번 확인 후 `.env*`와 프로젝트 Ollama 모델 볼륨도 지우고 멈춥니다. 성공한 fresh-start 후 웹이 다시 연결되면 DocReview의 대화·설정·바구니 저장값도 기본값으로 초기화됩니다. 다른 앱의 저장값은 보존합니다.
 
 검색 결과와 원문 근거를 확인한 뒤 [첫 답변 안내](docs/TUTORIAL/ko/answers.md#step-9)를
 따릅니다. Quick Start — DEV ONLY는 답변 질문을 제출하기 전에 끝납니다.

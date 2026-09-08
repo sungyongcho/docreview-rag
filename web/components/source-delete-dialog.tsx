@@ -21,6 +21,7 @@ export function SourceDeleteDialog({ documentIds, disabled, onConfirm, onOpenJob
   const active = useRetainedPanelActive();
   const titleId = useId();
   const warningId = useId();
+  const hintId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLElement>(null);
   const requestVersion = useRef(0);
@@ -95,9 +96,9 @@ export function SourceDeleteDialog({ documentIds, disabled, onConfirm, onOpenJob
   }
 
   return <>
-    <button ref={trigger} className="button danger-button" type="button" disabled={disabled || !documentIds.length || Boolean(phase)} aria-haspopup="dialog" aria-expanded={visible} onClick={() => void inspect()}>{t("Delete selected originals")}</button>
+    <span className="source-delete-trigger"><button ref={trigger} className="button danger-button" type="button" disabled={disabled || !documentIds.length || Boolean(phase)} aria-haspopup="dialog" aria-expanded={visible} aria-describedby={hintId} onClick={() => void inspect()}>{t("Delete all downloaded originals")}</button><span id={hintId} role="tooltip">{t("All downloaded originals will be deleted. You can download them again.")}</span></span>
     {visible && createPortal(<div className="wipe-scrim"><section ref={dialog} tabIndex={-1} className="wipe-dialog source-delete-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={warningId}>
-      <header><h2 id={titleId}>{t("Delete selected originals?")}</h2></header>
+      <header><h2 id={titleId}>{t("Delete all downloaded originals?")}</h2></header>
       <p id={warningId} className="notice error">{t("Deleting originals removes acquired source files. Clearing a selection only deselects them. To use deleted originals again, download them again in Filings.")}</p>
       <p>{t("Database documents, chunks, embeddings, and past job inputs are preserved.")}</p>
       {phase && <p role="status">{t(phase === "preview" ? "Preparing deletion preview…" : "Queuing source deletion…")}</p>}

@@ -7,6 +7,10 @@ Use this guide when **Settings → Local LLM** cannot find an answer model, or w
 
 The commands below are for you to run deliberately. Reading this page or opening the guide does not install software, download models, change services, or send a question to a model.
 
+## Prepare an installed model
+
+Use **Prepare model** in the pipeline answer-model card or **Settings → Local LLM**. The button loads the selected installed Ollama answer model without downloading a model or sending a question. It reports success only after the server confirms the model is loaded. Loading uses RAM/VRAM and can fail if memory is insufficient. The request keeps the model loaded for five minutes; it may unload after inactivity. Connection diagnostics remain read-only. OpenAI-compatible endpoints do not expose this Ollama-specific action.
+
 ## Check what already exists {#check}
 
 Run these on the computer that should host Ollama:

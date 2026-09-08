@@ -305,6 +305,57 @@ class LocalConnectionManager:
                     "selected_server_id": self._selected_server_id,
                 }
 
+    async def prepare_model(self, model: str) -> dict[str, Any]:
+        """Load an installed answer model on the active Ollama server and verify residency."""
+        self._require_enabled()
+        async with self._lock:
+            connection = self.current
+            inventory = connection.inventory
+            if inventory is None or inventory.protocol != "ollama":
+                raise LocalConnectionError(
+                    "unsupported_model_prepare", "Connect an Ollama server first."
+                )
+            inventory.invalidate()
+            snapshot = await inventory.snapshot()
+            installed = next(
+                (item for item in snapshot.models if item.name == model and item.selectable), None
+            )
+            if installed is None:
+                raise LocalConnectionError("model_unavailable", "Choose an installed answer model.")
+            if not installed.loaded:
+                headers = (
+                    {"authorization": f"Bearer {inventory.api_key}"} if inventory.api_key else {}
+                )
+                try:
+                    async with (
+                        asyncio.timeout(120),
+                        httpx.AsyncClient(transport=self._transport, timeout=120.0) as client,
+                    ):
+                        response = await client.post(
+                            f"{connection.base_url}/api/generate",
+                            headers=headers,
+                            json={
+                                "model": model,
+                                "prompt": "",
+                                "stream": False,
+                                "keep_alive": "5m",
+                            },
+                        )
+                        response.raise_for_status()
+                except (httpx.HTTPError, httpx.InvalidURL, TimeoutError) as error:
+                    raise LocalConnectionError(
+                        "model_prepare_failed",
+                        "Model preparation failed. Check Ollama and available memory, then retry.",
+                    ) from error
+            inventory.invalidate()
+            verified = await inventory.snapshot()
+            if not any(item.name == model and item.loaded is True for item in verified.models):
+                raise LocalConnectionError(
+                    "model_load_unconfirmed",
+                    "Model loading could not be confirmed. Refresh status and retry.",
+                )
+            return await self.state()
+
     def _saved_state(
         self, state: str, selected: str | None, servers: tuple[LocalServer, ...] | None = None
     ) -> dict[str, object]:

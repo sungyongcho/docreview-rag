@@ -9,7 +9,7 @@ describe("workspace navigation URLs", () => {
     { view: "build", tab: "documents" },
     { view: "build", tab: "jobs" },
     { view: "build", tab: "jobs", jobId: "admin-notification-1" },
-    ...["playground", "golden", "runs", "compare", "snapshots", "defaults", "presets"].map((tab) => ({ view: "measure" as const, tab: tab as "runs", resultId: 42 })),
+    ...["playground", "golden", "runs", "compare", "snapshots", "presets"].map((tab) => ({ view: "measure" as const, tab: tab as "runs", resultId: 42 })),
     ...["status", "operations", "api", "usage"].map((tab) => ({ view: "system" as const, tab: tab as "status" })),
   ])("round-trips the complete destination %j", (target) => {
     const url = navigationUrl(target, "/docreview-rag-agent/?locale=ko&theme=light&help=review.scope#inspection");
@@ -40,7 +40,7 @@ describe("workspace navigation URLs", () => {
     const t = (key: string) => key;
     expect(navigationLabel({ view: "review", conversationId: "a" }, { a: "NVIDIA filings" }, t)).toBe("Conversation · NVIDIA filings");
     expect(navigationLabel({ view: "build", tab: "pipeline", stage: 2 }, {}, t)).toBe("Build · Pipeline · Step 2");
-    expect(navigationLabel({ view: "measure", tab: "runs", resultId: 10 }, {}, t)).toBe("Measure · Run evaluation · Result 10");
+    expect(navigationLabel({ view: "measure", tab: "runs", resultId: 10 }, {}, t)).toBe("Measure · Run evaluation · Result details");
     expect(navigationLabel({ view: "system", tab: "usage" }, {}, t)).toBe("System · Usage");
   });
 });

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import os
@@ -45,6 +46,7 @@ from app.ingestion.source_selection import (
 )
 from app.observability.persistence import redact_sensitive_text
 from app.observability.usage import LEDGER_KIND, USAGE_KEY, UsageSink, merge_usage
+from app.operator.corpus_access import CorpusAccess
 from app.operator.jobs import (
     JobExecutionCoordinator,
     JobStore,
@@ -671,6 +673,7 @@ class RuntimeCorpusAdminService:
         embedding_provider: EmbeddingProvider | None = None,
         operation_runner: OperationRunner | None = None,
         job_store: JobStore | None = None,
+        corpus_access: CorpusAccess | None = None,
         execution_lock: asyncio.Lock | None = None,
         execution_coordinator: JobExecutionCoordinator | None = None,
     ) -> None:
@@ -681,6 +684,7 @@ class RuntimeCorpusAdminService:
         self._embedding_provider = embedding_provider
         self._operation_runner = operation_runner
         self._job_store = job_store
+        self.corpus_access = corpus_access or CorpusAccess()
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._corpus_root = configured.corpus_dir.resolve()
@@ -1570,7 +1574,16 @@ class RuntimeCorpusAdminService:
                     async with self._execution_lock:
                         if self._jobs.get(queued.job_id, queued).status != "cancelled":
                             try:
-                                await self._execute_job(queued)
+                                changes_search = queued.command.kind in {
+                                    "ingest_manifest",
+                                    "ingest_selected",
+                                    "backfill_embeddings",
+                                    "rebuild_bm25",
+                                }
+                                async with (
+                                    self.corpus_access.update() if changes_search else nullcontext()
+                                ):
+                                    await self._execute_job(queued)
                             except Exception as error:  # noqa: BLE001 - the worker outlives one job
                                 await self._abandon_job(queued, error)
                         else:

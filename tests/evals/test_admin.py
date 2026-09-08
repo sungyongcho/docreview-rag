@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from app.api.admin_schemas import EvaluationRunRequest
+from app.api.admin_schemas import EvaluationPreparationResource, EvaluationRunRequest
 from app.config import Settings
 from app.corpus_admin import AdminCommand, CorpusStatus, OperationOutcome, RuntimeCorpusAdminService
 import app.evals.admin as admin_module
@@ -36,6 +36,19 @@ def _absent_case(question: str) -> dict[str, object]:
     }
 
 
+@pytest.fixture
+def ready_evaluation_inputs(monkeypatch):
+    """Keep queue/coordinator tests independent from the separately tested input preflight."""
+
+    async def prepared(self, request):
+        """Provide a ready request before exercising scheduling and persistence behavior."""
+        return EvaluationPreparationResource(
+            suite_id=request.suite_id, kind="builtin", state="ready"
+        )
+
+    monkeypatch.setattr(EvaluationAdminService, "preparation", prepared)
+
+
 def test_suite_catalog_preserves_unapproved_provenance(tmp_path: Path) -> None:
     """Never present agent-curated pending cases as human-verified goldens."""
     service = EvaluationAdminService(
@@ -60,6 +73,7 @@ def test_suite_catalog_preserves_unapproved_provenance(tmp_path: Path) -> None:
     assert all(suite.source_ready is False for suite in suites)
 
 
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_evaluation_queue_runs_one_job_to_completion(tmp_path: Path, monkeypatch) -> None:
     """Keep evaluation execution serial and retain its terminal artifact identity."""
 
@@ -108,6 +122,24 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
             captured = args
             return {"persisted": [], "artifacts": []}
 
+        from app.ingestion.source_publication import publish_acquired
+        from tests.ingestion.support import acquired_filing, filing_document
+
+        filing = acquired_filing(tmp_path, document=filing_document(registry="dart"))
+        publish_acquired(
+            tmp_path / "manifest.json",
+            [filing],
+            selection_id="download",
+            selected_document_ids=[filing.document.document_id],
+        )
+
+        async def cases(request):
+            """Use a source-free question to isolate matrix scope construction."""
+            from app.evals.loader import GOLDEN_CASES
+
+            return GOLDEN_CASES.validate_python([_absent_case("Absent?")]), "a" * 64
+
+        monkeypatch.setattr(service, "_evaluation_cases", cases)
         monkeypatch.setattr(admin_module, "_run_cli", run_cli)
         request = EvaluationRunRequest(
             suite_id="dart-ko",
@@ -117,8 +149,9 @@ def test_matrix_forwards_dart_manifest_and_profile_parameters(tmp_path: Path, mo
         await service._matrix(request)
 
         assert captured is not None
-        assert captured.manifest_name == "manifest.json"
-        assert captured.selection_id == "dart-evaluation"
+        assert Path(captured.manifest_name).name.startswith(".evaluation-scope-")
+        assert not Path(captured.manifest_name).exists()
+        assert captured.selection_id == "evaluation-scope"
         assert captured.bm25_k1 == 1.5
         assert captured.bm25_b == 0.6
 
@@ -136,7 +169,9 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
         corpus_dir.mkdir()
         raw = "<p>Source.</p>"
         digest = hashlib.sha256(raw.encode()).hexdigest()
-        (corpus_dir / "source.html").write_text(raw)
+        source_path = corpus_dir / "sec/TEST/0000000001-24-000001/primary.html"
+        source_path.parent.mkdir(parents=True)
+        source_path.write_text(raw)
         manifest = corpus_dir / "manifest.json"
         manifest.write_text(
             json.dumps(
@@ -167,7 +202,7 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
                             "artifact_id": "source",
                             "document_id": "TEST-FY2024",
                             "role": "primary",
-                            "path": "source.html",
+                            "path": "sec/TEST/0000000001-24-000001/primary.html",
                             "sha256": digest,
                             "byte_length": len(raw.encode()),
                             "encoding": "utf-8",
@@ -190,10 +225,14 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
             artifact_dir=tmp_path / "runs",
         )
 
-        async def revision_payload(request):
-            """Return the selected revision bytes without a live database."""
-            assert request.golden_revision_id == 9
-            return payload, "a" * 64
+        from app.evals.golden_admin import GoldenAdminService
+
+        golden_dir = tmp_path / "golden"
+        golden_dir.mkdir()
+        (golden_dir / "retrieval.json").write_text(json.dumps(payload))
+        golden = GoldenAdminService(golden_dir=golden_dir, corpus_dir=corpus_dir)
+        draft = await golden.create_draft("sec-en", filename="custom.json")
+        service._golden_dir = golden_dir
 
         captured = None
 
@@ -203,23 +242,25 @@ def test_selected_golden_revision_drives_quick_and_matrix_inputs(
             captured = (args, json.loads(args.golden.read_text(encoding="utf-8")))
             return {"persisted": [], "artifacts": []}
 
-        monkeypatch.setattr(service, "_golden_revision_payload", revision_payload)
         monkeypatch.setattr(admin_module, "_run_cli", run_cli)
-        request = EvaluationRunRequest(suite_id="sec-en", golden_revision_id=9)
+        request = EvaluationRunRequest(suite_id="sec-en", golden_revision_id=draft.revision_id)
 
         cases, sha256 = await service._evaluation_cases(request)
         await service._matrix(request.model_copy(update={"mode": "matrix"}))
 
         assert cases[0].question == "Revision question?"
-        assert sha256 == "a" * 64
+        assert sha256 == draft.sha256
         assert captured is not None
         args, written = captured
         assert written == payload
+        assert args.admin_metadata["golden_provenance"]["filename"] == "custom.json"
+        assert args.admin_metadata["golden_provenance"]["golden_sha256"] == draft.sha256
         assert not args.golden.exists()
 
     asyncio.run(scenario())
 
 
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_queued_evaluation_can_be_cancelled_before_execution(tmp_path: Path, monkeypatch) -> None:
     """Keep cancellation cost-free by allowing it only before evaluation starts."""
 
@@ -256,6 +297,7 @@ def test_queued_evaluation_can_be_cancelled_before_execution(tmp_path: Path, mon
     asyncio.run(scenario())
 
 
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_corpus_and_evaluation_workers_share_one_execution_lock(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -313,7 +355,7 @@ def test_corpus_and_evaluation_workers_share_one_execution_lock(
 
 def test_suite_source_failure_is_typed_without_guessing(tmp_path: Path, monkeypatch) -> None:
     """Only actual source absence is classified as an acquisition prerequisite."""
-    from app.evals.loader import GoldenDataError, SourceMissingError
+    from app.evals.loader import GoldenDataError
 
     service = EvaluationAdminService(
         settings=Settings(corpus_dir=tmp_path),
@@ -323,20 +365,37 @@ def test_suite_source_failure_is_typed_without_guessing(tmp_path: Path, monkeypa
 
     def missing(*args, **kwargs):
         """Simulate the loader's explicit absent-artifact contract."""
-        raise SourceMissingError("missing artifact")
+        from app.evals.source_binding import BoundGolden, SourceCheck
 
-    monkeypatch.setattr(admin_module, "load_golden_cases", missing)
+        return BoundGolden(
+            (),
+            (
+                SourceCheck(
+                    "missing",
+                    "sec",
+                    "NVDA",
+                    2024,
+                    "receipt",
+                    None,
+                    "source_missing",
+                    "missing artifact",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(admin_module, "bind_golden", missing)
     assert all(row.source_error_code == "source_missing" for row in asyncio.run(service.suites()))
 
     def invalid(*args, **kwargs):
         """Keep invalid hashes or manifests distinct from missing downloads."""
         raise GoldenDataError("invalid source contract")
 
-    monkeypatch.setattr(admin_module, "load_golden_cases", invalid)
+    monkeypatch.setattr(admin_module, "bind_golden", invalid)
     assert all(row.source_error_code == "source_invalid" for row in asyncio.run(service.suites()))
 
 
 @pytest.mark.parametrize("preparation_succeeds", [True, False])
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
     tmp_path, monkeypatch, preparation_succeeds
 ):
@@ -389,6 +448,7 @@ def test_waiting_evaluation_deduplicates_and_rechecks_preparation(
     asyncio.run(scenario())
 
 
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_evaluation_waiting_message_tracks_the_current_global_blocker(tmp_path):
     """Refresh every queued evaluation when the active corpus job advances to BM25."""
 
@@ -465,6 +525,7 @@ def test_quick_evaluation_preparation_matches_the_selected_strategy(
             asyncio.run(service._require_preparation(request, allow_pending=False))
 
 
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_failed_durable_enqueue_does_not_leave_a_duplicate_reservation(tmp_path):
     """Allow retry after failed ledger creation without leaving a ghost queued job."""
     from types import SimpleNamespace
@@ -503,6 +564,7 @@ def test_failed_durable_enqueue_does_not_leave_a_duplicate_reservation(tmp_path)
     asyncio.run(scenario())
 
 
+@pytest.mark.usefixtures("ready_evaluation_inputs")
 def test_cancel_waits_for_queued_progress_before_persisting_terminal_state(tmp_path):
     """A delayed queued message must not overwrite a cancellation in the persistent job board."""
     from types import SimpleNamespace

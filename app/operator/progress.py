@@ -78,9 +78,21 @@ def advance_progress(
     if index is None:
         return dict(refs or {})
     previous = stored_progress(refs)
+    # Only acquisition detail counters represent bytes in the current unfinished item.
+    item_fraction = 0.0
+    if (
+        kind in {"acquire_edgar", "acquire_dart"}
+        and progress.stage in {"issuer_index", "download"}
+        and progress.detail_current is not None
+        and progress.detail_total is not None
+        and progress.detail_total > 0
+    ):
+        item_fraction = min(max(progress.detail_current / progress.detail_total, 0), 1)
     fraction = (
-        min(max(progress.current / progress.total, 0), 1)
+        min(max((progress.current + item_fraction) / progress.total, 0), 1)
         if progress.total is not None and progress.total > 0
+        else item_fraction
+        if progress.stage == "issuer_index"
         else 0
     )
     overall = min(99, int(99 * (index + fraction) / len(phases)))

@@ -1,4 +1,5 @@
 "use client";
+import { useConfirmation } from "./use-confirmation";
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
@@ -42,6 +43,7 @@ function sizeLabel(bytes: number): string { return bytes < 1024 ? `${bytes} B` :
 
 /** Export exact local payloads and confirm a fully validated import before overwriting. */
 export function BrowserStorageSettings({ disabled = false, onShowNotice }: { disabled?: boolean; onShowNotice?: () => void }) {
+  const { confirm, confirmationDialog } = useConfirmation();
   const { t } = useI18n();
   const { notify } = useNotifications();
   const input = useRef<HTMLInputElement>(null);
@@ -63,14 +65,14 @@ export function BrowserStorageSettings({ disabled = false, onShowNotice }: { dis
     setWorking(true);
     try {
       const text = await file.text(); validateBrowserSettings(text);
-      if (!window.confirm(t("Replace this browser's DocReview settings and conversations with this file?"))) return;
+      if (!await confirm(t("Replace this browser's DocReview settings and conversations with this file?"))) return;
       const persisted = importBrowserSettings(text, true);
       setRevision(value => value + 1);
       if (persisted) notify(t("Browser settings imported."), "success", "browser-storage-import", undefined, { event: "browser-storage-import-notice" });
     } catch { notify(t("This browser settings file is invalid or unsupported. Nothing was imported."), "error", "browser-storage-import", undefined, { event: "browser-storage-import-error" }); }
     finally { setWorking(false); if (input.current) input.current.value = ""; }
   }
-  return <section className="browser-storage-settings" aria-label={t("Browser storage")} data-revision={revision}>
+  return <section className="browser-storage-settings" aria-label={t("Browser storage")} data-revision={revision}>{confirmationDialog}
     <header><h3>{t("Browser storage")}</h3><button className="icon-button" type="button" aria-label={t("Show browser storage notice")} onClick={() => { onShowNotice?.(); window.dispatchEvent(new Event(OPEN_NOTICE)); }}>⚠️</button></header>
     <p>{t("Estimated browser storage: {size}", { size: sizeLabel(total) })}</p>
     {total >= STORAGE_WARNING_BYTES && <p role="status">{t("Browser storage is nearing a common limit. Export a backup; the actual quota depends on your browser.")}</p>}

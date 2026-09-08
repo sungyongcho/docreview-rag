@@ -8,9 +8,9 @@ import { setDesktopJobNotifications } from "@/lib/storage";
 
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup();vi.useRealTimers();vi.unstubAllGlobals(); });
-function Probe({ modal = false, long = false, target }: { modal?: boolean; long?: boolean; target?: NotificationTarget }) {
+function Probe({ modal = false, long = false, target, actionLabel }: { actionLabel?: string; modal?: boolean; long?: boolean; target?: NotificationTarget }) {
   const { notify } = useNotifications();useNotificationSurface("health", modal);
-  return <><button onClick={() => notify(long ? "Original server detail ".repeat(30) : "Original server message.", "error", "health", 1000, { event: "health-transition", target, detail: { text: "ValueError: original detail", cause: "invalid_json", path: "manifest.json" } })}>Emit</button><button onClick={() => notify("Job complete", "success", "job:1", undefined, { event: "job-status", jobId: "1", desktop: true, target: { view: "build", tab: "jobs", jobId: "1" } })}>Job</button></>;
+  return <><button onClick={() => notify(long ? "Original server detail ".repeat(30) : "Original server message.", "error", "health", 1000, { event: "health-transition", target, actionLabel, detail: { text: "ValueError: original detail", cause: "invalid_json", path: "manifest.json" } })}>Emit</button><button onClick={() => notify("Job complete", "success", "job:1", undefined, { event: "job-status", jobId: "1", desktop: true, target: { view: "build", tab: "jobs", jobId: "1" } })}>Job</button></>;
 }
 function mount(props = {}, navigate = vi.fn()) { return { ...render(<NotificationProvider><Probe {...props} /><NotificationCenter developer onNavigate={navigate} /></NotificationProvider>), navigate }; }
 function open() { fireEvent.click(screen.getByRole("button", { name: /^Notifications ·/ }));return screen.getByRole("dialog", { name: "Notification center" }); }
@@ -92,4 +92,32 @@ it("closes the center when an existing child confirmation dialog opens automatic
   view.rerender(<NotificationProvider><OwnedDialog active/><NotificationCenter onNavigate={vi.fn()}/></NotificationProvider>);
   expect(screen.queryByRole("dialog",{name:"Notification center"})).toBeNull();
   expect(screen.getByRole("dialog",{name:"Reset confirmation"})).toBeInTheDocument();
+});
+
+it("updates live job progress in place without creating notification history on every poll", () => {
+  const job = { job_id: "active-parse", domain: "corpus", kind: "ingest_manifest", status: "running", overall_current: 25, overall_total: 100 } as import("@/lib/types").OperatorJob;
+  const navigate = vi.fn();
+  const { rerender } = render(<NotificationProvider><NotificationCenter onNavigate={navigate} jobs={[job]} /></NotificationProvider>);
+  open();
+  expect(screen.getByText("Parsing / chunking · 25%")).toBeVisible();
+  rerender(<NotificationProvider><NotificationCenter onNavigate={navigate} jobs={[{ ...job, overall_current: 60 }]} /></NotificationProvider>);
+  expect(screen.getByText("Parsing / chunking · 60%")).toBeVisible();
+  expect(screen.queryByText("Parsing / chunking · 25%")).not.toBeInTheDocument();
+  expect(loadNotifications()).toHaveLength(0);
+  rerender(<NotificationProvider><NotificationCenter onNavigate={navigate} jobs={[job]} jobsStale /></NotificationProvider>);
+  expect(screen.getByText("Checking current job progress…")).toBeVisible();
+  expect(screen.queryByText("Parsing / chunking · 60%")).not.toBeInTheDocument();
+  rerender(<NotificationProvider><NotificationCenter onNavigate={navigate} jobs={[{ ...job, overall_current: 60 }]} /></NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: /Parsing \/ chunking · 60%/ }));
+  expect(navigate).toHaveBeenCalledWith({ view: "build", tab: "jobs", jobId: "active-parse" });
+});
+
+
+it("opens the explicit recovery destination from inside the banner", () => {
+  const target: NotificationTarget = { view: "build", tab: "pipeline", stage: 1 };
+  const { navigate } = mount({ target, actionLabel: "Check document preparation" });
+  fireEvent.click(screen.getByText("Emit"));
+  const banner = screen.getByRole("alert");
+  fireEvent.click(within(banner).getByRole("button", { name: "Check document preparation" }));
+  expect(navigate).toHaveBeenCalledExactlyOnceWith(target);
 });
