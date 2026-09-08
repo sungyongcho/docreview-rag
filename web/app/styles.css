@@ -818,3 +818,17 @@ select.chip { appearance: auto; padding-right: 6px; }
 
 .review-execution-summary > button { margin-top: 10px; }
 .message.pending .review-execution-summary { margin-top: 0; }
+
+/* Workflow steps and management share a strip, with separate labelled groups. */
+.measure-tab-strip { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.measure-tab-group { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.measure-tab-strip .measure-tab-group > button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; white-space: nowrap; font-size: 13px; }
+.measure-step-chip { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; line-height: 1; opacity: .75; }
+.measure-management-group { margin-left: auto; padding-left: 16px; border-left: 1px solid var(--border); }
+.measure-management-caption { color: var(--muted); font-size: 11px; padding-right: 4px; }
+.measure-tab-strip button:focus-visible { outline: 2px solid var(--focus, var(--text)); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .measure-tab-strip { align-items: stretch; gap: 8px; }
+  .measure-workflow-group { flex-basis: 100%; flex-wrap: wrap; }
+  .measure-management-group { flex-basis: 100%; margin-left: 0; padding: 8px 0 0; border-left: 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+}

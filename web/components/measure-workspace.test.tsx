@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -71,7 +71,7 @@ describe("Measure workspace", () => {
     render(<Host live />);
 
     expect(screen.getByText("Local operator")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
     expect(await screen.findByText("Which policy is absent?")).toBeInTheDocument();
     expect(screen.getByText("retrieval.json")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "test-01" }));
@@ -156,8 +156,8 @@ describe("Measure workspace", () => {
     expect(screen.getByRole("heading", { name: "Result details · #113" })).toBeInTheDocument();
     expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New evaluation" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
-    fireEvent.click(screen.getByRole("button", { name: "3. Run evaluation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
     expect(screen.getByRole("heading", { name: "Result details · #113" })).toBeVisible();
     expect(screen.queryByText(/No evaluations yet/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to evaluations" }));
@@ -201,15 +201,15 @@ describe("Measure workspace", () => {
     render(<Host live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
-    for (const label of ["1. Search trial", "2. Golden dataset", "3. Run evaluation", "4. Compare and save"]) {
+    for (const label of ["Search trial", "Golden dataset", "Run evaluation", "Compare results"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
     expect(screen.getByText("Playground runs on the local operator build.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "3. Run evaluation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
     expect(screen.getByText("Runs happen on the local operator build.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open Snapshots" }));
     expect(screen.getByRole("heading", { name: "Published snapshots" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Compare results" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" }));
     expect(screen.getByText("No comparison loaded yet. Queue a run, then click Compare on a succeeded result that has a baseline.")).toBeInTheDocument();
     expect(screen.getByText("Illustrative example only — not an evaluation result.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Case changes", level: 2 })).not.toBeInTheDocument();
@@ -374,4 +374,21 @@ describe("evaluation run refetch keyed on evaluation jobs", () => {
     rerender(view([corpusJob, { ...corpusJob, job_id: "eval-1", domain: "evaluation", kind: "quick" }]));
     await waitFor(() => expect(runsCalls()).toBe(before + 1));
   });
+});
+
+/** Keep management out of the ordered workflow while retaining accessible active states. */
+it("separates workflow and management and opens defaults as a tab", async () => {
+  stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/runs") ? { jobs: [] } : []);
+  render(<Host live initialTab="presets" />);
+  const workflow = screen.getByRole("group", { name: "Evaluation workflow" });
+  const management = screen.getByRole("group", { name: "Manage" });
+  expect(within(workflow).getAllByRole("button")).toHaveLength(4);
+  expect(workflow.querySelectorAll(".measure-step-chip")).toHaveLength(4);
+  expect(management.querySelector(".measure-step-chip")).toBeNull();
+  expect(document.querySelector('[data-help="measure.presets.manage"]')).not.toBeNull();
+  expect(within(management).getByRole("button", { name: "Presets" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(within(management).getByRole("button", { name: "Defaults" }));
+  expect(within(management).getByRole("button", { name: "Defaults" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(management).getByRole("button", { name: "Presets" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByRole("heading", { name: "Evaluation settings" })).toBeVisible();
 });

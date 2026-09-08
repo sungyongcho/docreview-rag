@@ -292,7 +292,7 @@ describe("service shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
     expect(screen.getByRole("heading", { name: "Measure retrieval before trusting it." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Search trial" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
     expect(screen.getByRole("heading", { name: "Runtime readiness" })).toBeInTheDocument();
@@ -422,7 +422,7 @@ describe("service shell", () => {
     render(<ServiceShell />);
     await screen.findByText("Corpus total · 29 filings");
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
-    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
     await screen.findByRole("option", { name: "v1 · draft" });
     fireEvent.change(screen.getByLabelText("Golden revision"), { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: "draft-01" }));
@@ -435,7 +435,7 @@ describe("service shell", () => {
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockReturnValue(true);
     await traverseHistory("Back");
-    expect(screen.getByRole("button", { name: "1. Search trial" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Search trial" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockRestore();
   });
@@ -465,7 +465,7 @@ describe("service shell", () => {
     render(<ServiceShell />);
     await screen.findByText("Corpus total · 29 filings");
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
-    fireEvent.click(screen.getByRole("button", { name: "3. Run evaluation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
     await screen.findByRole("heading", { name: "Result details · #16" });
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
@@ -478,7 +478,7 @@ describe("service shell", () => {
     expect(request).toHaveValue('{"suite_id":"sec-ko"}');
     await traverseHistory("Back");
     await traverseHistory("Back");
-    expect(screen.getByRole("button", { name: "3. Run evaluation" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Run evaluation" })).toHaveAttribute("aria-pressed", "true");
     // Result detail intentionally replaces the run list while preserving the selected result.
     expect(screen.queryByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to evaluations" })).toBeVisible();
@@ -1434,12 +1434,12 @@ describe("browser navigation history", () => {
     window.history.replaceState(null, "", "/docreview-rag-agent/?view=measure&tab=snapshots&locale=ko#saved");
     render(<ServiceShell />);
     await screen.findByRole("button", { name: "System · healthy" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "4. Compare and save" })).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" })).toHaveAttribute("aria-pressed", "true"));
     expect(window.location.pathname).toBe("/docreview-rag-agent/");
     expect(new URLSearchParams(window.location.search).get("locale")).toBe("ko");
     expect(window.location.hash).toBe("#saved");
     cleanup(); render(<ServiceShell />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "4. Compare and save" })).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" })).toHaveAttribute("aria-pressed", "true"));
   });
 
   it("falls back to a saved conversation when a shared URL names an unknown local id", async () => {

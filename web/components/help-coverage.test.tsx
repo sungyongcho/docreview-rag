@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -202,7 +202,7 @@ describe("help topic coverage", () => {
     expectPresent(["measure.runs.chunk_targets", "measure.runs.k", "measure.runs.rrf_k"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Close evaluation setup" }));
-    fireEvent.click(screen.getByRole("button", { name: "4. Compare and save" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" }));
     fireEvent.click(screen.getByRole("button", { name: "Saved snapshots" }));
     await screen.findByRole("heading", { name: "Evaluation snapshots" });
     fireEvent.change(screen.getByRole("combobox", { name: "Baseline" }), { target: { value: "1" } });
@@ -211,12 +211,12 @@ describe("help topic coverage", () => {
     await screen.findByRole("heading", { name: "Snapshot comparison" });
     expect(coverage("measure.snapshots").missing).toEqual([]);
 
-    fireEvent.click(screen.getByRole("button", { name: "2. Golden dataset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
     await screen.findByText("retrieval.json");
     expect(coverage("measure.golden").missing).toEqual([]);
     expectPresent(["measure.golden.revision"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "4. Compare and save" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" }));
     expect(coverage("measure.compare").missing).toEqual([]);
   });
 

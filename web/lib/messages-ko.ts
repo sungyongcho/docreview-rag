@@ -17,6 +17,12 @@ export const KO: Record<string, string> = {
 
   "characters": "자",
   "New conversation defaults": "새 대화 기본 한도",
+  "Golden dataset": "데이터셋",
+  "Evaluation workflow": "품질 검증 단계",
+  "Manage": "관리",
+  "Presets": "프리셋",
+  "Measure · Presets": "품질 검증 · 프리셋",
+  "Manage reusable search settings separately from the four evaluation steps. Select a preset in a conversation to apply it; saving a preset does not start an evaluation.": "네 검증 단계와 분리된 관리 영역에서 검색 설정을 저장합니다. 대화에서 프리셋을 선택하면 적용되며, 저장만으로 평가가 시작되지는 않습니다.",
   "Local": "로컬",
   "Ready to answer": "답변 준비",
   "No API key": "API 키 없음",
