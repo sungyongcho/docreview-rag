@@ -384,3 +384,5 @@ export function resolvedRetrievalProfile(profile: ReviewSessionProfile): Retriev
   }
   return DEFAULT_PROFILE;
 }
+
+export type SourceDeletionPreview = components["schemas"]["SourceDeletionPreviewResource"];

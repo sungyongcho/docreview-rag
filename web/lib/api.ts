@@ -478,3 +478,9 @@ export function manageJobHistory(payload: Omit<components["schemas"]["JobHistory
 export function jobHistoryBackupUrl(id: string): string {
   return `${API_BASE}/admin/jobs/history/backups/${encodeURIComponent(id)}`;
 }
+
+
+/** Preview exact current originals; confirmation queues deletion through the normal corpus API. */
+export function previewSourceDeletion(documentIds: string[]): Promise<import("./types").SourceDeletionPreview> {
+  return request("/admin/corpus/sources/deletion-preview", { method: "POST", body: JSON.stringify({ document_ids: documentIds }) });
+}

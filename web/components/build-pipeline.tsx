@@ -51,6 +51,8 @@ export interface BuildPipelineProps {
   manifests: ManifestSummary[];
   sources?: SourceInventory[];
   onChangeFilings?: () => void;
+  onDeleteSources?: (token: string) => Promise<void>;
+  sourceDeletionDisabled?: boolean;
   /** Runtime flags for the strip; `null` or `undefined` means "not known yet". */
   databaseConnected?: boolean | null;
   schemaStatus?: string | null;
@@ -216,6 +218,8 @@ export function BuildPipeline(props: BuildPipelineProps) {
             busy={props.busy}
             handler={handler}
             onDownload={props.onDownload}
+            onDeleteSources={props.onDeleteSources}
+            sourceDeletionDisabled={props.sourceDeletionDisabled || !props.canOperateCorpus || pipeline.stages.some((item) => item.job?.domain === "corpus" && ["queued", "running"].includes(item.job.status))}
             disabled={disabled}
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
@@ -346,13 +350,15 @@ interface StageCardProps {
   manifests: ManifestSummary[];
   sources?: SourceInventory[];
   onChangeFilings?: () => void;
+  onDeleteSources?: (token: string) => Promise<void>;
+  sourceDeletionDisabled?: boolean;
   onOpenDocuments: () => void;
   onOpenJobs: () => void;
   onOpenStatus: () => void;
   onCancelJob: (jobId: string) => void;
 }
 
-function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ answerEngines, onOpenLocalSettings, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -382,7 +388,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, sourc
               {stage.numbers.map((item, index) => <Fragment key={`${index}:${t(item)}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}
             </p>
           )}
-          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} />}
+          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
           {job && !(stage.id === "index" && activeJob) && (
             <div className="stage-job">
               <JobProgress job={job} />
@@ -398,12 +404,21 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, sourc
               <button className="button" type="button" onClick={onChangeFilings}><RefreshCw size={14} aria-hidden="true" />{t("Change selection in Filings")}</button>
             </header>
             <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
-            <SourceSelectionGrid sources={sources} pairs={sourceState.pairs} companies={companies} disabled={readOnly || busy || Boolean(activeJob)} onToggle={(changed, included) => {
+            <SourceSelectionGrid eligibleOnly sources={sources} pairs={sourceState.pairs} companies={companies} disabled={readOnly || busy || Boolean(activeJob)} onToggle={(changed, included) => {
               const next = new Map(sourceState.pairs.map((pair) => [pairKey(pair), pair]));
               for (const pair of changed) if (included) next.set(pairKey(pair), pair); else next.delete(pairKey(pair));
               onAcquisitionChange(acquisitionDraft([...next.values()]));
             }} />
-            {sourceState.blocked.map((source) => <p role="alert" className="index-selection-missing" key={source.document_id}>{source.blocker}</p>)}
+            {sourceState.downloadPairs.length > 0 && <div className="index-selection-missing" role="alert" style={{ overflowWrap: "anywhere" }}>
+              <strong>{t("Selected sources requiring download or repair")}</strong>
+              <ul>{sourceState.downloadPairs.map((pair) => {
+                const rows = sourceState.selected.filter((source) => source.registry === pair.registry && source.issuer.toUpperCase() === pair.issuer && source.fiscal_year === pair.year);
+                return <li key={pairKey(pair)}>{pair.registry.toUpperCase()} · {pair.issuer} FY{pair.year}
+                  {rows.length ? <ul>{rows.filter((source) => !source.on_disk || source.ready === false).map((source) => <li key={source.document_id}>{source.filing_id || source.document_id}: {source.blocker || t(source.on_disk ? "Source blocked" : "Missing source")}</li>)}</ul> : `: ${t("Missing source")}`}
+                </li>;
+              })}</ul>
+              <p>{t("The entire selected scope is blocked until these originals are downloaded or repaired in Filings.")}</p>
+            </div>}
             {!sourceState.pairs.length && <p className="helper">{t("Select sources in Filings to start parsing.")}</p>}
             {missingCount > 0 && <p role="alert" id="index-selection-missing" className="index-selection-missing">{t("{count} sources missing → download in Filings before parsing.", { count: missingCount })}</p>}
             {sourceState.pairs.length > 0 && <p className="helper">{t("Select or clear downloaded years here. Add missing filings in step 1.")}</p>}

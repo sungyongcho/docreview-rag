@@ -307,7 +307,8 @@ it("names missing company years, blocks the default ingest, and removes the Adva
   const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, on_disk: true }] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("4 documents · 1 ready · 3 to download");
-  expect(screen.getByRole("button", { name: "NVDA FY2023 · Missing source" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "NVDA FY2023 · Missing source" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2023: Missing source");
   expect(screen.queryByRole("textbox", { name: "Search/add company or year" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
   expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
@@ -362,7 +363,8 @@ it("counts partial and absent source identities and explains disabled parsing", 
   const primary = screen.getByRole("button", { name: "Parse & chunk selected sources" });
   expect(primary).toBeDisabled();
   expect(primary).toHaveAccessibleDescription("2 sources missing → download in Filings before parsing.");
-  expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveAttribute("title", expect.stringContaining("raw-second"));
+  expect(screen.queryByRole("button", { name: "NVDA FY2024 · Missing source" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("raw-second: Missing source");
 });
 
 it.each(["running", "queued"] as const)("replaces parsing with shared progress and cancel while %s", (status) => {
@@ -455,4 +457,21 @@ it.each(["en", "ko"] as const)("shows matching dual engine lights, details and r
   expect(screen.getAllByText(locale === "en" ? "OpenAI only ready · Local: Model not loaded" : "OpenAI만 준비 · 로컬: 모델 미적재")).toHaveLength(2);
   vi.unstubAllEnvs();
   vi.resetModules();
+});
+
+it("offers only fully eligible years and keeps every intended invalid or absent pair as a blocker", () => {
+  const changed = { ...selectionSource("NVDA", 2024), ready: false, blocker: "Source bytes changed", filing_id: "0001045810-24-000029" };
+  const sources = [changed, selectionSource("AMD", 2023), selectionSource("INTC", 2023, false), selectionSource("MU", 2023)];
+  const acquisition = acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "AMD", year: 2023 }, { registry: "sec", issuer: "MSFT", year: 2022 }]);
+  const handlers = renderPipeline(liveInput(), { focusStage: "index", sources, acquisition });
+  expect(screen.queryByRole("button", { name: /^NVDA FY/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^INTC FY/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^MSFT FY/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "MU FY2023 · On disk" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2024");
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("0001045810-24-000029: Source bytes changed");
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("MSFT FY2022: Missing source");
+  fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
+  expect(handlers.onIngestAll).not.toHaveBeenCalled();
+  expect(screen.queryByText("Advanced")).toBeNull();
 });

@@ -13,15 +13,17 @@ interface Props {
   companies: AcquisitionCompany[];
   disabled?: boolean;
   selectedOnly?: boolean;
+  eligibleOnly?: boolean;
   onToggle?: (pairs: AcquisitionPair[], included: boolean) => void;
 }
 
 /** Render a compact, accessible company/year grid for selection or a read-only summary. */
-export function SourceSelectionGrid({ sources, pairs, companies, disabled, selectedOnly = false, onToggle }: Props) {
+export function SourceSelectionGrid({ sources, pairs, companies, disabled, selectedOnly = false, eligibleOnly = false, onToggle }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const selected = new Set(pairs.map(pairKey));
-  return <div className="source-selection-grid">{sourceSelectionRows(sources, pairs, companies, selectedOnly).map(({ registry, rows }) => {
+  return <div className="source-selection-grid">{sourceSelectionRows(sources, pairs, companies, selectedOnly).map(({ registry, rows: allRows }) => {
+    const rows = eligibleOnly ? allRows.map((row) => ({ ...row, cells: row.cells.filter((cell) => cell.documents.length > 0 && cell.documents.every((source) => source.on_disk && source.ready === true)) })).filter((row) => row.cells.length > 0) : allRows;
     if (!rows.length) return null;
     const years = [...new Set(rows.flatMap((row) => row.cells.map((cell) => cell.pair.year)))].sort((a, b) => a - b);
     const columns = years.length <= 6;

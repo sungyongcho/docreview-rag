@@ -193,7 +193,7 @@ def test_unreadable_sources_cannot_be_reported_as_an_empty_inventory(tmp_path, d
     if os.geteuid() == 0:
         pytest.skip("Root bypasses the Unix mode-denial fixture.")
     corpus = tmp_path / "data/corpus"
-    nested = corpus / "locked directory"
+    nested = corpus / "sec" / "locked directory"
     nested.mkdir(parents=True)
     source = nested / "private-source.html"
     source.write_text("keep inaccessible bytes")
@@ -253,3 +253,36 @@ def test_failed_source_rollback_preserves_journal_and_reports_unconfirmed_recove
     assert "database and sources are unchanged" not in output
     assert "rag-dev up -d" in output
     assert (tmp_path / "data/.schema-recreate-journal/journal.json").exists()
+
+
+def test_reset_clears_managed_inputs_and_preserves_unregistered_html(tmp_path):
+    """Only registered or managed-namespace originals and pinned inputs enter the reset."""
+    from app.ingestion.source_selection import record_selection
+
+    corpus = tmp_path / "data/corpus"
+    write_selection_catalog(corpus)
+    record_selection(corpus, ("NVDA",), (2024,))
+    unrelated = corpus / "notes.html"
+    unrelated.write_text("unrelated local report")
+    orphan = corpus / "sec/orphan/primary.html"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_text("unregistered managed original")
+    preview = source_preview(tmp_path)
+    assert "notes.html" not in preview["files"]
+    assert "sec/orphan/primary.html" in preview["files"]
+    assert any(path.startswith("inputs/") for path in preview["files"])
+    reset = SourceReset(tmp_path, preview)
+    reset.stage()
+    reset.finish()
+    assert unrelated.read_text() == "unrelated local report"
+    assert not orphan.exists()
+    assert not list((corpus / "inputs").rglob("*.html"))
+
+
+def test_pending_acquisition_journal_blocks_source_reset(tmp_path):
+    """Reset cannot remove the backups needed to recover an interrupted acquisition."""
+    corpus = tmp_path / "data/corpus"
+    write_selection_catalog(corpus)
+    (corpus / ".source-transaction").mkdir()
+    with pytest.raises(ValueError, match="publication is pending"):
+        source_preview(tmp_path)

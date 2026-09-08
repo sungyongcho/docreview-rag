@@ -1,0 +1,202 @@
+"""Publish one current source per official filing identity without losing job inputs."""
+
+from collections.abc import Sequence
+import hashlib
+from pathlib import Path
+
+from app.ingestion.acquisition import AcquiredFiling, read_catalog
+from app.ingestion.manifest import Manifest, ProcessingSelection, SourceArtifact
+from app.ingestion.source_storage import (
+    commit_sources,
+    confined_path,
+    external_references,
+    fingerprint,
+    source_lock,
+)
+
+
+def fixed_path(registry: str, filing_id: str, role: str) -> str:
+    """Name current originals by registry and receipt, independent of content revisions."""
+    if "/" in filing_id or "\\" in filing_id or filing_id in {".", ".."}:
+        raise ValueError("Invalid official filing identifier.")
+    name = (
+        "original.zip"
+        if role == "archive"
+        else ("primary.html" if registry == "sec" else "primary.xml")
+    )
+    return SourceArtifact.validate_path(f"{registry}/{filing_id}/{name}")
+
+
+def publish_acquired(
+    path: Path,
+    acquired: Sequence[AcquiredFiling],
+    *,
+    selection_id: str,
+    selected_document_ids: Sequence[str],
+) -> Manifest:
+    """Merge against the latest catalog while holding the cross-process source lock."""
+    from app.ingestion.source_selection import resolve_primary
+
+    root = path.parent
+    with source_lock(root, recover=True):
+        catalog = read_catalog(path)
+        documents = {d.document_id: d for d in catalog.documents}
+        artifacts = {a.artifact_id: a for a in catalog.artifacts}
+        remap: dict[str, str] = {}
+        document_remap: dict[str, str] = {}
+        changes: dict[str, bytes | None] = {}
+        references = external_references(root)
+        filings = list(acquired)
+        downloaded_ids = {f.document.document_id for f in acquired}
+        for document_id in selected_document_ids:
+            if document_id in downloaded_ids or document_id not in documents:
+                continue
+            try:
+                primary = resolve_primary(catalog, document_id, root)
+            except ValueError as error:
+                if str(error).startswith("Conflicting primary sources:"):
+                    raise
+                continue
+            document = documents[document_id]
+            sources = [primary]
+            archives = [
+                a for a in catalog.artifacts if a.document_id == document_id and a.role == "archive"
+            ]
+            if archives:
+                archive = next(
+                    (a for a in archives if a.sha256 == primary.acquisition.archive_sha256), None
+                )
+                if archive is None:
+                    raise ValueError(
+                        "Cannot identify the archive belonging to the current primary."
+                    )
+                sources.insert(0, archive)
+            registered = [
+                a
+                for a in catalog.artifacts
+                if a.document_id == document_id and a.role in {"primary", "archive"}
+            ]
+            if len(registered) != len(sources) or any(
+                a.path != fixed_path(document.registry, document.filing_id, a.role) for a in sources
+            ):
+                filings.append(
+                    AcquiredFiling(
+                        document, tuple(sources), tuple(a.read_bytes(root) for a in sources)
+                    )
+                )
+        for filing in filings:
+            identity = (filing.document.registry, filing.document.filing_id)
+            known = next(
+                (d for d in documents.values() if (d.registry, d.filing_id) == identity), None
+            )
+            document = known or filing.document
+            document_remap[filing.document.document_id] = document.document_id
+            if (
+                document.document_id in documents
+                and documents[document.document_id].filing_id != document.filing_id
+            ):
+                raise ValueError("Document ID belongs to a different filing; refusing replacement.")
+            old = [
+                a
+                for a in artifacts.values()
+                if a.document_id == document.document_id and a.role in {"primary", "archive"}
+            ]
+            if known is not None:
+                try:
+                    resolve_primary(catalog, document.document_id, root)
+                except ValueError as error:
+                    if str(error).startswith("Conflicting primary sources:"):
+                        raise
+            documents[document.document_id] = document
+            replacements = []
+            for index, artifact in enumerate(filing.artifacts):
+                payload = filing.payloads[index] if filing.payloads else artifact.read_bytes(root)
+                if (
+                    len(payload) != artifact.byte_length
+                    or hashlib.sha256(payload).hexdigest() != artifact.sha256
+                ):
+                    raise ValueError("Downloaded bytes disagree with their acquisition record.")
+                if artifact.encoding is not None:
+                    payload.decode(artifact.encoding, errors="strict")
+                relative = fixed_path(document.registry, document.filing_id, artifact.role)
+                destination = confined_path(root, relative)
+                if relative in references and fingerprint(destination) not in {
+                    None,
+                    artifact.sha256,
+                }:
+                    raise ValueError(
+                        "A past input references the current path; preserve it before replacement."
+                    )
+                if (
+                    destination.exists()
+                    and relative not in {a.path for a in old}
+                    and fingerprint(destination) != artifact.sha256
+                ):
+                    raise ValueError(
+                        "Unregistered bytes occupy the fixed source path; "
+                        "inspect them before acquisition."
+                    )
+                updated = artifact.model_copy(
+                    update={
+                        "document_id": document.document_id,
+                        "artifact_id": f"{document.document_id}:{artifact.role}:{artifact.sha256}",
+                        "path": relative,
+                    }
+                )
+                replacements.append(updated)
+                changes[relative] = payload
+            primary = next(a for a in replacements if a.role == "primary")
+            for artifact in old:
+                artifacts.pop(artifact.artifact_id)
+                if artifact.role == "primary":
+                    remap[artifact.artifact_id] = primary.artifact_id
+                if artifact.path not in references and artifact.path not in changes:
+                    old_path = confined_path(root, artifact.path)
+                    if fingerprint(old_path) == artifact.sha256:
+                        changes[artifact.path] = None
+            artifacts.update((a.artifact_id, a) for a in replacements)
+        selections = []
+        for selection in catalog.selections:
+            if selection.selection_id != selection_id:
+                selections.append(
+                    selection.model_copy(
+                        update={
+                            "artifact_ids": tuple(
+                                dict.fromkeys(remap.get(i, i) for i in selection.artifact_ids)
+                            )
+                        }
+                    )
+                )
+        wanted = set(selected_document_ids)
+        wanted.update(f.document.document_id for f in acquired)
+        wanted = {document_remap.get(identity, identity) for identity in wanted}
+        chosen = []
+        for document_id in sorted(wanted):
+            new_primary = next(
+                (
+                    a
+                    for a in artifacts.values()
+                    if a.document_id == document_id and a.role == "primary" and a.path in changes
+                ),
+                None,
+            )
+            if new_primary is not None:
+                chosen.append(new_primary.artifact_id)
+            elif document_id in documents:
+                try:
+                    chosen.append(resolve_primary(catalog, document_id, root).artifact_id)
+                except ValueError as error:
+                    if str(error).startswith("Conflicting primary sources:"):
+                        raise
+        if chosen:
+            selections.append(
+                ProcessingSelection(selection_id=selection_id, artifact_ids=tuple(chosen))
+            )
+        result = Manifest(
+            corpus=catalog.corpus,
+            documents=tuple(documents.values()),
+            artifacts=tuple(artifacts.values()),
+            selections=tuple(selections),
+        )
+        commit_sources(root, result, changes)
+        return result

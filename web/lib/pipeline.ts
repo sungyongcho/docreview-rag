@@ -76,7 +76,7 @@ export const STAGE_COPY: Record<StageId, StageCopy> = {
     title: "Filings",
     description: "Download SEC 10-K and DART business reports into data/corpus.",
     why: "Everything downstream cites these files by SHA-256. Re-running only fetches what is missing.",
-    jobKinds: ["acquire_edgar", "acquire_dart"],
+    jobKinds: ["acquire_edgar", "acquire_dart", "delete_sources"],
   },
   index: {
     title: "Parse & chunk",

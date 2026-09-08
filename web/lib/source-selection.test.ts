@@ -68,3 +68,17 @@ it("keeps conflicting downloaded primaries distinct from pending downloads", () 
   expect(state.blocked).toEqual([blocked]);
   expect(state.complete).toBe(false);
 });
+
+it("reacquires physically present invalid sources without counting them as missing", () => {
+  const invalid = { ...rows[0], ready: false, blocker: "Source bytes changed" };
+  const absent = { ...rows[1], on_disk: false, ready: false };
+  const state = selectedSourceState([invalid, absent], acquisitionDraft([
+    { registry: "sec", issuer: "NVDA", year: 2023 }, { registry: "sec", issuer: "NVDA", year: 2024 },
+    { registry: "dart", issuer: "005930", year: 2024 },
+  ]));
+  expect(state.present).toEqual([invalid]);
+  expect(state.missingPairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "dart", issuer: "005930", year: 2024 }]);
+  expect(state.downloadPairs).toHaveLength(3);
+  expect(state.blocked).toEqual([invalid]);
+  expect(state.complete).toBe(false);
+});

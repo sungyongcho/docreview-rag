@@ -1,7 +1,7 @@
 """Publish acquired bytes and explicit selections in the common corpus manifest."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import os
@@ -23,6 +23,7 @@ class AcquiredFiling:
 
     document: DocumentReference
     artifacts: tuple[SourceArtifact, ...]
+    payloads: tuple[bytes, ...] = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Require one coherent source artifact group for the document."""
@@ -30,6 +31,8 @@ class AcquiredFiling:
             raise ValueError("acquired artifact belongs to another document")
         if len({artifact.artifact_id for artifact in self.artifacts}) != len(self.artifacts):
             raise ValueError("acquisition contains duplicate artifacts")
+        if self.payloads and len(self.payloads) != len(self.artifacts):
+            raise ValueError("acquisition payloads must match artifacts")
         _ = self.primary
 
     @property
@@ -82,22 +85,15 @@ def publish_bytes(corpus_root: Path, relative_path: str, payload: bytes) -> Path
 def current_primary(
     manifest: Manifest, document_id: str, corpus_root: Path
 ) -> SourceArtifact | None:
-    """Return the newest recorded primary whose exact bytes remain available."""
-    artifact = next(
-        (
-            artifact
-            for artifact in reversed(manifest.artifacts)
-            if artifact.document_id == document_id and artifact.role == "primary"
-        ),
-        None,
-    )
-    if artifact is None:
+    """Return an unambiguous verified original; conflicting revisions require intervention."""
+    from app.ingestion.source_selection import resolve_primary
+
+    if not any(d.document_id == document_id for d in manifest.documents):
         return None
     try:
-        artifact.read(corpus_root)
-    except OSError, UnicodeError, ValueError:
+        return resolve_primary(manifest, document_id, corpus_root)
+    except ValueError:
         return None
-    return artifact
 
 
 def merge_acquired(
@@ -124,7 +120,11 @@ def merge_acquired(
     )
     selected: list[str] = []
     for document_id in sorted(set(selected_document_ids)):
-        primary = current_primary(catalog, document_id, corpus_root)
+        primary = next(
+            (f.primary for f in reversed(acquired) if f.document.document_id == document_id), None
+        )
+        if primary is None:
+            primary = current_primary(catalog, document_id, corpus_root)
         if primary is not None:
             selected.append(primary.artifact_id)
     selections = [

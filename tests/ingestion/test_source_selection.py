@@ -195,7 +195,7 @@ def test_updated_document_metadata_creates_new_immutable_job_selection(tmp_path)
     assert Manifest.read(tmp_path / first_name).documents[0].aliases != ("Updated company name",)
 
 
-def test_duplicate_filing_identities_block_inventory_and_queue(tmp_path):
+def test_distinct_filings_require_explicit_document_ids(tmp_path):
     """Multiple filings for one picker pair require a decision before any job starts."""
     catalog = write_selection_catalog(tmp_path)
     original = catalog.documents[0]
@@ -227,7 +227,22 @@ def test_duplicate_filing_identities_block_inventory_and_queue(tmp_path):
         for row in source_inventory(tmp_path)
         if row.issuer == original.issuer and row.fiscal_year == original.fiscal_year
     ]
-    assert len(rows) == 2 and all(not row.ready for row in rows)
+    assert len(rows) == 2 and all(row.ready for row in rows)
     with pytest.raises(ValueError, match="Ambiguous filing identity"):
         record_selection(tmp_path, (original.issuer,), (original.fiscal_year,))
+    assert not list(tmp_path.glob("selected-*.json"))
+    name, selection_id = record_selection(
+        tmp_path,
+        (original.issuer,),
+        (original.fiscal_year,),
+        (original.document_id, duplicate.document_id),
+    )
+    assert len(Manifest.read(tmp_path / name).selected_sources(selection_id, tmp_path)) == 2
+
+
+def test_exact_document_ids_reject_a_stale_selection(tmp_path):
+    """A removed ID cannot silently become another filing from the same company/year."""
+    write_selection_catalog(tmp_path)
+    with pytest.raises(ValueError, match="identities changed"):
+        record_selection(tmp_path, ("NVDA",), (2024,), ("removed-id",))
     assert not list(tmp_path.glob("selected-*.json"))

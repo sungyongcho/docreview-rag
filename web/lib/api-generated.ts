@@ -68,6 +68,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/corpus/sources/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Source Deletion Preview
+         * @description Inspect exact acquired originals without deleting or changing their selection.
+         */
+        post: operations["source_deletion_preview_admin_corpus_sources_deletion_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/documents": {
         parameters: {
             query?: never;
@@ -1366,12 +1386,18 @@ export interface components {
             queued: components["schemas"]["CorpusJobResource"][];
         };
         /** @enum {string} */
-        CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "backfill_embeddings" | "rebuild_bm25";
+        CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
         /**
          * CorpusOperationRequest
          * @description One safe corpus operation accepted by the local operator API.
          */
         CorpusOperationRequest: {
+            /** Confirm Delete */
+            confirm_delete?: boolean | null;
+            /** Deletion Token */
+            deletion_token?: string | null;
+            /** Document Ids */
+            document_ids?: string[] | null;
             /** Expected Documents */
             expected_documents?: number | null;
             /**
@@ -3486,6 +3512,67 @@ export interface components {
             public: boolean;
         };
         /**
+         * SourceDeletionDocument
+         * @description Show the official filing identity before original-file deletion is confirmed.
+         */
+        SourceDeletionDocument: {
+            /** Document Id */
+            document_id: string;
+            /** Filing Id */
+            filing_id: string;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Issuer */
+            issuer: string;
+            /**
+             * Registry
+             * @enum {string}
+             */
+            registry: "sec" | "dart";
+        };
+        /**
+         * SourceDeletionFile
+         * @description Distinguish current files to remove from inputs retained for other recorded scopes.
+         */
+        SourceDeletionFile: {
+            /** Byte Length */
+            byte_length: number;
+            /** Path */
+            path: string;
+            /** Retained */
+            retained: boolean;
+        };
+        /**
+         * SourceDeletionPreviewResource
+         * @description A short-lived confirmation bound to exact files and the current catalog.
+         */
+        SourceDeletionPreviewResource: {
+            /** Documents */
+            documents: components["schemas"]["SourceDeletionDocument"][];
+            /** Expires At */
+            expires_at: number;
+            /** Files */
+            files: components["schemas"]["SourceDeletionFile"][];
+            /**
+             * Retained Derived
+             * @default true
+             * @constant
+             */
+            retained_derived: true;
+            /** Retained Inputs */
+            retained_inputs: number;
+            /** Token */
+            token: string;
+        };
+        /**
+         * SourceDeletionRequest
+         * @description Preview the exact acquired filing identities selected in step one.
+         */
+        SourceDeletionRequest: {
+            /** Document Ids */
+            document_ids: string[];
+        };
+        /**
          * SourceInventoryResource
          * @description Downloaded source identity independent of database rows.
          */
@@ -3494,6 +3581,8 @@ export interface components {
             blocker?: string | null;
             /** Document Id */
             document_id: string;
+            /** Filing Id */
+            filing_id?: string | null;
             /** Fiscal Year */
             fiscal_year: number;
             /** Issuer */
@@ -3978,6 +4067,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    source_deletion_preview_admin_corpus_sources_deletion_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceDeletionPreviewResource"];
                 };
             };
             /** @description Request validation failed. */

@@ -67,8 +67,8 @@ def test_mixed_catalog_retains_existing_selection_and_source_identities(tmp_path
     assert len(loaded.documents) == len(loaded.artifacts) == len(loaded.selections) == 2
 
 
-def test_current_source_never_silently_falls_back_after_corruption(tmp_path):
-    """A damaged current revision requires reacquisition despite older available bytes."""
+def test_conflicting_legacy_primaries_require_an_unambiguous_valid_source(tmp_path):
+    """Two valid revisions block acquisition reuse; one verified legacy copy can be recovered."""
     old = tmp_path / "old.html"
     old.write_text("old")
     new = tmp_path / "new.html"
@@ -83,9 +83,9 @@ def test_current_source_never_silently_falls_back_after_corruption(tmp_path):
         documents=(source.document,),
         artifacts=(source.artifact, newer.artifact),
     )
-    assert current_primary(catalog, source.document.document_id, tmp_path) == newer.artifact
-    new.write_text("corrupted")
     assert current_primary(catalog, source.document.document_id, tmp_path) is None
+    new.write_text("corrupted")
+    assert current_primary(catalog, source.document.document_id, tmp_path) == source.artifact
 
 
 def test_acquisition_group_rejects_disconnected_artifacts(tmp_path):

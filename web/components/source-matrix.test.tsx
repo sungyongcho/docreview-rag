@@ -159,3 +159,12 @@ it("rejects unsupported codes even when local source rows contain that issuer", 
   expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   expect(download).not.toHaveBeenCalled();
 });
+
+it("places invalid on-disk sources in the synchronization plan without calling them absent", () => {
+  const download = vi.fn();
+  render(<Harness sources={[{ ...source("NVDA", 2024), ready: false, blocker: "Source bytes changed" }]} initialPairs={[{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
+  expect(screen.getByText(/Selected on disk: 1/)).toHaveTextContent("To download: 1");
+  expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2024");
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]));
+});

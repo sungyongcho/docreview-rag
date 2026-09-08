@@ -5,12 +5,14 @@ import hashlib
 import json
 from pathlib import Path
 
+from app.ingestion.acquisition import publish_bytes
 from app.ingestion.manifest import Manifest, ProcessingSelection, SourceArtifact
 from app.ingestion.source_catalog import (
     ACQUISITION_COMPANIES,
     approved_company,
     default_acquisition_draft,
 )
+from app.ingestion.source_storage import JOURNAL, confined_path, source_lock, validate_source
 
 DRAFT_NAME = "acquisition-draft.json"
 
@@ -28,6 +30,7 @@ class SourceInventory:
     on_disk: bool
     ready: bool = False
     blocker: str | None = None
+    filing_id: str | None = None
 
 
 def catalogs(root: Path, *, strict: bool = True) -> tuple[tuple[Path, Manifest], ...]:
@@ -58,7 +61,9 @@ def acquired_catalog(root: Path) -> Manifest | None:
     return Manifest.read(path) if path.exists() else None
 
 
-def resolve_primary(manifest: Manifest, document_id: str, root: Path) -> SourceArtifact:
+def resolve_primary(
+    manifest: Manifest, document_id: str, root: Path, *, cached: bool = False
+) -> SourceArtifact:
     """Collapse byte-equivalent primaries; block conflicting valid bytes before queueing."""
     candidates = [
         a for a in manifest.artifacts if a.document_id == document_id and a.role == "primary"
@@ -67,7 +72,7 @@ def resolve_primary(manifest: Manifest, document_id: str, root: Path) -> SourceA
     failures = []
     for artifact in candidates:
         try:
-            artifact.read(root)
+            validate_source(artifact, root, cached=cached)
         except (OSError, ValueError, UnicodeError) as error:
             failures.append(str(error))
         else:
@@ -96,10 +101,6 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
     if manifest is None:
         return ()
     rows = []
-    pair_counts: dict[tuple[str, str, int], int] = {}
-    for document in manifest.documents:
-        key = (document.registry, document.issuer.upper(), document.fiscal_year)
-        pair_counts[key] = pair_counts.get(key, 0) + 1
     for document in manifest.documents:
         if not approved_company(document.registry, document.issuer):
             continue
@@ -114,14 +115,11 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
         )
         blocker = None
         try:
-            resolve_primary(manifest, document.document_id, root)
+            resolve_primary(manifest, document.document_id, root, cached=True)
+            if (root / JOURNAL).exists():
+                raise ValueError("Source publication is pending; retry acquisition to recover it.")
         except ValueError as error:
             blocker = str(error)
-        if pair_counts[(document.registry, document.issuer.upper(), document.fiscal_year)] > 1:
-            blocker = (
-                f"Ambiguous filing identity: {document.issuer} FY{document.fiscal_year}. "
-                "Inspect manifest.json before parsing."
-            )
         rows.append(
             SourceInventory(
                 "manifest.json",
@@ -133,6 +131,7 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
                 present,
                 blocker is None,
                 blocker,
+                document.filing_id,
             )
         )
     return tuple(rows)
@@ -185,7 +184,21 @@ def acquisition_draft(root: Path, sources: tuple[SourceInventory, ...]) -> dict[
 
 
 def record_selection(
-    root: Path, identifiers: tuple[str, ...], years: tuple[int, ...]
+    root: Path,
+    identifiers: tuple[str, ...],
+    years: tuple[int, ...],
+    document_ids: tuple[str, ...] | None = None,
+) -> tuple[str, str]:
+    """Pin selected inputs under the same lock used by acquisition and deletion."""
+    with source_lock(root):
+        return _record_selection(root, identifiers, years, document_ids)
+
+
+def _record_selection(
+    root: Path,
+    identifiers: tuple[str, ...],
+    years: tuple[int, ...],
+    document_ids: tuple[str, ...] | None,
 ) -> tuple[str, str]:
     """Persist one immutable selection, rejecting missing or ambiguous acquired sources."""
     if not identifiers or not years:
@@ -199,14 +212,25 @@ def record_selection(
     manifest = acquired_catalog(root)
     if manifest is None:
         raise ValueError("Download missing sources in Filings: no acquisition manifest.json")
+    exact_ids = set(document_ids) if document_ids is not None else None
+    if exact_ids is not None and (not exact_ids or len(exact_ids) != len(document_ids or ())):
+        raise ValueError("Choose unique downloaded document IDs before parsing.")
+    if exact_ids is not None:
+        matching = [d for d in manifest.documents if d.document_id in exact_ids]
+        if len(matching) != len(exact_ids) or any(
+            (d.issuer.upper(), d.fiscal_year) not in requested for d in matching
+        ):
+            raise ValueError("Selected filing identities changed; reselect downloaded originals.")
     for document in manifest.documents:
+        if exact_ids is not None and document.document_id not in exact_ids:
+            continue
         key = (document.issuer.upper(), document.fiscal_year)
         if key not in requested:
             continue
         if not approved_company(document.registry, document.issuer):
             raise ValueError(f"Unsupported acquisition company: {document.issuer}")
         artifact = resolve_primary(manifest, document.document_id, root)
-        if key in found:
+        if key in found and exact_ids is None:
             raise ValueError(
                 f"Ambiguous filing identity: {document.issuer} FY{document.fiscal_year}. "
                 "Inspect manifest.json before parsing."
@@ -221,6 +245,20 @@ def record_selection(
             "Download missing sources in Filings: "
             + ", ".join(f"{issuer} FY{year}" for issuer, year in sorted(missing))
         )
+    # A future current-source replacement must not change an already queued job input.
+    pinned = {}
+    for identity, artifact in artifacts.items():
+        document = documents[artifact.document_id]
+        payload = artifact.read_bytes(root)
+        suffix = ".html" if document.registry == "sec" else ".xml"
+        relative = f"inputs/{document.registry}/{document.filing_id}/{artifact.sha256}{suffix}"
+        destination = confined_path(root, relative)
+        if destination.exists() and destination.read_bytes() != payload:
+            raise ValueError("Recorded job input changed; refusing to overwrite.")
+        if not destination.exists():
+            publish_bytes(root, relative, payload)
+        pinned[identity] = artifact.model_copy(update={"path": relative})
+    artifacts = pinned
     ordered_documents = tuple(sorted(documents.values(), key=lambda document: document.document_id))
     ordered_artifacts = tuple(sorted(artifacts.values(), key=lambda artifact: artifact.artifact_id))
     payload = json.dumps(

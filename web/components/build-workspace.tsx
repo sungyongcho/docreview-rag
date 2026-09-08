@@ -234,7 +234,8 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     let queued = 0;
     try {
       for (const item of ordered) {
-        await queueCorpusOperation({ kind: "ingest_selected", identifiers: item.identifiers, years: item.years });
+        const documentIds = selection.selected.filter((source) => source.registry === item.registry && item.identifiers.includes(source.issuer.toUpperCase()) && item.years.includes(source.fiscal_year)).map((source) => source.document_id);
+        await queueCorpusOperation({ kind: "ingest_selected", identifiers: item.identifiers, years: item.years, document_ids: documentIds });
         queued += 1;
         onRefreshJobs();
       }
@@ -246,13 +247,13 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
     }
   }
 
-  /** Queue only missing pairs from the exact draft submitted by the picker. */
+  /** Queue missing or invalid originals from the exact draft submitted by the picker. */
   async function downloadFilings(next: AcquisitionForm = acquisition) {
     if (!live) return;
     setBusy(true);
     let queued = 0;
     try {
-      const missing = selectedSourceState(corpus?.sources ?? [], next).missingPairs;
+      const missing = selectedSourceState(corpus?.sources ?? [], next).downloadPairs;
       for (const group of acquisitionBatches(missing)) {
         await queueCorpusOperation({ kind: group.registry === "sec" ? "acquire_edgar" : "acquire_dart", identifiers: group.identifiers, years: group.years });
         queued += 1;
@@ -261,6 +262,16 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
       notify(t("Acquisition jobs queued: {count}.", { count: queued }), "success", "corpus-operation");
     } catch (reason) {
       notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation");
+    } finally { setBusy(false); }
+  }
+
+  /** Queue only the reviewed deletion token; the dialog owns inline request feedback. */
+  async function deleteSources(token: string) {
+    if (!canOperateCorpus || busy || activeCorpusJobs.length || jobsLoading || jobsStale) throw new Error(t("Source deletion is unavailable while corpus jobs or status checks are active."));
+    setBusy(true);
+    try {
+      await queueCorpusOperation({ kind: "delete_sources", identifiers: [], years: [], deletion_token: token, confirm_delete: true });
+      onRefreshJobs();
     } finally { setBusy(false); }
   }
 
@@ -405,6 +416,8 @@ export function BuildWorkspace({ live, readiness, healthKind, connectionPending 
         schemaMessage={runtimeCounts?.schema_message ?? null}
         writable={runtimeCounts?.writable ?? null}
         onDownload={downloadFilings}
+        onDeleteSources={deleteSources}
+        sourceDeletionDisabled={!canOperateCorpus || busy || activeCorpusJobs.length > 0 || jobsLoading || jobsStale}
         onIngestAll={() => void ingestAllManifests()}
         onBackfill={() => void queueCorpus({ kind: "backfill_embeddings", identifiers: [], years: [] })}
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}

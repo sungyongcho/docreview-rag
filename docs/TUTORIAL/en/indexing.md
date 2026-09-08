@@ -38,6 +38,10 @@ indicator is not proof that either index matches the current corpus.
   do not erase the database to resolve an unknown cause. See [troubleshooting](troubleshooting.md).
 - **Next:** [prepare embeddings](#step-6), or skip it when the current embedding identity is already ready.
 
+Selected filing IDs are verified as a complete set before queueing. The queue pins immutable
+source inputs, so later deletion or reacquisition in Filings does not alter an existing job.
+Missing or changed intended originals block new parsing until downloaded or explicitly reselected.
+
 Each Ingest action processes only its explicit selection. The common catalog remains intact.
 The operation stores source-linked structures and chunks. It leaves embeddings and BM25 to Build
 steps 3 and 4; changing chunks invalidates existing BM25 statistics. Work already completed by CLI against this same DB should be reused.

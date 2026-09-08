@@ -298,8 +298,8 @@ def test_failed_write_leaves_no_partial_file(tmp_path, monkeypatch):
 # --- the loop ---
 
 
-def test_download_stores_every_entry_and_paces_the_requests(tmp_path, monkeypatch):
-    """Every entry lands, and requests are spaced by the interval SEC asks for."""
+def test_download_stages_every_entry_and_paces_the_requests(tmp_path, monkeypatch):
+    """Validated bytes await publication, and SEC requests retain their required spacing."""
     monkeypatch.chdir(tmp_path)
     waits: list[float] = []
 
@@ -317,7 +317,8 @@ def test_download_stores_every_entry_and_paces_the_requests(tmp_path, monkeypatc
     stored = run(collect(client_returning(handler), entries))
 
     assert [filing.document for filing in stored] == entries
-    assert all(filing.primary.read_bytes(tmp_path) == FILING for filing in stored)
+    assert all(filing.payloads == (FILING,) for filing in stored)
+    assert not list(tmp_path.rglob("*.html"))
     assert waits == [edgar_api.REQUEST_INTERVAL_SECONDS]
 
 
@@ -333,8 +334,15 @@ def test_a_failed_document_keeps_the_documents_already_fetched(tmp_path, monkeyp
             return httpx.Response(500, content=b"server error")
         return httpx.Response(200, content=FILING)
 
+    manifest = write_manifest(tmp_path, entries)
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        edgar_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_class(transport=httpx.MockTransport(handler)),
+    )
     with pytest.raises(EdgarApiError, match="http 500"):
-        run(collect(client_returning(handler), entries))
+        run(acquire_edgar(manifest, tickers=("NVDA", "AMD"), user_agent=USER_AGENT))
 
     assert len(list(tmp_path.rglob("*.html"))) == 1
     assert next(tmp_path.rglob("*.html")).read_bytes() == FILING

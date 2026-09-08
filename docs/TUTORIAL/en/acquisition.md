@@ -2,33 +2,20 @@
 
 ## Reference acquisition scope
 
-The initial selection uses the exact company/year pairs actually on disk, without inventing
-cross-company combinations. With no sources it is empty; `rag-schema recreate --sample`
-explicitly presets **NVDA, AMD**, FY**2023, 2024**, without downloading.
+The default draft contains **NVDA and AMD FY2019–2024**, plus **005930 and 000660
+FY2022–2024**: exactly eighteen company/year pairs. It does not depend on existing files.
+`rag-schema recreate --sample` selects NVDA and AMD FY2023–2024; neither preset downloads automatically.
+Choose supported companies from the picker and add fiscal years. Edited selections, including
+an empty selection, persist until the reset revision changes.
 
-The compact matrix groups SEC and DART companies with single-line fiscal-year tokens. A check
-icon and filled background mean all sources for that year are on disk; `!` and a dashed outline
-mark missing sources. A stronger border marks selection. Row checkboxes support partial selection;
-**Select everything on disk**, **Clear selection**, and **Show all companies** retain their scope.
-Names come from the catalog or a consistent source-record name. Document IDs remain in chip details.
+The company/year matrix shows downloaded, missing and invalid originals separately. Selection
+changes describe what to prepare; they do not delete files. **Sync selection** downloads missing
+or invalid originals for the selected pairs. Valid originals are reused. Multiple filings in one
+year retain their distinct official receipt/accession IDs.
 
-Use **Search/add company or year** to find a code or name, then select the company and check its
-years. Company suggestions show the registry and on-disk year count. Arrow Down/Up move through
-suggestions; Enter or Space toggles a focused year, and Escape closes the list. The same input
-accepts unknown SEC tickers or six-digit DART codes, then years or ranges such as `2023-2025`.
-Choose **Change company** to add another company to the same pending list.
-
-On-disk choices join the shared selection immediately. Missing pairs enter **To be added**,
-grouped by registry with the required source credentials. **Remove** or **Clear pending** drops
-requests without deleting files. **Sync selection** applies all pending pairs and downloads only
-missing sources, using that exact draft even on the first click. Matrix-selected missing years
-appear in this same list. Invalid input stays visible; correct it before syncing. Simply leaving
-the search field does not add its unfinished text.
-
-Source acquisition can proceed while schema drift blocks indexing, provided source storage and
-tracked-job storage are available. After downloading, Parse & chunk receives the same exact
-company/year pairs. Companies with different selected years are submitted separately so no
-extra combinations are processed.
+Step 1 manages downloads and current originals. Step 2 starts from the fully downloaded, valid
+originals in that selection. Missing, changed or deleted intended sources remain explicit blockers;
+parsing never silently drops them. Use **Change selection in Filings** to revise the scope.
 
 ### SCREENSHOT NEEDED
 
@@ -58,9 +45,8 @@ environment does not need another download.
   credentials or unavailable reports, see [acquisition failures](troubleshooting.md).
 - **Next:** [download missing sources](#step-4), or [parse existing sources](indexing.md#step-5).
 
-The stable company code is always visible. Free entry supports comma-separated codes and
-ascending ranges of up to 50 years. Ready years are selected immediately; missing years are
-applied only when you sync. Parsing receives the same exact selected pairs.
+The stable company code and filing identity remain visible. Parsing receives exact selected
+document IDs, grouped by the selected company/year scope.
 
 <!-- capture:04-sec-inputs -->
 
@@ -73,8 +59,8 @@ applied only when you sync. Parsing receives the same exact selected pairs.
 - **Goal:** make the required original files available for parsing.
 - **Prerequisites:** valid selections from step 3 and the [source credentials](#sources).
 - **Screen:** Build → Pipeline → Filings, selected-stage execution panel.
-- **Inputs:** recheck **To be added**, grouped by SEC/DART. Only missing years are submitted.
-  Credential notes appear only for registries with missing selections; the button is disabled when none are missing.
+- **Inputs:** recheck **To be added**, grouped by SEC/DART. Missing or invalid selected originals are submitted.
+  Credential notes appear only for registries with missing selections; the button is disabled when every selected original is valid.
 - **Primary action:** **Sync selection**.
 - **Visible result:** a queued or running job appears. Open Build → Jobs to read progress and the actual result.
   Preparation status updates automatically when the job finishes; no manual refresh is needed.
@@ -110,3 +96,38 @@ everything on disk** to adopt the current downloaded set explicitly. **Clear sel
 all files intact. Return from Parse & chunk with **Change selection in Filings**. A clean start uses
 `uv run python -m scripts.schema recreate`; `--sample` presets the sample and
 `--keep-sources` preserves files. Compare reset scopes in the [CLI guide](cli.md).
+
+## Delete current originals from Filings
+
+In step 1, select downloaded originals and choose **Delete selected originals**. The preview lists
+exact registry, company, fiscal year, filing/document IDs, relative file paths and sizes. It marks
+shared or past input files that will be preserved. Nothing is deleted until **Confirm deletion of
+originals**. Cancel and **Clear selection** preserve both source bytes and recorded inputs.
+
+Confirmation queues a job; it is not a completed deletion. Read the result in **Jobs**. The preview
+expires after five minutes and is single-use. Changed files/catalogs, an expired confirmation or a
+service restart require a new preview. Deletion jobs do not offer blind retry. Deleted originals
+must be downloaded again before a new parse. Database documents, chunks, embeddings, snapshots
+and past job inputs remain available; this action does not cascade into derived data.
+
+### SCREENSHOT NEEDED
+
+<!-- SCREENSHOT NEEDED: feature=source-deletion; state=exact-target-preview-and-queued-result; locale=en; theme=light; issue=200; preserve-existing-assets=true -->
+
+## Current files and preserved inputs
+
+Current originals use `sec/<accession>/primary.html`, or `dart/<receipt>/primary.xml` with
+`original.zip`. Metadata retains the official URL and filename. A repeated download replaces the
+same current path and registration. Equivalent legacy copies are consolidated only after verifying
+identity and bytes; conflicting valid copies block automatic selection. Other catalogs and past jobs
+keep referenced inputs. New parse jobs pin verified bytes under `inputs/` before queueing.
+
+Inventory refreshes use file existence, size and modification metadata, rechecking content when a
+file changes. Download completion and parse selection still verify the complete bytes. Downloads
+publish through temporary files and a filesystem journal; a failed publication restores previous
+bytes. An unresolved `.source-transaction` blocks selection, deletion and reset; retry acquisition
+to recover a proven transaction. Foreign changes or damaged recovery evidence require inspection.
+
+Clean start resets managed originals, pinned inputs, manifests and the draft together. It preserves
+unrelated files and `--keep-sources` preserves the source set. The existing reset journal remains
+available when the database or cleanup outcome is uncertain.

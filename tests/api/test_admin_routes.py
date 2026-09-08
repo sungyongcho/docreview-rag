@@ -432,3 +432,46 @@ def test_history_routes_validate_scope_and_translate_conflicts(tmp_path) -> None
         assert client.get("/admin/jobs/history/backups/known").json() == {"records": []}
     with TestClient(create_api_app()) as client:
         assert client.get("/admin/jobs/history/backups/known").status_code == 404
+
+
+def test_source_deletion_preview_is_admin_only_and_validates_exact_ids():
+    """The preview route remains unavailable publicly and forwards only explicit IDs."""
+    from app.api.admin_schemas import SourceDeletionPreviewResource
+
+    with TestClient(create_api_app()) as client:
+        assert (
+            client.post(
+                "/admin/corpus/sources/deletion-preview", json={"document_ids": ["filing"]}
+            ).status_code
+            == 404
+        )
+    services = FakeAdminServices()
+    received = []
+
+    async def preview(request):
+        """Return a read-only exact file preview without invoking any deletion."""
+        received.append(request.document_ids)
+        return SourceDeletionPreviewResource(
+            token="preview",
+            expires_at=9999999999,
+            documents=(),
+            files=(),
+            retained_inputs=0,
+            retained_derived=True,
+        )
+
+    services.source_deletion_preview = preview
+    with TestClient(
+        create_api_app(admin_services=cast(RuntimeAdminApiServices, services))
+    ) as client:
+        assert (
+            client.post(
+                "/admin/corpus/sources/deletion-preview", json={"document_ids": []}
+            ).status_code
+            == 422
+        )
+        response = client.post(
+            "/admin/corpus/sources/deletion-preview", json={"document_ids": ["filing"]}
+        )
+    assert response.status_code == 200
+    assert received == [("filing",)]

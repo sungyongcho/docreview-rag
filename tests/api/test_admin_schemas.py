@@ -66,3 +66,26 @@ def test_retrieval_preview_carries_per_language_component_rankings() -> None:
 
     assert response.component_rankings["vector"] == (1, 2)
     assert response.component_rankings["lexical_by_language"] == {"ko": (3,), "en": (2, 1)}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"kind": "delete_sources"},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": False},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": "true"},
+        {
+            "kind": "delete_sources",
+            "deletion_token": "preview",
+            "confirm_delete": True,
+            "identifiers": ["NVDA"],
+        },
+        {"kind": "rebuild_bm25", "deletion_token": "preview", "confirm_delete": True},
+    ],
+)
+def test_source_deletion_requires_a_dedicated_explicit_confirmation(payload):
+    """Reject coercion and a target scope that was not part of the preview."""
+    from app.api.admin_schemas import CorpusOperationRequest
+
+    with pytest.raises(ValidationError):
+        CorpusOperationRequest.model_validate(payload)

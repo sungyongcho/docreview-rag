@@ -6,6 +6,7 @@ import { type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
 import { TokenSelect, type TokenOption } from "./token-select";
+import { SourceDeleteDialog } from "./source-delete-dialog";
 import { SourceSelectionGrid } from "./source-selection-grid";
 import "./source-matrix.css";
 
@@ -18,6 +19,9 @@ interface SourceMatrixProps {
   onValidityChange?: (valid: boolean) => void;
   onDownload: (next: AcquisitionForm) => void;
   downloadDisabled: boolean;
+  onDeleteSources?: (token: string) => Promise<void>;
+  deleteDisabled?: boolean;
+  onOpenJobs?: () => void;
 }
 
 /** Expand explicit years and bounded ascending ranges without changing invalid text. */
@@ -37,7 +41,7 @@ function fiscalYears(input: string): number[] | null {
 }
 
 /** Stage missing pairs separately and submit the exact synchronized draft atomically. */
-export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled }: SourceMatrixProps) {
+export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs }: SourceMatrixProps) {
   const { t } = useI18n();
   const [chosen, setChosen] = useState<Array<{ registry: "sec" | "dart"; issuer: string }>>([]);
   const [staged, setStaged] = useState<AcquisitionPair[]>([]);
@@ -45,7 +49,7 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
   const pairs = acquisitionPairs(acquisition, sources);
   const state = selectedSourceState(sources, acquisition);
   const merged = acquisitionPairs(acquisitionDraft([...pairs, ...staged]));
-  const pending = acquisitionPairs(acquisitionDraft([...state.missingPairs, ...staged]));
+  const pending = acquisitionPairs(acquisitionDraft([...state.downloadPairs, ...staged]));
   const valid = merged.length > 0 && pickerValid;
   useEffect(() => { onValidityChange?.(valid); }, [valid, onValidityChange]);
   const rows = sourceSelectionRows(sources, pairs, companies);
@@ -105,11 +109,13 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
   }
 
   return <section className="source-matrix" aria-label={t("Company and fiscal-year selection")}>
-    <p className="source-matrix-summary" role="status">{t("Selected on disk: {count}", { count: state.present.length })} · {t("To download: {count}", { count: state.missingPairs.length })} · {t("On disk not selected: {count}", { count: state.excluded.length })}</p>
+    <p className="source-matrix-summary" role="status">{t("Selected on disk: {count}", { count: state.present.length })} · {t("To download: {count}", { count: state.downloadPairs.length })} · {t("On disk not selected: {count}", { count: state.excluded.length })}</p>
     <div className="source-matrix-actions">
       <button type="button" disabled={disabled} onClick={() => onChange(acquisitionDraft(rows.flatMap((group) => group.rows.flatMap((row) => row.cells.filter((cell) => cell.documents.some((source) => source.on_disk)).map((cell) => cell.pair)))))}>{t("Select everything on disk")}</button>
       <button type="button" disabled={disabled || !pairs.length} onClick={() => onChange(acquisitionDraft([]))}>{t("Clear selection")}</button>
     </div>
+    <p className="helper">{t("Clearing a selection keeps the downloaded originals. Delete originals separately to remove them from disk.")}</p>
+    <SourceDeleteDialog documentIds={state.present.map((source) => source.document_id)} disabled={disabled || deleteDisabled || !onDeleteSources} onConfirm={onDeleteSources} onOpenJobs={onOpenJobs} />
     {!rows.some((group) => group.rows.length) && <p>{t("No sources yet. Add a company and fiscal year below.")}</p>}
     <SourceSelectionGrid sources={sources} pairs={pairs} companies={companies} disabled={disabled} onToggle={toggle} />
     <div className="source-matrix-add">

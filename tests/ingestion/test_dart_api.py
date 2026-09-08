@@ -29,6 +29,7 @@ from app.ingestion.dart_api import (
     select_primary_member,
 )
 from app.ingestion.manifest import CorpusIdentity, Manifest
+from app.ingestion.source_publication import publish_acquired
 from tests.ingestion.support import client_returning, filing_document, filing_source, run
 
 API_KEY = "k" * 40
@@ -417,6 +418,13 @@ def test_archive_document_writes_utf8_and_records_matching_identity(tmp_path):
 
     entry = archive_document(document, report, issuer, fiscal_year=2024, corpus_dir=tmp_path)
 
+    assert not (tmp_path / entry.primary.path).exists()
+    publish_acquired(
+        tmp_path / "manifest.json",
+        [entry],
+        selection_id="dart",
+        selected_document_ids=[entry.document.document_id],
+    )
     written = tmp_path / entry.primary.path
     stored = written.read_bytes().decode("utf-8")
     assert entry.document.registry == "dart"
@@ -607,7 +615,7 @@ def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monke
 
     assert len(result.archived) == 1
     assert result.added == ()
-    assert requested_paths == ["/api/list.json", "/api/document.xml"]
+    assert requested_paths == ["/api/document.xml"]
     stored = dart_api.read_manifest(tmp_path / "manifest.json")
     selected = stored.selected_sources(result.selection_id, tmp_path)
     assert selected[0].document.filing_id == RCEPT_NO
@@ -765,3 +773,38 @@ def test_conflicting_typed_issuer_ids_are_not_reused():
         corpus=CorpusIdentity(corpus_id="test", name="Test"), documents=(first, second)
     )
     assert dart_api._known_issuers(catalog, ("005930",)) == {}
+
+
+def test_same_year_missing_receipt_is_reacquired_without_replacing_ready_filing(
+    tmp_path, monkeypatch
+):
+    """A ready filing in the same year cannot hide a different missing receipt."""
+    ready = dart_acquired(tmp_path, receipt="20250311001084")
+    missing = dart_acquired(tmp_path, receipt=RCEPT_NO)
+    catalog_with(tmp_path, [ready, missing])
+    (tmp_path / missing.primary.path).unlink()
+    requests = []
+    payload = zip_bytes({f"{RCEPT_NO}.xml": b"<DOCUMENT>Recovered exact receipt</DOCUMENT>"})
+
+    def handler(request):
+        """Serve only the already identified missing receipt, without issuer/year rediscovery."""
+        requests.append(str(request.url))
+        assert request.url.path.endswith("document.xml")
+        assert request.url.params["rcept_no"] == RCEPT_NO
+        return httpx.Response(200, content=payload)
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx.MockTransport(handler)),
+    )
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+        )
+    )
+    assert len(requests) == len(result.archived) == 1
+    catalog = dart_api.read_manifest(tmp_path / "manifest.json")
+    assert {d.filing_id for d in catalog.documents} == {ready.document.filing_id, RCEPT_NO}
+    assert len(catalog.selected_sources(result.selection_id, tmp_path)) == 2
