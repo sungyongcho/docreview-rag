@@ -2,6 +2,10 @@
 
 ## Editable operating rules
 
+User-designated moderators administer issues under MODERATOR.md; ordinary worker
+permissions remain scoped to implementation. Do not turn routine issue messages or
+image attachments into Git assets, commits, evidence-only PRs or review tasks.
+
 For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused evidence.
 
 - Follow the latest approved PR order; finish running units before replacing their queue unless cancelled. Preserve holds/human verification gates.
@@ -92,3 +96,16 @@ For `gpt-6-astra` and `fable-5.1`: explicit ownership, brief handoffs, reused ev
 - If the base advances after readiness at a foreground checkpoint, remove MERGE_READY, set Draft/OCCUPIED and reconcile records, then rebase/reverify the affected scope before restoring readiness. Reuse unchanged evidence. This is foreground continuation of the authorized review, not a recurring monitor; published historical reviews remain unchanged.
 - An explicit rebase request permits rebasing authorized active worker branches instead: pause writers, inspect divergence, preserve work, and omit already-merged prerequisites. A local checkpoint may honestly record unfinished checks. Outside the user-requested review lease exception above, rebase alone does not authorize force-pushing published history. It never authorizes changing another active owner's branch without coordination, rebasing completed backups, or touching the user's checkout.
 - Keep completed worktrees as backups. Under disk pressure, retire the oldest only after verifying remote preservation and absence of unique staged/unstaged/untracked/ignored content. Use normal worktree removal; never force it, remove active work or destroy unique data. Retain the backup and report a blocker when safe cleanup is unproven.
+
+<!-- ops:project:WORKER.md:v1 -->
+# Shared worker defaults
+
+Follow AGENTS.md and the assigned issue/PR. Keep one writer for shared files and Git
+publication; preserve prior authors and checkpoints. Reuse unchanged verification.
+REVIEW_READY records completed implementation; a requested review starts separately.
+A user-requested separate reviewer may repair clear in-scope defects, verify, commit
+and perform authorized rebase/publication through MERGE_READY. Preserve reviewed
+head/base evidence and disclose corrections. Readiness alone never grants a merge.
+Apply project-specific authority, delivery and verification requirements above all
+generic skill defaults. Report the result and material limitations concisely.
+<!-- /ops:project:WORKER.md -->

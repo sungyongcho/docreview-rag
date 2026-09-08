@@ -41,7 +41,7 @@ For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals
 - Branches: `<type>/<actual-issue-number>-<description>`. A directly requested, issue-free documentation PR may use `docs/<description>`; do not invent an issue. Use release tags, not product-version prefixes on ordinary branches.
 - Commit/PR titles use English Conventional Commits: `<type>(<scope>): <outcome>`. Commit bodies contain Summary, Changes, Verification and applicable `Refs`. Conflict resolution commits and squash messages also preserve the sequence metadata in WORKER.md. No internal assembly-stage labels, unsolicited breaking-change markers or attribution footers. Stage explicit paths and use files for multiline commit/PR text.
 - Link every delivered issue. `Closes` means its full scope is complete; use `Refs` for partial delivery. Opening a PR is not permission to close an issue directly.
-- For authorized issue intake, reuse related issues and use Problem / outcome, Scope, Acceptance checks with observable checkboxes. MODERATOR.md defines the intake pipeline and record destinations. Workers only read this issue record.
+- User-designated moderators have standing routine issue-management authority under MODERATOR.md, including direct image attachments and evidenced close/reopen actions without per-action reapproval. Use Problem / outcome, Scope and observable Acceptance checks. Ordinary issue messages/images do not create Git assets, commits or evidence-only PRs. Worker delivery and Git permissions remain separate.
 - Keep `core.hooksPath=.githooks` in clones. Never bypass hooks or hide foreign changes with stash/reset. Fetch before integration/publication and inspect divergence.
 - The maintainer's canonical local branches are main/v1; worker backup refs are retained under WORKER.md. Legacy assemble/zero/new workflows and checkpoint stamping are retired.
 - Living drafts #37 (`docs/29-project-ideas`, `ideas.md`) and #38 (`docs/30-development-log`, `docs/DEVELOPMENT_STORY_OUTLINE.md`) retain user wording and only their own file. Never merge them without a specific request; general merge requests exclude them. Do not overwrite their authors' active changes.
@@ -65,3 +65,14 @@ For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals
 - `MODE` selects the OpenAI key slot (development `OPENAI_API_KEY_LOCAL`, production `OPENAI_API_KEY_PROD`); production rejects local engines. `DOCREVIEW_ADMIN_MODE` controls backend authority; `NEXT_PUBLIC_ADMIN_MODE` controls the web bundle. Keep them distinct.
 - Diagnose typed failures: workflow budget (`resource`, `limit`, `observed`, `blocked_node`), provider failure (`status`, `attempts`, `details`, optional numeric budget/source), or node error (`error_type`, `message`, `node`). Wall-clock seconds are not token counts; provider and workflow ceilings can differ. Never guess which resource failed.
 - Jobs are queued/running or succeeded/failed/cancelled/interrupted. Interrupted work does not resume automatically; failed/interrupted jobs may expose an explicit retry.
+
+<!-- ops:project:AGENTS.md:v1 -->
+# Shared operating defaults
+
+Keep project-specific rules in this file; they take precedence over these defaults.
+Use WORKER.md for assigned implementation/review and MODERATOR.md for assigned intake.
+Inspect the requested scope, preserve foreign changes and verify affected behavior.
+Record work in this project's GitHub issues/PRs, not a central project-data collection.
+Use the installed commit-it skill for portable Git procedures. OPS provides execution
+tools and these managed rules; it does not own product skill installation settings.
+<!-- /ops:project:AGENTS.md -->
