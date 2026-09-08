@@ -1,4 +1,6 @@
 "use client";
+import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure } from "@/lib/scope-failure";
+import { ScopeFailureSummary } from "@/components/scope-failure-summary";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
@@ -481,6 +483,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }, [pendingHelpTarget, view, buildTab, measureTab, systemTab, conversationTab]);
 
   // Saved error actions keep their old category identifiers but open the current owner.
+  /** Route existing failure actions through the history-aware workspace navigator. */
+  function openFailureFix(category: NonNullable<ChatMessage["failureFix"]>["category"]) {
+    if (category === "documents" || category === "jobs") return navigate({ view: "build", tab: category });
+    openSettings(category);
+  }
+
   function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
     if (category === "review") return openConversationSettings("filters");
     if (category === "limits") {
@@ -630,8 +638,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       };
       updateMessage(conversationId, assistantId, assistant);
     } catch (reason) {
-      if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
+      execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
+      const scopeFailure = scopeFailurePatch(reason, adminLive);
+      if (scopeFailure && !controller.signal.aborted) {
+        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution });
+        return;
+      }
       if (isInfrastructureFailure(reason)) {
         updateMessage(conversationId, assistantId, { pending: false, execution, text: reason instanceof Error ? reason.message : t("The review could not be completed.") });
         if (currentConversationId.current === conversationId) setQuery((current) => current || question);
@@ -792,8 +805,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         failureFix: terminalFailureFix(response),
       });
     } catch (reason) {
-      if (reason instanceof ApiError && reason.pathDecision) execution = { ...execution, pathDecision: reason.pathDecision };
+      execution = scopeFailureProgress(reason, execution);
       execution = finishReviewProgress(execution, controller.signal.aborted ? "cancelled" : "failed", Date.now() - requestStarted);
+      const scopeFailure = scopeFailurePatch(reason, adminLive);
+      if (scopeFailure && !controller.signal.aborted) {
+        updateMessage(conversationId, assistantId, { ...scopeFailure, pending: false, execution });
+        return;
+      }
       updateMessage(conversationId, assistantId, { pending: false, text: controller.signal.aborted ? t("Request cancelled") : reason instanceof Error ? reason.message : t("Selected evidence review failed."), execution });
       noteDailyBudget(reason);
       notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review");
@@ -984,6 +1002,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
                   onMark={(chunkId, mode) => markEvidence(message.id, chunkId, mode)}
                   onUseSelected={() => void useSelectedEvidence(message)}
                   onOpenDetails={(stage) => openRunDetails(message.id, stage)}
+                  onOpenFix={openFailureFix}
                 />
               ))}
 
@@ -1089,7 +1108,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         window.requestAnimationFrame(() => document.querySelector<HTMLSelectElement>("[data-answer-engine-select]")?.focus());
       }} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
+      <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={publicScopeFailure(runDetailsMessage, adminLive)} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openFailureFix} />
 
       <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
       <ServiceHealthModal
@@ -1110,6 +1129,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 }
 
 interface ReviewMessageProps {
+  onOpenFix?: (category: NonNullable<ChatMessage["failureFix"]>["category"]) => void;
   message: ChatMessage;
   catalogMode?: "live" | "published";
   onStop?: () => void;
@@ -1133,7 +1153,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   return null;
 }
 
-function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails }: ReviewMessageProps) {
+function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails, onOpenFix }: ReviewMessageProps) {
   const { t, locale } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
@@ -1153,7 +1173,8 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
-        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.scopeFailure ? t("Query scope metadata is unavailable.") : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
         {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details></>}
         {message.evidence?.length ? (
           <>

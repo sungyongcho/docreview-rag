@@ -2,6 +2,16 @@
 
 Start with the exact screen, operation, and error. Separate the observed symptom from a confirmed cause; if the cause is unknown, retain that uncertainty. Check the smallest relevant state, make the corresponding correction, and verify the original action again. Resetting the runtime is not a general remedy for a failed request.
 
+
+## Manifest scope metadata is unavailable {#manifest-scope}
+
+A `query_scope_unavailable` failure before the path decision belongs to **0. Path decision**; stages 1–5 remain unrun. A failure while resolving scope after the decision belongs to stage 1. In DEV, the existing failed-answer card shows the specific missing-file, invalid-JSON, invalid-manifest, alias-conflict or permission cause, the manifest path, and one **Open Documents** or **Open Jobs** action. A recent acquisition job is context, not proof that it caused the failure; if it is queued/running, wait for completion before retrying.
+
+Inspect the named file and run `rag-schema check` / `rag-corpus status`. Correct that input, then submit the question again; an unsuccessful lazy load is not cached and an API restart is unnecessary. Acquisition publishes manifests atomically, so readers see a complete committed file. **Run details → Trace** retains the original sanitized exception text. Production shows only the localized headline and a generic retry hint.
+
+### SCREENSHOT NEEDED
+<!-- Feature: manifest diagnosis and correct stage-zero versus stage-one failure; locale=en; light mode; show cause, relative path, one fix action and technical detail in Run details. -->
+
 ## The page, API, or database is unavailable {#connection}
 
 > [!DEV]

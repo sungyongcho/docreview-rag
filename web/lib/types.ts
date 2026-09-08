@@ -58,6 +58,7 @@ export interface ReviewPathDecision {
   suggested_scope: "auto" | null;
 }
 export interface ReviewExecution {
+  pathStatus?: "waiting" | "current" | "done" | "failed" | "cancelled";
   pathDecision?: ReviewPathDecision;
   node: ReviewEventNode;
   evidence: number;
@@ -96,7 +97,8 @@ export interface ChatMessage {
   /** Run and failure facts for the diagnostic table, in display order. */
   diagnostics?: Array<{ label: string; value: string }>;
   /** Settings destination that would change the outcome, when one exists. */
-  failureFix?: { label: string; category: "limits" | "runtime" };
+  failureFix?: { label: string; category: "limits" | "runtime" | "documents" | "jobs" };
+  scopeFailure?: { causeText: string; path?: string; jobId?: string; jobRunning?: boolean };
   question?: string;
   candidateToken?: string;
   pinnedChunkIds?: number[];

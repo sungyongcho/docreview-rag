@@ -88,6 +88,16 @@ class ApiError(StrictApiModel):
     message: NonBlank
     details: tuple[ValidationIssue, ...] = ()
     path_decision: JsonObject | None = Field(default=None, exclude_if=lambda value: value is None)
+    detail: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    path: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    cause: (
+        Literal["missing_file", "invalid_json", "invalid_manifest", "alias_conflict", "permission"]
+        | None
+    ) = Field(default=None, exclude_if=lambda value: value is None)
+    corpus_job: JsonObject | None = Field(default=None, exclude_if=lambda value: value is None)
+    failed_stage: Literal["path", "gate"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ErrorResponse(StrictApiModel):
