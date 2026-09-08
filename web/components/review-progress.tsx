@@ -201,7 +201,7 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
     <ol className="review-progress-steps" aria-label={t("Evidence review progress")}>
       <li className={stageClass("path", pathPhase)}>
         {toggle("path", "Path decision", pathPhase)}
-        <span className="review-phase-icon" aria-hidden="true">{state.pathDecision?.stopping_reason ? <TriangleAlert size={14} /> : state.pathDecision ? <Check size={14} /> : <Circle size={12} />}</span>
+        <span className="review-phase-icon" aria-hidden="true">{pathPhase === "done" ? <Check size={14} /> : pathPhase === "current" ? <LoaderCircle size={14} /> : pathPhase === "failed" || pathPhase === "cancelled" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
         <span><strong>0. {t("Path decision")}</strong><small>{state.pathDecision ? t(state.pathDecision.intent === "casual_chat" ? "Conversation reply" : "Document review") : t("Intent and filing scope")}</small></span>
       </li>
       {REVIEW_STEPS.map((step, index) => {
