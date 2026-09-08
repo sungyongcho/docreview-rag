@@ -5,6 +5,7 @@
 For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals or generic checklists.
 
 - Assigned implementers read [WORKER.md](WORKER.md) first for delivery, queues, staffing, integration and reviews.
+- Explicitly user-designated live sessions read [INTERACTIVE.md](INTERACTIVE.md) first. INTERACTIVE is a peer of WORKER and MAINTAINER; its session-scoped delivery exception is defined below.
 - User-designated intake coordinators read [MODERATOR.md](MODERATOR.md) for intake, sizing, evidence, drafts and owner notification.
 - Continuity lives in assignments, issues, PRs, commits and reproducible tests. Replaceable workers/models preserve valid evidence and improve outcomes through affected tests; a new model or conversation proves neither progress nor independent review.
 - Deliver the smallest reliable approved diff. Preserve foreign staged, unstaged, untracked and ignored work; no unsolicited cleanup/refactoring.
@@ -20,6 +21,9 @@ For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals
 **Edit boundary:** change this section only when the user explicitly requests the corresponding project-rule change. Ordinary implementation or instruction cleanup is not permission to weaken, relocate or relabel protected rules. Apply the same boundary to WORKER.md and MODERATOR.md. Higher-priority instructions and explicit user directions still prevail.
 
 ### Authority and delivery
+
+- User-designated INTERACTIVE sessions use the latest explicit user requests as the final requirements, including changes that supersede older issues. Within the named scope, session authority covers iterative edits/tests, personal commits/pushes/PRs, disclosed `Self-review: LGTM`, verified squash merge and clean local-main fast-forward. No separate reviewer task or repeated ordinary approval is required. Active overlaps require checkpoint-preserving ownership coordination before writes; unrelated work survives.
+- At each INTERACTIVE PR, record actual `Requirement changes` and complete/superseded/delta/retain dispositions. Close source issues only after verified merge; create residual issues first and preserve active ownership. Failed checks remain OCCUPIED; exact passing head/base evidence permits MERGE_READY. Use `opsctl interactive` with `merge_method: squash`. Dirty main is preserved, never stashed/reset automatically. Runtime/tool approvals, deployment, credentials and destructive data actions remain separate. These exceptions do not apply to ordinary WORKER delivery.
 
 - Ordinary worker implementation ends with verified PR delivery at `REVIEW_READY`. This completes implementation; it does not start a review. The user may open a different task and request review of the named PR, or the implementing worker may record a request. Ordinary self-review still requires explicit user approval for that scope.
 - Keep progress in the existing work-state record. At `REVIEW_READY`, consolidate the PR's completed outcomes, final verification and review notes in one reusable summary; no per-commit delivery comments. Preserve historical evidence and apply issue checklist changes only from verified acceptance results.
@@ -71,9 +75,16 @@ For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals
 # Shared operating defaults
 
 Keep project-specific rules in this file; they take precedence over these defaults.
-Use WORKER.md for assigned implementation/review and MODERATOR.md for assigned intake.
+Use WORKER.md for assigned implementation/review, INTERACTIVE.md for explicitly
+user-directed live iteration and delivery, and MODERATOR.md for assigned intake.
+INTERACTIVE is a peer role to WORKER and MAINTAINER; its scoped standing delivery
+authority does not extend to ordinary workers.
 Inspect the requested scope, preserve foreign changes and verify affected behavior.
 Record work in this project's GitHub issues/PRs, not a central project-data collection.
 Use the installed commit-it skill for portable Git procedures. OPS provides execution
 tools and these managed rules; it does not own product skill installation settings.
+
+For INTERACTIVE sessions, use the latest explicit user requirements and the declared
+session delivery grant; consult INTERACTIVE.md before creating/revising the session PR.
+Project-specific role dispatch must explicitly recognize this role during adoption.
 <!-- /ops:project:AGENTS.md -->

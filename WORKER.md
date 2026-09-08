@@ -111,4 +111,9 @@ and perform authorized rebase/publication through MERGE_READY. Preserve reviewed
 head/base evidence and disclose corrections. Readiness alone never grants a merge.
 Apply project-specific authority, delivery and verification requirements above all
 generic skill defaults. Report the result and material limitations concisely.
+
+When a user-designated INTERACTIVE session overlaps your files or behavior, preserve
+your checkpoint and coordinate exact ownership before further overlapping writes.
+Its latest explicit user requirements take precedence; retain unrelated work and
+continue disjoint scopes. Use guarded succession, never simultaneous file writes.
 <!-- /ops:project:WORKER.md -->
