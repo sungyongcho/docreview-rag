@@ -37,4 +37,10 @@ describe("answer engine matrix", () => {
     expect(answerEngineStates(ready(openai, local), null, now + 900000)[1].speed).toBeNull();
     expect(answerEngineStates(ready(openai, local), "removed", now)[1]).toMatchObject({ light: "amber", reason: "Selected model unavailable", model: "removed" });
   });
+  it("keeps an unselected conversation distinct from the inventory overview", () => {
+    const inventory = ready(openai, { ...local, model: null, models: [local.models![0], { ...local.models![0], name: "second" }] });
+    expect(answerEngineStates(inventory, null, now)[1]).toMatchObject({ light: "amber", reason: "Choose a model", model: null, speed: null });
+    expect(answerEngineStates(inventory, undefined, now)[1]).toMatchObject({ light: "green", model: "gemma" });
+    expect(answerEngineStates(inventory, "second", now)[1]).toMatchObject({ light: "green", model: "second" });
+  });
 });

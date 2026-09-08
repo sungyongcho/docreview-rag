@@ -13,7 +13,7 @@ export interface AnswerEngineState {
   speed?: number | null;
 }
 
-/** Derive display readiness from existing discovery; never probe or load a model. */
+/** Derive display readiness; a null conversation choice requires selection when several models exist. */
 export function answerEngineStates(readiness: Readiness | null, localModel?: string | null, now = Date.now()): AnswerEngineState[] {
   const engines = readiness?.review_engines;
   const openai = engines?.openai;
@@ -30,7 +30,9 @@ export function answerEngineStates(readiness: Readiness | null, localModel?: str
   }
   const local = engines?.local;
   const models = local?.models?.filter((item) => item.selectable) ?? [];
-  const name = localModel ?? local?.model ?? models.find((item) => item.loaded)?.name ?? models[0]?.name ?? null;
+  const name = localModel === null
+    ? (models.length === 1 ? models[0].name : null)
+    : localModel ?? local?.model ?? models.find((item) => item.loaded)?.name ?? models[0]?.name ?? null;
   const model = models.find((item) => item.name === name);
   const sample = model?.cpu_performance;
   const age = sample ? now - Date.parse(sample.measured_at) : NaN;
@@ -43,7 +45,8 @@ export function answerEngineStates(readiness: Readiness | null, localModel?: str
   if (!readiness) second.reason = "Checking…";
   else if (local?.enabled) {
     second.light = "green"; second.reason = "Ready to answer";
-    if (localModel && !model) { second.light = "amber"; second.reason = "Selected model unavailable"; }
+    if (!name) { second.light = "amber"; second.reason = "Choose a model"; }
+    else if (localModel && !model) { second.light = "amber"; second.reason = "Selected model unavailable"; }
     else if (model?.loaded === false) { second.light = "amber"; second.reason = "Model not loaded"; }
     else if (localCpuWarning({ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: name }, local, now) !== null) {
       second.light = "amber"; second.reason = "Slow CPU (below 15 tok/s)";

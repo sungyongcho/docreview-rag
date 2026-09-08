@@ -25,15 +25,23 @@ it("keeps a limited local engine selectable and preserves a missing explicit mod
   const readiness: Readiness = {
     status: "ready", mode: "runtime", admin_mode: "live", policy_revision: "test", models: {},
     review_enabled: true, active_review_model: null,
-    review_engines: { local: { enabled: true, models: [model("first"), model("second")] } },
+    review_engines: { local: { enabled: true, models: [{ ...model("first"), loaded: true }, model("second")] } },
     corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: "ok", documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true },
   };
   const props = { onChange };
   const { rerender } = render(<OperatorSettings {...props} readiness={readiness} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local" }} />);
   expect(screen.getByRole("option", { name: "🟠 Local LLM (Selected)" })).toBeEnabled();
   expect(screen.getByLabelText("Local model")).toHaveValue("");
+  expect(screen.getByLabelText("Answer engine")).toHaveAttribute("title", "Choose a model");
+  expect(screen.getByLabelText("Local: Choose a model")).toHaveAttribute("data-light", "amber");
+  expect(screen.getByRole("status")).toHaveTextContent("Choose a local answer model");
+  expect(onChange).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Local model"), { target: { value: "second" } });
   expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ local_model: "second" }));
+
+  rerender(<OperatorSettings {...props} readiness={readiness} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: "first" }} />);
+  expect(screen.getByLabelText("Local model")).toHaveValue("first");
+  expect(screen.getByLabelText("Local: Ready to answer")).toHaveAttribute("data-light", "green");
 
   rerender(<OperatorSettings {...props} readiness={readiness} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: "removed" }} />);
   expect(screen.getByLabelText("Local model")).toHaveValue("removed");
