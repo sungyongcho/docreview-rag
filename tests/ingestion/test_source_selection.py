@@ -8,24 +8,42 @@ import pytest
 from app.config import Settings
 from app.corpus_admin import AdminCommand, OperationOutcome, RuntimeCorpusAdminService
 from app.ingestion.manifest import Manifest
+from app.ingestion.source_publication import fixed_path, publish_acquired
 from app.ingestion.source_selection import acquisition_draft, record_selection, source_inventory
-from tests.ingestion.support import write_selection_catalog
+from tests.ingestion.support import (
+    acquired_filing,
+    filing_document,
+    selected_document_ids,
+    write_selection_catalog,
+)
 
 
 def test_selection_records_exact_scope_and_keeps_retry_reference(tmp_path):
     """Changing the draft produces independent immutable inputs for jobs and retries."""
     catalog = write_selection_catalog(tmp_path)
     original = (tmp_path / "manifest.json").read_bytes()
-    name, identity = record_selection(tmp_path, ("NVDA", "AMD"), (2023, 2024))
+    name, identity = record_selection(
+        tmp_path,
+        ("NVDA", "AMD"),
+        (2023, 2024),
+        selected_document_ids(tmp_path, ("NVDA", "AMD"), (2023, 2024)),
+    )
     selected = Manifest.read(tmp_path / name)
     assert len(selected.selected_sources(identity, tmp_path)) == 4
-    next_name, next_id = record_selection(tmp_path, ("NVDA",), (2024,))
+    next_name, next_id = record_selection(
+        tmp_path, ("NVDA",), (2024,), selected_document_ids(tmp_path, ("NVDA",), (2024,))
+    )
     assert name != next_name and identity != next_id
     assert len(Manifest.read(tmp_path / next_name).documents) == 1
     assert Manifest.read(tmp_path / name) == selected
     assert (tmp_path / "manifest.json").read_bytes() == original
     assert len(source_inventory(tmp_path)) == len(catalog.documents) == 4
-    assert record_selection(tmp_path, ("AMD", "NVDA"), (2024, 2023)) == (name, identity)
+    assert record_selection(
+        tmp_path,
+        ("AMD", "NVDA"),
+        (2024, 2023),
+        selected_document_ids(tmp_path, ("AMD", "NVDA"), (2024, 2023)),
+    ) == (name, identity)
 
 
 @pytest.mark.parametrize("failure", ["missing_file", "unknown_year", "changed_bytes"])
@@ -41,32 +59,48 @@ def test_missing_selected_sources_never_create_partial_selection(tmp_path, failu
     else:
         years = (2022, 2024)
     with pytest.raises(ValueError):
-        record_selection(tmp_path, ("NVDA", "AMD"), years)
+        record_selection(
+            tmp_path,
+            ("NVDA", "AMD"),
+            years,
+            tuple(document.document_id for document in catalog.documents),
+        )
     assert not list(tmp_path.glob("selected-*.json"))
 
 
 def test_default_pairs_are_exact_and_independent_of_disk(tmp_path):
-    """Ordinary fresh start selects eighteen intended pairs, never a registry cross product."""
-    draft = acquisition_draft(tmp_path, ())
+    """Only a missing draft uses defaults; persisted pairs are explicit, including empty scope."""
+    draft = acquisition_draft(tmp_path)
     expected = {
         ("sec", issuer, year) for issuer in ("NVDA", "AMD") for year in range(2019, 2025)
     } | {("dart", issuer, year) for issuer in ("005930", "000660") for year in range(2022, 2025)}
     assert {(p["registry"], p["issuer"], p["year"]) for p in draft["pairs"]} == expected
     assert len(draft["pairs"]) == 18
     write_selection_catalog(tmp_path)
-    assert acquisition_draft(tmp_path, source_inventory(tmp_path)) == draft
+    assert acquisition_draft(tmp_path) == draft
     path = tmp_path / "acquisition-draft.json"
-    path.write_text(json.dumps({"identifiers": ["NVDA", "AMD"], "years": [2023, 2024]}))
-    sample = acquisition_draft(tmp_path, ())
-    assert len(sample["pairs"]) == 4
-    assert sample["revision"] != draft["revision"]
-    path.write_text(json.dumps({"identifiers": [], "years": []}))
-    assert acquisition_draft(tmp_path, ())["pairs"] == draft["pairs"]
+    pairs = [
+        {"registry": "sec", "issuer": issuer, "year": year}
+        for issuer in ("NVDA", "AMD")
+        for year in (2023, 2024)
+    ]
+    path.write_text(
+        json.dumps({"identifiers": ["NVDA", "AMD"], "years": [2023, 2024], "pairs": pairs})
+    )
+    sample = acquisition_draft(tmp_path)
+    assert sample["pairs"] == pairs and sample["revision"] != draft["revision"]
+    path.write_text(json.dumps({"identifiers": [], "years": [], "pairs": []}))
+    assert acquisition_draft(tmp_path)["pairs"] == []
+    path.write_text(json.dumps({"identifiers": ["NVDA"], "years": [2024]}))
+    with pytest.raises(ValueError):
+        acquisition_draft(tmp_path)
 
 
 @pytest.mark.parametrize("duplicate_state", ["valid", "missing", "corrupt"])
-def test_equivalent_duplicate_primaries_are_ready_and_recorded_once(tmp_path, duplicate_state):
-    """The reported legacy/download duplicate with the same exact bytes safely collapses."""
+def test_equivalent_duplicate_primaries_are_rejected_without_changing_copies(
+    tmp_path, duplicate_state
+):
+    """Current inventory and parsing refuse duplicate registrations even when bytes match."""
     catalog = write_selection_catalog(tmp_path)
     primary = catalog.artifacts[0]
     duplicate = primary.model_copy(
@@ -81,9 +115,22 @@ def test_equivalent_duplicate_primaries_are_ready_and_recorded_once(tmp_path, du
     elif duplicate_state == "corrupt":
         (tmp_path / duplicate.path).write_bytes(b"damaged duplicate")
     before = (tmp_path / "manifest.json").read_bytes()
-    assert all(row.ready and not row.can_redownload for row in source_inventory(tmp_path))
-    name, selection = record_selection(tmp_path, ("NVDA", "AMD"), (2023, 2024))
-    assert len(Manifest.read(tmp_path / name).selected_sources(selection, tmp_path)) == 4
+    row = next(row for row in source_inventory(tmp_path) if row.document_id == primary.document_id)
+    assert not row.ready and not row.can_redownload
+    duplicate_before = (
+        (tmp_path / duplicate.path).read_bytes() if (tmp_path / duplicate.path).exists() else None
+    )
+    with pytest.raises(ValueError, match="Conflicting primary sources"):
+        record_selection(
+            tmp_path,
+            ("NVDA", "AMD"),
+            (2023, 2024),
+            selected_document_ids(tmp_path, ("NVDA", "AMD"), (2023, 2024)),
+        )
+    assert (
+        (tmp_path / duplicate.path).read_bytes() if (tmp_path / duplicate.path).exists() else None
+    ) == duplicate_before
+    assert not list(tmp_path.glob("selected-*.json"))
     assert (tmp_path / "manifest.json").read_bytes() == before
 
 
@@ -117,7 +164,12 @@ def test_conflicting_primary_blocks_readiness_and_execution(tmp_path, latest_sta
     assert blocked.on_disk and not blocked.ready and not blocked.can_redownload
     assert "Conflicting primary sources" in blocked.blocker
     with pytest.raises(ValueError, match="Conflicting primary sources"):
-        record_selection(tmp_path, (blocked.issuer,), (blocked.fiscal_year,))
+        record_selection(
+            tmp_path,
+            (blocked.issuer,),
+            (blocked.fiscal_year,),
+            selected_document_ids(tmp_path, (blocked.issuer,), (blocked.fiscal_year,)),
+        )
     assert not list(tmp_path.glob("selected-*.json"))
 
 
@@ -125,7 +177,9 @@ def test_selection_never_scans_other_catalogs(tmp_path):
     """Invalid or overlapping evaluation catalogs do not leak into Build processing."""
     catalog = write_selection_catalog(tmp_path)
     (tmp_path / "evaluation-manifest.json").write_text("invalid unrelated fixture")
-    name, _ = record_selection(tmp_path, ("NVDA",), (2024,))
+    name, _ = record_selection(
+        tmp_path, ("NVDA",), (2024,), selected_document_ids(tmp_path, ("NVDA",), (2024,))
+    )
     assert len(Manifest.read(tmp_path / name).documents) == 1
     assert len(source_inventory(tmp_path)) == len(catalog.documents)
 
@@ -161,7 +215,12 @@ def test_ingest_selected_job_uses_existing_manifest_job_contract(tmp_path):
             settings=Settings(corpus_dir=tmp_path), operation_runner=runner
         )
         job = await service.enqueue(
-            AdminCommand("ingest_selected", identifiers=("NVDA",), years=(2024,))
+            AdminCommand(
+                "ingest_selected",
+                identifiers=("NVDA",),
+                years=(2024,),
+                document_ids=selected_document_ids(tmp_path, ("NVDA",), (2024,)),
+            )
         )
         await service._queue.join()
         assert job.command.kind == "ingest_manifest"
@@ -194,18 +253,22 @@ def test_source_snapshot_accepts_the_strict_api_resource(tmp_path):
 def test_updated_document_metadata_creates_new_immutable_job_selection(tmp_path):
     """Changed filing metadata does not collide with an earlier retryable source selection."""
     catalog = write_selection_catalog(tmp_path)
-    first_name, _ = record_selection(tmp_path, ("NVDA",), (2024,))
+    first_name, _ = record_selection(
+        tmp_path, ("NVDA",), (2024,), selected_document_ids(tmp_path, ("NVDA",), (2024,))
+    )
     documents = tuple(
         document.model_copy(update={"aliases": ("Updated company name",)})
         for document in catalog.documents
     )
     catalog.model_copy(update={"documents": documents}).write(tmp_path / "manifest.json")
-    second_name, _ = record_selection(tmp_path, ("NVDA",), (2024,))
+    second_name, _ = record_selection(
+        tmp_path, ("NVDA",), (2024,), selected_document_ids(tmp_path, ("NVDA",), (2024,))
+    )
     assert first_name != second_name
     assert Manifest.read(tmp_path / first_name).documents[0].aliases != ("Updated company name",)
 
 
-def test_duplicate_filing_identities_block_inventory_and_queue(tmp_path):
+def test_distinct_filings_require_explicit_document_ids(tmp_path):
     """Multiple filings for one picker pair require a decision before any job starts."""
     catalog = write_selection_catalog(tmp_path)
     original = catalog.documents[0]
@@ -222,9 +285,10 @@ def test_duplicate_filing_identities_block_inventory_and_queue(tmp_path):
         update={
             "document_id": duplicate.document_id,
             "artifact_id": artifact.artifact_id + "-other",
-            "path": "other-filing.html",
+            "path": fixed_path(duplicate.registry, duplicate.filing_id, "primary"),
         }
     )
+    (tmp_path / alternate.path).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / alternate.path).write_bytes(artifact.read_bytes(tmp_path))
     catalog.model_copy(
         update={
@@ -237,9 +301,24 @@ def test_duplicate_filing_identities_block_inventory_and_queue(tmp_path):
         for row in source_inventory(tmp_path)
         if row.issuer == original.issuer and row.fiscal_year == original.fiscal_year
     ]
-    assert len(rows) == 2 and all(not row.ready and not row.can_redownload for row in rows)
-    with pytest.raises(ValueError, match="Ambiguous filing identity"):
-        record_selection(tmp_path, (original.issuer,), (original.fiscal_year,))
+    assert len(rows) == 2 and all(row.ready and not row.can_redownload for row in rows)
+    with pytest.raises(ValueError):
+        record_selection(tmp_path, (original.issuer,), (original.fiscal_year,), ())
+    assert not list(tmp_path.glob("selected-*.json"))
+    name, selection_id = record_selection(
+        tmp_path,
+        (original.issuer,),
+        (original.fiscal_year,),
+        (original.document_id, duplicate.document_id),
+    )
+    assert len(Manifest.read(tmp_path / name).selected_sources(selection_id, tmp_path)) == 2
+
+
+def test_exact_document_ids_reject_a_stale_selection(tmp_path):
+    """A removed ID cannot silently become another filing from the same company/year."""
+    write_selection_catalog(tmp_path)
+    with pytest.raises(ValueError, match="identities changed"):
+        record_selection(tmp_path, ("NVDA",), (2024,), ("removed-id",))
     assert not list(tmp_path.glob("selected-*.json"))
 
 
@@ -257,15 +336,20 @@ def test_unavailable_single_identity_can_be_downloaded_again(tmp_path, failure):
             update={"artifacts": tuple(a for a in catalog.artifacts if a != artifact)}
         ).write(tmp_path / "manifest.json")
     row = next(r for r in source_inventory(tmp_path) if r.document_id == artifact.document_id)
-    assert row.on_disk is (failure == "corrupt")
+    assert row.on_disk is (failure != "missing")
     assert not row.ready and row.can_redownload
     with pytest.raises(ValueError, match="Download it again in Filings"):
-        record_selection(tmp_path, (row.issuer,), (row.fiscal_year,))
+        record_selection(
+            tmp_path,
+            (row.issuer,),
+            (row.fiscal_year,),
+            selected_document_ids(tmp_path, (row.issuer,), (row.fiscal_year,)),
+        )
     assert not list(tmp_path.glob("selected-*.json"))
 
 
-def test_existing_acquisition_repairs_a_corrupt_source_without_deletion(tmp_path, monkeypatch):
-    """The existing acquisition operation restores verification while retaining catalog history."""
+def test_existing_acquisition_repairs_a_corrupt_source_at_its_stable_path(tmp_path, monkeypatch):
+    """Acquisition restores one verified original at the stable path for its exact filing."""
     from unittest.mock import AsyncMock
 
     from app.ingestion.edgar_api import acquire_edgar
@@ -288,7 +372,113 @@ def test_existing_acquisition_repairs_a_corrupt_source_without_deletion(tmp_path
     assert len(result.fetched) == 1
     row = next(r for r in source_inventory(tmp_path) if r.document_id == document.document_id)
     assert row.on_disk and row.ready and not row.can_redownload and row.blocker is None
-    name, selection = record_selection(tmp_path, (document.issuer,), (document.fiscal_year,))
+    name, selection = record_selection(
+        tmp_path,
+        (document.issuer,),
+        (document.fiscal_year,),
+        selected_document_ids(tmp_path, (document.issuer,), (document.fiscal_year,)),
+    )
     selected = Manifest.read(tmp_path / name).selected_sources(selection, tmp_path)
     assert len(selected) == 1 and selected[0].read().encode() == payload
-    assert artifact in Manifest.read(tmp_path / "manifest.json").artifacts
+    current = [
+        a
+        for a in Manifest.read(tmp_path / "manifest.json").artifacts
+        if a.document_id == document.document_id and a.role == "primary"
+    ]
+    assert len(current) == 1
+    assert current[0].path == f"sec/{document.filing_id}/primary.html"
+    assert current[0].sha256 == artifact.sha256
+
+
+@pytest.fixture
+def registered_dart_archive(tmp_path):
+    """Publish the actual producer's current ZIP/XML bundle in a disposable catalog."""
+    filing = acquired_filing(
+        tmp_path,
+        document=filing_document(registry="dart"),
+        payload=b"<DOCUMENT>synthetic DART input</DOCUMENT>",
+    )
+    catalog = publish_acquired(
+        tmp_path / "manifest.json",
+        [filing],
+        selection_id="download",
+        selected_document_ids=[filing.document.document_id],
+    )
+    return catalog, next(a for a in catalog.artifacts if a.role == "archive")
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt"])
+def test_registered_archive_inventory_cache_and_integrity_gate(
+    tmp_path, monkeypatch, registered_dart_archive, damage
+):
+    """Inventory caches unchanged ZIPs but detects damage and blocks new parse inputs."""
+    from app.ingestion.manifest import SourceArtifact
+
+    catalog, archive = registered_dart_archive
+    original = SourceArtifact.read_bytes
+    reads = []
+
+    def counted(self, root):
+        """Observe real integrity checks without replacing source validation."""
+        reads.append(self.path)
+        return original(self, root)
+
+    monkeypatch.setattr(SourceArtifact, "read_bytes", counted)
+    assert source_inventory(tmp_path)[0].ready
+    assert len(reads) == 2
+    assert source_inventory(tmp_path)[0].ready
+    assert len(reads) == 2
+    path = tmp_path / archive.path
+    if damage == "missing":
+        path.unlink()
+    else:
+        path.write_bytes(b"x" * archive.byte_length)
+    row = source_inventory(tmp_path)[0]
+    assert row.on_disk and not row.ready and row.can_redownload
+    assert "Registered DART archive" in row.blocker and archive.path in row.blocker
+    assert len(reads) == (2 if damage == "missing" else 3)
+    assert not source_inventory(tmp_path)[0].ready
+    assert len(reads) == (2 if damage == "missing" else 3)
+    document = catalog.documents[0]
+    with pytest.raises(ValueError, match="Registered DART archive"):
+        record_selection(
+            tmp_path, (document.issuer,), (document.fiscal_year,), (document.document_id,)
+        )
+    assert not list(tmp_path.glob("selected-*.json"))
+
+
+def test_dart_archive_registration_is_required_before_parsing(tmp_path, registered_dart_archive):
+    """A missing ZIP registration is an incomplete bundle, never an XML-only fallback."""
+    catalog, archive = registered_dart_archive
+    catalog.model_copy(
+        update={"artifacts": tuple(a for a in catalog.artifacts if a != archive)}
+    ).write(tmp_path / "manifest.json")
+    (tmp_path / archive.path).unlink()
+    row = source_inventory(tmp_path)[0]
+    assert row.on_disk and not row.ready and row.can_redownload
+    document = catalog.documents[0]
+    primary = next(a for a in catalog.artifacts if a.role == "primary")
+    before = primary.read_bytes(tmp_path)
+    with pytest.raises(ValueError, match="Registered DART archive"):
+        record_selection(
+            tmp_path, (document.issuer,), (document.fiscal_year,), (document.document_id,)
+        )
+    assert primary.read_bytes(tmp_path) == before
+    assert not list(tmp_path.glob("selected-*.json"))
+
+
+def test_old_source_path_is_rejected_without_migration(tmp_path):
+    """An old registered path never becomes a current original or an automatic download."""
+    catalog = write_selection_catalog(tmp_path)
+    primary = catalog.artifacts[0]
+    raw = primary.read_bytes(tmp_path)
+    old = primary.model_copy(update={"path": "old-original.html"})
+    (tmp_path / old.path).write_bytes(raw)
+    catalog.model_copy(
+        update={"artifacts": tuple(old if a == primary else a for a in catalog.artifacts)}
+    ).write(tmp_path / "manifest.json")
+    row = next(r for r in source_inventory(tmp_path) if r.document_id == primary.document_id)
+    assert not row.ready and not row.can_redownload
+    with pytest.raises(ValueError, match="Unsupported current source path"):
+        record_selection(tmp_path, (row.issuer,), (row.fiscal_year,), (row.document_id,))
+    assert (tmp_path / old.path).read_bytes() == primary.read_bytes(tmp_path) == raw

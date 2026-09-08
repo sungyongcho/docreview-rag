@@ -1118,3 +1118,22 @@ def test_ingest_leaves_bm25_for_explicit_rebuild_and_preserves_progress(tmp_path
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("document_ids", [None, (), ("filing-a", "filing-a")])
+def test_selected_command_requires_exact_document_ids(document_ids):
+    """Internal commands reject absent or duplicate selected identities before queueing."""
+    with pytest.raises(ValueError, match="nonempty unique document_ids"):
+        AdminCommand(
+            "ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=document_ids
+        )
+
+
+def test_current_ingestion_commands_preserve_explicit_source_modes():
+    """Exact selection and the current CLI manifest route keep distinct required inputs."""
+    selected = AdminCommand(
+        "ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=("filing-a",)
+    )
+    assert selected.document_ids == ("filing-a",)
+    manifest = AdminCommand("ingest_manifest", manifest="manifest.json", selection_id="selection-a")
+    assert manifest.document_ids is None

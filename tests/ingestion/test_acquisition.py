@@ -7,13 +7,13 @@ import pytest
 from app.ingestion.acquisition import (
     AcquiredFiling,
     current_primary,
-    merge_acquired,
     publish_bytes,
     read_catalog,
     selection_identity,
 )
 from app.ingestion.manifest import Manifest
-from tests.ingestion.support import filing_document, filing_source
+from app.ingestion.source_publication import publish_acquired
+from tests.ingestion.support import acquired_filing, filing_document, filing_source
 
 
 def test_public_source_bytes_remain_readable_across_runtime_users(tmp_path):
@@ -37,38 +37,31 @@ def test_atomic_publication_refuses_traversal_and_symlink_escape(tmp_path):
 
 
 def test_mixed_catalog_retains_existing_selection_and_source_identities(tmp_path):
-    """Adding DART acquisition must preserve SEC documents and exact selected artifacts."""
-    sec_path = tmp_path / "sec.html"
-    sec_path.write_text("SEC source")
-    dart_path = tmp_path / "dart.xml"
-    dart_path.write_text("DART source")
-    sec = filing_source(sec_path)
-    dart = filing_source(dart_path, document=filing_document(registry="dart"))
-    catalog = Manifest(corpus=sec.corpus)
-    catalog = merge_acquired(
-        catalog,
-        [AcquiredFiling(sec.document, (sec.artifact,))],
-        selection_id="sec",
-        selected_document_ids=[sec.document.document_id],
-        corpus_root=tmp_path,
+    """A current DART ZIP/XML pair preserves the existing SEC identity and exact selection."""
+    sec = acquired_filing(tmp_path, payload=b"SEC source")
+    dart = acquired_filing(
+        tmp_path,
+        document=filing_document(registry="dart", document_id="opaque-dart-id"),
+        payload=b"<DOCUMENT>DART source</DOCUMENT>",
     )
-    catalog = merge_acquired(
-        catalog,
-        [AcquiredFiling(dart.document, (dart.artifact,))],
-        selection_id="dart",
-        selected_document_ids=[dart.document.document_id],
-        corpus_root=tmp_path,
-    )
-    path = tmp_path / "manifest.json"
-    catalog.write(path)
-    loaded = read_catalog(path)
+    for label, filing in (("sec", sec), ("dart", dart)):
+        publish_acquired(
+            tmp_path / "manifest.json",
+            [filing],
+            selection_id=label,
+            selected_document_ids=[filing.document.document_id],
+        )
+    loaded = read_catalog(tmp_path / "manifest.json")
     assert loaded.selected_sources("sec", tmp_path)[0].read() == "SEC source"
-    assert loaded.selected_sources("dart", tmp_path)[0].read() == "DART source"
-    assert len(loaded.documents) == len(loaded.artifacts) == len(loaded.selections) == 2
+    assert "DART source" in loaded.selected_sources("dart", tmp_path)[0].read()
+    assert len(loaded.documents) == len(loaded.selections) == 2
+    assert len(loaded.artifacts) == 3
+    assert loaded.documents[1].document_id == "opaque-dart-id"
 
 
-def test_current_source_never_silently_falls_back_after_corruption(tmp_path):
-    """A damaged current revision requires reacquisition despite older available bytes."""
+@pytest.mark.parametrize("latest_state", ["corrupt", "missing"])
+def test_conflicting_legacy_primaries_block_even_when_a_copy_is_invalid(tmp_path, latest_state):
+    """Registered conflicting identities cannot silently fall back to an older valid source."""
     old = tmp_path / "old.html"
     old.write_text("old")
     new = tmp_path / "new.html"
@@ -83,9 +76,14 @@ def test_current_source_never_silently_falls_back_after_corruption(tmp_path):
         documents=(source.document,),
         artifacts=(source.artifact, newer.artifact),
     )
-    assert current_primary(catalog, source.document.document_id, tmp_path) == newer.artifact
-    new.write_text("corrupted")
-    assert current_primary(catalog, source.document.document_id, tmp_path) is None
+    with pytest.raises(ValueError, match="Conflicting primary sources"):
+        current_primary(catalog, source.document.document_id, tmp_path)
+    if latest_state == "corrupt":
+        new.write_text("corrupted")
+    else:
+        new.unlink()
+    with pytest.raises(ValueError, match="Conflicting primary sources"):
+        current_primary(catalog, source.document.document_id, tmp_path)
 
 
 def test_acquisition_group_rejects_disconnected_artifacts(tmp_path):
@@ -94,9 +92,9 @@ def test_acquisition_group_rejects_disconnected_artifacts(tmp_path):
     path.write_text("source")
     source = filing_source(path)
     with pytest.raises(ValueError, match="another document"):
-        AcquiredFiling(filing_document(registry="dart"), (source.artifact,))
+        AcquiredFiling(filing_document(registry="dart"), (source.artifact,), (b"source",))
     with pytest.raises(ValueError, match="exactly one primary"):
-        AcquiredFiling(source.document, ())
+        AcquiredFiling(source.document, (), ())
 
 
 def test_selection_identity_normalizes_scope_and_distinguishes_requests():
@@ -108,22 +106,26 @@ def test_selection_identity_normalizes_scope_and_distinguishes_requests():
 
 
 def test_reacquiring_prior_bytes_selects_the_actual_latest_acquisition(tmp_path):
-    """A source reverting to earlier bytes must select that reacquired artifact."""
-    first_path = tmp_path / "first.html"
-    first_path.write_text("first")
-    second_path = tmp_path / "second.html"
-    second_path.write_text("second")
-    first = filing_source(first_path)
-    second = filing_source(second_path, document=first.document)
-    second = replace(second, artifact=second.artifact.model_copy(update={"artifact_id": "second"}))
-    catalog = Manifest(corpus=first.corpus)
-    for source in (first, second, first):
-        catalog = merge_acquired(
-            catalog,
-            [AcquiredFiling(source.document, (source.artifact,))],
+    """Returning to earlier bytes keeps one current artifact and an opaque document ID."""
+    document = filing_document(document_id="opaque-source-identity")
+    for payload in (b"first", b"second", b"first"):
+        filing = acquired_filing(tmp_path, document=document, payload=payload)
+        catalog = publish_acquired(
+            tmp_path / "manifest.json",
+            [filing],
             selection_id="latest",
-            selected_document_ids=[source.document.document_id],
-            corpus_root=tmp_path,
+            selected_document_ids=[document.document_id],
         )
-        assert catalog.selected_sources("latest", tmp_path)[0].read() == source.read()
-    assert len(catalog.artifacts) == 2
+        selected = catalog.selected_sources("latest", tmp_path)[0]
+        assert selected.read().encode() == payload
+        assert selected.document.document_id == document.document_id
+        assert len(catalog.artifacts) == 1
+
+
+def test_acquisition_requires_explicit_payloads(tmp_path):
+    """No producer may implicitly reread an old path instead of supplying acquired bytes."""
+    filing = acquired_filing(tmp_path)
+    with pytest.raises(TypeError):
+        AcquiredFiling(filing.document, filing.artifacts)
+    with pytest.raises(ValueError, match="payload"):
+        AcquiredFiling(filing.document, filing.artifacts, ())

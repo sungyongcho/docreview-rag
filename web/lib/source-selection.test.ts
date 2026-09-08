@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { acquisitionBatches, acquisitionDraft, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState, type SourceInventory } from "./source-selection";
 
-const rows: SourceInventory[] = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
+const rows: SourceInventory[] = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
 
 describe("current source selection", () => {
   it("resolves four downloaded sources without duplicate manifest memberships", () => {
-    const state = selectedSourceState([...rows, rows[0]], { identifiers: "NVDA AMD", years: "2023 2024" });
+    const state = selectedSourceState([...rows, rows[0]], acquisitionDraft(rows.map(row => ({ registry: row.registry, issuer: row.issuer, year: row.fiscal_year }))));
     expect(state.complete).toBe(true);
     expect(state.present).toHaveLength(4);
   });
   it("names absent company/year pairs and downloaded exclusions", () => {
-    const state = selectedSourceState(rows, { identifiers: "NVDA", years: "2022 2024" });
+    const state = selectedSourceState(rows, acquisitionDraft([2022, 2024].map(year => ({ registry: "sec", issuer: "NVDA", year }))));
     expect(state.complete).toBe(false);
     expect(state.missing).toEqual(["NVDA FY2022"]);
     expect(state.present).toHaveLength(1);
     expect(state.excluded).toHaveLength(3);
   });
   it("never marks an empty draft or missing file complete", () => {
-    expect(selectedSourceState(rows, { identifiers: "", years: "" }).complete).toBe(false);
-    expect(selectedSourceState(rows.map((row) => ({ ...row, on_disk: false })), { identifiers: "NVDA", years: "2024" }).missing).toEqual(["NVDA FY2024"]);
+    expect(selectedSourceState(rows, acquisitionDraft([])).complete).toBe(false);
+    expect(selectedSourceState(rows.map((row) => ({ ...row, on_disk: false, ready: false, can_redownload: true })), acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }])).missing).toEqual(["NVDA FY2024"]);
   });
 });
 
@@ -36,7 +36,7 @@ it("preserves a sparse selection without introducing the other company/year comb
 });
 
 it("batches matching year sets while preserving registry and incomplete-year identity", () => {
-  const partial = [...rows, { ...rows[0], document_id: "NVDA-FY2023-extra", on_disk: false }];
+  const partial = [...rows, { ...rows[0], document_id: "NVDA-FY2023-extra", filing_id: "NVDA-FY2023-extra", on_disk: false, ready: false, can_redownload: true }];
   const draft = acquisitionDraft([
     { registry: "sec", issuer: "NVDA", year: 2023 }, { registry: "sec", issuer: "AMD", year: 2023 },
     { registry: "dart", issuer: "005930", year: 2023 },
@@ -85,5 +85,19 @@ it.each([false, true])("never downloads a conflicting filing even when on_disk i
   const pair = { registry: "sec" as const, issuer: conflict.issuer, year: conflict.fiscal_year };
   const state = selectedSourceState([conflict], acquisitionDraft([pair]));
   expect(state.downloadPairs).toEqual([]);
+  expect(state.complete).toBe(false);
+});
+
+it("reacquires physically present invalid sources without counting them as missing", () => {
+  const invalid = { ...rows[0], ready: false, can_redownload: true, blocker: "Source bytes changed" };
+  const absent = { ...rows[1], on_disk: false, ready: false, can_redownload: true };
+  const state = selectedSourceState([invalid, absent], acquisitionDraft([
+    { registry: "sec", issuer: "NVDA", year: 2023 }, { registry: "sec", issuer: "NVDA", year: 2024 },
+    { registry: "dart", issuer: "005930", year: 2024 },
+  ]));
+  expect(state.present).toEqual([invalid]);
+  expect(state.missingPairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "dart", issuer: "005930", year: 2024 }]);
+  expect(state.downloadPairs).toHaveLength(3);
+  expect(state.blocked).toEqual([invalid]);
   expect(state.complete).toBe(false);
 });

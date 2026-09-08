@@ -121,3 +121,21 @@ def test_duplicate_evaluation_is_a_typed_409():
     assert error.value.status_code == 409
     assert error.value.error.code == "evaluation_already_queued"
     assert "eval-existing" in error.value.error.message
+
+
+def test_acquisition_api_preserves_absent_deletion_and_document_arguments():
+    """New optional deletion fields must not make ordinary corpus commands invalid."""
+    from app.api.admin_schemas import CorpusOperationRequest
+    from app.corpus_admin import AdminJob
+
+    request = CorpusOperationRequest(kind="acquire_edgar", identifiers=("NVDA",), years=(2024,))
+    service = object.__new__(RuntimeAdminApiServices)
+
+    async def enqueue(command):
+        """Return the accepted command through the actual dataclass serialization boundary."""
+        assert command.document_ids is None and command.confirm_delete is None
+        return AdminJob("download", command, "queued", "queued", 0, None, "Queued")
+
+    service._corpus = SimpleNamespace(enqueue=enqueue)
+    result = asyncio.run(service.enqueue_corpus(request))
+    assert result["command"]["kind"] == "acquire_edgar"

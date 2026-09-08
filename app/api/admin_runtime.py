@@ -39,6 +39,8 @@ from app.api.admin_schemas import (
     ReviewPreviewResponse,
     SnapshotCreateRequest,
     SnapshotVisibilityRequest,
+    SourceDeletionPreviewResource,
+    SourceDeletionRequest,
     UsageModelResource,
     UsageProviderResource,
     UsageResponse,
@@ -247,11 +249,21 @@ class RuntimeAdminApiServices:
         """Return deterministic live filter values and counts."""
         return await self._documents.document_facets(registry=registry)
 
+    async def source_deletion_preview(
+        self, request: SourceDeletionRequest
+    ) -> SourceDeletionPreviewResource:
+        """Return the read-only source plan used by the confirmation dialog."""
+        preview = await self._corpus.preview_source_deletion(request.document_ids)
+        return SourceDeletionPreviewResource.model_validate(preview)
+
     async def enqueue_corpus(self, request: CorpusOperationRequest) -> dict[str, Any]:
         """Queue one validated safe corpus operation."""
         job = await self._corpus.enqueue(
             AdminCommand(
                 request.kind,
+                document_ids=request.document_ids,
+                deletion_token=request.deletion_token,
+                confirm_delete=request.confirm_delete,
                 identifiers=request.identifiers,
                 years=request.years,
                 manifest=request.manifest,
@@ -383,7 +395,8 @@ class RuntimeAdminApiServices:
                 )
             ),
             can_retry=(
-                job.status in {"failed", "interrupted"}
+                job.kind != "delete_sources"
+                and job.status in {"failed", "interrupted"}
                 and job.kind != "embedding_usage"
                 and not (
                     job.domain == "corpus"

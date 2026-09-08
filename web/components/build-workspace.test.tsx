@@ -242,7 +242,7 @@ describe("Build workspace", () => {
           documents: 29, chunks: 21927, embedded_chunks: 21927, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
-        sources: ["AMD", "NVDA"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true }))),
+        sources: ["AMD", "NVDA"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
         manifests: [{
           name: "manifest.json", corpus_id: "test", registries: ["sec", "dart"], documents: 30, valid: true, sources_present: 30,
           selections: [
@@ -283,7 +283,7 @@ describe("Build workspace", () => {
       .filter(([value, init]) => String(value).endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST")
       .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
     expect(bodies).toEqual([
-      { kind: "ingest_selected", identifiers: ["AMD", "NVDA"], years: [2023, 2024] },
+      { kind: "ingest_selected", identifiers: ["AMD", "NVDA"], years: [2023, 2024], document_ids: ["AMD-FY2023", "AMD-FY2024", "NVDA-FY2023", "NVDA-FY2024"] },
     ]);
   });
 
@@ -354,7 +354,7 @@ describe("Build workspace", () => {
           documents: 30, chunks: 22367, embedded_chunks: 22367, pending_embeddings: 0,
           bm25_ready: true, writable: true, provider: "deterministic",
         },
-        sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true }))),
+        sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))),
         manifests: [{ name: "manifest.json", corpus_id: "sec", registries: ["sec"], documents: 21, valid: true, sources_present: 21, selections: [{ selection_id: "sec-evaluation", document_ids: Array.from({length: 21}, (_, i) => `sec-${i}`), artifact_ids: Array.from({length: 21}, (_, i) => `sec-source-${i}`), sources_present: 21 }] }],
         documents: [],
       };
@@ -417,7 +417,8 @@ describe("preparation refresh after corpus jobs", () => {
     }));
     render(<Harness live />);
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    await screen.findByRole("button", { name: "NVDA FY2024 · Missing source" });
+    await screen.findByText("SEC · NVDA FY2024: Missing source");
+    expect(screen.queryByRole("button", { name: "NVDA FY2024 · Missing source" })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: /sec-evaluation|overlap/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 0 ready · 4 to download");
@@ -501,9 +502,9 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
 
 
 it("initializes empty, accepts a server sample, and reconciles disk changes without overwriting an edited draft", async () => {
-  const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: true })));
+  const sourceRows = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true })));
   let sources: typeof sourceRows = [];
-  let preset: typeof SAMPLE_DRAFT | null = null;
+  let preset: typeof SAMPLE_DRAFT = { identifiers: [], years: [], pairs: [], revision: "empty-v1" };
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
@@ -682,7 +683,7 @@ describe("refresh hygiene", () => {
 
 
 it.each([false, true])("queues exact sparse pairs and reports partial indexing submission: %s", async (failIndex) => {
-  const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, on_disk: !(issuer === "NVDA" && year === 2024) })));
+  const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: !(issuer === "NVDA" && year === 2024) })));
   const submitted: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -707,8 +708,8 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
   await waitFor(() => expect(submitted.slice(1)).toEqual([
-    { kind: "ingest_selected", identifiers: ["AMD"], years: [2023] },
-    { kind: "ingest_selected", identifiers: ["NVDA"], years: [2024] },
+    { kind: "ingest_selected", identifiers: ["AMD"], years: [2023], document_ids: ["AMD-2023"] },
+    { kind: "ingest_selected", identifiers: ["NVDA"], years: [2024], document_ids: ["NVDA-2024"] },
   ]));
   if (failIndex) expect(await screen.findByText(/Indexing stopped after 1 queued jobs/)).toBeInTheDocument();
   cleanup(); vi.unstubAllGlobals();
@@ -723,7 +724,7 @@ describe("connection readiness presentation", () => {
         ...CANNED_CORPUS,
         status: READY_RUNTIME.corpus,
         acquisition_draft: { identifiers: ["NVDA"], years: [2024], pairs: [{ registry: "sec", issuer: "NVDA", year: 2024 }], revision: "one-filing" },
-        sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true }],
+        sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }],
       });
       if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
       if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
@@ -791,8 +792,8 @@ it("queues a staged recoverable source and enables parsing after the verified re
       status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true },
       acquisition_draft: { identifiers: ["AMD"], years: [2023], pairs: [{ registry: "sec", issuer: "AMD", year: 2023 }], revision: "repair-source" },
       sources: [
-        { manifest: "manifest.json", document_id: "AMD-FY2023", registry: "sec", issuer: "AMD", name: "AMD", fiscal_year: 2023, on_disk: true, ready: true, can_redownload: false },
-        { manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
+        { manifest: "manifest.json", document_id: "AMD-FY2023", filing_id: "AMD-FY2023", registry: "sec", issuer: "AMD", name: "AMD", fiscal_year: 2023, on_disk: true, ready: true, can_redownload: false },
+        { manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, on_disk: true, ready: recovered, can_redownload: !recovered, blocker: recovered ? null : "Download it again in Filings" },
       ],
     });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
@@ -816,4 +817,104 @@ it("queues a staged recoverable source and enables parsing after the verified re
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled());
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+});
+
+/** Serve lifecycle requests while retaining the server snapshot until a terminal job refresh. */
+function stubSourceLifecycle(sources: Array<Record<string, unknown>>, submitted: Array<Record<string, unknown>>, previews: Array<Record<string, unknown>>) {
+  const pairs = [{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "dart", issuer: "005930", year: 2023 }];
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/admin/corpus/sources/deletion-preview")) {
+      previews.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ token: "exact-source-token", expires_at: Date.now() / 1000 + 300, retained_inputs: 1, retained_derived: true,
+        documents: sources.filter((row) => row.on_disk).map((row) => ({ document_id: row.document_id, registry: row.registry, issuer: row.issuer, fiscal_year: row.fiscal_year, filing_id: row.filing_id })),
+        files: [{ path: "data/corpus/sec/filing-a.html", byte_length: 10, retained: false }],
+      });
+    }
+    if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") { submitted.push(JSON.parse(String(init.body))); return jsonResponse({ job_id: "source-job", status: "queued" }); }
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: READY_RUNTIME.corpus, sources, acquisition_draft: { revision: "source-lifecycle", identifiers: ["NVDA", "005930"], years: [2023, 2024], pairs } });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
+    if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
+    return jsonResponse([]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+/** Keep two SEC filings in one year separate from the DART acquisition batch. */
+function lifecycleSources() {
+  return [
+    { registry: "sec", issuer: "NVDA", fiscal_year: 2024, document_id: "sec-filing-a", filing_id: "accession-a", manifest: "manifest.json", ready: true, can_redownload: false, on_disk: true },
+    { registry: "sec", issuer: "NVDA", fiscal_year: 2024, document_id: "sec-filing-b", filing_id: "accession-b", manifest: "manifest.json", ready: true, can_redownload: false, on_disk: true },
+    { registry: "dart", issuer: "005930", fiscal_year: 2023, document_id: "dart-filing-c", filing_id: "receipt-c", manifest: "manifest.json", ready: true, can_redownload: false, on_disk: true },
+  ];
+}
+
+it("submits each exact filing identity while preserving the existing registry/year batches", async () => {
+  const sources = lifecycleSources(); const submitted: Record<string, unknown>[] = [];
+  stubSourceLifecycle([...sources, { ...sources[0], manifest: "duplicate.json" }], submitted, []);
+  render(<Harness live readiness={READY_RUNTIME} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
+  await waitFor(() => expect(submitted).toEqual([
+    { kind: "ingest_selected", identifiers: ["NVDA"], years: [2024], document_ids: ["sec-filing-a", "sec-filing-b"] },
+    { kind: "ingest_selected", identifiers: ["005930"], years: [2023], document_ids: ["dart-filing-c"] },
+  ]));
+});
+
+it("queues reacquisition of changed bytes and blocks the whole intended parsing scope", async () => {
+  const sources = lifecycleSources(); sources[0].ready = false;
+  const submitted: Record<string, unknown>[] = [];
+  stubSourceLifecycle(sources.map((row) => ({ ...row, can_redownload: !row.ready, blocker: row.ready ? null : "Source bytes changed" })), submitted, []);
+  render(<Harness live readiness={READY_RUNTIME} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  await screen.findByText("accession-a: Source bytes changed");
+  expect(screen.queryByRole("button", { name: /^NVDA FY/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
+  expect(submitted).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
+  expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2024");
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  await waitFor(() => expect(submitted).toEqual([{ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] }]));
+});
+
+it("separates deselection and cancellation from confirmed deletion without premature inventory changes", async () => {
+  const sources = lifecycleSources(); sources[2].on_disk = false; sources[2].ready = false; sources[2].can_redownload = true;
+  const submitted: Record<string, unknown>[] = []; const previews: Record<string, unknown>[] = []; const refresh = vi.fn();
+  const fetchMock = stubSourceLifecycle(sources, submitted, previews);
+  render(<Harness live readiness={READY_RUNTIME} onRefreshJobs={refresh} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  const trigger = await screen.findByRole("button", { name: "Delete selected originals" });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(trigger).toBeDisabled(); expect(previews).toEqual([]); expect(submitted).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "NVDA FY2024 · On disk" }));
+  fireEvent.click(trigger);
+  await screen.findByRole("button", { name: "Confirm deletion of originals" });
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+  expect(submitted).toEqual([]);
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(trigger);
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm deletion of originals" }));
+  await screen.findByText("Source deletion queued. Files are not deleted yet; check Jobs for the result.");
+  expect(previews).toEqual([{ document_ids: ["sec-filing-a", "sec-filing-b"] }, { document_ids: ["sec-filing-a", "sec-filing-b"] }]);
+  expect(submitted).toEqual([{ kind: "delete_sources", identifiers: [], years: [], deletion_token: "exact-source-token", confirm_delete: true }]);
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/corpus"))).toHaveLength(1);
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it.each(["queued", "running"] as const)("locks deletion while a corpus job is %s", async (status) => {
+  const submitted: Record<string, unknown>[] = []; const previews: Record<string, unknown>[] = [];
+  stubSourceLifecycle(lifecycleSources(), submitted, previews);
+  const job: OperatorJob = { job_id: "other-corpus-job", domain: "corpus", kind: "backfill_embeddings", request: {}, status, stage: "embed", current: 1, total: 10, detail_current: null, detail_total: null, message: "Embedding", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-09-08T12:00:00Z", started_at: null, finished_at: null, updated_at: "2026-09-08T12:00:00Z" };
+  render(<Harness live readiness={READY_RUNTIME} jobBoard={{ jobs: [job], active_count: 1, queued_count: 0 }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  await screen.findByRole("button", { name: "NVDA FY2024 · On disk" });
+  fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" }));
+  expect(screen.getByRole("button", { name: "Delete selected originals" })).toBeDisabled();
+  expect(previews).toEqual([]); expect(submitted).toEqual([]);
 });

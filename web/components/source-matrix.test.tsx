@@ -10,7 +10,7 @@ afterEach(cleanup);
 
 /** Build one distinct source document without hiding registry or disk state. */
 function source(issuer: string, year: number, onDisk = true, name = issuer): SourceInventory {
-  return { document_id: `${issuer}-${year}`, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json" };
+  return { document_id: `${issuer}-${year}`, filing_id: `${issuer}-${year}`, can_redownload: !onDisk, registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, ready: onDisk, on_disk: onDisk, name, manifest: "manifest.json" };
 }
 const inventory = [source("NVDA", 2024), source("005930", 2023, false, "Samsung"), source("AMD", 2023), source("NVDA", 2022)];
 
@@ -199,4 +199,25 @@ it.each([
   expect(sync).toBeDisabled();
   fireEvent.click(sync);
   expect(download).not.toHaveBeenCalled();
+});
+
+it("places invalid on-disk sources in the synchronization plan without calling them absent", () => {
+  const download = vi.fn();
+  render(<Harness sources={[{ ...source("NVDA", 2024), ready: false, can_redownload: true, blocker: "Source bytes changed" }]} initialPairs={[{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
+  expect(screen.getByText(/Selected on disk: 1/)).toHaveTextContent("To download: 1");
+  expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2024");
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]));
+});
+
+
+it("rejects year zero and stages an explicit future year for a supported company", () => {
+  const download = vi.fn();
+  render(<Harness sources={[]} download={download} />);
+  enter("NVDA"); enter("0000");
+  expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+  enter("2099");
+  expect(screen.getByRole("button", { name: "Remove NVDA FY2099" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
+  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2099 }]));
 });

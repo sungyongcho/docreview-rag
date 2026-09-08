@@ -31,12 +31,16 @@
 - **선행 조건:** DB·스키마가 호환되고 [수집 단계](acquisition.md#step-4)의 필요한 원문이 모두 있습니다.
 - **화면 경로:** 데이터 준비 → 파이프라인 → 파싱·청킹 → 선택한 문서.
 - **입력:** 원문 단계의 선택을 SEC·DART → 회사 → 연도 순으로 확인합니다. 헤더에 문서·준비·누락·회사·연도 수가 표시됩니다. 눈에 잘 띄는 **원문 단계에서 선택 변경** 버튼을 쓰거나 연도를 눌러 빼면 두 단계의 공통 선택에 반영됩니다.
-- **주 동작:** **선택한 원문 파싱 및 청크 생성** 한 번으로 현재 선택 전체를 처리합니다. 기존 행별 적재는 **고급**에 있습니다.
+- **주 동작:** **선택한 원문 파싱 및 청크 생성** 한 번으로 현재 선택 전체를 처리합니다.
 - **화면 변화:** 작업에 진행 상황과 문서·청크 수가 기록되고 문서 목록에 해당 보고서가 나타납니다.
 - **완료 기준:** 작업이 성공했고 예상한 문서 식별자와 양수의 청크 수를 확인했습니다.
 - **실패와 복구:** 작업에서 파일 누락·스키마 오류를 읽고 선행 조건을 수정한 뒤 재시도합니다.
   원인을 모르는 상태에서 DB를 지우지 마세요. [문제 해결](troubleshooting.md)을 참고하세요.
 - **다음:** [임베딩 준비](#step-6). 현재 모델의 임베딩이 준비돼 있으면 실행을 생략합니다.
+
+큐 등록 전에 선택한 공시 ID 전체를 검증하고 원문 입력을 고정합니다. 이후 원문 단계에서
+삭제하거나 다시 내려받아도 기존 작업의 입력은 바뀌지 않습니다. 누락·변경된 선택 원문은
+다시 다운로드하거나 명시적으로 선택을 바꿀 때까지 새 파싱을 막습니다.
 
 각 DB 적재는 지정한 선택만 처리하며 공통 문서 목록을 복사하지 않습니다.
 적재는 원문과 연결된 구조·청크를 저장합니다. 임베딩과 BM25는 Build 3·4단계에서 별도로
@@ -146,3 +150,8 @@ OpenAI는 **시스템 상태 열기**, 서버 연결은 **로컬 LLM 설정 열�
 
 ### SCREENSHOT NEEDED
 <!-- Feature: issue 173 answer-model engine rows, CPU placement and measured speed, dual flow-map lights and composer tooltip; state: OpenAI ready plus loaded local CPU model, then unloaded and slow CPU states; locale=ko; light mode; actual runtime evidence required. -->
+
+2단계에서는 물리적으로 없는 파일 수와 **조치 필요** 수를 구분합니다. DART는 현재 XML과 해당 원문에 연결된 ZIP이 모두 필요합니다. 둘 중 하나라도 없거나 손상됐으면 같은 공시를 다시 다운로드한 뒤 파싱합니다. 명시적인 정리나 초기화가 필요한 중복 등록·지원하지 않는 경로도 포함해, 선택된 누락·차단 공시의 정확한 원인을 표시합니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: step 2 physical missing count, repair count and non-retryable identity-conflict diagnostics; locale=ko; theme=light; show a present primary with missing registered ZIP and a blocked conflicting source without enabling automatic download. -->

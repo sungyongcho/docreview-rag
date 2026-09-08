@@ -27,8 +27,6 @@ import httpx
 from app.ingestion.acquisition import (
     AcquiredFiling,
     current_primary,
-    merge_acquired,
-    publish_bytes,
     read_catalog,
     selection_identity,
 )
@@ -40,6 +38,7 @@ from app.ingestion.manifest import (
     SourceArtifact,
 )
 from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
+from app.ingestion.source_publication import fixed_path, publish_acquired
 
 DEFAULT_MANIFEST: Final[Path] = Path("data/corpus/manifest.json")
 CORPUS_ROOT: Final[Path] = Path("data/corpus")
@@ -152,17 +151,6 @@ def parse_years(text: str) -> range:
 
 
 # --- manifest ---
-
-
-def read_manifest(path: Path) -> Manifest:
-    """Read the shared typed corpus catalog."""
-    return read_catalog(path)
-
-
-def write_manifest(path: Path, manifest: Manifest) -> None:
-    """Publish the shared catalog atomically."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write(path)
 
 
 def merge_entries(
@@ -502,11 +490,6 @@ async def discover(
 # --- fetching ---
 
 
-def store_document(corpus_root: Path, relative_path: str, body: bytes) -> Path:
-    """Atomically store a confined source artifact."""
-    return publish_bytes(corpus_root, relative_path, body)
-
-
 def _no_progress(document: DocumentReference) -> AbstractContextManager[ByteProgress | None]:
     """Provide a no-op byte progress scope."""
     return nullcontext(None)
@@ -520,7 +503,7 @@ async def download_pending(
     user_agent: str,
     progress: ProgressFactory | None = None,
 ) -> AsyncIterator[AcquiredFiling]:
-    """Download verified UTF-8 primary artifacts with immutable content-addressed paths."""
+    """Download and validate complete bytes before transactional publication."""
     open_progress = progress or _no_progress
     for index, document in enumerate(entries):
         if index:
@@ -531,7 +514,7 @@ async def download_pending(
             )
         body.decode("utf-8", errors="strict")
         digest = hashlib.sha256(body).hexdigest()
-        path = f"sec/{document.filing_id}/{digest}.html"
+        path = fixed_path("sec", document.filing_id, "primary")
         artifact = SourceArtifact(
             artifact_id=f"{document.document_id}:primary:{digest}",
             document_id=document.document_id,
@@ -547,8 +530,7 @@ async def download_pending(
                 original_encoding="utf-8",
             ),
         )
-        store_document(corpus_root, path, body)
-        yield AcquiredFiling(document, (artifact,))
+        yield AcquiredFiling(document, (artifact,), (body,))
 
 
 def _entry_label(document: DocumentReference) -> str:
@@ -569,7 +551,7 @@ async def acquire_edgar(
 ) -> EdgarAcquisitionResult:
     """Acquire explicit SEC filing scope into the shared manifest and named selection."""
     declared = require_user_agent(user_agent)
-    catalog = read_manifest(manifest_path)
+    catalog = read_catalog(manifest_path)
     documents = list(catalog.documents)
     added: list[DocumentReference] = []
     wanted = tuple(sorted({ticker.upper() for ticker in tickers})) or tuple(
@@ -634,14 +616,12 @@ async def acquire_edgar(
             user_agent=declared,
             progress=administrative_progress,
         ):
-            catalog = merge_acquired(
-                catalog,
+            catalog = publish_acquired(
+                manifest_path,
                 [acquired],
                 selection_id=selection_id,
                 selected_document_ids=[document.document_id for document in selected],
-                corpus_root=manifest_path.parent,
             )
-            write_manifest(manifest_path, catalog)
             fetched.append(
                 (manifest_path.parent / acquired.primary.path, acquired.primary.byte_length)
             )
@@ -651,14 +631,12 @@ async def acquire_edgar(
                         "download", len(fetched), len(targets), _entry_label(acquired.document)
                     )
                 )
-    catalog = merge_acquired(
-        catalog,
+    catalog = publish_acquired(
+        manifest_path,
         [],
         selection_id=selection_id,
         selected_document_ids=[document.document_id for document in selected],
-        corpus_root=manifest_path.parent,
     )
-    write_manifest(manifest_path, catalog)
     if not targets and on_progress is not None:
         on_progress(OperationProgress("download", 0, 0, "Every selected filing is valid"))
     return EdgarAcquisitionResult(
@@ -688,7 +666,7 @@ if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
             wanted = tickers or tuple(
                 dict.fromkeys(
                     entry.issuer
-                    for entry in read_manifest(manifest_path).documents
+                    for entry in read_catalog(manifest_path).documents
                     if entry.registry == "sec"
                 )
             )

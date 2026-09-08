@@ -13,7 +13,6 @@
             "type": "array"
           },
           "pairs": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/AcquisitionPairResource"
             },
@@ -21,7 +20,6 @@
             "type": "array"
           },
           "revision": {
-            "default": "default-v1",
             "title": "Revision",
             "type": "string"
           },
@@ -34,6 +32,8 @@
           }
         },
         "required": [
+          "pairs",
+          "revision",
           "identifiers",
           "years"
         ],
@@ -930,6 +930,7 @@
           "acquire_dart",
           "ingest_manifest",
           "ingest_selected",
+          "delete_sources",
           "backfill_embeddings",
           "rebuild_bm25"
         ],
@@ -939,6 +940,42 @@
         "additionalProperties": false,
         "description": "One safe corpus operation accepted by the local operator API.",
         "properties": {
+          "confirm_delete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Delete"
+          },
+          "deletion_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Token"
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
+          },
           "expected_documents": {
             "anyOf": [
               {
@@ -6313,6 +6350,139 @@
         "title": "SnapshotVisibilityRequest",
         "type": "object"
       },
+      "SourceDeletionDocument": {
+        "additionalProperties": false,
+        "description": "Show the official filing identity before original-file deletion is confirmed.",
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "filing_id": {
+            "title": "Filing Id",
+            "type": "string"
+          },
+          "fiscal_year": {
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "registry": {
+            "enum": [
+              "sec",
+              "dart"
+            ],
+            "title": "Registry",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "registry",
+          "issuer",
+          "fiscal_year",
+          "filing_id"
+        ],
+        "title": "SourceDeletionDocument",
+        "type": "object"
+      },
+      "SourceDeletionFile": {
+        "additionalProperties": false,
+        "description": "Distinguish current files to remove from inputs retained for other recorded scopes.",
+        "properties": {
+          "byte_length": {
+            "minimum": 0.0,
+            "title": "Byte Length",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "retained": {
+            "title": "Retained",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "byte_length",
+          "retained"
+        ],
+        "title": "SourceDeletionFile",
+        "type": "object"
+      },
+      "SourceDeletionPreviewResource": {
+        "additionalProperties": false,
+        "description": "A short-lived confirmation bound to exact files and the current catalog.",
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/SourceDeletionDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SourceDeletionFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "retained_derived": {
+            "const": true,
+            "default": true,
+            "title": "Retained Derived",
+            "type": "boolean"
+          },
+          "retained_inputs": {
+            "minimum": 0.0,
+            "title": "Retained Inputs",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at",
+          "documents",
+          "files",
+          "retained_inputs"
+        ],
+        "title": "SourceDeletionPreviewResource",
+        "type": "object"
+      },
+      "SourceDeletionRequest": {
+        "additionalProperties": false,
+        "description": "Preview the exact acquired filing identities selected in step one.",
+        "properties": {
+          "document_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Document Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "document_ids"
+        ],
+        "title": "SourceDeletionRequest",
+        "type": "object"
+      },
       "SourceInventoryResource": {
         "additionalProperties": false,
         "description": "Downloaded source identity independent of database rows.",
@@ -6329,18 +6499,15 @@
             "title": "Blocker"
           },
           "can_redownload": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Can Redownload"
+            "title": "Can Redownload",
+            "type": "boolean"
           },
           "document_id": {
             "title": "Document Id",
+            "type": "string"
+          },
+          "filing_id": {
+            "title": "Filing Id",
             "type": "string"
           },
           "fiscal_year": {
@@ -6364,7 +6531,6 @@
             "type": "boolean"
           },
           "ready": {
-            "default": false,
             "title": "Ready",
             "type": "boolean"
           },
@@ -6384,7 +6550,10 @@
           "issuer",
           "name",
           "fiscal_year",
-          "on_disk"
+          "filing_id",
+          "on_disk",
+          "ready",
+          "can_redownload"
         ],
         "title": "SourceInventoryResource",
         "type": "object"
@@ -7394,6 +7563,58 @@
           }
         },
         "summary": "Retry Corpus",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/corpus/sources/deletion-preview": {
+      "post": {
+        "description": "Inspect exact acquired originals without deleting or changing their selection.",
+        "operationId": "source_deletion_preview_admin_corpus_sources_deletion_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceDeletionPreviewResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Source Deletion Preview",
         "tags": [
           "admin"
         ]

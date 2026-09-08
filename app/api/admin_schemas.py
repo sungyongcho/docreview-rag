@@ -44,6 +44,7 @@ type CorpusOperationKind = Literal[
     "acquire_dart",
     "ingest_manifest",
     "ingest_selected",
+    "delete_sources",
     "backfill_embeddings",
     "rebuild_bm25",
 ]
@@ -221,6 +222,9 @@ class CorpusOperationRequest(StrictAdminModel):
     """One safe corpus operation accepted by the local operator API."""
 
     kind: CorpusOperationKind
+    document_ids: Annotated[tuple[str, ...] | None, BeforeValidator(_tuple_from_json_array)] = None
+    deletion_token: str | None = None
+    confirm_delete: StrictBool | None = None
     identifiers: Annotated[
         tuple[str, ...],
         BeforeValidator(_tuple_from_json_array),
@@ -235,7 +239,26 @@ class CorpusOperationRequest(StrictAdminModel):
 
     @model_validator(mode="after")
     def validate_selection(self) -> Self:
-        """Require an explicit source selection for ingestion."""
+        """Require exact source selections and explicit deletion confirmation."""
+        if self.kind == "delete_sources":
+            if not self.deletion_token or self.confirm_delete is not True:
+                raise ValueError(
+                    "Source deletion requires a preview token and explicit confirmation."
+                )
+            if (
+                self.identifiers
+                or self.years
+                or self.manifest
+                or self.selection_id
+                or self.document_ids
+            ):
+                raise ValueError("Deletion targets must come from the confirmed preview.")
+        elif self.deletion_token is not None or self.confirm_delete is not None:
+            raise ValueError("Deletion confirmation applies only to source deletion.")
+        if self.kind == "ingest_selected" and (
+            not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)
+        ):
+            raise ValueError("ingest_selected requires nonempty unique document_ids")
         if self.kind == "ingest_manifest" and (
             not (self.manifest or "").strip() or not (self.selection_id or "").strip()
         ):
@@ -314,6 +337,45 @@ class CorpusDocumentResource(StrictAdminModel):
     chunk_count: NonnegativeInt
 
 
+class SourceDeletionRequest(StrictAdminModel):
+    """Preview the exact acquired filing identities selected in step one."""
+
+    document_ids: Annotated[
+        tuple[str, ...],
+        BeforeValidator(_tuple_from_json_array),
+        Field(min_length=1, max_length=200),
+    ]
+
+
+class SourceDeletionDocument(StrictAdminModel):
+    """Show the official filing identity before original-file deletion is confirmed."""
+
+    document_id: str
+    registry: Literal["sec", "dart"]
+    issuer: str
+    fiscal_year: int
+    filing_id: str
+
+
+class SourceDeletionFile(StrictAdminModel):
+    """Distinguish current files to remove from inputs retained for other recorded scopes."""
+
+    path: str
+    byte_length: NonnegativeInt
+    retained: StrictBool
+
+
+class SourceDeletionPreviewResource(StrictAdminModel):
+    """A short-lived confirmation bound to exact files and the current catalog."""
+
+    token: str
+    expires_at: float
+    documents: tuple[SourceDeletionDocument, ...]
+    files: tuple[SourceDeletionFile, ...]
+    retained_inputs: NonnegativeInt
+    retained_derived: Literal[True] = True
+
+
 class SourceInventoryResource(StrictAdminModel):
     """Downloaded source identity independent of database rows."""
 
@@ -323,10 +385,11 @@ class SourceInventoryResource(StrictAdminModel):
     issuer: str
     name: str
     fiscal_year: int
+    filing_id: str
     on_disk: StrictBool
-    ready: StrictBool = False
+    ready: StrictBool
     blocker: str | None = None
-    can_redownload: StrictBool | None = None
+    can_redownload: StrictBool
 
 
 class AcquisitionPairResource(StrictAdminModel):
@@ -340,10 +403,8 @@ class AcquisitionPairResource(StrictAdminModel):
 class AcquisitionDraftResource(StrictAdminModel):
     """Server-provided initial company and fiscal-year selection."""
 
-    pairs: Annotated[
-        tuple[AcquisitionPairResource, ...], BeforeValidator(_tuple_from_json_array)
-    ] = ()
-    revision: str = "default-v1"
+    pairs: Annotated[tuple[AcquisitionPairResource, ...], BeforeValidator(_tuple_from_json_array)]
+    revision: str
 
     identifiers: Annotated[tuple[str, ...], BeforeValidator(_tuple_from_json_array)]
     years: Annotated[tuple[int, ...], BeforeValidator(_tuple_from_json_array)]

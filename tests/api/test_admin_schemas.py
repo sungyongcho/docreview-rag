@@ -4,6 +4,8 @@ from pydantic import ValidationError
 import pytest
 
 from app.api.admin_schemas import (
+    AcquisitionDraftResource,
+    CorpusOperationRequest,
     EvaluationRunRequest,
     RetrievalPreviewResponse,
     RetrievalProfile,
@@ -75,6 +77,7 @@ def test_source_download_recovery_is_a_strict_boolean(can_redownload):
     values = {
         "manifest": "manifest.json",
         "document_id": "NVDA-FY2024",
+        "filing_id": "0001045810-24-000029",
         "registry": "sec",
         "issuer": "NVDA",
         "name": "NVIDIA",
@@ -87,3 +90,85 @@ def test_source_download_recovery_is_a_strict_boolean(can_redownload):
     assert resource.on_disk and resource.can_redownload is can_redownload
     with pytest.raises(ValidationError):
         SourceInventoryResource.model_validate({**values, "can_redownload": str(can_redownload)})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"kind": "delete_sources"},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": False},
+        {"kind": "delete_sources", "deletion_token": "preview", "confirm_delete": "true"},
+        {
+            "kind": "delete_sources",
+            "deletion_token": "preview",
+            "confirm_delete": True,
+            "identifiers": ["NVDA"],
+        },
+        {"kind": "rebuild_bm25", "deletion_token": "preview", "confirm_delete": True},
+    ],
+)
+def test_source_deletion_requires_a_dedicated_explicit_confirmation(payload):
+    """Reject coercion and a target scope that was not part of the preview."""
+    from app.api.admin_schemas import CorpusOperationRequest
+
+    with pytest.raises(ValidationError):
+        CorpusOperationRequest.model_validate(payload)
+
+
+@pytest.mark.parametrize("document_ids", [None, [], ["filing-a", "filing-a"]])
+def test_selected_ingestion_requires_nonempty_unique_document_ids(document_ids):
+    """Refuse old issuer/year-only requests before source selection can be inferred."""
+    with pytest.raises(ValidationError, match="nonempty unique document_ids"):
+        CorpusOperationRequest.model_validate(
+            {
+                "kind": "ingest_selected",
+                "identifiers": ["NVDA"],
+                "years": [2024],
+                "document_ids": document_ids,
+            }
+        )
+
+
+def test_exact_ingestion_and_current_cli_manifest_requests_remain_valid():
+    """Require IDs only for selected-source jobs while preserving explicit manifest ingestion."""
+    selected = CorpusOperationRequest(
+        kind="ingest_selected", identifiers=("NVDA",), years=(2024,), document_ids=("filing-a",)
+    )
+    assert selected.document_ids == ("filing-a",)
+    manifest = CorpusOperationRequest(
+        kind="ingest_manifest", manifest="manifest.json", selection_id="selection-a"
+    )
+    assert manifest.document_ids is None
+
+
+@pytest.mark.parametrize("field", ["filing_id", "ready", "can_redownload"])
+@pytest.mark.parametrize("missing", [False, True])
+def test_source_inventory_requires_current_identity_and_state_fields(field, missing):
+    """Reject missing or null current-source fields instead of inventing readiness defaults."""
+    values = {
+        "manifest": "manifest.json",
+        "document_id": "NVDA-FY2024",
+        "filing_id": "0001045810-24-000029",
+        "registry": "sec",
+        "issuer": "NVDA",
+        "name": "NVIDIA",
+        "fiscal_year": 2024,
+        "on_disk": True,
+        "ready": True,
+        "can_redownload": False,
+    }
+    if missing:
+        del values[field]
+    else:
+        values[field] = None
+    with pytest.raises(ValidationError):
+        SourceInventoryResource.model_validate(values)
+
+
+def test_acquisition_draft_requires_explicit_pairs_and_revision():
+    """Reject older draft shapes while keeping the exact empty current draft valid."""
+    values = {"identifiers": [], "years": [], "pairs": [], "revision": "reset-a"}
+    assert AcquisitionDraftResource.model_validate(values).pairs == ()
+    for field in ("pairs", "revision"):
+        with pytest.raises(ValidationError):
+            AcquisitionDraftResource.model_validate({k: v for k, v in values.items() if k != field})

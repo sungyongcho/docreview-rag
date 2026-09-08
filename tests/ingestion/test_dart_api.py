@@ -8,7 +8,7 @@ import zipfile
 import httpx
 import pytest
 
-from app.ingestion.acquisition import AcquiredFiling, merge_acquired
+from app.ingestion.acquisition import read_catalog
 import app.ingestion.dart_api as dart_api
 from app.ingestion.dart_api import (
     AnnualReport,
@@ -29,7 +29,8 @@ from app.ingestion.dart_api import (
     select_primary_member,
 )
 from app.ingestion.manifest import CorpusIdentity, Manifest
-from tests.ingestion.support import client_returning, filing_document, filing_source, run
+from app.ingestion.source_publication import publish_acquired
+from tests.ingestion.support import acquired_filing, client_returning, filing_document, run
 
 API_KEY = "k" * 40
 RCEPT_NO = "20250311001085"
@@ -417,6 +418,13 @@ def test_archive_document_writes_utf8_and_records_matching_identity(tmp_path):
 
     entry = archive_document(document, report, issuer, fiscal_year=2024, corpus_dir=tmp_path)
 
+    assert not (tmp_path / entry.primary.path).exists()
+    publish_acquired(
+        tmp_path / "manifest.json",
+        [entry],
+        selection_id="dart",
+        selected_document_ids=[entry.document.document_id],
+    )
     written = tmp_path / entry.primary.path
     stored = written.read_bytes().decode("utf-8")
     assert entry.document.registry == "dart"
@@ -449,37 +457,33 @@ def test_archive_document_rejects_a_broken_archive(tmp_path):
 
 
 def dart_acquired(tmp_path, year=2024, receipt=RCEPT_NO):
-    """Build a typed acquired filing with real test artifact bytes."""
-    path = tmp_path / f"{receipt}.xml"
-    path.write_text("사업보고서", encoding="utf-8")
-    document = filing_document(
-        registry="dart",
-        fiscal_year=year,
-        filing_id=receipt,
-        document_id=f"dart-{receipt}",
-        aliases=("삼성전자",),
+    """Build a complete current DART ZIP/XML pair with explicit acquired bytes."""
+    return acquired_filing(
+        tmp_path,
+        document=filing_document(
+            registry="dart",
+            fiscal_year=year,
+            filing_id=receipt,
+            document_id=f"dart-{receipt}",
+            aliases=("삼성전자",),
+        ),
+        payload="<DOCUMENT>사업보고서</DOCUMENT>".encode(),
     )
-    source = filing_source(path, document=document)
-    return AcquiredFiling(document, (source.artifact,))
 
 
 def catalog_with(tmp_path, acquired):
-    """Publish the selected typed artifacts and preserve their corpus catalog."""
-    catalog = Manifest(corpus=CorpusIdentity(corpus_id="test", name="Test"))
-    catalog = merge_acquired(
-        catalog,
+    """Publish current source groups through the actual managed publication boundary."""
+    return publish_acquired(
+        tmp_path / "manifest.json",
         acquired,
         selection_id="test-selection",
         selected_document_ids=[item.document.document_id for item in acquired],
-        corpus_root=tmp_path,
     )
-    dart_api.write_manifest(tmp_path / "manifest.json", catalog)
-    return catalog
 
 
 def test_a_missing_manifest_is_a_first_run(tmp_path):
     """Initialize the common catalog on a first acquisition."""
-    assert dart_api.read_manifest(tmp_path / "manifest.json").documents == ()
+    assert read_catalog(tmp_path / "manifest.json").documents == ()
 
 
 def test_manifest_without_common_identity_is_rejected(tmp_path):
@@ -487,20 +491,19 @@ def test_manifest_without_common_identity_is_rejected(tmp_path):
     path = tmp_path / "manifest.json"
     path.write_text('[{"issuer":"005930"}]')
     with pytest.raises(ValueError, match="object"):
-        dart_api.read_manifest(path)
+        read_catalog(path)
 
 
 def test_a_second_fiscal_year_does_not_erase_the_first(tmp_path):
     """Add an explicit new selection without replacing existing catalog documents."""
     first = dart_acquired(tmp_path)
     second = dart_acquired(tmp_path, 2023, "20240311001085")
-    catalog = catalog_with(tmp_path, [first])
-    merged = merge_acquired(
-        catalog,
+    catalog_with(tmp_path, [first])
+    merged = publish_acquired(
+        tmp_path / "manifest.json",
         [second],
         selection_id="second",
         selected_document_ids=[second.document.document_id],
-        corpus_root=tmp_path,
     )
     assert [document.fiscal_year for document in merged.documents] == [2024, 2023]
     assert merged.selected_sources("test-selection", tmp_path)[0].document == first.document
@@ -511,12 +514,11 @@ def test_re_archiving_one_filing_preserves_document_identity(tmp_path):
     """An idempotent repeat must not duplicate the filing or artifact catalog."""
     acquired = dart_acquired(tmp_path)
     catalog = catalog_with(tmp_path, [acquired])
-    merged = merge_acquired(
-        catalog,
+    merged = publish_acquired(
+        tmp_path / "manifest.json",
         [acquired],
         selection_id="test-selection",
         selected_document_ids=[acquired.document.document_id],
-        corpus_root=tmp_path,
     )
     assert merged == catalog
 
@@ -526,14 +528,14 @@ def test_two_receipts_for_one_issuer_year_remain_distinct(tmp_path):
     first = dart_acquired(tmp_path)
     second = dart_acquired(tmp_path, 2024, "20250311001086")
     catalog = catalog_with(tmp_path, [first, second])
-    assert len(catalog.documents) == len(catalog.artifacts) == 2
+    assert len(catalog.documents) == 2 and len(catalog.artifacts) == 4
 
 
 def test_manifest_round_trips_with_korean_names_intact(tmp_path):
     """Keep official aliases readable in the canonical manifest."""
     catalog = catalog_with(tmp_path, [dart_acquired(tmp_path)])
     assert "삼성전자" in (tmp_path / "manifest.json").read_text()
-    assert dart_api.read_manifest(tmp_path / "manifest.json") == catalog
+    assert read_catalog(tmp_path / "manifest.json") == catalog
 
 
 def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path, monkeypatch):
@@ -607,8 +609,8 @@ def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monke
 
     assert len(result.archived) == 1
     assert result.added == ()
-    assert requested_paths == ["/api/list.json", "/api/document.xml"]
-    stored = dart_api.read_manifest(tmp_path / "manifest.json")
+    assert requested_paths == ["/api/document.xml"]
+    stored = read_catalog(tmp_path / "manifest.json")
     selected = stored.selected_sources(result.selection_id, tmp_path)
     assert selected[0].document.filing_id == RCEPT_NO
     assert "복구됨" in selected[0].read()
@@ -657,7 +659,7 @@ def test_reusable_dart_acquisition_archives_and_merges_with_progress(tmp_path, m
     assert result.manifest_entries == 1
     assert result.manifest == "manifest.json"
     assert (tmp_path / result.archived[0].primary.path).is_file()
-    assert len(dart_api.read_manifest(tmp_path / "manifest.json").artifacts) == 2
+    assert len(read_catalog(tmp_path / "manifest.json").artifacts) == 2
     assert updates[-1].current == updates[-1].total == 1
 
 
@@ -765,3 +767,264 @@ def test_conflicting_typed_issuer_ids_are_not_reused():
         corpus=CorpusIdentity(corpus_id="test", name="Test"), documents=(first, second)
     )
     assert dart_api._known_issuers(catalog, ("005930",)) == {}
+
+
+def test_same_year_missing_receipt_is_reacquired_without_replacing_ready_filing(
+    tmp_path, monkeypatch
+):
+    """A ready filing in the same year cannot hide a different missing receipt."""
+    ready = dart_acquired(tmp_path, receipt="20250311001084")
+    missing = dart_acquired(tmp_path, receipt=RCEPT_NO)
+    catalog_with(tmp_path, [ready, missing])
+    (tmp_path / missing.primary.path).unlink()
+    requests = []
+    payload = zip_bytes({f"{RCEPT_NO}.xml": b"<DOCUMENT>Recovered exact receipt</DOCUMENT>"})
+
+    def handler(request):
+        """Serve only the already identified missing receipt, without issuer/year rediscovery."""
+        requests.append(str(request.url))
+        assert request.url.path.endswith("document.xml")
+        assert request.url.params["rcept_no"] == RCEPT_NO
+        return httpx.Response(200, content=payload)
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx.MockTransport(handler)),
+    )
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+        )
+    )
+    assert len(requests) == len(result.archived) == 1
+    catalog = read_catalog(tmp_path / "manifest.json")
+    assert {d.filing_id for d in catalog.documents} == {ready.document.filing_id, RCEPT_NO}
+    assert len(catalog.selected_sources(result.selection_id, tmp_path)) == 2
+
+
+def registered_dart_filing(root, receipt=RCEPT_NO):
+    """Publish a real synthetic ZIP and linked XML through the acquisition boundary."""
+    payload = zip_bytes({f"{receipt}.xml": f"<DOCUMENT>{receipt}</DOCUMENT>".encode()})
+    entry = archive_document(
+        DocumentArchive(receipt, payload, hashlib.sha256(payload).hexdigest()),
+        AnnualReport(receipt, "00126380", "Samsung", "Annual report", "2025-03-11"),
+        CorpCode("00126380", "Samsung", "005930"),
+        fiscal_year=2024,
+        corpus_dir=root,
+    )
+    publish_acquired(
+        root / "manifest.json",
+        [entry],
+        selection_id=receipt,
+        selected_document_ids=[entry.document.document_id],
+    )
+    return entry
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt"])
+def test_registered_archive_recovers_exact_receipt_and_preserves_other_inputs(
+    tmp_path, monkeypatch, damage
+):
+    """ZIP recovery keeps the good primary, another same-year filing and pinned job inputs."""
+    from app.ingestion.source_selection import record_selection, source_inventory
+
+    target = registered_dart_filing(tmp_path)
+    other = registered_dart_filing(tmp_path, "20250311001084")
+    name, selection = record_selection(
+        tmp_path, ("005930",), (2024,), (target.document.document_id,)
+    )
+    pinned = (tmp_path / name).read_bytes()
+    before = read_catalog(tmp_path / "manifest.json")
+    other_artifacts = tuple(
+        a for a in before.artifacts if a.document_id == other.document.document_id
+    )
+    other_bytes = {a.path: a.read_bytes(tmp_path) for a in other_artifacts}
+    primary_bytes = target.primary.read_bytes(tmp_path)
+    archive = next(a for a in target.artifacts if a.role == "archive")
+    if damage == "missing":
+        (tmp_path / archive.path).unlink()
+    else:
+        (tmp_path / archive.path).write_bytes(b"x" * archive.byte_length)
+    requested = []
+
+    def handler(request):
+        """Serve only the exact damaged receipt without discovering another filing."""
+        requested.append(request.url.params["rcept_no"])
+        assert request.url.path == "/api/document.xml"
+        assert requested[-1] == RCEPT_NO
+        return httpx.Response(200, content=target.payloads[0])
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        dart_api.httpx,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx.MockTransport(handler)),
+    )
+    result = run(
+        acquire_dart(
+            stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+        )
+    )
+    assert requested == [RCEPT_NO] and len(result.archived) == 1 and result.added == ()
+    assert archive.read_bytes(tmp_path) == target.payloads[0]
+    assert target.primary.read_bytes(tmp_path) == primary_bytes
+    restored = read_catalog(tmp_path / "manifest.json")
+    assert restored.documents == before.documents
+    assert (
+        tuple(a for a in restored.artifacts if a.document_id == other.document.document_id)
+        == other_artifacts
+    )
+    assert all((tmp_path / path).read_bytes() == payload for path, payload in other_bytes.items())
+    assert (tmp_path / name).read_bytes() == pinned
+    assert (
+        Manifest.read(tmp_path / name).selected_sources(selection, tmp_path)[0].read().encode()
+        == primary_bytes
+    )
+    assert all(row.ready and not row.can_redownload for row in source_inventory(tmp_path))
+
+
+@pytest.mark.parametrize("conflict", ["primary", "archive_link", "archive_link_missing_primary"])
+def test_dart_identity_conflicts_block_before_download_or_publication(
+    tmp_path, monkeypatch, conflict
+):
+    """Unknown lineage never becomes an automatic download or a replacement of registered data."""
+    from app.ingestion.source_selection import source_inventory
+
+    target = registered_dart_filing(tmp_path)
+    catalog = read_catalog(tmp_path / "manifest.json")
+    if conflict == "primary":
+        artifact = target.primary.model_copy(
+            update={
+                "artifact_id": "conflicting-primary",
+                "path": "missing-conflict.xml",
+                "sha256": "0" * 64,
+            }
+        )
+        catalog = catalog.model_copy(update={"artifacts": (*catalog.artifacts, artifact)})
+    else:
+        primary = target.primary.model_copy(
+            update={
+                "acquisition": target.primary.acquisition.model_copy(
+                    update={"archive_sha256": "0" * 64}
+                )
+            }
+        )
+        catalog = catalog.model_copy(
+            update={
+                "artifacts": tuple(primary if a.role == "primary" else a for a in catalog.artifacts)
+            }
+        )
+    catalog.write(tmp_path / "manifest.json")
+    if conflict == "archive_link_missing_primary":
+        (tmp_path / target.primary.path).unlink()
+    before = (tmp_path / "manifest.json").read_bytes()
+    row = source_inventory(tmp_path)[0]
+    assert not row.ready and not row.can_redownload
+
+    def unexpected_client(**kwargs):
+        """No provider interaction is authorized for conflicting source identities."""
+        raise AssertionError("Network must not be reached")
+
+    monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
+    with pytest.raises(ValueError, match="Conflicting primary|Archive identity"):
+        run(
+            acquire_dart(
+                stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
+            )
+        )
+    with pytest.raises(ValueError, match="Conflicting primary|Archive identity"):
+        publish_acquired(
+            tmp_path / "manifest.json",
+            [target],
+            selection_id="retry",
+            selected_document_ids=[target.document.document_id],
+        )
+    assert (tmp_path / "manifest.json").read_bytes() == before
+    assert all(
+        a.read_bytes(tmp_path) == payload
+        for a, payload in zip(target.artifacts, target.payloads, strict=True)
+        if conflict != "archive_link_missing_primary" or a.role != "primary"
+    )
+    if conflict == "archive_link_missing_primary":
+        assert not (tmp_path / target.primary.path).exists()
+
+
+def test_unrelated_archive_lineage_does_not_block_selected_filing(tmp_path, monkeypatch):
+    """A conflict outside the requested year cannot prevent a valid no-op acquisition."""
+    selected = registered_dart_filing(tmp_path)
+    unrelated = dart_acquired(tmp_path, year=2023, receipt="20240311001085")
+    publish_acquired(
+        tmp_path / "manifest.json",
+        [unrelated],
+        selection_id="unrelated",
+        selected_document_ids=[unrelated.document.document_id],
+    )
+    catalog = read_catalog(tmp_path / "manifest.json")
+    conflicting = unrelated.primary.model_copy(
+        update={
+            "artifact_id": "unrelated-conflict",
+            "path": "unrelated-conflict.xml",
+            "sha256": "0" * 64,
+        }
+    )
+    catalog.model_copy(
+        update={
+            "documents": catalog.documents,
+            "artifacts": (*catalog.artifacts, conflicting),
+        }
+    ).write(tmp_path / "manifest.json")
+    original = (tmp_path / unrelated.primary.path).read_bytes()
+
+    def unexpected_client(**kwargs):
+        """The requested filing is complete and needs no provider call."""
+        raise AssertionError("Network must not be reached")
+
+    monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
+    result = run(
+        acquire_dart(stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key="")
+    )
+    assert result.archived == ()
+    assert (tmp_path / unrelated.primary.path).read_bytes() == original
+    assert selected.primary.read_bytes(tmp_path) == selected.payloads[-1]
+
+
+def test_missing_archive_cannot_hide_later_same_year_lineage_conflict(tmp_path, monkeypatch):
+    """Every requested receipt is checked before key validation or provider setup."""
+    missing = registered_dart_filing(tmp_path)
+    conflicting = registered_dart_filing(tmp_path, "20250311001084")
+    archive = next(a for a in missing.artifacts if a.role == "archive")
+    (tmp_path / archive.path).unlink()
+    catalog = read_catalog(tmp_path / "manifest.json")
+    primary = conflicting.primary.model_copy(
+        update={
+            "acquisition": conflicting.primary.acquisition.model_copy(
+                update={"archive_sha256": "0" * 64}
+            )
+        }
+    )
+    catalog = catalog.model_copy(
+        update={
+            "artifacts": tuple(
+                primary if a.artifact_id == primary.artifact_id else a for a in catalog.artifacts
+            )
+        }
+    )
+    catalog.write(tmp_path / "manifest.json")
+
+    def unexpected_client(**kwargs):
+        """A nonrecoverable requested filing must fail before constructing a provider client."""
+        raise AssertionError("Network client must not be constructed")
+
+    monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
+    with pytest.raises(ValueError, match="Archive identity"):
+        dart_api.pending_dart_targets(
+            catalog, stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path
+        )
+    with pytest.raises(ValueError, match="Archive identity"):
+        run(
+            acquire_dart(
+                stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=""
+            )
+        )

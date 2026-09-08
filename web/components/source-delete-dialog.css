@@ -1,0 +1,7 @@
+.source-delete-dialog { min-width: 0; overflow-wrap: anywhere; }
+.source-delete-dialog h2, .source-delete-dialog h3 { min-width: 0; }
+.source-delete-targets { display: grid; gap: 8px; margin: 0; padding-left: 20px; min-width: 0; }
+.source-delete-targets li { min-width: 0; }
+.source-delete-targets span { display: block; font-size: 12px; }
+.source-delete-targets code { white-space: normal; overflow-wrap: anywhere; }
+.source-delete-dialog .wipe-dialog-actions .button { max-width: 100%; white-space: normal; }

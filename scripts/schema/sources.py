@@ -13,6 +13,7 @@ import stat
 from app.ingestion.manifest import Manifest
 from app.ingestion.source_catalog import default_acquisition_draft
 from app.ingestion.source_selection import DRAFT_NAME
+from app.ingestion.source_storage import JOURNAL, source_lock
 
 JOURNAL_NAME = ".schema-recreate-journal"
 
@@ -95,6 +96,10 @@ def source_preview(root: Path) -> dict:
     """Fingerprint exact confined raw files and manifests before asking for approval."""
     corpus = root / "data" / "corpus"
     check_source_journal(root)
+    if (corpus / JOURNAL).exists():
+        raise ValueError(
+            "Source publication is pending; recover acquisition before resetting sources."
+        )
     metadata = _source_stat(corpus)
     if metadata is not None and stat.S_ISLNK(metadata.st_mode):
         raise ValueError("Source reset refuses symlinked data directories.")
@@ -120,7 +125,8 @@ def source_preview(root: Path) -> dict:
         raw.update(
             str(path.relative_to(corpus))
             for path in paths
-            if path.suffix.lower() in {".html", ".htm", ".xml", ".zip"}
+            if path.relative_to(corpus).parts[0] in {"sec", "dart", "inputs"}
+            and path.suffix.lower() in {".html", ".htm", ".xml", ".zip"}
         )
     if raw & (set(manifests) | {DRAFT_NAME}):
         raise ValueError("Source artifact paths collide with manifest or draft metadata.")
@@ -180,6 +186,12 @@ class SourceReset:
             os.close(descriptor)
 
     def stage(self) -> None:
+        """Exclude concurrent acquisition while staging the approved source reset."""
+        check_source_write_access(self.root, self.preview)
+        with source_lock(self.corpus):
+            self._stage()
+
+    def _stage(self) -> None:
         """Quarantine exact files and replace source catalogs without deleting backups."""
         if source_preview(self.root) != self.preview:
             raise ValueError("Source inventory changed; review a new preview. Nothing deleted.")

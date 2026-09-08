@@ -84,6 +84,7 @@ def write_selection_catalog(root):
     from pathlib import Path
 
     from app.ingestion.manifest import Manifest
+    from app.ingestion.source_publication import fixed_path
 
     original = Manifest.read(Path(__file__).resolve().parents[2] / "data/corpus/manifest.json")
     documents = tuple(
@@ -91,21 +92,88 @@ def write_selection_catalog(root):
         for d in original.documents
         if d.issuer in {"NVDA", "AMD"} and d.fiscal_year in {2023, 2024}
     )
-    ids = {d.document_id for d in documents}
+    ids = {d.document_id: d for d in documents}
     artifacts = []
     root.mkdir(parents=True, exist_ok=True)
     for artifact in original.artifacts:
         if artifact.document_id not in ids or artifact.role != "primary":
             continue
         raw = f"synthetic fixture {artifact.document_id}".encode()
-        path = root / artifact.path
+        document = ids[artifact.document_id]
+        relative = fixed_path(document.registry, document.filing_id, "primary")
+        path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(raw)
         artifacts.append(
             artifact.model_copy(
-                update={"sha256": hashlib.sha256(raw).hexdigest(), "byte_length": len(raw)}
+                update={
+                    "path": relative,
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                    "byte_length": len(raw),
+                }
             )
         )
     manifest = Manifest(corpus=original.corpus, documents=documents, artifacts=tuple(artifacts))
     manifest.write(root / "manifest.json")
     return manifest
+
+
+def acquired_filing(root, *, document=None, payload=b"synthetic source"):
+    """Build a current filing with explicit bytes, preserving the opaque document ID."""
+    from datetime import UTC, datetime
+    import hashlib
+    import io
+    import zipfile
+
+    from app.ingestion.acquisition import AcquiredFiling
+    from app.ingestion.dart_api import AnnualReport, CorpCode, DocumentArchive, archive_document
+    from app.ingestion.manifest import Acquisition, SourceArtifact
+    from app.ingestion.source_publication import fixed_path
+
+    document = document or filing_document()
+    if document.registry == "dart":
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(f"{document.filing_id}.xml", payload)
+        raw = buffer.getvalue()
+        return archive_document(
+            DocumentArchive(document.filing_id, raw, hashlib.sha256(raw).hexdigest()),
+            AnnualReport(
+                document.filing_id,
+                document.issuer_id,
+                document.issuer,
+                document.dart.report_name,
+                document.filing_date.isoformat(),
+            ),
+            CorpCode(document.issuer_id, document.issuer, document.issuer),
+            fiscal_year=document.fiscal_year,
+            corpus_dir=root,
+            document_reference=document,
+        )
+    digest = hashlib.sha256(payload).hexdigest()
+    artifact = SourceArtifact(
+        artifact_id=f"{document.document_id}:primary:{digest}",
+        document_id=document.document_id,
+        role="primary",
+        path=fixed_path(document.registry, document.filing_id, "primary"),
+        sha256=digest,
+        byte_length=len(payload),
+        encoding="utf-8",
+        acquisition=Acquisition(
+            acquired_at=datetime(2026, 1, 1, tzinfo=UTC),
+            url=document.source_url,
+            media_type="text/html",
+        ),
+    )
+    return AcquiredFiling(document, (artifact,), (payload,))
+
+
+def selected_document_ids(root, identifiers, years):
+    """Extract explicit IDs from the synthetic catalog when constructing a test request."""
+    from app.ingestion.manifest import Manifest
+
+    return tuple(
+        d.document_id
+        for d in Manifest.read(root / "manifest.json").documents
+        if d.issuer in identifiers and d.fiscal_year in years
+    )

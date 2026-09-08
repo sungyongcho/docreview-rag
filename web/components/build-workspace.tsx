@@ -82,7 +82,7 @@ const TABS: Array<[BuildTab, string]> = [
   ["jobs", "Jobs"],
 ];
 
-const DEFAULT_ACQUISITION: AcquisitionForm = { identifiers: "", years: "" };
+const DEFAULT_ACQUISITION = acquisitionDraft([]);
 
 const UNKNOWN_CORPUS: CorpusCounts = { database_connected: null, schema_status: null, schema_message: null, documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: null, writable: null, provider: null };
 
@@ -125,7 +125,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   const draftRevision = useRef<string | null>(null);
   const serverDraft = useMemo<AcquisitionForm>(() => {
     const draft = corpus?.acquisition_draft;
-    return draft ? acquisitionDraft(draft.pairs ?? []) : acquisitionDraft([]);
+    return draft ? acquisitionDraft(draft.pairs) : acquisitionDraft([]);
   }, [corpus]);
   const revision = corpus?.acquisition_draft?.revision ?? "default-v1";
   useEffect(() => {
@@ -235,7 +235,8 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     let queued = 0;
     try {
       for (const item of ordered) {
-        await queueCorpusOperation({ kind: "ingest_selected", identifiers: item.identifiers, years: item.years });
+        const documentIds = selection.selected.filter((source) => source.registry === item.registry && item.identifiers.includes(source.issuer.toUpperCase()) && item.years.includes(source.fiscal_year)).map((source) => source.document_id);
+        await queueCorpusOperation({ kind: "ingest_selected", identifiers: item.identifiers, years: item.years, document_ids: documentIds });
         queued += 1;
         onRefreshJobs();
       }
@@ -262,6 +263,16 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
       notify(t("Acquisition jobs queued: {count}.", { count: queued }), "success", "corpus-operation");
     } catch (reason) {
       notify(t("Acquisition stopped after {count} queued jobs. Check Jobs before retrying.", { count: queued }) + " " + (reason instanceof Error ? reason.message : t("Corpus operation failed.")), "error", "corpus-operation");
+    } finally { setBusy(false); }
+  }
+
+  /** Queue only the reviewed deletion token; the dialog owns inline request feedback. */
+  async function deleteSources(token: string) {
+    if (!canOperateCorpus || busy || activeCorpusJobs.length || jobsLoading || jobsStale) throw new Error(t("Source deletion is unavailable while corpus jobs or status checks are active."));
+    setBusy(true);
+    try {
+      await queueCorpusOperation({ kind: "delete_sources", identifiers: [], years: [], deletion_token: token, confirm_delete: true });
+      onRefreshJobs();
     } finally { setBusy(false); }
   }
 
@@ -407,6 +418,8 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         schemaMessage={runtimeCounts?.schema_message ?? null}
         writable={runtimeCounts?.writable ?? null}
         onDownload={downloadFilings}
+        onDeleteSources={deleteSources}
+        sourceDeletionDisabled={!canOperateCorpus || busy || activeCorpusJobs.length > 0 || jobsLoading || jobsStale}
         onIngestAll={() => void ingestAllManifests()}
         onBackfill={() => void queueCorpus({ kind: "backfill_embeddings", identifiers: [], years: [] })}
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}

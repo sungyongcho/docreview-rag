@@ -118,7 +118,7 @@ describe("help topic coverage", () => {
         live
         busy={false}
         canOperateCorpus
-        acquisition={{ identifiers: "NVDA", years: "2024" }}
+        acquisition={{ identifiers: "NVDA", years: "2024", pairs: [{ registry: "sec", issuer: "NVDA", year: 2024 }] }}
         onAcquisitionChange={noop}
         manifests={input.manifests}
         onCancelJob={noop}
@@ -139,7 +139,7 @@ describe("help topic coverage", () => {
 
     expect(coverage("build").missing).toEqual([]);
     cleanup();
-    render(<BuildPipeline pipeline={derivePipeline({ ...input, live: false, readiness: null, corpus: null })} live={false} busy={false} canOperateCorpus={false} acquisition={{ identifiers: "", years: "" }} onAcquisitionChange={noop} manifests={[]} onCancelJob={noop} onDownload={noop} onIngestAll={noop} onBackfill={noop} onRebuildBm25={noop} onAsk={noop} onRecheck={noop} onEvaluate={noop} onCompareSnapshots={noop} onOpenDocuments={noop} onOpenJobs={noop} onOpenStatus={noop} onRefresh={noop} />);
+    render(<BuildPipeline pipeline={derivePipeline({ ...input, live: false, readiness: null, corpus: null })} live={false} busy={false} canOperateCorpus={false} acquisition={{ identifiers: "", years: "", pairs: [] }} onAcquisitionChange={noop} manifests={[]} onCancelJob={noop} onDownload={noop} onIngestAll={noop} onBackfill={noop} onRebuildBm25={noop} onAsk={noop} onRecheck={noop} onEvaluate={noop} onCompareSnapshots={noop} onOpenDocuments={noop} onOpenJobs={noop} onOpenStatus={noop} onRefresh={noop} />);
     expect(coverage("build").missing).toEqual([]);
   });
 

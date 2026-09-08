@@ -100,7 +100,7 @@ function renderPipeline(input: PipelineInput, overrides: Partial<BuildPipelinePr
       live={input.live}
       busy={false}
       canOperateCorpus={input.live}
-      acquisition={{ identifiers: "NVDA AMD", years: "2023 2024" }}
+      acquisition={acquisitionDraft(["NVDA", "AMD"].flatMap(issuer => [2023, 2024].map(year => ({ registry: "sec", issuer, year }))))}
       manifests={input.manifests}
       {...handlers}
       {...overrides}
@@ -190,7 +190,7 @@ describe("BuildPipeline", () => {
 
 
   it("points at the next stage and wires its primary action", () => {
-    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))) });
+    const handlers = renderPipeline(liveInput(), { sources: ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-FY${year}`, filing_id: `${issuer}-FY${year}`, can_redownload: false, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: true }))) });
 
     expect(screen.getByText("Recommended next step")).toBeInTheDocument();
     expect(document.querySelector(".pipeline-guidance button")).toHaveTextContent("Parse & chunk");
@@ -304,10 +304,11 @@ it("links schema-blocked downstream selection back to step 2", () => {
 
 
 it("names missing company years, blocks the default ingest, and removes the Advanced bypass", () => {
-  const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, on_disk: true }] });
+  const handlers = renderPipeline(liveInput(), { sources: [{ manifest: "manifest.json", document_id: "NVDA-FY2024", filing_id: "NVDA-FY2024", registry: "sec", issuer: "NVDA", name: "NVIDIA", fiscal_year: 2024, ready: true, can_redownload: false, on_disk: true }] });
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("4 documents · 1 ready · 3 to download");
-  expect(screen.getByRole("button", { name: "NVDA FY2023 · Missing source" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "NVDA FY2023 · Missing source" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2023: Missing source");
   expect(screen.queryByRole("textbox", { name: "Search/add company or year" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
   expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
@@ -339,7 +340,7 @@ it.each(["en", "ko"] as const)("keeps the developer guide aligned with actual Fi
 
 /** Keep source identities distinct from human-facing company/year labels. */
 function selectionSource(issuer: string, year: number, onDisk = true): SourceInventory {
-  return { registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, document_id: `raw-${issuer}-${year}`, name: issuer === "NVDA" ? "NVIDIA" : issuer, ready: onDisk, on_disk: onDisk, manifest: "manifest.json" };
+  return { registry: /^\d{6}$/.test(issuer) ? "dart" : "sec", issuer, fiscal_year: year, document_id: `raw-${issuer}-${year}`, filing_id: `raw-${issuer}-${year}`, can_redownload: !onDisk, name: issuer === "NVDA" ? "NVIDIA" : issuer, ready: onDisk, on_disk: onDisk, manifest: "manifest.json" };
 }
 
 it.each(["en", "ko"] as const)("summarizes 32 documents once with a shared compact grid (%s)", (locale) => {
@@ -356,13 +357,14 @@ it.each(["en", "ko"] as const)("summarizes 32 documents once with a shared compa
 
 it("counts partial and absent source identities and explains disabled parsing", () => {
   const row = selectionSource("NVDA", 2024);
-  const sources = [row, { ...row, manifest: "duplicate.json" }, { ...row, document_id: "raw-second", on_disk: false }];
+  const sources = [row, { ...row, manifest: "duplicate.json" }, { ...row, document_id: "raw-second", filing_id: "0001045810-24-000030", on_disk: false, ready: false, can_redownload: true }];
   renderPipeline(liveInput(), { sources, acquisition: acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "AMD", year: 2023 }]), focusStage: "index" });
   expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("3 documents · 1 ready · 2 to download");
   const primary = screen.getByRole("button", { name: "Parse & chunk selected sources" });
   expect(primary).toBeDisabled();
   expect(primary).toHaveAccessibleDescription("2 sources missing → download in Filings before parsing.");
-  expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveAttribute("title", expect.stringContaining("raw-second"));
+  expect(screen.queryByRole("button", { name: "NVDA FY2024 · Missing source" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("0001045810-24-000030: Missing source");
 });
 
 it.each(["running", "queued"] as const)("replaces parsing with shared progress and cancel while %s", (status) => {
@@ -370,7 +372,7 @@ it.each(["running", "queued"] as const)("replaces parsing with shared progress a
   const input = liveInput(); const pipeline = derivePipeline(input);
   const stage = pipeline.stages.find((item) => item.id === "index")!;
   stage.job = job; stage.status = status;
-  const handlers = renderPipeline(input, { pipeline, focusStage: "index", sources: [selectionSource("NVDA", 2024)], acquisition: { identifiers: "NVDA", years: "2024" } });
+  const handlers = renderPipeline(input, { pipeline, focusStage: "index", sources: [selectionSource("NVDA", 2024)], acquisition: acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]) });
   const actions = screen.getByRole("group", { name: "Parsing actions" });
   expect(within(actions).getByRole("progressbar", { name: "Overall progress" })).toHaveAttribute("value", "25");
   expect(within(actions).getByRole("progressbar", { name: "Current stage" })).toHaveAttribute("value", "50");
@@ -433,7 +435,7 @@ it.each(["en", "ko"] as const)("shows matching dual engine lights, details and r
   const onOpenStatus = vi.fn(), onOpenLocalSettings = vi.fn();
   const input = liveInput({ readiness });
   const props = {
-    live: true, busy: false, canOperateCorpus: true, acquisition: { identifiers: "", years: "" }, manifests: [], focusStage: "answer_model",
+    live: true, busy: false, canOperateCorpus: true, acquisition: acquisitionDraft([]), manifests: [], focusStage: "answer_model",
     onAcquisitionChange: vi.fn(), onCancelJob: vi.fn(), onDownload: vi.fn(), onIngestAll: vi.fn(), onIngest: vi.fn(), onBackfill: vi.fn(), onRebuildBm25: vi.fn(), onAsk: vi.fn(), onRecheck: vi.fn(), onEvaluate: vi.fn(), onCompareSnapshots: vi.fn(), onOpenDocuments: vi.fn(), onOpenJobs: vi.fn(), onRefresh: vi.fn(), onOpenStatus, onOpenLocalSettings,
   };
   const { rerender } = render(<LiveI18n><LivePipeline {...props} readiness={readiness} pipeline={deriveLivePipeline(input)} /></LiveI18n>);
@@ -459,4 +461,50 @@ it.each(["en", "ko"] as const)("shows matching dual engine lights, details and r
   expect(screen.getAllByText(locale === "en" ? "OpenAI only ready · Local: Model not loaded" : "OpenAI만 준비 · 로컬: 모델 미적재")).toHaveLength(3);
   vi.unstubAllEnvs();
   vi.resetModules();
+});
+
+it("offers only fully eligible years and keeps every intended invalid or absent pair as a blocker", () => {
+  const changed = { ...selectionSource("NVDA", 2024), ready: false, blocker: "Source bytes changed", filing_id: "0001045810-24-000029" };
+  const sources = [changed, selectionSource("AMD", 2023), selectionSource("INTC", 2023, false), selectionSource("MU", 2023)];
+  const acquisition = acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "sec", issuer: "AMD", year: 2023 }, { registry: "sec", issuer: "MSFT", year: 2022 }]);
+  const handlers = renderPipeline(liveInput(), { focusStage: "index", sources, acquisition });
+  expect(screen.queryByRole("button", { name: /^NVDA FY/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^INTC FY/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^MSFT FY/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "MU FY2023 · On disk" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("NVDA FY2024");
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("0001045810-24-000029: Source bytes changed");
+  expect(screen.getByRole("region", { name: "Selected documents" })).toHaveTextContent("MSFT FY2022: Missing source");
+  fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
+  expect(handlers.onIngestAll).not.toHaveBeenCalled();
+  expect(screen.queryByText("Advanced")).toBeNull();
+});
+
+/** A physically present XML does not hide the incomplete archive bundle in step two. */
+it.each(["en", "ko"] as const)("shows repair count without fabricating missing files in %s", locale => {
+  localStorage.setItem(LOCALE_KEY, locale);
+  const broken = { ...selectionSource("005930", 2024), ready: false, can_redownload: true, blocker: "Registered original.zip is missing", filing_id: "20250311001085" };
+  const handlers = renderPipeline(liveInput(), { sources: [broken], acquisition: acquisitionDraft([{ registry: "dart", issuer: "005930", year: 2024 }]) });
+  fireEvent.click(screen.getByRole("button", { name: translate(locale, "Select {p0}", { p0: translate(locale, "Parse & chunk") }) }));
+  const summary = screen.getByRole("region", { name: translate(locale, "Selected documents") });
+  expect(within(summary).getByRole("status")).toHaveTextContent(locale === "en" ? "1 documents · 0 ready · 0 to download · Needs repair: 1" : "문서 1개 · 준비됨 0개 · 다운로드 예정 0개 · 조치 필요 1개");
+  expect(summary).toHaveTextContent("20250311001085: Registered original.zip is missing");
+  const parse = screen.getByRole("button", { name: translate(locale, "Parse & chunk selected sources") });
+  expect(parse).toBeDisabled(); fireEvent.click(parse); expect(handlers.onIngestAll).not.toHaveBeenCalled();
+});
+
+/** Unsafe conflicts remain visible even when they cannot be queued for acquisition. */
+it.each([true, false])("shows non-retryable source conflicts with on_disk=%s", onDisk => {
+  const conflict = { ...selectionSource("NVDA", 2024, onDisk), ready: false, can_redownload: false, blocker: "Conflicting primary sources: inspect both registered identities", filing_id: "conflicting-filing" };
+  const handlers = renderPipeline(liveInput(), { sources: [conflict], acquisition: acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]) });
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  const summary = screen.getByRole("region", { name: "Selected documents" });
+  expect(summary).toHaveTextContent("conflicting-filing: Conflicting primary sources: inspect both registered identities");
+  expect(within(summary).getByRole("status")).not.toHaveTextContent("-1 ready");
+  if (onDisk) expect(within(summary).getByRole("status")).toHaveTextContent("0 to download · Needs repair: 1");
+  const parse = screen.getByRole("button", { name: "Parse & chunk selected sources" });
+  expect(parse).toBeDisabled(); fireEvent.click(parse); expect(handlers.onIngestAll).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeDisabled(); fireEvent.click(sync); expect(handlers.onDownload).not.toHaveBeenCalled();
 });

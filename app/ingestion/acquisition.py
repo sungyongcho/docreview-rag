@@ -1,7 +1,7 @@
 """Publish acquired bytes and explicit selections in the common corpus manifest."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import os
@@ -12,7 +12,6 @@ from app.ingestion.manifest import (
     CorpusIdentity,
     DocumentReference,
     Manifest,
-    ProcessingSelection,
     SourceArtifact,
 )
 
@@ -23,6 +22,7 @@ class AcquiredFiling:
 
     document: DocumentReference
     artifacts: tuple[SourceArtifact, ...]
+    payloads: tuple[bytes, ...] = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Require one coherent source artifact group for the document."""
@@ -30,7 +30,13 @@ class AcquiredFiling:
             raise ValueError("acquired artifact belongs to another document")
         if len({artifact.artifact_id for artifact in self.artifacts}) != len(self.artifacts):
             raise ValueError("acquisition contains duplicate artifacts")
+        if len(self.payloads) != len(self.artifacts):
+            raise ValueError("acquisition payloads must match artifacts")
         _ = self.primary
+        roles = [artifact.role for artifact in self.artifacts]
+        expected = {"primary", "archive"} if self.document.registry == "dart" else {"primary"}
+        if len(roles) != len(expected) or set(roles) != expected:
+            raise ValueError("acquisition requires the complete current source bundle")
 
     @property
     def primary(self) -> SourceArtifact:
@@ -82,61 +88,12 @@ def publish_bytes(corpus_root: Path, relative_path: str, payload: bytes) -> Path
 def current_primary(
     manifest: Manifest, document_id: str, corpus_root: Path
 ) -> SourceArtifact | None:
-    """Return the newest recorded primary whose exact bytes remain available."""
-    artifact = next(
-        (
-            artifact
-            for artifact in reversed(manifest.artifacts)
-            if artifact.document_id == document_id and artifact.role == "primary"
-        ),
-        None,
-    )
-    if artifact is None:
+    """Return an unambiguous verified original; conflicting revisions require intervention."""
+    from app.ingestion.source_selection import SourceDownloadRequiredError, resolve_primary
+
+    if not any(d.document_id == document_id for d in manifest.documents):
         return None
     try:
-        artifact.read(corpus_root)
-    except OSError, UnicodeError, ValueError:
+        return resolve_primary(manifest, document_id, corpus_root)
+    except SourceDownloadRequiredError:
         return None
-    return artifact
-
-
-def merge_acquired(
-    manifest: Manifest,
-    acquired: Sequence[AcquiredFiling],
-    *,
-    selection_id: str,
-    selected_document_ids: Sequence[str],
-    corpus_root: Path,
-) -> Manifest:
-    """Preserve the catalog while naming exactly the valid artifacts in this request."""
-    documents = {document.document_id: document for document in manifest.documents}
-    artifacts = {artifact.artifact_id: artifact for artifact in manifest.artifacts}
-    for filing in acquired:
-        documents[filing.document.document_id] = filing.document
-        for artifact in filing.artifacts:
-            artifacts.pop(artifact.artifact_id, None)
-            artifacts[artifact.artifact_id] = artifact
-    catalog = Manifest(
-        corpus=manifest.corpus,
-        documents=tuple(documents.values()),
-        artifacts=tuple(artifacts.values()),
-        selections=manifest.selections,
-    )
-    selected: list[str] = []
-    for document_id in sorted(set(selected_document_ids)):
-        primary = current_primary(catalog, document_id, corpus_root)
-        if primary is not None:
-            selected.append(primary.artifact_id)
-    selections = [
-        selection for selection in catalog.selections if selection.selection_id != selection_id
-    ]
-    if selected:
-        selections.append(
-            ProcessingSelection(selection_id=selection_id, artifact_ids=tuple(selected))
-        )
-    return Manifest(
-        corpus=catalog.corpus,
-        documents=catalog.documents,
-        artifacts=catalog.artifacts,
-        selections=tuple(selections),
-    )

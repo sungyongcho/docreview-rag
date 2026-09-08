@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import os
 from pathlib import Path
 import time
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from pydantic import StrictInt, StrictStr, TypeAdapter
@@ -36,6 +36,7 @@ from app.ingestion.manifest import Manifest
 from app.ingestion.progress import OperationProgress
 from app.ingestion.seed import load_seed_batch, persist_seed_batch
 from app.ingestion.source_catalog import ACQUISITION_COMPANIES, AcquisitionCompany, approved_company
+from app.ingestion.source_deletion import SourceDeletion
 from app.ingestion.source_selection import (
     SourceInventory,
     acquisition_draft,
@@ -65,6 +66,7 @@ type AdminJobKind = Literal[
     "acquire_dart",
     "ingest_manifest",
     "ingest_selected",
+    "delete_sources",
     "backfill_embeddings",
     "rebuild_bm25",
 ]
@@ -275,6 +277,9 @@ class AdminCommand:
     manifest: str | None = None
     selection_id: str | None = None
     expected_documents: int | None = None
+    document_ids: tuple[str, ...] | None = None
+    deletion_token: str | None = None
+    confirm_delete: bool | None = None
 
     def __post_init__(self) -> None:
         """Reject unsupported or structurally unsafe command arguments."""
@@ -286,10 +291,34 @@ class AdminCommand:
                 raise ValueError("acquisition requires identifiers and fiscal years")
             if any(year < 1900 or year > 2100 for year in self.years):
                 raise ValueError("fiscal years must be between 1900 and 2100")
+        if self.kind == "ingest_selected" and (
+            not self.document_ids or len(set(self.document_ids)) != len(self.document_ids)
+        ):
+            raise ValueError("ingest_selected requires nonempty unique document_ids")
         if self.kind == "ingest_manifest" and (
             not (self.manifest or "").strip() or not (self.selection_id or "").strip()
         ):
             raise ValueError("ingestion requires a manifest and selection_id")
+        if self.kind == "delete_sources":
+            if not self.deletion_token or self.confirm_delete is not True:
+                raise ValueError(
+                    "Source deletion requires a fresh preview and explicit confirmation."
+                )
+            if (
+                self.identifiers
+                or self.years
+                or self.manifest
+                or self.selection_id
+                or self.document_ids
+            ):
+                raise ValueError("Source deletion targets come only from the confirmed preview.")
+        elif self.deletion_token is not None or self.confirm_delete is not None:
+            raise ValueError("Deletion confirmation cannot be used for another operation.")
+        if self.document_ids is not None and self.kind not in {
+            "ingest_selected",
+            "ingest_manifest",
+        }:
+            raise ValueError("Exact document IDs apply only to source ingestion.")
         if self.expected_documents is not None and self.expected_documents <= 0:
             raise ValueError("expected_documents must be positive")
 
@@ -329,13 +358,18 @@ class JobCancelledError(RuntimeError):
 
 def _command_payload(command: AdminCommand) -> dict[str, object]:
     """Serialize one validated command for persistent retry provenance."""
-    return {
+    payload: dict[str, object] = {
         "identifiers": list(command.identifiers),
         "years": list(command.years),
         "manifest": command.manifest,
         "selection_id": command.selection_id,
         "expected_documents": command.expected_documents,
     }
+    if command.document_ids is not None:
+        payload["document_ids"] = list(command.document_ids)
+    if command.deletion_token is not None:
+        payload.update(deletion_token=command.deletion_token, confirm_delete=command.confirm_delete)
+    return payload
 
 
 _JOB_KIND = TypeAdapter(AdminJobKind)
@@ -343,6 +377,7 @@ _COMMAND_IDENTIFIERS = TypeAdapter(tuple[StrictStr, ...])
 _COMMAND_YEARS = TypeAdapter(tuple[StrictInt, ...])
 _COMMAND_TEXT = TypeAdapter(StrictStr | None)
 _COMMAND_COUNT = TypeAdapter(StrictInt | None)
+_COMMAND_CONFIRM = TypeAdapter(bool | None)
 
 
 def _command_from_stored(job: StoredJob) -> AdminCommand:
@@ -355,6 +390,11 @@ def _command_from_stored(job: StoredJob) -> AdminCommand:
         manifest=_COMMAND_TEXT.validate_python(payload.get("manifest")),
         selection_id=_COMMAND_TEXT.validate_python(payload.get("selection_id")),
         expected_documents=_COMMAND_COUNT.validate_python(payload.get("expected_documents")),
+        document_ids=_COMMAND_IDENTIFIERS.validate_python(payload["document_ids"])
+        if payload.get("document_ids") is not None
+        else None,
+        deletion_token=_COMMAND_TEXT.validate_python(payload.get("deletion_token")),
+        confirm_delete=_COMMAND_CONFIRM.validate_python(payload.get("confirm_delete"), strict=True),
     )
 
 
@@ -400,6 +440,10 @@ class CorpusAdminService(Protocol):
 
     async def document_detail(self, doc_id: str) -> DocumentDetail | None:
         """Return one selected document and bounded chunk previews."""
+        ...
+
+    async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
+        """Preview exact current original files without changing them."""
         ...
 
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
@@ -590,6 +634,10 @@ class CannedCorpusAdminService:
             return None
         return DocumentDetail(document, self._details.get(doc_id, ()))
 
+    async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
+        """Reject deletion previews in the read-only demonstration."""
+        raise ValueError("Source deletion is unavailable in read-only mode.")
+
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Refuse mutation on the public portfolio fixture."""
         del command, retry_of
@@ -636,6 +684,7 @@ class RuntimeCorpusAdminService:
         self._execution_lock = execution_lock or asyncio.Lock()
         self._execution_coordinator = execution_coordinator or JobExecutionCoordinator()
         self._corpus_root = configured.corpus_dir.resolve()
+        self._source_deletion = SourceDeletion(self._corpus_root)
         self._status_lock = asyncio.Lock()
         self._status_cache: _StatusProbe | None = None
         self._queue: asyncio.Queue[AdminJob] = asyncio.Queue(maxsize=MAX_QUEUED_JOBS)
@@ -955,7 +1004,7 @@ class RuntimeCorpusAdminService:
             ),
             manifests=self._manifest_summaries(),
             sources=sources,
-            acquisition_draft=acquisition_draft(self._corpus_root, sources),
+            acquisition_draft=acquisition_draft(self._corpus_root),
             documents=filtered,
         )
 
@@ -1070,11 +1119,16 @@ class RuntimeCorpusAdminService:
             ),
         )
 
+    async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
+        """Read exact deletion targets in a thread without blocking service requests."""
+        return await asyncio.to_thread(self._source_deletion.preview, document_ids)
+
     async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
         """Queue one operation and start the persistent single worker lazily."""
         if command.kind == "ingest_selected":
+            assert command.document_ids is not None
             manifest, selection_id = record_selection(
-                self._corpus_root, command.identifiers, command.years
+                self._corpus_root, command.identifiers, command.years, command.document_ids
             )
             command = replace(
                 command, kind="ingest_manifest", manifest=manifest, selection_id=selection_id
@@ -1082,6 +1136,9 @@ class RuntimeCorpusAdminService:
         await self.recover_jobs()
         if self._queue.full():
             raise RuntimeError(f"administrator queue is full ({MAX_QUEUED_JOBS})")
+        if command.kind == "delete_sources":
+            assert command.deletion_token is not None
+            self._source_deletion.reserve(command.deletion_token)
         job = AdminJob(
             job_id=f"admin-{uuid4().hex}",
             command=command,
@@ -1142,6 +1199,10 @@ class RuntimeCorpusAdminService:
             )
         if job is None or job.status not in {"failed", "interrupted"}:
             raise ValueError("only a known failed or interrupted job can be retried")
+        if job.command.kind == "delete_sources":
+            raise ValueError(
+                "Source deletion requires a fresh preview and confirmation; it cannot be retried."
+            )
         return await self.enqueue(job.command, retry_of=job_id)
 
     async def cancel(self, job_id: str) -> AdminJob:
@@ -1268,6 +1329,12 @@ class RuntimeCorpusAdminService:
         on_usage: UsageSink | None = None,
     ) -> OperationOutcome:
         """Execute one safe operation through reusable in-process boundaries."""
+        if command.kind == "delete_sources":
+            assert command.deletion_token is not None
+            publish(OperationProgress("delete_sources", 0, 1, "Checking confirmed originals"))
+            summary = await asyncio.to_thread(self._source_deletion.execute, command.deletion_token)
+            publish(OperationProgress("delete_sources", 1, 1, summary))
+            return OperationOutcome(summary)
         if self._operation_runner is not None:
             return await self._operation_runner(command, publish)
         if command.kind not in {"acquire_edgar", "acquire_dart"}:

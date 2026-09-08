@@ -33,9 +33,6 @@ import httpx
 
 from app.ingestion.acquisition import (
     AcquiredFiling,
-    current_primary,
-    merge_acquired,
-    publish_bytes,
     read_catalog,
     selection_identity,
 )
@@ -47,6 +44,8 @@ from app.ingestion.manifest import (
     SourceArtifact,
 )
 from app.ingestion.progress import ByteProgress, OperationProgress, OperationProgressCallback
+from app.ingestion.source_publication import fixed_path, publish_acquired
+from app.ingestion.source_selection import SourceDownloadRequiredError, resolve_primary
 
 DART_BASE: Final[str] = "https://opendart.fss.or.kr/api"
 DART_VIEWER: Final[str] = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo="
@@ -600,7 +599,7 @@ def archive_document(
     fetched_at: datetime | None = None,
     document_reference: DocumentReference | None = None,
 ) -> AcquiredFiling:
-    """Publish original archive and canonical UTF-8 source with complete acquisition lineage."""
+    """Validate the original archive and stage canonical UTF-8 bytes with acquisition lineage."""
     if document.rcept_no != report.rcept_no or issuer.corp_code != report.corp_code:
         raise DartArchiveError("archive and selected report identities disagree")
     if hashlib.sha256(document.zip_bytes).hexdigest() != document.archive_sha256:
@@ -642,7 +641,7 @@ def archive_document(
         artifact_id=f"{metadata.document_id}:archive:{document.archive_sha256}",
         document_id=metadata.document_id,
         role="archive",
-        path=f"dart/{document.rcept_no}/{document.archive_sha256}.zip",
+        path=fixed_path("dart", document.rcept_no, "archive"),
         sha256=document.archive_sha256,
         byte_length=len(document.zip_bytes),
         encoding=None,
@@ -656,7 +655,7 @@ def archive_document(
         artifact_id=f"{metadata.document_id}:primary:{digest}",
         document_id=metadata.document_id,
         role="primary",
-        path=f"dart/{document.rcept_no}/{digest}.xml",
+        path=fixed_path("dart", document.rcept_no, "primary"),
         sha256=digest,
         byte_length=len(payload),
         encoding="utf-8",
@@ -670,20 +669,16 @@ def archive_document(
             normalized_separator_count=exotic,
         ),
     )
-    publish_bytes(corpus_dir, archive.path, document.zip_bytes)
-    publish_bytes(corpus_dir, primary.path, payload)
-    return AcquiredFiling(metadata, (archive, primary))
+    return AcquiredFiling(metadata, (archive, primary), (document.zip_bytes, payload))
 
 
-def read_manifest(path: Path) -> Manifest:
-    """Read only the common corpus manifest."""
-    return read_catalog(path)
-
-
-def write_manifest(path: Path, manifest: Manifest) -> None:
-    """Atomically publish the validated common corpus manifest."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write(path)
+def _dart_source_ready(manifest: Manifest, document_id: str, root: Path) -> bool:
+    """Permit exact-receipt recovery only for an unambiguous incomplete source bundle."""
+    try:
+        resolve_primary(manifest, document_id, root)
+    except SourceDownloadRequiredError:
+        return False
+    return True
 
 
 def pending_dart_targets(
@@ -693,18 +688,22 @@ def pending_dart_targets(
     fiscal_years: Sequence[int],
     corpus_dir: Path,
 ) -> list[tuple[str, int]]:
-    """Find requested issuer-years lacking a verified acquired primary source."""
-    valid = {
-        (document.issuer, document.fiscal_year)
-        for document in existing.documents
-        if document.registry == "dart"
-        and current_primary(existing, document.document_id, corpus_dir) is not None
-    }
+    """Find requested issuer-years lacking a verified primary and registered archive."""
+    readiness: dict[tuple[str, int], bool] = {}
+    for document in existing.documents:
+        if (
+            document.registry == "dart"
+            and document.issuer in stock_codes
+            and document.fiscal_year in fiscal_years
+        ):
+            key = (document.issuer, document.fiscal_year)
+            ready = _dart_source_ready(existing, document.document_id, corpus_dir)
+            readiness[key] = readiness.get(key, True) and ready
     return [
         (stock_code, fiscal_year)
         for stock_code in dict.fromkeys(stock_codes)
         for fiscal_year in dict.fromkeys(fiscal_years)
-        if (stock_code, fiscal_year) not in valid
+        if not readiness.get((stock_code, fiscal_year), False)
     ]
 
 
@@ -740,7 +739,7 @@ async def acquire_dart(
 ) -> DartAcquisitionResult:
     """Download and archive requested DART filings without parsing or ingesting them."""
     manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
-    existing = read_manifest(manifest_path)
+    existing = read_catalog(manifest_path)
     if not stock_codes or not fiscal_years:
         raise ValueError("DART acquisition requires explicit issuers and fiscal years")
     selection_id = selection_identity("dart", stock_codes, fiscal_years)
@@ -760,14 +759,12 @@ async def acquire_dart(
             and document.issuer in stock_codes
             and document.fiscal_year in fiscal_years
         ]
-        existing = merge_acquired(
-            existing,
+        existing = publish_acquired(
+            manifest_path,
             [],
             selection_id=selection_id,
             selected_document_ids=selected,
-            corpus_root=corpus_dir,
         )
-        write_manifest(manifest_path, existing)
         return DartAcquisitionResult((), (), len(existing.documents), selection_id=selection_id)
     if not api_key.strip():
         raise ValueError("DART_API_KEY is not configured; add it to .env")
@@ -825,18 +822,41 @@ async def acquire_dart(
                 )
             issuers.update(parse_corp_codes(bundle, stock_codes=unknown))
 
-        for index, (stock_code, fiscal_year) in enumerate(targets):
+        work: list[tuple[str, int, DocumentReference | None]] = []
+        for stock_code, fiscal_year in targets:
+            missing = [
+                known
+                for known in existing.documents
+                if known.registry == "dart"
+                and known.issuer == stock_code
+                and known.fiscal_year == fiscal_year
+                and not _dart_source_ready(existing, known.document_id, corpus_dir)
+            ]
+            work.extend((stock_code, fiscal_year, known) for known in missing or [None])
+        for index, (stock_code, fiscal_year, known_target) in enumerate(work):
             issuer = issuers[stock_code]
             label = f"{issuer.corp_name} FY{fiscal_year}"
             if on_progress is not None:
-                on_progress(OperationProgress("select", index, len(targets), label))
-            rows = await fetch_annual_report_rows(
-                client,
-                api_key=api_key,
-                corp_code=issuer.corp_code,
-                filing_year=fiscal_year + 1,
-            )
-            report = select_annual_report(rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year)
+                on_progress(OperationProgress("select", index, len(work), label))
+            if known_target is not None:
+                assert known_target.dart is not None
+                report = AnnualReport(
+                    known_target.filing_id,
+                    issuer.corp_code,
+                    issuer.corp_name,
+                    known_target.dart.report_name,
+                    known_target.filing_date.isoformat(),
+                )
+            else:
+                rows = await fetch_annual_report_rows(
+                    client,
+                    api_key=api_key,
+                    corp_code=issuer.corp_code,
+                    filing_year=fiscal_year + 1,
+                )
+                report = select_annual_report(
+                    rows, corp_code=issuer.corp_code, fiscal_year=fiscal_year
+                )
             if report.corp_name:
                 issuer = CorpCode(issuer.corp_code, report.corp_name, stock_code)
                 label = f"{issuer.corp_name} FY{fiscal_year}"
@@ -844,7 +864,7 @@ async def acquire_dart(
                 label,
                 stage="download",
                 current=index,
-                total=len(targets),
+                total=len(work),
             ) as progress:
                 document = await fetch_document_archive(
                     client,
@@ -875,16 +895,14 @@ async def acquire_dart(
                 and known.issuer in stock_codes
                 and known.fiscal_year in fiscal_years
             ]
-            existing = merge_acquired(
-                existing,
+            existing = publish_acquired(
+                manifest_path,
                 [entry],
                 selection_id=selection_id,
                 selected_document_ids=selected,
-                corpus_root=corpus_dir,
             )
-            write_manifest(manifest_path, existing)
             if on_progress is not None:
-                on_progress(OperationProgress("download", index + 1, len(targets), label))
+                on_progress(OperationProgress("download", index + 1, len(work), label))
 
     added = tuple(
         entry.document for entry in archived if entry.document.document_id not in prior_ids

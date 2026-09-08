@@ -44,6 +44,8 @@ from app.api.admin_schemas import (
     ReviewPreviewResponse,
     SnapshotCreateRequest,
     SnapshotVisibilityRequest,
+    SourceDeletionPreviewResource,
+    SourceDeletionRequest,
     UsageResponse,
 )
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
@@ -127,6 +129,15 @@ async def document_detail(doc_id: str, services: AdminServices) -> DocumentDetai
     if detail is None:
         raise not_found("document", doc_id)
     return DocumentDetailResponse.model_validate(detail)
+
+
+@router.post("/corpus/sources/deletion-preview", response_model=SourceDeletionPreviewResource)
+async def source_deletion_preview(
+    request: SourceDeletionRequest, services: AdminServices
+) -> SourceDeletionPreviewResource:
+    """Inspect exact acquired originals without deleting or changing their selection."""
+    async with translate_runtime_errors():
+        return await services.source_deletion_preview(request)
 
 
 @router.post(

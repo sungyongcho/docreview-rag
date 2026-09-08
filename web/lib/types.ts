@@ -387,3 +387,5 @@ export function resolvedRetrievalProfile(profile: ReviewSessionProfile): Retriev
   }
   return structuredClone(BUILTIN_PRESETS.find(p => p.id === profile.retrieval_preset)?.retrieval ?? BUILTIN_PRESETS[0].retrieval);
 }
+
+export type SourceDeletionPreview = components["schemas"]["SourceDeletionPreviewResource"];

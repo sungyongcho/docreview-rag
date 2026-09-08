@@ -38,6 +38,10 @@ indicator is not proof that either index matches the current corpus.
   do not erase the database to resolve an unknown cause. See [troubleshooting](troubleshooting.md).
 - **Next:** [prepare embeddings](#step-6), or skip it when the current embedding identity is already ready.
 
+Selected filing IDs are verified as a complete set before queueing. The queue pins immutable
+source inputs, so later deletion or reacquisition in Filings does not alter an existing job.
+Missing or changed intended originals block new parsing until downloaded or explicitly reselected.
+
 Each Ingest action processes only its explicit selection. The common catalog remains intact.
 The operation stores source-linked structures and chunks. It leaves embeddings and BM25 to Build
 steps 3 and 4; changing chunks invalidates existing BM25 statistics. Work already completed by CLI against this same DB should be reused.
@@ -145,3 +149,8 @@ Use **Open System status** for OpenAI or **Open Local LLM settings** to connect 
 
 ### SCREENSHOT NEEDED
 <!-- Feature: issue 173 answer-model engine rows, CPU placement and measured speed, dual flow-map lights and composer tooltip; state: OpenAI ready plus loaded local CPU model, then unloaded and slow CPU states; locale=en; light mode; actual runtime evidence required. -->
+
+Step 2 keeps physical missing-file counts separate from **Needs repair**. DART requires both the current XML and its matching ZIP. If either current file is missing or damaged, download the same filing again before parsing. All selected missing or blocked filings show their exact diagnostic, including duplicate registrations and unsupported paths that require explicit cleanup or reset.
+
+### SCREENSHOT NEEDED
+<!-- Feature: step 2 physical missing count, repair count and non-retryable identity-conflict diagnostics; locale=en; theme=light; show a present primary with missing registered ZIP and a blocked conflicting source without enabling automatic download. -->

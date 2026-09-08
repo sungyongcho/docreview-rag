@@ -495,3 +495,8 @@ export function putFilePreset(preset: import("./saved-presets").SavedPreset) {
 export function deleteFilePreset(id: string) {
   return request<import("./preset-storage").PresetCatalog>(`/admin/presets?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+
+/** Preview exact current originals; confirmation queues deletion through the normal corpus API. */
+export function previewSourceDeletion(documentIds: string[]): Promise<import("./types").SourceDeletionPreview> {
+  return request("/admin/corpus/sources/deletion-preview", { method: "POST", body: JSON.stringify({ document_ids: documentIds }) });
+}
