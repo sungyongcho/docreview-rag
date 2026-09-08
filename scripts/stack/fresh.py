@@ -57,6 +57,17 @@ def status(root: Path, command: str) -> int:
     return 0 if result["status"] == "succeeded" else 1
 
 
+def tracked_state(root: Path) -> dict[str, str]:
+    """Pin HEAD and both tracked diffs so later cleanup cannot discard unconfirmed edits."""
+    return {
+        "head": git(root, "rev-parse", "HEAD").strip(),
+        "worktree_diff": hashlib.sha256(git(root, "diff", "--binary").encode()).hexdigest(),
+        "index_diff": hashlib.sha256(
+            git(root, "diff", "--cached", "--binary").encode()
+        ).hexdigest(),
+    }
+
+
 def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
     """Pin removable file identities and tracked changes; never follow directory links."""
     root = root.resolve()
@@ -128,11 +139,7 @@ def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
         "files": files,
         "directories": directories,
         "revert": revert,
-        "head": git(root, "rev-parse", "HEAD").strip(),
-        "worktree_diff": hashlib.sha256(git(root, "diff", "--binary").encode()).hexdigest(),
-        "index_diff": hashlib.sha256(
-            git(root, "diff", "--cached", "--binary").encode()
-        ).hexdigest(),
+        **tracked_state(root),
     }
 
 
@@ -351,6 +358,13 @@ def start_fresh(
             remove_files(root, files)
         completed.append("files")
         if files["revert"]:
+            if tracked_state(root) != {
+                key: files[key] for key in ("head", "worktree_diff", "index_diff")
+            }:
+                raise ValueError(
+                    "Tracked Git state changed during cleanup; tracked files were not restored. "
+                    "Cleanup may be partial. Inspect the changes before requesting a new preview."
+                )
             subprocess.run(
                 [
                     "git",

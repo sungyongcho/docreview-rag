@@ -409,3 +409,51 @@ def test_post_preview_inode_change_records_failure_without_restart(checkout, mon
     assert receipt["error"] == "ValueError"
     assert "files" not in receipt["completed"]
     assert not any(call.args[0][0] == "bash" for call in commands.call_args_list)
+
+
+@pytest.mark.parametrize("changed_state", ["worktree", "index", "head"])
+def test_post_preview_git_changes_are_preserved_before_restore(
+    checkout, monkeypatch, changed_state
+):
+    """Concurrent tracked changes after confirmation cannot be discarded by the final restore."""
+    populate(checkout)
+    relative = "data/corpus/manifest.json"
+    target = checkout / relative
+
+    def change_tracked_state():
+        """Simulate a writer updating the manifest while cleanup stops its services."""
+        target.write_text("new concurrent content")
+        if changed_state in {"index", "head"}:
+            subprocess.run(["git", "-C", str(checkout), "add", "--", relative], check=True)
+        if changed_state == "head":
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(checkout),
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-qm",
+                    "Concurrent fixture commit",
+                ],
+                check=True,
+            )
+
+    operator = Mock()
+    operator.stop.side_effect = change_tracked_state
+    monkeypatch.setattr(fresh, "LocalOperator", lambda root: operator)
+    with pytest.raises(ValueError, match="Tracked Git state changed"):
+        fresh.start_fresh(checkout, no_start=True)
+    assert target.read_text() == "new concurrent content"
+    if changed_state == "index":
+        assert fresh.git(checkout, "show", f":{relative}") == "new concurrent content"
+    if changed_state == "head":
+        assert fresh.git(checkout, "show", f"HEAD:{relative}") == "new concurrent content"
+    receipt = json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())
+    assert receipt["status"] == "failed"
+    assert "tracked files" not in receipt["completed"]
