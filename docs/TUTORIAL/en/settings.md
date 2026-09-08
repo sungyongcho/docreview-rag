@@ -135,7 +135,7 @@ The [Ollama setup guide](ollama.md) opens in a new tab from this screen. It cove
 
 ### Saved execution defaults
 
-Open **Settings → Prompt → New-conversation limits and evidence** to edit and explicitly save the default budget and evidence size. System status shows a summary and a link to this editor. Existing conversations keep their own values and Basic shows their differences from saved defaults. **Restore setting defaults** in the conversation copies the saved search/prompt/evidence/limits while preserving document filters. The defaults editor’s **Restore limit defaults** prepares the original application values; save them explicitly to use them for future conversations.
+Open **Settings → Run limits** to edit and explicitly save the default budget and evidence size. System status shows a summary and a link to this editor. Existing conversations keep their own values and Basic shows their differences from saved defaults. **Restore setting defaults** in the conversation copies the saved search/prompt/evidence/limits while preserving document filters. The defaults editor’s **Restore limit defaults** prepares the original application values; save them explicitly to use them for future conversations.
 
 ### SCREENSHOT NEEDED
 <!-- Default limits editor and System status summary; en; light mode; show saved values and a conversation override. Preserve existing assets. -->
@@ -158,3 +158,8 @@ The first PROD visit displays **⚠️ Settings and conversations are saved only
 
 ### SCREENSHOT NEEDED
 <!-- Feature: PROD browser-storage notice, Data & help per-key usage, export/import confirmation and reminder; locale=en; light mode; show real deployed state. Preserve existing assets. -->
+
+The defaults editor and **Conversation settings → Advanced → Run limits** share the preset row, aligned budget/evidence fields and guidance. The editor uses two columns on desktop and one at 720 px or below. Save feedback stays beside the save/restore actions. Composer default-limit links and the System status summary open **Settings → Run limits**; CPU recommendations still open the current conversation override.
+
+### SCREENSHOT NEEDED
+<!-- Feature: Run limits category, shared conversation limits and System summary; locale=en; theme=light; widths=1440,720; show aligned units, hints, save feedback and keyboard focus. -->

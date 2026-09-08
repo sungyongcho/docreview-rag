@@ -63,3 +63,19 @@ it("applies the optional CPU starting point only to the defaults draft until sav
   expect(loadDefaultProfile().prompt_policy).toMatchObject({ max_context_chars: 8000, workflow_budget: { max_input_tokens: 24000, max_output_tokens: 2000, max_wall_clock_s: 300 } });
   expect(DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget.max_wall_clock_s).toBe(120);
 });
+
+/** Restoring is a draft action; saving changes only future conversations. */
+it("restores limits explicitly and clears saved feedback after edits", () => {
+  render(<DefaultRunLimits />);
+  fireEvent.change(screen.getByLabelText("Maximum wall clock seconds"), { target: { value: "300" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save default limits" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Default limits saved");
+  fireEvent.click(screen.getByRole("button", { name: "Restore limit defaults" }));
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.getByLabelText("Maximum wall clock seconds")).toHaveValue(120);
+  expect(loadDefaultProfile().prompt_policy.workflow_budget.max_wall_clock_s).toBe(300);
+  fireEvent.click(screen.getByRole("button", { name: "Save default limits" }));
+  expect(loadDefaultProfile().prompt_policy.workflow_budget.max_wall_clock_s).toBe(120);
+  fireEvent.change(screen.getByLabelText("Maximum evidence characters"), { target: { value: "9000" } });
+  expect(screen.queryByRole("status")).toBeNull();
+});

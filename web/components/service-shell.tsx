@@ -484,7 +484,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
     if (category === "review") return openConversationSettings("filters");
     if (category === "limits") {
-      if (adminLive) return openConversationSettings("limits");
+      if (adminLive) { setSettingsCategory("limits"); setSettingsOpen(true); return; }
       return navigate({ view: "system", tab: "status" });
     }
     if (category === "runtime") return navigate({ view: "system", tab: "status" });
@@ -1011,7 +1011,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
-            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
+            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
 
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
@@ -1068,7 +1068,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           helpTarget={pendingHelpTarget}
         /></RetainedPanel>
         <RetainedPanel active={view === "system"} className="retained-workspace" workspace="system"><SystemWorkspace
-          onOpenLimitDefaults={() => openSettings("prompt")}
+          onOpenLimitDefaults={() => openSettings("limits")}
           live={adminLive}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
