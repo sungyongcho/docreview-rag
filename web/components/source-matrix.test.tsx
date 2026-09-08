@@ -159,3 +159,44 @@ it("rejects unsupported codes even when local source rows contain that issuer", 
   expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   expect(download).not.toHaveBeenCalled();
 });
+
+
+it("includes a selected damaged source in Sync and clears recovery after verification", () => {
+  const download = vi.fn();
+  const damaged = { ...source("NVDA", 2024), ready: false, can_redownload: true, blocker: "Download it again in Filings" };
+  const healthy = { ...source("AMD", 2023), can_redownload: false };
+  const initialPairs: AcquisitionPair[] = [
+    { registry: "sec", issuer: "NVDA", year: 2024 },
+    { registry: "sec", issuer: "AMD", year: 2023 },
+  ];
+  const { rerender } = render(<Harness sources={[damaged, healthy]} initialPairs={initialPairs} download={download} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Selected on disk: 2 · To download: 1");
+  const pending = screen.getByRole("region", { name: "To be added" });
+  expect(within(pending).getAllByRole("listitem")).toHaveLength(1);
+  expect(within(pending).getByRole("button", { name: "Remove NVDA FY2024" })).toBeVisible();
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeEnabled();
+  fireEvent.click(sync);
+  expect(download).toHaveBeenCalledExactlyOnceWith(acquisitionDraft(initialPairs));
+  rerender(<Harness sources={[{ ...damaged, ready: true, can_redownload: false, blocker: null }, healthy]} initialPairs={initialPairs} download={download} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Selected on disk: 2 · To download: 0");
+  expect(within(pending).queryByRole("listitem")).toBeNull();
+  expect(sync).toBeDisabled();
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it.each([
+  { onDisk: false, staged: false }, { onDisk: false, staged: true },
+  { onDisk: true, staged: false }, { onDisk: true, staged: true },
+])("excludes conflicting sources from Sync with $onDisk on disk and $staged staged", ({ onDisk, staged }) => {
+  const download = vi.fn();
+  const conflict = { ...source("NVDA", 2024, onDisk), ready: false, can_redownload: false, blocker: "Conflicting primary sources" };
+  render(<Harness sources={[conflict]} initialPairs={staged ? [] : [{ registry: "sec", issuer: "NVDA", year: 2024 }]} download={download} />);
+  if (staged) { enter("NVDA"); enter("2024"); }
+  expect(screen.getByRole("status")).toHaveTextContent("To download: 0");
+  expect(within(screen.getByRole("region", { name: "To be added" })).queryByRole("listitem")).toBeNull();
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeDisabled();
+  fireEvent.click(sync);
+  expect(download).not.toHaveBeenCalled();
+});
