@@ -44,3 +44,12 @@ describe("answer engine matrix", () => {
     expect(answerEngineStates(inventory, "second", now)[1]).toMatchObject({ light: "green", model: "second" });
   });
 });
+
+
+it("keeps missing load evidence amber and hides stale placement on an unloaded model", () => {
+  const unknown = { ...local, models: [{ ...local.models![0], loaded: null }] };
+  expect(answerEngineStates(ready(openai, unknown), "gemma", now)[1]).toMatchObject({ light: "amber", reason: "Model load state unknown", speed: null, placement: undefined });
+  const unloaded = { ...local, models: [{ ...local.models![0], loaded: false }] };
+  expect(answerEngineStates(ready(openai, unloaded), "gemma", now)[1]).toMatchObject({ reason: "Model not loaded", placement: undefined });
+  expect(ready(openai, unknown).review_enabled).toBe(true);
+});

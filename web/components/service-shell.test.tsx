@@ -1489,3 +1489,36 @@ it.each(["en", "ko"] as const)("shows the measured CPU warning before sending an
     await waitFor(() => expect(screen.queryByRole("status", { name: t("Slow local CPU model") })).toBeNull());
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
 });
+
+it("opens model selection from Build without submitting or changing the engine", async () => {
+  cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const model = { name: "answer", selectable: true, loaded: false, size_bytes: 100, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"] };
+  const local = { enabled: true, protocol: "ollama", models: [model] };
+  const fetchMock = stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { openai: { enabled: true }, local } }));
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input) => String(input).endsWith("/admin/local-llm/connection")
+    ? new Response(JSON.stringify({ base_url: "http://ollama:11434", initial_base_url: "http://ollama:11434", protocol: "auto", source: "environment", local }), { headers: { "content-type": "application/json" } })
+    : originalFetch(input));
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  try {
+    render(<LiveShell />);
+    const engine = await screen.findByLabelText("Answer engine");
+    fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Select Answer model" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Local LLM settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose or use a model in conversation" }));
+    await waitFor(() => expect(engine).toHaveFocus());
+    expect(screen.queryByRole("dialog", { name: "Local LLM" })).not.toBeInTheDocument();
+    expect(engine).toHaveValue("openai");
+    expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toHaveValue("Keep my draft");
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/review/stream"))).toBe(true);
+    fireEvent.change(engine, { target: { value: "local" } });
+    expect(screen.getByLabelText("Local model")).toHaveValue("answer");
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    const row = await screen.findByRole("region", { name: "Local" });
+    expect(row).toHaveTextContent("answer");
+    expect(row).toHaveTextContent("Model not loaded");
+  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
+});

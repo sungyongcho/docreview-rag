@@ -668,7 +668,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         evidenceLabel: "Retrieved candidates — answer not generated",
       });
     } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
+      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
       setBusy(false);
       setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
@@ -798,7 +798,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       noteDailyBudget(reason);
       notify(reason instanceof Error ? reason.message : t("Selected evidence review failed."), "error", "evidence-review");
     } finally {
-      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check();
+      if ((active.profile ?? profile).engine === "local") void runtimeHealth.check(true);
       setBusy(false);
       setActiveReview(null);
       if (reviewAbort.current === controller) reviewAbort.current = null;
@@ -1023,6 +1023,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         </RetainedPanel>
 
         <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
+          localModel={activeSessionProfile.local_model}
           focusStep={pendingStage}
           live={adminBuild && permissions?.can_build_snapshot === true}
           ready={runtimeHealth.kind === "healthy"}
@@ -1081,7 +1082,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         /></RetainedPanel>
       </section>
       <BrowserStorageSupport enabled={!publicPreview && environment === "prod" && productionBrowserStorageEnabled()} />
-      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
+      <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onOpenModelSelection={() => {
+        if (!navigate({ view: "review" })) return;
+        setSettingsOpen(false);
+        if (window.innerWidth <= 560) setSidebarOpen(false);
+        window.requestAnimationFrame(() => document.querySelector<HTMLSelectElement>("[data-answer-engine-select]")?.focus());
+      }} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success"); }} />
       {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
       <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={runDetailsMessage} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openSettings} />
 

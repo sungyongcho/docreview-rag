@@ -27,7 +27,7 @@ export function LocalEngineSettings({ profile, readiness, onChange }: {
   const issue = localModelIssue(profile, readiness);
   const label = !local ? "Local LLM (Checking…)" : !available ? "Local LLM (Unavailable)" : profile.engine === "local" ? "Local LLM (Selected)" : "Local LLM";
   return <>
-    <label className="composer-engine-field"><span className="composer-engine-label">{t("Answer engine")}</span><select aria-label={t("Answer engine")} title={t(selectedEngine.reason)} value={profile.engine} onChange={(event) => onChange({ engine: event.target.value as ReviewSessionDraft["engine"], local_model: selected })}>
+    <label className="composer-engine-field"><span className="composer-engine-label">{t("Answer engine")}</span><select data-answer-engine-select aria-label={t("Answer engine")} title={t(selectedEngine.reason)} value={profile.engine} onChange={(event) => onChange({ engine: event.target.value as ReviewSessionDraft["engine"], local_model: selected })}>
       <option value="openai" title={t(engines[0].reason)}>{symbols[engines[0].light]} {t("OpenAI API")}</option>
       <option value="local" title={t(engines[1].reason)} disabled={engines[1].light === "grey"}>{symbols[engines[1].light]} {t(label)}</option>
     </select><span className="composer-control-description"><AnswerEngineLight engine={selectedEngine} /></span></label>

@@ -3,7 +3,7 @@ import { useI18n } from "@/lib/i18n";
 
 
 import { AnswerEngineLight, AnswerEngineRows } from "@/components/answer-engine-light";
-import { answerEngineStates, type AnswerEngineState } from "@/lib/answer-engine-state";
+import { answerEngineStates, answerEngineSummary, type AnswerEngineState } from "@/lib/answer-engine-state";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { TerminalHandoff } from "@/components/terminal-handoff";
 import { PipelineReference } from "@/components/pipeline-reference";
@@ -59,6 +59,7 @@ export interface BuildPipelineProps {
   /** "dev key" / "prod key" / "explicit key" / "local" / "off"; `null` while readiness is unknown. */
   answerModel?: string | null;
   readiness?: Readiness | null;
+  localModel?: string | null;
   onOpenLocalSettings?: () => void;
   /** Local Operations reachable from this build; the strip then offers service buttons instead of commands. */
   operationsAvailable?: boolean;
@@ -105,7 +106,7 @@ function isApiDown(pipeline: Pipeline): boolean {
 export function BuildPipeline(props: BuildPipelineProps) {
   const { t, locale } = useI18n();
   const { pipeline } = props;
-  const answerEngines = answerEngineStates(props.readiness ?? null).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
+  const answerEngines = answerEngineStates(props.readiness ?? null, props.localModel).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
   const [acquisitionValid, setAcquisitionValid] = useState(true);
   const [selectedChoice, setSelectedId] = useState<Stage["id"] | null>(null);
   const selectedId = selectedChoice ?? pipeline.stages.find((stage) => stage.status === "running")?.id ?? pipeline.next?.id ?? "filings";
@@ -151,6 +152,10 @@ export function BuildPipeline(props: BuildPipelineProps) {
     writable: props.writable ?? null,
   });
 
+  if (selected.id === "answer_model" && selected.status === "done") {
+    diagnosis.detail = answerEngineSummary(answerEngines);
+  }
+
   function navigatePreparation(target: NonNullable<Diagnosis["returnTo"]>) {
     if (target === "setup") {
       const setup = document.getElementById("pipeline-setup-checks") as HTMLDetailsElement | null;
@@ -182,7 +187,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         <header className="pipeline-map-heading"><h2>{t("Data workflow")}</h2><span>{t("Select a step")}</span></header>
         <div className="pipeline-graph" data-tour="stage-list">
           {pipeline.stages.map((stage) => <button key={stage.id} data-help={`build.stage.${stage.id}`} className={`pipeline-node ${stage.id} ${stage.status}`} type="button" aria-label={t("Select {p0}", { p0: t(stage.title) })} aria-pressed={selectedId === stage.id} aria-controls="pipeline-execution" onClick={() => setSelectedId(stage.id)}>
-            <span className="pipeline-node-number">{stage.order}</span><strong>{t(stage.title)}</strong><small className="pipeline-node-status"><i className="status-beacon" aria-hidden="true" />{t(stage.statusDetail || stageStatusLabel(stage.status))}</small>
+            <span className="pipeline-node-number">{stage.order}</span><strong>{t(stage.title)}</strong><small className="pipeline-node-status"><i className="status-beacon" aria-hidden="true" />{t(stage.id === "answer_model" && stage.status === "done" ? answerEngineSummary(answerEngines) : stage.statusDetail || stageStatusLabel(stage.status))}</small>
             {stage.id === "answer_model" && stage.status !== "readonly" && <span className="answer-engine-lights">{answerEngines.map((engine) => <AnswerEngineLight key={engine.id} engine={engine} />)}</span>}
             <span className="pipeline-dependency">{t(STEP_DEPENDENCIES[stage.id])}</span>
           </button>)}
@@ -372,7 +377,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onDownload, busy, sourc
         <div className={`stage-index ${stage.status}`} aria-hidden="true">{stage.status === "done" ? <Check size={15} /> : stage.order}</div>
         <div className="stage-body">
           <div className="stage-head">
-            <StatusPill status={stage.status} detail={stage.statusDetail} />
+            <StatusPill status={stage.status} detail={stage.id === "answer_model" && stage.status === "done" ? answerEngineSummary(answerEngines) : stage.statusDetail} />
             {OPERATOR_STAGES.has(stage.id) && <DevelopmentBadge locale={locale} compact />}
           </div>
           <p className="stage-description">{t(stage.description)}</p>

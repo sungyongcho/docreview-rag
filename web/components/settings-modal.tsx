@@ -30,6 +30,7 @@ interface Props {
   capabilities: Capabilities | null;
   readiness?: Readiness | null;
   onLocalConnectionChanged?: (local: ReviewEngineState) => void;
+  onOpenModelSelection?: () => void;
   onChange: (profile: Partial<ReviewSessionDraft>) => void;
   onClose: () => void;
   onOpenTour: () => void;
@@ -74,7 +75,7 @@ export function SettingsModal(props: Props) {
       </aside>
       <section className="settings-content"><header><div><p className="eyebrow">{props.capabilities?.environment?.toUpperCase() ?? t("Checking environment")}</p><h2 id="settings-title">{t(categories.find(([id]) => id === category)?.[1] ?? "Settings")}</h2></div><button className="icon-button" type="button" aria-label={t("Close settings")} onClick={props.onClose}><X /></button></header><NotificationOutlet priority={50} />
         {category === "about" && <section className="settings-about"><CreatorSignature variant="about" /><p className="helper">{t("Evidence-first SEC and DART filing review")}</p><dl className="request-facts"><div><dt>{t("Version")}</dt><dd>v2</dd></div><div><dt>{t("Environment")}</dt><dd>{props.capabilities?.environment?.toUpperCase() ?? t("Unknown")}</dd></div></dl><GuidesNavigation /></section>}
-        {category === "local" && localAllowed && <LocalConnectionSettings readiness={props.readiness} onChanged={props.onLocalConnectionChanged} />}
+        {category === "local" && localAllowed && <LocalConnectionSettings readiness={props.readiness} localModel={props.profile.local_model} selectedEngine={props.profile.engine} onOpenModelSelection={props.onOpenModelSelection} onChanged={props.onLocalConnectionChanged} />}
         {category === "prompt" && dev && <div className="settings-form"><label>{t("Immutable evidence guard")}<textarea readOnly value={GUARD} /></label><label>{t("Additional operator instructions")}<textarea maxLength={8000} value={props.profile.prompt_policy.additional_instructions} onChange={(event) => patchPolicy({ additional_instructions: event.target.value })} /></label><label>{t("Final prompt preview")}<textarea readOnly value={`${GUARD}${props.profile.prompt_policy.additional_instructions.trim() ? `\n\n${props.profile.prompt_policy.additional_instructions.trim()}` : ""}\n\n[conversation history: ${props.profile.prompt_policy.history_turns} turns]\n[evidence inserted here]`} /></label><button className="button primary" type="button" onClick={() => {
   saveDefaultPrompt(props.profile.prompt_policy.additional_instructions);
   notify(t("Prompt saved for new conversations."), "success", "prompt-defaults");
