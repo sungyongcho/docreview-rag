@@ -9051,6 +9051,69 @@
         ]
       }
     },
+    "/admin/golden/revisions/{revision_id}/delete": {
+      "post": {
+        "description": "Delete one user dataset file using an expected draft digest.",
+        "operationId": "delete_golden_revision_admin_golden_revisions__revision_id__delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "title": "Revision Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldenRevisionActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoldenRevisionResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Delete Golden Revision",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/golden/revisions/{revision_id}/validate": {
       "post": {
         "description": "Validate one exact draft against corpus source bytes.",

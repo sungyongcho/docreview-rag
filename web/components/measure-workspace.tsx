@@ -39,7 +39,7 @@ import {
   getGoldenRevisions,
   getPublishedSnapshots,
   queueEvaluation,
-  saveGoldenCase, deleteGoldenCase,
+  saveGoldenCase, deleteGoldenCase, deleteGoldenRevision,
   setSnapshotVisibility,
   transitionGoldenRevision,
 } from "@/lib/api";
@@ -510,6 +510,23 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     } finally { setGoldenBusy(false); }
   }
 
+  async function deleteGoldenFile() {
+    const revision = activeGoldenRevision;
+    if (!revision || goldenBusy) return;
+    if (!await confirm(t("Delete dataset file {p0}? Its questions are removed from disk; built-in suites and evaluation results are kept.", { p0: revision.filename }), { confirm: "Yes", cancel: "No", danger: true })) return;
+    setGoldenBusy(true);
+    try {
+      await deleteGoldenRevision(revision.revision_id, revision.sha256);
+      setGoldenRevisions((current) => current.filter((item) => item.revision_id !== revision.revision_id));
+      setAllGoldenFiles((current) => current.filter((item) => item.revision_id !== revision.revision_id));
+      setSelectedGoldenRevision(null); setGoldenDetailOpen(false); resetGoldenSelection(); setSourceJsonOpen(false);
+      window.dispatchEvent(new Event("docreview:golden-files-changed"));
+      notify(t("Dataset file deleted."), "success", "golden-delete", undefined, { event: "golden-delete-notice" });
+    } catch (reason) {
+      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Dataset file could not be deleted."), "error", "golden-delete", undefined, { event: "golden-delete-error", detail: notificationErrorDetail(reason) });
+    } finally { setGoldenBusy(false); }
+  }
+
   async function reloadGoldenQuestion() {
     if (!selectedGoldenRevision || !await confirm(t("Reload the saved question and discard local edits?"))) return;
     try {
@@ -744,7 +761,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
         <section hidden={goldenDetailOpen} className="surface form-stack golden-controls evaluation-golden-controls">
           {live && <div className="golden-dataset-selector">{datasetSelect("measure.golden.suite")}<button type="button" className="button" disabled={goldenBusy || goldenDirty} onClick={() => setDraftFormOpen(value => !value)}><Plus size={15} />{t("Create draft")}</button></div>}
           {draftFormOpen && <div className="golden-draft-form"><label>{t("JSON filename")}<input value={draftFilename} placeholder="my-evaluation.json" onChange={event => setDraftFilename(event.target.value)} /></label><label>{t("Starting content")}<select value={emptyDraft ? "empty" : "copy"} onChange={event => setEmptyDraft(event.target.value === "empty")}><option value="copy">{t("Copy selected dataset")}</option><option value="empty">{t("Empty dataset")}</option></select></label><button type="button" className="button primary" disabled={goldenBusy || !draftFilename.trim().endsWith(".json")} onClick={() => void newGoldenDraft()}>{t("Create file")}</button><button type="button" className="button ghost" onClick={() => setDraftFormOpen(false)}>{t("Cancel")}</button></div>}
-          {live && <div className="golden-file golden-file-inline" data-help="measure.golden.revision"><div className="golden-file-header"><FileJson size={18} aria-hidden="true" /><div className="golden-file-identity"><strong className="golden-file-title">{selectedFile?.filename ?? t("Loading…")}{!activeGoldenRevision && <DatasetLock />}</strong><div className="golden-file-traits">{fileRegistry.toUpperCase()} · {t(fileLanguage === "en" ? "English" : fileLanguage === "ko" ? "Korean" : fileLanguage === "mixed" ? "English / Korean" : fileLanguage)} · {t("Question count: {count}", { count: activeGoldenCases.length })}{!activeGoldenRevision && <span className="golden-builtin-badge">{t("Built-in")}</span>}</div></div><button className="button ghost" type="button" disabled={!selectedFile} aria-expanded={sourceJsonOpen} aria-controls={sourceJsonOpen ? sourceJsonId : undefined} onClick={() => setSourceJsonOpen(value => !value)}>{t("View source JSON")}<ChevronDown size={15} aria-hidden="true" /></button></div>{sourceJsonOpen && selectedFile && <div id={sourceJsonId} className="source-json"><h3>{t("Source JSON · read-only")}</h3><code>SHA-256 · {selectedFile.sha256}</code><pre>{JSON.stringify("file_content" in selectedFile ? selectedFile.file_content : selectedFile.payload, null, 2)}</pre></div>}</div>}
+          {live && <div className="golden-file golden-file-inline" data-help="measure.golden.revision"><div className="golden-file-header"><FileJson size={18} aria-hidden="true" /><div className="golden-file-identity"><strong className="golden-file-title">{selectedFile?.filename ?? t("Loading…")}{!activeGoldenRevision && <DatasetLock />}</strong><div className="golden-file-traits">{fileRegistry.toUpperCase()} · {t(fileLanguage === "en" ? "English" : fileLanguage === "ko" ? "Korean" : fileLanguage === "mixed" ? "English / Korean" : fileLanguage)} · {t("Question count: {count}", { count: activeGoldenCases.length })}{!activeGoldenRevision && <span className="golden-builtin-badge">{t("Built-in")}</span>}</div></div><button className="button ghost" type="button" disabled={!selectedFile} aria-expanded={sourceJsonOpen} aria-controls={sourceJsonOpen ? sourceJsonId : undefined} onClick={() => setSourceJsonOpen(value => !value)}>{t("View source JSON")}<ChevronDown size={15} aria-hidden="true" /></button>{activeGoldenRevision && <button className="button ghost golden-file-delete" type="button" disabled={goldenBusy || goldenDirty} aria-label={t("Delete dataset file")} title={t("Delete dataset file")} onClick={() => void deleteGoldenFile()}><Trash2 size={15} aria-hidden="true" /></button>}</div>{sourceJsonOpen && selectedFile && <div id={sourceJsonId} className="source-json"><h3>{t("Source JSON · read-only")}</h3><code>SHA-256 · {selectedFile.sha256}</code><pre>{JSON.stringify("file_content" in selectedFile ? selectedFile.file_content : selectedFile.payload, null, 2)}</pre></div>}</div>}
           {live && active && tab === "golden" && <GoldenPreparation request={evaluationRequest} onOpenSources={onOpenPreparation ? () => onOpenPreparation(1) : undefined} />}
           {!live && <p className="helper">{t("Golden suites are edited on the local operator build. Compare stored published snapshots instead.")}</p>}
         </section>

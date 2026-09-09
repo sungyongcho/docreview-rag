@@ -437,6 +437,12 @@ class RuntimeAdminApiServices:
         """Remove one question from a draft under the optimistic digest check."""
         return await self._golden.delete_case(revision_id, case_id, expected_sha256=expected_sha256)
 
+    async def delete_golden_revision(
+        self, revision_id: int, expected_sha256: str
+    ) -> GoldenRevisionResource:
+        """Delete one user dataset file under the optimistic digest check."""
+        return await self._golden.delete_draft(revision_id, expected_sha256=expected_sha256)
+
     async def validate_golden_revision(
         self, revision_id: int, expected_sha256: str
     ) -> GoldenRevisionResource:

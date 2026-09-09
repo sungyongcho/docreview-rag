@@ -224,3 +224,22 @@ def test_delete_case_removes_one_question_under_the_digest_check(service):
             await service.delete_case(deleted.revision_id, first, expected_sha256=deleted.sha256)
 
     asyncio.run(exercise())
+
+
+def test_delete_draft_removes_only_user_files_under_the_digest_check(service, tmp_path):
+    """A user file disappears from disk and listings; built-ins and stale digests are refused."""
+
+    async def exercise():
+        draft = await service.create_draft("sec-en", filename="gone.json")
+        with pytest.raises(Exception, match="Dataset changed"):
+            await service.delete_draft(draft.revision_id, expected_sha256="a" * 64)
+        builtin = service._identity("retrieval.json")
+        with pytest.raises(ValueError, match="Built-in"):
+            await service.delete_draft(builtin, expected_sha256="a" * 64)
+        deleted = await service.delete_draft(draft.revision_id, expected_sha256=draft.sha256)
+        assert deleted.filename == "gone.json"
+        assert not (tmp_path / "gone.json").exists()
+        assert (tmp_path / "retrieval.json").exists()
+        assert await service.list("sec-en") == ()
+
+    asyncio.run(exercise())

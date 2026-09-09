@@ -451,6 +451,10 @@ export function deleteGoldenCase(revisionId: number, caseId: string, expectedSha
   return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/cases/${encodeURIComponent(caseId)}/delete`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
 }
 
+export function deleteGoldenRevision(revisionId: number, expectedSha256: string): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/delete`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
+}
+
 export function transitionGoldenRevision(revisionId: number, action: "validate", expectedSha256: string): Promise<GoldenRevision> {
   return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/${action}`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
 }

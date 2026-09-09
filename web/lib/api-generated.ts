@@ -332,6 +332,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/golden/revisions/{revision_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Golden Revision
+         * @description Delete one user dataset file using an expected draft digest.
+         */
+        post: operations["delete_golden_revision_admin_golden_revisions__revision_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/golden/revisions/{revision_id}/validate": {
         parameters: {
             query?: never;
@@ -5055,6 +5075,50 @@ export interface operations {
             path: {
                 revision_id: number;
                 case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenRevisionActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenRevisionResource"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_golden_revision_admin_golden_revisions__revision_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision_id: number;
             };
             cookie?: never;
         };

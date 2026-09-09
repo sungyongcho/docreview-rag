@@ -289,6 +289,22 @@ class GoldenAdminService:
                 )
             )
 
+    async def delete_draft(
+        self, revision_id: int, *, expected_sha256: str
+    ) -> GoldenRevisionResource:
+        """Delete one user dataset file after the digest check; built-in suites stay untouched."""
+        builtins = {definition.golden_name for definition in SUITES.values()}
+        if any(self._identity(name) == revision_id for name in builtins):
+            raise ValueError("Built-in datasets cannot be deleted")
+        with self._locked():
+            item = self.get(revision_id)
+            if item.sha256 != expected_sha256:
+                raise DraftConflictError(
+                    "Dataset changed; reload the saved question before retrying."
+                )
+            self._path(item.filename).unlink()
+            return item
+
     async def validate(self, revision_id: int, *, expected_sha256: str) -> GoldenRevisionResource:
         """Check question shape and source spans without granting human quality approval."""
         with self._locked():

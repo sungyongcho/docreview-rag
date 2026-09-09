@@ -77,7 +77,7 @@ The same suite catalog is used by Golden, new evaluation setup, and the New eval
 
 The filename and small source/language summary sit directly under the selector. **View source JSON** opens the selected file's data; user files include their metadata and cases.
 
-**Create draft**, beside the selector, creates a named `.json` file by copying the selection or starting empty. **Add question** opens a new editable question. Use **Save draft**, then **Check format and sources**. There is no separate JSON publication step, and bundled files cannot be overwritten.
+**Create draft**, beside the selector, creates a named `.json` file by copying the selection or starting empty. The trash icon beside **View source JSON** deletes the selected user file after a **Yes / No** confirmation; built-in suites cannot be deleted. **Add question** opens a new editable question. Use **Save draft**, then **Check format and sources**. There is no separate JSON publication step, and bundled files cannot be overwritten.
 
 All active dataset files live in `data/golden/`. User files use a `docreview-golden-set` envelope with `suite_id`, `registry`, `question_language`, timestamps, `checked_sha256`, and `cases`. Files survive database resets and `rag-start-fresh`; DB draft rows are not the source of truth.
 
