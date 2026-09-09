@@ -6,7 +6,6 @@ import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "re
 import { createPortal } from "react-dom";
 import { ChevronRight, SlidersHorizontal, LoaderCircle } from "lucide-react";
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
-import { Segmented } from "@/components/segmented";
 import { presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
@@ -180,7 +179,7 @@ export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, o
   return (
     <div className="composer-toolbar composer-toolbar-aligned">
       <div className="chip-group composer-toolbar-primary">
-        <div className="composer-scope-control"><span className="composer-control-label">{t("Corpus scope")}<ControlHelp label={t("About corpus scope")}><p><strong>{t("Auto")}</strong> — {t("Auto chooses SEC or DART from the question and filters. The server result appears in progress.")}</p><p><strong>SEC</strong> — {t("Search SEC filings from U.S. registrants.")}</p><p><strong>DART</strong> — {t("Search Korean DART filings.")}</p></ControlHelp></span><Segmented label={t("Corpus scope")} helpId="review.scope" options={SCOPE_OPTIONS} value={profile.corpus_scope} onChange={(value) => onChange({ corpus_scope: value })} /><p className="composer-control-description">{t(profile.corpus_scope === "auto" ? "Automatic source routing" : profile.corpus_scope === "sec" ? "U.S. SEC filings" : "Korean DART filings")}</p></div>
+        <div className="composer-scope-control"><span className="composer-control-label">{t("Corpus scope")}<ControlHelp label={t("About corpus scope")}><p><strong>{t("Auto")}</strong> — {t("Auto chooses SEC or DART from the question and filters. The server result appears in progress.")}</p><p><strong>SEC</strong> — {t("Search SEC filings from U.S. registrants.")}</p><p><strong>DART</strong> — {t("Search Korean DART filings.")}</p></ControlHelp></span><div className="lab-tabs composer-scope-tabs" role="group" aria-label={t("Corpus scope")} data-help="review.scope">{SCOPE_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={profile.corpus_scope === option.value} onClick={() => onChange({ corpus_scope: option.value })}>{t(option.label)}</button>)}</div><p className="composer-control-description">{t(profile.corpus_scope === "auto" ? "Automatic source routing" : profile.corpus_scope === "sec" ? "U.S. SEC filings" : "Korean DART filings")}</p></div>
         {engineControls}
         <div className="composer-preset-control"><div className="composer-control-label"><label htmlFor="composer-retrieval-preset">{t("Retrieval preset")}</label><ControlHelp label={t("About retrieval presets")}><p>{t(preset.purpose)}</p><code>{preset.settings}</code><p>{t("Open Settings and preview to inspect the next request.")}</p></ControlHelp></div><RetrievalPresetSelect id="composer-retrieval-preset" profile={profile} editable={canUseCustom} onChange={onChange} onManage={onOpenCustom} onLocked={onLocked} /><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p></div>
         <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip" type="button" data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={16} aria-hidden="true" />{filters > 0 ? t("Settings and preview · {p0}", { p0: filters }) : t("Settings and preview")}</button>
@@ -195,6 +194,7 @@ export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, o
       <div className="composer-toolbar-secondary">
         <div className="composer-corpus-readiness">
           <button className="composer-readiness-facts" type="button" data-help="review.readiness" title={t("Open Build to inspect corpus readiness")} onClick={onOpenBuild}><span>{typeof corpusCount === "number" ? t("Corpus total · {count} filings", { count: corpusCount.toLocaleString(locale) }) : t(corpusLabel)}</span><small className={readinessStatus === "Hybrid search ready" ? "confirmed" : ""}>{t(readinessStatus)}</small><ChevronRight size={13} aria-hidden="true" /></button>
+          <span className="composer-key-hint">{t("Enter sends · Shift+Enter adds a line")}</span>
         </div>
       </div>
     </div>

@@ -158,8 +158,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .composer button { width: 37px; height: 37px; display: grid; place-items: center; align-self: end; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
 .composer button:disabled { opacity: .35; cursor: default; }
 .composer-wrap > p { margin: 7px 8px 0; color: var(--muted); font-size: 10px; text-align: center; }
-.composer-key-hint { white-space: nowrap; opacity: .8; }
-.composer-key-hint::before { content: "·"; margin: 0 6px 0 2px; }
 
 .lab-shell, .status-page, .operations-page { min-height: 0; flex: 1; overflow: auto; padding: 26px; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }

@@ -1099,7 +1099,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline", stage: banner.step })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
-              : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")} <span className="composer-key-hint">{t("Enter sends · Shift+Enter adds a line")}</span></p>}
+              : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
           </div>
         </RetainedPanel>
 

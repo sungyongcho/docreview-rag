@@ -30,6 +30,7 @@ export function LocalEngineSettings({ profile, readiness, onChange }: {
       <option value="openai" title={t(engines[0].reason)}>{t("OpenAI API")}</option>
       <option value="local" title={t(engines[1].reason)} disabled={engines[1].light === "grey"}>{t(label)}</option>
     </select><span className="composer-control-description"><AnswerEngineLight engine={selectedEngine} showStatus /></span></label>
+    {profile.engine !== "local" && <div className="composer-engine-field composer-engine-placeholder" aria-hidden="true" />}
     {profile.engine === "local" && <>
       <label className="composer-engine-field"><span className="composer-engine-label">{t("Local model")}</span><select value={selected ?? ""} disabled={!available} onChange={(event) => onChange({ local_model: event.target.value || null })}>
         <option value="" disabled>{t("Choose a model")}</option>
