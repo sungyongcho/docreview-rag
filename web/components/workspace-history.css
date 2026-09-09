@@ -5,7 +5,7 @@
 .workspace-history-title { min-width: 0; text-align: left; }
 .workspace-history-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-history button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-.workspace-history-list { position: absolute; z-index: 90; top: calc(100% + 8px); left: 0; min-width: 260px; max-width: min(480px, 90vw); max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 5px; color: var(--text); background: var(--surface); box-shadow: 0 8px 24px #0003; }
+.workspace-history-list { position: absolute; z-index: 90; top: calc(100% + 8px); left: 36px; min-width: 260px; max-width: min(480px, 90vw); max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 5px; color: var(--text); background: var(--surface); box-shadow: 0 8px 24px #0003; }
 .workspace-history-list button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px; text-align: left; border: 0; border-radius: 4px; color: inherit; background: transparent; }
 .workspace-history-list button[aria-selected="true"] { background: var(--surface-2); font-weight: 600; }
 .workspace-history-list button:hover { background: var(--surface-2); }
