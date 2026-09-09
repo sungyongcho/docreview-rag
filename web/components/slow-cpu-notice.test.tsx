@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { loadDefaultProfile, newConversation, saveDefaultProfile } from "@/lib/storage";
 import { RunLimitFields } from "./run-limit-fields";
 import { SlowCpuNotice } from "./slow-cpu-notice";
+import { NotificationProvider } from "./notifications";
 import { DefaultRunLimits } from "./default-run-limits";
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
@@ -12,13 +13,17 @@ afterEach(cleanup);
 it("opens the settings editor without changing values or saving defaults", () => {
   const limits = vi.fn(), evidence = vi.fn();
   const original = structuredClone(DEFAULT_SESSION_PROFILE);
-  render(<SlowCpuNotice profile={original} model="gemma4:e4b" speed={11.7} onOpenLimits={limits} onOpenEvidence={evidence} />);
-  fireEvent.click(screen.getByRole("button", { name: "Review recommended limits in settings" }));
+  const view = render(<NotificationProvider><SlowCpuNotice profile={original} model="gemma4:e4b" speed={11.7} onOpenLimits={limits} onOpenEvidence={evidence} /></NotificationProvider>);
+  const toast = screen.getByRole("alert");
+  expect(toast).toHaveTextContent("gemma4:e4b on CPU · 11.7 tok/s");
+  expect(toast.closest(".notification-stack")).toHaveAttribute("data-placement", "overlay");
+  fireEvent.click(within(toast).getByRole("button", { name: /Review recommended limits in settings/ }));
   expect(limits).toHaveBeenCalledOnce();
   expect(screen.queryByRole("button", { name: /Apply recommended/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
-  expect(evidence).toHaveBeenCalledOnce();
+  expect(evidence).not.toHaveBeenCalled();
   expect(original).toEqual(DEFAULT_SESSION_PROFILE);
+  view.unmount();
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(loadDefaultProfile().prompt_policy.workflow_budget.max_wall_clock_s).toBe(120);
 });
 

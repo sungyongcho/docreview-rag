@@ -70,8 +70,11 @@
   .default-run-limits-summary p { flex-basis: 100%; }
 }
 
-.limit-recommendation { grid-column: 1 / -1; padding: 16px; border-radius: 10px; }
-.limit-recommendation .button { white-space: normal; }
+.notice.limit-recommendation { grid-column: 1 / -1; display: grid; gap: 8px; margin: 0 0 4px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-inline-start: 3px solid color-mix(in srgb, var(--warn) 70%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--surface-2) 55%, transparent); color: var(--text); font-size: 12px; line-height: 1.55; }
+.notice.limit-recommendation h3 { margin: 0; color: var(--muted); font-size: 11px; font-weight: 580; letter-spacing: .06em; text-transform: uppercase; }
+.notice.limit-recommendation p { margin: 0; }
+.notice.limit-recommendation .button { justify-self: start; min-height: 32px; padding: 5px 10px; font-size: 12px; white-space: normal; background: transparent; border-color: var(--border); }
+.notice.limit-recommendation .button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .preset-list { display: flex; flex-direction: column; margin-block: 12px 24px; border-top: 1px solid var(--border); }
 .preset-list-entry { border-bottom: 1px solid var(--border); }
 .preset-list-row { display: flex; width: 100%; min-height: 52px; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 12px; border: 0; border-radius: 0; background: transparent; color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }

@@ -1071,7 +1071,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             </div>
           </div>
           <div className="composer-wrap" data-tour="composer">
-            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
+            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} />}
             {conversationTab && <ConversationSettings speed={localCpuSpeed} query={query} onManagePresets={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }} key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
             <ComposerToolbar
               query={query}

@@ -89,7 +89,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setItems(current => {
       const existing = current.find(item => item.key === key);
       if (!persist && existing?.message === message && existing.tone === tone && existing.duration === duration) return current;
-      const next = [...current.filter(item => item.key !== key && !options?.supersedes?.includes(item.key)), { id: persist ? entry.id : existing?.id ?? entry.id, key, tone, message, duration, timing: { remaining: duration, runningSince: null }, entryId: persist ? entry.id : undefined, surface: entry.surface, actionLabel: options?.actionLabel, onAction: options?.actionLabel && entry.target ? () => { navigator.current?.(entry.target!); } : undefined }];
+      const next = [...current.filter(item => item.key !== key && !options?.supersedes?.includes(item.key)), { id: persist ? entry.id : existing?.id ?? entry.id, key, tone, message, duration, timing: { remaining: duration, runningSince: null }, entryId: persist ? entry.id : undefined, surface: entry.surface, actionLabel: options?.actionLabel, onAction: options?.onAction ?? (options?.actionLabel && entry.target ? () => { navigator.current?.(entry.target!); } : undefined) }];
       const pinned = next.filter(item => item.duration === 0).slice(-3);
       const slots = 3 - pinned.length;
       return [...pinned, ...(slots ? next.filter(item => item.duration !== 0).slice(-slots) : [])];

@@ -563,6 +563,15 @@ export const NOTIFICATION_EVENTS = {
     },
     "surface": "local-model"
   },
+  "slow-cpu-notice": {
+    "classification": "transient",
+    "title": "Slow local CPU model",
+    "target": {
+      "view": "settings",
+      "category": "limits"
+    },
+    "surface": "slow-cpu-toast"
+  },
   "local-cpu": {
     "classification": "persistent",
     "title": "Local model speed",
@@ -639,6 +648,8 @@ export interface NotifyOptions {
   update?: boolean;
   /** Persist or update the history entry without showing a toast; the topbar and Job Center carry live state. */
   silent?: boolean;
+  /** Custom action for the toast button; defaults to navigating to the entry target. */
+  onAction?: () => void;
 }
 
 /** Keep structured API text verbatim; UI chrome explains the stable cause separately. */
