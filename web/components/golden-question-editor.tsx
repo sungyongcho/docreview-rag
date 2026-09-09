@@ -1,7 +1,7 @@
 "use client";
 import { useConfirmation } from "./use-confirmation";
 
-import { ArrowLeft, Check, FileSearch, Plus, Save, X } from "lucide-react";
+import { ArrowLeft, Check, FileSearch, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { DatasetLock } from "./dataset-lock";
 import { useI18n } from "@/lib/i18n";
@@ -16,6 +16,8 @@ interface Props {
   filename: string; registry: string; json: string; readOnly: boolean; dirty: boolean; busy: boolean;
   error: string; issues: GoldenFieldError[]; onChange: (json: string) => void;
   onReload?: () => void; onSave: () => void; onBack: () => void; onParsing?: () => void;
+  /** Removes the draft question after confirmation; absent for read-only sources. */
+  onDelete?: () => void;
 }
 
 /** Full-width authoring replaces the list without creating a second page scroll area. */
@@ -70,7 +72,10 @@ export function GoldenQuestionEditor(props: Props) {
     return props.issues.filter(issue => String(issue.location[0]) === field).map((issue, index) => <p className="golden-field-error" key={index}>{t(issue.message)}</p>);
   }
   return <section className="golden-question-screen" aria-label={t("Question editor")}>{confirmationDialog}
-    <header className="golden-question-header"><button type="button" className="button ghost" onClick={props.onBack} disabled={props.busy}><ArrowLeft size={16} />{t("Question list")}</button><div><strong>{props.filename}{props.readOnly && <DatasetLock />}</strong><span>{t(props.readOnly ? "Read-only source" : "Editable draft")}{props.dirty ? ` · ${t("Unsaved changes")}` : ""}</span></div></header>
+    <header className="golden-question-header"><button type="button" className="button ghost" onClick={props.onBack} disabled={props.busy}><ArrowLeft size={16} />{t("Question list")}</button>
+      <div className="golden-question-meta"><strong>{props.filename}{props.readOnly && <DatasetLock />}</strong><span>{t(props.readOnly ? "Read-only source" : "Editable draft")}{props.dirty ? ` · ${t("Unsaved changes")}` : ""}</span></div>
+      {!props.readOnly && <div className="golden-question-actions"><span>{t(props.issues.length ? "Incomplete" : "Saving a draft does not run an evaluation.")}</span>{props.onDelete && <button type="button" className="button danger-button" disabled={props.busy} onClick={() => { void confirm(t("Delete this draft question?"), { confirm: "Yes", cancel: "No", danger: true }).then(approved => { if (approved) props.onDelete?.(); }); }}><Trash2 size={15} />{t("Delete draft")}</button>}<button type="button" className="button primary" disabled={props.busy || !props.dirty || !value} onClick={props.onSave}><Save size={15} />{t(props.busy ? "Saving…" : "Save draft")}</button></div>}
+    </header>
     <div ref={body} className="golden-question-body">
       <h2 ref={heading} tabIndex={-1}>{t(picker ? "Select original evidence" : props.readOnly ? "Question details" : "Edit question")}</h2>
       {(props.error || props.issues.length > 0) && <div id={issuesId} role="alert" className="golden-question-alert">{props.error && <p>{t(props.error)}</p>}{props.error.startsWith("Dataset changed") && props.onReload && <button type="button" className="button" onClick={props.onReload}>{t("Reload saved question")}</button>}{props.issues.length > 0 && !props.error && <p>{t("Complete the indicated fields before evaluation. Draft saving remains available.")}</p>}</div>}
@@ -93,7 +98,6 @@ export function GoldenQuestionEditor(props: Props) {
         <details className="golden-question-options" open={!value || undefined}><summary>{t("Technical details and question JSON")}</summary><p className="helper">{String(value?.id ?? "")} · {String(value?.expected_label ?? "—")}</p>{!props.readOnly && selected && !absent && <button type="button" className="button" onClick={() => patch({ answers: [...answers, { doc_id: "", source_sha256: "", start_char: null, end_char: null }] })}>{t("Add span manually in JSON")}</button>}<label>{t("Single-case JSON")}<textarea className="golden-question-json" rows={10} wrap="off" readOnly={props.readOnly} value={props.json} onChange={event => props.onChange(event.target.value)} /></label></details>
       </>}
     </div>
-    {!props.readOnly && <footer className="golden-question-footer"><span>{t(props.issues.length ? "Incomplete" : "Saving a draft does not run an evaluation.")}</span><button type="button" className="button primary" disabled={props.busy || !props.dirty || !value} onClick={props.onSave}><Save size={15} />{t(props.busy ? "Saving…" : "Save draft")}</button></footer>}
   </section>;
 }
 

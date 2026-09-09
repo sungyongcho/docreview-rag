@@ -8979,6 +8979,78 @@
         ]
       }
     },
+    "/admin/golden/revisions/{revision_id}/cases/{case_id}/delete": {
+      "post": {
+        "description": "Remove one question from a draft using an expected draft digest.",
+        "operationId": "delete_golden_case_admin_golden_revisions__revision_id__cases__case_id__delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "title": "Revision Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldenRevisionActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoldenRevisionResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Delete Golden Case",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/golden/revisions/{revision_id}/validate": {
       "post": {
         "description": "Validate one exact draft against corpus source bytes.",

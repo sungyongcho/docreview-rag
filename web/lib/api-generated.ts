@@ -312,6 +312,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/golden/revisions/{revision_id}/cases/{case_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Golden Case
+         * @description Remove one question from a draft using an expected draft digest.
+         */
+        post: operations["delete_golden_case_admin_golden_revisions__revision_id__cases__case_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/golden/revisions/{revision_id}/validate": {
         parameters: {
             query?: never;
@@ -4996,6 +5016,51 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GoldenCaseUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenRevisionResource"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_golden_case_admin_golden_revisions__revision_id__cases__case_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision_id: number;
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenRevisionActionRequest"];
             };
         };
         responses: {

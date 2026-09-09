@@ -292,6 +292,23 @@ async def replace_golden_case(
 
 
 @router.post(
+    "/golden/revisions/{revision_id}/cases/{case_id}/delete",
+    response_model=GoldenRevisionResource,
+)
+async def delete_golden_case(
+    revision_id: int,
+    case_id: str,
+    request: GoldenRevisionActionRequest,
+    services: AdminServices,
+) -> GoldenRevisionResource:
+    """Remove one question from a draft using an expected draft digest."""
+    async with translate_runtime_errors(), golden_input_errors():
+        return await services.delete_golden_case(
+            revision_id, case_id, expected_sha256=request.expected_sha256
+        )
+
+
+@router.post(
     "/golden/revisions/{revision_id}/validate",
     response_model=GoldenRevisionResource,
 )

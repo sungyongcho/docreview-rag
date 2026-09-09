@@ -81,11 +81,11 @@ The filename and small source/language summary sit directly under the selector. 
 
 All active dataset files live in `data/golden/`. User files use a `docreview-golden-set` envelope with `suite_id`, `registry`, `question_language`, timestamps, `checked_sha256`, and `cases`. Files survive database resets and `rag-start-fresh`; DB draft rows are not the source of truth.
 
-Selecting a question opens a wide editor in the same area. The header and save bar stay visible while the fields scroll. **Question list** restores the previous search, sort, and scroll position. Unsaved navigation offers **Save draft and leave**, **Discard changes and leave**, or **Keep editing**.
+Selecting a question opens a wide editor in the same area. The header keeps the file name, the completion state, **Delete draft** and **Save draft** visible while the fields scroll. **Question list** restores the previous search, sort, and scroll position. Unsaved navigation offers **Save draft and leave**, **Discard changes and leave**, or **Keep editing**.
 
 Start with the question and choose whether original documents can answer it. Evidence-backed questions need a reference answer and source evidence before evaluation. **Select evidence from documents** searches documents and paged chunks; selecting a chunk records its exact document ID, SHA-256, and character interval. Unparsed documents link to preparation. Switching to no evidence asks before clearing an existing answer or source spans.
 
-**Save draft** accepts incomplete questions. Completion is separate from **Check format and sources** and human review. Any incomplete question blocks evaluation of the whole dataset. Type errors appear beside the affected field; a conflicting file update preserves your input and offers reload. Classification, multilingual tags, and review notes are optional sections; raw JSON and manual source entry are advanced tools.
+**Save draft** accepts incomplete questions. **Delete draft** asks **Yes / No** and removes only that question; the list shows an inline **Incomplete** flag beside each ID and a per-row delete action for editable drafts. Completion is separate from **Check format and sources** and human review. Any incomplete question blocks evaluation of the whole dataset. Type errors appear beside the affected field; a conflicting file update preserves your input and offers reload. Classification, multilingual tags, and review notes are optional sections; raw JSON and manual source entry are advanced tools.
 
 Bundled filenames display a gray, noninteractive lock: create a draft to edit. New evaluation parameters are grouped into candidates/fusion, BM25, and reranking/language. Small information icons explain their purpose on hover or keyboard focus.
 

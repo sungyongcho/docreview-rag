@@ -160,6 +160,24 @@ export const NOTIFICATION_EVENTS = {
     },
     "surface": "measure-golden"
   },
+  "golden-delete-notice": {
+    "classification": "persistent",
+    "title": "Golden dataset",
+    "target": {
+      "view": "measure",
+      "tab": "golden"
+    },
+    "surface": "measure-golden"
+  },
+  "golden-delete-error": {
+    "classification": "persistent",
+    "title": "Golden dataset",
+    "target": {
+      "view": "measure",
+      "tab": "golden"
+    },
+    "surface": "measure-golden"
+  },
   "golden-action-notice": {
     "classification": "persistent",
     "title": "Golden dataset",

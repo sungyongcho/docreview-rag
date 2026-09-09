@@ -263,6 +263,32 @@ class GoldenAdminService:
                 )
             )
 
+    async def delete_case(
+        self, revision_id: int, case_id: str, *, expected_sha256: str
+    ) -> GoldenRevisionResource:
+        """Remove one question from a draft with the same optimistic digest check as saving."""
+        with self._locked():
+            item = self.get(revision_id)
+            if item.sha256 != expected_sha256:
+                raise DraftConflictError(
+                    "Dataset changed; reload the saved question before retrying."
+                )
+            cases = DRAFT_CASES.validate_python(item.payload)
+            remaining = [case for case in cases if case.id != case_id]
+            if len(remaining) == len(cases):
+                raise ValueError("Question does not exist in this dataset")
+            encoded = tuple(case.model_dump(mode="json") for case in remaining)
+            return self._write(
+                item.model_copy(
+                    update={
+                        "payload": encoded,
+                        "sha256": golden_payload_sha256(list(encoded)),
+                        "status": "draft",
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+
     async def validate(self, revision_id: int, *, expected_sha256: str) -> GoldenRevisionResource:
         """Check question shape and source spans without granting human quality approval."""
         with self._locked():
