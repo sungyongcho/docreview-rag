@@ -361,7 +361,14 @@ class RuntimeAdminApiServices:
     ) -> SourceDeletionPreviewResource:
         """Return the read-only source plan used by the confirmation dialog."""
         preview = await self._corpus.preview_source_deletion(request.document_ids)
-        return SourceDeletionPreviewResource.model_validate(preview)
+        # The plan keeps JSON lists for its fingerprint; the strict resource wants tuples.
+        return SourceDeletionPreviewResource.model_validate(
+            {
+                **preview,
+                "documents": tuple(preview["documents"]),
+                "files": tuple(preview["files"]),
+            }
+        )
 
     async def enqueue_corpus(self, request: CorpusOperationRequest) -> dict[str, Any]:
         """Queue one validated safe corpus operation."""

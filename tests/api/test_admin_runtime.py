@@ -270,3 +270,37 @@ def test_golden_evidence_pages_preserve_exact_source_coordinates():
             await engine.dispose()
 
     asyncio.run(exercise())
+
+
+def test_source_deletion_preview_accepts_the_plan_lists_from_the_corpus_service():
+    """The fingerprinted plan carries JSON lists; the strict resource still validates."""
+    from app.api.admin_schemas import SourceDeletionRequest
+
+    plan = {
+        "token": "preview-token",
+        "expires_at": 1_800_000_000.5,
+        "documents": [
+            {
+                "document_id": "dart-20250311001085",
+                "registry": "dart",
+                "issuer": "005930",
+                "fiscal_year": 2024,
+                "filing_id": "20250311001085",
+            }
+        ],
+        "files": [
+            {"path": "dart/005930/20250311001085/primary.xml", "byte_length": 10, "retained": False}
+        ],
+        "retained_inputs": 2,
+        "retained_derived": True,
+    }
+    service = object.__new__(RuntimeAdminApiServices)
+    service._corpus = SimpleNamespace(preview_source_deletion=AsyncMock(return_value=plan))
+    resource = asyncio.run(
+        service.source_deletion_preview(
+            SourceDeletionRequest(document_ids=("dart-20250311001085",))
+        )
+    )
+    assert resource.documents[0].document_id == "dart-20250311001085"
+    assert resource.files[0].retained is False
+    assert resource.retained_inputs == 2
