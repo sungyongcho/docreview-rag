@@ -358,6 +358,8 @@ def test_release_uses_configured_embedding_identity_and_credential_slot(
         "model": "text-embedding-3-large",
         "key": "sk-development-fixture" if environment == "dev" else "sk-production-fixture",
     }
+    # Review calls must record the same slot as embeddings, not "unknown".
+    assert services._credential_slot == environment
 
 
 def test_runtime_readiness_default_probe_shares_admin_status_and_keeps_the_payload(

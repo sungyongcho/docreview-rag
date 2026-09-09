@@ -223,6 +223,7 @@ def build_runtime_services(
         allow_local_engine=settings.environment != "prod",
         local_timeout_s=settings.local_llm_timeout_s,
         secret_values=tuple(secrets),
+        credential_slot=settings.openai_key_slot,
         intent_classifier_enabled=True,
         query_routing_enabled=True,
         allow_custom_prompt_policy=settings.admin_mode == "live",
