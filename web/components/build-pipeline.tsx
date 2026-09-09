@@ -9,7 +9,7 @@ import { PipelineReference } from "@/components/pipeline-reference";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
 import { DevLockedButton } from "@/components/dev-locked-button";
-import { PublishedCorpusScope, type ScopeFilters } from "@/components/published-corpus-scope";
+import type { ScopeFilters } from "@/lib/scope-filters";
 import { WipeRuntime } from "@/components/wipe-runtime";
 import { Server, ChevronDown, Lightbulb, MousePointer2, ArrowDown, ArrowRight, Check, RefreshCw, CircleDollarSign, Clock3 } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -421,8 +421,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
             </p>
           )}
           {stage.id === "evaluate" && (evaluationSetup ? evaluationSetup(stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null) : stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null)}
-          {stage.id === "filings" && readOnly && <PublishedCorpusScope documents={documents} onAskScope={onAskScope} />}
-          {stage.id === "filings" && !readOnly && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
+          {stage.id === "filings" && <SourceMatrix locked={readOnly} onAskScope={onAskScope} sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
           {job && !(stage.id === "index" && activeJob) && (
             <div className="stage-job">
               <JobProgress job={job} />
@@ -432,14 +431,14 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
           {recovery}
           {readOnlyNote && <p className="stage-note">{t(DEV_ONLY_NOTE)}</p>}
           <p className="stage-why"><strong><Lightbulb size={15} aria-hidden="true" />{t("Why it matters:")}</strong><span>{t(stage.why)}</span></p>
-          {stage.id === "index" && !readOnly && <section className="index-selection source-basket" aria-label={t("Selected documents")}>
+          {stage.id === "index" && <section className="index-selection source-basket" aria-label={t("Selected documents")}>
             <header className="index-selection-heading">
               <h3>{t("Selected documents")}</h3>
               <button className="button" type="button" onClick={onChangeFilings}><span className="pipeline-return-step" aria-hidden="true">1</span>{t("Change selection in Filings")}</button>
             </header>
             <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}{sourceState.blocked.length > 0 && <> · {t("Needs repair: {count}", { count: sourceState.blocked.length })}</>}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
             <div className="source-year-legend"><span><span className="year-downloaded-mark" aria-hidden="true">✓</span>{t("Downloaded")}</span><span><span className="source-year-pending" aria-hidden="true">!</span>{t("Download or repair needed")}</span><span><MousePointer2 size={11} aria-hidden="true" />{t("Click to select or deselect")}</span></div>
-            <SourceSelectionGrid sources={sources.filter((source) => sourceState.pairs.some((pair) => pair.registry === source.registry && pair.issuer === source.issuer))} pairs={sourceState.pairs} companies={companies} disabled={readOnly || busy || Boolean(activeJob)}
+            <SourceSelectionGrid sources={sources.filter((source) => sourceState.pairs.some((pair) => pair.registry === source.registry && pair.issuer === source.issuer))} pairs={sourceState.pairs} companies={companies} disabled={busy || Boolean(activeJob)}
               onRemoveCompany={(company) => onAcquisitionChange(acquisitionDraft(sourceState.pairs.filter((pair) => pair.registry !== company.registry || pair.issuer !== company.issuer)))} onToggle={(changed, included) => {
               const next = new Map(sourceState.pairs.map((pair) => [pairKey(pair), pair]));
               for (const pair of changed) if (included) next.set(pairKey(pair), pair); else next.delete(pairKey(pair));

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { Info, ListChecks, ListX, MousePointer2 } from "lucide-react";
+import { Info, ListChecks, ListX, MousePointer2, MessageSquare } from "lucide-react";
 import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeline";
 import { type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
+import { DevLockedButton } from "./dev-locked-button";
 import { TokenSelect, type TokenOption } from "./token-select";
 import { SourceDeleteDialog } from "./source-delete-dialog";
 import { SourceSelectionGrid } from "./source-selection-grid";
@@ -23,10 +24,13 @@ interface SourceMatrixProps {
   onDeleteSources?: (token: string) => Promise<void>;
   deleteDisabled?: boolean;
   onOpenJobs?: () => void;
+  /** Read-only servers: the grid is a question scope and the download action is locked in place. */
+  locked?: boolean;
+  onAskScope?: (filters: { registries: string[]; issuers: string[]; fiscal_years: number[] }) => void;
 }
 
 /** Stage missing or recoverable pairs and submit the exact synchronized draft atomically. */
-export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs }: SourceMatrixProps) {
+export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, onAskScope }: SourceMatrixProps) {
   const { t } = useI18n();
   const scopeId = useId();
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -128,8 +132,8 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
         hint={t("Basket counts show selected years / available years. Choose a company to edit its scope.")} disabled={disabled}
         hideValues commitOnBlur={false} integratedAdd overlayOptions />
     </div>
-    <p className="helper">{t("Clearing a selection keeps the downloaded originals. Delete originals separately to remove them from disk.")}</p>
-    {!rows.some((group) => group.rows.length) && <p>{t("No sources yet. Add a company and fiscal year below.")}</p>}
+    <p className="helper">{t(locked ? "Pick companies and years to scope your next question. Downloading more filings runs in DEV mode." : "Clearing a selection keeps the downloaded originals. Delete originals separately to remove them from disk.")}</p>
+    {!rows.some((group) => group.rows.length) && <p>{t(locked ? "No published filings yet. They appear here once the operator publishes a snapshot." : "No sources yet. Add a company and fiscal year below.")}</p>}
     <section className="source-basket" aria-label={t("Company basket")}><header><div className="source-basket-title"><h4>{t("Company basket")}</h4><span className="source-scope-trigger" onMouseEnter={() => setScopeOpen(true)} onMouseLeave={() => setScopeOpen(false)} onKeyDown={(event) => { if (event.key === "Escape") setScopeOpen(false); }}>
       <button type="button" aria-label={t("Supported document scope")} aria-describedby={scopeOpen ? scopeId : undefined} onFocus={() => setScopeOpen(true)} onBlur={() => setScopeOpen(false)} onClick={() => setScopeOpen((open) => !open)}><Info size={14} aria-hidden="true" /></button>
       {scopeOpen && <div id={scopeId} role="tooltip" className="source-scope-tooltip"><strong>DocReview RAG v2.0</strong><p>{t("Supported documents: SEC 10-K filings and DART annual business reports.")}</p><dl>{(["dart", "sec"] as const).map((registry) => <div key={registry}><dt>{registry.toUpperCase()}</dt><dd>{companies.filter((company) => company.registry === registry).map((company) => `${company.name} (${company.issuer})`).join(", ") || t("Checking status")}</dd></div>)}<div><dt>{t("Fiscal years")}</dt><dd>{t("Default: {first}–{last}", { first: latestYear - 5, last: latestYear })}</dd></div></dl><p>{t("Existing source and selected years are also available. Actual filing availability varies by company and year.")}</p></div>}
@@ -155,11 +159,16 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
     <section className="source-matrix-plan" aria-label={t("To be added")}>
       {(["sec", "dart"] as const).map((registry) => {
         const missing = pending.filter((pair) => pair.registry === registry);
-        return missing.length ? <div key={registry}><p className="helper">{t(registry === "sec" ? "EDGAR downloads need SEC_USER_AGENT in .env." : "DART downloads need DART_API_KEY in .env.")}</p></div> : null;
+        return missing.length && !locked ? <div key={registry}><p className="helper">{t(registry === "sec" ? "EDGAR downloads need SEC_USER_AGENT in .env." : "DART downloads need DART_API_KEY in .env.")}</p></div> : null;
       })}
       <div className="source-sync-actions">
-      {!pending.length && <p>{t("No missing sources selected.")}</p>}
-      <button type="button" className="button primary" disabled={disabled || downloadDisabled || !valid || !pending.length} onClick={sync}>{t("Sync selection")}</button>
+      {!pending.length && !locked && <p>{t("No missing sources selected.")}</p>}
+      {locked
+        ? <>
+          {onAskScope && <button type="button" className="button primary" onClick={() => onAskScope({ registries: [...new Set(merged.map((pair) => pair.registry))], issuers: [...new Set(merged.map((pair) => pair.issuer))], fiscal_years: [...new Set(merged.map((pair) => pair.year))].sort() })}><MessageSquare size={15} aria-hidden="true" />{merged.length ? t("Ask about {count} selected filings", { count: merged.length.toLocaleString() }) : t("Ask about the whole corpus")}</button>}
+          <DevLockedButton reason="corpus">{t("Sync selection")}</DevLockedButton>
+        </>
+        : <button type="button" className="button primary" disabled={disabled || downloadDisabled || !valid || !pending.length} onClick={sync}>{t("Sync selection")}</button>}
       </div>
     </section>
     </section>

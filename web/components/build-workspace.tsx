@@ -1,7 +1,7 @@
 "use client";
 
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
-import type { ScopeFilters } from "@/components/published-corpus-scope";
+import type { ScopeFilters } from "@/lib/scope-filters";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
@@ -25,6 +25,7 @@ import {
   getPublishedSnapshots,
   queueCorpusOperation,
   queueEvaluation,
+  getPublishedDocuments,
 } from "@/lib/api";
 import { CANNED_CORPUS, CANNED_JOB } from "@/lib/canned";
 import { deploymentLabel } from "@/lib/deployment";
@@ -160,6 +161,33 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   useEffect(() => {
     setExperimentDefaults(loadExperimentDefaults());
   }, []);
+
+  /** A read-only server has no administrator inventory: rebuild the company grid from the published listing. */
+  useEffect(() => {
+    if (live) return;
+    let cancelled = false;
+    (async () => {
+      const documents: CorpusDocument[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page += 1) {
+        const params = new URLSearchParams({ limit: "100" });
+        if (cursor) params.set("cursor", cursor);
+        const result = await getPublishedDocuments(params);
+        documents.push(...result.documents);
+        cursor = result.next_cursor;
+        if (!cursor) break;
+      }
+      if (cancelled || !documents.length) return;
+      const companies = new Map<string, CorpusSnapshot["acquisition_companies"][number]>();
+      for (const document of documents) {
+        const key = `${document.registry}:${document.issuer}`;
+        if (!companies.has(key)) companies.set(key, { registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer });
+      }
+      const sources: CorpusSnapshot["sources"] = documents.map((document) => ({ registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer, fiscal_year: document.fiscal_year, filing_id: document.filing_id, document_id: document.doc_id, manifest: "", on_disk: true, ready: true, can_redownload: false, blocker: null }));
+      setCorpus((current) => current ? { ...current, documents, sources, acquisition_companies: [...companies.values()], acquisition_draft: { revision: "published", identifiers: [...new Set(sources.map((source) => source.issuer))].sort(), years: [...new Set(sources.map((source) => source.fiscal_year))].sort((a, b) => a - b), pairs: sources.map((source) => ({ registry: source.registry, issuer: source.issuer, year: source.fiscal_year })) } } : current);
+    })().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [live]);
 
   /**
    * Reload the four administrator reads independently: a failed read keeps the last known state and
