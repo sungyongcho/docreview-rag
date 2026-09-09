@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { localEngineStatus } from "@/lib/local-models";
 import type { Readiness } from "@/lib/types";
+import { emphasizeEnvKeys } from "@/components/default-run-limits";
 
 interface SystemStatusProps {
   readiness: Readiness | null;
@@ -74,7 +75,7 @@ export function SystemStatus({ readiness, localModel, localAllowed = false, load
           <p className="helper">{t("Review capability:")}{" "}{readiness?.review_enabled ? readiness.active_review_model : t("disabled")}</p>
           {readiness?.openai_call_limits && <>
             <dl className="request-facts"><div><dt>{t("Per-call input tokens")}</dt><dd>{readiness.openai_call_limits.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Per-call output tokens")}</dt><dd>{readiness.openai_call_limits.max_output_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Per-call cost cap")}</dt><dd>${readiness.openai_call_limits.max_cost_usd}</dd></div></dl>
-            <p className="helper">{t("Per-call caps for one OpenAI request, separate from the whole-run limits. DEV can lower them in Settings › Run limits; raising them means editing DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env and restarting with rag-dev down/up.")}</p>
+            <p className="helper">{emphasizeEnvKeys(t("Per-call caps for one OpenAI request, separate from the whole-run limits. DEV can lower them in Settings › Run limits; raising them means editing DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env and restarting with rag-dev down/up."))}</p>
           </>}
         </section>
         {LOCAL_ENGINE_VISIBLE && localAllowed && readiness?.environment === "dev" && <LocalModelPolicy readiness={readiness} selected={localModel} />}

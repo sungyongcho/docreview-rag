@@ -10,6 +10,11 @@ import { notificationErrorMessage } from "@/lib/notification-registry";
 import { LOCAL_CPU_STARTING_BUDGET, LOCAL_CPU_EVIDENCE_CHARS } from "@/lib/local-limit-suggestion";
 import { RunLimitFields } from "./run-limit-fields";
 
+/** Bold the .env keys and file paths inside translated guidance without changing the copy. */
+export function emphasizeEnvKeys(text: string) {
+  return text.split(/(DOCREVIEW_OPENAI_MAX_[A-Z_]+|data\/local-settings\/openai-limits\.json|\.env|rag-dev down\/up)/).map((part, index) => index % 2 === 1 ? <strong key={index}>{part}</strong> : part);
+}
+
 /** Edit only new-conversation evidence and limits, preserving other saved defaults. */
 export function DefaultRunLimits({ summary = false, onOpen, speed, readiness = null, capsEditable = false }: { summary?: boolean; onOpen?: () => void; speed?: number | null; readiness?: Readiness | null; capsEditable?: boolean }) {
   const { t, locale } = useI18n();
@@ -67,7 +72,7 @@ export function DefaultRunLimits({ summary = false, onOpen, speed, readiness = n
             {capsError ? <p role="alert">{capsError}</p> : capsNotice && <p role="status">{t(capsNotice)}</p>}
           </div>
         </>}
-        <p className="helper">{t(capsEditable ? "Working values for DEV only, saved on the server at data/local-settings/openai-limits.json. The web cannot exceed the ceiling: to raise it, edit DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env and restart with rag-dev down/up. Public PROD always uses the ceiling." : "These caps apply to each OpenAI call and come from .env on the server. They can be lowered only in a DEV build; raising them means editing .env and restarting the stack.")}</p>
+        <p className="helper">{emphasizeEnvKeys(t(capsEditable ? "Working values for DEV only, saved on the server at data/local-settings/openai-limits.json. The web cannot exceed the ceiling: to raise it, edit DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env and restart with rag-dev down/up. Public PROD always uses the ceiling." : "These caps apply to each OpenAI call and come from .env on the server. They can be lowered only in a DEV build; raising them means editing .env and restarting the stack."))}</p>
       </div>}
     </>}
   </section>;

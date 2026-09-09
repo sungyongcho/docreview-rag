@@ -29,7 +29,7 @@ describe("DefaultRunLimits OpenAI per-call caps", () => {
     expect(screen.getByRole("heading", { name: "OpenAI per-call caps" })).toBeInTheDocument();
     expect(screen.getByText("12,000")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save per-call caps" })).toBeNull();
-    expect(screen.getByText(/raising them means editing \.env/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenAI per-call caps" }).parentElement).toHaveTextContent("raising them means editing .env");
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -50,6 +50,6 @@ describe("DefaultRunLimits OpenAI per-call caps", () => {
     expect(String(post[0])).toMatch(/\/admin\/openai\/limits$/);
     expect(JSON.parse(String(post[1]?.body))).toEqual({ max_input_tokens: 12000, max_output_tokens: 300, max_cost_usd: "0.04" });
     expect(screen.getByText("Saved working value")).toBeInTheDocument();
-    expect(screen.getByText(/cannot exceed the ceiling/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenAI per-call caps" }).parentElement).toHaveTextContent("cannot exceed the ceiling");
   });
 });
