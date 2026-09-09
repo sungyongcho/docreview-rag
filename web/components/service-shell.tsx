@@ -1186,6 +1186,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         onDismiss={runtimeHealth.dismissWarning}
         onOpenStatus={() => { runtimeHealth.dismissWarning(); navigate({ view: "system", tab: "status" }); }}
         onOpenBuild={() => { runtimeHealth.dismissWarning(); navigate({ view: "build", tab: "pipeline" }); }}
+        readOnly={!adminLive}
         degradedMessage={runtimeHealth.readiness?.corpus?.pending_embeddings
           ? `${runtimeHealth.readiness.corpus.pending_embeddings.toLocaleString()} chunks still need embeddings. Open Build and run Backfill embeddings.`
           : runtimeHealth.readiness?.corpus?.schema_message || undefined}

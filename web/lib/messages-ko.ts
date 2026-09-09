@@ -1187,6 +1187,7 @@ export const KO: Record<string, string> = {
   "Provider timing breakdown was not collected.": "모델 서버의 세부 시간 정보는 수집되지 않았습니다.",
   "Server-applied settings": "서버에서 적용한 설정",
   "Job domain": "작업 영역",
+  "The database is connected and its schema is compatible, but this server's corpus has not been prepared yet. Questions stay unavailable until the operator prepares documents, chunks, embeddings and BM25.": "DB가 연결되어 있고 스키마도 호환되지만 이 서버의 코퍼스는 아직 준비되지 않았습니다. 운영자가 문서·청크·임베딩·BM25를 준비하기 전까지 질문은 사용할 수 없습니다.",
   "Slow local model": "느린 로컬 모델",
   "Just now": "방금",
   "{count} min ago": "{count}분 전",
