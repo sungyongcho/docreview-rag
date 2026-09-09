@@ -188,9 +188,13 @@ it("keeps restored development settings intact in prod, blocks both review paths
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
     fireEvent.keyDown(screen.getByPlaceholderText("Ask a question about the filing corpus"), { key: "Enter" });
     expect(screen.queryByLabelText("Answer engine")).not.toBeInTheDocument();
-    const modeBadge = screen.getByRole("note", { name: "PROD MODE" });
-    expect(modeBadge).toHaveAttribute("title", "Server environment: PROD MODE");
-    expect(modeBadge.nextElementSibling).toHaveClass("sidebar-nav");
+    const modeBadge = screen.getByRole("link", { name: "PROD MODE" });
+    expect(modeBadge).toHaveAttribute("href", "https://github.com/sungyongcho/docreview-rag-agent");
+    fireEvent.mouseEnter(modeBadge.parentElement!);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Try 'DEV MODE' now!github.com/sungyongcho/docreview-rag-agent");
+    fireEvent.mouseLeave(modeBadge.parentElement!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(modeBadge.parentElement!.nextElementSibling).toHaveClass("sidebar-nav");
     expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "PROD MODE");
     expect(screen.getByRole("button", { name: /Review again with selected evidence/, hidden: true })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -1129,7 +1133,7 @@ describe("isolated production presentation preview", () => {
     const trigger = screen.getByRole("button", { name: "Production preview" });
     trigger.focus();
     fireEvent.click(trigger);
-    expect(screen.getByTitle("Production preview interface")).toHaveAttribute("src", "/docreview-rag-agent/production-preview/?locale=en&theme=system");
+    expect(screen.getByTitle("Production preview interface")).toHaveAttribute("src", "/docreview-rag-agent/production-preview/");
     expect(question).not.toBeVisible();
     expect(screen.getByText("Data center revenue grew on Hopper demand.")).not.toBeVisible();
     expect(screen.queryByRole("button", { name: "System · healthy" })).toBeNull();
@@ -1151,6 +1155,8 @@ describe("isolated production presentation preview", () => {
     enterProductionPreview("document");
     render(<ServiceShell publicPreview />);
     await screen.findByText("Published corpus");
+    fireEvent.mouseEnter(screen.getByRole("note", { name: "PROD MODE" }).parentElement!);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Deployed screen drawn by the DEV server");
     expect(screen.queryByText("Data center revenue grew on Hopper demand.")).toBeNull();
     expect(screen.queryByText("NVIDIA data center")).toBeNull();
     expect(screen.queryByText(/Corpus total · 29/)).toBeNull();

@@ -1829,6 +1829,8 @@ export const KO: Record<string, string> = {
   "Send to API": "API 요청",
   "Server URL": "서버 주소",
   "Server environment: {p0}": "서버 환경: {p0}",
+  "Deployed screen drawn by the DEV server · public data only": "DEV 서버가 그린 배포 화면 · 공개 데이터만 조회",
+  "Try 'DEV MODE' now!": "'DEV MODE'를 직접 써보세요!",
   "Set up the answer model": "답변 모델 설정",
   "Settings": "설정",
   "Show tutorial": "튜토리얼 보기",

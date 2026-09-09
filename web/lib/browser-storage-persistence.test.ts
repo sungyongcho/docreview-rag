@@ -22,16 +22,16 @@ describe("production browser persistence", () => {
     expect(localStorage.getItem("docreview:theme:v1")).toBeNull();
   });
 
-  it("keeps preview data in isolated memory even with production configuration", () => {
+  it("keeps preview session data in isolated memory while sharing the theme preference", () => {
     localStorage.setItem("docreview:theme", "light");
     enterProductionPreview("document"); configureBrowserStorage("prod");
     browserStorage().setItem("docreview:theme", "dark"); saveConversations(conversations);
     expect(productionBrowserStorageEnabled()).toBe(false);
     expect(browserStorage().getItem("docreview:theme")).toBe("dark");
-    expect(localStorage.getItem("docreview:theme")).toBe("light");
+    expect(localStorage.getItem("docreview:theme")).toBe("dark");
     expect(localStorage.getItem("docreview:conversations:v2")).toBeNull();
     exitProductionPreview(); configureBrowserStorage("dev");
-    expect(browserStorage().getItem("docreview:theme")).toBe("light");
+    expect(browserStorage().getItem("docreview:theme")).toBe("dark");
   });
 
   it("migrates valid legacy conversations, theme and locale once", () => {

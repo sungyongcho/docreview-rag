@@ -251,7 +251,7 @@ export function configureBrowserStorage(environment?: "dev" | "prod"): void {
 
 /** Preview sessions always retain their existing isolated memory storage. */
 export function productionBrowserStorageEnabled(): boolean {
-  return storageEnvironment === "prod" && previewState().mode === "normal";
+  return storageEnvironment === "prod" && previewState().mode !== "document";
 }
 
 /** Record only one warning per cause; never include user payloads in notifications. */
@@ -466,7 +466,7 @@ const developmentStorage: Storage = {
 
 /** All consumers share this boundary; only real PROD migrates or uses quota fallback. */
 export function browserStorage(): Storage {
-  if (previewState().mode !== "normal") return rawBrowserStorage();
+  if (previewState().mode === "document") return developmentStorage;
   return productionBrowserStorageEnabled() ? productionStorage : storageEnvironment === "dev" ? developmentStorage : rawBrowserStorage();
 }
 
@@ -565,7 +565,7 @@ export function applyFreshStartReset(resetId: string | null | undefined): boolea
 /** Pre-paint preference read, generated here so components never access localStorage directly. */
 export function browserThemeBootstrap(legacyKey: string): string {
   const allowVersioned = process.env.NEXT_PUBLIC_ADMIN_MODE !== "live";
-  return `(function(){var t="system";try{var p=window.name==="docreview-production-preview";var v=p?new URLSearchParams(location.search).get("theme"):localStorage.getItem(${JSON.stringify(legacyKey)});if(!p&&!v&&${allowVersioned}){var s=JSON.parse(localStorage.getItem("docreview:theme:v1")||"null");if(s&&s.version===1)v=s.value;}if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
+  return `(function(){var t="system";try{var v=localStorage.getItem(${JSON.stringify(legacyKey)});if(!v&&${allowVersioned}){var s=JSON.parse(localStorage.getItem("docreview:theme:v1")||"null");if(s&&s.version===1)v=s.value;}if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
 }
 
 /** Raw-value boundary shared with the browser-local preset implementation. */

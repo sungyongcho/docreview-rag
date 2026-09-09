@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { enterProductionPreview } from "@/lib/production-preview";
-import { browserStorage } from "@/lib/storage";
 import { getCapabilities } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { ServiceShell } from "./service-shell";
@@ -15,10 +14,6 @@ export function ProductionPreviewDocument() {
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ADMIN_MODE !== "live") { setUnavailable(true); return; }
     enterProductionPreview("document");
-    const locale = new URLSearchParams(window.location.search).get("locale");
-    if (locale === "en" || locale === "ko") browserStorage().setItem("docreview.locale", locale);
-    const theme = new URLSearchParams(window.location.search).get("theme");
-    if (theme === "light" || theme === "dark" || theme === "system") browserStorage().setItem("docreview:theme", theme);
     let current = true;
     void getCapabilities().then((capabilities) => {
       if (!current) return;

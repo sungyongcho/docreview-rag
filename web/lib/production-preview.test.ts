@@ -82,19 +82,25 @@ it("keeps a preview frame isolated after a same-origin document reload", async (
   const previousName = window.name;
   const previousPath = window.location.pathname + window.location.search;
   localStorage.setItem("docreview:conversations:v2", "private history");
+  localStorage.setItem("docreview.locale", "en");
   window.name = "docreview-production-preview";
-  window.history.replaceState({}, "", "/docreview-rag-agent/production-preview/?locale=en");
+  window.history.replaceState({}, "", "/docreview-rag-agent/production-preview/");
   vi.resetModules();
   const reloaded = await import("./production-preview");
   try {
     expect(reloaded.previewState().mode).toBe("document");
     expect(reloaded.browserStorage().getItem("docreview:conversations:v2")).toBeNull();
     expect(reloaded.browserStorage().getItem("docreview.locale")).toBe("en");
+    reloaded.browserStorage().setItem("docreview.locale", "ko");
+    reloaded.browserStorage().setItem("docreview:conversations:v2", "preview history");
+    expect(localStorage.getItem("docreview.locale")).toBe("ko");
+    expect(localStorage.getItem("docreview:conversations:v2")).toBe("private history");
     await expect(reloaded.presentationFetch("/docreview-rag-agent/api/admin/documents")).rejects.toMatchObject({ name: "AbortError" });
   } finally {
     reloaded.exitProductionPreview();
     window.name = previousName;
     window.history.replaceState({}, "", previousPath);
+    localStorage.removeItem("docreview.locale");
   }
 });
 

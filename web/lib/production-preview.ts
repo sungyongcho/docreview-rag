@@ -8,19 +8,15 @@ const listeners = new Set<() => void>();
 const requests = new Map<AbortController, boolean>();
 const PREVIEW_PAUSE = Symbol("production-preview-pause");
 const memory = new Map<string, string>();
-if (previewDocument) {
-  const locale = new URLSearchParams(window.location.search).get("locale");
-  if (locale === "en" || locale === "ko") memory.set("docreview.locale", locale);
-  const theme = new URLSearchParams(window.location.search).get("theme");
-  if (theme === "light" || theme === "dark" || theme === "system") memory.set("docreview:theme", theme);
-}
-const memoryStorage: Storage = {
+/** Language and theme are one browser preference: the preview document and its DEV host share them. */
+const SHARED_PREFERENCE_KEYS = new Set(["docreview.locale", "docreview:theme"]);
+const previewStorage: Storage = {
   get length() { return memory.size; },
   clear: () => memory.clear(),
-  getItem: (key) => memory.get(key) ?? null,
+  getItem: (key) => SHARED_PREFERENCE_KEYS.has(key) ? window.localStorage.getItem(key) : memory.get(key) ?? null,
   key: (index) => [...memory.keys()][index] ?? null,
-  removeItem: (key) => { memory.delete(key); },
-  setItem: (key, value) => { memory.set(String(key), String(value)); },
+  removeItem: (key) => { if (SHARED_PREFERENCE_KEYS.has(key)) window.localStorage.removeItem(key); else memory.delete(key); },
+  setItem: (key, value) => { if (SHARED_PREFERENCE_KEYS.has(key)) window.localStorage.setItem(key, value); else memory.set(String(key), String(value)); },
 };
 
 function update(next: PreviewState) {
@@ -35,9 +31,9 @@ export function subscribePreview(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-/** Never read or change the user's persistent session from a preview document. */
+/** A preview document never reads or changes the user's session; the DEV host keeps its real storage. */
 export function browserStorage(): Storage {
-  return state.mode === "normal" ? window.localStorage : memoryStorage;
+  return state.mode === "document" ? previewStorage : window.localStorage;
 }
 
 /** Suspend outstanding reads before the DEV tree is hidden; never cancel a write. */

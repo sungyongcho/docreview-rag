@@ -55,20 +55,20 @@ it("follows OS changes in System mode but keeps an explicit Light choice", () =>
   expect(screen.getByRole("button", { name: "Theme: Dark" })).toBeInTheDocument();
 });
 
-it("writes preview theme choices only to isolated memory", () => {
+it("shares theme choices between a preview document and its DEV host", () => {
   localStorage.setItem(THEME_KEY, "light");
   enterProductionPreview("document");
-  browserStorage().setItem(THEME_KEY, "dark");
+  expect(browserStorage().getItem(THEME_KEY)).toBe("light");
   render(<ThemeProvider><ThemeSwitch locale="en" /></ThemeProvider>);
-  fireEvent.click(screen.getByRole("button", { name: "Theme: Dark" }));
+  fireEvent.click(screen.getByRole("button", { name: "Theme: Light" }));
   fireEvent.click(screen.getByRole("menuitemradio", { name: "System" }));
   expect(browserStorage().getItem(THEME_KEY)).toBe("system");
-  expect(localStorage.getItem(THEME_KEY)).toBe("light");
+  expect(localStorage.getItem(THEME_KEY)).toBe("system");
   fireEvent(window, new StorageEvent("storage", { key: THEME_KEY, newValue: "dark" }));
-  expect(screen.getByRole("button", { name: "Theme: System" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Theme: Dark" })).toBeInTheDocument();
 });
 
-it("applies the first-paint preference without reading DEV preferences inside preview frames", () => {
+it("applies the same first-paint preference inside preview frames", () => {
   const html = { dataset: {} as Record<string, string>, style: {} as Record<string, string> };
   const getItem = vi.fn(() => "dark");
   const sandbox = { window: { name: "", matchMedia: () => ({ matches: false }) }, document: { documentElement: html }, localStorage: { getItem }, URLSearchParams, location: { search: "" } };
@@ -77,10 +77,9 @@ it("applies the first-paint preference without reading DEV preferences inside pr
   expect(html.dataset.theme).toBe("dark");
   getItem.mockClear();
   sandbox.window.name = "docreview-production-preview";
-  sandbox.location.search = "?theme=light";
   runInNewContext(THEME_BOOTSTRAP, sandbox);
-  expect(html.style.colorScheme).toBe("light");
-  expect(getItem).not.toHaveBeenCalled();
+  expect(html.style.colorScheme).toBe("dark");
+  expect(getItem).toHaveBeenCalledWith(THEME_KEY);
 });
 
 it("closes the theme menu with Escape without changing the selection", () => {

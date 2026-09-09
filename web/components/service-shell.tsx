@@ -41,7 +41,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
 import { WorkspaceHistory } from "@/components/workspace-history";
@@ -93,6 +93,18 @@ interface NavigationEntry {
   conversationTab: ConversationSettingsTab | null;
   scroll: Array<{ element: HTMLElement; top: number; left: number }>;
   focus: HTMLElement | null;
+}
+
+const SOURCE_REPOSITORY_URL = "https://github.com/sungyongcho/docreview-rag-agent";
+
+/** A speech bubble that follows the pointer or keyboard focus over the mode badge and leaves with it. */
+function ModeBubble({ bubble, children }: { bubble: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return <div className="runtime-mode-wrap" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} aria-describedby={open ? id : undefined}>
+    {children}
+    {open && <div id={id} className="runtime-mode-bubble" role="tooltip">{bubble}</div>}
+  </div>;
 }
 
 /** Preserve the complete DEV tree while a separate public document is being inspected. */
@@ -204,7 +216,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const runtimeHealth = useRuntimeHealth({ active: sessionActive, publicPreview });
   const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
   const environment = permissions?.environment ?? runtimeHealth.readiness?.environment;
-  const modeLabel = environment ? `${environment.toUpperCase()} MODE` : null;
+  // The preview document presents the deployed screen, so its badge says PROD while the server stays DEV.
+  const badgeEnvironment = publicPreview && environment ? "prod" : environment;
+  const modeLabel = badgeEnvironment ? `${badgeEnvironment.toUpperCase()} MODE` : null;
   const adminLive = adminBuild && permissions?.can_edit_prompt_policy === true;
   const localAllowed = LOCAL_ENGINE_VISIBLE && permissions?.environment === "dev" && permissions.can_configure_local_llm;
   useEffect(() => {
@@ -995,9 +1009,21 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             </div>
           ))}
         </div>
-        {environment && <div className={`runtime-mode-badge ${environment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
-          <strong>{environment.toUpperCase()}</strong><span>{t("MODE")}</span>
-        </div>}
+        {badgeEnvironment && (publicPreview
+          ? <ModeBubble bubble={<span>{t("Deployed screen drawn by the DEV server · public data only")}</span>}>
+            <div className="runtime-mode-badge prod preview" role="note" aria-label={modeLabel ?? undefined}>
+              <span className="runtime-mode-label"><strong>PROD</strong><span>{t("MODE")}</span></span><CircleHelp size={13} aria-hidden="true" />
+            </div>
+          </ModeBubble>
+          : badgeEnvironment === "prod"
+            ? <ModeBubble bubble={<><strong>{t("Try 'DEV MODE' now!")}</strong><span>{SOURCE_REPOSITORY_URL.replace(/^https?:\/\//, "")}</span></>}>
+              <a className="runtime-mode-badge prod" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label={modeLabel ?? undefined}>
+                <strong>PROD</strong><span>{t("MODE")}</span>
+              </a>
+            </ModeBubble>
+            : <div className={`runtime-mode-badge ${badgeEnvironment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
+              <strong>{badgeEnvironment.toUpperCase()}</strong><span>{t("MODE")}</span>
+            </div>)}
         <div className="sidebar-nav">
           <GuidesNavigation />
           <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
