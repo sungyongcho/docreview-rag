@@ -650,6 +650,8 @@ export interface NotifyOptions {
   silent?: boolean;
   /** Custom action for the toast button; defaults to navigating to the entry target. */
   onAction?: () => void;
+  /** Called when the user closes the toast explicitly, so a pinned notice can stay closed. */
+  onDismiss?: () => void;
 }
 
 /** Keep structured API text verbatim; UI chrome explains the stable cause separately. */

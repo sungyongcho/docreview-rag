@@ -9,6 +9,10 @@
 .notification.warning { border-left-color: var(--warn, #d6a545); }.notification.error { border-left-color: var(--bad); }.notification.success { border-left-color: var(--good); }
 .notification-message { min-width: 0; flex: 1; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .notification.is-expanded .notification-message { display: block; max-height: 120px; overflow: auto; }
+.notification.is-pinned { flex-wrap: wrap; }
+.notification.is-pinned .notification-message { flex-basis: calc(100% - 28px); display: block; -webkit-line-clamp: unset; overflow: visible; }
+.notification.is-pinned .notification-actions { margin-left: auto; }
+.notification.is-pinned .notification-actions button[aria-label] { order: -1; }
 .notification-actions { display: flex; flex: none; gap: 4px; }
 .notification button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
 .notification button:hover { background: var(--surface-2); color: var(--text); }

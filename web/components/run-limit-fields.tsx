@@ -27,7 +27,7 @@ export function RunLimitFields({ budget, onChange, speed, onApplyCpuPreset, evid
     </div>
     <div className="run-limit-help">
       <RunLimitGuidance />
-    {suggestion && <p className="helper">{t("Generation estimate: {seconds} seconds at {speed} tok/s. Retrieval and prompt processing take additional time; this is not a completion guarantee.", { seconds: Math.ceil(suggestion.estimatedSeconds), speed: speed! })}</p>}
+    {suggestion && <p className="helper">{t("Generation estimate: {seconds} seconds at {speed} tok/s. Retrieval and prompt processing take additional time; this is not a completion guarantee.", { seconds: Math.ceil(suggestion.estimatedSeconds), speed: speed!.toLocaleString(locale, { maximumFractionDigits: 1 }) })}</p>}
     </div>
   </div>;
 }

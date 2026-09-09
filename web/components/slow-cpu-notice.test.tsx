@@ -98,3 +98,16 @@ it("clears saved feedback when the CPU starting preset changes the draft", () =>
   expect(loadDefaultProfile().prompt_policy.workflow_budget.max_wall_clock_s).toBe(300);
   expect(screen.getByRole("status")).toHaveTextContent("Default limits saved");
 });
+
+it("stays closed after an explicit dismiss even when the recommendation is applied", () => {
+  function Host() {
+    const [profile, setProfile] = useState(structuredClone(DEFAULT_SESSION_PROFILE));
+    return <NotificationProvider><SlowCpuNotice profile={profile} model="gemma4:e4b" speed={11.7} onOpenLimits={() => setProfile({ ...profile, prompt_policy: { ...profile.prompt_policy, workflow_budget: { ...profile.prompt_policy.workflow_budget, max_wall_clock_s: 445 } } })} /></NotificationProvider>;
+  }
+  render(<Host />);
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  // A re-render with a changed recommendation must not bring the closed toast back.
+  fireEvent.click(document.body);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
