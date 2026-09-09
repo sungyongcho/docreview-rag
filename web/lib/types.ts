@@ -195,6 +195,8 @@ export interface Conversation {
   updatedAt: string;
   messages: ChatMessage[];
   profile: ReviewSessionDraft | null;
+  /** Browser-only exact public selection; absent means all, [] means explicitly empty. */
+  publishedScope?: string[];
 }
 
 export type EvaluationPreparation = components["schemas"]["EvaluationPreparationResource"];
@@ -267,6 +269,9 @@ export type DocumentFacetValue = components["schemas"]["DocumentFacetValue"];
 export type DocumentFacets = components["schemas"]["DocumentFacetsResponse"];
 
 export type DocumentDetail = components["schemas"]["DocumentDetailResponse"];
+
+export type PublicSnapshotDataset = components["schemas"]["PublicSnapshotDataset"];
+export type PublicSnapshotEvaluation = components["schemas"]["PublicSnapshotEvaluation"];
 
 export type AdminDocumentPage = components["schemas"]["DocumentInventoryResponse"];
 
@@ -380,6 +385,8 @@ export interface LocalLLMDiagnostics {
 }
 
 export interface ReleaseLimits {
+  prompt_policy?: ReviewSessionDraft["prompt_policy"];
+  per_call?: { max_input_tokens: number; max_output_tokens: number; max_cost_usd: string };
   per_minute: number;
   per_day: number;
   remaining_minute: number;

@@ -160,7 +160,7 @@ function stubPublicApi() {
     };
     else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
     else if (url.endsWith("/public/documents/facets")) payload = EMPTY_DOCUMENT_FACETS;
-    else if (url.includes("/public/documents?")) payload = { documents: [], total: 0, next_cursor: null };
+    else if (url.includes("/public/documents?")) payload = { documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null };
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -525,6 +525,7 @@ describe("service shell", () => {
   it("shows the evidence-only banner and fallback when the answer model is off", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
       if (url.endsWith("/review/stream")) {
         return new Response(
           JSON.stringify({ error: { code: "provider_unavailable", message: "Review engine 'openai' is not configured." } }),
@@ -540,8 +541,8 @@ describe("service shell", () => {
       else if (url.endsWith("/retrieve")) payload = {
         results: [],
         candidates: [
-          { chunk_id: 1, doc_id: "NVDA-FY2025", item: "7", kind: "text", citation: "NVDA FY2025 Item 7", start_char: 0, end_char: 120, source_sha256: "a", body: "Data center revenue grew.", context_header: "Item 7", score: 0.9, section_title: "Management's Discussion and Analysis" },
-          { chunk_id: 2, doc_id: "NVDA-FY2025", item: "7", kind: "table", citation: "NVDA FY2025 Item 7 table", start_char: 120, end_char: 240, source_sha256: "a", body: "Revenue by segment.", context_header: "Item 7", score: 0.8, section_title: null },
+          { chunk_id: 1, doc_id: "NVDA-FY2024", item: "7", kind: "text", citation: "NVDA FY2024 Item 7", start_char: 0, end_char: 120, source_sha256: "a", body: "Data center revenue grew.", context_header: "Item 7", score: 0.9, section_title: "Management's Discussion and Analysis" },
+          { chunk_id: 2, doc_id: "NVDA-FY2024", item: "7", kind: "table", citation: "NVDA FY2024 Item 7 table", start_char: 120, end_char: 240, source_sha256: "a", body: "Revenue by segment.", context_header: "Item 7", score: 0.8, section_title: null },
         ],
         candidate_token: null,
         candidate_expires_at: 0,
@@ -866,6 +867,7 @@ describe("service shell", () => {
     };
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
       if (url.endsWith("/review/stream")) {
         const frames = [
           'event: node\ndata: {"node":"grade","evidence_count":4,"relevant_count":2,"step_count":1}',
@@ -908,6 +910,7 @@ describe("service shell", () => {
   it("renders a conversation reply without a verdict pill", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
       if (url.endsWith("/review/stream")) {
         const frames = [
           'event: node\ndata: {"node":"gate","evidence_count":0,"relevant_count":0,"step_count":1}',
@@ -989,7 +992,7 @@ it("preserves streamed messages and the submitted settings while background disc
     await waitFor(() => expect(submitted).toBeDefined());
     expect(screen.getByText("Waiting for the server")).toBeVisible();
     expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(6);
-    fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Settings and preview/ }));
     fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
     fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
@@ -1047,7 +1050,7 @@ it("preserves the question and blocks Send until an invalid drawer draft is disc
   const send = screen.getByRole("button", { name: "Send question" });
   const stored = loadConversations();
   expect(send).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Settings and preview/ }));
   const company = screen.getByLabelText("Companies");
   fireEvent.keyDown(window, { key: "?" });
   expect(screen.queryByRole("complementary", { name: "Help" })).not.toBeInTheDocument();
@@ -1092,7 +1095,7 @@ it("keeps confirmed routing with its submitted profile while next-request contro
     fireEvent.change(input, { target: { value: "Next draft stays here" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
     fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "accuracy" } });
-    fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Settings and preview/ }));
   fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(input).toHaveValue("Next draft stays here");
@@ -1137,7 +1140,7 @@ describe("isolated production presentation preview", () => {
     expect(question).not.toBeVisible();
     expect(screen.getByText("Data center revenue grew on Hopper demand.")).not.toBeVisible();
     expect(screen.queryByRole("button", { name: "System · healthy" })).toBeNull();
-    expect(screen.getByText(/The backend is still DEV/)).toBeVisible();
+    expect(screen.getByText(/PROD interface · local DEV backend/)).toBeVisible();
     expect(JSON.stringify(window.localStorage)).toBe(original);
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
     await waitFor(() => expect(trigger).toHaveFocus());
@@ -1148,15 +1151,16 @@ describe("isolated production presentation preview", () => {
     expect(JSON.stringify(window.localStorage)).toBe(original);
   });
 
-  it("mounts a fresh public session without reading DEV history or calling private readiness", async () => {
+  it("mounts the PROD interface using public DEV requests and isolated persistent storage", async () => {
     const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     seedAnsweredConversation();
     const original = JSON.stringify(window.localStorage);
     enterProductionPreview("document");
+    localStorage.setItem("docreview:preview:docreview:onboarding:v1", JSON.stringify({ version: 1, value: "done" }));
     render(<ServiceShell publicPreview />);
     await screen.findByText("Published corpus");
-    fireEvent.mouseEnter(screen.getByRole("note", { name: "PROD MODE" }).parentElement!);
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Deployed screen drawn by the DEV server");
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Production preview details" }).parentElement!);
+    expect(screen.getByRole("tooltip", { name: "Production preview" })).toHaveTextContent("The same PROD interface sends real requests to this local DEV backend under public limits.");
     expect(screen.queryByText("Data center revenue grew on Hopper demand.")).toBeNull();
     expect(screen.queryByText("NVIDIA data center")).toBeNull();
     expect(screen.queryByText(/Corpus total · 29/)).toBeNull();
@@ -1166,10 +1170,10 @@ describe("isolated production presentation preview", () => {
     fireEvent.change(question, { target: { value: "Preview draft only" } });
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
     fireEvent.keyDown(question, { key: "Enter" });
-    fireEvent.click(screen.getByRole("button", { name: "Settings and preview" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Settings and preview/ }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/public/documents/facets"))).toBe(true));
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).endsWith("/ready") && !String(url).includes("/review/stream"))).toBe(true);
-    expect(JSON.stringify(window.localStorage)).toBe(original);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).includes("/review/stream"))).toBe(true);
+    expect(Object.entries(JSON.parse(original)).every(([key, value]) => window.localStorage.getItem(key) === value)).toBe(true);
   });
 });
 
@@ -1635,4 +1639,38 @@ it.each(["en", "ko"] as const)("localizes an untouched draft and hides only its 
   expect(loadConversations()).toHaveLength(count);
   expect(document.querySelector(".workspace-history-title")).toHaveTextContent(label);
   expect(screen.queryByText("New review")).not.toBeInTheDocument();
+});
+
+
+it("keeps exact Build scope in the request and persists an empty selection", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubPublicApi();
+  const ordinary = fetchMock.getMockImplementation()!;
+  const documents = [2023, 2024].flatMap((year) => ["NVDA", "AMD"].map((issuer) => ({ doc_id: `${issuer}-${year}`, issuer, fiscal_year: year, registry: "sec", language: "en", chunk_count: 10, embedded_chunks: 10, filing_id: `${issuer}-${year}`, form: "10-K" })));
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/public/documents?")) return new Response(JSON.stringify({ documents, total: 4, next_cursor: null }), { headers: { "content-type": "application/json" } });
+    return ordinary(input, init);
+  });
+  const view = render(<ServiceShell />);
+  await screen.findByText("Questions use the selected published filings.");
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(screen.getByRole("button", { name: "Ask about this scope" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "NVDA FY2023 · Not in scope" }));
+  fireEvent.click(screen.getByRole("button", { name: "AMD FY2024 · Not in scope" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask about this scope" }));
+  const query = screen.getByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(query, { target: { value: "Compare the selected filings" } });
+  fireEvent.keyDown(query, { key: "Enter" });
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/review/stream"))).toBe(true));
+  const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/review/stream"))!;
+  expect(JSON.parse(String((request[1] as RequestInit).body)).session_profile.doc_ids.sort()).toEqual(["AMD-2024", "NVDA-2023"]);
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(loadConversations()[0].publishedScope).toEqual([]);
+  view.unmount(); window.history.replaceState(null, "", "/"); render(<ServiceShell />);
+  await screen.findAllByText("Select at least one published filing to ask a question.");
+  expect(loadConversations()[0].publishedScope).toEqual([]);
+  expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+  cleanup(); vi.unstubAllGlobals();
 });

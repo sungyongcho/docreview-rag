@@ -33,7 +33,8 @@ export function serverPresetStorageKind(): PresetStorageKind {
 
 /** Preview and effective PROD never reach the DEV file API, including in a live bundle. */
 export function presetStorageKind(): PresetStorageKind {
-  if (previewState().mode !== "normal") return "preview";
+  if (previewState().mode === "document") return "browser";
+  if (previewState().mode === "host") return "pending";
   if (process.env.NEXT_PUBLIC_ADMIN_MODE !== "live" || permissions?.environment === "prod") return "browser";
   return permissions?.environment === "dev" && permissions.can_change_custom_retrieval ? "file" : "pending";
 }

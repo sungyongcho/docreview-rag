@@ -1016,6 +1016,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/snapshots/{snapshot_id}/dataset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dataset
+         * @description Read a filtered page of the exact published dataset.
+         */
+        get: operations["dataset_public_snapshots__snapshot_id__dataset_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/snapshots/{snapshot_id}/evaluation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Evaluation
+         * @description Read recorded settings and case scores without launching any work.
+         */
+        get: operations["evaluation_public_snapshots__snapshot_id__evaluation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/retrieve": {
         parameters: {
             query?: never;
@@ -2656,6 +2696,23 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * GoldenSpan
+         * @description One half-open answer span in an immutable raw filing snapshot.
+         *
+         *     The type blocks empty and reversed intervals and pins both coordinates to
+         *     one exact source snapshot, so an answer can never drift to other bytes.
+         */
+        GoldenSpan: {
+            /** Doc Id */
+            doc_id: string;
+            /** End Char */
+            end_char: number;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Start Char */
+            start_char: number;
+        };
         /** @enum {string} */
         GoldenSuiteId: "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
         /**
@@ -3319,6 +3376,105 @@ export interface components {
              * @enum {string}
              */
             status: "schema_rejected" | "provider_refused" | "provider_error" | "budget_exceeded";
+        };
+        /**
+         * PublicEvaluationCase
+         * @description Recorded case metrics; no retrieval is performed when reading them.
+         */
+        PublicEvaluationCase: {
+            /** Case Id */
+            case_id: string;
+            /** First Relevant Rank */
+            first_relevant_rank?: number | null;
+            /** Hit At K */
+            hit_at_k?: number | null;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Question */
+            question: string;
+            /** Recall At K */
+            recall_at_k?: number | null;
+            /** Reciprocal Rank */
+            reciprocal_rank?: number | null;
+        };
+        /**
+         * PublicGoldenCase
+         * @description Question and expected evidence without internal curation notes.
+         */
+        PublicGoldenCase: {
+            /** Answers */
+            answers: components["schemas"]["GoldenSpan"][];
+            /** Category */
+            category: string;
+            /** Expected Label */
+            expected_label: string;
+            /** Facet */
+            facet: string;
+            /** Id */
+            id: string;
+            /** Question */
+            question: string;
+            /** Reference Answer */
+            reference_answer: string;
+            /** Tags */
+            tags: string[];
+        };
+        /**
+         * PublicSnapshotDataset
+         * @description One filtered page from the exact published golden version.
+         */
+        PublicSnapshotDataset: {
+            /** Cases */
+            cases: components["schemas"]["PublicGoldenCase"][];
+            /** Golden Sha256 */
+            golden_sha256: string;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Revision Id */
+            revision_id: number | null;
+            /** Snapshot Id */
+            snapshot_id: number;
+            /** Suite */
+            suite: string;
+            /** Total */
+            total: number;
+            /** Version */
+            version: number | null;
+        };
+        /**
+         * PublicSnapshotEvaluation
+         * @description One filtered page of a published evaluation's recorded evidence.
+         */
+        PublicSnapshotEvaluation: {
+            /** Cases */
+            cases: components["schemas"]["PublicEvaluationCase"][];
+            /** Config */
+            config: {
+                [key: string]: string | number | boolean | null;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Eval Result Id */
+            eval_result_id: number;
+            /** Limit */
+            limit: number;
+            /** Metrics */
+            metrics: {
+                [key: string]: number;
+            };
+            /** Offset */
+            offset: number;
+            /** Snapshot Id */
+            snapshot_id: number;
+            /** Suite */
+            suite: string;
+            /** Total */
+            total: number;
         };
         /**
          * RelevanceBelowThreshold
@@ -6740,6 +6896,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    dataset_public_snapshots__snapshot_id__dataset_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                query?: string;
+                sort?: "id" | "question";
+            };
+            header?: never;
+            path: {
+                snapshot_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicSnapshotDataset"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    evaluation_public_snapshots__snapshot_id__evaluation_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                query?: string;
+                sort?: "id" | "question";
+            };
+            header?: never;
+            path: {
+                snapshot_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicSnapshotEvaluation"];
                 };
             };
             /** @description Request validation failed. */

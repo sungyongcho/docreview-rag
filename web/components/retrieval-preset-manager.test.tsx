@@ -7,11 +7,11 @@ import { RetrievalPresetManager } from "./retrieval-preset-manager";
 
 afterEach(() => { cleanup(); exitProductionPreview(); localStorage.clear(); vi.unstubAllEnvs(); });
 
-it("shows the preview persistence notice and disables visible write actions", () => {
+it("allows preset editing in isolated preview browser storage", () => {
   enterProductionPreview("document");
   render(<RetrievalPresetManager />);
-  expect(screen.getByRole("note")).toHaveTextContent("not saved in preview (memory only)");
-  for (const name of ["Save current search as a preset", "Register new preset", "Import preset JSON"]) expect(screen.getByRole("button", { name })).toBeDisabled();
+  expect(screen.queryByText(/not saved in preview/)).not.toBeInTheDocument();
+  for (const name of ["Save current search as a preset", "Register new preset", "Import preset JSON"]) expect(screen.getByRole("button", { name })).toBeEnabled();
 });
 
 it("registers balanced defaults through JSON with inline validation", () => {

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import { useI18n } from "@/lib/i18n";
-import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_LABEL, type DevOnlyReason } from "@/lib/dev-mode";
+import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_LABEL, SOURCE_REPOSITORY_URL, type DevOnlyReason } from "@/lib/dev-mode";
 import { HoverBubble } from "./hover-bubble";
 
 /** True on a public surface, where a locked control should point at the repository instead of DEV settings. */
@@ -19,9 +19,9 @@ export function DevModeBubble({ reason, children, inline = false, placement }: {
   const text = reason ? (reason in DEV_ONLY_REASONS ? DEV_ONLY_REASONS[reason as DevOnlyReason] : reason) : null;
   // Nothing to say on a DEV surface without a reason: keep the child bare instead of an empty bubble.
   if (!promote && !text) return <>{children}</>;
-  return <HoverBubble inline={inline} placement={placement} bubble={<>
+  return <HoverBubble pinnable={Boolean(text)} label={t("DEV only")} inline={inline} placement={placement} bubble={<>
     {promote && <strong>{t(text ? "Not available on this website." : "Try 'DEV MODE' now!")}</strong>}
     {text && <em>{t(text)}</em>}
-    {promote && <span>{text ? t("DEV mode: {repository}", { repository: SOURCE_REPOSITORY_LABEL }) : SOURCE_REPOSITORY_LABEL}</span>}
+    {promote && <a href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer">{text ? t("DEV mode: {repository}", { repository: SOURCE_REPOSITORY_LABEL }) : SOURCE_REPOSITORY_LABEL}</a>}
   </>}>{children}</HoverBubble>;
 }

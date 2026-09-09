@@ -209,7 +209,7 @@ function profileFieldTopics(prefix: string, optional: boolean): HelpTopic[] {
 
 const BUILD: HelpTopic[] = [
   {
-    id: "build.runtime",
+    id: "build.runtime", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Published document counts describe the current selection. Corpus preparation runs in DEV mode."], "guide": {"summary": "Published document counts describe the current selection. Corpus preparation runs in DEV mode.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Runtime strip",
     body: [
       "Expand the compact runtime summary to inspect API, database, schema, data directory access, and answer model readiness.",
@@ -219,7 +219,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.next-step", "system.status"],
   },
   {
-    id: "build.next-step",
+    id: "build.next-step", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Choose published filings in Build, then explore the real chunks, retrieval results and citations."], "guide": {"summary": "Choose published filings in Build, then explore the real chunks, retrieval results and citations.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Next step",
     body: [
       "This callout always names the first stage that needs you: the first stage in action or failed state, a running job with its progress, or a blocked stage with the reason.",
@@ -228,7 +228,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.filings", "build.stage.evaluate"],
   },
   {
-    id: "build.stage.filings",
+    id: "build.stage.filings", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Choose published filings to ask about. Downloading new filings runs in DEV mode.", "Keyword statistics use the server corpus, grouped by language."], "guide": {"summary": "Choose published filings to ask about. Downloading new filings runs in DEV mode.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "1 · Filings",
     body: [
       "Downloads SEC 10-K and DART business reports into data/corpus. Everything downstream cites these files by SHA-256, and re-running only fetches what is missing.",
@@ -238,7 +238,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.index"],
   },
   {
-    id: "build.stage.index",
+    id: "build.stage.index", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["The selected documents bound the evidence for your next question.", "Chunks in scope"], "guide": {"summary": "The selected documents bound the evidence for your next question.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "2 · Parse & chunk",
     body: [
       "Reads each filing, splits it into citable text and table chunks, and loads them into PostgreSQL. Chunk boundaries decide what can be cited, so every answer must point to a chunk from this step.",
@@ -248,7 +248,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.embeddings", "build.stage.lexical"],
   },
   {
-    id: "build.stage.embeddings",
+    id: "build.stage.embeddings", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Embedding counts describe the selected published documents. Selecting documents does not generate vectors."], "guide": {"summary": "Embedding counts describe the selected published documents. Selecting documents does not generate vectors.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "3 · Embeddings",
     body: [
       "Turns every chunk into a vector so questions can match by meaning, not only by exact words. Vector search is what lets a Korean question find an English filing.",
@@ -258,7 +258,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.ask", "measure.playground.strategy"],
   },
   {
-    id: "build.stage.lexical",
+    id: "build.stage.lexical", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Keyword statistics use the server corpus, grouped by language."], "guide": {"summary": "Keyword statistics use the server corpus, grouped by language.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "4 · Lexical index (BM25)",
     body: [
       "Keyword statistics for exact terms, tickers, numbers and Korean bigram tokens: term frequencies, chunk lengths and per-lexeme document frequencies.",
@@ -267,7 +267,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["measure.playground.lexical_ranker", "build.stage.index"],
   },
   {
-    id: "build.stage.ask",
+    id: "build.stage.ask", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Questions use the selected published filings."], "guide": {"summary": "Questions use the selected published filings.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "5 · Ask",
     body: [
       "Retrieves evidence for a question across both indexes, then lets the model answer only from it. Unsupported answers end as NOT_IN_DOCS.",

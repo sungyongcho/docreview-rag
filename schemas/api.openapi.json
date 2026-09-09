@@ -3728,6 +3728,41 @@
         "title": "GoldenRevisionResource",
         "type": "object"
       },
+      "GoldenSpan": {
+        "additionalProperties": false,
+        "description": "One half-open answer span in an immutable raw filing snapshot.\n\nThe type blocks empty and reversed intervals and pins both coordinates to\none exact source snapshot, so an answer can never drift to other bytes.",
+        "properties": {
+          "doc_id": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "end_char": {
+            "exclusiveMinimum": 0.0,
+            "title": "End Char",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "start_char": {
+            "minimum": 0.0,
+            "title": "Start Char",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "doc_id",
+          "source_sha256",
+          "start_char",
+          "end_char"
+        ],
+        "title": "GoldenSpan",
+        "type": "object"
+      },
       "GoldenSuiteId": {
         "enum": [
           "sec-en",
@@ -5392,6 +5427,286 @@
           "details"
         ],
         "title": "ProviderFailure",
+        "type": "object"
+      },
+      "PublicEvaluationCase": {
+        "description": "Recorded case metrics; no retrieval is performed when reading them.",
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "first_relevant_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Relevant Rank"
+          },
+          "hit_at_k": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hit At K"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "number"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "recall_at_k": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall At K"
+          },
+          "reciprocal_rank": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reciprocal Rank"
+          }
+        },
+        "required": [
+          "case_id",
+          "question",
+          "latency_ms"
+        ],
+        "title": "PublicEvaluationCase",
+        "type": "object"
+      },
+      "PublicGoldenCase": {
+        "additionalProperties": false,
+        "description": "Question and expected evidence without internal curation notes.",
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/GoldenSpan"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "expected_label": {
+            "title": "Expected Label",
+            "type": "string"
+          },
+          "facet": {
+            "title": "Facet",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "reference_answer": {
+            "title": "Reference Answer",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "category",
+          "facet",
+          "tags",
+          "answers",
+          "expected_label",
+          "reference_answer"
+        ],
+        "title": "PublicGoldenCase",
+        "type": "object"
+      },
+      "PublicSnapshotDataset": {
+        "description": "One filtered page from the exact published golden version.",
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/PublicGoldenCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "golden_sha256": {
+            "title": "Golden Sha256",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "revision_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "integer"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "suite",
+          "golden_sha256",
+          "revision_id",
+          "version",
+          "total",
+          "offset",
+          "limit",
+          "cases"
+        ],
+        "title": "PublicSnapshotDataset",
+        "type": "object"
+      },
+      "PublicSnapshotEvaluation": {
+        "description": "One filtered page of a published evaluation's recorded evidence.",
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/PublicEvaluationCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "config": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "eval_result_id": {
+            "title": "Eval Result Id",
+            "type": "integer"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "integer"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "eval_result_id",
+          "suite",
+          "created_at",
+          "config",
+          "metrics",
+          "total",
+          "offset",
+          "limit",
+          "cases"
+        ],
+        "title": "PublicSnapshotEvaluation",
         "type": "object"
       },
       "RelevanceBelowThreshold": {
@@ -11304,6 +11619,210 @@
         "summary": "Document Detail",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/public/snapshots/{snapshot_id}/dataset": {
+      "get": {
+        "description": "Read a filtered page of the exact published dataset.",
+        "operationId": "dataset_public_snapshots__snapshot_id__dataset_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Snapshot Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "id",
+              "enum": [
+                "id",
+                "question"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSnapshotDataset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Dataset",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/public/snapshots/{snapshot_id}/evaluation": {
+      "get": {
+        "description": "Read recorded settings and case scores without launching any work.",
+        "operationId": "evaluation_public_snapshots__snapshot_id__evaluation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Snapshot Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "id",
+              "enum": [
+                "id",
+                "question"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSnapshotEvaluation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Evaluation",
+        "tags": [
+          "snapshots"
         ]
       }
     },

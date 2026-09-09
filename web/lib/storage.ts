@@ -189,6 +189,7 @@ function isConversation(value: unknown): value is Conversation {
     typeof item.title === "string" &&
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string" &&
+    (item.publishedScope === undefined || Array.isArray(item.publishedScope) && item.publishedScope.every((id) => typeof id === "string")) &&
     Array.isArray(item.messages)
   );
 }
@@ -249,9 +250,9 @@ export function configureBrowserStorage(environment?: "dev" | "prod"): void {
   }
 }
 
-/** Preview sessions always retain their existing isolated memory storage. */
+/** PROD and its preview share validation and persistence over different raw storage namespaces. */
 export function productionBrowserStorageEnabled(): boolean {
-  return storageEnvironment === "prod" && previewState().mode !== "document";
+  return storageEnvironment === "prod";
 }
 
 /** Record only one warning per cause; never include user payloads in notifications. */
@@ -270,7 +271,7 @@ export function subscribeStorageWarnings(listener: (warning: StorageWarning) => 
 }
 
 /** Match only this application's browser keys, including its legacy locale spelling. */
-function ownedStorageKey(key: string): boolean { return key.startsWith("docreview:") || key === "docreview.locale"; }
+function ownedStorageKey(key: string): boolean { return !key.startsWith("docreview:preview:") && (key.startsWith("docreview:") || key === "docreview.locale"); }
 
 /** Keep current versioned keys; migrate only the previous unversioned preference names. */
 function versionedKey(key: string): string {
@@ -467,7 +468,6 @@ const developmentStorage: Storage = {
 
 /** All consumers share this boundary; only real PROD migrates or uses quota fallback. */
 export function browserStorage(): Storage {
-  if (previewState().mode === "document") return developmentStorage;
   return productionBrowserStorageEnabled() ? productionStorage : storageEnvironment === "dev" ? developmentStorage : rawBrowserStorage();
 }
 
@@ -534,13 +534,14 @@ export function subscribeStorageRestored(listener: () => void): () => void {
 }
 
 /** Keep raw destructive browser-reset access centralized; callers retain existing confirmation. */
-export function browserResetStores(): Storage[] { return [rawBrowserStorage(), window.sessionStorage]; }
+export function browserResetStores(): Storage[] { return previewState().mode === "document" ? [rawBrowserStorage()] : [rawBrowserStorage(), window.sessionStorage]; }
 
 // Kept outside portable preference keys so imports cannot replay a fresh-start receipt.
 export const FRESH_START_RECEIPT_KEY = "docreview.fresh-start";
 
 /** Consume an explicit server reset once, clearing only this application's browser keys. */
 export function applyFreshStartReset(resetId: string | null | undefined): boolean {
+  if (previewState().mode === "document") return false;
   if (!resetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resetId) || typeof window === "undefined") return false;
   const [local, session] = browserResetStores();
   const resetLocal = local.getItem(FRESH_START_RECEIPT_KEY) !== resetId;

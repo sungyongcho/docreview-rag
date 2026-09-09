@@ -1,4 +1,5 @@
 "use client";
+import { loadPublishedPortfolio } from "@/lib/use-published-corpus";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
@@ -89,7 +90,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
     setListError(null);
     setDocumentNextCursor(null);
     const timer = window.setTimeout(() => {
-      const getPage = live ? getAdminDocuments : getPublishedDocuments;
+      const getPage = live ? getAdminDocuments : async (params: URLSearchParams) => { const documents = await loadPublishedPortfolio(params); return { documents, total: documents.length, next_cursor: null }; };
       void getPage(new URLSearchParams(queryKey)).then((page) => {
         if (generation !== requestGeneration.current) return;
         setDocuments(page.documents);
@@ -201,7 +202,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
   return <div ref={layout.workspaceRef} style={layout.splitStyle} className={`document-workspace ${styles.workspace} ${compact ? styles.split : ""}`} data-detail-open={showDetail}>
     <section id={layout.listPanelId} data-help="build.documents.list" className={`surface document-inventory ${styles.listPanel} ${compact ? styles.compact : ""}`} hidden={showDetail && layout.narrow}>
       <div className={styles.heading}>
-        <div><h2>{t("Document inventory")}</h2><p className="helper">{t("Showing {shown} of {total} filings", { shown: visibleDocuments.length.toLocaleString(locale), total: documentTotal.toLocaleString(locale) })}</p></div>
+        <div><h2>{t("Document inventory")}</h2>{!live && <p className="helper">{t("Same published portfolio set as the Filings scope.")}</p>}<p className="helper">{t("Showing {shown} of {total} filings", { shown: visibleDocuments.length.toLocaleString(locale), total: documentTotal.toLocaleString(locale) })}</p></div>
         {activeFilters.length > 0 && <button className="button ghost" type="button" onClick={resetDocumentFilters}>{t("Reset filters")}</button>}
       </div>
       <div className={styles.toolbar} data-help="build.documents.filters">

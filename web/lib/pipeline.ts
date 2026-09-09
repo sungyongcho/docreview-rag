@@ -45,6 +45,7 @@ export interface Pipeline {
 }
 
 export interface PipelineInput {
+  publicScope?: { filings: number; total: number; chunks: number; embedded: number | null; pending: number | null; status: "loading" | "ready" | "error" };
   live: boolean;
   healthKind: RuntimeHealthKind;
   /** A failed connection check is retrying while last-known readiness is retained. */
@@ -228,7 +229,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     ? input.readiness.corpus
     : null;
   // A live build never derives real state from the portfolio fixture; it waits.
-  const fixtureAllowed = !input.live;
+  const fixtureAllowed = !input.live && !input.publicScope;
   const source: Pipeline["source"] = input.corpus ? "admin" : readinessCorpus ? "readiness" : fixtureAllowed ? "fixture" : "pending";
   const counts: CorpusCounts = input.corpus ?? readinessCorpus ?? (fixtureAllowed ? CANNED_CORPUS.status : PENDING_COUNTS);
   const manifests = source === "admin" ? input.manifests.filter((item) => item.valid) : source === "fixture" ? CANNED_CORPUS.manifests : [];
@@ -397,6 +398,19 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       }
     }
 
+    if (readOnly && input.publicScope && ["filings", "index", "embeddings", "lexical", "ask"].includes(id)) {
+      const scope = input.publicScope;
+      status = id === "ask" ? (scope.chunks > 0 && drafts.ask.status === "done" ? "done" : "blocked") : "readonly";
+      statusDetail = scope.status === "ready" ? "Published corpus" : scope.status === "error" ? "Published filings could not be loaded." : "Loading published filings…";
+      hint = scope.status === "ready" && !scope.filings ? "Select at least one published filing to ask a question." : "";
+      numbers = scope.status !== "ready" ? [] : id === "filings" ? [`${n(scope.filings)} / ${n(scope.total)}`, "Published documents in scope"]
+        : id === "index" ? [`${n(scope.chunks)}`, "Chunks in scope"]
+        : id === "embeddings" ? scope.embedded === null ? ["Embedding coverage unknown"] : [`${n(scope.embedded)} embedded`, `${n(scope.pending ?? 0)} pending`]
+        : id === "lexical" ? [bm25Ready ? "BM25 ready" : "BM25 not built", "Keyword statistics use the server corpus, grouped by language."]
+        : [`${n(scope.chunks)}`, "Chunks in scope"];
+      if (id === "filings") action = { label: "Ask about this scope", kind: "ask" };
+      if (scope.status !== "ready") { status = "unknown"; action = null; }
+    }
     if (input.healthKind === "api_down" || connectionUnconfirmed) {
       status = "unknown";
       statusDetail = input.healthKind === "api_down" ? "API unavailable" : "Checking…";
@@ -411,8 +425,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       id,
       order: index + 1,
       title: copy.title,
-      description: copy.description,
-      why: copy.why,
+      description: readOnly && id === "filings" ? "Choose published filings to ask about. Downloading new filings runs in DEV mode." : copy.description,
+      why: readOnly && id === "filings" ? "The selected documents bound the evidence for your next question." : copy.why,
       status,
       statusDetail,
       numbers,
@@ -425,8 +439,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     };
   });
 
-  const next = stages.find((stage) => stage.status === "action" || stage.status === "failed" || (stage.status === "blocked" && stage.id !== "answer_model")) ?? null;
-  const corpusReady = stages.slice(0, 4).every((stage) => stage.status === "done" || stage.status === "readonly");
+  const next = readOnly && input.publicScope && (input.publicScope.status !== "ready" || input.publicScope.filings === 0) ? stages[0] : stages.find((stage) => stage.status === "action" || stage.status === "failed" || (stage.status === "blocked" && stage.id !== "answer_model")) ?? null;
+  const corpusReady = (!input.publicScope || input.publicScope.status === "ready" && input.publicScope.chunks > 0 && input.publicScope.pending === 0 && bm25Ready) && stages.slice(0, 4).every((stage) => stage.status === "done" || stage.status === "readonly");
   return { stages, next, corpusReady, readOnly, source };
 }
 

@@ -1,4 +1,7 @@
 "use client";
+import { usePublishedCorpus } from "@/lib/use-published-corpus";
+import { effectivePublishedProfile } from "@/lib/published-scope";
+import { HoverBubble } from "./hover-bubble";
 import { useConfirmation } from "./use-confirmation";
 import { SearchUpdateStatus } from "./search-update-status";
 import { NotificationCenter } from "@/components/notification-center";
@@ -203,7 +206,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     setView("build"); setBuildTab("pipeline"); setBuildStage(stages[stage]); setPendingStage(stages[stage]);
   }, [publicPreview, sessionActive]);
   const adminBuild = process.env.NEXT_PUBLIC_ADMIN_MODE === "live" && !publicPreview;
-  const runtimeHealth = useRuntimeHealth({ active: sessionActive, publicPreview });
+  const reportedRuntime = useRuntimeHealth({ active: sessionActive, publicPreview });
+  // Only the presentation mode changes. Measured status, models and counts stay server-owned.
+  const runtimeHealth = publicPreview && reportedRuntime.readiness ? { ...reportedRuntime, readiness: { ...reportedRuntime.readiness, environment: "prod" as const, admin_mode: "readonly" as const } } : reportedRuntime;
   const permissions = capabilities && (!runtimeHealth.readiness?.environment || capabilities.environment === runtimeHealth.readiness.environment) ? capabilities : null;
   const environment = permissions?.environment ?? runtimeHealth.readiness?.environment;
   // The preview document presents the deployed screen, so its badge says PROD while the server stays DEV.
@@ -212,7 +217,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const adminLive = adminBuild && permissions?.can_edit_prompt_policy === true;
   const localAllowed = LOCAL_ENGINE_VISIBLE && permissions?.environment === "dev" && permissions.can_configure_local_llm;
   useEffect(() => {
-    configurePresetStorage(sessionActive && !publicPreview ? permissions : null);
+    configurePresetStorage(sessionActive ? permissions : null);
     return () => configurePresetStorage(null);
   }, [permissions?.environment, permissions?.can_change_custom_retrieval, sessionActive, publicPreview]);
   const operationsAvailable = adminBuild && permissions?.environment === "dev" && permissions.can_use_operations && operatorAvailable();
@@ -231,7 +236,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     tourInitialized.current = true;
     let savedTour: string | null = null;
     try { savedTour = browserStorage().getItem(ONBOARDING_KEY); } catch { /* PROD recovery starts after capabilities identify the environment. */ }
-    const shouldOpenTour = !publicPreview && savedTour !== "done";
+    const shouldOpenTour = savedTour !== "done";
     setTourOpen(shouldOpenTour);
     // The tour owns the screen on a first visit; a persisted open Help state waits until it is dismissed.
     setHelpOpen(!shouldOpenTour && loadHelpOpen());
@@ -258,7 +263,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     void getCapabilities().then((value) => {
       if (cancelled) return;
       if (!["dev", "prod"].includes(value.environment)) { setCapabilities(null); return; }
-      configureBrowserStorage(publicPreview ? undefined : value.environment);
+      configureBrowserStorage(publicPreview ? "prod" : value.environment);
       if (!publicPreview && value.environment === "dev" && applyFreshStartReset(value.browser_reset_id)) {
         initialized.current = false;
         reviewAbort.current?.abort();
@@ -288,6 +293,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       }
       setCapabilities(adminBuild ? value : {
         ...value,
+        environment: publicPreview ? "prod" : value.environment,
         can_edit_prompt_policy: false,
         can_edit_run_limits: false,
         can_edit_golden: false,
@@ -307,11 +313,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     return () => { cancelled = true; };
   }, [adminBuild, runtimeHealth.checkedAt, runtimeHealth.readiness?.environment, sessionActive]);
 
-  useEffect(() => {
-    if (publicPreview && capabilities && capabilities.environment !== "dev") window.parent.postMessage({ type: "docreview-preview-unavailable" }, window.location.origin);
-  }, [publicPreview, capabilities]);
 
-  useEffect(() => { if (initialized.current && sessionActive && !publicPreview) saveActiveConversation(activeId); }, [activeId, sessionActive, publicPreview]);
+
+  useEffect(() => { if (initialized.current && sessionActive) saveActiveConversation(activeId); }, [activeId, sessionActive, publicPreview]);
   useEffect(() => subscribeStorageRestored(() => {
     if (!initialized.current || !productionBrowserStorageEnabled()) return;
     const loaded = restoreInterruptedConversations(loadConversations(), t);
@@ -334,7 +338,21 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     if (element && followReview.current) element.scrollTop = element.scrollHeight;
   }, [active?.messages, active?.id, view]);
 
-  const activeSessionProfile = active?.profile ?? profile;
+  const storedSessionProfile = active?.profile ?? profile;
+  const publicCorpus = usePublishedCorpus(!adminLive);
+  const activeSessionProfile = adminLive ? storedSessionProfile : effectivePublishedProfile(storedSessionProfile, publicCorpus.documents, active?.publishedScope);
+  const publicScopeBlocked = !adminLive && (publicCorpus.status !== "ready" || activeSessionProfile.doc_ids.length === 0);
+  const unavailableScope = !adminLive && publicCorpus.status === "ready" && active?.publishedScope?.some((id) => !publicCorpus.documents.some((doc) => doc.doc_id === id));
+
+  /** Update only this conversation's public selection, preserving messages and DEV drafts. */
+  function changePublishedScope(ids: string[]) {
+    const targetId = active?.id;
+    if (!targetId) return;
+    const reset = { doc_ids: [], registries: [], issuers: [], fiscal_years: [] };
+    setConversations((current) => saveConversations(current.map((conversation) => conversation.id === targetId
+      ? { ...conversation, publishedScope: [...new Set(ids)], profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
+      : conversation)));
+  }
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
   const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
   const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
@@ -342,7 +360,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
   const settingsValidationError = conversationSettingsError(activeSessionProfile);
-  const sendBlocked = settingsValidationError !== null || publicPreview || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -642,7 +660,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   async function submit() {
-    if (publicPreview || !sessionActive) return;
+    if (!sessionActive) return;
     const question = query.trim();
     if (!question || busy || !active || sendBlocked) return;
     setQuery("");
@@ -661,7 +679,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     setActiveReview(lastReview.current);
     followReview.current = true;
     let preparedEvidence: EvidenceHit[] = [];
-    const selectedProfile = { ...(active.profile ?? profile), local_model: localModel };
+    const selectedProfile = { ...activeSessionProfile, local_model: localModel };
     appendMessage(conversationId, [userMessage, { id: assistantId, role: "assistant", text: "", pending: true, execution, question }]);
     try {
       let evidence: EvidenceHit[] = [];
@@ -778,10 +796,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   /** Patch preferences without replacing messages appended by an in-flight response. */
   function updateSessionProfile(update: Partial<ReviewSessionDraft>) {
     const targetId = active?.id;
+    const dimensionsChanged = !adminLive && ["registries", "issuers", "fiscal_years", "doc_ids"].some((key) => key in update);
+    const selection = dimensionsChanged ? effectivePublishedProfile({ ...storedSessionProfile, ...update }, publicCorpus.documents, undefined).doc_ids : undefined;
     setProfile((current) => ({ ...current, ...update }));
     if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
-        ? { ...conversation, updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
+        ? { ...conversation, ...(dimensionsChanged ? { publishedScope: selection } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
         : conversation,
     )));
   }
@@ -849,7 +869,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         .map((item) => ({ role: item.role, text: item.text }));
       const response = await streamReview(
         message.question,
-        active.profile ?? profile,
+        activeSessionProfile,
         {
           candidateToken: message.candidateToken,
           pinned: message.pinnedChunkIds ?? [],
@@ -1006,11 +1026,12 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           ))}
         </div>
         {badgeEnvironment && (publicPreview
-          ? <DevModeBubble reason="Deployed screen drawn by the DEV server · public data only">
-            <div className="runtime-mode-badge prod preview" role="note" aria-label={modeLabel ?? undefined}>
-              <span className="runtime-mode-label"><strong>PROD</strong><span>{t("MODE")}</span></span><CircleHelp size={13} aria-hidden="true" />
-            </div>
-          </DevModeBubble>
+          ? <HoverBubble pinnable width={440} label={t("Production preview")} bubble={<>
+            <strong>{t("Production preview")}</strong>
+            <p>{t("The same PROD interface sends real requests to this local DEV backend under public limits.")}</p>
+            <p>{t("Conversations, scope and settings persist in preview-only localStorage. DEV conversations stay separate; language and theme are shared.")}</p>
+            <p>{t("Filings, chunks and vectors stay in the DEV database. Model calls use real usage; illustrative examples are labeled separately.")}</p>
+          </>}><button type="button" className="runtime-mode-badge prod preview" aria-label={t("Production preview details")}><span className="runtime-mode-label"><strong>PROD</strong><span>{t("MODE")}</span></span><CircleHelp size={13} aria-hidden="true" /></button></HoverBubble>
           : badgeEnvironment === "prod"
             ? <DevModeBubble>
               <a className="runtime-mode-badge prod" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label={modeLabel ?? undefined}>
@@ -1043,7 +1064,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel ?? undefined} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
             <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
           </div>
-          <div className="topbar-status">{sessionActive && <><SearchUpdateStatus updating={runtimeHealth.readiness?.corpus.updating === true} preparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null} jobs={operatorJobs.board.jobs} stale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} onOpenJobs={jobId => navigate({ view: "build", tab: "jobs", jobId })} /><NotificationCenter jobs={operatorJobs.board.jobs} jobsStale={operatorJobs.stale} developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} /></>}{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-status">{sessionActive && <><SearchUpdateStatus updating={runtimeHealth.readiness?.corpus.updating === true} preparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null} jobs={operatorJobs.board.jobs} stale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} onOpenJobs={adminLive ? jobId => navigate({ view: "build", tab: "jobs", jobId }) : undefined} /><NotificationCenter jobs={operatorJobs.board.jobs} jobsStale={operatorJobs.stale} developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} /></>}{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
         {runDetailsMessage && <div className="run-details-backdrop" aria-hidden="true" onClick={() => setRunDetailsMessageId(null)} />}
         {sessionActive && (runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
@@ -1111,6 +1132,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               onOpenBuild={() => navigate({ view: "build", tab: "pipeline" })}
             />
 
+            {!adminLive && <p className="helper" role="status">{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : publicScopeBlocked ? "Select at least one published filing to ask a question." : "Questions use the selected published filings.")}{unavailableScope && <> {t("Some saved filings are no longer published. Review your selection.")}</>}{publicCorpus.status === "error" && <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Retry")}</button>}</p>}
             <label className="composer">
               <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
@@ -1119,7 +1141,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
-            {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
+            {banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline", stage: banner.step })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
               : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
           </div>
@@ -1131,7 +1153,11 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           focusStep={pendingStage}
           focusJobId={buildJobId}
           live={adminBuild && permissions?.can_build_snapshot === true}
-          onAskScope={(filters) => { updateSessionProfile(filters); navigate({ view: "review" }); }}
+          publishedCorpus={publicCorpus}
+          publicProfile={activeSessionProfile}
+          publicSelection={active?.publishedScope ?? effectivePublishedProfile({ ...storedSessionProfile, corpus_scope: "auto" }, publicCorpus.documents, undefined).doc_ids}
+          onPublicSelectionChange={changePublishedScope}
+          onAskScope={() => { if (!publicScopeBlocked) navigate({ view: "review" }); }}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
@@ -1153,7 +1179,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         /></RetainedPanel>
         <RetainedPanel active={view === "measure"} className="retained-workspace" workspace="measure"><MeasureWorkspace
           capabilities={helpCapabilities}
-          publicPreview={publicPreview}
+          publicPreview={false}
           active={sessionActive && view === "measure"}
           readiness={runtimeHealth.readiness}
           onOpenPreparation={(stage) => navigate({ view: "build", tab: "pipeline", stage })}
@@ -1163,6 +1189,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           live={adminBuild && permissions?.can_run_evaluation === true}
           ready={runtimeHealth.kind === "healthy"}
           profile={resolvedRetrievalProfile(activeSessionProfile)}
+          publicProfile={activeSessionProfile}
+          publicScopeBlocked={publicScopeBlocked}
           onProfileChange={updateLabProfile}
           onApplyProfile={applyProfile}
           onApplySnapshot={applySnapshot}
@@ -1188,18 +1216,18 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           onTabChange={(tab) => navigate({ view: "system", tab })}
         /></RetainedPanel>
       </section>
-      <BrowserStorageSupport enabled={!publicPreview && environment === "prod" && productionBrowserStorageEnabled()} />
+      <BrowserStorageSupport enabled={environment === "prod" && productionBrowserStorageEnabled()} />
       <SettingsModal storageImportDisabled={busy} open={sessionActive && settingsOpen} initialCategory={settingsCategory} profile={active?.profile ?? profile} capabilities={permissions} readiness={readiness} onLocalConnectionChanged={runtimeHealth.refreshLocal} onOpenModelSelection={() => {
         if (!navigate({ view: "review" })) return;
         setSettingsOpen(false);
         if (window.innerWidth <= 560) setSidebarOpen(false);
         window.requestAnimationFrame(() => document.querySelector<HTMLSelectElement>("[data-answer-engine-select]")?.focus());
       }} onChange={updateSessionProfile} onClose={() => setSettingsOpen(false)} onOpenTour={() => { setSettingsOpen(false); openTour(); }} onClear={() => { clearReviews(); notify(t("Local conversations cleared."), "success", "local-conversations-cleared", undefined, { event: "local-conversations-cleared-notice" }); }} />
-      {sessionActive && tourOpen && <Onboarding onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
-      <RunDetailsPanel stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={publicScopeFailure(runDetailsMessage, adminLive)} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openFailureFix} />
+      {sessionActive && tourOpen && <Onboarding publicMode={!adminLive} onClose={closeTour} includeOperations={operationsAvailable} onStepChange={openTourStep} location={location} />}
+      <RunDetailsPanel editable={adminLive} stageRequest={runDetailsStage} draftProfile={activeSessionProfile} draftQuery={query} message={publicScopeFailure(runDetailsMessage, adminLive)} onClose={() => setRunDetailsMessageId(null)} onOpenFix={openFailureFix} />
 
-      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={publicPreview} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
-      <NotificationSignals enabled={sessionActive && !publicPreview && environment !== undefined} healthKind={runtimeHealth.kind} healthMessage={runtimeHealth.readiness?.corpus?.schema_message} checkedAt={runtimeHealth.checkedAt} operations={Boolean(operationsAvailable)} local={runtimeHealth.readiness?.review_engines?.local} model={localModel ?? null} cpuSpeed={localCpuSpeed} conversationId={activeId} reviewVisible={view === "review"} jobsVisible={view === "build" && buildTab === "jobs"} systemVisible={view === "system" && systemTab === "status"} />
+      <HelpOverlay screen={helpScreen(view, currentTab)} open={helpVisible} keyboard={!modalOpen} capabilities={helpCapabilities} publicPreview={false} onClose={() => setHelp(false)} location={location} onNavigateTopic={navigateHelpTopic} />
+      <NotificationSignals enabled={sessionActive && environment !== undefined} healthKind={runtimeHealth.kind} healthMessage={runtimeHealth.readiness?.corpus?.schema_message} checkedAt={runtimeHealth.checkedAt} operations={Boolean(operationsAvailable)} local={runtimeHealth.readiness?.review_engines?.local} model={localModel ?? null} cpuSpeed={localCpuSpeed} conversationId={activeId} reviewVisible={view === "review"} jobsVisible={view === "build" && buildTab === "jobs"} systemVisible={view === "system" && systemTab === "status"} />
       <ServiceHealthModal
         kind={runtimeHealth.kind}
         visible={sessionActive && runtimeHealth.modalVisible}

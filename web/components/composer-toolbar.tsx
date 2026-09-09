@@ -102,7 +102,7 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
 
 /** Number of active session filters shown on the Filters chip. */
 export function filterCount(profile: ReviewSessionDraft): number {
-  return profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
+  return profile.doc_ids.length + profile.registries.length + profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
 export type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
@@ -133,7 +133,7 @@ export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }:
   if (readiness?.mode === "runtime" && readiness.corpus.availability !== "not_applicable"
     && (live || readiness.corpus.availability !== "ready")) {
     const requirement = retrievalReadiness(readiness.corpus, resolvedRetrievalProfile(profile).strategy, jobs);
-    if (requirement.status !== "done") return { kind: "preparation", text: requirement.hint, action: "build", step: requirement.blockedBy === "embeddings" ? 3 : requirement.blockedBy === "lexical" ? 4 : 2 };
+    if (requirement.status !== "done") return live ? { kind: "preparation", text: requirement.hint, action: "build", step: requirement.blockedBy === "embeddings" ? 3 : requirement.blockedBy === "lexical" ? 4 : 2 } : { kind: "preparation", text: "Published search is not ready yet.", action: "build" };
   }
   if (readiness?.mode === "runtime" && readiness.review_enabled === false) {
     return {

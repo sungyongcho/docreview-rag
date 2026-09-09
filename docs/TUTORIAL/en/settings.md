@@ -1,5 +1,12 @@
 # Settings for the next request
 
+## Preset explanations and server limits
+
+Preset parameters show their names, purpose, current values and differences from Balanced. The canonical preset files remain unchanged. A setting that is not used by the selected strategy is identified explicitly. Wider candidate pools and reranking may cost more time; Accuracy is a configuration name, not an accuracy guarantee.
+
+Question execution limits are separate from search presets. PROD reads actual server-owned question budgets and per-model-call ceilings; browser defaults are not presented as applied policy when that read fails. DEV retains its local-model guidance.
+
+
 Conversation settings determine where to search, how to rank evidence, and how much work a review may do. They belong to the active conversation. Changing a control does not rewrite an existing answer or change the settings already submitted with a running request.
 
 The primary composer row follows **Corpus scope → answer engine/local model → retrieval preset → Settings and preview**. The last action opens one drawer with **Basic**, **Advanced** (DEV) and **Preview** views. Switching views preserves configured values. The secondary row shows corpus readiness for the whole catalog, not the selected SEC/DART subset.

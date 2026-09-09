@@ -1,0 +1,33 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
+import { HoverBubble } from "./hover-bubble";
+afterEach(cleanup);
+it("opens on hover and focus, pins on click, and closes explicitly", () => {
+  render(<HoverBubble pinnable label="PROD preview explanation" bubble={<p>Separate persistent browser storage</p>}><button>Preview help</button></HoverBubble>);
+  const trigger = screen.getByRole("button", {name: "Preview help"});
+  fireEvent.mouseEnter(trigger);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Separate persistent browser storage");
+  fireEvent.mouseLeave(trigger);
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  fireEvent.focus(trigger);
+  expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.blur(trigger); fireEvent.mouseLeave(trigger);
+  expect(screen.getByRole("dialog", {name: "PROD preview explanation"})).toBeInTheDocument();
+  fireEvent.pointerDown(screen.getByText("Separate persistent browser storage"));
+  fireEvent.click(screen.getByText("Separate persistent browser storage"));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name: "Close"}));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+it("dismisses pinned content with Escape and an outside pointer", () => {
+  render(<><HoverBubble pinnable bubble="Explanation"><button>Help</button></HoverBubble><button>Outside</button></>);
+  const trigger = screen.getByRole("button", {name: "Help"});
+  fireEvent.click(trigger);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  fireEvent.keyDown(document, {key: "Escape"});
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.pointerDown(screen.getByRole("button", {name: "Outside"}));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});

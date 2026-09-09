@@ -16,7 +16,7 @@ it("validates direct JSON and reserves built-in identities", () => {
   for (const retrieval of [5, true, "hybrid", [], null]) expect(() => parsePresetJSON(JSON.stringify({ ...preset, retrieval }))).toThrow("Include all retrieval fields and no unknown fields.");
 });
 
-it("persists through browser storage in PROD and blocks preview writes", () => {
+it("persists PROD and preview presets in separate browser namespaces", () => {
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "off");
   const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   expect(presetStorageKind()).toBe("browser");
@@ -24,8 +24,14 @@ it("persists through browser storage in PROD and blocks preview writes", () => {
   expect(readPresetCatalog().presets[0].description).toBe("Detailed");
   enterProductionPreview("document");
   expect(readPresetCatalog().presets).toEqual([]);
-  expect(() => saveStoredPreset(preset)).toThrow(/not saved in preview/);
-  expect(() => deleteStoredPreset(preset.id)).toThrow(/not saved in preview/);
+  expect(presetStorageKind()).toBe("browser");
+  saveStoredPreset({ ...preset, description: "Preview research" });
+  expect(readPresetCatalog().presets[0].description).toBe("Preview research");
+  exitProductionPreview();
+  enterProductionPreview("document");
+  expect(readPresetCatalog().presets[0].description).toBe("Preview research");
+  deleteStoredPreset(preset.id);
+  expect(readPresetCatalog().presets).toEqual([]);
   exitProductionPreview();
   expect(readPresetCatalog().presets).toHaveLength(1);
   deleteStoredPreset(preset.id);

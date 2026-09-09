@@ -1,5 +1,12 @@
 # Compare results and preserve search data
 
+## Interactive public comparisons
+
+Select compatible published results and compare their recorded metrics and case changes on demand. This reads stored artifacts; it does not run retrieval, an evaluation or a model. Identical comparisons are reused in the page, and case lists are paged. Public artifact reads and comparison responses have size limits and report an explicit error when exceeded.
+
+**Explore an example** explicitly opens the existing two-of-three versus three-of-three teaching scenario. Reverse the baseline, search questions and expand rank changes using the same comparison surface. This illustrative data is not a measured evaluation and does not change when experiment parameters change. Failed or missing real results never switch to examples automatically.
+
+
 An evaluation result records measured outcomes and settings. A snapshot preserves search data together with a selected evaluation result so that a known setup can be reused. Comparing stored snapshots reads existing artifacts; it does not run another evaluation or call a model provider.
 
 ## 12. Compare results and save a suitable snapshot {#step-12}

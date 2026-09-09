@@ -10,6 +10,7 @@ from app.api.deps import ApiServices, get_api_services
 from app.api.errors import install_error_handlers
 from app.api.routes import api_router
 from app.api.routes.admin import router as admin_router
+from app.api.routes.public_snapshot_details import router as public_snapshot_details_router
 from app.api.runtime_gate import RuntimeResetGate, install_reset_gate
 from app.api.schemas import ErrorResponse
 
@@ -52,6 +53,7 @@ def create_api_app(
         install_reset_gate(app, gate)
     install_error_handlers(app)
     app.include_router(api_router, responses=COMMON_ERROR_RESPONSES)
+    app.include_router(public_snapshot_details_router, responses=COMMON_ERROR_RESPONSES)
     if services is not None:
         app.dependency_overrides[get_api_services] = lambda: services
     if admin_services is not None:

@@ -88,7 +88,7 @@ describe("composerBanner", () => {
 
   it.each([false, true])("keeps redacted degraded corpus readiness blocked (live=%s)", (live) => {
     const degraded = readiness({ availability: "degraded", documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, writable: null }, { status: "degraded", admin_mode: live ? "live" : "readonly" });
-    expect(composerBanner({ readiness: degraded, live, profile: DEFAULT_SESSION_PROFILE, resetAt: null })).toMatchObject({ kind: "preparation", text: "Readiness not confirmed" });
+    expect(composerBanner({ readiness: degraded, live, profile: DEFAULT_SESSION_PROFILE, resetAt: null })).toMatchObject({ kind: "preparation", text: live ? "Readiness not confirmed" : "Published search is not ready yet." });
   });
 
   it("gates the active strategy and preserves canned and not-applicable readiness", () => {

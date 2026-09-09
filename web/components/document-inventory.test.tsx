@@ -13,8 +13,8 @@ vi.mock("@/lib/api", () => api);
 /** Supply an independently identifiable filing for selection and stale-response checks. */
 function filing(docId: string): AdminDocument {
   return {
-    doc_id: docId, registry: "sec", language: "en", issuer: `Issuer ${docId}`, issuer_id: docId,
-    fiscal_year: 2025, form: "10-K", filing_date: "2026-01-01", report_period: "2025-12-31", filing_id: docId,
+    doc_id: docId, registry: "sec", language: "en", issuer: "NVDA", issuer_name: `Issuer ${docId}`, issuer_id: docId,
+    fiscal_year: 2024, form: "10-K", filing_date: "2026-01-01", report_period: "2025-12-31", filing_id: docId,
     source_url: `https://example.com/${docId}`, parse_status: "parsed", source_length: 1000, source_sha256: "abc",
     chunk_count: 4, embedded_chunks: 4, text_chunks: 3, table_chunks: 1, embedding_status: "complete", snapshot_count: 1,
   };
@@ -53,44 +53,44 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("DocumentInventory", () => {
   it.each([true, false])("shows company names in the list, detail, groups and facets while filtering by code (live=%s)", async (live) => {
-    const namedDocument = { ...filing("apple-2025"), issuer: "AAPL", issuer_name: "Apple Inc." };
-    const earlierDocument = { ...filing("apple-2024"), issuer: "AAPL", fiscal_year: 2024 };
+    const namedDocument = { ...filing("nvda-2024"), issuer: "NVDA", issuer_name: "NVIDIA" };
+    const earlierDocument = { ...filing("nvda-2023"), issuer: "NVDA", fiscal_year: 2024 };
     const companyPage = { documents: [namedDocument, earlierDocument], total: 2, next_cursor: null };
     const getPage = live ? api.getAdminDocuments : api.getPublishedDocuments;
     getPage.mockResolvedValue(companyPage);
     (live ? api.getDocumentFacets : api.getPublishedDocumentFacets).mockResolvedValue({
-      ...facets, issuers: [{ value: "AAPL", label: "AAPL · Apple Inc.", count: 2 }],
+      ...facets, issuers: [{ value: "NVDA", label: "NVDA · NVIDIA", count: 2 }],
     });
     (live ? api.getDocumentDetail : api.getPublishedDocumentDetail).mockResolvedValue({
-      ...detail("apple-2025"), document: namedDocument,
+      ...detail("nvda-2024"), document: namedDocument,
     });
     render(<DocumentInventory live={live} fallbackDocuments={[]} />);
-    expect(await screen.findByRole("option", { name: "AAPL · Apple Inc. (2)" })).toHaveValue("AAPL");
-    expect(within(await screen.findByRole("row", { name: /apple-2025/ })).getByText("AAPL · Apple Inc.")).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "NVDA · NVIDIA (2)" })).toHaveValue("NVDA");
+    expect(within(await screen.findByRole("row", { name: /nvda-2024/ })).getByText("NVDA · NVIDIA")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Group documents" }), { target: { value: "issuer" } });
-    const companyGroup = screen.getByText("Company · AAPL · Apple Inc.");
+    const companyGroup = screen.getByText("Company · NVDA · NVIDIA");
     expect(companyGroup).toHaveTextContent("2 filings");
-    expect(screen.queryByText("Company · AAPL", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Company · NVDA", { exact: true })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "apple-2025" }));
-    const heading = await screen.findByRole("heading", { name: "Apple Inc." });
+    fireEvent.click(screen.getByRole("button", { name: "nvda-2024" }));
+    const heading = await screen.findByRole("heading", { name: "NVIDIA" });
     const identity = heading.closest("header")!;
-    expect(within(identity).getByLabelText("Fiscal year: 2025")).toHaveTextContent("FY 2025");
-    expect(within(identity).getByText("apple-2025")).toBeInTheDocument();
-    expect(within(identity).getByText("AAPL · 10-K")).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "AAPL" } });
-    expect(screen.getByRole("button", { name: "Remove filter: Company" })).toHaveTextContent("Company: AAPL · Apple Inc.");
+    expect(within(identity).getByLabelText("Fiscal year: 2024")).toHaveTextContent("FY 2024");
+    expect(within(identity).getByText("nvda-2024")).toBeInTheDocument();
+    expect(within(identity).getByText("NVDA · 10-K")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "NVDA" } });
+    expect(screen.getByRole("button", { name: "Remove filter: Company" })).toHaveTextContent("Company: NVDA · NVIDIA");
     await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
     const params = getPage.mock.calls[1][0] as URLSearchParams;
-    expect(params.get("issuer")).toBe("AAPL");
+    expect(params.get("issuer")).toBe("NVDA");
     expect(params.has("issuer_name")).toBe(false);
     expect(params.toString()).not.toContain("Apple");
   });
 
   it("keeps an unknown company code unchanged across the list, detail and filters", async () => {
-    const unknownDocument = { ...filing("unknown-2025"), issuer: "ZZZZ" };
+    const unknownDocument = { ...filing("unknown-2025"), issuer: "ZZZZ", issuer_name: null };
     api.getAdminDocuments.mockResolvedValue({ documents: [unknownDocument], total: 1, next_cursor: null });
     api.getDocumentFacets.mockResolvedValue({ ...facets, issuers: [{ value: "ZZZZ", label: null, count: 1 }] });
     api.getDocumentDetail.mockResolvedValue({ ...detail("unknown-2025"), document: unknownDocument });

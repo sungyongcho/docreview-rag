@@ -225,3 +225,8 @@
 .evaluation-inline-defaults [role="status"] { margin-top: 8px; color: var(--good); }
 .golden-file-title { display:flex; align-items:center; gap:8px; }
 .golden-file-lock { display:inline-flex; align-items:center; vertical-align:middle; margin-left:6px; color:var(--muted); cursor:default; flex:none; }
+
+/* Comparison values keep equal columns instead of the question-table proportions. */
+.measure-workspace .evaluation-comparison-table { table-layout: fixed; width: 100%; }
+.measure-workspace .evaluation-comparison-table th:first-child { width: 40%; }
+.measure-workspace .evaluation-comparison-table th:not(:first-child) { width: 20%; }

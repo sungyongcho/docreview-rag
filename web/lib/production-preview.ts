@@ -7,16 +7,35 @@ let state: PreviewState = previewDocument ? { mode: "document", pendingMutations
 const listeners = new Set<() => void>();
 const requests = new Map<AbortController, boolean>();
 const PREVIEW_PAUSE = Symbol("production-preview-pause");
-const memory = new Map<string, string>();
-/** Language and theme are one browser preference: the preview document and its DEV host share them. */
-const SHARED_PREFERENCE_KEYS = new Set(["docreview.locale", "docreview:theme"]);
+export const PREVIEW_STORAGE_PREFIX = "docreview:preview:";
+/** Display preferences remain shared; all other preview records have their own persistent namespace. */
+const SHARED_PREFERENCE_KEYS = new Set(["docreview.locale", "docreview:theme", "docreview:locale:v1", "docreview:theme:v1"]);
+function previewKeys(): string[] {
+  return Object.keys(window.localStorage).filter((key) => key.startsWith(PREVIEW_STORAGE_PREFIX));
+}
+function physicalKey(key: string): string { return SHARED_PREFERENCE_KEYS.has(key) ? key : PREVIEW_STORAGE_PREFIX + key; }
+/** Legacy DEV and versioned PROD preferences address the same display preference. */
+function sharedLegacyKey(key: string): string | null {
+  return key === "docreview:theme:v1" ? "docreview:theme" : key === "docreview:locale:v1" ? "docreview.locale" : null;
+}
 const previewStorage: Storage = {
-  get length() { return memory.size; },
-  clear: () => memory.clear(),
-  getItem: (key) => SHARED_PREFERENCE_KEYS.has(key) ? window.localStorage.getItem(key) : memory.get(key) ?? null,
-  key: (index) => [...memory.keys()][index] ?? null,
-  removeItem: (key) => { if (SHARED_PREFERENCE_KEYS.has(key)) window.localStorage.removeItem(key); else memory.delete(key); },
-  setItem: (key, value) => { if (SHARED_PREFERENCE_KEYS.has(key)) window.localStorage.setItem(key, value); else memory.set(String(key), String(value)); },
+  get length() { return previewKeys().length; },
+  clear: () => { for (const key of previewKeys()) window.localStorage.removeItem(key); },
+  getItem: (key) => {
+    const legacy = sharedLegacyKey(key);
+    const value = legacy ? window.localStorage.getItem(legacy) : null;
+    return value === null ? window.localStorage.getItem(physicalKey(key)) : JSON.stringify({ version: 1, value });
+  },
+  key: (index) => previewKeys()[index]?.slice(PREVIEW_STORAGE_PREFIX.length) ?? null,
+  removeItem: (key) => window.localStorage.removeItem(physicalKey(key)),
+  setItem: (key, value) => {
+    window.localStorage.setItem(physicalKey(key), String(value));
+    const legacy = sharedLegacyKey(key);
+    if (legacy) {
+      const payload: unknown = JSON.parse(value);
+      if (payload && typeof payload === "object" && "value" in payload && typeof payload.value === "string") window.localStorage.setItem(legacy, payload.value);
+    }
+  },
 };
 
 function update(next: PreviewState) {
@@ -41,14 +60,12 @@ export function enterProductionPreview(mode: "host" | "document" = "host"): bool
   if (state.pendingMutations) return false;
   if (state.mode === mode) return true;
   for (const [controller, mutation] of requests) if (!mutation) controller.abort(PREVIEW_PAUSE);
-  memory.clear();
   update({ mode, pendingMutations: 0 });
   return true;
 }
 
 export function exitProductionPreview() {
   for (const controller of requests.keys()) controller.abort();
-  memory.clear();
   update({ mode: "normal", pendingMutations: state.pendingMutations });
 }
 
@@ -82,11 +99,12 @@ export async function presentationFetch(url: string, init: PresentationInit = {}
   const mutation = method !== "GET" && method !== "HEAD";
   const pathname = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname;
   const path = pathname.replace(/^\/docreview-rag-agent\/api(?=\/|$)/, "").replace(/\/$/, "");
-  const allowed = /^\/public\/documents(?:\/[^/]+)?$/.test(path)
+  const publicRead = /^\/public\/(?:documents|snapshots)(?:\/[^/]+)*$/.test(path)
     || /^\/snapshots(?:\/compare)?$/.test(path)
-    || ["/health", "/capabilities", "/limits"].includes(path);
-  if (state.mode === "host" || (state.mode === "document" && (operator || mutation || !allowed))) {
-    throw new DOMException("Production preview permits public metadata reads only.", "AbortError");
+    || ["/health", "/ready", "/release", "/capabilities", "/limits"].includes(path);
+  const publicExecution = method === "POST" && ["/retrieve", "/review", "/review/stream"].includes(path);
+  if (state.mode === "host" || state.mode === "document" && (operator || !(mutation ? publicExecution : publicRead))) {
+    throw new DOMException("Production preview permits the public API only.", "AbortError");
   }
   const controller = new AbortController();
   const startedNormally = state.mode === "normal";

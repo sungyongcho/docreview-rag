@@ -10,6 +10,7 @@ from sqlalchemy import func, insert, literal, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.errors import ApiProblemError
 from app.api.schemas import (
     SnapshotCaseComparison,
     SnapshotComparisonResponse,
@@ -39,6 +40,19 @@ from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
 from app.evals.index_identity import index_fingerprint
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
+
+PUBLIC_COMPARE_MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
+PUBLIC_COMPARE_MAX_CASES = 1000
+PUBLIC_COMPARE_MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+def _public_comparison_unavailable() -> ApiProblemError:
+    """Return one safe failure for unavailable or oversized public evidence."""
+    return ApiProblemError(
+        status_code=409,
+        code="snapshot_comparison_unavailable",
+        message="The stored comparison is unavailable within the public evidence limits.",
+    )
 
 
 def _default_session_factory() -> AsyncSession:
@@ -116,6 +130,22 @@ class SnapshotService:
         if not isinstance(payload, dict):
             raise ValueError("evaluation artifact root must be an object")
         return payload
+
+    def _public_artifact(self, raw: str) -> dict[str, object]:
+        """Confine and bound public artifact reads before constructing a comparison."""
+        try:
+            path = Path(raw).resolve()
+            if path.parent != self._artifact_dir:
+                raise _public_comparison_unavailable()
+            if path.stat().st_size > PUBLIC_COMPARE_MAX_ARTIFACT_BYTES:
+                raise _public_comparison_unavailable()
+            payload = self._artifact(str(path))
+            cases = payload.get("cases", [])
+            if not isinstance(cases, list) or len(cases) > PUBLIC_COMPARE_MAX_CASES:
+                raise _public_comparison_unavailable()
+            return payload
+        except (OSError, ValueError) as exc:
+            raise _public_comparison_unavailable() from exc
 
     async def _existing(self, eval_result_id: int) -> SnapshotResource | None:
         """Read the snapshot already bound to this result using a fresh transaction."""
@@ -440,8 +470,9 @@ class SnapshotService:
             )
             for name in names
         )
-        before_cases = _cases_by_id(self._artifact(before.raw_artifact_path))
-        after_cases = _cases_by_id(self._artifact(after.raw_artifact_path))
+        artifact_reader = self._public_artifact if public_only else self._artifact
+        before_cases = _cases_by_id(artifact_reader(before.raw_artifact_path))
+        after_cases = _cases_by_id(artifact_reader(after.raw_artifact_path))
         common_ids = sorted(set(before_cases) & set(after_cases))
         cases: list[SnapshotCaseComparison] = []
         for case_id in common_ids:
@@ -487,7 +518,7 @@ class SnapshotService:
                     ),
                 )
             )
-        return SnapshotComparisonResponse(
+        response = SnapshotComparisonResponse(
             baseline_id=baseline_id,
             candidate_id=candidate_id,
             directly_comparable=comparable,
@@ -500,6 +531,12 @@ class SnapshotService:
             common_case_count=len(cases),
             cases=tuple(cases),
         )
+        if (
+            public_only
+            and len(response.model_dump_json().encode()) > PUBLIC_COMPARE_MAX_RESPONSE_BYTES
+        ):
+            raise _public_comparison_unavailable()
+        return response
 
     @staticmethod
     def _resource(

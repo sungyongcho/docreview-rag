@@ -911,3 +911,17 @@ describe("public surface readiness", () => {
     expect(stage(degraded, "ask").status).not.toBe("done");
   });
 });
+
+
+it("uses actual public selection statistics and never claims an empty scope is ready", () => {
+  const input = liveInput({ live: false, publicScope: { status: "ready", filings: 2, total: 18, chunks: 20, embedded: 18, pending: 2 } });
+  const pipeline = derivePipeline(input);
+  expect(pipeline.stages.find((stage) => stage.id === "index")?.numbers).toEqual(["20", "Chunks in scope"]);
+  expect(pipeline.stages.find((stage) => stage.id === "embeddings")?.numbers).toEqual(["18 embedded", "2 pending"]);
+  const empty = derivePipeline({ ...input, publicScope: { status: "ready", filings: 0, total: 18, chunks: 0, embedded: 0, pending: 0 } });
+  expect(empty.corpusReady).toBe(false);
+  expect(empty.stages.find((stage) => stage.id === "ask")?.status).toBe("blocked");
+  const failed = derivePipeline({ ...input, publicScope: { ...input.publicScope!, status: "error" } });
+  expect(failed.stages.find((stage) => stage.id === "index")?.numbers).toEqual([]);
+  expect(failed.corpusReady).toBe(false);
+});

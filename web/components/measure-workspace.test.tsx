@@ -208,14 +208,16 @@ describe("Measure workspace", () => {
     }
     expect(screen.getByRole("button", { name: "Preview review" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
-    expect(screen.getByText("Evaluation runs happen in DEV mode only.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Snapshots" }));
-    expect(screen.getByRole("heading", { name: "Published snapshots" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Explore evaluation settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Explore evaluation settings" }));
+    expect(screen.getByText("Settings exploration only. These changes do not execute on the server or change recorded results.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Queue evaluation" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" }));
-    expect(screen.getByText("No comparison loaded yet. Queue a run, then click Compare on a succeeded result that has a baseline.")).toBeInTheDocument();
-    expect(screen.getByText("Illustrative example only — not an evaluation result.")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Case changes", level: 2 })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Compare selected results" })).toBeDisabled();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Explore an example" }));
+    expect(screen.getAllByText("Illustrative example only — not an evaluation result.").length).toBeGreaterThan(0);
+    expect(screen.getByRole("table")).toBeInTheDocument();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));

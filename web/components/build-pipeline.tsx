@@ -79,6 +79,7 @@ export interface BuildPipelineProps {
   onAsk: () => void;
   /** Read-only servers turn the company grid into a question scope. */
   onAskScope?: (filters: ScopeFilters) => void;
+  corpusScope?: string;
   onRecheck: () => void;
   onEvaluate: () => void;
   onCompareSnapshots: () => void;
@@ -114,10 +115,10 @@ function isApiDown(pipeline: Pipeline): boolean {
 export function BuildPipeline(props: BuildPipelineProps) {
   const { t, locale } = useI18n();
   const { pipeline } = props;
-  const answerEngines = answerEngineStates(props.readiness ?? null, props.localModel).filter((engine) => LOCAL_ENGINE_VISIBLE || engine.id === "openai");
+  const answerEngines = answerEngineStates(props.readiness ?? null, props.localModel).filter((engine) => !pipeline.readOnly && LOCAL_ENGINE_VISIBLE || engine.id === "openai");
   const [acquisitionValid, setAcquisitionValid] = useState(true);
   const [selectedChoice, setSelectedId] = useState<Stage["id"] | null>(null);
-  const selectedId = selectedChoice ?? pipeline.stages.find((stage) => stage.status === "running")?.id ?? pipeline.next?.id ?? "filings";
+  const selectedId = selectedChoice ?? (pipeline.readOnly ? "filings" : null) ?? pipeline.stages.find((stage) => stage.status === "running")?.id ?? pipeline.next?.id ?? "filings";
   const selected = pipeline.stages.find((stage) => stage.id === selectedId) ?? pipeline.stages[0];
   const selectedGroup = selected.order <= 4 ? 1 : selected.id === "answer_model" ? 2 : 3;
   const selectedGroupTitle = selectedGroup === 1 ? t("Data preparation") : selectedGroup === 2 ? t("Answer preparation") : t("Use and evaluation");
@@ -224,7 +225,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
         </div>
       </section>
       <section id="pipeline-execution" className="pipeline-execution" aria-label={t("Selected step execution")}>
-        <header><span>{t("Stage {number}: {title}", { number: selectedGroup, title: selectedGroupTitle })}</span><h2>{selectedNumber}. {t(selected.title)}</h2>{props.live && !pipeline.readOnly ? <TerminalHandoff compact diagnosis={diagnosis} technicalDetail={props.schemaStatus === "drifted" && selected.id !== "filings" && selected.id !== "answer_model" ? props.schemaMessage : null} steps={diagnosis.terminalSteps} blocking={diagnosis.state === "blocked"} onNavigate={diagnosis.returnTo !== selected.id ? navigatePreparation : undefined} onRefresh={props.onRefresh} /> : null}{OPERATOR_STAGES.has(selected.id) && <div className="pipeline-header-dev"><DevelopmentBadge locale={locale} compact /></div>}<button type="button" className="button ghost" onClick={props.onOpenJobs}>{t("View all jobs")}</button></header>
+        <header><span>{t("Stage {number}: {title}", { number: selectedGroup, title: selectedGroupTitle })}</span><h2>{selectedNumber}. {t(selected.title)}</h2>{props.live && !pipeline.readOnly ? <TerminalHandoff compact diagnosis={diagnosis} technicalDetail={props.schemaStatus === "drifted" && selected.id !== "filings" && selected.id !== "answer_model" ? props.schemaMessage : null} steps={diagnosis.terminalSteps} blocking={diagnosis.state === "blocked"} onNavigate={diagnosis.returnTo !== selected.id ? navigatePreparation : undefined} onRefresh={props.onRefresh} /> : null}{OPERATOR_STAGES.has(selected.id) && !(pipeline.readOnly && selected.id === "filings") && <div className="pipeline-header-dev"><DevelopmentBadge locale={locale} compact /></div>}{!pipeline.readOnly && <button type="button" className="button ghost" onClick={props.onOpenJobs}>{t("View all jobs")}</button>}</header>
         <p className="helper">{selected.blockedBy ? t("Required first: {p0}", { p0: t(pipeline.stages.find((item) => item.id === selected.blockedBy)?.title ?? selected.blockedBy) }) : t("Review the inputs before starting. Selecting a step does not execute it.")}</p>
         {selected.id === "evaluate" && props.evaluationBlockedReason && <p className="notice" role="status">{t(props.evaluationBlockedReason)}</p>}
         {selected.id === "embeddings" && <div className="embedding-notices">
@@ -253,6 +254,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             onAcquisitionChange={props.onAcquisitionChange}
             documents={props.documents ?? []}
             onAskScope={props.onAskScope}
+            corpusScope={props.corpusScope}
             companies={props.companies ?? []}
             onAcquisitionValidityChange={setAcquisitionValid}
             manifests={props.manifests}
@@ -376,6 +378,7 @@ interface StageCardProps {
   documents: CorpusDocument[];
   companies: AcquisitionCompany[];
   onAskScope?: (filters: ScopeFilters) => void;
+  corpusScope?: string;
   onAcquisitionValidityChange: (valid: boolean) => void;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
@@ -389,18 +392,20 @@ interface StageCardProps {
   onCancelJob: (jobId: string) => void;
 }
 
-function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, corpusScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
-  const readOnlyNote = readOnly && OPERATOR_STAGES.has(stage.id);
+  const readOnlyNote = readOnly && stage.id !== "filings" && OPERATOR_STAGES.has(stage.id);
   const sourceState = selectedSourceState(sources, acquisition);
   const activeJob = job && (job.status === "running" || job.status === "queued");
   const selectedKeys = new Set(sourceState.selected.map((source) => pairKey({ registry: source.registry, issuer: source.issuer, year: source.fiscal_year })));
   const absentCount = sourceState.pairs.filter((pair) => !selectedKeys.has(pairKey(pair))).length;
-  const documentCount = sourceState.selected.length + absentCount;
-  const companyCount = new Set(sourceState.pairs.map((pair) => `${pair.registry}:${pair.issuer}`)).size;
-  const yearCount = new Set(sourceState.pairs.map((pair) => pair.year)).size;
+  const scopedDocuments = documents.filter((doc) => (corpusScope === "auto" || !corpusScope || doc.registry === corpusScope) && sourceState.pairs.some((pair) => pair.registry === doc.registry && pair.issuer === doc.issuer && pair.year === doc.fiscal_year));
+  const scopedChunks = scopedDocuments.reduce((sum, doc) => sum + doc.chunk_count, 0);
+  const documentCount = readOnly ? scopedDocuments.length : sourceState.selected.length + absentCount;
+  const companyCount = new Set(sourceState.pairs.filter((pair) => !readOnly || !corpusScope || corpusScope === "auto" || pair.registry === corpusScope).map((pair) => `${pair.registry}:${pair.issuer}`)).size;
+  const yearCount = new Set(sourceState.pairs.filter((pair) => !readOnly || !corpusScope || corpusScope === "auto" || pair.registry === corpusScope).map((pair) => pair.year)).size;
   const missingCount = documentCount - sourceState.present.length;
   const unreadyPairs = sourceState.pairs.filter((pair) => {
     const rows = sourceState.selected.filter((source) => source.registry === pair.registry && source.issuer.toUpperCase() === pair.issuer && source.fiscal_year === pair.year);
@@ -421,7 +426,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
             </p>
           )}
           {stage.id === "evaluate" && (evaluationSetup ? evaluationSetup(stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null) : stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null)}
-          {stage.id === "filings" && <SourceMatrix locked={readOnly} onAskScope={onAskScope} sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
+          {stage.id === "filings" && <SourceMatrix locked={readOnly} corpusScope={corpusScope} askDisabled={disabled("ask")} onAskScope={onAskScope} sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
           {job && !(stage.id === "index" && activeJob) && (
             <div className="stage-job">
               <JobProgress job={job} />
@@ -436,21 +441,21 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
               <h3>{t("Selected documents")}</h3>
               <button className="button" type="button" onClick={onChangeFilings}><span className="pipeline-return-step" aria-hidden="true">1</span>{t("Change selection in Filings")}</button>
             </header>
-            <p className="index-selection-totals" role="status"><strong>{t("{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}{sourceState.blocked.length > 0 && <> · {t("Needs repair: {count}", { count: sourceState.blocked.length })}</>}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
-            <div className="source-year-legend"><span><span className="year-downloaded-mark" aria-hidden="true">✓</span>{t("Downloaded")}</span><span><span className="source-year-pending" aria-hidden="true">!</span>{t("Download or repair needed")}</span><span><MousePointer2 size={11} aria-hidden="true" />{t("Click to select or deselect")}</span></div>
-            <SourceSelectionGrid sources={sources.filter((source) => sourceState.pairs.some((pair) => pair.registry === source.registry && pair.issuer === source.issuer))} pairs={sourceState.pairs} companies={companies} disabled={busy || Boolean(activeJob)}
+            <p className="index-selection-totals" role="status"><strong>{t(readOnly ? "{documents} documents · {chunks} chunks in scope" : "{documents} documents · {ready} ready · {missing} to download", { documents: documentCount, chunks: scopedChunks, ready: sourceState.present.length - sourceState.blocked.length, missing: missingCount })}{sourceState.blocked.length > 0 && <> · {t("Needs repair: {count}", { count: sourceState.blocked.length })}</>}</strong><span>{t("{companies} companies · {years} fiscal years", { companies: companyCount, years: yearCount })}</span></p>
+            <div className="source-year-legend"><span><span className="year-downloaded-mark" aria-hidden="true">✓</span>{t(readOnly ? "In scope" : "Downloaded")}</span><span><span className="source-year-pending" aria-hidden="true">!</span>{t(readOnly ? "Not in scope" : "Download or repair needed")}</span><span><MousePointer2 size={11} aria-hidden="true" />{t("Click to select or deselect")}</span></div>
+            <SourceSelectionGrid scopeMode={readOnly} corpusScope={corpusScope} sources={sources.filter((source) => sourceState.pairs.some((pair) => pair.registry === source.registry && pair.issuer === source.issuer))} pairs={sourceState.pairs} companies={companies} disabled={busy || Boolean(activeJob)}
               onRemoveCompany={(company) => onAcquisitionChange(acquisitionDraft(sourceState.pairs.filter((pair) => pair.registry !== company.registry || pair.issuer !== company.issuer)))} onToggle={(changed, included) => {
               const next = new Map(sourceState.pairs.map((pair) => [pairKey(pair), pair]));
               for (const pair of changed) if (included) next.set(pairKey(pair), pair); else next.delete(pairKey(pair));
               onAcquisitionChange(acquisitionDraft([...next.values()]));
             }} />
-            {unreadyPairs.length > 0 && <p className="index-readiness-note" role="alert" id="index-selection-missing">{t("{count} company-years need download or repair in step 1 before parsing.", { count: unreadyPairs.length })}</p>}
-            {unreadyPairs.length > 0 && <details className="index-repair-details"><summary>{t("Download and repair details")}</summary><ul>{unreadyPairs.map((pair) => {
+            {!readOnly && unreadyPairs.length > 0 && <p className="index-readiness-note" role="alert" id="index-selection-missing">{t("{count} company-years need download or repair in step 1 before parsing.", { count: unreadyPairs.length })}</p>}
+            {!readOnly && unreadyPairs.length > 0 && <details className="index-repair-details"><summary>{t("Download and repair details")}</summary><ul>{unreadyPairs.map((pair) => {
               const rows = sourceState.selected.filter((source) => source.registry === pair.registry && source.issuer === pair.issuer && source.fiscal_year === pair.year);
               return <li key={pairKey(pair)}>{pair.registry.toUpperCase()} · {pair.issuer} FY{pair.year}{rows.length ? <ul>{rows.filter((source) => !source.on_disk || source.ready === false).map((source) => <li key={source.document_id}>{source.filing_id}: {source.blocker || t(source.on_disk ? "Source blocked" : "Missing source")}</li>)}</ul> : `: ${t("Missing source")}`}</li>;
             })}</ul></details>}
-            {!sourceState.pairs.length && <p className="helper">{t("Select sources in Filings to start parsing.")}</p>}
-            {sourceState.pairs.length > 0 && <p className="helper">{t("Select or clear downloaded years here. Add missing filings in step 1.")}</p>}
+            {!readOnly && !sourceState.pairs.length && <p className="helper">{t("Select sources in Filings to start parsing.")}</p>}
+            {!readOnly && sourceState.pairs.length > 0 && <p className="helper">{t("Select or clear downloaded years here. Add missing filings in step 1.")}</p>}
           </section>}
           {stage.id === "index" ? <div className="index-action-bar" aria-label={t("Parsing actions")} role="group">
             {activeJob && <div className="index-action-progress"><JobProgress job={job} /></div>}

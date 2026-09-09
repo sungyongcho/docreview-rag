@@ -1,4 +1,5 @@
 "use client";
+import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
 
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
 import { DevLockedButton } from "@/components/dev-locked-button";
@@ -81,6 +82,8 @@ export const MEASURE_TABS: Array<[MeasureTab, string]> = [
 ];
 
 export interface MeasureWorkspaceProps {
+  publicProfile?: import("@/lib/types").ReviewSessionDraft;
+  publicScopeBlocked?: boolean;
   capabilities?: Capabilities | null;
   publicPreview?: boolean;
   active?: boolean;
@@ -121,7 +124,7 @@ function toCanonical(value: unknown): GoldenCanonical | null {
     : null;
 }
 
-export function MeasureWorkspace({ capabilities, publicPreview, active = true, live, ready, readiness, onOpenPreparation, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange, onLeaveGuard }: MeasureWorkspaceProps) {
+export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabilities, publicPreview, active = true, live, ready, readiness, onOpenPreparation, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange, onLeaveGuard }: MeasureWorkspaceProps) {
   const { confirm, confirmationDialog } = useConfirmation();
   const { t, locale } = useI18n();
   const sourceJsonId = useId();
@@ -179,6 +182,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
   const [resultError, setResultError] = useState("");
   const [resultDetail, setResultDetail] = useState<EvaluationResultDetail | null>(null);
   const [snapshots, setSnapshots] = useState<PublishedSnapshot[]>([]);
+  const [publicSnapshotsLoading, setPublicSnapshotsLoading] = useState(!live);
+  const [publicSnapshotsError, setPublicSnapshotsError] = useState(false);
+  const [publicSnapshotsRevision, setPublicSnapshotsRevision] = useState(0);
   const [snapshotIds, setSnapshotIds] = useState<[number | null, number | null]>([null, null]);
   const [goldenRevisions, setGoldenRevisions] = useState<GoldenRevision[]>([]);
   const [goldenCanonical, setGoldenCanonical] = useState<GoldenCanonical | null>(null);
@@ -341,8 +347,11 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     void refreshJobs();
   }, [live, evaluationSignature]);
   useEffect(() => {
-    if (!live) void getPublishedSnapshots().then((rows) => setSnapshots(Array.isArray(rows) ? rows : [])).catch(() => undefined);
-  }, [live]);
+    if (live) return;
+    let current = true; setPublicSnapshotsLoading(true); setPublicSnapshotsError(false);
+    void getPublishedSnapshots().then((rows) => { if (current) setSnapshots(rows); }).catch(() => { if (current) setPublicSnapshotsError(true); }).finally(() => { if (current) setPublicSnapshotsLoading(false); });
+    return () => { current = false; };
+  }, [live, publicSnapshotsRevision]);
   useEffect(() => {
     if (!live) return;
     let active = true;
@@ -755,17 +764,17 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
         </div>
       </nav>
       <div className="workflow-section-heading" data-help={tab === "presets" ? "measure.presets.manage" : undefined}><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "snapshots" ? t(live ? "Snapshot management" : "Published snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp active={active} screen={`measure.${tab}`} capabilities={capabilities} publicPreview={publicPreview} /></div>
-      <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : "Read-only workspace · published snapshots come from the server")}</p>
-      <p className="workflow-intro">{tab === "presets" ? t("Create reusable search settings, then select them in a conversation.") : tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t("Select a JSON dataset and inspect its questions. Create a separate file to edit, save changes, then check format and sources.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Compare evidence hits, rank, and latency. Saving a snapshot is optional.")}</p>
+      <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : tab === "playground" ? "Live search within the selected published scope" : "Explore published records. Reading and filtering do not run an evaluation.")}</p>
+      <p className="workflow-intro">{tab === "presets" ? t("Create reusable search settings, then select them in a conversation.") : tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t(live ? "Select a JSON dataset and inspect its questions. Create a separate file to edit, save changes, then check format and sources." : "Inspect published questions and expected evidence. Editing runs in DEV mode.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Compare evidence hits, rank, and latency. Saving a snapshot is optional.")}</p>
       {(tab === "compare" || tab === "snapshots") && <nav className="result-tabs"><button type="button" aria-pressed={tab === "compare"} onClick={() => changeTab("compare")}>{t("Compare results")}</button><button type="button" aria-pressed={tab === "snapshots"} onClick={() => changeTab("snapshots")}>{t(live ? "Snapshot management" : "Published snapshots")}</button></nav>}
 
 
       {leaveAction && createPortal(<div className="golden-leave-backdrop"><section ref={leaveDialog} role="dialog" aria-modal="true" aria-label={t("Unsaved question changes")} className="golden-leave-dialog"><h2>{t("Unsaved question changes")}</h2><p>{t("Save this draft before leaving?")}</p><div className="action-row"><button autoFocus type="button" className="button" onClick={() => setLeaveAction(null)}>{t("Continue editing")}</button><button type="button" className="button" disabled={goldenBusy} onClick={() => { const action = leaveAction; setGoldenCaseJson(savedGoldenJson); setGoldenIssues([]); setGoldenError(""); setLeaveAction(null); onLeaveGuard?.(null); action(); }}>{t("Discard and leave")}</button><button type="button" className="button primary" disabled={goldenBusy || !parsedGoldenCase} onClick={async () => { const action = leaveAction; if (await saveSelectedGoldenCase()) { setLeaveAction(null); onLeaveGuard?.(null); action(); } else { setLeaveAction(null); } }}>{t("Save draft and leave")}</button></div></section></div>, document.body)}
       {tab === "presets" && <RetrievalPresetManager profile={profile} onApply={onApplyProfile} canApply={capabilities?.can_change_custom_retrieval ?? live} />}
 
-      <RetainedPanel active={tab === "playground"}><Playground live={live} profile={profile} onProfileChange={onProfileChange} onOpenSnapshots={() => changeTab("snapshots")} /></RetainedPanel>
+      <RetainedPanel active={tab === "playground"}><Playground live={live} profile={profile} publicProfile={publicProfile} publicScopeBlocked={publicScopeBlocked} onProfileChange={onProfileChange} onOpenSnapshots={() => changeTab("snapshots")} /></RetainedPanel>
 
-      <RetainedPanel active={tab === "golden"} className="golden-workspace evaluation-golden">
+      <RetainedPanel active={tab === "golden"} className="golden-workspace evaluation-golden">{!live ? <PublicEvaluationWorkspace tab="golden" snapshots={snapshots} loading={publicSnapshotsLoading} error={publicSnapshotsError} onRefresh={() => setPublicSnapshotsRevision((value) => value + 1)} /> : <>
         {goldenDetailOpen && <GoldenQuestionEditor filename={selectedFile?.filename ?? ""} registry={fileRegistry} onDelete={goldenReadOnly || !selectedGoldenCase ? undefined : () => void deleteGoldenQuestion(selectedGoldenCase, { confirmed: true })} json={goldenCaseJson} readOnly={goldenReadOnly} dirty={goldenDirty} busy={goldenBusy} error={goldenError} issues={goldenIssues} onChange={json => { setGoldenCaseJson(json); setGoldenError(""); setGoldenIssues([]); }} onReload={() => void reloadGoldenQuestion()} onSave={() => void saveSelectedGoldenCase()} onBack={closeGoldenDetails} onParsing={onOpenPreparation ? () => requestGoldenLeave(() => { setGoldenDetailOpen(false); onOpenPreparation(2); }) : undefined} />}
 
         <section hidden={goldenDetailOpen} className="surface form-stack golden-controls evaluation-golden-controls">
@@ -783,7 +792,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           {live ? <><div className="golden-table-tools"><input aria-label={t("Search golden cases")} placeholder={t("Search ID, question, category, facet, or tag")} value={goldenCaseQuery} onChange={(event) => setGoldenCaseQuery(event.target.value)} /><select aria-label={t("Sort golden cases")} value={goldenCaseSort} onChange={(event) => setGoldenCaseSort(event.target.value)}><option value="id">{t("ID")}</option><option value="question">{t("Question")}</option><option value="category">{t("Category")}</option><option value="facet">{t("Facet")}</option></select></div><div id={goldenSplit.listPanelId} ref={goldenSplit.listRef} className="golden-table-scroll"><table><thead><tr><th>{t("ID")}</th><th>{t("Question")}</th><th>{t("Category")}</th><th>{t("Facet")}</th><th>{t("Tags")}</th>{goldenScoreResult && <><th>{t("Eval")}</th><th>{t("First rank")}</th><th>{t("RR")}</th></>}{!goldenReadOnly && <th className="golden-row-actions"><span className="sr-only">{t("Actions")}</span></th>}</tr></thead><tbody>{visibleGoldenCases.map((item) => { const score = goldenScoreResult?.cases.find((value) => value.case_id === item.id); const rank = score?.first_relevant_rank ?? null; return <tr key={String(item.id)} tabIndex={0} onClick={() => openGoldenCase(item)} onKeyDown={(event) => { if (event.key === "Enter") openGoldenCase(item); }} className={selectedGoldenCase === String(item.id) ? "selected" : ""}><td><span className="golden-id-cell"><button type="button" className="row-detail" onClick={(event) => { event.stopPropagation(); openGoldenCase(item); }}>{String(item.id)}</button>{activeGoldenRevision && ((activeGoldenRevision.completion?.[String(item.id)]?.length ?? 0) > 0 ? <span className="golden-case-flag incomplete"><TriangleAlert size={11} aria-hidden="true" />{t("Incomplete")}</span> : <span className="golden-case-flag" title={t("Input complete")}><Check size={11} aria-hidden="true" />{t("Input complete")}</span>)}</span></td><td>{String(item.question) || t("Untitled question")}</td><td>{item.category == null ? "—" : t(String(item.category))}</td><td>{t(String(item.facet))}</td><td>{Array.isArray(item.tags) && item.tags.length ? item.tags.join(", ") : "—"}</td>{goldenScoreResult && <><td>{score ? rank ? t("hit") : t("miss") : t("not run")}</td><td>{rank ?? "—"}</td><td>{score ? (rank ? 1 / rank : 0).toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false }) : "—"}</td></>}{!goldenReadOnly && <td className="golden-row-actions"><button type="button" className="golden-row-delete" aria-label={t("Delete question {p0}", { p0: String(item.id) })} title={t("Delete question")} disabled={goldenBusy} onClick={(event) => { event.stopPropagation(); void deleteGoldenQuestion(String(item.id)); }}><Trash2 size={13} aria-hidden="true" /></button></td>}</tr>; })}</tbody></table></div>{!visibleGoldenCases.length && <p className="helper">{t("No questions match this filter.")}</p>}</> : (comparison?.metrics ?? []).map((metric) => <div className="metric-row" key={metric.name}><span>{metric.name}</span><strong>{metric.candidate.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })}</strong><em className={metric.delta >= 0 ? "positive" : "negative"}>{metric.delta >= 0 ? "+" : ""}{metric.delta.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })}</em></div>)}
           <p className="helper">{t("Hit, first rank, and reciprocal rank measure retrieval—not final-answer factuality.")}</p>
         </section>
-      </RetainedPanel>
+      </>}</RetainedPanel>
 
       <RetainedPanel active={tab === "runs"}>{live ? <div className="panel-stack run-workspace evaluation-runs">
         <section className="surface evaluation-run-overview" data-help="measure.runs.results">
@@ -831,9 +840,9 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           {preparation && preparation.state !== "ready" && onOpenPreparation && <button type="button" className="button" onClick={() => onOpenPreparation(preparation.next_step === "filings" ? 1 : preparation.next_step === "index" ? 2 : preparation.next_step === "embeddings" ? 3 : preparation.next_step === "lexical" ? 4 : "setup")}>{t("Open preparation step")}</button>}
           </div><div className="action-row evaluation-setup-footer"><button className="button" type="button" disabled={busy} onClick={() => setSetupOpen(false)}>{t("Cancel")}</button><button className="button primary" type="button" data-help="measure.runs.queue" disabled={!canRun || busy} onClick={() => void runEvaluation()}><Play size={15} />{busy ? t("Queueing…") : t("Queue evaluation")}</button></div>
         </section></div>, document.body)}
-      </div> : lockedRuns(DEV_ONLY_REASONS.evaluation)}</RetainedPanel>
+      </div> : <PublicEvaluationWorkspace tab="runs" snapshots={snapshots} loading={publicSnapshotsLoading} error={publicSnapshotsError} onRefresh={() => setPublicSnapshotsRevision((value) => value + 1)} />}</RetainedPanel>
 
-      <RetainedPanel active={tab === "compare"}><div className="panel-stack" data-help="measure.compare.overview">
+      <RetainedPanel active={tab === "compare"}>{!live ? <PublicEvaluationWorkspace tab="compare" snapshots={snapshots} loading={publicSnapshotsLoading} error={publicSnapshotsError} onRefresh={() => setPublicSnapshotsRevision((value) => value + 1)} /> : <><div className="panel-stack" data-help="measure.compare.overview">
         {live && <section className="surface evaluation-comparison-setup"><div className="evaluation-compare-filters"><label>{t("Evaluation dataset")}<select value={compareFile} onChange={event => changeCompareFile(event.target.value)}><option value="">{t("Select a dataset first")}</option>{filterOptions}</select></label><label>{t("Sort by")}<select value={compareSort} onChange={event => setCompareSort(event.target.value)}><option value="newest">{t("Newest first")}</option><option value="oldest">{t("Oldest first")}</option></select></label></div><div className="comparison-picker"><label>{t("Baseline")}<select disabled={!compareFile} value={compareIds[0] ?? ""} onChange={event => { comparisonRequestRef.current += 1; setComparison(null); setCompareIds([Number(event.target.value) || null, compareIds[1]]); }}><option value="">{t("Select result")}</option>{comparableEntries.map(entry => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label><label>{t("Candidate")}<select disabled={!compareFile} value={compareIds[1] ?? ""} onChange={event => { comparisonRequestRef.current += 1; setComparison(null); setCompareIds([compareIds[0], Number(event.target.value) || null]); }}><option value="">{t("Select result")}</option>{comparableEntries.map(entry => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label><button className="button primary" type="button" disabled={!compareFile || !compareIds[0] || !compareIds[1] || compareIds[0] === compareIds[1] || !!resultMismatch || !!datasetChanged} onClick={() => void loadComparison(compareIds[1]!, compareIds[0]!)}>{t("Compare selected results")}</button></div>{compareFile && comparableEntries.length < 2 && <p className="helper">{t("This dataset needs two completed evaluations to compare.")} <button className="inline-link" type="button" onClick={viewDatasetRuns}>{t("Open Runs")}</button></p>}</section>}
 
         {(beforeEntry || afterEntry) && <div className="evaluation-comparison-metadata">{([["Baseline", beforeEntry], ["Candidate", afterEntry]] as const).map(([label, entry]) => <section className="surface" key={label}><p className="eyebrow">{t(label)}</p>{entry ? <><h3>{filename(entry.dataset)}</h3><p>{entry.settings}</p><p className="helper">{new Date(entry.time).toLocaleString(locale)}</p><details><summary>{t("Recorded configuration")}</summary><pre>{JSON.stringify({ result_id: entry.id, dataset_sha256: entry.dataset.hash, config: entry.config ?? entry.job.request }, null, 2)}</pre></details></> : <p className="helper">{t("Select result")}</p>}</section>)}</div>}
@@ -846,7 +855,7 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
           <div className="metric-grid">{comparison.metrics.map((metric) => <Metric key={metric.name} icon={<Beaker />} label={metric.name} value={`${metric.candidate.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })} (${metric.delta >= 0 ? "+" : ""}${metric.delta.toLocaleString(locale, { minimumFractionDigits: 3, maximumFractionDigits: 3, useGrouping: false })})`} />)}</div>
           <section className="surface" data-help="measure.compare.cases"><h2>{t("Case changes")}</h2>{comparison.cases.map((item) => <article className="case-row" key={item.case_id}><div><strong>{item.case_id}</strong><p>{item.question}</p></div><span className={`transition ${item.transition}`}>{t(item.transition.replaceAll("_", " "))}</span></article>)}{!comparison.cases.length && <p className="helper">{t("No case-level changes were recorded for this comparison.")}</p>}</section>
         </> : <div className="empty-state"><p>{t("No comparison loaded yet. Queue a run, then click Compare on a succeeded result that has a baseline.")}</p><button className="button" type="button" onClick={() => changeTab("runs")}>{t("Open Runs")}</button></div>}
-      </div></RetainedPanel>
+      </div></>}</RetainedPanel>
 
       <RetainedPanel active={tab === "snapshots"} className="panel-stack evaluation-snapshots">
         <div className="evaluation-list-tools snapshot-list-tools"><label>{t("Dataset file")}<select value={snapshotFileFilter} onChange={event => { setSnapshotFileFilter(event.target.value); setSnapshotIds([null, null]); snapshotComparisonRequestRef.current += 1; setSnapshotComparison(null); }}><option value="all">{t("All datasets")}</option>{filterOptions}</select></label><label>{t("Search")}<input value={snapshotSearch} onChange={event => setSnapshotSearch(event.target.value)} placeholder={t("Search filename or snapshot name")} /></label><label>{t("Sort by")}<select value={snapshotSort} onChange={event => setSnapshotSort(event.target.value)}><option value="newest">{t("Newest first")}</option><option value="oldest">{t("Oldest first")}</option><option value="name">{t("Name")}</option><option value="filename">{t("Filename")}</option></select></label></div>

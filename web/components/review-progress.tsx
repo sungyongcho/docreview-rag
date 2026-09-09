@@ -130,7 +130,7 @@ export function PathDecisionBadge({ decision }: { decision: ReviewPathDecision }
   const { t } = useI18n();
   const scope = decision.resolved_scope;
   const outcome = decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved";
-  return <p className="review-scope-outcome"><strong>{t(outcome)}</strong> · {t(decision.selected_scope === "auto" ? "Auto" : "Pinned")} {decision.selected_scope !== "auto" && decision.selected_scope.toUpperCase()}{scope && <> → {scope.filters.registries.join(" / ").toUpperCase()} / {scope.filters.issuers.join(", ") || t("No company restriction")}</>}</p>;
+  return <p className="review-scope-outcome"><strong>{t(outcome)}</strong> · {t(decision.selected_scope === "auto" ? "Auto" : "Pinned")} {decision.selected_scope !== "auto" && decision.selected_scope.toUpperCase()}{scope && <> → {scope.filters.registries.join(" / ").toUpperCase()} / {scope.filters.issuers.join(", ") || t("No company restriction")} {(scope.filters.fiscal_years ?? []).map((year) => `FY${year}`).join(", ")}</>}</p>;
 }
 
 /** The requested mode and confirmed applied routing remain distinct throughout execution. */

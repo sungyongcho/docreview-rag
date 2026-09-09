@@ -264,20 +264,9 @@ export function getCapabilities(): Promise<Capabilities> {
   return request<Capabilities>("/capabilities");
 }
 
-/** A preview knows only published catalog facts; uncollected runtime fields stay unknown. */
-export async function getProductionPreviewReadiness(signal?: AbortSignal): Promise<Readiness> {
-  const page = await request<AdminDocumentPage>("/public/documents?limit=1", { signal });
-  if (!Number.isInteger(page.total) || page.total < 0) throw new Error("Invalid public catalog count.");
-  return {
-    status: "ready", mode: "runtime", admin_mode: "readonly", policy_revision: "—",
-    models: {}, review_enabled: false, active_review_model: null,
-    review_engines: { openai: { enabled: false, reason: "preview_read_only" }, local: { enabled: false, reason: "public_surface" } },
-    corpus: {
-      availability: "not_applicable", database_connected: null, schema_status: null,
-      schema_message: null, documents: page.total, chunks: null, embedded_chunks: null,
-      pending_embeddings: null, bm25_ready: null, writable: false,
-    },
-  };
+/** Preview uses the same public readiness request; the transport selects public policy on DEV. */
+export function getProductionPreviewReadiness(signal?: AbortSignal): Promise<Readiness> {
+  return getReadiness(signal);
 }
 
 export async function checkEvaluationPreparation(requestBody: import("./types").EvaluationRequest, signal?: AbortSignal): Promise<import("./types").EvaluationPreparation> {
@@ -535,4 +524,15 @@ export function previewSourceDeletion(documentIds: string[]): Promise<import("./
 
 export function getGoldenEvidence(docId: string, query: string, after: number, signal?: AbortSignal) {
   return request<components["schemas"]["GoldenEvidencePage"]>(`/admin/documents/${encodeURIComponent(docId)}/golden-evidence?${new URLSearchParams({ query, after: String(after), limit: "20" })}`, { signal });
+}
+
+
+/** Read an exact published golden version without exposing an administrator catalog. */
+export function getPublicSnapshotDataset(snapshotId: number, params: URLSearchParams) {
+  return request<import("./types").PublicSnapshotDataset>(`/public/snapshots/${snapshotId}/dataset?${params}`);
+}
+
+/** Read a page of recorded evaluation cases; this never starts a run. */
+export function getPublicSnapshotEvaluation(snapshotId: number, params: URLSearchParams) {
+  return request<import("./types").PublicSnapshotEvaluation>(`/public/snapshots/${snapshotId}/evaluation?${params}`);
 }

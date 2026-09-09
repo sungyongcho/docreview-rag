@@ -1,5 +1,15 @@
 # Acquire SEC and DART filings
 
+## Published portfolio scope
+
+On PROD, this same company/year grid selects the next question's evidence scope. NVIDIA (NVDA) and AMD cover FY2019–2024; Samsung Electronics (005930) and SK hynix (000660) cover FY2022–2024: 18 fixed company/year pairs. Only actually published documents in this target set are selectable. Multiple filings for one pair remain distinct documents.
+
+Selection is stored per conversation and passed as exact `doc_ids`. Select all remains bounded to this portfolio; Clear selection disables questions and search until a filing is selected. SEC/DART tabs temporarily intersect the selection, and Auto restores it. Unavailable saved documents are reported without widening the selection. No download, parsing, embedding or evaluation runs when toggling a year.
+
+
+
+The company picker also lets visitors add the four portfolio companies to inspect their target years before publication. Unpublished years are labeled and open DEV preparation help; they never enter searchable document filters or prepared counts.
+
 ## Reference acquisition scope
 
 The default draft contains **NVDA and AMD FY2019–2024**, plus **005930 and 000660
@@ -25,7 +35,7 @@ parsing never silently drops them. Use **Change selection in Filings** to revise
 
 
 > [!DEV]
-> Editing acquisition inputs and downloading filings require DEV. The public pipeline can be inspected, but its acquisition controls cannot start work.
+> Downloading filings requires DEV. The public company/year grid selects the question scope; it cannot start server preparation work.
 
 Acquisition downloads original reports and records their identities in the common `manifest.json`. Parsing and database
 storage happen later. Check [Documents](documents.md#step-2) first: a report already prepared in this

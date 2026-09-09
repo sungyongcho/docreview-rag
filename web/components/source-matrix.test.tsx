@@ -315,3 +315,40 @@ it("shows supported companies and default fiscal years in the basket information
   fireEvent.keyDown(info, { key: "Escape" });
   expect(screen.queryByText("DocReview RAG v2.0")).toBeNull();
 });
+
+
+it("uses the published grid for exact selection and blocks asking after clearing", () => {
+  const changed = vi.fn();
+  function PublicHarness() {
+    const [draft, setDraft] = useState(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]));
+    return <SourceMatrix locked sources={[source("NVDA", 2024), source("AMD", 2023)]} companies={[]} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} onDownload={vi.fn()} downloadDisabled onAskScope={vi.fn()} />;
+  }
+  render(<PublicHarness />);
+  expect(screen.queryByText("To download:")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "AMD FY2023 · Not in scope" }));
+  expect(changed.mock.lastCall?.[0].pairs).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(changed.mock.lastCall?.[0].pairs).toEqual([]);
+  expect(screen.getByRole("button", { name: "Ask about this scope" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Select the whole corpus" }));
+  expect(changed.mock.lastCall?.[0].pairs).toHaveLength(2);
+});
+
+
+it("lets visitors add a target company and open DEV help before any document is published", () => {
+  const changed = vi.fn(); const download = vi.fn();
+  render(<SourceMatrix locked sources={[]} companies={[]} acquisition={acquisitionDraft([])} onChange={changed} onDownload={download} downloadDisabled onAskScope={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("Search/add company or year"), { target: { value: "NVDA" } });
+  fireEvent.click(screen.getByRole("button", { name: /NVIDIA.*Published years: 0 \/ 6/ }));
+  expect(screen.getByRole("group", { name: /NVDA.*NVIDIA/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ask about this scope" })).toBeDisabled();
+  expect(changed).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "NVDA FY2019 · Not published" }));
+  expect(screen.getByRole("dialog", { name: "DEV only" })).toHaveTextContent("This filing is not published.");
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: /Remove .*NVDA.* from basket/ }));
+  expect(screen.queryByRole("group", { name: /NVDA.*NVIDIA/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Published corpus" }));
+  expect(screen.getByRole("dialog", { name: "Published corpus" })).toBeVisible();
+  expect(download).not.toHaveBeenCalled();
+});

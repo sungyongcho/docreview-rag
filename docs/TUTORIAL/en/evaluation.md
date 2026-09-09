@@ -1,7 +1,14 @@
 # Evaluate retrieval against known evidence
 
+## Public exploration and recorded evidence
+
+PROD retains the evaluation workflow layout. Published dataset questions and expected source spans, recorded run settings, and case scores can be searched, sorted and paged. Only the exact published dataset version is shown; unavailable evidence is not replaced by today's editable file.
+
+Open **Explore evaluation settings** to change Quick/Matrix, chunk targets and retrieval parameters in the browser. The request preview is not submitted. Saving this exploration uses browser storage only and never changes recorded scores. Queueing evaluations, editing datasets, and creating snapshots keep their DEV badges and remain locked.
+
+
 > [!DEV]
-> The live evaluation workspace, Golden source/draft tools, and evaluation jobs run in DEV mode only. Visitors can use the separately published snapshot comparison.
+> Evaluation execution and dataset editing run in DEV only. Visitors can explore settings and read published questions, recorded evaluations and comparisons.
 
 An evaluation asks whether the search system can find the evidence specified by a golden dataset. It records a dataset, retrieval configuration, progress, and results. It does not require a generated answer first, and its retrieval scores do not certify the factual accuracy of an answer model.
 

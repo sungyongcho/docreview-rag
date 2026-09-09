@@ -6,6 +6,9 @@ import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeli
 import { type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
+import { PORTFOLIO_FILINGS } from "@/lib/published-scope";
+import { DevModeBubble } from "./dev-mode-bubble";
+import { HoverBubble } from "./hover-bubble";
 import { DevLockedButton } from "./dev-locked-button";
 import { TokenSelect, type TokenOption } from "./token-select";
 import { SourceDeleteDialog } from "./source-delete-dialog";
@@ -26,11 +29,13 @@ interface SourceMatrixProps {
   onOpenJobs?: () => void;
   /** Read-only servers: the grid is a question scope and the download action is locked in place. */
   locked?: boolean;
+  corpusScope?: string;
+  askDisabled?: boolean;
   onAskScope?: (filters: { registries: string[]; issuers: string[]; fiscal_years: number[] }) => void;
 }
 
 /** Stage missing or recoverable pairs and submit the exact synchronized draft atomically. */
-export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, onAskScope }: SourceMatrixProps) {
+export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, corpusScope = "auto", askDisabled = false, onAskScope }: SourceMatrixProps) {
   const { t } = useI18n();
   const scopeId = useId();
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -122,6 +127,55 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
     onChange(next);
     setStaged([]);
     onDownload(next);
+  }
+
+  if (locked) {
+    const names: Record<string, string> = { NVDA: "NVIDIA · 엔비디아", AMD: "Advanced Micro Devices", "005930": "Samsung Electronics · 삼성전자", "000660": "SK hynix · SK하이닉스" };
+    const publicCompanies = PORTFOLIO_FILINGS.map((target) => ({ registry: target.registry, issuer: target.issuer, name: names[target.issuer] }));
+    const visible = sources.filter((source) => !hiddenCompanies.includes(`${source.registry}:${source.issuer}`));
+    /** Add a target company to the browser basket; only published years become query filters. */
+    function choosePublicCompanies(values: string[]) {
+      const added = publicCompanies.filter((company) => values.includes(`${company.registry}:${company.issuer}`));
+      setBasket((current) => [...new Map([...current, ...added].map((company) => [`${company.registry}:${company.issuer}`, company])).values()]);
+      setHiddenCompanies((current) => current.filter((key) => !values.includes(key)));
+      setChosen(added.slice(0, 1));
+      const available = sources.filter((source) => added.some((company) => company.registry === source.registry && company.issuer === source.issuer));
+      if (available.length) onChange(acquisitionDraft([...pairs, ...available.map((source) => ({ registry: source.registry, issuer: source.issuer, year: source.fiscal_year }))]));
+    }
+    const allPairs = acquisitionPairs(acquisitionDraft(sources.map((source) => ({ registry: source.registry, issuer: source.issuer, year: source.fiscal_year }))));
+    const effective = pairs.filter((pair) => corpusScope === "auto" || pair.registry === corpusScope);
+    return <section className="source-matrix" aria-label={t("Company and fiscal-year selection")}>
+      <div className="source-company-search"><TokenSelect label={t("Search/add company or year")} placeholder={t("Search company name, SEC ticker or DART code")} values={[]} options={publicCompanies.map((company) => {
+        const target = PORTFOLIO_FILINGS.find((row) => row.issuer === company.issuer)!;
+        const published = new Set(sources.filter((source) => source.issuer === company.issuer).map((source) => source.fiscal_year)).size;
+        return { value: `${company.registry}:${company.issuer}`, label: `${company.name} · ${company.issuer}`, meta: t("Published years: {published} / {total}", { published, total: target.last - target.first + 1 }), badge: { label: company.registry.toUpperCase(), tone: company.registry === "sec" ? "blue" as const : "amber" as const } };
+      })} onChange={choosePublicCompanies} disabled={disabled} hideValues commitOnBlur={false} integratedAdd overlayOptions hint={t("Add a portfolio company to inspect its years. Only published filings can be selected for search.")} /></div>
+      <section className="source-basket" aria-label={t("Company basket")}>
+        <header><div className="source-basket-title"><h4>{t("Company basket")}</h4><HoverBubble pinnable width={360} label={t("Published corpus")} bubble={<><strong>{t("Published corpus")}</strong><p>NVDA / AMD · FY2019–2024<br />005930 / 000660 · FY2022–2024</p><p>{t("Keyword statistics use the server corpus, grouped by language.")}</p><p>{t("Unpublished years are preparation targets, not searchable documents.")}</p></>}><span className="source-scope-trigger"><button type="button" aria-label={t("Published corpus")}><Info size={14} /></button></span></HoverBubble></div><div className="source-basket-tools">
+          <span className="source-basket-tool"><button type="button" disabled={disabled || !allPairs.length} aria-label={t("Select the whole corpus")} onClick={() => onChange(acquisitionDraft(allPairs))}><ListChecks size={16} /></button><span role="tooltip">{t("Select the whole corpus")}</span></span>
+          <span className="source-basket-tool"><button type="button" disabled={disabled || !pairs.length} aria-label={t("Clear selection")} onClick={() => onChange(acquisitionDraft([]))}><ListX size={16} /></button><span role="tooltip">{t("Clear selection")}</span></span>
+        </div></header>
+        <p className="source-matrix-summary" role="status">{t("In scope: {count}", { count: effective.length })} · {t("Published company-years: {count}", { count: allPairs.length })}</p>
+        <div className="source-year-legend"><span>{t("In scope")}</span><span>{t("Not in scope")}</span><span><MousePointer2 size={11} />{t("Click to select or deselect")}</span></div>
+        <SourceSelectionGrid sources={visible} pairs={pairs.filter((pair) => visible.some((source) => source.registry === pair.registry && source.issuer === pair.issuer && source.fiscal_year === pair.year))} companies={publicCompanies} disabled={disabled} scopeMode corpusScope={corpusScope} onToggle={toggle}
+          addedCompanies={basket.filter((company) => !hiddenCompanies.includes(`${company.registry}:${company.issuer}`))}
+          onRemoveCompany={(company) => {
+            setHiddenCompanies((current) => [...current, `${company.registry}:${company.issuer}`]);
+            setBasket((current) => current.filter((item) => item.registry !== company.registry || item.issuer !== company.issuer));
+            onChange(acquisitionDraft(pairs.filter((pair) => pair.registry !== company.registry || pair.issuer !== company.issuer)));
+          }}
+          onEditCompany={(company) => setChosen((current) => current[0]?.issuer === company.issuer ? [] : [company])}
+          renderYearEditor={(company) => {
+            if (chosen[0]?.issuer !== company.issuer) return null;
+            const target = PORTFOLIO_FILINGS.find((row) => row.issuer === company.issuer);
+            if (!target) return null;
+            const missing = Array.from({ length: target.last - target.first + 1 }, (_, index) => target.first + index).filter((year) => !sources.some((source) => source.issuer === company.issuer && source.fiscal_year === year));
+            return <div className="source-matrix-add"><div className="source-year-candidates" role="group" aria-label={t("Available years")}>{missing.map((year) => <DevModeBubble inline reason="This filing is not published. Prepare and publish it in DEV to enable search." key={year}><button type="button" aria-disabled="true" aria-label={`${company.issuer} FY${year} · ${t("Not published")}`} onClick={(event) => event.preventDefault()}>FY{year} · {t("Not published")}</button></DevModeBubble>)}</div>{missing.length > 0 && <p className="helper">{t("Unpublished years are preparation targets, not searchable documents.")}</p>}</div>;
+          }} />
+        {!visible.length && !basket.length && <p className="helper">{t("Choose a company above to explore the portfolio scope. Published documents will enable search.")}</p>}
+        <div className="source-sync-actions"><button type="button" className="button primary" disabled={disabled || askDisabled || !effective.length} onClick={() => onAskScope?.({ registries: [], issuers: [], fiscal_years: [] })}><MessageSquare size={15} />{t("Ask about this scope")}</button><DevLockedButton reason="corpus">{t("Sync selection")}</DevLockedButton></div>
+      </section>
+    </section>;
   }
 
   return <section className="source-matrix" aria-label={t("Company and fiscal-year selection")}>

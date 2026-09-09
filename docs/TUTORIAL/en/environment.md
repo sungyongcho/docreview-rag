@@ -191,15 +191,21 @@ operation needs a retry. [Runtime](runtime.md) explains job and execution states
 > [!DEV]
 > Production preview is a DEV-only inspection tool. It leaves the backend in DEV and does not grant production operator permissions.
 
-In a running DEV environment, **Production preview** in the top bar opens the visitor interface while the backend remains DEV. It is read-only: question execution and server changes are disabled. Finish the current request and close dialogs before opening it. **Exit preview** returns to the retained DEV conversation, selections, and scroll position. The preview uses separate temporary browser state, so inspecting it does not overwrite your DEV conversations.
+In a running DEV environment, **Production preview** opens the same PROD interface against the current DEV backend. Public reads, bounded search and answers execute through the public request policy. Administrator actions and local engines stay unavailable. Finish an active DEV request before opening the preview; **Exit preview** restores the retained DEV tree.
+
+Conversations, document scope, settings and browser-only experiments persist under a preview-specific localStorage namespace. They survive re-entry and reload without importing DEV conversations. Language and theme are shared. No preview database is created or copied: published source data is read from the DEV backend's database, and DEV reprocessing can change it.
+
+Click the struck PROD badge to pin its explanation; Close, Escape or an outside click dismisses it. Hover and keyboard focus also expose the explanation. Model calls are real and can consume usage.
 
 <!-- capture:28-production-preview -->
 
 ![The isolated public-interface preview is explicitly labeled as using a DEV backend.](../assets/28-production-preview.en.jpg)
 
-*The isolated public-interface preview is explicitly labeled as using a DEV backend. It has no private conversation history and disables question execution and server changes; Exit preview returns to retained DEV work.*
+*Earlier preview layout; the current preview supports public requests and persistent isolated storage as described above.*
 
-Open **Preview limits** to distinguish this interface check from a production-image check. The preview reuses the public interface in the development bundle; actual production permissions and build-time exclusions still require verification in the production image.
+### SCREENSHOT NEEDED
+<!-- feature=interactive-production-preview; locale=en; theme=light; state=pinned-PROD-explanation-with-public-interface; preserve-existing-assets=true -->
+The public bundle and production backend remain separate release checks; the preview does not change server credentials or deployment settings.
 
 `rag-prod` opens a local public preview with different permissions; it does not publish
 the site. A working local-model connection in development does not make Local LLM

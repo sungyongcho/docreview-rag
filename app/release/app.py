@@ -18,6 +18,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.admin_runtime import READINESS_STATUS_MAX_AGE_S, RuntimeAdminApiServices
 from app.api.app import create_api_app
+from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.config import Settings
 from app.corpus_admin import RuntimeCorpusAdminService
@@ -130,6 +131,8 @@ class ReleaseLimits(BaseModel):
     minute_reset_seconds: int
     day_reset_seconds: int
     daily_cost_reset_at_utc: datetime
+    prompt_policy: PromptPolicy
+    per_call: OpenAICallLimits
     scope: Literal["single_process"] = "single_process"
 
 
@@ -340,7 +343,13 @@ def create_release_app(
         key = blake2s(host.encode("utf-8"), key=limiter_salt, digest_size=16).hexdigest()
         rate = await limiter.peek(key)
         remaining_cost, cost_reset = await cost_limiter.status()
+        manager = active_services.openai_limits if active_services is not None else None
+        call_limits = (
+            manager or OpenAILimitsManager(active_settings.provider_budget(), enabled=False)
+        ).state()
         return ReleaseLimits(
+            prompt_policy=PromptPolicy(),
+            per_call=call_limits.model_copy(update={"editable": False}),
             per_minute=active_settings.rate_limit_per_minute,
             per_day=active_settings.rate_limit_per_day,
             remaining_minute=rate.remaining_minute,

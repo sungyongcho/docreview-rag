@@ -15,6 +15,8 @@ import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
 
 export interface PlaygroundProps {
+  publicProfile?: import("@/lib/types").ReviewSessionDraft;
+  publicScopeBlocked?: boolean;
   live: boolean;
   profile: RetrievalProfile;
   onProfileChange: (profile: RetrievalProfile) => void;
@@ -101,7 +103,7 @@ function toReviewSummary(payload: Record<string, unknown>): ReviewSummary {
   };
 }
 
-export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: PlaygroundProps) {
+export function Playground({ publicProfile, publicScopeBlocked = false, live, profile, onProfileChange, onOpenSnapshots }: PlaygroundProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
@@ -111,13 +113,13 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
   const [shown, setShown] = useState<"retrieval" | "review" | null>(null);
 
   async function runRetrieval() {
-    if (!question.trim() || busy) return;
+    if (!question.trim() || busy || (!live && publicScopeBlocked)) return;
     setBusy("retrieval");
     try {
       // A public surface has no admin preview; the public /retrieve answers with the same rankings for a custom profile.
       const payload = live
         ? await previewRetrieval(question.trim(), profile)
-        : await retrieveEvidence(question.trim(), { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: profile as CustomRetrievalProfile });
+        : await retrieveEvidence(question.trim(), { ...(publicProfile ?? DEFAULT_SESSION_PROFILE), retrieval_preset: "custom", custom_retrieval: profile as CustomRetrievalProfile });
       setRetrieval(toRetrievalPreview({ query: question.trim(), profile, score_stage: "rrf", ...(payload as unknown as Record<string, unknown>) }));
       setShown("retrieval");
     } catch (reason) {
@@ -128,7 +130,7 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
   }
 
   async function runReview() {
-    if (!question.trim() || busy) return;
+    if (!question.trim() || busy || (!live && publicScopeBlocked)) return;
     setBusy("review");
     try {
       setReview(toReviewSummary(await previewReview(question.trim(), profile)));
@@ -148,11 +150,11 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
       <section className="surface form-stack">
         <div className="surface-heading"><div><h2>{t("Playground")}</h2><p className="helper">{t("One query through an explicit retrieval profile. Nothing is persisted.")}</p></div></div>
         <label>{t("Question")}<textarea aria-label={t("Playground question")} data-help="measure.playground.question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} /></label>
-        <fieldset className="playground-core"><legend>{t("Core search settings")}</legend><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" fields="core" /></fieldset>
+        <fieldset className="playground-core"><legend>{t("Core search settings")}</legend>{!live && <p className="helper">{t("Search uses the current published filing scope.")}</p>}<ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" fields="core" /></fieldset>
         <details><summary>{t("Advanced search settings")}</summary><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" fields="advanced" /></details>
         <div className="action-row">
-          <button className="button primary" type="button" data-help="measure.playground.preview_retrieval" disabled={busy !== null || !question.trim()} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? t("Previewing…") : t("Preview retrieval")}</button>
-          {live ? <button className="button" type="button" data-help="measure.playground.preview_review" disabled={busy !== null || !question.trim()} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? t("Reviewing…") : t("Preview review")}</button>
+          <button className="button primary" type="button" data-help="measure.playground.preview_retrieval" disabled={busy !== null || !question.trim() || (!live && publicScopeBlocked)} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? t("Previewing…") : t("Preview retrieval")}</button>
+          {live ? <button className="button" type="button" data-help="measure.playground.preview_review" disabled={busy !== null || !question.trim() || (!live && publicScopeBlocked)} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? t("Reviewing…") : t("Preview review")}</button>
             : <DevLockedButton reason="preview"><Play size={15} /> {t("Preview review")}</DevLockedButton>}
         </div>
         <p className="helper">{t(live ? "Preview review calls the answer model once and records provider usage." : "Search runs on the published corpus within the server's public ranges. Nothing is persisted.")}</p>

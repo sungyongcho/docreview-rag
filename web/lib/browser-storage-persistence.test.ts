@@ -22,11 +22,12 @@ describe("production browser persistence", () => {
     expect(localStorage.getItem("docreview:theme:v1")).toBeNull();
   });
 
-  it("keeps preview session data in isolated memory while sharing the theme preference", () => {
+  it("keeps preview session data in persistent isolated storage while sharing the theme preference", () => {
     localStorage.setItem("docreview:theme", "light");
     enterProductionPreview("document"); configureBrowserStorage("prod");
     browserStorage().setItem("docreview:theme", "dark"); saveConversations(conversations);
-    expect(productionBrowserStorageEnabled()).toBe(false);
+    expect(productionBrowserStorageEnabled()).toBe(true);
+    expect(localStorage.getItem("docreview:preview:docreview:conversations:v2")).not.toBeNull();
     expect(browserStorage().getItem("docreview:theme")).toBe("dark");
     expect(localStorage.getItem("docreview:theme")).toBe("dark");
     expect(localStorage.getItem("docreview:conversations:v2")).toBeNull();

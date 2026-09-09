@@ -1,5 +1,10 @@
 # Ask a question and verify its citations
 
+## Shared published evidence scope
+
+Build selection, conversation settings, next-request preview and Search trial share the effective published document scope. A sparse selection such as NVDA FY2023 and AMD FY2024 never adds NVDA FY2024 or AMD FY2023. Answers and citations use actual retrieval within the existing public request limits. Returning to an old answer retains its recorded scope.
+
+
 An answer joins source selection, retrieval, evidence review, and model execution. The result can be a
 supported answer, insufficient evidence (`NOT_IN_DOCS`), or an operational failure. Read those outcomes
 separately instead of treating every completed request as a successful answer.
