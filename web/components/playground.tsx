@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { Play, Search } from "lucide-react";
 import { useState } from "react";
 
-import { previewRetrieval, previewReview } from "@/lib/api";
+import { ApiError, previewRetrieval, previewReview } from "@/lib/api";
 import { failureMessage } from "@/lib/pipeline";
 import type { EvidenceHit, RetrievalProfile } from "@/lib/types";
 import { ProfileFields } from "@/components/profile-fields";
@@ -119,7 +119,7 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
       setRetrieval(toRetrievalPreview(await previewRetrieval(question.trim(), profile) as unknown as Record<string, unknown>));
       setShown("retrieval");
     } catch (reason) {
-      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Retrieval preview failed."), "error", "playground-retrieval", undefined, { event: "playground-retrieval-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Retrieval preview failed."), "error", "playground-retrieval", undefined, { event: "playground-retrieval-error", detail: notificationErrorDetail(reason), ...(reason instanceof ApiError && reason.code === "query_scope_empty" ? { actionLabel: "Check document preparation", target: { view: "build" as const, tab: "pipeline" as const, stage: 1 } } : {}) });
     } finally {
       setBusy(null);
     }
@@ -132,7 +132,7 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
       setReview(toReviewSummary(await previewReview(question.trim(), profile)));
       setShown("review");
     } catch (reason) {
-      notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Review preview failed."), "error", "playground-review", undefined, { event: "playground-review-error", detail: notificationErrorDetail(reason) });
+      notify(reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Review preview failed."), "error", "playground-review", undefined, { event: "playground-review-error", detail: notificationErrorDetail(reason), ...(reason instanceof ApiError && reason.code === "query_scope_empty" ? { actionLabel: "Check document preparation", target: { view: "build" as const, tab: "pipeline" as const, stage: 1 } } : {}) });
     } finally {
       setBusy(null);
     }

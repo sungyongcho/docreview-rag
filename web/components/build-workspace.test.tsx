@@ -86,6 +86,8 @@ describe("Build workspace", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
       if (url.includes("/documents?")) return jsonResponse({ documents: [], total: 0, next_cursor: null });
       if (url.endsWith("/snapshots")) return jsonResponse({ snapshots: [] });
@@ -109,6 +111,8 @@ describe("Build workspace", () => {
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
       if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
       else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
@@ -153,6 +157,8 @@ describe("Build workspace", () => {
     const prefix = live ? "/admin" : "/public";
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
       if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
       else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
@@ -232,6 +238,8 @@ describe("Build workspace", () => {
   it("orders build steps from the administrator snapshot", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
       if (url.endsWith("/admin/evaluations/suites")) payload = CANNED_SUITES;
       else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [CANNED_JOB] };
@@ -290,6 +298,8 @@ describe("Build workspace", () => {
   it("never calls the administrator API in the public build", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       const payload: unknown = url.endsWith("/snapshots") ? { snapshots: [] } : url.endsWith("/public/documents/facets") ? EMPTY_DOCUMENT_FACETS_FIXTURE : url.includes("/public/documents?") ? { documents: [], total: 0, next_cursor: null } : {};
       return jsonResponse(payload);
     });
@@ -324,7 +334,7 @@ describe("Build workspace", () => {
       />,
     );
 
-    expect(screen.getByText("No answer model")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select Answer model" })).toHaveTextContent("Not configured");
     fireEvent.click(screen.getByRole("button", { name: "Select Answer model" }));
     fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
     expect(onRecheck).toHaveBeenCalledTimes(1);
@@ -345,6 +355,8 @@ describe("Build workspace", () => {
   it("queues a quick evaluation with a non-empty chunk target list", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
       if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") payload = { ...CANNED_JOB, job_id: "eval-new", status: "queued", result_id: null, result_ids: [] };
       else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
@@ -388,6 +400,8 @@ describe("preparation refresh after corpus jobs", () => {
   it.each(["succeeded", "failed", "cancelled", "interrupted"] as const)("refreshes once for %s and ignores repeated polls", async (status: OperatorJobStatus) => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
       if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
       return jsonResponse([]);
@@ -417,8 +431,8 @@ describe("preparation refresh after corpus jobs", () => {
     }));
     render(<Harness live />);
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    await screen.findByText("SEC · NVDA FY2024: Missing source");
-    expect(screen.queryByRole("button", { name: "NVDA FY2024 · Missing source" })).toBeNull();
+    await screen.findByRole("button", { name: "NVDA FY2024 · Missing source" });
+    expect(screen.getByRole("button", { name: "NVDA FY2024 · Missing source" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("checkbox", { name: /sec-evaluation|overlap/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Selected documents" })).getByRole("status")).toHaveTextContent("4 documents · 0 ready · 4 to download");
@@ -430,6 +444,8 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   const onRefreshJobs = vi.fn();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", documents: 0, chunks: 0, embedded_chunks: 0, pending_embeddings: 0, writable: true, bm25_ready: false }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
@@ -438,7 +454,7 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} onRefreshJobs={onRefreshJobs} />);
   await screen.findByText("0 / 4 filings on disk");
-  fireEvent.click(screen.getByRole("checkbox", { name: /^Select all years for AMD/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Remove AMD.*from basket/ }));
   fireEvent.click(screen.getByRole("button", { name: /^NVDA FY2023/ }));
   const years = screen.getByRole("textbox", { name: "Search/add company or year" });
   const download = screen.getByRole("button", { name: "Sync selection" });
@@ -458,6 +474,8 @@ it("queues exactly the selected company years after changing matrix cells", asyn
 it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
@@ -465,7 +483,8 @@ it("keeps source acquisition available during schema drift and exposes terminal 
   vi.stubGlobal("fetch", fetchMock);
   render(<Harness live ready={false} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Sync selection" })).toBeEnabled());
-  expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("This step is ready to run");
+  expect(screen.getByRole("region", { name: "Terminal preparation" })).toHaveTextContent("Ready to run");
+  expect(screen.getByRole("region", { name: "Terminal preparation" }).closest("header")).not.toBeNull();
   expect(document.getElementById("pipeline-setup-checks")).toHaveTextContent("scripts.schema recover --return-stage filings");
   expect(screen.getByRole("button", { name: "Check updated status" })).toBeEnabled();
   expect(screen.queryByText("data/ not writable")).not.toBeInTheDocument();
@@ -476,6 +495,8 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
   const submitted: Record<string, unknown>[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)); submitted.push(body);
       if (failDart && body.kind === "acquire_dart") return new Response(JSON.stringify({ error: { message: "DART submission unavailable" } }), { status: 503, headers: { "Content-Type": "application/json" } });
@@ -489,8 +510,9 @@ it.each([false, true])("queues mixed companies by source and reports partial sub
   await screen.findByText("0 / 4 filings on disk");
   fireEvent.change(screen.getByRole("textbox", { name: "Search/add company or year" }), { target: { value: "005930,000660" } });
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Search/add company or year" }), { key: "Enter" });
-  fireEvent.change(screen.getByRole("textbox", { name: "Search/add company or year" }), { target: { value: "2023-2024" } });
-  fireEvent.keyDown(screen.getByRole("textbox", { name: "Search/add company or year" }), { key: "Enter" });
+  for (const year of [2023, 2024]) { const choice = screen.queryByRole("button", { name: `FY${year}` }); if (choice) fireEvent.click(choice); }
+  fireEvent.click(screen.getByRole("button", { name: /^Add years for 000660/ }));
+  for (const year of [2023, 2024]) { const choice = screen.queryByRole("button", { name: `FY${year}` }); if (choice) fireEvent.click(choice); }
   fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toHaveLength(2));
   expect(submitted).toEqual([
@@ -507,6 +529,8 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   let preset: typeof SAMPLE_DRAFT = { identifiers: [], years: [], pairs: [], revision: "empty-v1" };
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
     return jsonResponse([]);
@@ -519,20 +543,20 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
   preset = SAMPLE_DRAFT;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await screen.findByRole("checkbox", { name: /^Select all years for NVDA/ });
+  await screen.findByRole("button", { name: /^Add years for NVDA/ });
   expect(screen.getByText("0 / 4 filings on disk")).toBeInTheDocument();
   sources = sourceRows;
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText("4 / 4 filings on disk");
-  fireEvent.click(screen.getByRole("checkbox", { name: /^Select all years for AMD/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Remove AMD.*from basket/ }));
   expect(screen.getByText(/On disk not selected: 2/)).toBeInTheDocument();
   sources = sourceRows.filter((row) => row.document_id !== "NVDA-FY2023");
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /^NVDA FY2023/ })).toHaveAccessibleName("NVDA FY2023 · Missing source"));
-  expect(screen.getByRole("checkbox", { name: /^Select all years for AMD/ })).not.toBeChecked();
-  expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2023");
+  expect(screen.queryByRole("button", { name: /^Remove AMD.*from basket/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /^NVDA FY2023/ })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Select everything on disk" }));
-  expect(screen.getByRole("checkbox", { name: /^Select all years for AMD/ })).toBeChecked();
+  expect(screen.getAllByRole("button", { name: /^AMD FY/ }).every((button) => button.getAttribute("aria-pressed") === "true")).toBe(true);
   expect(screen.queryByRole("button", { name: "Sync draft with downloaded sources" })).not.toBeInTheDocument();
 });
 
@@ -541,6 +565,8 @@ describe("quick evaluation feedback", () => {
   function stubQueue(corpus: Partial<Readiness["corpus"]> = {}, duplicate = false) {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...READY_RUNTIME.corpus, ...corpus }, sources: [] });
       if (url.endsWith("/admin/evaluations/runs") && init?.method === "POST") {
         if (duplicate) return new Response(JSON.stringify({ error: { code: "evaluation_already_queued", message: "Already queued" } }), { status: 409, headers: { "content-type": "application/json" } });
@@ -591,7 +617,7 @@ describe("quick evaluation feedback", () => {
     await openEvaluation();
     fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
     await waitFor(() => expect(screen.getAllByText("The same evaluation is already queued.").length).toBeGreaterThan(0));
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/evaluations/runs") && init?.method === "POST")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Open Jobs" }).length).toBeGreaterThan(0);
   });
 
@@ -612,11 +638,11 @@ describe("quick evaluation feedback", () => {
     [{ bm25_ready: false, pending_embeddings: 10 }, "Complete BM25 (step 4) before evaluating."],
   ] as const)("disables the action and reports the current blocker: %j", async (corpus, reason) => {
     const fetchMock = stubQueue(corpus);
-    render(<Harness live ready={false} jobBoard={{ jobs: [preparingJob()], active_count: 1, queued_count: 0 }} />);
+    render(<Harness live ready={false} profile={{ ...DEFAULT_PROFILE, lexical_ranker: "bm25" }} jobBoard={{ jobs: [preparingJob()], active_count: 1, queued_count: 0 }} />);
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
     await waitFor(() => expect(screen.getAllByText(reason).length).toBeGreaterThan(0));
     expect(screen.getByRole("button", { name: "Run quick evaluation" })).toBeDisabled();
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/evaluations/runs") && init?.method === "POST")).toHaveLength(0);
   });
 });
 
@@ -628,6 +654,8 @@ describe("refresh hygiene", () => {
   function stubAdmin(override: (url: string) => Response | undefined) {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       const custom = override(url);
       if (custom) return custom;
       if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
@@ -689,6 +717,8 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
   const submitted: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") { const body = JSON.parse(String(init.body)); submitted.push(body); if (failIndex && body.kind === "ingest_selected" && body.identifiers[0] === "NVDA") return new Response(JSON.stringify({ error: { code: "unavailable", message: "Indexing unavailable" } }), { status: 503 }); return jsonResponse({ job_id: String(submitted.length), status: "queued" }); }
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, sources, status: { ...CANNED_CORPUS.status, writable: true, database_connected: true, schema_status: "compatible" } });
     if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
@@ -722,6 +752,8 @@ describe("connection readiness presentation", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+      if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/admin/corpus")) return jsonResponse({
         ...CANNED_CORPUS,
         status: READY_RUNTIME.corpus,
@@ -784,6 +816,8 @@ it("queues a staged recoverable source and enables parsing after the verified re
   let recovered = false;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
       submitted.push(JSON.parse(String(init.body)));
       recovered = true;
@@ -808,9 +842,8 @@ it("queues a staged recoverable source and enables parsing after the verified re
   const company = screen.getByLabelText("Search/add company or year");
   fireEvent.change(company, { target: { value: "NVDA" } });
   fireEvent.keyDown(company, { key: "Enter" });
-  const year = screen.getByLabelText("Search/add company or year");
-  fireEvent.change(year, { target: { value: "2024" } });
-  fireEvent.keyDown(year, { key: "Enter" });
+  const year = screen.queryByRole("button", { name: "FY2024" });
+  if (year) fireEvent.click(year);
   fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toHaveLength(1));
   expect(submitted[0]).toMatchObject({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
@@ -826,6 +859,8 @@ function stubSourceLifecycle(sources: Array<Record<string, unknown>>, submitted:
   const pairs = [{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "dart", issuer: "005930", year: 2023 }];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/sources/deletion-preview")) {
       previews.push(JSON.parse(String(init?.body)));
       return jsonResponse({ token: "exact-source-token", expires_at: Date.now() / 1000 + 300, retained_inputs: 1, retained_derived: true,
@@ -873,11 +908,11 @@ it("queues reacquisition of changed bytes and blocks the whole intended parsing 
   render(<Harness live readiness={READY_RUNTIME} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
   await screen.findByText("accession-a: Source bytes changed");
-  expect(screen.queryByRole("button", { name: /^NVDA FY/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /^NVDA FY/ })).toHaveClass("source-blocked");
   fireEvent.click(screen.getByRole("button", { name: "Parse & chunk selected sources" }));
   expect(submitted).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
-  expect(screen.getByRole("region", { name: "To be added" })).toHaveTextContent("NVDA FY2024");
+  expect(screen.getByRole("button", { name: /^NVDA FY2024/ })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Sync selection" }));
   await waitFor(() => expect(submitted).toEqual([{ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] }]));
 });
@@ -888,10 +923,10 @@ it("separates deselection and cancellation from confirmed deletion without prema
   const fetchMock = stubSourceLifecycle(sources, submitted, previews);
   render(<Harness live readiness={READY_RUNTIME} onRefreshJobs={refresh} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
-  const trigger = await screen.findByRole("button", { name: "Delete selected originals" });
+  const trigger = await screen.findByRole("button", { name: "Delete all downloaded originals" });
   await waitFor(() => expect(trigger).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
-  expect(trigger).toBeDisabled(); expect(previews).toEqual([]); expect(submitted).toEqual([]);
+  expect(trigger).toBeEnabled(); expect(previews).toEqual([]); expect(submitted).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "NVDA FY2024 · On disk" }));
   fireEvent.click(trigger);
   await screen.findByRole("button", { name: "Confirm deletion of originals" });
@@ -901,7 +936,7 @@ it("separates deselection and cancellation from confirmed deletion without prema
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole("button", { name: "Confirm deletion of originals" }));
   await screen.findByText("Source deletion queued. Files are not deleted yet; check Jobs for the result.");
-  expect(previews).toEqual([{ document_ids: ["sec-filing-a", "sec-filing-b"] }, { document_ids: ["sec-filing-a", "sec-filing-b"] }]);
+  expect(previews).toEqual([{ document_ids: sources.map((source) => source.document_id) }, { document_ids: sources.map((source) => source.document_id) }]);
   expect(submitted).toEqual([{ kind: "delete_sources", identifiers: [], years: [], deletion_token: "exact-source-token", confirm_delete: true }]);
   expect(refresh).toHaveBeenCalledOnce();
   expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/corpus"))).toHaveLength(1);
@@ -916,7 +951,24 @@ it.each(["queued", "running"] as const)("locks deletion while a corpus job is %s
   render(<Harness live readiness={READY_RUNTIME} jobBoard={{ jobs: [job], active_count: 1, queued_count: 0 }} />);
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   await screen.findByRole("button", { name: "NVDA FY2024 · On disk" });
-  fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" }));
-  expect(screen.getByRole("button", { name: "Delete selected originals" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
+  expect(screen.getByRole("button", { name: "Delete all downloaded originals" })).toBeDisabled();
   expect(previews).toEqual([]); expect(submitted).toEqual([]);
+});
+
+it("opens the golden-set manager from pipeline evaluation setup", async () => {
+  const onNavigate = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
+    if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
+    if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: READY_RUNTIME.corpus });
+    if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+    if (url.endsWith("/admin/evaluations/runs")) return jsonResponse({ jobs: [] });
+    return jsonResponse([]);
+  }));
+  render(<Harness live readiness={READY_RUNTIME} onNavigate={onNavigate} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Manage golden sets" }));
+  expect(onNavigate).toHaveBeenCalledExactlyOnceWith({ view: "measure", tab: "golden" });
 });

@@ -1,5 +1,4 @@
-.run-details-panel { --run-details-edge-width: 30px; position: fixed; z-index: 36; inset: 68px 16px 16px auto; display: flex; width: min(428px, calc(100vw - 32px)); min-height: 0; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px #0002; }
-.service-shell.run-details-open .workspace { padding-right: 460px; }
+.run-details-panel { position: fixed; z-index: 36; inset: 68px 16px 16px auto; display: flex; width: min(760px, calc(100vw - 32px)); min-height: 0; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px #0002; }
 .run-details-body { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: hidden; border-radius: inherit; }
 .run-details-body[hidden], .run-details-content > section[hidden] { display: none; }
 .run-details-header { flex: none; padding: 12px 22px 18px; border-bottom: 1px solid var(--border); }
@@ -11,7 +10,7 @@
 .run-details-question-line h2.is-expanded { white-space: normal; overflow-wrap: anywhere; }
 .run-details-message-id { flex: none; color: var(--muted); font: 10px/1.5 ui-monospace, monospace; }
 .run-details-question-toggle { min-height: 36px; margin: 4px 0 10px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.run-details-tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.run-details-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .run-details-tabs button { min-height: 40px; padding: 7px 5px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
 .run-details-tabs button[aria-selected="true"] { border-color: var(--border); background: var(--surface); color: var(--text); box-shadow: 0 1px 3px #0001; }
 .run-details-content { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 22px; scrollbar-gutter: stable; }
@@ -23,21 +22,32 @@
 .run-details-content .run-diagnostics > div { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); padding-block: 10px; border-bottom: 1px solid var(--border); }
 .run-details-content .run-diagnostics dt { color: var(--muted); }
 .run-details-content .run-diagnostics dd { margin: 0; overflow-wrap: anywhere; }
-.run-details-edge { position: absolute; top: 50%; left: -15px; display: grid; place-items: center; width: var(--run-details-edge-width); height: 52px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; box-shadow: 0 2px 8px #0001; transform: translateY(-50%); }
-.run-details-panel.is-collapsed { width: 44px; }
-.run-details-panel.is-collapsed .run-details-edge { left: 6px; }
-.service-shell.run-details-open:has(.run-details-panel.is-collapsed) .workspace { padding-right: 76px; }
 .run-details-panel button:focus-visible, .run-details-content > section:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.run-details-close:hover, .run-details-edge:hover { background: var(--surface-2); }
+.run-details-close:hover { background: var(--surface-2); }
 @media (max-width: 900px) {
   .run-details-panel { inset: 0; width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
   .run-details-header { padding-top: calc(12px + env(safe-area-inset-top)); }
   .run-details-content { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
-  .run-details-edge { left: 0; }
   .run-details-close, .run-details-tabs button { min-height: 44px; }
-  .run-details-panel.is-collapsed { inset: 68px 8px 16px auto; height: auto; border: 1px solid var(--border); border-radius: 12px; }
-  .service-shell.run-details-open .workspace, .service-shell.run-details-open:has(.run-details-panel.is-collapsed) .workspace { padding-right: 0; padding-bottom: 0; }
 }
 
-/* Reserve the edge control lane rather than layering notifications above or below it. */
-.run-details-body > .notification-outlet:not(:empty) { margin-inline-start: calc(var(--run-details-edge-width) + 8px); }
+
+/* The inspector overlays the conversation without changing its layout width. */
+.workspace { position: relative; }
+.run-details-backdrop { position: absolute; z-index: 35; inset: 64px 0 0; background: rgb(190 193 190 / 24%); cursor: pointer; }
+@media (prefers-reduced-motion: no-preference) { .run-details-backdrop { animation: run-backdrop-in .16s ease-out; } }
+@keyframes run-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+
+.run-details-panel .execution-performance .performance-table { table-layout: fixed; min-width: 0; }
+.run-details-panel .execution-performance .performance-table th, .run-details-panel .execution-performance .performance-table td { white-space: normal; overflow-wrap: anywhere; padding: 8px 6px; }
+.run-details-panel .execution-performance .performance-table th:first-child { width: 42px; }
+.run-details-panel .execution-performance .performance-table th:nth-child(2) { width: 30%; }
+.run-details-panel .performance-identifier, .run-details-panel .performance-model { white-space: normal; overflow-wrap: anywhere; }
+.run-details-panel.is-leaving { pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .run-details-panel { animation: run-panel-in 200ms ease-out both; }
+  .run-details-panel.is-leaving { animation: run-panel-out 180ms ease-in both; }
+}
+@keyframes run-panel-in { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes run-panel-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(36px); } }
+@media (max-width: 480px) { .run-details-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

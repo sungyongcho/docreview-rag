@@ -92,26 +92,19 @@ export function loadExperimentDefaults(): ExperimentDefaults {
     const mode = value.mode === "matrix" || value.mode === "quick"
       ? value.mode
       : DEFAULT_EXPERIMENT_DEFAULTS.mode;
-    const retrievalPreset = ["balanced", "korean", "accuracy", "custom"].includes(String(value.retrieval_preset))
-      ? value.retrieval_preset as ExperimentDefaults["retrieval_preset"]
-      : DEFAULT_EXPERIMENT_DEFAULTS.retrieval_preset;
-    return {
-      ...DEFAULT_EXPERIMENT_DEFAULTS,
-      ...value,
-      suite_id: suiteId,
-      mode,
-      retrieval_preset: retrievalPreset,
-      golden_revision_id: positiveId(value.golden_revision_id),
-      snapshot_id: positiveId(value.snapshot_id),
-      baseline_snapshot_id: positiveId(value.baseline_snapshot_id),
-    };
+    const normalized = { suite_id: suiteId, mode, golden_revision_id: positiveId(value.golden_revision_id) };
+    if (Object.keys(value).some(key => !["suite_id", "mode", "golden_revision_id"].includes(key))) {
+      try { browserStorage().setItem(EXPERIMENT_DEFAULTS_KEY, JSON.stringify(normalized)); }
+      catch (error) { if (!(error instanceof DOMException)) throw error; }
+    }
+    return normalized;
   } catch {
     return DEFAULT_EXPERIMENT_DEFAULTS;
   }
 }
 
 export function saveExperimentDefaults(value: ExperimentDefaults): void {
-  if (typeof window !== "undefined") browserStorage().setItem(EXPERIMENT_DEFAULTS_KEY, JSON.stringify(value));
+  if (typeof window !== "undefined") browserStorage().setItem(EXPERIMENT_DEFAULTS_KEY, JSON.stringify({ suite_id: value.suite_id, mode: value.mode, golden_revision_id: value.golden_revision_id }));
 }
 
 export function resetExperimentDefaults(): void {
@@ -541,6 +534,33 @@ export function subscribeStorageRestored(listener: () => void): () => void {
 
 /** Keep raw destructive browser-reset access centralized; callers retain existing confirmation. */
 export function browserResetStores(): Storage[] { return [rawBrowserStorage(), window.sessionStorage]; }
+
+// Kept outside portable preference keys so imports cannot replay a fresh-start receipt.
+export const FRESH_START_RECEIPT_KEY = "docreview.fresh-start";
+
+/** Consume an explicit server reset once, clearing only this application's browser keys. */
+export function applyFreshStartReset(resetId: string | null | undefined): boolean {
+  if (!resetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resetId) || typeof window === "undefined") return false;
+  const [local, session] = browserResetStores();
+  const resetLocal = local.getItem(FRESH_START_RECEIPT_KEY) !== resetId;
+  const sessionReceipt = session.getItem(FRESH_START_RECEIPT_KEY);
+  // A tab opened after the reset was acknowledged holds nothing stale; record the receipt
+  // without a reset so its deep link survives.
+  const resetSession = sessionReceipt !== resetId && (resetLocal || sessionReceipt !== null);
+  if (!resetLocal && !resetSession) {
+    if (sessionReceipt === null) session.setItem(FRESH_START_RECEIPT_KEY, resetId);
+    return false;
+  }
+  for (const store of resetLocal ? [local, session] : [session]) {
+    const keys = Array.from({ length: store.length }, (_, index) => store.key(index)).filter((key): key is string => key !== null && ownedStorageKey(key));
+    for (const key of keys) store.removeItem(key);
+  }
+  sessionValues.clear(); knownValues.clear(); corruptValues.clear(); warnings.clear();
+  session.setItem(FRESH_START_RECEIPT_KEY, resetId);
+  // Acknowledge only after both stores were cleared successfully; other tabs observe this write.
+  if (resetLocal) local.setItem(FRESH_START_RECEIPT_KEY, resetId);
+  return true;
+}
 
 /** Pre-paint preference read, generated here so components never access localStorage directly. */
 export function browserThemeBootstrap(legacyKey: string): string {

@@ -280,6 +280,12 @@ export async function getProductionPreviewReadiness(signal?: AbortSignal): Promi
   };
 }
 
+export async function checkEvaluationPreparation(requestBody: import("./types").EvaluationRequest, signal?: AbortSignal): Promise<import("./types").EvaluationPreparation> {
+  const result = await request<import("./types").EvaluationPreparation>("/admin/evaluations/preparation", { method: "POST", body: JSON.stringify(requestBody), signal });
+  if (!result || !["ready", "source_missing", "source_invalid", "draft_incomplete", "parsing_required", "index_update_required", "unavailable"].includes(result.state) || !Array.isArray(result.source_checks) || !Array.isArray(result.blockers)) throw new ApiError(502, "invalid_preparation_response", "Evaluation preparation status is unavailable.");
+  return result;
+}
+
 export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMConnection> {
   return request<LocalLLMConnection>("/admin/local-llm/connection", { signal });
 }
@@ -305,6 +311,12 @@ export function selectLocalLLMServer(server_id: string): Promise<LocalLLMConnect
 export function diagnoseLocalLLM(target: LocalLLMDiagnosticTarget = {}, signal?: AbortSignal): Promise<LocalLLMDiagnostics> {
   return request<LocalLLMDiagnostics>("/admin/local-llm/diagnostics", {
     method: "POST", body: JSON.stringify(target), signal,
+  });
+}
+
+export function prepareLocalLLM(model: string): Promise<LocalLLMConnection> {
+  return request<LocalLLMConnection>("/admin/local-llm/prepare", {
+    method: "POST", body: JSON.stringify({ model }),
   });
 }
 
@@ -415,15 +427,15 @@ export function getGoldenCanonical(suiteId: SuiteId): Promise<GoldenCanonical> {
   return request<GoldenCanonical>(`/admin/golden/${suiteId}/canonical`);
 }
 
-export function createGoldenDraft(suiteId: SuiteId, parentId: number | null): Promise<GoldenRevision> {
-  return request<GoldenRevision>(`/admin/golden/${suiteId}/drafts`, { method: "POST", body: JSON.stringify({ parent_id: parentId }) });
+export function createGoldenDraft(suiteId: SuiteId, parentId: number | null, filename: string, empty = false): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/${suiteId}/drafts`, { method: "POST", body: JSON.stringify({ parent_id: parentId, filename, empty }) });
 }
 
 export function saveGoldenCase(revisionId: number, caseId: string, expectedSha256: string, value: Record<string, unknown>): Promise<GoldenRevision> {
   return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/cases/${caseId}`, { method: "PUT", body: JSON.stringify({ expected_sha256: expectedSha256, case: value }) });
 }
 
-export function transitionGoldenRevision(revisionId: number, action: "validate" | "publish", expectedSha256: string): Promise<GoldenRevision> {
+export function transitionGoldenRevision(revisionId: number, action: "validate", expectedSha256: string): Promise<GoldenRevision> {
   return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/${action}`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
 }
 
@@ -499,4 +511,8 @@ export function deleteFilePreset(id: string) {
 /** Preview exact current originals; confirmation queues deletion through the normal corpus API. */
 export function previewSourceDeletion(documentIds: string[]): Promise<import("./types").SourceDeletionPreview> {
   return request("/admin/corpus/sources/deletion-preview", { method: "POST", body: JSON.stringify({ document_ids: documentIds }) });
+}
+
+export function getGoldenEvidence(docId: string, query: string, after: number, signal?: AbortSignal) {
+  return request<components["schemas"]["GoldenEvidencePage"]>(`/admin/documents/${encodeURIComponent(docId)}/golden-evidence?${new URLSearchParams({ query, after: String(after), limit: "20" })}`, { signal });
 }

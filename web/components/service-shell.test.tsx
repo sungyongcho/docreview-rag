@@ -1,3 +1,4 @@
+import { I18nProvider } from "@/lib/i18n";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -75,7 +76,7 @@ it.each([
   fireEvent.keyDown(input, { key: "Enter" });
   expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url)))).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Open Build" }));
-  await screen.findByRole("heading", { name: step === 3 ? "3. Embeddings" : "4. Lexical index (BM25)" });
+  await screen.findByRole("heading", { name: step === 3 ? "1-3. Embeddings" : "1-4. Lexical index (BM25)" });
 });
 
 /** Live-build API stub: runtime endpoints plus empty `/admin/*` and operator lists; `ready` lets a test hold back `/ready`. */
@@ -84,6 +85,10 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/lifecycle/receipts")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/admin/evaluations/suites")) return new Response(JSON.stringify(CANNED_SUITES), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/admin/golden/") && url.endsWith("/revisions")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/admin/evaluations/preparation")) return new Response(JSON.stringify({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "source_missing", source_checks: [], blockers: [], next_step: "filings" }), { status: 200, headers: { "content-type": "application/json" } });
     let payload: unknown = {};
     if (url.endsWith("/health")) payload = { status: "ok" };
     else if (url.endsWith("/ready")) payload = await ready();
@@ -134,6 +139,10 @@ function stubPublicApi() {
   configureBrowserStorage("prod");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/lifecycle/receipts")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/admin/evaluations/suites")) return new Response(JSON.stringify(CANNED_SUITES), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/admin/golden/") && url.endsWith("/revisions")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    if (url.endsWith("/admin/evaluations/preparation")) return new Response(JSON.stringify({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "source_missing", source_checks: [], blockers: [], next_step: "filings" }), { status: 200, headers: { "content-type": "application/json" } });
     let payload: unknown = {};
     if (url.endsWith("/health")) payload = { status: "ok" };
     else if (url.endsWith("/ready")) payload = READY_RUNTIME;
@@ -192,7 +201,7 @@ it("keeps restored development settings intact in prod, blocks both review paths
     expect(screen.queryByRole("button", { name: "Operations" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Local model policy" })).not.toBeInTheDocument();
     expect(screen.getAllByText("PROD").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "New review" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(loadConversations().find((item) => item.id === "saved-dev")?.profile).toEqual(original);
     expect(loadConversations().find((item) => item.id !== "saved-dev")?.profile).toEqual(DEFAULT_SESSION_PROFILE);
     expect(loadDefaultProfile()).toEqual(original);
@@ -300,8 +309,8 @@ describe("service shell", () => {
     expect(screen.queryByRole("button", { name: "Operations" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
 
-    // The sidebar action comes first in DOM order; the untitled conversation row shares its name.
-    fireEvent.click(screen.getAllByRole("button", { name: "New review" })[0]);
+    // An unstarted draft is represented only by the New chat action.
+    fireEvent.click(screen.getAllByRole("button", { name: "New chat" })[0]);
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -347,17 +356,17 @@ describe("service shell", () => {
     render(<ServiceShell />);
     await screen.findByRole("button", { name: "System · healthy" });
     fireEvent.click(screen.getByRole("button", { name: "About corpus scope" }));
-    expect(screen.getByRole("tooltip")).toBeVisible();
+    expect(document.querySelector(".composer-help-tooltip")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.querySelector(".composer-help-tooltip")).toBeNull();
     const back = screen.getByRole("button", { name: "Back" });
     back.focus();
     fireEvent.keyDown(back, { key: "Escape" });
     expect(back).toHaveFocus();
     await traverseHistory("Back");
-    expect(screen.getByRole("tooltip")).toBeVisible();
+    expect(document.querySelector(".composer-help-tooltip")).toBeVisible();
     fireEvent.keyDown(screen.getByRole("button", { name: "About corpus scope" }), { key: "Escape" });
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.querySelector(".composer-help-tooltip")).toBeNull();
   });
 
   it("explains pinning and saved-result limitations without changing the existing answer", async () => {
@@ -412,10 +421,10 @@ describe("service shell", () => {
     const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     const ordinaryFetch = fetchMock.getMockImplementation()!;
     const question = { id: "draft-01", question: "Original question", category: "simple_lookup", facet: "factual", answers: [], reference_answer: "Original answer" };
-    const revision = { revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
+    const revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      const payload = url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/canonical") ? { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [question] } : url.endsWith("/revisions") ? [revision] : null;
+      const payload = url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/canonical") ? { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [question] } : url.endsWith("/sec-en/revisions") ? [revision] : null;
       return payload ? new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } }) : ordinaryFetch(input, init);
     });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -423,18 +432,20 @@ describe("service shell", () => {
     await screen.findByText("Corpus total · 29 filings");
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
     fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
-    await screen.findByRole("option", { name: "v1 · draft" });
-    fireEvent.change(screen.getByLabelText("Golden revision"), { target: { value: "7" } });
+    await screen.findByRole("option", { name: "custom.json" });
+    fireEvent.change(screen.getByLabelText("Golden suite"), { target: { value: "file:7" } });
     fireEvent.click(screen.getByRole("button", { name: "draft-01" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Question" }), { target: { value: "Unsaved question" } });
     const rejectedPosition = window.history.state.docreviewNavigation.position;
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await screen.findByRole("dialog", { name: "Unsaved question changes" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue editing" }));
     await waitFor(() => expect(window.history.state.docreviewNavigation.position).toBe(rejectedPosition));
     expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Unsaved question");
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
-    confirm.mockReturnValue(true);
-    await traverseHistory("Back");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByRole("dialog", { name: "Unsaved question changes" });
+    fireEvent.click(screen.getByRole("button", { name: "Discard and leave" }));
     expect(screen.getByRole("button", { name: "Search trial" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
     confirm.mockRestore();
@@ -448,7 +459,7 @@ describe("service shell", () => {
       render(<ServiceShell />);
       await waitFor(() => expect(document.getElementById("stage-7")).toBeInTheDocument());
       expect(await screen.findByRole("button", { name: "Build, needs attention" })).toHaveAttribute("aria-pressed", "true");
-      expect(requests.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+      expect(requests.mock.calls.some(([url, init]) => init?.method === "POST" && !String(url).endsWith("/admin/evaluations/preparation"))).toBe(false);
     } finally { window.history.replaceState({}, "", originalUrl); }
   });
 
@@ -467,7 +478,7 @@ describe("service shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Measure" }));
     fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
-    await screen.findByRole("heading", { name: "Result details · #16" });
+    await screen.findByRole("heading", { name: "Result details" });
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
     fireEvent.click(screen.getByRole("button", { name: "API inspector" }));
     const request = screen.getByRole("textbox");
@@ -482,7 +493,7 @@ describe("service shell", () => {
     // Result detail intentionally replaces the run list while preserving the selected result.
     expect(screen.queryByRole("radio", { name: `Select ${CANNED_JOB.job_id}` })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to evaluations" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Result details · #16" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Result details" })).toBeVisible();
   });
 
   it("renders the review shell with guides and development links in the same tab", async () => {
@@ -875,7 +886,7 @@ describe("service shell", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     await waitFor(() => expect(screen.getByText(/wall-clock limit of 120s/)).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Run details" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open run details|Run details)$/ }));
     fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
     // The run identifier is the only handle for correlating this with the server traces.
     expect(screen.getByText("run-42")).toBeInTheDocument();
@@ -1257,7 +1268,7 @@ describe("in-message review lifecycle", () => {
   it("finalizes the original message after switching conversations without changing the new draft", async () => {
     const request = await startReview();
     const originalId = loadConversations()[0].id;
-    fireEvent.click(screen.getByRole("button", { name: "New review" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     fireEvent.change(request.input, { target: { value: "Different conversation draft" } });
     await act(async () => { request.stream.enqueue(request.encoder.encode('event: report\ndata: {"run":{"status":"ok","report":{"report_kind":"conversation","answer":"Original conversation answer."}}}\n\nevent: done\ndata: {}\n\n')); request.stream.close(); });
     await waitFor(() => expect(loadConversations().find((conversation) => conversation.id === originalId)?.messages[1].pending).toBe(false));
@@ -1354,11 +1365,15 @@ describe("right-side run details", () => {
 
   it("moves details out of the answer and restores each question's last section", async () => {
     render(<ServiceShell />);
-    const buttons = await screen.findAllByRole("button", { name: "Run details" });
+    const buttons = await screen.findAllByRole("button", { name: /^(Open run details|Run details)$/ });
     const composer = screen.getByPlaceholderText("Ask a question about the filing corpus");
     fireEvent.change(composer, { target: { value: "Keep this unsent draft" } });
     expect(screen.queryByText("run-first")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".review-execution-summary")).toHaveLength(2);
+    expect(buttons).toHaveLength(2);
+    buttons.forEach(button => expect(button).toBeVisible());
+    expect(document.querySelector(".review-execution-summary[open]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Run details" })).toBeNull();
     expect(document.querySelector(".message .execution-performance")).toBeNull();
     fireEvent.click(buttons[0]);
     let panel = screen.getByRole("dialog", { name: "Run details" });
@@ -1380,7 +1395,7 @@ describe("right-side run details", () => {
 
   it("keeps only one right panel open and closes help from the composer", async () => {
     render(<ServiceShell />);
-    const buttons = await screen.findAllByRole("button", { name: "Run details" });
+    const buttons = await screen.findAllByRole("button", { name: /^(Open run details|Run details)$/ });
     fireEvent.click(screen.getByRole("button", { name: "Toggle help" }));
     expect(screen.getByRole("complementary", { name: "Help" })).toBeInTheDocument();
     fireEvent.click(buttons[0]);
@@ -1434,12 +1449,12 @@ describe("browser navigation history", () => {
     window.history.replaceState(null, "", "/docreview-rag-agent/?view=measure&tab=snapshots&locale=ko#saved");
     render(<ServiceShell />);
     await screen.findByRole("button", { name: "System · healthy" });
-    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" })).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" })).toHaveAttribute("aria-pressed", "true"));
     expect(window.location.pathname).toBe("/docreview-rag-agent/");
     expect(new URLSearchParams(window.location.search).get("locale")).toBe("ko");
     expect(window.location.hash).toBe("#saved");
     cleanup(); render(<ServiceShell />);
-    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" })).toHaveAttribute("aria-pressed", "true"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" })).toHaveAttribute("aria-pressed", "true"));
   });
 
   it("falls back to a saved conversation when a shared URL names an unknown local id", async () => {
@@ -1533,7 +1548,7 @@ it("opens default limits from System status", async () => {
   render(<LiveShell />);
   fireEvent.click(await screen.findByRole("button", { name: "Edit default limits" }));
   const dialog = await screen.findByRole("dialog", { name: "Run limits" });
-  expect(within(dialog).getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByRole("button", { name: "Answer limits" })).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).getByLabelText("Maximum wall clock seconds").closest(".settings-form")).toBeNull();
   expect(within(dialog).queryByLabelText("Additional operator instructions")).toBeNull();
 });
@@ -1555,4 +1570,66 @@ it("restores a notification job destination on fresh load", async () => {
     expect(await screen.findByText("Requested job result")).toBeVisible();
     expect(screen.queryByText("Other job result")).toBeNull();
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); localStorage.clear(); }
+});
+
+it("keeps the draft visible and blocks submission during corpus updates without a modal", async () => {
+  cleanup();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  window.localStorage.clear();
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  const corpus = { ...READY_RUNTIME.corpus, writable: true, updating: true };
+  const fetchMock = stubLiveApi(corpus, async () => ({ ...liveReadiness(corpus), status: "degraded" }));
+  vi.resetModules();
+  const { ServiceShell: LiveShell } = await import("./service-shell");
+  render(<LiveShell />);
+  await screen.findByText("Search data is updating. Existing answers can finish; new questions will be available after preparation.");
+  const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(input, { target: { value: "Keep this question" } });
+  expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+  expect(input).toHaveValue("Keep this question");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url)))).toBe(false);
+});
+
+it("keeps the related-evidence qualification once without a duplicate notice box", async () => {
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  stubPublicApi();
+  seedAnsweredConversation();
+  const conversations = loadConversations();
+  conversations[0].messages[1].evidenceLabel = "Related evidence — not direct support";
+  conversations[0].messages[1].text = "No direct evidence was found.";
+  saveConversations(conversations);
+  render(<ServiceShell />);
+  const heading = await screen.findByText("Related evidence — not direct support · 1");
+  expect(heading.tagName).toBe("SUMMARY");
+  expect(screen.queryByText("Related evidence is shown below, but it is not direct support.")).not.toBeInTheDocument();
+  fireEvent.click(heading);
+  expect(heading.closest("details")).toHaveAttribute("open");
+});
+
+it.each(["en", "ko"] as const)("localizes an untouched draft and hides only its trash action (%s)", async locale => {
+  cleanup(); window.localStorage.clear();
+  window.localStorage.setItem("docreview.locale", locale);
+  window.localStorage.setItem(ONBOARDING_KEY, "done");
+  stubPublicApi();
+  saveConversations([
+    { id: "untouched", title: "New review", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: null, messages: [] },
+    { id: "untouched-2", title: "New review", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: null, messages: [] },
+    { id: "started", title: "Existing question", createdAt: "2026-09-08", updatedAt: "2026-09-08", profile: null, messages: [{ id: "question", role: "user", text: "Existing question" }] },
+  ]);
+  render(<I18nProvider><ServiceShell /></I18nProvider>);
+  const label = locale === "ko" ? "새 대화" : "New chat";
+  await waitFor(() => expect(screen.getAllByRole("button", { name: label })).toHaveLength(1));
+  const rows = document.querySelectorAll(".conversation-row");
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toHaveTextContent("Existing question");
+  expect(rows[0].querySelector(".delete-review")).not.toBeNull();
+  expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
+  const count = loadConversations().length;
+  fireEvent.click(screen.getByRole("button", { name: label }));
+  fireEvent.click(screen.getByRole("button", { name: label }));
+  expect(loadConversations()).toHaveLength(count);
+  expect(document.querySelector(".workspace-history-title")).toHaveTextContent(label);
+  expect(screen.queryByText("New review")).not.toBeInTheDocument();
 });

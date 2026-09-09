@@ -54,14 +54,14 @@ describe("Pipeline terminal reference", () => {
     ] };
     const { rerender } = render(<PipelineReference {...props} />);
     fireEvent.click(screen.getByText("Implementation and terminal reference"));
-    expect(screen.queryByRole("option", { name: "invalid.json" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "invalid.json" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();
-    fireEvent.change(screen.getByLabelText("CLI manifest reference"), { target: { value: "valid.json" } });
-    fireEvent.change(screen.getByLabelText("Processing selection"), { target: { value: "sec-evaluation" } });
+    fireEvent.click(screen.getByRole("button", { name: "valid.json" }));
+    fireEvent.click(screen.getByRole("button", { name: "sec-evaluation" }));
     expect(screen.getByRole("button", { name: "Copy code" })).toBeVisible();
     rerender(<PipelineReference {...props} manifests={[]} />);
     expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();
-    expect(screen.getByLabelText("CLI manifest reference")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "valid.json" })).toBeNull();
   });
 
   it("copies the exact command without executing a server request", async () => {

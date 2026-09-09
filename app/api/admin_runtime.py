@@ -21,9 +21,13 @@ from app.api.admin_schemas import (
     EvaluationComparisonResponse,
     EvaluationJobResource,
     EvaluationJobsResponse,
+    EvaluationPreparationResource,
     EvaluationResultDetailResponse,
+    EvaluationResultSummaryResource,
     EvaluationRunRequest,
     GoldenCanonicalResource,
+    GoldenEvidenceChunk,
+    GoldenEvidencePage,
     GoldenRevisionResource,
     GoldenSuiteId,
     GoldenSuiteResource,
@@ -56,14 +60,22 @@ from app.api.schemas import (
     SnapshotComparisonResponse,
     SnapshotResource,
 )
+from app.api.search_consistency import prepare_search
 from app.config import get_settings
 from app.corpus_admin import AdminCommand, CorpusStatus, RuntimeCorpusAdminService
 from app.db.models import (
+    Chunk,
+    Document,
+    EvalResult,
     OperatorJob,
     Run,
     Trace,
 )
-from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
+from app.evals.admin import (
+    EvaluationAdminService,
+    EvaluationAlreadyQueuedError,
+    EvaluationNotReadyError,
+)
 from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
@@ -112,9 +124,11 @@ class RuntimeAdminApiServices:
         self._corpus = corpus or RuntimeCorpusAdminService(
             session_factory=runtime.session_factory,
             job_store=self._job_store,
+            corpus_access=runtime.corpus_access,
             execution_lock=execution_lock,
             execution_coordinator=execution_coordinator,
         )
+        self._corpus.corpus_access = runtime.corpus_access
         self._evaluations = evaluations or EvaluationAdminService(
             corpus_status=self._corpus.status,
             session_factory=runtime.session_factory,
@@ -175,6 +189,13 @@ class RuntimeAdminApiServices:
             if action == "select":
                 return await connection.select_server(server_id)
             return await connection.reset()
+        except LocalConnectionError as error:
+            raise unavailable(error.code, str(error)) from error
+
+    async def prepare_local_model(self, model: str) -> dict[str, Any]:
+        """Prepare the selected server's installed model under the developer-only guard."""
+        try:
+            return await self._local_connection().prepare_model(model)
         except LocalConnectionError as error:
             raise unavailable(error.code, str(error)) from error
 
@@ -245,6 +266,40 @@ class RuntimeAdminApiServices:
             limit=limit,
         )
 
+    async def golden_evidence_chunks(
+        self, doc_id: str, query: str, after: int, limit: int
+    ) -> GoldenEvidencePage:
+        """Page current chunks deterministically using their exact stored source spans."""
+        statement = (
+            select(Chunk)
+            .join(Document, Document.doc_id == Chunk.doc_id)
+            .where(
+                Chunk.doc_id == doc_id,
+                Chunk.id > after,
+            )
+        )
+        if query:
+            statement = statement.where(Chunk.body.icontains(query, autoescape=True))
+        async with self._runtime.session_factory() as session:
+            rows = tuple(await session.scalars(statement.order_by(Chunk.id).limit(limit + 1)))
+        return GoldenEvidencePage(
+            chunks=tuple(
+                GoldenEvidenceChunk(
+                    chunk_id=row.id,
+                    doc_id=row.doc_id,
+                    source_sha256=row.source_sha256,
+                    start_char=row.start_char,
+                    end_char=row.end_char,
+                    item=row.item,
+                    kind=row.kind,
+                    body=row.body,
+                    citation=row.citation,
+                )
+                for row in rows[:limit]
+            ),
+            next_after=rows[limit - 1].id if len(rows) > limit else None,
+        )
+
     async def document_facets(self, registry: str = "") -> DocumentFacetsResponse:
         """Return deterministic live filter values and counts."""
         return await self._documents.document_facets(registry=registry)
@@ -294,10 +349,12 @@ class RuntimeAdminApiServices:
         return await self._golden.list(suite_id)
 
     async def create_golden_draft(
-        self, suite_id: GoldenSuiteId, parent_id: int | None
+        self, suite_id: GoldenSuiteId, parent_id: int | None, filename: str, empty: bool = False
     ) -> GoldenRevisionResource:
         """Create one editable revision from canonical or parent bytes."""
-        return await self._golden.create_draft(suite_id, parent_id=parent_id)
+        return await self._golden.create_draft(
+            suite_id, parent_id=parent_id, filename=filename, empty=empty
+        )
 
     async def replace_golden_case(
         self,
@@ -320,12 +377,6 @@ class RuntimeAdminApiServices:
     ) -> GoldenRevisionResource:
         """Validate schema, uniqueness, and exact source spans."""
         return await self._golden.validate(revision_id, expected_sha256=expected_sha256)
-
-    async def publish_golden_revision(
-        self, revision_id: int, expected_sha256: str
-    ) -> GoldenRevisionResource:
-        """Publish one validated revision to canonical JSON atomically."""
-        return await self._golden.publish(revision_id, expected_sha256=expected_sha256)
 
     async def snapshots(self) -> tuple[SnapshotResource, ...]:
         """Return all local snapshots including private experiment rows."""
@@ -352,10 +403,23 @@ class RuntimeAdminApiServices:
         """Compare private or public local snapshots without rerunning work."""
         return await self._snapshots.compare(baseline_id, candidate_id)
 
+    async def evaluation_preparation(
+        self, request: EvaluationRunRequest
+    ) -> EvaluationPreparationResource:
+        """Expose the same readiness gate used by evaluation submission."""
+        return await self._evaluations.preparation(request)
+
     async def enqueue_evaluation(self, request: EvaluationRunRequest) -> EvaluationJobResource:
         """Queue one quick or matrix evaluation."""
         try:
             return await self._evaluations.enqueue(request)
+        except EvaluationNotReadyError as error:
+            raise ApiProblemError(
+                status_code=409,
+                code="evaluation_not_ready",
+                message=str(error),
+                detail=error.preparation.state,
+            ) from error
         except EvaluationAlreadyQueuedError as error:
             raise ApiProblemError(
                 status_code=409,
@@ -365,7 +429,34 @@ class RuntimeAdminApiServices:
 
     async def evaluation_jobs(self) -> EvaluationJobsResponse:
         """Return newest-first evaluation job state."""
-        return await self._evaluations.jobs()
+        board = await self._evaluations.jobs()
+        ids = {result_id for job in board.jobs for result_id in job.result_ids}
+        if not ids:
+            return board
+        async with self._runtime.session_factory() as session:
+            rows = tuple(await session.scalars(select(EvalResult).where(EvalResult.id.in_(ids))))
+        summaries = {
+            row.id: EvaluationResultSummaryResource(
+                result_id=row.id, created_at=row.created_at, config=row.config
+            )
+            for row in rows
+        }
+        return board.model_copy(
+            update={
+                "jobs": tuple(
+                    job.model_copy(
+                        update={
+                            "result_summaries": tuple(
+                                summaries[result_id]
+                                for result_id in job.result_ids
+                                if result_id in summaries
+                            )
+                        }
+                    )
+                    for job in board.jobs
+                )
+            }
+        )
 
     @staticmethod
     def _operator_resource(job: StoredJob, queue_positions: dict[str, int]) -> OperatorJobResource:
@@ -629,6 +720,13 @@ class RuntimeAdminApiServices:
         filters: RetrievalFilters,
     ) -> RetrievalResult:
         """Execute one explicit profile while retaining component provenance."""
+        await prepare_search(
+            session,
+            self._runtime.embedding_provider,
+            profile.strategy,
+            profile.lexical_ranker or "ts_rank_cd",
+            filters,
+        )
         bm25 = profile.lexical_ranker == "bm25"
         if profile.strategy == "hybrid":
             return await retrieve(
@@ -676,7 +774,7 @@ class RuntimeAdminApiServices:
         request: RetrievalPreviewRequest,
     ) -> RetrievalPreviewResponse:
         """Return evidence and component ranks for one session-scoped profile."""
-        async with self._runtime.session_factory() as session:
+        async with self._runtime.search_access(), self._runtime.session_factory() as session:
             result = await self._retrieve_profile(
                 session,
                 request.query,

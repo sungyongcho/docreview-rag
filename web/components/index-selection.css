@@ -14,3 +14,15 @@
 .index-action-bar .button { max-width: 100%; font-size: 12px; }
 .index-action-count { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 15%, transparent); }
 .index-action-progress { width: 100%; min-width: 0; }
+
+.index-selection.source-basket { padding: 12px; gap: 8px; }
+.index-selection .index-selection-totals { gap: 4px 10px; font-size: 11px; color: var(--muted); }
+.index-selection .index-selection-totals strong { padding: 0; border: 0; border-radius: 0; background: transparent; font-weight: 400; }
+.index-selection .index-selection-heading .button { min-height: 30px; padding: 5px 8px; font-size: 11px; }
+.index-readiness-note { margin: 0; padding: 4px 0; color: light-dark(#96520e, #e9b976); font-size: 11px; line-height: 1.5; }
+.index-selection > .helper { margin: 0; font-size: 11px; }
+.source-basket .source-selection-grid .source-matrix-year.source-blocked { border-color: color-mix(in srgb, var(--bad) 50%, var(--border)); color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); }
+
+.index-repair-details { font-size: 11px; color: var(--muted); }
+.index-repair-details summary { cursor: pointer; padding: 3px 0; }
+.index-repair-details ul { margin: 5px 0; padding-left: 18px; overflow-wrap: anywhere; }

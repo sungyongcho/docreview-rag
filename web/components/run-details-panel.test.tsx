@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@/lib/types";
 import { RunDetailsPanel } from "./run-details-panel";
@@ -13,7 +13,7 @@ const first: ChatMessage = {
 };
 const second: ChatMessage = { ...first, id: "second45-message-id", question: "What changed in operating expenses?", trace: "A different run trace" };
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 /** Model the parent keeping its conversation and inspector mounted across closes. */
 function Conversation() {
@@ -77,16 +77,18 @@ describe("Run details panel", () => {
     expect(opener).toHaveFocus();
   });
 
-  it("collapses to its edge and restores the current section on expand", () => {
-    render(<RunDetailsPanel message={first} onClose={vi.fn()} />);
+  it("animates removal without leaving an edge handle and restores the selected section on reopen", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(<RunDetailsPanel message={first} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
-    fireEvent.click(screen.getByRole("button", { name: "Collapse run details" }));
-    expect(screen.getByRole("dialog")).toHaveClass("is-collapsed");
-    expect(screen.queryByRole("tab")).toBeNull();
-    expect(screen.getByRole("button", { name: "Expand run details" })).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByRole("button", { name: "Expand run details" }));
+    expect(screen.queryByRole("button", { name: "Collapse run details" })).toBeNull();
+    rerender(<RunDetailsPanel message={null} onClose={vi.fn()} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.querySelector(".run-details-panel")).toHaveClass("is-leaving");
+    act(() => vi.advanceTimersByTime(180));
+    expect(container.querySelector(".run-details-panel")).toBeNull();
+    rerender(<RunDetailsPanel message={first} onClose={vi.fn()} />);
     expect(screen.getByRole("tab", { name: "Trace" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText(first.trace!)).toBeVisible();
   });
 
   it("closes on conversation or composer input without discarding draft, focus or scroll", () => {
@@ -169,8 +171,16 @@ it("opens the selected stage on Performance while retaining every collected node
   expect(table.querySelectorAll('tr[aria-current="true"]')).toHaveLength(2);
   expect(Array.from(table.querySelectorAll('tr[aria-current="true"]'), (row) => row.getAttribute("data-stage-node"))).toEqual(["retrieve", "retrieve"]);
   fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
-  fireEvent.click(screen.getByRole("button", { name: "Collapse run details" }));
   rerender(<RunDetailsPanel message={message} onClose={vi.fn()} stageRequest={{ stage: "retrieve" }} />);
   expect(screen.getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
-  expect(screen.getByRole("button", { name: "Collapse run details" })).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("button", { name: "Close run details" })).toBeVisible();
+});
+
+it("restores covered conversation controls when the inspector closes", () => {
+  const { container, rerender } = render(<><div className="review-workspace"><textarea defaultValue="Keep my draft" /></div><RunDetailsPanel message={first} onClose={vi.fn()} /></>);
+  const conversation = container.querySelector<HTMLElement>(".review-workspace")!;
+  expect(conversation.inert).toBe(true);
+  rerender(<><div className="review-workspace"><textarea defaultValue="Keep my draft" /></div><RunDetailsPanel message={null} onClose={vi.fn()} /></>);
+  expect(conversation.inert).not.toBe(true);
+  expect(screen.getByRole("textbox")).toHaveValue("Keep my draft");
 });

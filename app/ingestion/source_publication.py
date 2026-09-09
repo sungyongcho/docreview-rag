@@ -15,14 +15,16 @@ from app.ingestion.source_storage import (
 )
 
 
-def fixed_path(registry: str, filing_id: str, role: str) -> str:
-    """Name current originals by registry and receipt, independent of content revisions."""
+def fixed_path(registry: str, issuer: str, filing_id: str, role: str) -> str:
+    """Group current originals by company code while retaining official filing identity."""
     if (
         registry not in {"sec", "dart"}
         or role not in {"primary", "archive"}
         or (registry == "sec" and role == "archive")
     ):
         raise ValueError("Unsupported current source role.")
+    if not issuer.strip() or "/" in issuer or "\\" in issuer or issuer in {".", ".."}:
+        raise ValueError("Invalid company code.")
     if "/" in filing_id or "\\" in filing_id or filing_id in {".", ".."}:
         raise ValueError("Invalid official filing identifier.")
     name = (
@@ -30,7 +32,7 @@ def fixed_path(registry: str, filing_id: str, role: str) -> str:
         if role == "archive"
         else ("primary.html" if registry == "sec" else "primary.xml")
     )
-    return SourceArtifact.validate_path(f"{registry}/{filing_id}/{name}")
+    return SourceArtifact.validate_path(f"{registry}/{issuer}/{filing_id}/{name}")
 
 
 def publish_acquired(
@@ -80,7 +82,9 @@ def publish_acquired(
             documents[document.document_id] = document
             replacements = []
             for index, artifact in enumerate(filing.artifacts):
-                relative = fixed_path(document.registry, document.filing_id, artifact.role)
+                relative = fixed_path(
+                    document.registry, document.issuer, document.filing_id, artifact.role
+                )
                 if artifact.path != relative:
                     raise ValueError(
                         "Unsupported current source path; acquire the filing at its fixed path."

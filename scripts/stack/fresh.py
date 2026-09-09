@@ -15,12 +15,22 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from scripts.stack.operator import LocalOperator
 from scripts.stack.prompts import confirm
 from scripts.stack.terminal import activity, run_step
 
-PRESERVED = {".git", ".agents", ".claude", ".codex", ".vscode", ".idea", ".freshstart-keep"}
+PRESERVED = {
+    "data/golden",
+    ".git",
+    ".agents",
+    ".claude",
+    ".codex",
+    ".vscode",
+    ".idea",
+    ".freshstart-keep",
+}
 VOLUMES = {"pg_data", "web_next", "web_node_modules", "ollama_models"}
 
 
@@ -227,6 +237,10 @@ def docker_inventory(root: Path, *, extreme: bool) -> dict:
 def preview(root: Path, files: dict, resources: dict) -> None:
     """Show numbered top-level file totals and the exact tracked/Docker deletion scope."""
     print(f"Fresh-start preview: {root}\nNo backup will be created.")
+    print(
+        "DocReview browser data: conversations, settings and basket "
+        "reset to defaults on next connection."
+    )
     groups = defaultdict(lambda: [0, 0])
     for name, info in files["files"].items():
         group = groups[name.split("/", 1)[0]]
@@ -380,6 +394,28 @@ def start_fresh(
                 check=True,
             )
         completed.append("tracked files")
+        (root / "data").mkdir(parents=True, exist_ok=True)
+        with parent_descriptor(root, "data/browser-reset.json") as (parent, name):
+            reset_id = str(uuid4())
+            temporary_name = f".browser-reset-{reset_id}.tmp"
+            descriptor = os.open(
+                temporary_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o644,
+                dir_fd=parent,
+            )
+            try:
+                with os.fdopen(descriptor, "w") as stream:
+                    stream.write(json.dumps({"reset_id": reset_id}) + "\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary_name, name, src_dir_fd=parent, dst_dir_fd=parent)
+            finally:
+                try:
+                    os.unlink(temporary_name, dir_fd=parent)
+                except FileNotFoundError:
+                    pass
+        completed.append("browser reset")
         write_receipt(root, "start-fresh", status="succeeded", completed=completed, restarted=False)
     except (
         OSError,
@@ -393,8 +429,8 @@ def start_fresh(
         )
         raise
     print(
-        "Checkout cleanup complete. Browser localStorage is unchanged; clear it in "
-        "Settings > Data and help (설정 › 데이터와 도움말)."
+        "Checkout cleanup complete. DocReview browser data will reset to defaults "
+        "when the web interface next connects. Other applications are unchanged."
     )
     if extreme:
         print(

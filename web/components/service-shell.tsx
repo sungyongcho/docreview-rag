@@ -1,4 +1,6 @@
 "use client";
+import { useConfirmation } from "./use-confirmation";
+import { SearchUpdateStatus } from "./search-update-status";
 import { NotificationCenter } from "@/components/notification-center";
 import { NotificationSignals } from "@/components/notification-signals";
 import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
@@ -6,7 +8,7 @@ import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notific
 import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure } from "@/lib/scope-failure";
 import { ScopeFailureSummary } from "@/components/scope-failure-summary";
 import { BrowserStorageSupport } from "@/components/browser-storage";
-import { browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
+import { applyFreshStartReset, FRESH_START_RECEIPT_KEY, browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -24,6 +26,7 @@ import { localCpuWarning, localModelIssue, selectedLocalModel, SLOW_LOCAL_CPU_TO
 
 import {
   Activity,
+  ArrowUpRight,
   CircleHelp,
   FlaskConical,
   Hammer,
@@ -38,7 +41,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
 import { WorkspaceHistory } from "@/components/workspace-history";
@@ -130,6 +133,7 @@ function restoreInterruptedConversations(saved: Conversation[], t: (key: string)
 }
 
 function ServiceSession({ publicPreview = false, sessionActive = true, onPreview, previewBlocked = false }: { publicPreview?: boolean; sessionActive?: boolean; onPreview?: () => void; previewBlocked?: boolean }) {
+  const { confirm, confirmationDialog } = useConfirmation();
   const { t, locale } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -141,6 +145,8 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const [buildStage, setBuildStage] = useState<number | "setup" | undefined>(undefined);
   const pendingReturn = useRef<NavigationEntry | null>(null);
   const [unsavedGolden, setUnsavedGolden] = useState(false);
+  const goldenLeaveGuard = useRef<((action: () => void) => void) | null>(null);
+  const registerGoldenLeave = useCallback((guard: ((action: () => void) => void) | null) => { goldenLeaveGuard.current = guard; }, []);
   const [buildTab, setBuildTab] = useState<BuildTab>("pipeline");
   const [buildJobId, setBuildJobId] = useState<string | undefined>();
   const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
@@ -222,12 +228,31 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
   useEffect(() => () => reviewAbort.current?.abort(), []);
   useEffect(() => {
+    if (publicPreview || !sessionActive) return;
+    function freshStart(event: StorageEvent) {
+      if (event.storageArea !== window.localStorage || event.key !== FRESH_START_RECEIPT_KEY || !event.newValue) return;
+      if (applyFreshStartReset(event.newValue)) {
+        initialized.current = false;
+        reviewAbort.current?.abort();
+        window.location.replace("/docreview-rag-agent/");
+      }
+    }
+    window.addEventListener("storage", freshStart);
+    return () => window.removeEventListener("storage", freshStart);
+  }, [publicPreview, sessionActive]);
+  useEffect(() => {
     if (!sessionActive) return;
     let cancelled = false;
     void getCapabilities().then((value) => {
       if (cancelled) return;
       if (!["dev", "prod"].includes(value.environment)) { setCapabilities(null); return; }
       configureBrowserStorage(publicPreview ? undefined : value.environment);
+      if (!publicPreview && value.environment === "dev" && applyFreshStartReset(value.browser_reset_id)) {
+        initialized.current = false;
+        reviewAbort.current?.abort();
+        window.location.replace("/docreview-rag-agent/");
+        return;
+      }
       if (!initialized.current) {
         initialized.current = true;
         const saved = loadConversations();
@@ -300,7 +325,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
   const settingsValidationError = conversationSettingsError(activeSessionProfile);
-  const sendBlocked = settingsValidationError !== null || publicPreview || !conversationInputsValid || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = settingsValidationError !== null || publicPreview || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -353,7 +378,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       || (normalized.view === "measure" && (normalized.tab !== measureTab || normalized.resultId !== measureResultId))
       || (normalized.view === "system" && normalized.tab !== systemTab)
       || (normalized.view === "review" && normalized.conversationId !== activeId);
-    if (!confirmed && changed && view === "measure" && unsavedGolden && !window.confirm(t("Discard unsaved question changes?"))) return false;
+    if (!confirmed && changed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => navigate(target, true)); return false; }
     if (changed && !returning) {
       const origin = currentNavigation();
       setNavigationHistory((history) => [...history.slice(-29), origin]);
@@ -518,16 +543,18 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       return navigate({ view: "system", tab: "status" });
     }
     if (category === "runtime") return navigate({ view: "system", tab: "status" });
-    if (category === "experiments") return navigate({ view: "measure", tab: "defaults" });
+    if (category === "experiments") return navigate({ view: "measure", tab: "runs" });
     if (category === "snapshot") return navigate({ view: "measure", tab: "snapshots" });
     setSettingsCategory(category);
     setSettingsOpen(true);
   }
 
-  function createReview() {
-    if (view === "measure" && unsavedGolden && !window.confirm(t("Discard unsaved question changes?"))) return;
-    const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
-    persist([conversation, ...conversations]);
+  function createReview(confirmed = false) {
+    if (!confirmed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => createReview(true)); return; }
+    const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile ?? DEFAULT_SESSION_PROFILE, permissions));
+    const conversation = reusable ?? newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
+    if (reusable && activeId === reusable.id && view === "review") return;
+    if (!reusable) persist([conversation, ...conversations]);
     setActiveId(conversation.id);
     setProfile(conversation.profile ?? DEFAULT_SESSION_PROFILE);
     navigate({ view: "review", conversationId: conversation.id }, true);
@@ -929,7 +956,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     try {
       const command = (await getOperatorCommands()).find((item) => item.command_id === commandId);
       if (!command) throw new Error(`Operations does not offer ${commandId}.`);
-      if (command.confirmation && !window.confirm(command.confirmation)) return;
+      if (command.confirmation && !await confirm(command.confirmation)) return;
       await startOperatorJob(command.command_id);
       notify(t("{p0} started. Follow it under System › Operations.", { p0: command.label }), "success", "operations-run", undefined, { event: "operations-run-notice" });
     } catch (reason) {
@@ -937,26 +964,26 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     }
   }
   const historyEntries = [...navigationHistory.map(({ position, target }) => ({ position, target })), { position: navigationPosition.current, target: currentTarget() }, ...navigationForward.map(({ position, target }) => ({ position, target }))];
-  const conversationTitles = Object.fromEntries(conversations.map((item) => [item.id, item.title]));
+  const conversationTitles = Object.fromEntries(conversations.map((item) => [item.id, item.messages.length > 0 ? item.title : t("New chat")]));
   function closeSidebar() {
     setSidebarOpen(false);
     sidebarToggle.current?.focus();
   }
 
   return (
-    <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>
+    <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>{confirmationDialog}
       {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
       <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
         <div className="brand"><ProductBrand /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
-        <button className="new-review" data-tour="new-review" type="button" onClick={createReview}><SquarePen size={17} /><span>{t("New review")}</span></button>
+        <button className="new-review" data-tour="new-review" type="button" aria-pressed={view === "review" && !!active && active.messages.length === 0} onClick={() => createReview()}><SquarePen size={17} /><span>{t("New chat")}</span></button>
         <p className="sidebar-label">{t("Recent reviews")}</p>
         <div className="conversation-list" data-tour="recent-reviews">
-          {conversations.map((conversation) => (
+          {conversations.filter(conversation => conversation.messages.length > 0).map((conversation) => (
             <div className="conversation-row" key={conversation.id}>
               <button type="button" aria-pressed={conversation.id === activeId && view === "review"} onClick={() => navigate({ view: "review", conversationId: conversation.id })}>
-                <MessageSquare size={15} /><span>{conversation.title}</span>
+                <MessageSquare size={15} /><span>{conversationTitles[conversation.id]}</span>
               </button>
-              <button className="delete-review" type="button" aria-label={t("Delete {p0}", { p0: conversation.title })} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>
+              {conversation.messages.length > 0 && <button className="delete-review" type="button" aria-label={t("Delete {p0}", { p0: conversation.title })} onClick={() => removeReview(conversation.id)}><Trash2 size={14} /></button>}
             </div>
           ))}
         </div>
@@ -986,8 +1013,9 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             <button ref={sidebarToggle} className="icon-button" type="button" aria-label={t("Toggle sidebar")} aria-expanded={sidebarOpen} aria-controls="service-navigation" title={modeLabel ?? undefined} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>
             <WorkspaceHistory entries={historyEntries.map((entry) => ({ id: String(entry.position), label: navigationLabel(entry.target, conversationTitles, t) }))} currentIndex={navigationHistory.length} onBack={() => { const previous = navigationHistory.at(-1); if (previous) jumpNavigation(previous.position); }} onForward={() => { const next = navigationForward[0]; if (next) jumpNavigation(next.position); }} onJump={(index) => jumpNavigation(historyEntries[index].position)} />
           </div>
-          <div className="topbar-status">{sessionActive && <NotificationCenter developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} />}{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
+          <div className="topbar-status">{sessionActive && <><SearchUpdateStatus updating={runtimeHealth.readiness?.corpus.updating === true} preparation={banner?.kind === "preparation" || banner?.kind === "empty" ? banner.text : null} jobs={operatorJobs.board.jobs} stale={operatorJobs.stale || runtimeHealth.waiting || !runtimeHealth.readiness || runtimeHealth.kind === "api_down"} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} onOpenJobs={jobId => navigate({ view: "build", tab: "jobs", jobId })} /><NotificationCenter jobs={operatorJobs.board.jobs} jobsStale={operatorJobs.stale} developer={adminLive} onNavigate={openNotification} blocked={settingsOpen || runtimeHealth.modalVisible || tourOpen} /></>}{onPreview && adminBuild && environment === "dev" && <button className="button production-preview-trigger" type="button" aria-label={t("Production preview")} disabled={busy || modalOpen || tourOpen || previewBlocked} title={t(busy || modalOpen || tourOpen || previewBlocked ? "Finish the current request or close the dialog before previewing." : "On the deployed screen, settings are stored in this browser's localStorage")} onClick={() => { if (!busy && !modalOpen && !tourOpen && !previewBlocked) onPreview(); }}><Monitor size={16} aria-hidden="true" /><span>{t("Production preview")}</span></button>}<LanguageSwitch /><ThemeSwitch />{adminLive && (operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0) && <button className="job-health" type="button" onClick={() => navigate({ view: "build", tab: "jobs" })}>{operatorJobs.board.active_count}{t("running ·")}{" "}{operatorJobs.board.queued_count}{t("queued")}</button>}<button type="button" className="icon-button help-toggle" aria-label={t("Toggle help")} aria-pressed={helpOpen} onClick={() => setHelp(!helpOpen)}><CircleHelp size={18} /></button></div>
         </header>
+        {runDetailsMessage && <div className="run-details-backdrop" aria-hidden="true" onClick={() => setRunDetailsMessageId(null)} />}
         {sessionActive && (runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
         <NotificationOutlet active={sessionActive} />
 
@@ -1069,6 +1097,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         </RetainedPanel>
 
         <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
+          onLocalPrepared={runtimeHealth.refreshLocal}
           localModel={activeSessionProfile.local_model}
           focusStep={pendingStage}
           focusJobId={buildJobId}
@@ -1099,6 +1128,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           readiness={runtimeHealth.readiness}
           onOpenPreparation={(stage) => navigate({ view: "build", tab: "pipeline", stage })}
           onDirtyChange={setUnsavedGolden}
+          onLeaveGuard={registerGoldenLeave}
           environment={permissions?.environment}
           live={adminBuild && permissions?.can_run_evaluation === true}
           ready={runtimeHealth.kind === "healthy"}
@@ -1186,7 +1216,6 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
   const { t, locale } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
-  const notInDocs = message.evidenceLabel === "Related evidence — not direct support";
   const article = useRef<HTMLElement>(null);
   /** Reveal only this message's evidence list when its report stage links to candidates. */
   function showEvidence() {
@@ -1204,17 +1233,16 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
         {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.scopeFailure ? t("Query scope metadata is unavailable.") : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
         {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
-        {message.execution && <><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details></>}
+        {message.execution && <div className="review-execution-wrap"><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps showDetailsAction={false} catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{onOpenDetails && <div className="review-stage-actions"><button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails()}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button></div>}</div>}
         {message.evidence?.length ? (
           <>
-            {notInDocs && <p className="notice">{t("Related evidence is shown below, but it is not direct support.")}</p>}
             <details className="evidence" data-help={latestEvidence ? "review.evidence" : undefined}>
               <summary data-tour="evidence-toggle">{t(message.evidenceLabel === "Cited evidence" ? "Retrieved evidence candidates" : message.evidenceLabel ?? "Retrieved candidates")} · {message.evidence.length}</summary>
               <EvidenceCandidates key={message.id} message={message} busy={busy} onMark={onMark} onUseSelected={onUseSelected} />
             </details>
           </>
         ) : null}
-        {message.role === "assistant" && (message.execution || message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={() => onOpenDetails()}>{t("Run details")}</button>}
+        {message.role === "assistant" && !message.execution && (message.performance || message.diagnostics?.length || message.trace) && onOpenDetails && <button className="button ghost" type="button" data-run-details-open data-help="review.run-trace" onClick={() => onOpenDetails()}>{t("Run details")}</button>}
       </div>
     </article>
   );

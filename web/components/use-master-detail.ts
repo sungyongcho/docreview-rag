@@ -19,7 +19,7 @@ export type MasterDetailResize = {
 };
 
 /** Measure the actual workspace so a sidebar never forces a cramped split view. */
-export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storageKey?: string; defaultListWidth?: number } = {}) {
+export function useMasterDetail({ storageKey, defaultListWidth = 360, active = true, minDetailWidth = MIN_DETAIL_WIDTH, collapseBelow = 1100 }: { storageKey?: string; defaultListWidth?: number; active?: boolean; minDetailWidth?: number; collapseBelow?: number } = {}) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const listPanelId = useId();
@@ -28,7 +28,7 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
   const [preferredWidth, setPreferredWidth] = useState<number | null>(null);
   const [narrow, setNarrow] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const max = Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, Math.floor(workspaceWidth - MIN_DETAIL_WIDTH - DIVIDER_WIDTH)));
+  const max = Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, Math.floor(workspaceWidth - minDetailWidth - DIVIDER_WIDTH)));
   const value = Math.max(MIN_LIST_WIDTH, Math.min(max, preferredWidth ?? defaultListWidth));
 
   useEffect(() => {
@@ -46,12 +46,12 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
 
   useEffect(() => {
     const element = workspaceRef.current;
-    if (!element) return;
+    if (!active || !element) return;
     let visible = element.getBoundingClientRect().width > 0;
     const measure = (width: number) => {
       if (width > 0) {
         setWorkspaceWidth(width);
-        setNarrow(width < 1100);
+        setNarrow(width < collapseBelow);
         if (!visible && listRef.current) listRef.current.scrollTop = scrollPosition.current;
       }
       visible = width > 0;
@@ -61,7 +61,7 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
     const observer = new ResizeObserver(([entry]) => measure(entry.contentRect.width));
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [active, collapseBelow]);
 
   useEffect(() => {
     const list = listRef.current;
@@ -71,7 +71,7 @@ export function useMasterDetail({ storageKey, defaultListWidth = 360 }: { storag
     };
     list.addEventListener("scroll", rememberScroll, { passive: true });
     return () => list.removeEventListener("scroll", rememberScroll);
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     if ((!narrow || !detailOpen) && listRef.current) listRef.current.scrollTop = scrollPosition.current;

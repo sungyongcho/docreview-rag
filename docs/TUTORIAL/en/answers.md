@@ -191,3 +191,14 @@ A review that finishes or fails while you are on another workspace produces a be
 
 ### SCREENSHOT NEEDED
 <!-- Feature: background review completion/failure notification returning to its original conversation; locale=en; light mode; show the same persisted message and no repeated request. -->
+
+### Inspecting an execution
+
+Use **Open run details** on the right of **Execution summary**; it remains available
+when the summary is collapsed. The inspector overlays the conversation and composer
+without narrowing them. A light gray backdrop pauses interaction with the covered
+content. Close the inspector, click the backdrop, or press Escape to return. Your draft and conversation remain intact.
+
+An unstarted draft is represented by **New chat**, not a recent-conversation row.
+Repeated clicks reuse an available empty draft. The conversation appears in the recent
+list with its delete action after the first message is sent.

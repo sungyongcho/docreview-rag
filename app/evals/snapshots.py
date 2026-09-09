@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from sqlalchemy import func, insert, literal, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
@@ -115,7 +116,50 @@ class SnapshotService:
             raise ValueError("evaluation artifact root must be an object")
         return payload
 
+    async def _existing(self, eval_result_id: int) -> SnapshotResource | None:
+        """Read the snapshot already bound to this result using a fresh transaction."""
+        statement = (
+            select(EvaluationSnapshot, EvalResult, func.count(SnapshotDocument.doc_id))
+            .join(EvalResult, EvalResult.id == EvaluationSnapshot.eval_result_id)
+            .outerjoin(SnapshotDocument, SnapshotDocument.snapshot_id == EvaluationSnapshot.id)
+            .where(EvaluationSnapshot.eval_result_id == eval_result_id)
+            .group_by(EvaluationSnapshot.id, EvalResult.id)
+        )
+        async with self._session_factory() as session:
+            row = (await session.execute(statement)).one_or_none()
+        return None if row is None else self._resource(row[0], row[1], int(row[2]))
+
     async def create(
+        self,
+        *,
+        label: str,
+        eval_result_id: int,
+        golden_revision_id: int | None,
+        public: bool,
+    ) -> SnapshotResource:
+        """Return an existing snapshot on retry without changing its label or visibility."""
+        existing = await self._existing(eval_result_id)
+        if existing is not None:
+            return existing
+        try:
+            return await self._create(
+                label=label,
+                eval_result_id=eval_result_id,
+                golden_revision_id=golden_revision_id,
+                public=public,
+            )
+        except IntegrityError as error:
+            # Recover only this uniqueness race; every other integrity failure remains an error.
+            cause = getattr(error.orig, "__cause__", None)
+            constraint = getattr(cause, "constraint_name", None)
+            if constraint != "evaluation_snapshots_eval_result_id_key":
+                raise
+            existing = await self._existing(eval_result_id)
+            if existing is None:
+                raise
+            return existing
+
+    async def _create(
         self,
         *,
         label: str,

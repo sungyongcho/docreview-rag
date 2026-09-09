@@ -8,7 +8,7 @@ import { JobHistoryControls } from "./job-history-controls";
 import { useMasterDetail } from "@/components/use-master-detail";
 import { MasterDetailDivider } from "@/components/master-detail-divider";
 import styles from "./master-detail.module.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { OperatorJob, OperatorJobBoard } from "@/lib/types";
 import { overallJobPercent } from "@/lib/pipeline";
@@ -61,22 +61,75 @@ export function elapsedLabel(job: Pick<OperatorJob, "started_at" | "finished_at"
   return minutes > 0 ? translate(locale, "{minutes}m {seconds}s", { minutes, seconds: seconds % 60 }) : translate(locale, "{seconds}s", { seconds });
 }
 
+/** Format download bytes with decimal units matching the displayed transfer speed. */
+function downloadSize(bytes: number, locale: Locale): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = bytes > 0 ? Math.min(Math.floor(Math.log10(bytes) / 3), units.length - 1) : 0;
+  return `${(bytes / 1000 ** index).toLocaleString(locale, { maximumFractionDigits: index ? 1 : 0 })} ${units[index]}`;
+}
+
+/** Measure download bytes between server samples; reset on item changes and retries. */
+function useDownloadRate(job: OperatorJob): number | null {
+  const [rate, setRate] = useState<number | null>(null);
+  const sample = useRef<{ key: string; bytes: number; time: number } | null>(null);
+  const stage = job.progress_stage ?? job.stage;
+  const active = job.status === "running" && ["acquire_edgar", "acquire_dart"].includes(job.kind)
+    && ["issuer_index", "download"].includes(stage) && job.detail_current != null;
+  const key = JSON.stringify([job.job_id, stage, job.current, job.message]);
+  useEffect(() => {
+    const bytes = job.detail_current;
+    const time = Date.parse(job.updated_at);
+    if (!active || bytes == null || !Number.isFinite(time)) {
+      sample.current = null;
+      setRate(null);
+      return;
+    }
+    const previous = sample.current;
+    if (!previous || previous.key !== key || bytes < previous.bytes || time < previous.time) {
+      setRate(null);
+    } else if (time > previous.time) {
+      setRate((bytes - previous.bytes) * 1000 / (time - previous.time));
+    }
+    sample.current = { key, bytes, time };
+    // Polling can stop producing samples while the transfer stalls.
+    const timer = window.setTimeout(() => setRate(0), 5000);
+    return () => window.clearTimeout(timer);
+  }, [active, key, job.detail_current, job.updated_at]);
+  return active ? rate : null;
+}
+
 export function JobProgress({ job }: { job: OperatorJob }) {
   const { t, locale } = useI18n();
   const overall = overallJobPercent(job);
+  const rate = useDownloadRate(job);
   const stage = job.progress_stage ?? job.stage;
+  const itemPercent = job.detail_current != null && job.detail_total != null && job.detail_total > 0
+    ? Math.min(100, Math.max(0, Math.round(job.detail_current / job.detail_total * 100)))
+    : null;
   const indeterminate = job.status === "running" && ["schema", "documents", "bm25"].includes(stage) && job.total === 1;
   const percent = !indeterminate && job.total && job.total > 0
     ? Math.min(100, Math.round((job.current / job.total) * 100))
     : null;
+  const itemIsBytes = ["acquire_edgar", "acquire_dart"].includes(job.kind)
+    && ["issuer_index", "download"].includes(stage);
+  const itemLabel = (value: number) => itemIsBytes ? downloadSize(value, locale)
+    : t("{count} items", { count: value.toLocaleString(locale) });
+  const acquisition = ["acquire_edgar", "acquire_dart"].includes(job.kind);
+  const stageLabel = acquisition && stage === "issuer_index" ? t("DART company directory download")
+    : acquisition && stage === "discover" ? t("SEC filing lookup")
+    : acquisition && stage === "select" ? t("DART annual report lookup")
+    : acquisition && stage === "download" ? t("Original report download") : t(stage);
+  const message = acquisition && stage === "issuer_index" ? t("All DART companies · company code directory")
+    : job.message === "Discovering EDGAR filings" ? t("Resolving SEC company identifiers") : job.message;
+  const itemIdentity = itemIsBytes && stage === "download" && job.detail_current != null && job.detail_total != null;
+  const hasItemTotal = job.detail_current != null && job.detail_total != null;
+  const speed = rate !== null ? <span className="job-progress-metric">{t("Download speed")}: {(rate / (rate >= 1_000_000 ? 1_000_000 : 1000)).toLocaleString(locale, { maximumFractionDigits: 1 })} {rate >= 1_000_000 ? "MB/s" : "KB/s"}</span> : null;
   return <div className="job-progress">
-    <div><span>{t("Overall progress")}</span><strong>{job.stage_index != null && job.stage_count != null ? t("Stage {current} / {total}", { current: job.stage_index, total: job.stage_count }) + " · " : ""}{overall === null ? t("Progress not reported") : `${overall}%`}</strong></div>
+    <div><span className="job-progress-label"><span>{t("Overall progress")}</span><span className="job-progress-metric">{t("Elapsed")}: {elapsedLabel(job, locale)}</span></span><strong>{job.stage_index != null && job.stage_count != null ? t("Stage {current} / {total}", { current: job.stage_index, total: job.stage_count }) + " · " : ""}{overall === null ? t("Progress not reported") : `${overall}%`}</strong></div>
     {overall !== null && <progress aria-label={t("Overall progress")} max={100} value={overall} />}
-    <p className="helper">{t("Elapsed")}: {elapsedLabel(job, locale)}</p>
-    <div><span>{t("Current stage")} · {t(stage)}</span><strong>{indeterminate ? t("In progress") : job.total == null ? job.current.toLocaleString(locale) : t("{p0} / {p1}{p2}", { p0: job.current.toLocaleString(locale), p1: job.total.toLocaleString(locale), p2: percent === null ? "" : ` · ${percent}%` })}</strong></div>
-    {(indeterminate || job.total != null) && <progress aria-label={t("Current stage")} max={Math.max(job.total ?? 1, 1)} value={indeterminate ? undefined : Math.min(job.current, job.total ?? 1)} />}
-    <p className="helper">{job.message}{job.stage_started_at ? ` · ${t("Stage elapsed")}: ${elapsedLabel({ started_at: job.stage_started_at, finished_at: job.finished_at }, locale)}` : ""}</p>
-    {job.detail_current != null && job.detail_total != null && <><div><span>{t("Current item")}</span><strong>{job.detail_current.toLocaleString(locale)} / {job.detail_total.toLocaleString(locale)}</strong></div><progress aria-label={t("Current item")} max={Math.max(job.detail_total, 1)} value={Math.min(job.detail_current, job.detail_total)} /></>}
+    <div><span>{t("Current stage")} · {stageLabel}</span><strong>{indeterminate ? t("In progress") : job.total == null ? t("In progress") : t("{p0} / {p1}{p2}", { p0: job.current.toLocaleString(locale), p1: job.total.toLocaleString(locale), p2: percent === null ? "" : ` · ${percent}%` })}</strong></div>
+    <p className="helper job-progress-meta">{!itemIdentity && <span>{message}</span>}{job.stage_started_at && <span className="job-progress-metric">{t("Stage elapsed")}: {elapsedLabel({ started_at: job.stage_started_at, finished_at: job.finished_at }, locale)}</span>}{!hasItemTotal && speed}</p>
+    {job.detail_current != null && job.detail_total != null && <><div><span className="job-progress-label"><span>{t("Current item")}{itemIdentity ? ` · ${message}` : ""}</span>{speed}</span><strong>{itemLabel(job.detail_current)} / {itemLabel(job.detail_total)}{itemPercent === null ? "" : ` · ${itemPercent}%`}</strong></div><progress aria-label={t("Current item")} max={Math.max(job.detail_total, 1)} value={Math.min(job.detail_current, job.detail_total)} /></>}
   </div>;
 }
 
@@ -141,8 +194,8 @@ export function JobCenter({ board, loading, stale = false, onRetry, onCancel, on
         <div className="job-title"><div><p className="eyebrow">{t("Job details")}</p><h2>{t(jobCopy(selected).label)}</h2><p>{t(jobCopy(selected).purpose)}</p></div><span className={`job-status ${selected.status}`}>{t(selected.status)}</span></div>
         <section className="document-detail-section"><h3>{t("Actual progress")}</h3><JobProgress job={selected} /><dl className="status-list"><div><dt>{t("Created")}</dt><dd>{new Date(selected.created_at).toLocaleString(dateLocale)}</dd></div><div><dt>{t("Started")}</dt><dd>{selected.started_at ? new Date(selected.started_at).toLocaleString(dateLocale) : "—"}</dd></div><div><dt>{t("Finished")}</dt><dd>{selected.finished_at ? new Date(selected.finished_at).toLocaleString(dateLocale) : "—"}</dd></div><div><dt>{t("Elapsed")}</dt><dd>{elapsedLabel(selected, locale)}</dd></div><div><dt>{t("Last update")}</dt><dd>{new Date(selected.updated_at).toLocaleString(dateLocale)}</dd></div></dl></section>
         {selected.error_code && <section className="document-detail-section"><h3>{t("Error")}</h3><p className="job-error">{jobErrorSummary(selected.error_code, locale)}</p><code>{selected.error_code}</code></section>}
-        <section className="document-detail-section"><h3>{t("Request options")}</h3>{Object.keys(selected.request).length > 0 ? <dl className={styles.request}>{Object.entries(selected.request).map(([key, value]) => <div key={key}><dt>{t(key.replaceAll("_", " "))}</dt><dd>{typeof value === "string" ? value : JSON.stringify(value)}</dd></div>)}</dl> : <p className="helper">{t("No request options were recorded.")}</p>}</section>
-        {(resultId !== null || Object.keys(selected.result_refs).length > 0) && <section className="document-detail-section"><h3>{t("Results")}</h3><dl className={styles.request}>{Object.entries(selected.result_refs).map(([key, value]) => <div key={key}><dt>{t(key.replaceAll("_", " "))}</dt><dd>{typeof value === "string" ? value : JSON.stringify(value)}</dd></div>)}</dl></section>}
+        <section className="document-detail-section"><h3>{t("Request options")}</h3>{Object.keys(selected.request).length > 0 ? <dl className={styles.request}>{Object.entries(selected.request).map(([key, value]) => <div key={key}><dt>{t(key.replaceAll("_", " "))}</dt><dd><pre className={styles.codeValue}><code>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</code></pre></dd></div>)}</dl> : <p className="helper">{t("No request options were recorded.")}</p>}</section>
+        {(resultId !== null || Object.keys(selected.result_refs).length > 0) && <section className="document-detail-section"><h3>{t("Results")}</h3><dl className={styles.request}>{Object.entries(selected.result_refs).map(([key, value]) => <div key={key}><dt>{t(key.replaceAll("_", " "))}</dt><dd><pre className={styles.codeValue}><code>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</code></pre></dd></div>)}</dl></section>}
         <div className="action-row">
           {onOpenPipeline && originatingStage && <button className="button" type="button" onClick={() => onOpenPipeline(originatingStage)}>{t("Open originating step")}</button>}
           {resultId !== null && <button className="button primary" type="button" onClick={() => onOpenResult(resultId)}>{t("View result #")}{resultId}</button>}

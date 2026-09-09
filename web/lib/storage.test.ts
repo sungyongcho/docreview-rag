@@ -53,10 +53,7 @@ describe("conversation storage", () => {
       ...DEFAULT_EXPERIMENT_DEFAULTS,
       suite_id: "dart-ko" as const,
       golden_revision_id: 7,
-      snapshot_id: 11,
       mode: "matrix" as const,
-      baseline_snapshot_id: 9,
-      retrieval_preset: "accuracy" as const,
     };
 
     saveExperimentDefaults(configured);
@@ -104,4 +101,11 @@ describe("operations filter storage", () => {
     saveOperationsFilter("all");
     expect(window.localStorage.getItem("docreview:operations-filter:v1")).toBeNull();
   });
+});
+
+
+it("drops retired snapshot and chat-preset fields from saved evaluation defaults", () => {
+  window.localStorage.setItem("docreview:experiment-defaults:v1", JSON.stringify({ suite_id: "dart-ko", golden_revision_id: null, mode: "quick", snapshot_id: 12, baseline_snapshot_id: 8, retrieval_preset: "accuracy" }));
+  expect(loadExperimentDefaults()).toEqual({ suite_id: "dart-ko", golden_revision_id: null, mode: "quick" });
+  expect(JSON.parse(window.localStorage.getItem("docreview:experiment-defaults:v1")!)).not.toHaveProperty("snapshot_id");
 });

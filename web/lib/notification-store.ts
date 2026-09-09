@@ -27,7 +27,7 @@ export function validNotificationTarget(value: unknown): value is NotificationTa
   if (route.view === "settings") return ["prompt", "local", "data", "about", "limits", "runtime"].includes(String(route.category));
   if (route.view === "review") return route.conversationId === undefined || typeof route.conversationId === "string";
   if (route.view === "build") return [undefined, "pipeline", "documents", "jobs"].includes(route.tab as string) && (route.jobId === undefined || typeof route.jobId === "string") && (route.stage === undefined || route.stage === "setup" || Number.isInteger(route.stage) && Number(route.stage) >= 1 && Number(route.stage) <= 7);
-  if (route.view === "measure") return [undefined, "playground", "golden", "runs", "compare", "snapshots", "defaults", "presets"].includes(route.tab as string) && (route.resultId == null || Number.isSafeInteger(route.resultId) && Number(route.resultId) > 0);
+  if (route.view === "measure") return [undefined, "playground", "golden", "runs", "compare", "snapshots", "presets"].includes(route.tab as string) && (route.resultId == null || Number.isSafeInteger(route.resultId) && Number(route.resultId) > 0);
   return route.view === "system" && [undefined, "status", "operations", "api", "usage"].includes(route.tab as string);
 }
 

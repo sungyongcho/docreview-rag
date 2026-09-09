@@ -18,6 +18,7 @@ def checkout(tmp_path, monkeypatch):
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     for name, content in {
         "data/corpus/manifest.json": "{}",
+        ".gitignore": "data/browser-reset.json\ndata/browser-reset.tmp\n",
         "source.py": "original",
         ".env.example": "template",
     }.items():
@@ -101,7 +102,8 @@ def test_clean_restores_data_and_preserves_configuration_with_own_receipt(checko
     output = capsys.readouterr().out
     assert "files," in output and "bytes" in output and "1." in output
     assert "Revert tracked: data/corpus/manifest.json" in output
-    assert "localStorage is unchanged" in output
+    assert "browser data will reset to defaults" in output
+    assert json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
 
 
 @pytest.mark.parametrize(
@@ -457,3 +459,34 @@ def test_post_preview_git_changes_are_preserved_before_restore(
     receipt = json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())
     assert receipt["status"] == "failed"
     assert "tracked files" not in receipt["completed"]
+
+
+def test_each_successful_fresh_start_issues_a_new_browser_reset(checkout):
+    """Only an approved completed fresh cleanup publishes a new web reset identity."""
+    from uuid import UUID
+
+    assert fresh.start_fresh(checkout, no_start=True) == 0
+    first = json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
+    UUID(first)
+    assert fresh.start_fresh(checkout, no_start=True) == 0
+    second = json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
+    UUID(second)
+    assert first != second
+
+
+def test_cancelled_fresh_start_does_not_schedule_browser_reset(checkout, monkeypatch):
+    """Declining cleanup leaves browser reset state entirely unchanged."""
+    monkeypatch.setattr(fresh, "confirm", lambda prompt: False)
+    assert fresh.start_fresh(checkout, no_start=True) == 0
+    assert not (checkout / "data/browser-reset.json").exists()
+
+
+def test_fresh_preserves_builtin_and_custom_golden_files(checkout):
+    """Preview never deletes authored evaluation data while clearing runtime artifacts."""
+    folder = checkout / "data" / "golden"
+    folder.mkdir()
+    (folder / "retrieval.json").write_text("[]")
+    (folder / "my-evaluation.json").write_text('{"cases": []}')
+    plan = fresh.inventory(checkout, extreme=True, discard_tracked=False)
+    assert not any(path.startswith("data/golden") for path in plan["files"])
+    assert not any(path.startswith("data/golden") for path in plan["revert"])

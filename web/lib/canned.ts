@@ -9,6 +9,7 @@ export const CANNED_SUITES: GoldenSuite[] = [
 ].map(([suite_id, label, registry, question_language, corpus_language]) => ({
   suite_id: suite_id as GoldenSuite["suite_id"],
   label,
+  filename: ({ "sec-en": "retrieval.json", "sec-ko": "retrieval_ko.json", "dart-en": "dart_retrieval.json", "dart-ko": "dart_retrieval_ko.json" } as Record<string, string>)[suite_id],
   registry: registry as GoldenSuite["registry"],
   question_language: question_language as GoldenSuite["question_language"],
   corpus_language: corpus_language as GoldenSuite["corpus_language"],
@@ -19,7 +20,7 @@ export const CANNED_SUITES: GoldenSuite[] = [
   approval_status: "pending-author-approval",
   human_verified: false,
   golden_sha256: "0".repeat(64),
-  source_ready: true,
+  source_ready: true, source_checks: [],
   source_error: null,
 }));
 
@@ -63,6 +64,7 @@ export const CANNED_CORPUS: { status: CorpusSnapshot["status"]; manifests: Manif
 };
 
 export const CANNED_JOB: EvaluationJob = {
+  result_summaries: [],
   job_id: "archived-crosslingual-vector-ko",
   request: {
     suite_id: "sec-ko",

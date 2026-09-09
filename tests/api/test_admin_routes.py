@@ -475,3 +475,59 @@ def test_source_deletion_preview_is_admin_only_and_validates_exact_ids():
         )
     assert response.status_code == 200
     assert received == [("filing",)]
+
+
+def test_evaluation_preparation_and_submission_share_a_typed_blocker(tmp_path):
+    """Missing sources produce read-only readiness and a 409 without any registered job."""
+    from app.api.runtime import RuntimeApiServices
+    from app.config import Settings
+    from app.evals.admin import EvaluationAdminService
+    from app.retrieval.embeddings import DeterministicEmbeddingProvider
+
+    evaluations = EvaluationAdminService(
+        settings=Settings(corpus_dir=tmp_path), provider=DeterministicEmbeddingProvider()
+    )
+    services = RuntimeAdminApiServices(
+        runtime=RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider()),
+        evaluations=evaluations,
+    )
+    with TestClient(create_api_app(admin_services=services)) as client:
+        request = {"suite_id": "dart-ko", "mode": "quick"}
+        preparation = client.post("/admin/evaluations/preparation", json=request)
+        assert preparation.status_code == 200
+        assert preparation.json()["state"] == "source_missing"
+        assert preparation.json()["verification_status"] == "pending_review"
+        rejected = client.post("/admin/evaluations/runs", json=request)
+        assert rejected.status_code == 409
+        assert rejected.json()["error"]["code"] == "evaluation_not_ready"
+        assert evaluations._jobs == {}
+
+
+def test_golden_field_errors_are_structured_and_evidence_pages_are_bounded():
+    """Expose field paths without authored input and reject excessive page sizes."""
+    from app.evals.drafts import DraftFieldIssue, DraftInputError
+
+    class InvalidDraftServices(FakeAdminServices):
+        async def replace_golden_case(self, *args, **kwargs):
+            """Reject the requested field with a safe domain error."""
+            raise DraftInputError(
+                (DraftFieldIssue(location=("tags", 0), code="string_type", message="Enter a tag."),)
+            )
+
+        async def golden_evidence_chunks(self, *args, **kwargs):
+            """Supply a valid empty document page."""
+            return {"chunks": (), "next_after": None}
+
+    services = cast(RuntimeAdminApiServices, InvalidDraftServices())
+    with TestClient(create_api_app(admin_services=services)) as client:
+        response = client.put(
+            "/admin/golden/revisions/1/cases/q-1",
+            json={"expected_sha256": "a" * 64, "case": {"id": "q-1", "tags": [123]}},
+        )
+        assert response.status_code == 422
+        assert "golden_input_invalid" in response.text
+        assert "string_type" in response.text
+        assert "tags" in response.text
+        assert "input_value" not in response.text
+        assert client.get("/admin/documents/ACME/golden-evidence?limit=51").status_code == 422
+        assert client.get("/admin/documents/ACME/golden-evidence?limit=20").status_code == 200

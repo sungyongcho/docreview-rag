@@ -99,7 +99,8 @@ all files intact. Return from Parse & chunk with **Change selection in Filings**
 
 ## Delete current originals from Filings
 
-In step 1, select downloaded originals and choose **Delete selected originals**. The preview lists
+In step 1, choose the red **Delete all downloaded originals** button in the company basket.
+It targets all registered originals, independently of the selected company/year scope. The preview lists
 exact registry, company, fiscal year, filing/document IDs, relative file paths and sizes. It marks
 shared or past input files that will be preserved. Nothing is deleted until **Confirm deletion of
 originals**. Cancel and **Clear selection** preserve both source bytes and recorded inputs.
@@ -114,9 +115,19 @@ and past job inputs remain available; this action does not cascade into derived 
 
 <!-- SCREENSHOT NEEDED: feature=source-deletion; state=exact-target-preview-and-queued-result; locale=en; theme=light; issue=200; preserve-existing-assets=true -->
 
+The selected-step heading shows a compact status icon and label. Use the adjacent refresh icon to check status; success changes the icon without adding a text row. Hover over the status for details. The separate system-connection control reports infrastructure health, not job execution. Required recovery commands remain available.
+
+The current stage distinguishes company-directory download, filing lookup, and original-report download. SEC lookup reports each ticker and requested fiscal years; original downloads identify the company and fiscal year in the current-item row. The DART company directory is shared across all companies and has no individual fiscal year.
+
+Current download sizes use B, KB, MB, or GB as appropriate; non-download detail counters show item counts. Download progress includes the current response byte fraction in the overall stage-weighted percentage when its total size is known. SEC originals, the DART company index, and DART originals show download speed in KB/s or MB/s, measured between received progress updates. Speed appears after two samples, resets for a new item or retry, and shows zero after five seconds without a fresh update. Unknown response sizes still allow speed measurement; 100% overall is reserved for successful completion.
+
+Use the company search at the top of Filings. Click the input or its integrated plus button to browse supported companies, or type a company name or code to filter. Choosing a company adds it to the company basket. Each company has one card: use + beside its name to reveal only unselected fiscal years, and × to remove the company and its selected years from the basket without deleting downloaded originals. There is no year search field. Amber year chips are selected but awaiting download; green checks identify downloaded originals. Company scopes remain independent; Sync selection submits the exact chosen pairs.
+
+Parse & chunk shows the selected scope as company cards with compact year chips. Downloaded, missing, and blocked originals have distinct indicators. Unready selected years block parsing; inspect the compact recovery details or return to step 1. Removing a company only changes the selection.
+
 ## Current files and preserved inputs
 
-Current originals use `sec/<accession>/primary.html`, or `dart/<receipt>/primary.xml` with
+Current originals use `sec/<ticker>/<accession>/primary.html`, or `dart/<stock-code>/<receipt>/primary.xml` with
 `original.zip`. Metadata retains the official URL and filename. A repeated download replaces the
 same current path and registration. Each filing requires exactly one primary; DART also requires
 its matching ZIP. Duplicate registrations and paths outside this layout block acquisition and parsing

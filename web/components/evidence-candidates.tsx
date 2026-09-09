@@ -1,5 +1,5 @@
 "use client";
-import { ChevronDown, ChevronLeft, ChevronRight, CircleMinus, Pin as PinIcon } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, ChevronDown, ChevronLeft, ChevronRight, CircleMinus, Pin as PinIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { evidenceHeading, evidencePage } from "@/lib/evidence";
@@ -30,6 +30,7 @@ export function EvidenceCandidates({ message, busy, onMark, onUseSelected }: Evi
   const [pageIndex, setPageIndex] = useState(0);
   const toolbar = useRef<HTMLDivElement>(null);
   const { items, page, pages, from, to } = evidencePage(hits, pageIndex);
+  const allExpanded = hits.length > 0 && hits.every(hit => expanded.has(hit.chunk_id));
   const guideId = `evidence-selection-${message.id}`;
 
   function toggle(chunkId: number) {
@@ -52,8 +53,7 @@ export function EvidenceCandidates({ message, busy, onMark, onUseSelected }: Evi
         <span className="evidence-count">{t("Showing {from}–{to} of {total}", { from, to, total: hits.length })}</span>
         <span className="evidence-selection-summary">{t("{pinned} pinned · {excluded} excluded", { pinned: pinned.length, excluded: excluded.length })}</span>
         <div className="evidence-toolbar-actions">
-          <button className="button" type="button" onClick={() => setExpanded(new Set(hits.map((hit) => hit.chunk_id)))}>{t("Expand all")}</button>
-          <button className="button" type="button" onClick={() => setExpanded(new Set())}>{t("Collapse all")}</button>
+          <button className="button evidence-bulk-toggle" type="button" disabled={!hits.length} onClick={() => setExpanded(allExpanded ? new Set() : new Set(hits.map(hit => hit.chunk_id)))}>{allExpanded ? <ChevronsDownUp size={14} aria-hidden="true" /> : <ChevronsUpDown size={14} aria-hidden="true" />}{t(allExpanded ? "Collapse all" : "Expand all")}</button>
           {pages > 1 && (
             <nav className="evidence-pager" aria-label={t("Evidence pages")}>
               <button className="button" type="button" disabled={page === 0} aria-label={t("Previous page")} onClick={() => goTo(page - 1)}><ChevronLeft size={16} aria-hidden="true" /></button>

@@ -1,7 +1,7 @@
 import { answerEngineStates, answerEngineSummary } from "./answer-engine-state";
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import { CANNED_CORPUS } from "./canned";
-import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness, RetrievalProfile } from "./types";
+import type { CorpusSnapshot, CorpusCounts, ManifestSummary, OperatorJob, Readiness, RetrievalProfile } from "./types";
 import type { RuntimeHealthKind } from "./use-runtime-health";
 
 export type StageId = "filings" | "index" | "embeddings" | "lexical" | "ask" | "answer_model" | "evaluate";
@@ -53,6 +53,7 @@ export interface PipelineInput {
   /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness or the fixture. */
   corpus: CorpusCounts | null;
   manifests: ManifestSummary[];
+  sourceInventory?: NonNullable<CorpusSnapshot["sources"]>;
   sourceSelection?: { complete: boolean; present: unknown[]; missing: string[] };
   /** Ingested documents per registry, from `/admin/documents/facets`. */
   registryCounts: Record<string, number>;
@@ -266,16 +267,23 @@ export function derivePipeline(input: PipelineInput): Pipeline {
         .filter((item) => item.registries.length === 1 && count(item.documents) > count(input.registryCounts[item.registries[0]]))
         .map((item) => ({ registry: item.registries[0], gap: count(item.documents) - count(input.registryCounts[item.registries[0]]) }))
       : [];
+    const downloadedCounts: Record<string, number> = {};
+    if (input.sourceInventory) {
+      for (const source of new Map(input.sourceInventory.filter((source) => source.on_disk && source.ready).map((source) => [source.document_id, source])).values()) downloadedCounts[source.registry] = (downloadedCounts[source.registry] ?? 0) + 1;
+    } else {
+      for (const manifest of manifests) if (manifest.registries.length === 1) downloadedCounts[manifest.registries[0]] = Math.max(downloadedCounts[manifest.registries[0]] ?? 0, count(manifest.sources_present));
+    }
+    const newOriginals = source === "admin" && indexDone && facetsKnown && Object.entries(downloadedCounts).some(([registry, available]) => available > count(input.registryCounts[registry]));
     let hint = "";
     if (source === "admin" && indexDone && gaps.length) {
       for (const item of gaps) numbers.push(`${n(item.gap)} listed filing${item.gap === 1 ? "" : "s"} not ingested yet (${registryLabel(item.registry)})`);
       hint = "Re-run Ingest selected sources to add them.";
     }
     if (schemaBroken) drafts.index = { status: "blocked", statusDetail: "Database setup required", numbers, hint: schemaHint };
-    else if (indexDone) drafts.index = { status: "done", numbers, hint };
+    else if (indexDone) drafts.index = { status: "done", statusDetail: newOriginals ? "Complete · new originals available" : undefined, numbers, hint: newOriginals ? "New downloaded originals can be parsed and chunked. Select them and run Ingest selected sources." : hint };
     else if (filingsUnknown) drafts.index = { ...checking };
-    else if (!filingsDone) drafts.index = { status: "blocked", statusDetail: `after ${stepRef(1, "Filings")}`, numbers: ["Nothing ingested yet."], hint: "Download filings first (step 1).", blockedBy: "filings" };
-    else drafts.index = { status: "action", numbers: ["Nothing ingested yet."], hint: "Review the selected filings, then run Parse & chunk selected sources." };
+    else if (!filingsDone) drafts.index = { status: "blocked", statusDetail: `after ${stepRef(1, "Filings")}`, numbers: ["No parsed and chunked documents have been stored in the database yet."], hint: "Download filings first (step 1).", blockedBy: "filings" };
+    else drafts.index = { status: "action", numbers: ["No parsed and chunked documents have been stored in the database yet."], hint: "Run parsing and chunking for the selected sources." };
     drafts.index.action = { label: "Ingest selected sources", kind: "ingest_all" };
   }
 
@@ -292,12 +300,13 @@ export function derivePipeline(input: PipelineInput): Pipeline {
 
   // Step 4 — Lexical index
   {
-    const numbers = [bm25Ready ? "BM25 ready" : "BM25 not built"];
+    const needsUpdate = !bm25Ready && counts.bm25_rebuild_recorded === true;
+    const numbers = [bm25Ready ? "BM25 ready" : needsUpdate ? "Keyword index update required" : "BM25 not built"];
     if (schemaBroken) drafts.lexical = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: schemaHint, blockedBy: "index" };
     else if (lexicalDone) drafts.lexical = { status: "done", numbers };
     else if (drafts.index.status === "unknown") drafts.lexical = { ...checking };
     else if (!indexDone) drafts.lexical = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: "Ingest a manifest first (step 2).", blockedBy: "index" };
-    else drafts.lexical = { status: "action", numbers, hint: "Compute BM25 after parsing and chunking, or recompute it after chunk changes." };
+    else drafts.lexical = { status: "action", statusDetail: needsUpdate ? "Update required" : undefined, numbers, hint: needsUpdate ? "Update the keyword index to match the parsing and chunking results." : "Compute BM25 after parsing and chunking, or recompute it after chunk changes." };
     drafts.lexical.action = { label: bm25Ready || counts.bm25_rebuild_recorded ? "Recompute BM25" : "Compute BM25", kind: "bm25" };
   }
 

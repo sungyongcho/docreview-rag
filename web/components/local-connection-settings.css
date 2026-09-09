@@ -1,5 +1,5 @@
-.connection-intro { display: grid; gap: 10px; }
-.connection-intro p { margin: 0; max-width: 65ch; line-height: 1.65; }
+.connection-intro { display: grid; justify-items: start; gap: 6px; margin: 0; }
+.connection-intro p { margin: 0; max-width: 72ch; font-size: 12px; line-height: 1.55; color: var(--muted); word-break: keep-all; overflow-wrap: anywhere; }
 .connection-intro a, .connection-cli-help > a { display: inline-flex; align-items: center; gap: 6px; width: fit-content; color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .connection-server-picker { display: grid; gap: 8px; max-width: 520px; font-size: 13px; font-weight: 600; }
 .connection-server-picker select { width: 100%; min-height: 40px; }
@@ -42,3 +42,22 @@
 .connection-next-step .button { justify-self: start; min-height: 44px; max-width: 100%; white-space: normal; text-align: start; gap: 8px; }
 .connection-next-step .button svg { flex: none; }
 .connection-next-step .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.connection-model-status { display: flex; align-items: flex-start; gap: 7px; margin: 3px 0 0; font-size: 12px; line-height: 1.5; }
+.connection-model-status svg { flex: none; margin-top: 2px; }
+.connection-model-status.ready svg { color: var(--good); }
+.connection-model-status.pending svg { color: var(--warn); }
+.connection-model-status.error svg { color: var(--bad); }
+.local-connection-settings .connection-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 7px; }
+.local-connection-settings .connection-actions .button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 10px; font-size: 12px; line-height: 20px; border-radius: 6px; }
+
+.local-connection-settings .connection-actions { gap: 6px; }
+.local-connection-settings .connection-actions .button { padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); }
+.connection-conversation-action { display: flex; justify-content: flex-start; }
+.connection-conversation-action:empty { display: none; }
+.connection-conversation-action .button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; min-height: 30px; font-size: 11px; }
+.connection-health-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .connection-health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.connection-intro > a { padding: 3px 0; font-size: 12px; line-height: 1.5; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
+.connection-intro > a svg { width: 13px; height: 13px; flex: none; }

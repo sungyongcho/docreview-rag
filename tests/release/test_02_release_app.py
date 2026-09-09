@@ -447,3 +447,47 @@ def test_bm25_missing_is_normal_preparation_after_embeddings_finish():
     assert response.json()["corpus"]["schema_status"] == "compatible"
     assert response.json()["corpus"]["database_connected"] is True
     assert response.json()["corpus"]["bm25_rebuild_recorded"] is True
+
+
+def test_readiness_reports_update_without_hiding_existing_counts():
+    """An active writer overrides cached ready counts and clears when the update ends."""
+    import asyncio
+
+    import httpx
+
+    async def exercise():
+        """Use the same event loop for the application and its admission gate."""
+        runtime = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+
+        async def probe():
+            """Return a populated, previously ready corpus without database calls."""
+            return {
+                "status": {
+                    "database_connected": True,
+                    "schema_status": "compatible",
+                    "documents": 1,
+                    "chunks": 2,
+                    "embedded_chunks": 2,
+                    "pending_embeddings": 0,
+                    "bm25_ready": True,
+                }
+            }
+
+        app = create_release_app(
+            ReleaseSettings(mode="runtime", host="127.0.0.1", _env_file=None),
+            services=runtime,
+            readiness_probe=probe,
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
+        ) as client:
+            async with runtime.corpus_access.update():
+                response = await client.get("/ready")
+                assert response.status_code == 503
+                assert response.json()["corpus"]["updating"] is True
+                assert response.json()["corpus"]["database_connected"] is True
+            response = await client.get("/ready")
+            assert response.status_code == 200
+            assert response.json()["corpus"]["updating"] is False
+
+    asyncio.run(exercise())

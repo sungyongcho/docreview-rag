@@ -20,6 +20,7 @@ from pydantic import (
 
 from app.api.schemas import EvidenceHit, RunResponse
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, BM25Idf, LexicalRanker
+from app.evals.source_binding import SourceCheck
 from app.llm.local_connection import ConnectionSource, LocalProtocol, validate_base_url
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.types import RetrievalFilters
@@ -105,11 +106,33 @@ class RetrievalProfile(StrictAdminModel):
         return self
 
 
+class EvaluationPreparationResource(StrictAdminModel):
+    """Separate golden provenance from readiness of the currently requested corpus and index."""
+
+    suite_id: GoldenSuiteId
+    kind: Literal["builtin", "user"]
+    verification_status: Literal["pending_review", "verified"] = "pending_review"
+    state: Literal[
+        "ready",
+        "source_missing",
+        "source_invalid",
+        "draft_incomplete",
+        "parsing_required",
+        "index_update_required",
+        "unavailable",
+    ]
+    source_checks: tuple[SourceCheck, ...] = ()
+    next_step: Literal["filings", "index", "embeddings", "lexical", "setup"] | None = None
+    blockers: tuple[str, ...] = ()
+    golden_sha256: str | None = None
+
+
 class GoldenSuiteResource(StrictAdminModel):
     """One immutable golden suite exposed to the experiment selector."""
 
     suite_id: GoldenSuiteId
     label: str
+    filename: str
     registry: Literal["sec", "dart"]
     question_language: Literal["en", "ko", "mixed"]
     corpus_language: Literal["en", "ko"]
@@ -121,14 +144,18 @@ class GoldenSuiteResource(StrictAdminModel):
     human_verified: Literal[False]
     golden_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     source_ready: StrictBool
+    source_checks: tuple[SourceCheck, ...] = ()
     source_error: str | None = None
     source_error_code: Literal["source_missing", "source_invalid"] | None = None
 
 
 class GoldenRevisionResource(StrictAdminModel):
-    """One editable or published golden-suite revision."""
+    """One independent user dataset file with its content identity."""
 
     revision_id: PositiveInt
+    filename: str
+    file_content: dict[str, object] = Field(default_factory=dict)
+    completion: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     suite_id: GoldenSuiteId
     version: PositiveInt
     status: Literal["draft", "validated", "published"]
@@ -149,8 +176,10 @@ class GoldenCanonicalResource(StrictAdminModel):
 
 
 class GoldenDraftRequest(StrictAdminModel):
-    """Create a draft from canonical JSON or one exact parent revision."""
+    """Create a named JSON file, empty or copied from a selected dataset."""
 
+    filename: str
+    empty: bool = False
     parent_id: PositiveInt | None = None
 
 
@@ -577,6 +606,14 @@ class DocumentDetailResponse(StrictAdminModel):
     snapshot_memberships: tuple[DocumentSnapshotMembershipResource, ...]
 
 
+class EvaluationResultSummaryResource(StrictAdminModel):
+    """Recorded inputs for one result, including individual matrix configurations."""
+
+    result_id: PositiveInt
+    created_at: datetime
+    config: dict[str, Any]
+
+
 class EvaluationJobResource(StrictAdminModel):
     """One background evaluation job and its bounded safe output."""
 
@@ -589,6 +626,7 @@ class EvaluationJobResource(StrictAdminModel):
     total: Annotated[StrictInt, Field(ge=0)] | None = None
     result_id: PositiveInt | None = None
     result_ids: tuple[PositiveInt, ...] = ()
+    result_summaries: tuple[EvaluationResultSummaryResource, ...] = ()
     baseline_id: PositiveInt | None = None
     artifact_paths: tuple[str, ...] = ()
     created_at: datetime
@@ -801,6 +839,13 @@ class LocalConnectionRequest(BaseModel):
         return validate_base_url(value)
 
 
+class LocalModelPrepareRequest(BaseModel):
+    """Name an installed model on the already selected server, never an arbitrary endpoint."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    model: str = Field(min_length=1, max_length=256)
+
+
 class LocalConnectionResponse(BaseModel):
     """Private settings state and safe model metadata for the developer UI."""
 
@@ -910,3 +955,24 @@ class JobHistoryResultResource(StrictAdminModel):
     changed_count: NonnegativeInt
     backup_id: str | None
     summary: JobHistorySummaryResource
+
+
+class GoldenEvidenceChunk(StrictAdminModel):
+    """One selectable chunk with exact original-source coordinates."""
+
+    chunk_id: PositiveInt
+    doc_id: str
+    source_sha256: str
+    start_char: NonnegativeInt
+    end_char: PositiveInt
+    item: str | None
+    kind: str
+    body: str
+    citation: str
+
+
+class GoldenEvidencePage(StrictAdminModel):
+    """A bounded page for choosing evidence without running retrieval or a model."""
+
+    chunks: tuple[GoldenEvidenceChunk, ...]
+    next_after: int | None = None

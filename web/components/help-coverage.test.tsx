@@ -193,7 +193,7 @@ describe("help topic coverage", () => {
     render(<MeasureHost initialTab="runs" />);
 
     fireEvent.click(await screen.findByRole("radio", { name: `Select ${CANNED_JOB.job_id}` }));
-    await screen.findByRole("heading", { name: "Result details · #16" });
+    await screen.findByRole("heading", { name: "Result details" });
     expectPresent(["measure.snapshots.freeze"]);
     fireEvent.click(screen.getByRole("button", { name: "New evaluation" }));
     expect(coverage("measure.runs").missing).toEqual([]);
@@ -202,9 +202,9 @@ describe("help topic coverage", () => {
     expectPresent(["measure.runs.chunk_targets", "measure.runs.k", "measure.runs.rrf_k"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Close evaluation setup" }));
-    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" }));
-    fireEvent.click(screen.getByRole("button", { name: "Saved snapshots" }));
-    await screen.findByRole("heading", { name: "Evaluation snapshots" });
+    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" }));
+    fireEvent.click(screen.getByRole("button", { name: "Snapshot management" }));
+    await screen.findByRole("heading", { name: "Compare snapshots" });
     fireEvent.change(screen.getByRole("combobox", { name: "Baseline" }), { target: { value: "1" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Candidate" }), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "Compare stored results" }));
@@ -212,11 +212,11 @@ describe("help topic coverage", () => {
     expect(coverage("measure.snapshots").missing).toEqual([]);
 
     fireEvent.click(screen.getByRole("button", { name: "Golden dataset" }));
-    await screen.findByText("retrieval.json");
+    await screen.findAllByText("retrieval.json");
     expect(coverage("measure.golden").missing).toEqual([]);
     expectPresent(["measure.golden.revision"]);
 
-    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare results" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" }));
     expect(coverage("measure.compare").missing).toEqual([]);
   });
 

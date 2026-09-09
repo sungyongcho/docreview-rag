@@ -1,5 +1,7 @@
 """SSH-only corpus and evaluation experiment resources."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query
@@ -18,11 +20,13 @@ from app.api.admin_schemas import (
     EvaluationComparisonResponse,
     EvaluationJobResource,
     EvaluationJobsResponse,
+    EvaluationPreparationResource,
     EvaluationResultDetailResponse,
     EvaluationRunRequest,
     GoldenCanonicalResource,
     GoldenCaseUpdateRequest,
     GoldenDraftRequest,
+    GoldenEvidencePage,
     GoldenRevisionActionRequest,
     GoldenRevisionResource,
     GoldenSuiteId,
@@ -34,6 +38,7 @@ from app.api.admin_schemas import (
     LocalConnectionResponse,
     LocalDiagnosticsRequest,
     LocalDiagnosticsResponse,
+    LocalModelPrepareRequest,
     LocalServerRequest,
     LocalServerSelectionRequest,
     OperatorJobResource,
@@ -50,8 +55,14 @@ from app.api.admin_schemas import (
 )
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
 from app.api.preset_store import PresetCatalog, StoredPreset, preset_store
-from app.api.schemas import ErrorResponse, SnapshotComparisonResponse, SnapshotResource
+from app.api.schemas import (
+    ErrorResponse,
+    SnapshotComparisonResponse,
+    SnapshotResource,
+    ValidationIssue,
+)
 from app.config import get_settings
+from app.evals.drafts import DraftConflictError, DraftInputError
 from app.operator.job_history import HistoryConflictError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -117,6 +128,19 @@ async def document_facets(services: AdminServices, registry: str = "") -> Docume
         return await services.document_facets(registry=registry)
 
 
+@router.get("/documents/{doc_id}/golden-evidence", response_model=GoldenEvidencePage)
+async def golden_evidence_chunks(
+    doc_id: str,
+    services: AdminServices,
+    query: Annotated[str, Query(max_length=200)] = "",
+    after: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> GoldenEvidencePage:
+    """Read an evidence page without generating embeddings or modifying documents."""
+    async with translate_runtime_errors():
+        return await services.golden_evidence_chunks(doc_id, query, after, limit)
+
+
 @router.get(
     "/documents/{doc_id}",
     response_model=DocumentDetailResponse,
@@ -169,6 +193,15 @@ async def retry_corpus(job_id: str, services: AdminServices) -> dict[str, Any]:
         return await services.retry_corpus(job_id)
 
 
+@router.post("/evaluations/preparation", response_model=EvaluationPreparationResource)
+async def evaluation_preparation(
+    request: EvaluationRunRequest, services: AdminServices
+) -> EvaluationPreparationResource:
+    """Check source and retrieval prerequisites without queueing or generating anything."""
+    async with translate_runtime_errors():
+        return await services.evaluation_preparation(request)
+
+
 @router.get("/evaluations/suites", response_model=tuple[GoldenSuiteResource, ...])
 async def evaluation_suites(services: AdminServices) -> tuple[GoldenSuiteResource, ...]:
     """Return golden suite provenance and source readiness."""
@@ -208,7 +241,32 @@ async def create_golden_draft(
 ) -> GoldenRevisionResource:
     """Create a draft from canonical JSON or one selected parent."""
     async with translate_runtime_errors():
-        return await services.create_golden_draft(suite_id, request.parent_id)
+        return await services.create_golden_draft(
+            suite_id, request.parent_id, request.filename, request.empty
+        )
+
+
+@asynccontextmanager
+async def golden_input_errors() -> AsyncIterator[None]:
+    """Expose bounded field errors without echoing authored text."""
+    try:
+        yield
+    except DraftConflictError as error:
+        raise ApiProblemError(
+            status_code=409, code="golden_draft_conflict", message=str(error)
+        ) from error
+    except DraftInputError as error:
+        raise ApiProblemError(
+            status_code=422,
+            code="golden_input_invalid",
+            message="Check the indicated question fields.",
+            details=tuple(
+                ValidationIssue(
+                    location=issue.location, message=issue.message, error_type=issue.code
+                )
+                for issue in error.issues
+            ),
+        ) from error
 
 
 @router.put(
@@ -222,7 +280,7 @@ async def replace_golden_case(
     services: AdminServices,
 ) -> GoldenRevisionResource:
     """Replace one case using an expected draft digest."""
-    async with translate_runtime_errors():
+    async with translate_runtime_errors(), golden_input_errors():
         return await services.replace_golden_case(
             revision_id,
             case_id,
@@ -241,22 +299,8 @@ async def validate_golden_revision(
     services: AdminServices,
 ) -> GoldenRevisionResource:
     """Validate one exact draft against corpus source bytes."""
-    async with translate_runtime_errors():
+    async with translate_runtime_errors(), golden_input_errors():
         return await services.validate_golden_revision(revision_id, request.expected_sha256)
-
-
-@router.post(
-    "/golden/revisions/{revision_id}/publish",
-    response_model=GoldenRevisionResource,
-)
-async def publish_golden_revision(
-    revision_id: int,
-    request: GoldenRevisionActionRequest,
-    services: AdminServices,
-) -> GoldenRevisionResource:
-    """Atomically publish one validated revision."""
-    async with translate_runtime_errors():
-        return await services.publish_golden_revision(revision_id, request.expected_sha256)
 
 
 @router.get("/snapshots", response_model=tuple[SnapshotResource, ...])
@@ -496,6 +540,15 @@ async def select_local_server(
     """Verify and select a saved endpoint or Default without accepting a new URL."""
     async with translate_runtime_errors():
         return await services.update_local_connection("select", server_id=request.server_id)
+
+
+@router.post("/local-llm/prepare", response_model=LocalConnectionResponse)
+async def prepare_local_model(
+    request: LocalModelPrepareRequest, services: AdminServices
+) -> dict[str, Any]:
+    """Load one installed model without generating an answer or changing connection settings."""
+    async with translate_runtime_errors():
+        return await services.prepare_local_model(request.model)
 
 
 @router.post("/local-llm/diagnostics", response_model=LocalDiagnosticsResponse)

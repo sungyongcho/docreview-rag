@@ -4,7 +4,7 @@ import { useI18n } from "@/lib/i18n";
 
 import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, SlidersHorizontal, LoaderCircle } from "lucide-react";
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { Segmented } from "@/components/segmented";
 import { presetDescription } from "@/components/request-preview";
@@ -104,7 +104,7 @@ export function filterCount(profile: ReviewSessionDraft): number {
   return profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
-export type ComposerBannerKind = "empty" | "preparation" | "answer-model" | "budget";
+export type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
 
 export interface ComposerBannerModel {
   kind: ComposerBannerKind;
@@ -124,6 +124,7 @@ export interface ComposerBannerInput {
 
 /** Picks the single banner the composer shows, highest-priority blocker first; null means the plain helper line. */
 export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }: ComposerBannerInput): ComposerBannerModel | null {
+  if (readiness?.corpus.updating) return { kind: "updating", text: "Search data is updating. Existing answers can finish; new questions will be available after preparation." };
   if (live && readiness?.corpus.documents === 0) {
     return { kind: "empty", text: "The corpus is empty. Build it first.", action: "build" };
   }
@@ -158,6 +159,7 @@ export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: Compo
   if (!banner) return null;
   return (
     <p className={`composer-banner ${banner.kind}`} role="status">
+      {banner.kind === "updating" && <LoaderCircle size={14} aria-hidden="true" />}
       <span>{t(banner.text)}</span>
       {banner.action === "build" && <button className="inline-link" type="button" onClick={onOpenBuild}>{t("Open Build")}</button>}
       {banner.action === "answer-model" && <button className="inline-link" type="button" onClick={onOpenAnswerModel}>{t("Set up the answer model")}</button>}

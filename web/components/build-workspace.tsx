@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { RetainedPanel } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
+import { PipelineGoldenPicker } from "./golden-preparation";
 import { BuildPipeline, type AcquisitionForm } from "@/components/build-pipeline";
 import { DocumentInventory } from "@/components/document-inventory";
 import { JobCenter, jobCopy } from "@/components/job-center";
@@ -17,7 +18,7 @@ import {
   getCorpusSnapshot,
   getDocumentFacets,
   getEvaluationJobs,
-  getGoldenRevisions,
+  checkEvaluationPreparation,
   getPublishedSnapshots,
   queueCorpusOperation,
   queueEvaluation,
@@ -28,10 +29,12 @@ import { derivePipeline } from "@/lib/pipeline";
 import { acquisitionBatches, acquisitionDraft, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState } from "@/lib/source-selection";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type {
+  ReviewEngineState,
   CorpusDocument,
   CorpusCounts,
   EvaluationJob,
   EvaluationRequest,
+  EvaluationPreparation,
   ExperimentDefaults,
   CorpusSnapshot,
   CorpusOperationRequest,
@@ -48,7 +51,7 @@ export type BuildTab = "pipeline" | "documents" | "jobs";
 export type BuildNavigationTarget =
   | { view: "review" }
   | { view: "system"; tab: "status" }
-  | { view: "measure"; tab: "snapshots" | "runs"; resultId?: number };
+  | { view: "measure"; tab: "snapshots" | "runs" | "golden"; resultId?: number };
 
 export interface BuildWorkspaceProps {
   live: boolean;
@@ -75,6 +78,7 @@ export interface BuildWorkspaceProps {
   focusStep?: number | "setup" | null;
   focusJobId?: string;
   onOpenLocalSettings?: () => void;
+  onLocalPrepared?: (local: ReviewEngineState) => void;
   onNavigate: (target: BuildNavigationTarget) => void;
 }
 
@@ -101,7 +105,7 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, focusStep, focusJobId }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -109,6 +113,8 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   const environment = deploymentLabel(readiness?.environment);
   const connectionConfirmed = healthKind !== "checking" && healthKind !== "api_down" && !connectionPending;
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
+  const [evaluationPreparation, setEvaluationPreparation] = useState<EvaluationPreparation | null>(null);
+  const quickRequest = useMemo<EvaluationRequest>(() => ({ suite_id: experimentDefaults.suite_id, golden_revision_id: experimentDefaults.golden_revision_id, mode: "quick", profile, target_tokens: [1024, 2048], strategies: ["lexical", "vector", "hybrid"], lexical_rankers: ["ts_rank_cd", "bm25"] }), [experimentDefaults.suite_id, experimentDefaults.golden_revision_id, profile]);
   // Fixtures seed only the public build; a live build waits for the administrator API.
   const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS, sources: [], acquisition_companies: [] }));
   /** True once `/admin/corpus` replaced the portfolio fixture. */
@@ -284,20 +290,10 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     setDuplicateEvaluation(false);
     setBusy(true);
     try {
-      // The saved default revision applies only when it still exists for the suite;
-      // otherwise the canonical JSON is measured, as Measure › Runs does.
-      const revisions = await getGoldenRevisions(experimentDefaults.suite_id).catch(() => []);
-      const defaultRevision = experimentDefaults.golden_revision_id;
-      const goldenRevisionId = Array.isArray(revisions) && revisions.some((row) => row.revision_id === defaultRevision) ? defaultRevision : null;
-      const request: EvaluationRequest = {
-        suite_id: experimentDefaults.suite_id,
-        golden_revision_id: goldenRevisionId,
-        mode: "quick" as const,
-        profile,
-        target_tokens: [1024, 2048],
-        strategies: ["lexical", "vector", "hybrid"],
-        lexical_rankers: ["ts_rank_cd", "bm25"],
-      };
+      const request = quickRequest;
+      const prepared = await checkEvaluationPreparation(request);
+      setEvaluationPreparation(prepared);
+      if (prepared.state !== "ready") { notify(prepared.blockers.join("; ") || t("Evaluation prerequisites are not ready."), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
       const activeEvaluations = [...jobBoard.jobs.filter((job) => job.domain === "evaluation"), ...jobs];
       if (activeEvaluations.some((job) => ["queued", "running"].includes(job.status) && sameEvaluationRequest(job.request, request))) {
         setDuplicateEvaluation(true);
@@ -340,6 +336,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     corpus: live && adminLoaded ? status : null,
     manifests,
     sourceSelection: selectedSourceState(corpus?.sources ?? [], acquisition),
+    sourceInventory: corpus?.sources,
     registryCounts,
     jobs: Array.isArray(jobBoard.jobs) ? jobBoard.jobs : [],
     evaluationResults,
@@ -369,7 +366,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     : runtimeCounts?.database_connected !== true || !["ok", "compatible"].includes(runtimeCounts?.schema_status ?? "") ? "Readiness not confirmed"
     : !runtimeCounts?.chunks ? "Finish steps 1–2 to enable retrieval."
     : profile.strategy !== "lexical" && runtimeCounts.pending_embeddings !== 0 && !activeCorpusJobs.some((job) => job.kind === "backfill_embeddings") ? "Complete Embeddings (step 3) before evaluating."
-    : profile.strategy !== "vector" && runtimeCounts.bm25_ready !== true && !activeCorpusJobs.some((job) => job.kind === "rebuild_bm25") ? "Complete BM25 (step 4) before evaluating."
+    : profile.strategy !== "vector" && profile.lexical_ranker === "bm25" && runtimeCounts.bm25_ready !== true && !activeCorpusJobs.some((job) => job.kind === "rebuild_bm25") ? "Complete BM25 (step 4) before evaluating."
     : null;
 
   return (
@@ -403,6 +400,8 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         busy={busy}
         canOperateCorpus={canOperateCorpus}
         evaluationBlockedReason={evaluationBlockedReason}
+        evaluationPreparationReady={!live || evaluationPreparation?.state === "ready"}
+        evaluationSetup={live ? (action) => <PipelineGoldenPicker action={action} onManage={() => onNavigate({ view: "measure", tab: "golden" })} request={quickRequest} onOpenSources={() => { setFocusStage("filings"); onTabChange("pipeline"); }} onChecked={setEvaluationPreparation} onSelect={(suite_id, golden_revision_id) => { setEvaluationPreparation(null); setExperimentDefaults((current) => ({ ...current, suite_id, golden_revision_id })); }} /> : undefined}
         acquisition={acquisition}
         companies={referenceCompanies}
         onAcquisitionChange={changeAcquisition}
@@ -412,6 +411,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         readiness={connectionConfirmed ? readiness : null}
         localModel={localModel}
         onOpenLocalSettings={onOpenLocalSettings}
+        onLocalPrepared={onLocalPrepared}
         onCancelJob={onCancelJob}
         operationsAvailable={operationsAvailable}
         onRunOperation={onRunOperation}

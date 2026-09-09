@@ -79,6 +79,9 @@ export function diagnosePreparation(stageId: StageId, pipeline: Pipeline, runtim
   if (stage.status === "unknown") {
     return result("checking", "Waiting for current state", "This step has not received enough current information yet.");
   }
+  if (stage.status === "done" && stage.id === "index" && stage.statusDetail === "Complete · new originals available") {
+    return result("complete", "Complete · new originals available", stage.hint, stageId);
+  }
   if (stage.status === "done") {
     return result("complete", "This step is already complete", "The current application state satisfies this step. No preparation command is needed.", stageId);
   }

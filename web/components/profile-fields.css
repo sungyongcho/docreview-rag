@@ -1,0 +1,14 @@
+.profile-fields > .parameter-group { grid-column:1 / -1; border:1px solid var(--border); border-radius:8px; padding:10px 12px; min-width:0; }
+.parameter-group > summary { padding:2px 0; cursor:pointer; color:var(--muted); font-size:12px; }
+.parameter-group > .profile-grid { margin-top:10px; }
+.parameter-label { display:inline-flex; align-items:center; gap:6px; }
+.parameter-help { display:inline-flex; align-items:center; justify-content:center; padding:2px; width:18px; height:18px; border:0; border-radius:50%; background:transparent; color:var(--muted); cursor:help; }
+.parameter-help:hover,.parameter-help:focus-visible { color:var(--text); outline:1px solid var(--border); }
+.parameter-help-tip { position:fixed; z-index:180; width:min(280px,calc(100vw - 24px)); box-sizing:border-box; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px 12px; box-shadow:0 6px 20px #0002; font-size:12px; line-height:1.55; pointer-events:none; }
+.profile-fields select,.evaluation-setup select { appearance:none; padding-right:36px !important; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%; background-size:5px 5px; background-repeat:no-repeat; }
+.evaluation-setup-body > details > summary { padding:8px 10px; border:1px solid var(--border); border-radius:7px; }
+.evaluation-setup .evaluation-setup-body select { appearance:none; padding-right:36px; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%; background-size:5px 5px; background-repeat:no-repeat; }
+
+.parameter-field { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.parameter-field.checkbox { flex-direction:row; align-items:center; }
+.parameter-label > label { margin:0; }

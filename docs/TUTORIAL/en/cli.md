@@ -549,9 +549,12 @@ receipt; inspect `rag-start-fresh --status` before requesting another preview.
 
 Ordinary cleanup then runs `rag-start-quick`, including reinstalling dependencies.
 `--no-start` stops after cleanup. Extreme mode ends with the instruction to run
-`rag-start-quick`, which creates a new `.env` for local editing. Browser storage is
-unchanged; clear it separately under **Settings → Data and help**. The existing web
-wipe endpoint and its browser acknowledgement remain available through the web UI.
+`rag-start-quick`, which creates a new `.env` for local editing. Successful cleanup records
+a reset ID. On its next DEV connection, the web interface restores DocReview conversations,
+settings, and the company basket to defaults; other applications' storage is preserved.
+Ordinary restarts, `rag-start-quick`, and `rag-reset` do not schedule this browser reset.
+`--no-start` and extreme mode also apply it on the next DEV connection. The existing web
+wipe endpoint remains available.
 
 ### Narrow data reset
 
@@ -681,6 +684,6 @@ status/navigation/dismiss buttons retain their behavior.
 | Same command with `--sample` | Same clean start | Server-persisted NVDA/AMD FY2023–2024 draft; press Download yourself |
 | Same command with `--keep-sources` | ORM tables/data only | All raw source files; confirm `Y` |
 | `rag-reset` | Same ORM/source scope as schema recreation; `--keep-sources` and `--sample` supported | Preserves settings/exports/volume; starts DEV, verifies readiness, prints the web hand-off links |
-| `rag-start-fresh --extreme` | Previewed config, runtime files/caches and volumes | Two uppercase Y gates; browser storage unchanged; no restart |
+| `rag-start-fresh --extreme` | Previewed config, runtime files/caches and volumes | Two uppercase Y gates; DocReview browser defaults reset on next DEV connection; no restart |
 
 The two options cannot be combined. CLI acquisition still requires explicit identifiers and years. Source cleanup quarantines the exact previewed files under `data/.schema-recreate-journal` until the DB transaction commits. A DB failure attempts to restore all source bytes; inspect the schema before retrying because a lost connection can leave the DB outcome unconfirmed. Interrupted or incomplete cleanup retains `journal.json` with paths and phase and blocks another reset. Inspect that journal and preserve its backups; do not delete it or repeat recreation to hide the failure. If DB commit succeeded but file cleanup failed, the command returns failure and says so explicitly. The API remains stopped until you inspect state and run `rag-up`.

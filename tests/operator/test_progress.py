@@ -66,3 +66,41 @@ def test_legacy_and_invalid_progress_do_not_invent_overall_values():
     """Keep old or malformed ledger metadata nullable instead of manufacturing percentages."""
     assert progress_fields({}) == {}
     assert progress_fields({"operation_progress_v1": {"overall_current": "100"}}) == {}
+
+
+@pytest.mark.parametrize(
+    "kind,stage,current,total,read,length,expected",
+    [
+        ("acquire_dart", "issuer_index", 0, None, 475136, 3603839, 6),
+        ("acquire_dart", "issuer_index", 0, None, 3603839, 3603839, 49),
+        ("acquire_dart", "download", 1, 2, 500, 1000, 86),
+        ("acquire_edgar", "download", 0, 2, 500, 1000, 61),
+        ("acquire_edgar", "download", 1, 2, 1500, 1000, 99),
+        ("acquire_dart", "issuer_index", 0, None, 500, None, 0),
+        ("acquire_dart", "issuer_index", 0, None, 500, 0, 0),
+        ("ingest_manifest", "documents", 0, 2, 500, 1000, 39),
+    ],
+)
+def test_download_bytes_contribute_only_to_acquisition_progress(
+    kind, stage, current, total, read, length, expected
+):
+    """Combine completed items and known byte fractions without guessing unknown lengths."""
+    refs = advance_progress(
+        kind, {}, OperationProgress(stage, current, total, "", read, length), datetime.now(UTC)
+    )
+    assert progress_fields(refs)["overall_current"] == expected
+
+
+def test_download_retry_and_item_transition_preserve_overall_progress():
+    """A byte counter reset never rolls back completion or counts an item twice."""
+    refs = {}
+    values = []
+    for current, read, length in [(0, 800, 1000), (0, 0, 1000), (1, None, None), (1, 500, 1000)]:
+        refs = advance_progress(
+            "acquire_edgar",
+            refs,
+            OperationProgress("download", current, 2, "", read, length),
+            datetime.now(UTC),
+        )
+        values.append(progress_fields(refs)["overall_current"])
+    assert values == [69, 69, 74, 86]

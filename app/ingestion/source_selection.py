@@ -89,7 +89,7 @@ def resolve_primary(
             "Archive identity is ambiguous: multiple ZIP registrations require explicit cleanup."
         )
     for artifact in sources:
-        expected = fixed_path(document.registry, document.filing_id, artifact.role)
+        expected = fixed_path(document.registry, document.issuer, document.filing_id, artifact.role)
         if artifact.path != expected:
             raise ValueError(
                 f"Unsupported current source path: {artifact.path}. "
@@ -141,7 +141,7 @@ def source_inventory(root: Path) -> tuple[SourceInventory, ...]:
         can_redownload = False
         try:
             present = confined_path(
-                root, fixed_path(document.registry, document.filing_id, "primary")
+                root, fixed_path(document.registry, document.issuer, document.filing_id, "primary")
             ).is_file()
             resolve_primary(manifest, document.document_id, root, cached=True)
             if (root / JOURNAL).exists():

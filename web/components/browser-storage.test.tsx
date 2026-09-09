@@ -66,12 +66,14 @@ it("rejects invalid imports before confirmation and preserves existing settings"
 it("leaves valid imports unchanged when confirmation is declined, then restores after consent", async () => {
   configureBrowserStorage("prod"); browserStorage().setItem("docreview:theme", "light");
   const backup = exportBrowserSettings(); browserStorage().setItem("docreview:theme", "dark");
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(<NotificationProvider><BrowserStorageSettings /></NotificationProvider>);
   upload(backup);
-  await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(browserStorage().getItem("docreview:theme")).toBe("dark");
-  confirm.mockReturnValue(true); upload(backup);
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  upload(backup);
+  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
   await waitFor(() => expect(browserStorage().getItem("docreview:theme")).toBe("light"));
   expect(screen.getByRole("status")).toHaveTextContent("Browser settings imported.");
 });

@@ -26,6 +26,7 @@ from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
 from app.llm.provider import LLMProvider, OpenAILLMProvider
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
+from app.release.browser_reset import browser_reset_id
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 from app.release.middleware import ReleaseGuardMiddleware, SecurityHeadersMiddleware, client_host
@@ -108,6 +109,7 @@ class ReleaseCapabilities(BaseModel):
     can_query_snapshot: bool
     can_use_operations: bool
     can_compare_published_snapshots: bool = True
+    browser_reset_id: str | None = None
 
 
 class ReleaseLimits(BaseModel):
@@ -146,6 +148,7 @@ class CorpusReadiness(BaseModel):
     bm25_ready: bool | None = None
     bm25_rebuild_recorded: bool | None = None
     writable: bool | None = None
+    updating: bool = False
 
 
 class ReleaseReadiness(BaseModel):
@@ -310,6 +313,7 @@ def create_release_app(
         )
         return ReleaseCapabilities(
             environment=active_settings.environment,
+            browser_reset_id=browser_reset_id() if active_settings.environment == "dev" else None,
             can_configure_local_llm=live and active_settings.environment != "prod",
             can_edit_prompt_policy=live,
             can_edit_run_limits=live,
@@ -401,8 +405,10 @@ def create_release_app(
             documents = int(raw_status.get("documents", 0))
             chunks = int(raw_status.get("chunks", 0))
             pending_embeddings = int(raw_status.get("pending_embeddings", 0))
+            updating = active_services is not None and active_services.corpus_access.updating
             corpus_ready = (
-                database_connected
+                not updating
+                and database_connected
                 and schema_status == "compatible"
                 and documents > 0
                 and chunks > 0
@@ -421,6 +427,7 @@ def create_release_app(
                 bm25_ready=raw_status.get("bm25_ready") is True,
                 bm25_rebuild_recorded=raw_status.get("bm25_rebuild_recorded") is True,
                 writable=raw_status.get("writable") is True,
+                updating=updating,
             )
         except Exception as error:
             corpus_ready = False

@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/documents/{doc_id}/golden-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Golden Evidence Chunks
+         * @description Read an evidence page without generating embeddings or modifying documents.
+         */
+        get: operations["golden_evidence_chunks_admin_documents__doc_id__golden_evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/evaluations/compare": {
         parameters: {
             query?: never;
@@ -182,6 +202,26 @@ export interface paths {
         get: operations["evaluation_job_admin_evaluations_jobs__job_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/evaluations/preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluation Preparation
+         * @description Check source and retrieval prerequisites without queueing or generating anything.
+         */
+        post: operations["evaluation_preparation_admin_evaluations_preparation_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -266,26 +306,6 @@ export interface paths {
          */
         put: operations["replace_golden_case_admin_golden_revisions__revision_id__cases__case_id__put"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/golden/revisions/{revision_id}/publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Publish Golden Revision
-         * @description Atomically publish one validated revision.
-         */
-        post: operations["publish_golden_revision_admin_golden_revisions__revision_id__publish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -554,6 +574,26 @@ export interface paths {
          * @description Save explicit disconnection so environment defaults cannot reactivate it.
          */
         post: operations["disconnect_local_llm_admin_local_llm_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/local-llm/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare Local Model
+         * @description Load one installed model without generating an answer or changing connection settings.
+         */
+        post: operations["prepare_local_model_admin_local_llm_prepare_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1972,6 +2012,11 @@ export interface components {
              * @default []
              */
             result_ids: number[];
+            /**
+             * Result Summaries
+             * @default []
+             */
+            result_summaries: components["schemas"]["EvaluationResultSummaryResource"][];
             /** Stage */
             stage: string;
             /** Started At */
@@ -2007,6 +2052,43 @@ export interface components {
         /** @enum {string} */
         EvaluationMode: "quick" | "matrix";
         /**
+         * EvaluationPreparationResource
+         * @description Separate golden provenance from readiness of the currently requested corpus and index.
+         */
+        EvaluationPreparationResource: {
+            /**
+             * Blockers
+             * @default []
+             */
+            blockers: string[];
+            /** Golden Sha256 */
+            golden_sha256?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "builtin" | "user";
+            /** Next Step */
+            next_step?: ("filings" | "index" | "embeddings" | "lexical" | "setup") | null;
+            /**
+             * Source Checks
+             * @default []
+             */
+            source_checks: components["schemas"]["SourceCheck"][];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "source_missing" | "source_invalid" | "draft_incomplete" | "parsing_required" | "index_update_required" | "unavailable";
+            suite_id: components["schemas"]["GoldenSuiteId"];
+            /**
+             * Verification Status
+             * @default pending_review
+             * @enum {string}
+             */
+            verification_status: "pending_review" | "verified";
+        };
+        /**
          * EvaluationResultDetailResponse
          * @description Absolute metrics, configuration, and bounded cases for one result.
          */
@@ -2032,6 +2114,23 @@ export interface components {
             result_id: number;
             /** Suite */
             suite: string;
+        };
+        /**
+         * EvaluationResultSummaryResource
+         * @description Recorded inputs for one result, including individual matrix configurations.
+         */
+        EvaluationResultSummaryResource: {
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Result Id */
+            result_id: number;
         };
         /**
          * EvaluationRunRequest
@@ -2372,11 +2471,52 @@ export interface components {
         };
         /**
          * GoldenDraftRequest
-         * @description Create a draft from canonical JSON or one exact parent revision.
+         * @description Create a named JSON file, empty or copied from a selected dataset.
          */
         GoldenDraftRequest: {
+            /**
+             * Empty
+             * @default false
+             */
+            empty: boolean;
+            /** Filename */
+            filename: string;
             /** Parent Id */
             parent_id?: number | null;
+        };
+        /**
+         * GoldenEvidenceChunk
+         * @description One selectable chunk with exact original-source coordinates.
+         */
+        GoldenEvidenceChunk: {
+            /** Body */
+            body: string;
+            /** Chunk Id */
+            chunk_id: number;
+            /** Citation */
+            citation: string;
+            /** Doc Id */
+            doc_id: string;
+            /** End Char */
+            end_char: number;
+            /** Item */
+            item: string | null;
+            /** Kind */
+            kind: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Start Char */
+            start_char: number;
+        };
+        /**
+         * GoldenEvidencePage
+         * @description A bounded page for choosing evidence without running retrieval or a model.
+         */
+        GoldenEvidencePage: {
+            /** Chunks */
+            chunks: components["schemas"]["GoldenEvidenceChunk"][];
+            /** Next After */
+            next_after?: number | null;
         };
         /**
          * GoldenRevisionActionRequest
@@ -2388,14 +2528,26 @@ export interface components {
         };
         /**
          * GoldenRevisionResource
-         * @description One editable or published golden-suite revision.
+         * @description One independent user dataset file with its content identity.
          */
         GoldenRevisionResource: {
+            /** Completion */
+            completion?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                }[];
+            };
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** File Content */
+            file_content?: {
+                [key: string]: unknown;
+            };
+            /** Filename */
+            filename: string;
             /** Parent Id */
             parent_id: number | null;
             /** Payload */
@@ -2446,6 +2598,8 @@ export interface components {
              * @constant
              */
             curation_status: "agent-curated";
+            /** Filename */
+            filename: string;
             /** Golden Sha256 */
             golden_sha256: string;
             /**
@@ -2467,6 +2621,11 @@ export interface components {
             registry: "sec" | "dart";
             /** Scored Positive Cases */
             scored_positive_cases: number;
+            /**
+             * Source Checks
+             * @default []
+             */
+            source_checks: components["schemas"]["SourceCheck"][];
             /** Source Error */
             source_error?: string | null;
             /** Source Error Code */
@@ -2694,6 +2853,14 @@ export interface components {
             server_id: string | null;
             /** Server Name */
             server_name: string;
+        };
+        /**
+         * LocalModelPrepareRequest
+         * @description Name an installed model on the already selected server, never an arbitrary endpoint.
+         */
+        LocalModelPrepareRequest: {
+            /** Model */
+            model: string;
         };
         /**
          * LocalModelTiming
@@ -3573,6 +3740,33 @@ export interface components {
             public: boolean;
         };
         /**
+         * SourceCheck
+         * @description One evidence-document requirement and its current source validation result.
+         */
+        SourceCheck: {
+            /** Company Name */
+            company_name?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Document Id */
+            document_id: string | null;
+            /** Filing Id */
+            filing_id: string | null;
+            /** Fiscal Year */
+            fiscal_year: number | null;
+            /** Golden Document Id */
+            golden_document_id: string;
+            /** Issuer */
+            issuer: string;
+            /** Registry */
+            registry: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "source_missing" | "source_invalid";
+        };
+        /**
          * SourceDeletionDocument
          * @description Show the official filing identity before original-file deletion is confirmed.
          */
@@ -4357,6 +4551,50 @@ export interface operations {
             };
         };
     };
+    golden_evidence_chunks_admin_documents__doc_id__golden_evidence_get: {
+        parameters: {
+            query?: {
+                query?: string;
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenEvidencePage"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     compare_evaluations_admin_evaluations_compare_get: {
         parameters: {
             query: {
@@ -4425,6 +4663,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    evaluation_preparation_admin_evaluations_preparation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationPreparationResource"];
                 };
             };
             /** @description Request validation failed. */
@@ -4627,50 +4907,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GoldenCaseUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GoldenRevisionResource"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    publish_golden_revision_admin_golden_revisions__revision_id__publish_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                revision_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GoldenRevisionActionRequest"];
             };
         };
         responses: {
@@ -5286,6 +5522,48 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalConnectionResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    prepare_local_model_admin_local_llm_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalModelPrepareRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

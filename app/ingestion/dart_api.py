@@ -641,7 +641,7 @@ def archive_document(
         artifact_id=f"{metadata.document_id}:archive:{document.archive_sha256}",
         document_id=metadata.document_id,
         role="archive",
-        path=fixed_path("dart", document.rcept_no, "archive"),
+        path=fixed_path("dart", metadata.issuer, document.rcept_no, "archive"),
         sha256=document.archive_sha256,
         byte_length=len(document.zip_bytes),
         encoding=None,
@@ -655,7 +655,7 @@ def archive_document(
         artifact_id=f"{metadata.document_id}:primary:{digest}",
         document_id=metadata.document_id,
         role="primary",
-        path=fixed_path("dart", document.rcept_no, "primary"),
+        path=fixed_path("dart", metadata.issuer, document.rcept_no, "primary"),
         sha256=digest,
         byte_length=len(payload),
         encoding="utf-8",
@@ -835,7 +835,7 @@ async def acquire_dart(
             work.extend((stock_code, fiscal_year, known) for known in missing or [None])
         for index, (stock_code, fiscal_year, known_target) in enumerate(work):
             issuer = issuers[stock_code]
-            label = f"{issuer.corp_name} FY{fiscal_year}"
+            label = f"{issuer.corp_name} ({stock_code}) FY{fiscal_year}"
             if on_progress is not None:
                 on_progress(OperationProgress("select", index, len(work), label))
             if known_target is not None:
@@ -859,7 +859,7 @@ async def acquire_dart(
                 )
             if report.corp_name:
                 issuer = CorpCode(issuer.corp_code, report.corp_name, stock_code)
-                label = f"{issuer.corp_name} FY{fiscal_year}"
+                label = f"{issuer.corp_name} ({stock_code}) FY{fiscal_year}"
             with byte_progress(
                 label,
                 stage="download",

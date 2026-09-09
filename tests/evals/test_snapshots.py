@@ -142,7 +142,13 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 metrics={"mrr": 0.5},
                 raw_artifact_path=str(changed_path),
             )
-            session.add_all((first, second, changed))
+            stale = EvalResult(
+                suite="snapshot-test",
+                config=config,
+                metrics={"mrr": 0.4},
+                raw_artifact_path=str(baseline_path),
+            )
+            session.add_all((first, second, changed, stale))
             await session.commit()
             await session.refresh(first)
             await session.refresh(second)
@@ -178,12 +184,27 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 golden_revision_id=None,
                 public=True,
             )
-            changed_snapshot = await service.create(
-                label="Changed golden",
-                eval_result_id=changed.id,
-                golden_revision_id=None,
-                public=True,
+            concurrent = await asyncio.gather(
+                *(
+                    service.create(
+                        label="Changed golden",
+                        eval_result_id=changed.id,
+                        golden_revision_id=None,
+                        public=True,
+                    )
+                    for _ in range(2)
+                )
             )
+            changed_snapshot = concurrent[0]
+            assert concurrent[1].snapshot_id == changed_snapshot.snapshot_id
+            repeated = await service.create(
+                label="Do not rename",
+                eval_result_id=first.id,
+                golden_revision_id=None,
+                public=False,
+            )
+            assert repeated.snapshot_id == baseline.snapshot_id
+            assert repeated.label == "Baseline" and repeated.public is True
             async with factory() as session:
                 retained = (
                     await session.execute(
@@ -246,7 +267,7 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
             with pytest.raises(ValueError, match="no longer matches"):
                 await service.create(
                     label="Stale evaluation",
-                    eval_result_id=first.id,
+                    eval_result_id=stale.id,
                     golden_revision_id=None,
                     public=False,
                 )
@@ -310,3 +331,27 @@ def test_snapshot_uses_recorded_identity_including_tokenizer():
             }
         }
     ) == EmbeddingIdentity("test", "model", 384, "cl100k_base")
+
+
+def test_snapshot_does_not_mask_unrelated_integrity_errors(monkeypatch):
+    """Only the result uniqueness race may reuse an existing snapshot."""
+    from sqlalchemy.exc import IntegrityError
+
+    service = SnapshotService()
+    failure = IntegrityError("unrelated statement", {}, Exception("different constraint"))
+
+    async def absent(_result):
+        """Represent a result without a prior snapshot."""
+        return None
+
+    async def broken(**_kwargs):
+        """Fail with an unrelated persistence constraint."""
+        raise failure
+
+    monkeypatch.setattr(service, "_existing", absent)
+    monkeypatch.setattr(service, "_create", broken)
+    with pytest.raises(IntegrityError) as captured:
+        asyncio.run(
+            service.create(label="test", eval_result_id=1, golden_revision_id=None, public=False)
+        )
+    assert captured.value is failure

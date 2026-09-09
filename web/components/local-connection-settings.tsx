@@ -3,7 +3,8 @@ import { useNotifications, useNotificationSurface } from "./notifications";
 import { notificationErrorDetail, notificationErrorMessage, localConnectionNotice } from "@/lib/notification-registry";
 
 import { useEffect, useRef, useState } from "react";
-import { Activity, ArrowRight, ExternalLink, Plug, RotateCcw, Unplug } from "lucide-react";
+import { CheckCircle2, AlertCircle, LoaderCircle, Activity, ArrowRight, ExternalLink, Plug, RotateCcw, Unplug } from "lucide-react";
+import { PrepareLocalModel } from "./prepare-local-model";
 import { CodeBlock } from "@/components/code-block";
 import { useI18n } from "@/lib/i18n";
 import { addLocalLLMServer, diagnoseLocalLLM, disconnectLocalLLM, getLocalLLMConnection, selectLocalLLMServer } from "@/lib/api";
@@ -65,6 +66,7 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
   onChanged?: (local: ReviewEngineState) => void;
 }) {
   const { t, locale } = useI18n();
+  const [modelPreparation, setModelPreparation] = useState({ loading: false, error: "" });
   const [connection, setConnection] = useState<LocalLLMConnection | null>(null);
   const [selected, setSelected] = useState("default");
   const [name, setName] = useState("");
@@ -88,6 +90,7 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
   const guideHref = `/docreview-rag-agent/docs/${locale}/ollama/`;
 
   function accept(value: LocalLLMConnection) {
+    setModelPreparation({ loading: false, error: "" });
     setConnection(value);
     const options = serverOptions(value);
     setSelected(value.selected_server_id ?? options.find((item) => item.base_url === value.base_url)?.id ?? "default");
@@ -161,25 +164,13 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
 
   const engine = answerEngineStates(connection ? { review_engines: local ? { local } : undefined } : null, localModel)[1];
   const canChoose = local?.enabled === true && (answerCount ?? 0) > 0;
-  const nextStep = !reachable
-    ? "Connect a server below. If it is unreachable, run connection diagnostics to find the recovery step."
-    : !canChoose ? "No answer model is available. Follow the setup guide to prepare one, then reconnect."
-    : engine.reason === "Selected model unavailable" ? "The conversation's saved model is unavailable. Choose an installed answer model in the conversation."
-    : selectedEngine !== "local" || !engine.model ? "Open the conversation, choose Local LLM as the answer engine, then select an installed model."
-    : engine.reason === "Model not loaded" || engine.reason === "Model load state unknown"
-      ? "The model is installed but loading is not confirmed. Send your next question in the conversation when ready; first use can load the model."
-      : "Continue in the conversation. After actual model use, return to Build to inspect refreshed placement and measured speed.";
+  const selectedModelInfo = local?.models?.find((model) => model.name === engine.model);
+  const preparing = modelPreparation.loading;
+  const actionBusy = busy || preparing;
+  const statusTone = modelPreparation.error || !reachable ? "error" : engine.light === "green" ? "ready" : "pending";
+  const StatusIcon = preparing ? LoaderCircle : statusTone === "ready" ? CheckCircle2 : AlertCircle;
 
-  return <div className="local-connection-settings" aria-busy={busy}>
-    {connection && <section className="connection-next-step" aria-labelledby="connection-next-title">
-      <h3 id="connection-next-title">{t("Next step for local answers")}</h3>
-      <p className="connection-next-state">{t("Server connection")}: <strong>{t(reachable ? "Connected" : local?.reason === "unreachable" ? "Unreachable" : "Not confirmed")}</strong>{" · "}{t("Answer models")}: {answerCount ?? t("Not collected")}</p>
-      <p className="connection-next-state">{t("Conversation engine")}: {t(selectedEngine === "local" ? "Local" : "OpenAI")}{" · "}{t("Local model")}: <code>{engine.model ?? t("Choose a model")}</code>{" · "}{t(engine.reason)}</p>
-      <p>{t(nextStep)}</p>
-      {canChoose && onOpenModelSelection ? <button type="button" className="button primary" disabled={busy} onClick={onOpenModelSelection}>{t("Choose or use a model in conversation")}<ArrowRight size={16} aria-hidden="true" /></button>
-        : !canChoose && <a className="button" href={guideHref} target="_blank" rel="noopener noreferrer">{t("Ollama setup and recovery guide")}<ExternalLink size={14} aria-hidden="true" /><span className="visually-hidden">{t("New tab")}</span></a>}
-      <p className="helper">{t("Connection checks only read metadata. Loading, CPU / GPU placement and speed are separate observations; missing measurements stay unknown.")}</p>
-    </section>}
+  return <div className="local-connection-settings" aria-busy={actionBusy}>
     <div className="connection-intro"><p>{t("Use Ollama on this computer. Choose Default to connect without entering a server address.")}</p>
       <a href={guideHref} target="_blank" rel="noopener noreferrer">{t("Set up Ollama on macOS or Linux")}<ExternalLink size={14} aria-hidden="true" /><span className="visually-hidden">{t("New tab")}</span></a>
     </div>
@@ -198,16 +189,22 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
       {!draftValid && <p className="helper" role="status">{t("Use a unique name other than Default and an HTTP or HTTPS address without credentials, query parameters, or a fragment.")}</p>}
       <button className="button ghost" type="button" disabled={busy} onClick={() => { setSelected(connection?.selected_server_id ?? "default"); setDiagnostics(null); setError(null); }}>{t("Cancel adding server")}</button>
     </fieldset>}
+    {connection && <p className={`connection-model-status ${statusTone}`} role="status" aria-label={t("Local model status")}><StatusIcon size={15} aria-hidden="true" className={preparing ? "preparation-spinner" : undefined} /><span>{modelPreparation.error ? t(modelPreparation.error) : preparing ? t("Preparing model…") : <>{engine.model ? <><strong>{engine.model}</strong>: </> : null}{t(engine.reason)} · {t("Conversation engine")}: {t(selectedEngine === "local" ? "Local" : "OpenAI")}</>}</span></p>}
     <div className="connection-actions" role="group" aria-label={t("Connection actions")}>
-      <button className="button primary" type="button" disabled={busy || !targetValid} onClick={() => void change("connect")}><Plug size={16} aria-hidden="true" />{t(pendingAction === "connect" ? "Connecting…" : adding ? "Add & connect" : "Connect")}</button>
-      <button className={`button${pendingAction === "diagnose" ? " is-checking" : ""}`} type="button" disabled={busy || !targetValid} onClick={() => void diagnose()}><Activity size={16} aria-hidden="true" />{t(pendingAction === "diagnose" ? "Checking connection…" : "Run connection diagnostics")}</button>
-      <button className="button ghost" type="button" disabled={busy || !connection || connection.source === "disabled"} onClick={() => void change("disconnect")}><Unplug size={16} aria-hidden="true" />{t(pendingAction === "disconnect" ? "Disconnecting…" : "Disconnect")}</button>
-      <button className="button ghost" type="button" disabled={busy || !connection} onClick={() => void change("reset")}><RotateCcw size={16} aria-hidden="true" />{t(pendingAction === "reset" ? "Restoring…" : "Use Default")}</button>
+
+      <button className="button primary" type="button" disabled={actionBusy || !targetValid} onClick={() => void change("connect")}><Plug size={16} aria-hidden="true" />{t(pendingAction === "connect" ? "Connecting…" : adding ? "Add & connect" : "Connect")}</button>
+      {local?.protocol === "ollama" && <PrepareLocalModel model={engine.model} disabled={busy || adding || selected !== connection?.selected_server_id} ready={local.models?.some((model) => model.name === engine.model && model.loaded === true)} onStatus={setModelPreparation} onPrepared={(value) => { accept(value); onChanged?.(value.local); }} />}
+      <button className={`button${pendingAction === "diagnose" ? " is-checking" : ""}`} type="button" disabled={actionBusy || !targetValid} onClick={() => void diagnose()}><Activity size={16} aria-hidden="true" />{t(pendingAction === "diagnose" ? "Checking connection…" : "Run connection diagnostics")}</button>
+      <button className="button ghost" type="button" disabled={actionBusy || !connection || connection.source === "disabled"} onClick={() => void change("disconnect")}><Unplug size={16} aria-hidden="true" />{t(pendingAction === "disconnect" ? "Disconnecting…" : "Disconnect")}</button>
+      <button className="button ghost" type="button" disabled={actionBusy || !connection} onClick={() => void change("reset")}><RotateCcw size={16} aria-hidden="true" />{t(pendingAction === "reset" ? "Restoring…" : "Use Default")}</button>
+    </div>
+    <div className="connection-conversation-action">
+      {canChoose && onOpenModelSelection && <button type="button" className="button" disabled={actionBusy} onClick={onOpenModelSelection}>{t("Choose or use a model in conversation")}<ArrowRight size={15} aria-hidden="true" /></button>}
     </div>
     <p className="helper connection-action-help">{t("Selecting a server does not change the active connection until you connect. Diagnostics only read server metadata; they do not generate an answer, install a model, or save settings.")}</p>
     {busy && !connection && <p className="helper" role="status">{t("Loading connection settings…")}</p>}
     {error && <div className="notice error" role="alert"><strong>{t(error.kept ? "Connection change failed." : pendingAction === null && connection ? "Connection diagnostics could not be completed." : "Connection settings could not be loaded.")}</strong>{error.kept && <p>{t("Your previous connection setting was kept.")}</p>}<details><summary>{t("Technical details")}</summary><p>{error.detail}</p></details>{!connection && <button type="button" className="button" onClick={() => setLoadAttempt((value) => value + 1)}>{t("Retry")}</button>}</div>}
-    {message && <p className="notice" role="status">{t(message)}</p>}
+    {message && message !== "Connected and saved. Models refreshed." && <p className="notice" role="status">{t(message)}</p>}
     {diagnostics && <section className="connection-diagnostics" aria-label={t("Connection diagnostics")}>
       <h3>{t("Connection diagnostics")} · {diagnostics.server_id === null ? t("New server") : diagnostics.server_name}</h3>
       <p className="helper">{t("Last checked")}: {new Date(diagnostics.checked_at).toLocaleString(locale)}</p>
@@ -222,6 +219,7 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
         <div className="connection-health-grid">
           <div><span>{t("Active server")}</span><strong>{connection.source === "disabled" ? t("Disconnected") : activeName === "Default" ? "Default" : activeName ?? t("Unavailable")}</strong></div>
           <div className={reachable ? "is-passed" : local?.reason === "unreachable" ? "is-failed" : "is-unknown"}><span>{t("Server connection")}</span><strong><span className="connection-status-dot" aria-hidden="true" />{t(reachable ? "Connected" : local?.reason === "unreachable" ? "Unreachable" : "Not confirmed")}</strong></div>
+          <div className={selectedModelInfo?.loaded === true ? "is-passed" : modelPreparation.error ? "is-failed" : "is-blocked"}><span>{t("Model residency")}</span><strong><span className="connection-status-dot" aria-hidden="true" />{t(preparing ? "Preparing model…" : selectedModelInfo?.loaded === true ? "Loaded" : selectedModelInfo?.loaded === false ? "Model not loaded" : "Not confirmed")}</strong></div>
           <div><span>{t("Detected models")}</span><strong>{local?.models?.length ?? t("Not collected")}</strong></div>
           <div><span>{t("Answer models")}</span><strong>{answerCount ?? t("Not collected")}</strong></div>
         </div>

@@ -13,3 +13,35 @@
 .schema-technical-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 
 .terminal-handoff-step.is-danger { border-inline-start: 3px solid var(--bad); padding-inline-start: 12px; }
+
+.pipeline-execution > header .terminal-handoff.is-compact { margin: 0; padding: 0; border: 0; background: transparent; }
+.terminal-handoff.is-compact .terminal-handoff-heading { flex-wrap: nowrap; gap: 8px; }
+.preparation-state { display: inline-flex; align-items: center; gap: 6px; }
+.is-compact .preparation-state { font-size: 13px; white-space: nowrap; }
+.preparation-state[data-state="running"], .preparation-state[data-state="complete"] { color: var(--accent); }
+.preparation-state[data-state="blocked"] { color: var(--warn, #c39340); }
+.pipeline-execution > header .is-compact .button { margin-left: 0; min-width: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+
+.pipeline-execution > header .is-compact .terminal-handoff-heading { gap: 6px; }
+.is-compact .preparation-state { gap: 6px; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--text) 9%, transparent); border-radius: 6px; background: var(--surface-2); font-weight: 500; line-height: 20px; }
+.pipeline-execution > header .is-compact .terminal-handoff-heading > .button { width: 32px; min-width: 32px; min-height: 32px; height: 32px; padding: 0; border: 1px solid color-mix(in srgb, var(--text) 12%, transparent); background: transparent; }
+.pipeline-execution > header .is-compact .terminal-handoff-heading > .button:hover { background: var(--surface-2); border-color: var(--border); }
+.pipeline-execution > header .is-compact .terminal-handoff-heading > .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.preparation-spinner { animation: preparation-rotate 1.5s linear infinite; }
+@keyframes preparation-rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .preparation-spinner { animation: none; } }
+
+.terminal-handoff-heading { position: relative; }
+.preparation-tooltip { position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: max-content; max-width: min(280px, calc(100vw - 48px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 6px 20px #0003; font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.preparation-tooltip::before { content: ""; position: absolute; inset: -9px 0 auto; height: 9px; }
+.preparation-tooltip > strong, .preparation-tooltip > span { display: block; }
+.preparation-tooltip > span { margin-top: 4px; color: var(--muted); }
+.preparation-state:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.pipeline-execution > header .is-compact .terminal-handoff-heading > .button:not([aria-label]) { width: auto; min-width: 0; padding: 5px 9px; white-space: nowrap; font-size: 12px; }
+@media (max-width: 600px) { .terminal-handoff.is-compact .terminal-handoff-heading { flex-wrap: wrap; } }
+
+/* Anchor compact hints to the card header, not the narrow status controls. */
+.pipeline-execution > header { position: relative; }
+.pipeline-execution > header .is-compact .terminal-handoff-heading { position: static; }
+.pipeline-execution > header .is-compact .preparation-tooltip { left: 16px; right: auto; top: calc(100% + 6px); box-sizing: border-box; width: max-content; max-width: min(280px, calc(100% - 32px)); }

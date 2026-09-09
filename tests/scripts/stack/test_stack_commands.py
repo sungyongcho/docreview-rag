@@ -240,11 +240,12 @@ def test_extreme_confirmation_cancellation_never_submits(fresh_io, tmp_path, mon
 
 
 def test_extreme_completion_does_not_claim_browser_deletion(fresh_io, tmp_path, capsys):
-    """Host extreme completion explicitly leaves browser storage to the user."""
+    """Host extreme completion schedules a browser reset instead of claiming deletion."""
     assert fresh.start_fresh(tmp_path, extreme=True) == 0
     output = capsys.readouterr().out
-    assert "localStorage is unchanged" in output
-    assert "설정 › 데이터와 도움말" in output
+    assert "browser data will reset to defaults" in output
+    assert "Other applications are unchanged" in output
+    assert "deleted" not in output.lower()
 
 
 def test_extreme_success_reports_scope_without_restart(fresh_io, tmp_path, monkeypatch, capsys):

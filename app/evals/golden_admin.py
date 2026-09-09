@@ -1,233 +1,291 @@
-"""Database-backed draft, validation, and publication of golden suites."""
+"""File-backed user evaluation sets beside read-only built-in golden JSON."""
 
-from collections.abc import Callable
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+import fcntl
+import hashlib
+import json
 import os
 from pathlib import Path
+import re
 import tempfile
 
-from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import ValidationError
 
 from app.api.admin_schemas import GoldenCanonicalResource, GoldenRevisionResource, GoldenSuiteId
 from app.config import get_settings
-from app.db.models import GoldenRevision
 from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
+from app.evals.drafts import (
+    DRAFT_CASES,
+    DraftConflictError,
+    DraftFieldIssue,
+    DraftInputError,
+    GoldenDraftCase,
+    executable_cases,
+    unique_draft_ids,
+)
 from app.evals.loader import (
     GOLDEN_CASES,
     GoldenDataError,
-    encode_golden_payload,
     golden_payload_sha256,
-    validate_golden_sources,
     validate_unique_cases,
 )
-from app.evals.types import GoldenCase
-
-
-def _default_session_factory() -> AsyncSession:
-    """Create one caller-owned database session."""
-    from app.db.session import Session
-
-    return Session()
-
-
-_GOLDEN_SUITE_ID = TypeAdapter(GoldenSuiteId)
+from app.evals.source_binding import bind_golden
 
 
 class GoldenAdminService:
-    """Persist mutable drafts while keeping published revisions immutable."""
+    """Store independent datasets atomically beside immutable bundled files."""
 
-    def __init__(
-        self,
-        *,
-        session_factory: Callable[[], AsyncSession] = _default_session_factory,
-        golden_dir: Path | None = None,
-        corpus_dir: Path | None = None,
-    ) -> None:
-        self._session_factory = session_factory
-        root = Path(__file__).resolve().parents[2]
-        self._golden_dir = (golden_dir or root / "data" / "golden").resolve()
+    def __init__(self, *, golden_dir: Path | None = None, corpus_dir: Path | None = None) -> None:
+        self._golden_dir = (
+            golden_dir or Path(__file__).resolve().parents[2] / "data" / "golden"
+        ).resolve()
         self._corpus_dir = (corpus_dir or get_settings().corpus_dir).resolve()
 
-    def _paths(self, suite_id: GoldenSuiteId) -> tuple[Path, Path]:
-        """Resolve one validated suite to its canonical JSON and corpus manifest."""
-        definition = SUITES[suite_id]
-        return (
-            self._golden_dir / definition.golden_name,
-            self._corpus_dir / definition.manifest_name,
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        """Serialize read-modify-write across local workers and refuse a redirected lock."""
+        self._golden_dir.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(
+            self._golden_dir / ".datasets.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
         )
+        with os.fdopen(descriptor, "a") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
+
+    def _path(self, filename: str) -> Path:
+        """Accept a flat JSON basename only and reject symlink targets."""
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.json", filename):
+            raise ValueError(
+                "Use a JSON filename containing letters, numbers, dots, dashes or underscores."
+            )
+        path = self._golden_dir / filename
+        if path.is_symlink():
+            raise ValueError("Dataset symlinks are not supported")
+        return path
 
     @staticmethod
-    def _resource(revision: GoldenRevision) -> GoldenRevisionResource:
-        """Project one ORM row onto the strict administrator schema."""
-        return GoldenRevisionResource.model_validate(
-            {
-                "revision_id": revision.id,
-                "suite_id": revision.suite_id,
-                "version": revision.version,
-                "status": revision.status,
-                "payload": tuple(revision.payload),
-                "sha256": revision.sha256,
-                "parent_id": revision.parent_id,
-                "created_at": revision.created_at,
-                "updated_at": revision.updated_at,
-            }
+    def _identity(filename: str) -> int:
+        """Keep a stable browser-safe dataset identity independent of database resets."""
+        return int(hashlib.sha256(filename.encode()).hexdigest()[:12], 16) or 1
+
+    def _read_user(self, path: Path) -> GoldenRevisionResource:
+        """Validate the complete file envelope and reject stale validation claims."""
+        raw = read_strict_json(self._path(path.name), error=GoldenDataError)
+        if not isinstance(raw, dict) or raw.get("format") != "docreview-golden-set":
+            raise GoldenDataError(f"Unsupported user dataset format: {path.name}")
+        required = {"suite_id", "cases", "created_at", "updated_at"}
+        if (
+            not required.issubset(raw)
+            or not isinstance(raw["suite_id"], str)
+            or raw["suite_id"] not in SUITES
+        ):
+            raise GoldenDataError(f"Missing or invalid dataset metadata: {path.name}")
+        definition = SUITES[raw["suite_id"]]
+        if (
+            raw.get("registry") != definition.registry
+            or raw.get("question_language") != definition.question_language
+        ):
+            raise GoldenDataError(
+                f"Dataset metadata does not match its source configuration: {path.name}"
+            )
+        if not isinstance(raw["created_at"], str) or not isinstance(raw["updated_at"], str):
+            raise GoldenDataError(f"Dataset timestamps must be ISO strings: {path.name}")
+        cases = DRAFT_CASES.validate_python(raw["cases"])
+        unique_draft_ids(cases)
+        payload = [case.model_dump(mode="json") for case in cases]
+        digest = golden_payload_sha256(payload)
+        return GoldenRevisionResource(
+            revision_id=self._identity(path.name),
+            filename=path.name,
+            file_content=raw,
+            completion={
+                case.id: [issue.model_dump(mode="json") for issue in case.missing()]
+                for case in cases
+            },
+            suite_id=raw["suite_id"],
+            version=1,
+            status="validated"
+            if raw.get("checked_sha256") == digest
+            and cases
+            and all(not case.missing() for case in cases)
+            else "draft",
+            payload=tuple(payload),
+            sha256=digest,
+            parent_id=None,
+            created_at=datetime.fromisoformat(raw["created_at"]),
+            updated_at=datetime.fromisoformat(raw["updated_at"]),
         )
 
+    def _write(self, item: GoldenRevisionResource) -> GoldenRevisionResource:
+        """Replace one user file atomically; built-in paths are never writable."""
+        if item.filename in {definition.golden_name for definition in SUITES.values()}:
+            raise ValueError("Built-in datasets are read-only. Create a separate draft.")
+        path = self._path(item.filename)
+        envelope = {
+            "format": "docreview-golden-set",
+            "suite_id": item.suite_id,
+            "registry": SUITES[item.suite_id].registry,
+            "question_language": SUITES[item.suite_id].question_language,
+            "created_at": item.created_at.isoformat(),
+            "updated_at": item.updated_at.isoformat(),
+            "checked_sha256": item.sha256 if item.status == "validated" else None,
+            "cases": list(item.payload),
+        }
+        descriptor, temporary = tempfile.mkstemp(prefix=".dataset-", dir=self._golden_dir)
+        try:
+            with os.fdopen(descriptor, "w") as handle:
+                json.dump(envelope, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        return self._read_user(path)
+
     async def list(self, suite_id: GoldenSuiteId) -> tuple[GoldenRevisionResource, ...]:
-        """Return newest-first revisions for one suite."""
-        async with self._session_factory() as session:
-            rows = tuple(
-                await session.scalars(
-                    select(GoldenRevision)
-                    .where(GoldenRevision.suite_id == suite_id)
-                    .order_by(GoldenRevision.version.desc())
-                )
-            )
-        return tuple(self._resource(row) for row in rows)
+        """Discover independent user files for the selected source/language configuration."""
+        builtins = {definition.golden_name for definition in SUITES.values()}
+        rows: list[GoldenRevisionResource] = []
+        for path in sorted(self._golden_dir.glob("*.json")):
+            if path.name in builtins:
+                continue
+            try:
+                rows.append(self._read_user(path))
+            except GoldenDataError, ValueError:
+                # A stray or malformed file must not hide every valid dataset; `get`
+                # still reports the exact problem when that file is opened directly.
+                continue
+        return tuple(row for row in rows if row.suite_id == suite_id)
+
+    def get(self, identity: int) -> GoldenRevisionResource:
+        """Resolve a stable file identity without reading legacy database revisions."""
+        paths = [
+            path
+            for path in self._golden_dir.glob("*.json")
+            if self._identity(path.name) == identity
+        ]
+        if len(paths) != 1:
+            raise ValueError("Dataset file does not exist or its identity is ambiguous")
+        return self._read_user(paths[0])
 
     def canonical(self, suite_id: GoldenSuiteId) -> GoldenCanonicalResource:
-        """Return validated canonical cases without creating a database revision."""
-        canonical_path, _manifest_path = self._paths(suite_id)
-        raw = read_strict_json(canonical_path, error=GoldenDataError)
-        if not isinstance(raw, list):
-            raise GoldenDataError("canonical golden suite root must be an array")
-        cases = GOLDEN_CASES.validate_python(raw)
+        """Read the immutable built-in payload without creating a copy."""
+        path = self._path(SUITES[suite_id].golden_name)
+        cases = GOLDEN_CASES.validate_python(read_strict_json(path, error=GoldenDataError))
         validate_unique_cases(cases)
         payload = [case.model_dump(mode="json") for case in cases]
         return GoldenCanonicalResource(
             suite_id=suite_id,
-            filename=canonical_path.name,
+            filename=path.name,
             payload=tuple(payload),
             sha256=golden_payload_sha256(payload),
         )
 
     async def create_draft(
-        self, suite_id: GoldenSuiteId, *, parent_id: int | None = None
+        self,
+        suite_id: GoldenSuiteId,
+        *,
+        filename: str,
+        empty: bool = False,
+        parent_id: int | None = None,
     ) -> GoldenRevisionResource:
-        """Create the next draft from canonical JSON or one exact parent revision."""
-        canonical_path, _manifest_path = self._paths(suite_id)
-        async with self._session_factory() as session:
-            parent = await session.get(GoldenRevision, parent_id) if parent_id is not None else None
-            if parent_id is not None and (parent is None or parent.suite_id != suite_id):
-                raise ValueError("golden parent revision does not belong to this suite")
-            raw = (
-                parent.payload
-                if parent is not None
-                else read_strict_json(canonical_path, error=GoldenDataError)
-            )
-            if not isinstance(raw, list):
-                raise GoldenDataError("canonical golden suite root must be an array")
-            cases = GOLDEN_CASES.validate_python(raw)
-            validate_unique_cases(cases)
-            payload = [case.model_dump(mode="json") for case in cases]
-            version = (
-                int(
-                    await session.scalar(
-                        select(func.coalesce(func.max(GoldenRevision.version), 0)).where(
-                            GoldenRevision.suite_id == suite_id
-                        )
-                    )
-                    or 0
-                )
-                + 1
-            )
-            revision = GoldenRevision(
+        """Create a named empty dataset or an independent copy of the selected dataset."""
+        with self._locked():
+            path = self._path(filename)
+            if path.exists() or filename in {
+                definition.golden_name for definition in SUITES.values()
+            }:
+                raise ValueError("A dataset with this filename already exists")
+            source = self.get(parent_id) if parent_id is not None else self.canonical(suite_id)
+            if source.suite_id != suite_id:
+                raise ValueError("Source dataset belongs to another suite")
+            payload = () if empty else source.payload
+            now = datetime.now(UTC)
+            item = GoldenRevisionResource(
+                revision_id=self._identity(filename),
+                filename=filename,
                 suite_id=suite_id,
-                version=version,
+                version=1,
                 status="draft",
                 payload=payload,
-                sha256=golden_payload_sha256(payload),
-                parent_id=parent.id if parent is not None else None,
+                sha256=golden_payload_sha256(list(payload)),
+                parent_id=None,
+                created_at=now,
+                updated_at=now,
             )
-            session.add(revision)
-            await session.commit()
-            await session.refresh(revision)
-        return self._resource(revision)
+            return self._write(item)
 
     async def replace_case(
-        self,
-        revision_id: int,
-        case_id: str,
-        *,
-        expected_sha256: str,
-        payload: dict[str, object],
+        self, revision_id: int, case_id: str, *, expected_sha256: str, payload: dict[str, object]
     ) -> GoldenRevisionResource:
-        """Replace one case using optimistic byte-identity concurrency control."""
+        """Save or add one strict question with optimistic content concurrency checks."""
         try:
-            replacement = GoldenCase.model_validate(payload)
+            replacement = GoldenDraftCase.model_validate(payload)
         except ValidationError as error:
-            raise GoldenDataError(f"invalid golden case: {error}") from error
+            issues = tuple(
+                DraftFieldIssue(
+                    location=item["loc"],
+                    code=item["type"],
+                    message="Check this field's type, format, or length.",
+                )
+                for item in error.errors(include_input=False, include_url=False)
+            )
+            raise DraftInputError(issues) from error
         if replacement.id != case_id:
-            raise ValueError("case id in the path and payload must match")
-        async with self._session_factory() as session:
-            revision = await session.get(GoldenRevision, revision_id, with_for_update=True)
-            if revision is None:
-                raise ValueError("golden revision does not exist")
-            if revision.status == "published":
-                raise ValueError("published golden revisions are immutable")
-            if revision.sha256 != expected_sha256:
-                raise ValueError("golden draft changed; refresh before saving")
-            cases = GOLDEN_CASES.validate_python(revision.payload)
+            raise ValueError("Case ID must match the request")
+        with self._locked():
+            item = self.get(revision_id)
+            if item.sha256 != expected_sha256:
+                raise DraftConflictError(
+                    "Dataset changed; reload the saved question before retrying."
+                )
+            cases = DRAFT_CASES.validate_python(item.payload)
             index = next((i for i, case in enumerate(cases) if case.id == case_id), None)
             if index is None:
-                raise ValueError("golden case does not exist in this revision")
-            cases[index] = replacement
-            validate_unique_cases(cases)
-            encoded = [case.model_dump(mode="json") for case in cases]
-            revision.payload = encoded
-            revision.sha256 = golden_payload_sha256(encoded)
-            revision.status = "draft"
-            await session.commit()
-            await session.refresh(revision)
-        return self._resource(revision)
+                cases.append(replacement)
+            else:
+                cases[index] = replacement
+            unique_draft_ids(cases)
+            encoded = tuple(case.model_dump(mode="json") for case in cases)
+            return self._write(
+                item.model_copy(
+                    update={
+                        "payload": encoded,
+                        "sha256": golden_payload_sha256(list(encoded)),
+                        "status": "draft",
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
 
     async def validate(self, revision_id: int, *, expected_sha256: str) -> GoldenRevisionResource:
-        """Validate one draft against strict schema, uniqueness, and source spans."""
-        async with self._session_factory() as session:
-            revision = await session.get(GoldenRevision, revision_id, with_for_update=True)
-            if revision is None:
-                raise ValueError("golden revision does not exist")
-            if revision.sha256 != expected_sha256:
-                raise ValueError("golden draft changed; refresh before validating")
-            cases = GOLDEN_CASES.validate_python(revision.payload)
-            validate_unique_cases(cases)
-            suite_id = _GOLDEN_SUITE_ID.validate_python(revision.suite_id, strict=True)
-            _golden_path, manifest_path = self._paths(suite_id)
-            validate_golden_sources(
-                cases, manifest_path, selection_id=SUITES[suite_id].selection_id
+        """Check question shape and source spans without granting human quality approval."""
+        with self._locked():
+            item = self.get(revision_id)
+            if item.sha256 != expected_sha256:
+                raise DraftConflictError(
+                    "Dataset changed; reload the saved question before retrying."
+                )
+            if not item.payload:
+                raise ValueError("Add at least one question before checking")
+            executable_cases(item.payload)
+            definition = SUITES[item.suite_id]
+            bound = bind_golden(
+                list(item.payload), self._corpus_dir / definition.manifest_name, definition.registry
             )
-            revision.status = "validated"
-            await session.commit()
-            await session.refresh(revision)
-        return self._resource(revision)
-
-    async def publish(self, revision_id: int, *, expected_sha256: str) -> GoldenRevisionResource:
-        """Atomically replace canonical JSON with one validated revision."""
-        async with self._session_factory() as session:
-            revision = await session.get(GoldenRevision, revision_id, with_for_update=True)
-            if revision is None:
-                raise ValueError("golden revision does not exist")
-            if revision.status != "validated":
-                raise ValueError("golden revision must be validated before publication")
-            if revision.sha256 != expected_sha256:
-                raise ValueError("golden revision changed; refresh before publishing")
-            path, _manifest_path = self._paths(
-                _GOLDEN_SUITE_ID.validate_python(revision.suite_id, strict=True)
+            if not bound.ready:
+                raise GoldenDataError(
+                    "; ".join(
+                        source.detail or source.state
+                        for source in bound.sources
+                        if source.state != "ready"
+                    )
+                )
+            return self._write(
+                item.model_copy(update={"status": "validated", "updated_at": datetime.now(UTC)})
             )
-            path.parent.mkdir(parents=True, exist_ok=True)
-            descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-            try:
-                with os.fdopen(descriptor, "wb") as temporary:
-                    temporary.write(encode_golden_payload(revision.payload))
-                    temporary.flush()
-                    os.fsync(temporary.fileno())
-                os.replace(temporary_name, path)
-            finally:
-                if os.path.exists(temporary_name):
-                    os.unlink(temporary_name)
-            revision.status = "published"
-            await session.commit()
-            await session.refresh(revision)
-        return self._resource(revision)

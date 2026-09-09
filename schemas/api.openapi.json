@@ -2260,6 +2260,14 @@
             "title": "Result Ids",
             "type": "array"
           },
+          "result_summaries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvaluationResultSummaryResource"
+            },
+            "title": "Result Summaries",
+            "type": "array"
+          },
           "stage": {
             "title": "Stage",
             "type": "string"
@@ -2369,6 +2377,97 @@
         ],
         "type": "string"
       },
+      "EvaluationPreparationResource": {
+        "additionalProperties": false,
+        "description": "Separate golden provenance from readiness of the currently requested corpus and index.",
+        "properties": {
+          "blockers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "golden_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Golden Sha256"
+          },
+          "kind": {
+            "enum": [
+              "builtin",
+              "user"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "enum": [
+                  "filings",
+                  "index",
+                  "embeddings",
+                  "lexical",
+                  "setup"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Step"
+          },
+          "source_checks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SourceCheck"
+            },
+            "title": "Source Checks",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "source_missing",
+              "source_invalid",
+              "draft_incomplete",
+              "parsing_required",
+              "index_update_required",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "suite_id": {
+            "$ref": "#/components/schemas/GoldenSuiteId"
+          },
+          "verification_status": {
+            "default": "pending_review",
+            "enum": [
+              "pending_review",
+              "verified"
+            ],
+            "title": "Verification Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "kind",
+          "state"
+        ],
+        "title": "EvaluationPreparationResource",
+        "type": "object"
+      },
       "EvaluationResultDetailResponse": {
         "additionalProperties": false,
         "description": "Absolute metrics, configuration, and bounded cases for one result.",
@@ -2421,6 +2520,34 @@
           "created_at"
         ],
         "title": "EvaluationResultDetailResponse",
+        "type": "object"
+      },
+      "EvaluationResultSummaryResource": {
+        "additionalProperties": false,
+        "description": "Recorded inputs for one result, including individual matrix configurations.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "result_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Result Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "result_id",
+          "created_at",
+          "config"
+        ],
+        "title": "EvaluationResultSummaryResource",
         "type": "object"
       },
       "EvaluationRunRequest": {
@@ -3364,8 +3491,17 @@
       },
       "GoldenDraftRequest": {
         "additionalProperties": false,
-        "description": "Create a draft from canonical JSON or one exact parent revision.",
+        "description": "Create a named JSON file, empty or copied from a selected dataset.",
         "properties": {
+          "empty": {
+            "default": false,
+            "title": "Empty",
+            "type": "boolean"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
           "parent_id": {
             "anyOf": [
               {
@@ -3379,7 +3515,104 @@
             "title": "Parent Id"
           }
         },
+        "required": [
+          "filename"
+        ],
         "title": "GoldenDraftRequest",
+        "type": "object"
+      },
+      "GoldenEvidenceChunk": {
+        "additionalProperties": false,
+        "description": "One selectable chunk with exact original-source coordinates.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "chunk_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Chunk Id",
+            "type": "integer"
+          },
+          "citation": {
+            "title": "Citation",
+            "type": "string"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "end_char": {
+            "exclusiveMinimum": 0.0,
+            "title": "End Char",
+            "type": "integer"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "start_char": {
+            "minimum": 0.0,
+            "title": "Start Char",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "doc_id",
+          "source_sha256",
+          "start_char",
+          "end_char",
+          "item",
+          "kind",
+          "body",
+          "citation"
+        ],
+        "title": "GoldenEvidenceChunk",
+        "type": "object"
+      },
+      "GoldenEvidencePage": {
+        "additionalProperties": false,
+        "description": "A bounded page for choosing evidence without running retrieval or a model.",
+        "properties": {
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/GoldenEvidenceChunk"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "next_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After"
+          }
+        },
+        "required": [
+          "chunks"
+        ],
+        "title": "GoldenEvidencePage",
         "type": "object"
       },
       "GoldenRevisionActionRequest": {
@@ -3400,11 +3633,31 @@
       },
       "GoldenRevisionResource": {
         "additionalProperties": false,
-        "description": "One editable or published golden-suite revision.",
+        "description": "One independent user dataset file with its content identity.",
         "properties": {
+          "completion": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "title": "Completion",
+            "type": "object"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "file_content": {
+            "additionalProperties": true,
+            "title": "File Content",
+            "type": "object"
+          },
+          "filename": {
+            "title": "Filename",
             "type": "string"
           },
           "parent_id": {
@@ -3462,6 +3715,7 @@
         },
         "required": [
           "revision_id",
+          "filename",
           "suite_id",
           "version",
           "status",
@@ -3518,6 +3772,10 @@
             "title": "Curation Status",
             "type": "string"
           },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
           "golden_sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Golden Sha256",
@@ -3553,6 +3811,14 @@
             "exclusiveMinimum": 0.0,
             "title": "Scored Positive Cases",
             "type": "integer"
+          },
+          "source_checks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SourceCheck"
+            },
+            "title": "Source Checks",
+            "type": "array"
           },
           "source_error": {
             "anyOf": [
@@ -3591,6 +3857,7 @@
         "required": [
           "suite_id",
           "label",
+          "filename",
           "registry",
           "question_language",
           "corpus_language",
@@ -4124,6 +4391,23 @@
           "checks"
         ],
         "title": "LocalDiagnosticsResponse",
+        "type": "object"
+      },
+      "LocalModelPrepareRequest": {
+        "additionalProperties": false,
+        "description": "Name an installed model on the already selected server, never an arbitrary endpoint.",
+        "properties": {
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "LocalModelPrepareRequest",
         "type": "object"
       },
       "LocalModelTiming": {
@@ -6350,6 +6634,98 @@
         "title": "SnapshotVisibilityRequest",
         "type": "object"
       },
+      "SourceCheck": {
+        "description": "One evidence-document requirement and its current source validation result.",
+        "properties": {
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "filing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filing Id"
+          },
+          "fiscal_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiscal Year"
+          },
+          "golden_document_id": {
+            "title": "Golden Document Id",
+            "type": "string"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "registry": {
+            "title": "Registry",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "source_missing",
+              "source_invalid"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "golden_document_id",
+          "registry",
+          "issuer",
+          "fiscal_year",
+          "filing_id",
+          "document_id",
+          "state"
+        ],
+        "title": "SourceCheck",
+        "type": "object"
+      },
       "SourceDeletionDocument": {
         "additionalProperties": false,
         "description": "Show the official filing identity before original-file deletion is confirmed.",
@@ -7946,6 +8322,93 @@
         ]
       }
     },
+    "/admin/documents/{doc_id}/golden-evidence": {
+      "get": {
+        "description": "Read an evidence page without generating embeddings or modifying documents.",
+        "operationId": "golden_evidence_chunks_admin_documents__doc_id__golden_evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoldenEvidencePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Golden Evidence Chunks",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/evaluations/compare": {
       "get": {
         "description": "Return metrics and per-case changes between compatible artifacts.",
@@ -8068,6 +8531,58 @@
           }
         },
         "summary": "Evaluation Job",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/evaluations/preparation": {
+      "post": {
+        "description": "Check source and retrieval prerequisites without queueing or generating anything.",
+        "operationId": "evaluation_preparation_admin_evaluations_preparation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationPreparationResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Evaluation Preparation",
         "tags": [
           "admin"
         ]
@@ -8341,69 +8856,6 @@
           }
         },
         "summary": "Replace Golden Case",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/golden/revisions/{revision_id}/publish": {
-      "post": {
-        "description": "Atomically publish one validated revision.",
-        "operationId": "publish_golden_revision_admin_golden_revisions__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "title": "Revision Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GoldenRevisionActionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GoldenRevisionResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Publish Golden Revision",
         "tags": [
           "admin"
         ]
@@ -9202,6 +9654,58 @@
           }
         },
         "summary": "Disconnect Local Llm",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/local-llm/prepare": {
+      "post": {
+        "description": "Load one installed model without generating an answer or changing connection settings.",
+        "operationId": "prepare_local_model_admin_local_llm_prepare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalModelPrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Prepare Local Model",
         "tags": [
           "admin"
         ]

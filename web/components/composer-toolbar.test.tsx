@@ -290,3 +290,9 @@ it("keeps selected source filters distinct from the global corpus count and unco
   expect(screen.queryByText("Hybrid search ready")).toBeNull();
   expect(screen.getByRole("button", { name: "View corpus readiness" })).toBeVisible();
 });
+
+ it("prioritizes the update notice over stale ready counts", () => {
+    const banner = composerBanner({ readiness: readiness({ updating: true }), live: true, profile: DEFAULT_SESSION_PROFILE, resetAt: null });
+    expect(banner?.kind).toBe("updating");
+    expect(banner?.action).toBeUndefined();
+ });

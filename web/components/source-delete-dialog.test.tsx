@@ -23,7 +23,7 @@ describe("source deletion confirmation", () => {
   it("previews exact IDs, distinguishes retained data and cancels without a queue request", async () => {
     const confirm = vi.fn();
     render(<SourceDeleteDialog documentIds={["filing-a", "filing-b", "filing-a"]} disabled={false} onConfirm={confirm} />);
-    const trigger = screen.getByRole("button", { name: "Delete selected originals" });
+    const trigger = screen.getByRole("button", { name: "Delete all downloaded originals" });
     trigger.focus(); fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveFocus();
@@ -42,7 +42,7 @@ describe("source deletion confirmation", () => {
   it("requires confirmation of the token and reports queued status until Jobs completes", async () => {
     const confirm = vi.fn().mockResolvedValue(undefined); const jobs = vi.fn();
     render(<SourceDeleteDialog documentIds={["filing-a", "filing-b"]} disabled={false} onConfirm={confirm} onOpenJobs={jobs} />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
     const button = await screen.findByRole("button", { name: "Confirm deletion of originals" });
     expect(confirm).not.toHaveBeenCalled();
     fireEvent.click(button);
@@ -57,7 +57,7 @@ describe("source deletion confirmation", () => {
     const confirm = vi.fn().mockRejectedValue(new Error("exact server failure"));
     if (failure === "preview") vi.mocked(previewSourceDeletion).mockRejectedValueOnce(new Error("exact server failure"));
     render(<SourceDeleteDialog documentIds={["filing-a"]} disabled={false} onConfirm={confirm} />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
     if (failure === "confirm") fireEvent.click(await screen.findByRole("button", { name: "Confirm deletion of originals" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("exact server failure");
     expect(screen.getByRole("dialog")).toContainElement(screen.getByRole("alert"));
@@ -70,7 +70,7 @@ describe("source deletion confirmation", () => {
     vi.mocked(previewSourceDeletion).mockReturnValue(new Promise((done) => { resolve = done; }));
     const confirm = vi.fn();
     render(<SourceDeleteDialog documentIds={["filing-a"]} disabled={false} onConfirm={confirm} />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
     fireEvent.keyDown(window, { key: "Escape" });
     await act(async () => resolve(preview()));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -80,7 +80,7 @@ describe("source deletion confirmation", () => {
   it("traps focus, hides retained portals, and disables confirmation after runtime becomes busy", async () => {
     const props = { documentIds: ["filing-a"], disabled: false, onConfirm: vi.fn() };
     const { rerender } = render(<RetainedPanel active><SourceDeleteDialog {...props} /></RetainedPanel>);
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" }));
     const confirm = await screen.findByRole("button", { name: "Confirm deletion of originals" });
     const cancel = screen.getByRole("button", { name: "Cancel" });
     confirm.focus(); fireEvent.keyDown(window, { key: "Tab" }); expect(cancel).toHaveFocus();
@@ -96,7 +96,7 @@ describe("source deletion confirmation", () => {
     vi.useFakeTimers();
     vi.mocked(previewSourceDeletion).mockResolvedValue({ ...preview(), expires_at: Date.now() / 1000 + 1, files: [] });
     render(<SourceDeleteDialog documentIds={["filing-a"]} disabled={false} onConfirm={vi.fn()} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Delete selected originals" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Delete all downloaded originals" })); });
     expect(screen.getByText("No physical files will be deleted. Only the selected acquisition records may be removed.")).toBeVisible();
     await act(async () => { vi.advanceTimersByTime(1001); });
     expect(screen.getByRole("alert")).toHaveTextContent("The deletion preview expired.");
@@ -106,7 +106,7 @@ describe("source deletion confirmation", () => {
   it("localizes the warning and keeps the explicit confirmation visible in Korean", async () => {
     localStorage.setItem(LOCALE_KEY, "ko");
     render(<I18nProvider><SourceDeleteDialog documentIds={["filing-a"]} disabled={false} onConfirm={vi.fn()} /></I18nProvider>);
-    fireEvent.click(screen.getByRole("button", { name: "선택한 원본 삭제" }));
+    fireEvent.click(screen.getByRole("button", { name: "다운로드 원문 모두 삭제" }));
     await screen.findByRole("button", { name: "원본 삭제 확인" });
     expect(screen.getByRole("dialog")).toHaveTextContent("다시 다운로드해야 합니다.");
     expect(screen.getByRole("dialog")).toHaveTextContent("DB 문서·청크·임베딩과 과거 작업 입력은 보존됩니다.");

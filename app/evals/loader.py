@@ -111,6 +111,7 @@ def validate_golden_sources(
     manifest_path: str | Path = DEFAULT_MANIFEST_PATH,
     *,
     selection_id: str = "sec-evaluation",
+    sources: dict[str, FilingSource] | None = None,
 ) -> None:
     """Verify each positive span against its exact selected source and SHA-256.
 
@@ -137,7 +138,9 @@ def validate_golden_sources(
     than the whole cited corpus. Each artifact verifies its acquired bytes before
     decoding; golden hashes identify decoded text using the ingestion source digest.
     """
-    sources = _manifest_sources(Path(manifest_path), selection_id)
+    sources = (
+        sources if sources is not None else _manifest_sources(Path(manifest_path), selection_id)
+    )
     cited: dict[str, list[tuple[str, GoldenSpan]]] = defaultdict(list)
     for case in cases:
         for answer in case.answers:
@@ -229,6 +232,8 @@ def validate_golden_payload(
     label: str = "golden payload",
 ) -> list[GoldenCase]:
     """Validate in-memory revision cases against schema, uniqueness, and source bytes."""
+    if isinstance(payload, dict) and payload.get("format") == "docreview-golden-set":
+        payload = payload.get("cases")
     if not isinstance(payload, list):
         raise GoldenDataError(f"golden file root must be a JSON array: {label}")
     try:

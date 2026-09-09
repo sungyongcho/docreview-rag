@@ -418,6 +418,10 @@ def test_archive_document_writes_utf8_and_records_matching_identity(tmp_path):
 
     entry = archive_document(document, report, issuer, fiscal_year=2024, corpus_dir=tmp_path)
 
+    assert entry.primary.path == f"dart/005930/{RCEPT_NO}/primary.xml"
+    assert next(a.path for a in entry.artifacts if a.role == "archive") == (
+        f"dart/005930/{RCEPT_NO}/original.zip"
+    )
     assert not (tmp_path / entry.primary.path).exists()
     publish_acquired(
         tmp_path / "manifest.json",
