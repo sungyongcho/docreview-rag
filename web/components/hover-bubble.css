@@ -1,8 +1,6 @@
 .hover-bubble-wrap { position: relative; display: flex; }
 .hover-bubble-wrap.is-inline { display: inline-flex; vertical-align: middle; }
-.hover-bubble { position: absolute; left: 8px; z-index: 30; display: grid; gap: 2px; min-width: 200px; max-width: 260px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: 400 12px/1.45 var(--font-sans, inherit); letter-spacing: 0; text-align: left; white-space: normal; box-shadow: 0 12px 32px #0003; animation: hover-bubble-enter 140ms ease-out; }
-.hover-bubble[data-placement="above"] { bottom: calc(100% + 10px); }
-.hover-bubble[data-placement="below"] { top: calc(100% + 10px); }
+.hover-bubble { position: fixed; z-index: 240; display: grid; gap: 2px; width: max-content; min-width: 200px; max-width: 280px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: 400 12px/1.45 var(--font-sans, inherit); letter-spacing: 0; text-align: left; white-space: normal; box-shadow: 0 12px 32px #0003; animation: hover-bubble-enter 140ms ease-out; pointer-events: none; }
 @keyframes hover-bubble-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .hover-bubble::after { content: ""; position: absolute; left: 18px; width: 10px; height: 10px; background: var(--surface); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); transform: rotate(45deg); }
 .hover-bubble[data-placement="above"]::after { bottom: -6px; }

@@ -17,6 +17,8 @@ export function DevModeBubble({ reason, children, inline = false, placement }: {
   const { t } = useI18n();
   const promote = useDevPromotion();
   const text = reason ? (reason in DEV_ONLY_REASONS ? DEV_ONLY_REASONS[reason as DevOnlyReason] : reason) : null;
+  // Nothing to say on a DEV surface without a reason: keep the child bare instead of an empty bubble.
+  if (!promote && !text) return <>{children}</>;
   return <HoverBubble inline={inline} placement={placement} bubble={<>
     {promote && <strong>{t(text ? "Not available on this website." : "Try 'DEV MODE' now!")}</strong>}
     {text && <em>{t(text)}</em>}
