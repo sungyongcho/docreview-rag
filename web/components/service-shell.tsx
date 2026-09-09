@@ -59,7 +59,7 @@ import { PathDecisionBadge, ReviewProgressSteps, WaitingGlyph, reviewProgressFro
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
-import { NotificationProvider, NotificationOutlet, useNotifications } from "@/components/notifications";
+import { NotificationProvider, useNotifications } from "@/components/notifications";
 import { ProductionPreviewFrame } from "@/components/production-preview-frame";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { enterProductionPreview, exitProductionPreview, previewState } from "@/lib/production-preview";
@@ -1025,7 +1025,6 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         </header>
         {runDetailsMessage && <div className="run-details-backdrop" aria-hidden="true" onClick={() => setRunDetailsMessageId(null)} />}
         {sessionActive && (runtimeHealth.waiting || runtimeHealth.kind === "checking") && <div className="connection-status" role="status"><span>{t(runtimeHealth.waiting ? workPending ? "A job is in progress. Waiting for the API; retrying status checks." : "Connection check delayed. Retrying before declaring an outage." : "Checking API connection…")}</span><button className="button" type="button" disabled={runtimeHealth.checking} onClick={() => void runtimeHealth.check(true)}>{t("Retry connection")}</button></div>}
-        <NotificationOutlet active={sessionActive} />
 
         <RetainedPanel active={view === "review"} className="review-workspace" workspace="review">
           <div className="messages" ref={messagesViewport} onScroll={(event) => { const element = event.currentTarget; followReview.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
@@ -1072,6 +1071,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             </div>
           </div>
           <div className="composer-wrap" data-tour="composer">
+            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
             {conversationTab && <ConversationSettings speed={localCpuSpeed} query={query} onManagePresets={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }} key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
             <ComposerToolbar
               query={query}
@@ -1093,7 +1093,6 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
-            {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
 
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
             {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}

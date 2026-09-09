@@ -637,6 +637,8 @@ export interface NotifyOptions {
   supersedes?: string[];
   revision?: string;
   update?: boolean;
+  /** Persist or update the history entry without showing a toast; the topbar and Job Center carry live state. */
+  silent?: boolean;
 }
 
 /** Keep structured API text verbatim; UI chrome explains the stable cause separately. */

@@ -1,0 +1,24 @@
+/* Transient feedback: an overlay rail under the topbar in the shell, an in-flow rail inside dialogs. */
+.notification-outlet { flex: none; min-width: 0; }
+.notification-outlet:empty { display: none; }
+.notification-stack { position: relative; display: grid; gap: 8px; min-width: 0; max-height: min(180px, 28dvh); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left)); }
+.notification-stack[data-placement="overlay"] { position: fixed; top: 76px; right: 16px; z-index: 34; width: min(380px, calc(100vw - 32px)); max-height: min(60dvh, 420px); padding: 0; overflow: visible; pointer-events: none; }
+.notification-stack[data-placement="overlay"] .notification { pointer-events: auto; }
+.notification { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 12px; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px); box-shadow: 0 12px 32px #0002; padding: 10px 12px; font-size: 12px; line-height: 1.5; color: var(--text); animation: notification-enter 160ms ease-out; }
+.notification[data-leaving="true"] { animation: notification-leave 160ms ease-in forwards; }
+.notification.warning { border-left-color: var(--warn, #d6a545); }.notification.error { border-left-color: var(--bad); }.notification.success { border-left-color: var(--good); }
+.notification-message { min-width: 0; flex: 1; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.notification.is-expanded .notification-message { display: block; max-height: 120px; overflow: auto; }
+.notification-actions { display: flex; flex: none; gap: 4px; }
+.notification button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+.notification button:hover { background: var(--surface-2); color: var(--text); }
+.notification button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.notification-actions .notification-recovery { width: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; white-space: nowrap; }
+@keyframes notification-enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes notification-leave { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .notification, .notification[data-leaving="true"] { animation: none; } }
+@media (max-width: 560px) {
+  .notification-stack { padding-inline: max(8px, env(safe-area-inset-left)); }
+  .notification-stack[data-placement="overlay"] { top: 64px; left: 12px; right: 12px; width: auto; }
+  .notification button { width: 34px; height: 34px; }
+}

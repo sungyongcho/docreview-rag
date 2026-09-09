@@ -234,3 +234,22 @@ describe("notification outlet ownership and viewport", () => {
     expect(rail).toHaveStyle({ maxHeight: "180px" });
   });
 });
+
+describe("silent job updates", () => {
+  function SilentProbe() {
+    const { notify } = useNotifications();
+    return <><button onClick={() => notify("Queued", "job", "job:1", undefined, { event: "job-status", update: true, revision: "queued:1", jobId: "1", silent: true })}>Queued</button><button onClick={() => notify("Done", "success", "job:1", undefined, { event: "job-status", update: true, revision: "succeeded:2", jobId: "1" })}>Done</button></>;
+  }
+  it("records a queued job without a toast and shows the outcome as an overlay toast", () => {
+    localStorage.clear();
+    render(<NotificationProvider><SilentProbe /></NotificationProvider>);
+    fireEvent.click(screen.getByText("Queued"));
+    expect(document.querySelector(".notification-stack")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("docreview:notifications:v1") ?? "{}").entries).toHaveLength(1);
+    fireEvent.click(screen.getByText("Done"));
+    const stack = document.querySelector(".notification-stack");
+    expect(stack).toHaveAttribute("data-placement", "overlay");
+    expect(within(stack as HTMLElement).getByText("Done")).toBeVisible();
+    expect(JSON.parse(localStorage.getItem("docreview:notifications:v1") ?? "{}").entries).toHaveLength(1);
+  });
+});

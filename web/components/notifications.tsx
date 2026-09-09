@@ -6,6 +6,7 @@ import { appendNotification, loadNotifications, readNotification, saveNotificati
 import { NOTIFICATION_EVENTS, type NotificationKind, type NotificationTarget, type NotifyOptions } from "@/lib/notification-registry";
 import { NotificationIcon } from "./notification-icon";
 import "./notification-center.css";
+import "./notification-toasts.css";
 
 type Tone = NotificationKind;
 interface Timing { remaining: number; runningSince: number | null; }
@@ -84,6 +85,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (prior && options?.update && tone !== "error" && prior.body === message && prior.kind === tone && JSON.stringify(prior.target) === JSON.stringify(candidate.target) && JSON.stringify(prior.detail) === JSON.stringify(candidate.detail)) return;
       const next = appendNotification(history.current, candidate, options?.update);entry = next[next.length - 1];commitHistory(next);
     }
+    if (options?.silent) return;
     setItems(current => {
       const existing = current.find(item => item.key === key);
       if (!persist && existing?.message === message && existing.tone === tone && existing.duration === duration) return current;
@@ -109,7 +111,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const modalActive = surfaces.some(surface => surface.modal);
   const visible = useMemo(() => panelOpen ? [] : items.filter(item => !item.surface || !surfaces.some(owner => owner.surface === item.surface)), [items, surfaces, panelOpen]);
   const value = useMemo(() => ({ notify, dismissNotice, dismiss, expire, markRead, remove, register, registerSurface, modalActive, bindNavigation, setPanelOpen, selected, items: visible, entries }), [notify, dismissNotice, dismiss, expire, markRead, remove, register, registerSurface, modalActive, bindNavigation, selected, visible, entries]);
-  return <Context.Provider value={value}>{children}{!selected && visible.length > 0 && <NotificationTray items={visible} onDismiss={dismiss} onExpire={expire} />}{panelOpen && <span className="visually-hidden" role="status" aria-live="polite">{entries.at(-1)?.body}</span>}</Context.Provider>;
+  return <Context.Provider value={value}>{children}{!selected && visible.length > 0 && <NotificationTray items={visible} onDismiss={dismiss} onExpire={expire} placement="overlay" />}{panelOpen && <span className="visually-hidden" role="status" aria-live="polite">{entries.at(-1)?.body}</span>}</Context.Provider>;
 }
 
 export function useNotifications(): Notifications { return useContext(Context); }
@@ -130,7 +132,7 @@ export function NotificationOutlet({ priority = 0, active = true }: { priority?:
 }
 
 /** Bound the rail by the visual viewport as well as dynamic viewport units and safe areas. */
-function NotificationTray({ items, onDismiss, onExpire }: { items: Notice[]; onDismiss: (id: string) => void; onExpire: (id: string) => void }) {
+function NotificationTray({ items, onDismiss, onExpire, placement = "inline" }: { items: Notice[]; onDismiss: (id: string) => void; onExpire: (id: string) => void; placement?: "overlay" | "inline" }) {
   const { t } = useI18n();
   const [viewportHeight, setViewportHeight] = useState<number | undefined>();
   useEffect(() => {
@@ -139,7 +141,7 @@ function NotificationTray({ items, onDismiss, onExpire }: { items: Notice[]; onD
     measure(); viewport?.addEventListener("resize", measure); window.addEventListener("resize", measure);
     return () => { viewport?.removeEventListener("resize", measure); window.removeEventListener("resize", measure); };
   }, []);
-  return <section className="notification-stack" aria-label={t("Notifications")} style={viewportHeight ? { maxHeight: Math.min(180, viewportHeight * 0.28) } : undefined}>
+  return <section className="notification-stack" data-placement={placement} aria-label={t("Notifications")} style={viewportHeight && placement === "inline" ? { maxHeight: Math.min(180, viewportHeight * 0.28) } : undefined}>
     {items.map(item => <NotificationCard key={item.id} item={item} onDismiss={onDismiss} onExpire={onExpire} />)}
   </section>;
 }
@@ -149,7 +151,14 @@ function NotificationCard({ item, onDismiss, onExpire }: { item: Notice; onDismi
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [truncated, setTruncated] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const message = useRef<HTMLSpanElement>(null);
+  /** Animate out only where motion is allowed; test runtimes and reduced-motion users get the immediate removal. */
+  function leave(done: () => void) {
+    const animate = typeof window.matchMedia === "function" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!animate || leaving) { done(); return; }
+    setLeaving(true); window.setTimeout(done, 160);
+  }
   const pauses = useRef(new Set<string>());
   const timer = useRef<number | null>(null);
   /** Account for elapsed active time only when a timer was actually running. */
@@ -163,7 +172,7 @@ function NotificationCard({ item, onDismiss, onExpire }: { item: Notice; onDismi
   function start() {
     if (item.duration === 0 || pauses.current.size || timer.current !== null) return;
     item.timing.runningSince = Date.now();
-    timer.current = window.setTimeout(() => onExpire(item.id), item.timing.remaining);
+    timer.current = window.setTimeout(() => leave(() => onExpire(item.id)), item.timing.remaining);
   }
   function pause(reason: string) { pauses.current.add(reason); stop(); }
   function resume(reason: string) { pauses.current.delete(reason); start(); }
@@ -174,12 +183,12 @@ function NotificationCard({ item, onDismiss, onExpire }: { item: Notice; onDismi
     measure(); const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(element); return () => observer?.disconnect();
   }, [item.message, expanded]);
-  return <div className={`notification ${item.tone}${expanded ? " is-expanded" : ""}`} role={item.tone === "error" || item.tone === "warning" ? "alert" : "status"}
+  return <div className={`notification ${item.tone}${expanded ? " is-expanded" : ""}`} data-leaving={leaving || undefined} role={item.tone === "error" || item.tone === "warning" ? "alert" : "status"}
     onMouseEnter={() => pause("hover")} onMouseLeave={() => resume("hover")} onFocus={() => pause("focus")} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) resume("focus"); }}>
     <NotificationIcon kind={item.tone} /><span ref={message} className="notification-message">{item.message}</span><div className="notification-actions">
       {item.actionLabel && item.onAction && <button className="notification-recovery" type="button" onClick={item.onAction}>{t(item.actionLabel)} <span aria-hidden="true">→</span></button>}
       {(truncated || expanded) && <button type="button" aria-label={t(expanded ? "Collapse notification" : "Expand notification")} aria-expanded={expanded} onClick={() => { const next = !expanded; setExpanded(next); if (next) pause("expanded"); else resume("expanded"); }}>{expanded ? "−" : "+"}</button>}
-      <button type="button" aria-label={t("Dismiss notification")} onClick={() => onDismiss(item.id)}>×</button>
+      <button type="button" aria-label={t("Dismiss notification")} onClick={() => leave(() => onDismiss(item.id))}>×</button>
     </div>
   </div>;
 }
