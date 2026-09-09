@@ -366,8 +366,12 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 .command-kind.service { color: var(--bad); }
 .command-card h4 { margin: 13px 0 5px; font-size: 15px; }
 .command-card p { flex: 1; margin: 0 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.command-filter { margin: 0 0 12px; }
-.command-filter .segmented { max-width: 100%; flex-wrap: wrap; }
+.command-filter { margin: 0 0 16px; }
+.operation-output-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.operation-output-command { color: var(--muted); font-size: 13px; font-weight: 580; }
+.job-notifications-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.job-notifications-state { display: grid; gap: 4px; }
+.job-notifications-state strong { font-size: 15px; font-weight: 580; }
 .command-group + .command-group { margin-top: 18px; }
 .command-group-heading { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 580; letter-spacing: .08em; text-transform: uppercase; }
 .command-badges { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
