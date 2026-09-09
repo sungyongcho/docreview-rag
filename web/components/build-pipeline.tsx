@@ -265,8 +265,8 @@ export function BuildPipeline(props: BuildPipelineProps) {
           />
         ))}
       </ol>
-        <details className="execution-console"><summary>{t("Actual server job record")}</summary>{selected.job ? <pre>{JSON.stringify({ job_id: selected.job.job_id, status: selected.job.status, stage: selected.job.stage, current: selected.job.current, total: selected.job.total, overall_current: selected.job.overall_current, overall_total: selected.job.overall_total, stage_index: selected.job.stage_index, stage_count: selected.job.stage_count, stage_started_at: selected.job.stage_started_at, progress_stage: selected.job.progress_stage, detail_current: selected.job.detail_current, detail_total: selected.job.detail_total, message: selected.job.message }, null, 2)}</pre> : <p className="helper">{t("No job has been started for this step.")}</p>}</details>
-        <PipelineReference stage={selected.id} acquisition={props.acquisition} manifests={props.manifests} provider={props.embeddingProvider} />
+        {!pipeline.readOnly && <details className="execution-console"><summary>{t("Actual server job record")}</summary>{selected.job ? <pre>{JSON.stringify({ job_id: selected.job.job_id, status: selected.job.status, stage: selected.job.stage, current: selected.job.current, total: selected.job.total, overall_current: selected.job.overall_current, overall_total: selected.job.overall_total, stage_index: selected.job.stage_index, stage_count: selected.job.stage_count, stage_started_at: selected.job.stage_started_at, progress_stage: selected.job.progress_stage, detail_current: selected.job.detail_current, detail_total: selected.job.detail_total, message: selected.job.message }, null, 2)}</pre> : <p className="helper">{t("No job has been started for this step.")}</p>}</details>}
+        {!pipeline.readOnly && <PipelineReference stage={selected.id} acquisition={props.acquisition} manifests={props.manifests} provider={props.embeddingProvider} />}
       </section>
       </div>
     </div>
@@ -432,7 +432,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
           {recovery}
           {readOnlyNote && <p className="stage-note">{t(DEV_ONLY_NOTE)}</p>}
           <p className="stage-why"><strong><Lightbulb size={15} aria-hidden="true" />{t("Why it matters:")}</strong><span>{t(stage.why)}</span></p>
-          {stage.id === "index" && <section className="index-selection source-basket" aria-label={t("Selected documents")}>
+          {stage.id === "index" && !readOnly && <section className="index-selection source-basket" aria-label={t("Selected documents")}>
             <header className="index-selection-heading">
               <h3>{t("Selected documents")}</h3>
               <button className="button" type="button" onClick={onChangeFilings}><span className="pipeline-return-step" aria-hidden="true">1</span>{t("Change selection in Filings")}</button>
@@ -458,7 +458,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
             <button className="button" type="button" onClick={onOpenDocuments}>{t("Open Documents")}</button>
             {activeJob ? <>
               {job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
-            </> : readOnly ? <DevLockedButton reason="corpus" className="button primary" ariaLabel={t("Parse & chunk selected sources")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></DevLockedButton> : <button className="button primary" type="button" aria-label={t("Parse & chunk selected sources")} aria-describedby={unreadyPairs.length ? "index-selection-missing" : undefined} disabled={disabled("ingest_all") || !sourceState.complete} onClick={handler("ingest_all")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></button>}
+            </> : readOnly ? <DevLockedButton reason="corpus" className="button primary" ariaLabel={t("Parse & chunk selected sources")}>{t("Parse & chunk selected sources")}</DevLockedButton> : <button className="button primary" type="button" aria-label={t("Parse & chunk selected sources")} aria-describedby={unreadyPairs.length ? "index-selection-missing" : undefined} disabled={disabled("ingest_all") || !sourceState.complete} onClick={handler("ingest_all")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></button>}
           </div> : <div className="stage-actions">
             {job && job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
             {stage.action && stage.id !== "filings" && stage.id !== "evaluate" && <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} locked={readOnly} />}
