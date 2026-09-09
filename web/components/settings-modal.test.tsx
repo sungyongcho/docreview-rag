@@ -34,7 +34,7 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
 
   it("shows developer prompt policy while preserving the immutable guard", () => {
     renderSettings(DEV);
-    expect(screen.getByRole("button", { name: "Prompt" })).toHaveAttribute("title", "DEV only");
+    expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).toHaveAttribute("aria-label", "DEV only");
     expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
@@ -46,7 +46,10 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
     const onClose = vi.fn();
     renderSettings({ ...DEV, can_edit_prompt_policy: false }, onClose);
 
-    expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
+    // A public surface keeps Prompt listed as a read-only page whose edit control is locked.
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+    expect(screen.getByLabelText("Additional operator instructions")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save prompt for new conversations" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Data & help" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
@@ -94,7 +97,7 @@ it("opens the limits category separately from prompt settings", () => {
   renderSettings(DEV);
   expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
   const tab = screen.getByRole("button", { name: "Run limits" });
-  expect(tab).toHaveAttribute("title", "DEV only");
+  expect(tab.querySelector(".development-badge")).toHaveAttribute("aria-label", "DEV only");
   fireEvent.click(tab);
   expect(tab).toHaveAttribute("aria-pressed", "true");
   const input = screen.getByLabelText("Maximum wall clock seconds");
@@ -106,9 +109,10 @@ it("opens the limits category separately from prompt settings", () => {
   expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
 });
 
-/** Deep links require the independent DEV limit capability. */
-it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", (environment, can_edit_run_limits, visible) => {
+/** Editing needs the independent DEV limit capability; the page itself stays listed read-only. */
+it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", (environment, can_edit_run_limits, editable) => {
   render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={vi.fn()} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
-  expect(!!screen.queryByLabelText("Maximum wall clock seconds")).toBe(visible);
-  expect(!!screen.queryByRole("button", { name: "Run limits" })).toBe(visible);
+  expect(!!screen.queryByLabelText("Maximum wall clock seconds")).toBe(editable);
+  expect(screen.getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
+  if (!editable) expect(screen.getByRole("button", { name: "Save default limits" })).toHaveAttribute("aria-disabled", "true");
 });

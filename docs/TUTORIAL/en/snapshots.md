@@ -5,7 +5,7 @@ An evaluation result records measured outcomes and settings. A snapshot preserve
 ## 12. Compare results and save a suitable snapshot {#step-12}
 
 > [!DEV]
-> Comparing private evaluation results and saving new snapshots requires DEV. Comparing snapshots already published for visitors remains a separate public feature.
+> Comparing private evaluation results and saving new snapshots runs in DEV mode only. Comparing snapshots already published for visitors remains a separate public feature.
 
 **Goal:** choose a result using its evidence and experiment conditions, then preserve it for later use.
 
@@ -63,7 +63,7 @@ A snapshot is not a full backup of the application, browser conversations, or cr
 ## Private storage and public visibility {#visibility}
 
 > [!DEV]
-> Publish and Hide change snapshot visibility and require DEV. Reading an already published snapshot or its eligible documents does not change visibility.
+> Publish and Hide change snapshot visibility and run in DEV mode only. Reading an already published snapshot or its eligible documents does not change visibility.
 
 The Save result as snapshot action creates a private snapshot. **Publish** and **Hide** are separate operator actions. Publishing allows the ready snapshot and its eligible document catalog to be read by visitors; hiding removes that snapshot from the public list.
 

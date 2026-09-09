@@ -199,7 +199,7 @@ it("keeps restored development settings intact in prod, blocks both review paths
     expect(screen.getByRole("button", { name: /Review again with selected evidence/, hidden: true })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
     fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
     expect(screen.queryByRole("button", { name: "Operations" })).not.toBeInTheDocument();
@@ -224,7 +224,7 @@ it("makes no administrator or local connection calls before capabilities are kno
     render(<LiveShell />);
     await screen.findByRole("button", { name: "System · healthy" });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).startsWith(OPERATOR_URL))).toBe(true);

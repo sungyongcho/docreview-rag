@@ -206,9 +206,9 @@ describe("Measure workspace", () => {
     for (const label of ["Search trial", "Golden dataset", "Run evaluation", "Compare & snapshots"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByText("Playground runs on the local operator build.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview review" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
-    expect(screen.getByText("Runs happen on the local operator build.")).toBeInTheDocument();
+    expect(screen.getByText("Evaluation runs happen in DEV mode only.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open Snapshots" }));
     expect(screen.getByRole("heading", { name: "Published snapshots" })).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" }));
@@ -443,7 +443,7 @@ it("creates a named empty JSON dataset beside the selector without a publication
     return [];
   });
   render(<Host live initialTab="golden" />);
-  await screen.findByRole("option", { name: "retrieval.json (Built-in)" });
+  await screen.findByRole("option", { name: /· retrieval\.json \(Built-in\)$/ });
   expect(screen.queryByLabelText("Golden revision")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Create draft" }));
   fireEvent.change(screen.getByLabelText("JSON filename"), { target: { value: "my-eval.json" } });
@@ -511,7 +511,7 @@ it("filters comparisons by dataset and clears both selections when the file chan
   stubFetch(url => url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/admin/evaluations/runs") ? { jobs } : []);
   render(<Host live initialTab="compare" />);
   const dataset = await screen.findByLabelText("Evaluation dataset");
-  await screen.findByRole("option", { name: "dart_retrieval.json (Built-in)" });
+  await screen.findByRole("option", { name: /· dart_retrieval\.json \(Built-in\)$/ });
   expect(screen.getByLabelText("Baseline")).toBeDisabled();
   fireEvent.change(dataset, { target: { value: "builtin:dart-en" } });
   await waitFor(() => expect(screen.getByLabelText("Baseline").querySelectorAll("option")).toHaveLength(3));
@@ -570,7 +570,7 @@ it("saves evaluation defaults explicitly without changing current inputs or chat
   stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/runs") ? { jobs: [] } : []);
   render(<Host live initialTab="runs" />);
   fireEvent.click(screen.getByRole("button", { name: "New evaluation" }));
-  await within(screen.getByRole("dialog", { name: "New evaluation" })).findByRole("option", { name: "dart_retrieval_ko.json (Built-in)" });
+  await within(screen.getByRole("dialog", { name: "New evaluation" })).findByRole("option", { name: /· dart_retrieval_ko\.json \(Built-in\)$/ });
   fireEvent.change(screen.getByLabelText("Golden suite"), { target: { value: "dart-ko" } });
   fireEvent.click(screen.getByText("Advanced evaluation options"));
   fireEvent.change(screen.getByLabelText("Run mode"), { target: { value: "matrix" } });

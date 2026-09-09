@@ -342,6 +342,7 @@ function validStoredValue(key: string, raw: string): boolean {
     if (key === DEFAULT_PROFILE_KEY) return validProfile(value);
     if (key === "docreview:retrieval-presets:v1") return Array.isArray(value) && value.every(item => objectValue(item) && typeof item.id === "string" && typeof item.name === "string" && validRetrieval(item.retrieval));
     if (key === EXPERIMENT_DEFAULTS_KEY || key === RECOVERY_KEY) return objectValue(value);
+    if (key === "docreview:notifications:v1") return objectValue(value) && value.version === 1 && Array.isArray(value.entries) && value.entries.every(entry => objectValue(entry) && typeof entry.id === "string" && typeof entry.title === "string" && typeof entry.body === "string");
     return value !== null && typeof value === "object";
   } catch { return false; }
 }

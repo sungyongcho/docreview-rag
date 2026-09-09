@@ -1,4 +1,7 @@
 "use client";
+
+import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
+import type { ScopeFilters } from "@/components/published-corpus-scope";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
@@ -80,6 +83,8 @@ export interface BuildWorkspaceProps {
   onOpenLocalSettings?: () => void;
   onLocalPrepared?: (local: ReviewEngineState) => void;
   onNavigate: (target: BuildNavigationTarget) => void;
+  /** Read-only servers: scope the next question to the chosen published filings. */
+  onAskScope?: (filters: ScopeFilters) => void;
 }
 
 const TABS: Array<[BuildTab, string]> = [
@@ -105,7 +110,7 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
+export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onAskScope, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -286,7 +291,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   }
 
   async function runQuickEvaluation() {
-    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
+    if (!live) { notify(t(DEV_ONLY_REASONS.evaluation), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
     if (evaluationBlockedReason) { notify(t(evaluationBlockedReason), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
     dismissNotice("evaluation-duplicate");
     setBusy(true);
@@ -421,6 +426,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         onBackfill={() => void queueCorpus({ kind: "backfill_embeddings", identifiers: [], years: [] })}
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}
         onAsk={() => onNavigate({ view: "review" })}
+        onAskScope={onAskScope}
         onRecheck={onRecheck}
         onEvaluate={() => void runQuickEvaluation()}
         onCompareSnapshots={() => onNavigate({ view: "measure", tab: "snapshots" })}
@@ -445,7 +451,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
             onRefresh={onRefreshJobs}
             onOpenResult={(resultId) => onNavigate({ view: "measure", tab: "runs", resultId })}
           />
-        : <div className="empty-state"><h2>{t("Jobs")}</h2><p>{t("Jobs run on the local operator build.")}</p></div>)}</RetainedPanel>
+        : <div className="empty-state"><h2>{t("Jobs")}</h2><p>{t(DEV_ONLY_REASONS.jobs)}</p></div>)}</RetainedPanel>
     </section>
   );
 }

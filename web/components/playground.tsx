@@ -6,7 +6,9 @@ import { useI18n } from "@/lib/i18n";
 import { Play, Search } from "lucide-react";
 import { useState } from "react";
 
-import { ApiError, previewRetrieval, previewReview } from "@/lib/api";
+import { ApiError, previewRetrieval, previewReview, retrieveEvidence } from "@/lib/api";
+import { DEFAULT_SESSION_PROFILE, type CustomRetrievalProfile } from "@/lib/types";
+import { DevLockedButton } from "@/components/dev-locked-button";
 import { failureMessage } from "@/lib/pipeline";
 import type { EvidenceHit, RetrievalProfile } from "@/lib/types";
 import { ProfileFields } from "@/components/profile-fields";
@@ -108,15 +110,15 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
   const [review, setReview] = useState<ReviewSummary | null>(null);
   const [shown, setShown] = useState<"retrieval" | "review" | null>(null);
 
-  if (!live) {
-    return <div className="empty-state"><p>{t("Playground runs on the local operator build.")}</p><button className="button" type="button" onClick={onOpenSnapshots}>{t("Open Snapshots")}</button></div>;
-  }
-
   async function runRetrieval() {
     if (!question.trim() || busy) return;
     setBusy("retrieval");
     try {
-      setRetrieval(toRetrievalPreview(await previewRetrieval(question.trim(), profile) as unknown as Record<string, unknown>));
+      // A public surface has no admin preview; the public /retrieve answers with the same rankings for a custom profile.
+      const payload = live
+        ? await previewRetrieval(question.trim(), profile)
+        : await retrieveEvidence(question.trim(), { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: profile as CustomRetrievalProfile });
+      setRetrieval(toRetrievalPreview({ query: question.trim(), profile, score_stage: "rrf", ...(payload as unknown as Record<string, unknown>) }));
       setShown("retrieval");
     } catch (reason) {
       notify(reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Retrieval preview failed."), "error", "playground-retrieval", undefined, { event: "playground-retrieval-error", detail: notificationErrorDetail(reason), ...(reason instanceof ApiError && reason.code === "query_scope_empty" ? { actionLabel: "Check document preparation", target: { view: "build" as const, tab: "pipeline" as const, stage: 1 } } : {}) });
@@ -150,9 +152,10 @@ export function Playground({ live, profile, onProfileChange, onOpenSnapshots }: 
         <details><summary>{t("Advanced search settings")}</summary><ProfileFields profile={profile} onChange={onProfileChange} helpPrefix="measure.playground" fields="advanced" /></details>
         <div className="action-row">
           <button className="button primary" type="button" data-help="measure.playground.preview_retrieval" disabled={busy !== null || !question.trim()} onClick={() => void runRetrieval()}><Search size={15} /> {busy === "retrieval" ? t("Previewing…") : t("Preview retrieval")}</button>
-          <button className="button" type="button" data-help="measure.playground.preview_review" disabled={busy !== null || !question.trim()} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? t("Reviewing…") : t("Preview review")}</button>
+          {live ? <button className="button" type="button" data-help="measure.playground.preview_review" disabled={busy !== null || !question.trim()} onClick={() => void runReview()}><Play size={15} /> {busy === "review" ? t("Reviewing…") : t("Preview review")}</button>
+            : <DevLockedButton reason="preview"><Play size={15} /> {t("Preview review")}</DevLockedButton>}
         </div>
-        <p className="helper">{t("Preview review calls the answer model once and records provider usage.")}</p>
+        <p className="helper">{t(live ? "Preview review calls the answer model once and records provider usage." : "Search runs on the published corpus within the server's public ranges. Nothing is persisted.")}</p>
       </section>
       {busy && <p className="helper" role="status">{t(busy === "retrieval" ? "Previewing…" : "Reviewing…")}</p>}
       {shown !== null && <section className="surface playground-results" aria-live="polite">

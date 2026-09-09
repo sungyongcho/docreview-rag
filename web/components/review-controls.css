@@ -127,3 +127,19 @@
 .review-routing > .review-routing-query { order: 4; }
 
 @container (max-width: 560px) { .review-routing { grid-template-columns: minmax(0, 1fr); } }
+
+/* Read-only Filings stage: the published company × year grid doubles as a question scope. */
+.published-corpus-grid { display: grid; gap: 8px; margin: 10px 0; }
+.published-corpus-row { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.published-corpus-company { display: grid; gap: 2px; min-width: 0; }
+.published-corpus-company strong { font-size: 13px; overflow-wrap: anywhere; }
+.published-corpus-company span { color: var(--muted); font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.published-corpus-years { display: flex; flex-wrap: wrap; gap: 6px; }
+.published-corpus-years .chip[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--text); }
+.published-corpus-scope .source-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 560px) { .published-corpus-row { grid-template-columns: 1fr; } }
+
+/* Public surfaces: the fixed answer model occupies the engine column. */
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-model-control { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; font-size: 11px; }
+.composer-model-chip { display: inline-flex; align-items: center; min-height: 40px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; cursor: default; }
+.composer-model-control .composer-control-description { color: var(--muted); font-size: 11px; }

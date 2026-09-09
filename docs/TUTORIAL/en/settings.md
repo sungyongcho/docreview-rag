@@ -47,7 +47,7 @@ The primary composer row follows **Corpus scope → answer engine/local model �
 ## Presets and effective values {#presets}
 
 > [!DEV]
-> Custom retrieval editing requires DEV. The permitted Balanced, Korean, and Accuracy presets remain available in the public interface.
+> Saving presets as server files runs in DEV mode only. The public build keeps the Balanced, Korean, and Accuracy presets, allows custom retrieval values within the server's bounds (`k` ≤ 10, `candidate_k` ≤ 50, `max_context_chars` ≤ 12000), and saves custom presets in this browser.
 
 The following values come from the current preset definitions. All three built-in presets use hybrid retrieval and return `k=5` results.
 
@@ -100,7 +100,7 @@ Click a selected Pin or Exclude again to deselect it. Both buttons sit in each c
 ## Evidence size and execution limits {#budgets}
 
 > [!DEV]
-> Editing Search, Evidence, and Run limits requires DEV. Public users can still use permitted scope, preset, and filter choices.
+> Editing Search, Evidence, and Run limits in the conversation drawer runs in DEV mode only. Public users can still use permitted scope, preset, and filter choices, plus custom presets within the server's public bounds.
 
 Under **Settings and preview → Advanced → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run of one question, whichever answer engine (OpenAI or local) is selected. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
 
@@ -118,16 +118,16 @@ In DEV the editor saves lower working values on the server in `data/local-settin
 ## Defaults and permissions {#defaults}
 
 > [!DEV]
-> Saving experiment defaults and editing the prompt policy require DEV. Browser language and permitted conversation choices remain separate.
+> Saving experiment defaults and editing the prompt policy run in DEV mode only. **Settings → Prompt** and **Settings → Run limits** stay listed on the public build as read-only pages: the guard text and final prompt preview are visible, while **Additional operator instructions** and the save buttons are locked with a bubble that says the control runs in DEV mode only and links to the source repository. Browser language and permitted conversation choices remain separate.
 
 **Measure → Evaluation settings** saves experiment defaults and the retrieval preset for new conversations. Existing conversations and recorded results keep their settings. Global **Settings → Prompt** applies to the current conversation's prompt policy; local-server connection settings are managed separately under **Local LLM**.
 
-Public mode exposes permitted scope, preset, and filter choices but locks development-only editing and local-model configuration. A saved development profile that is incompatible with the current deployment is reported explicitly; it is not silently rewritten into a different experiment.
+Public mode exposes permitted scope, preset, and filter choices and the read-only Prompt and Run limits pages, but locks DEV-only editing and local-model configuration. A saved development profile that is incompatible with the current deployment is reported explicitly; it is not silently rewritten into a different experiment.
 
 ## Local server selection {#local-server}
 
 > [!DEV]
-> Adding, connecting, disconnecting, or diagnosing a local model server requires DEV. This guide stays readable in the public manual.
+> Adding, connecting, disconnecting, or diagnosing a local model server runs in DEV mode only. This guide stays readable in the public manual.
 
 In **Settings → Local LLM**, **Default** uses the address prepared for the current DocReview environment. Selecting a server alone does not change the active connection. **Run connection diagnostics** checks the selected candidate without saving settings, downloading/loading models, or generating answers. Inspect the named diagnostic result and checked time; active settings remain in **Connection status**.
 

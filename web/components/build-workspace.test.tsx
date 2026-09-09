@@ -103,9 +103,9 @@ describe("Build workspace", () => {
     render(<Harness live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
@@ -312,7 +312,7 @@ describe("Build workspace", () => {
     expect(screen.getAllByText("Portfolio fixture").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
     expect(screen.getByRole("button", { name: "Compare published snapshots" })).toBeInTheDocument();
-    expect(screen.getAllByText("Runs on the local operator build.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("This control runs in DEV mode only.").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
@@ -321,7 +321,7 @@ describe("Build workspace", () => {
     expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Jobs" }));
-    expect(screen.getByText("Jobs run on the local operator build.")).toBeInTheDocument();
+    expect(screen.getByText("Jobs run in DEV mode only.")).toBeInTheDocument();
   });
 
   it("shows the answer-model fix when review is disabled", () => {

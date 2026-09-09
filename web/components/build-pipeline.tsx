@@ -7,6 +7,9 @@ import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { TerminalHandoff } from "@/components/terminal-handoff";
 import { PipelineReference } from "@/components/pipeline-reference";
 import { DevelopmentBadge } from "@/components/development-badge";
+import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
+import { DevLockedButton } from "@/components/dev-locked-button";
+import { PublishedCorpusScope, type ScopeFilters } from "@/components/published-corpus-scope";
 import { WipeRuntime } from "@/components/wipe-runtime";
 import { Server, ChevronDown, Lightbulb, MousePointer2, ArrowDown, ArrowRight, Check, RefreshCw, CircleDollarSign, Clock3 } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -74,6 +77,8 @@ export interface BuildPipelineProps {
   onBackfill: () => void;
   onRebuildBm25: () => void;
   onAsk: () => void;
+  /** Read-only servers turn the company grid into a question scope. */
+  onAskScope?: (filters: ScopeFilters) => void;
   onRecheck: () => void;
   onEvaluate: () => void;
   onCompareSnapshots: () => void;
@@ -95,9 +100,8 @@ const STEP_DEPENDENCIES: Record<Stage["id"], string> = {
 
 /** Actions that queue an operator job; they are locked in read-only mode and while a request is in flight. */
 const OPERATOR_ACTIONS: ReadonlySet<StageActionKind> = new Set(["acquire", "ingest_all", "embed", "bm25", "evaluate"]);
-/** Stages whose work runs only on the local operator build. */
+/** Stages whose work runs only in DEV mode. */
 const OPERATOR_STAGES: ReadonlySet<Stage["id"]> = new Set(["filings", "index", "embeddings", "lexical", "evaluate"]);
-const READ_ONLY_NOTE = "Runs on the local operator build.";
 
 export function splitList(value: string): string[] {
   return value.split(/[\s,]+/).filter(Boolean);
@@ -248,6 +252,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             acquisition={props.acquisition}
             onAcquisitionChange={props.onAcquisitionChange}
             documents={props.documents ?? []}
+            onAskScope={props.onAskScope}
             companies={props.companies ?? []}
             onAcquisitionValidityChange={setAcquisitionValid}
             manifests={props.manifests}
@@ -344,10 +349,11 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
   );
 }
 
-function ActionButton({ stage, primary, handler, disabled }: { stage: Stage; primary: boolean; handler: (kind: StageActionKind) => () => void; disabled: (kind: StageActionKind) => boolean }) {
+function ActionButton({ stage, primary, handler, disabled, locked = false }: { stage: Stage; primary: boolean; handler: (kind: StageActionKind) => () => void; disabled: (kind: StageActionKind) => boolean; locked?: boolean }) {
   const { t, locale } = useI18n();
   if (!stage.action) return null;
   const { kind, label } = stage.action;
+  if (locked && OPERATOR_ACTIONS.has(kind)) return <DevLockedButton reason={kind === "evaluate" ? "evaluation" : "corpus"} className={primary ? "button primary" : "button"}>{t(label)}</DevLockedButton>;
   return <button className={primary ? "button primary" : "button"} type="button" disabled={disabled(kind)} onClick={handler(kind)}>{t(label)}</button>;
 }
 
@@ -369,6 +375,7 @@ interface StageCardProps {
   acquisition: AcquisitionForm;
   documents: CorpusDocument[];
   companies: AcquisitionCompany[];
+  onAskScope?: (filters: ScopeFilters) => void;
   onAcquisitionValidityChange: (valid: boolean) => void;
   onAcquisitionChange: (next: AcquisitionForm) => void;
   manifests: ManifestSummary[];
@@ -382,7 +389,7 @@ interface StageCardProps {
   onCancelJob: (jobId: string) => void;
 }
 
-function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
+function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
   const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
@@ -414,7 +421,8 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
             </p>
           )}
           {stage.id === "evaluate" && (evaluationSetup ? evaluationSetup(stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null) : stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null)}
-          {stage.id === "filings" && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
+          {stage.id === "filings" && readOnly && <PublishedCorpusScope documents={documents} onAskScope={onAskScope} />}
+          {stage.id === "filings" && !readOnly && <SourceMatrix sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={readOnly || busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
           {job && !(stage.id === "index" && activeJob) && (
             <div className="stage-job">
               <JobProgress job={job} />
@@ -422,7 +430,7 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
           )}
           {showHint && <p className="stage-hint">{t(stage.hint)}</p>}
           {recovery}
-          {readOnlyNote && <p className="stage-note">{t(READ_ONLY_NOTE)}</p>}
+          {readOnlyNote && <p className="stage-note">{t(DEV_ONLY_NOTE)}</p>}
           <p className="stage-why"><strong><Lightbulb size={15} aria-hidden="true" />{t("Why it matters:")}</strong><span>{t(stage.why)}</span></p>
           {stage.id === "index" && <section className="index-selection source-basket" aria-label={t("Selected documents")}>
             <header className="index-selection-heading">
@@ -450,10 +458,10 @@ function StageCard({ answerEngines, onOpenLocalSettings, onLocalPrepared, onDown
             <button className="button" type="button" onClick={onOpenDocuments}>{t("Open Documents")}</button>
             {activeJob ? <>
               {job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
-            </> : <button className="button primary" type="button" aria-label={t("Parse & chunk selected sources")} aria-describedby={unreadyPairs.length ? "index-selection-missing" : undefined} disabled={disabled("ingest_all") || !sourceState.complete} onClick={handler("ingest_all")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></button>}
+            </> : readOnly ? <DevLockedButton reason="corpus" className="button primary" ariaLabel={t("Parse & chunk selected sources")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></DevLockedButton> : <button className="button primary" type="button" aria-label={t("Parse & chunk selected sources")} aria-describedby={unreadyPairs.length ? "index-selection-missing" : undefined} disabled={disabled("ingest_all") || !sourceState.complete} onClick={handler("ingest_all")}>{t("Parse & chunk selected sources")}<span className="index-action-count">{sourceState.present.length}</span></button>}
           </div> : <div className="stage-actions">
             {job && job.can_cancel && <button className="button" type="button" onClick={() => onCancelJob(job.job_id)}>{t("Cancel")}</button>}
-            {stage.action && stage.id !== "filings" && stage.id !== "evaluate" && <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} />}
+            {stage.action && stage.id !== "filings" && stage.id !== "evaluate" && <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} locked={readOnly} />}
           </div>}
 
         </div>

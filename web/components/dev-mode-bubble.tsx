@@ -1,0 +1,25 @@
+"use client";
+
+import { createContext, useContext, type ReactNode } from "react";
+import { useI18n } from "@/lib/i18n";
+import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_LABEL, type DevOnlyReason } from "@/lib/dev-mode";
+import { HoverBubble } from "./hover-bubble";
+
+/** True on a public surface, where a locked control should point at the repository instead of DEV settings. */
+const DevPromotionContext = createContext(false);
+export function DevPromotionProvider({ promote, children }: { promote: boolean; children: ReactNode }) {
+  return <DevPromotionContext.Provider value={promote}>{children}</DevPromotionContext.Provider>;
+}
+export function useDevPromotion() { return useContext(DevPromotionContext); }
+
+/** Hover copy for a DEV-only control: the reason, and on a public surface the invitation to run DEV mode. */
+export function DevModeBubble({ reason, children, inline = false, placement }: { reason?: DevOnlyReason | string; children: ReactNode; inline?: boolean; placement?: "above" | "below" }) {
+  const { t } = useI18n();
+  const promote = useDevPromotion();
+  const text = reason ? (reason in DEV_ONLY_REASONS ? DEV_ONLY_REASONS[reason as DevOnlyReason] : reason) : null;
+  return <HoverBubble inline={inline} placement={placement} bubble={<>
+    {promote && <strong>{t(text ? "Not available on this website." : "Try 'DEV MODE' now!")}</strong>}
+    {text && <em>{t(text)}</em>}
+    {promote && <span>{text ? t("DEV mode: {repository}", { repository: SOURCE_REPOSITORY_LABEL }) : SOURCE_REPOSITORY_LABEL}</span>}
+  </>}>{children}</HoverBubble>;
+}

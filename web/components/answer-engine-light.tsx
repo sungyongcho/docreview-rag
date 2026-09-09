@@ -4,6 +4,7 @@ import { PrepareLocalModel } from "./prepare-local-model";
 import type { ReviewEngineState } from "@/lib/types";
 import { ArrowRight } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { useDevPromotion } from "./dev-mode-bubble";
 import type { AnswerEngineState } from "@/lib/answer-engine-state";
 import "./answer-engine-light.css";
 
@@ -17,10 +18,12 @@ export function AnswerEngineLight({ engine, showStatus = false }: { engine: Answ
 /** Show each engine's actual metadata and its own configuration destination. */
 export function AnswerEngineRows({ engines, onOpenStatus, onOpenLocal, onLocalPrepared }: { onLocalPrepared?: (local: ReviewEngineState) => void; engines: AnswerEngineState[]; onOpenStatus: () => void; onOpenLocal?: () => void }) {
   const { t } = useI18n();
+  // A visitor to the deployed screen sees the model, never which key slot serves it.
+  const publicSurface = useDevPromotion();
   return <div className="answer-engine-rows">{engines.map((engine) => <section className="answer-engine-row" key={engine.id} aria-label={t(engine.label)}>
     <strong><AnswerEngineLight engine={engine} /></strong><span>{t(engine.reason)}</span>
     <dl><div><dt>{t("Model")}</dt><dd>{engine.model ?? t("Not configured")}</dd></div>
-      {engine.id === "openai" ? <div><dt>{t("Key slot")}</dt><dd>{engine.keySlot ?? t("Not configured")}</dd></div> : <>
+      {engine.id === "openai" ? !publicSurface && <div><dt>{t("Key slot")}</dt><dd>{engine.keySlot ?? t("Not configured")}</dd></div> : <>
         <div><dt>{t("Server")}</dt><dd>{engine.server ?? t("Not configured")}</dd></div>
         <div><dt>{t("CPU / GPU placement")}</dt><dd>{engine.placement === "cpu" ? "CPU" : engine.placement === "gpu" ? "GPU" : engine.placement === "mixed" ? "CPU + GPU" : t("Placement unknown")}</dd></div>
         <div><dt>{t("Last measured speed")}</dt><dd>{engine.speed == null ? t("Not measured") : `${engine.speed.toFixed(1)} tok/s`}</dd></div>

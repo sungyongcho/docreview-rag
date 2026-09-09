@@ -41,7 +41,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RetainedPanel } from "@/components/retained-panel";
 import "./workspace-navigation.css";
 import { WorkspaceHistory } from "@/components/workspace-history";
@@ -57,7 +57,9 @@ import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspac
 import { Onboarding, type TourView } from "@/components/onboarding";
 import { PathDecisionBadge, ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer, type ReviewProgressState } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
-import { PROD_LOCKED_MESSAGE, SettingsModal, type SettingsCategory } from "@/components/settings-modal";
+import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
+import { DevModeBubble, DevPromotionProvider } from "@/components/dev-mode-bubble";
+import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_URL } from "@/lib/dev-mode";
 import { SystemWorkspace, type SystemTab } from "@/components/system-workspace";
 import { NotificationProvider, useNotifications } from "@/components/notifications";
 import { ProductionPreviewFrame } from "@/components/production-preview-frame";
@@ -93,18 +95,6 @@ interface NavigationEntry {
   conversationTab: ConversationSettingsTab | null;
   scroll: Array<{ element: HTMLElement; top: number; left: number }>;
   focus: HTMLElement | null;
-}
-
-const SOURCE_REPOSITORY_URL = "https://github.com/sungyongcho/docreview-rag-agent";
-
-/** A speech bubble that follows the pointer or keyboard focus over the mode badge and leaves with it. */
-function ModeBubble({ bubble, children }: { bubble: ReactNode; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  return <div className="runtime-mode-wrap" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} aria-describedby={open ? id : undefined}>
-    {children}
-    {open && <div id={id} className="runtime-mode-bubble" role="tooltip">{bubble}</div>}
-  </div>;
 }
 
 /** Preserve the complete DEV tree while a separate public document is being inspected. */
@@ -308,9 +298,14 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         can_use_operations: false,
         can_configure_local_llm: false,
       });
-    }).catch(() => { if (!cancelled) setCapabilities(null); });
+    }).catch(() => {
+      if (cancelled) return;
+      // A public bundle still needs an environment for the tour and help; assume the deployed shape until the server answers.
+      const fallback = runtimeHealth.readiness?.environment;
+      setCapabilities(!adminBuild && (fallback === "prod" || fallback === "dev") ? { environment: fallback, browser_reset_id: null, can_configure_local_llm: false, can_edit_prompt_policy: false, can_edit_run_limits: false, can_edit_golden: false, can_build_snapshot: false, can_run_evaluation: false, can_change_custom_retrieval: false, can_query_snapshot: false, can_use_operations: false, can_compare_published_snapshots: true } : null);
+    });
     return () => { cancelled = true; };
-  }, [adminBuild, runtimeHealth.checkedAt, sessionActive]);
+  }, [adminBuild, runtimeHealth.checkedAt, runtimeHealth.readiness?.environment, sessionActive]);
 
   useEffect(() => {
     if (publicPreview && capabilities && capabilities.environment !== "dev") window.parent.postMessage({ type: "docreview-preview-unavailable" }, window.location.origin);
@@ -499,7 +494,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
 
   function navigateHelpTopic(id: string) {
     if (!adminLive && (id === "review.evidence-policy" || id === "review.run-limits" || id.startsWith("review.retrieval"))) {
-      notify(t(PROD_LOCKED_MESSAGE), "warning", "help-locked", undefined, { event: "help-locked-warning" });
+      notify(t(DEV_ONLY_REASONS.settings), "warning", "help-locked", undefined, { event: "help-locked-warning" });
       return;
     }
     const owner = helpTopicScreen(id);
@@ -993,6 +988,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   }
 
   return (
+    <DevPromotionProvider promote={!adminLive}>
     <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>{confirmationDialog}
       {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
       <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
@@ -1010,17 +1006,17 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           ))}
         </div>
         {badgeEnvironment && (publicPreview
-          ? <ModeBubble bubble={<span>{t("Deployed screen drawn by the DEV server · public data only")}</span>}>
+          ? <DevModeBubble reason="Deployed screen drawn by the DEV server · public data only">
             <div className="runtime-mode-badge prod preview" role="note" aria-label={modeLabel ?? undefined}>
               <span className="runtime-mode-label"><strong>PROD</strong><span>{t("MODE")}</span></span><CircleHelp size={13} aria-hidden="true" />
             </div>
-          </ModeBubble>
+          </DevModeBubble>
           : badgeEnvironment === "prod"
-            ? <ModeBubble bubble={<><strong>{t("Try 'DEV MODE' now!")}</strong><span>{SOURCE_REPOSITORY_URL.replace(/^https?:\/\//, "")}</span></>}>
+            ? <DevModeBubble>
               <a className="runtime-mode-badge prod" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label={modeLabel ?? undefined}>
                 <strong>PROD</strong><span>{t("MODE")}</span>
               </a>
-            </ModeBubble>
+            </DevModeBubble>
             : <div className={`runtime-mode-badge ${badgeEnvironment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
               <strong>{badgeEnvironment.toUpperCase()}</strong><span>{t("MODE")}</span>
             </div>)}
@@ -1107,7 +1103,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
               profile={activeSessionProfile}
               onChange={updateSessionProfile}
               canUseCustom={adminBuild && permissions?.can_change_custom_retrieval === true}
-              onLocked={() => notify(t(PROD_LOCKED_MESSAGE), "warning", "prod-locked", undefined, { event: "prod-locked-warning" })}
+              onLocked={() => notify(t(DEV_ONLY_REASONS.settings), "warning", "prod-locked", undefined, { event: "prod-locked-warning" })}
               onOpenSettings={() => openConversationSettings("filters")}
               onOpenCustom={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }}
               readiness={readiness}
@@ -1135,6 +1131,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           focusStep={pendingStage}
           focusJobId={buildJobId}
           live={adminBuild && permissions?.can_build_snapshot === true}
+          onAskScope={(filters) => { updateSessionProfile(filters); navigate({ view: "review" }); }}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
@@ -1218,6 +1215,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           : runtimeHealth.readiness?.corpus?.schema_message || undefined}
       />
     </main>
+    </DevPromotionProvider>
   );
 }
 

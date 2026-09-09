@@ -150,7 +150,7 @@ describe("BuildPipeline", () => {
 
   it("marks operator execution stages without marking the public question path", () => {
     renderPipeline(liveInput(), { focusStage: "filings" });
-    expect(document.querySelector(".pipeline-header-dev .development-badge")).toHaveAttribute("title", "DEV only");
+    expect(document.querySelector(".pipeline-header-dev .development-badge")).toHaveAttribute("aria-label", "DEV only");
     fireEvent.click(screen.getByRole("button", { name: "Select Ask" }));
     expect(document.querySelector(".pipeline-header-dev .development-badge")).toBeNull();
   });
@@ -210,12 +210,12 @@ describe("BuildPipeline", () => {
 
     expect(document.querySelector(".pipeline-guidance")).toBeInTheDocument();
     expect(screen.getByText("Read-only portfolio · stored snapshots + live retrieval")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync selection" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: "Select Embeddings" }));
-    expect(screen.getByRole("button", { name: "Backfill embeddings" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Backfill embeddings" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
-    expect(screen.getByRole("button", { name: "Recompute BM25" })).toBeDisabled();
-    expect(screen.getByText("Runs on the local operator build.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Recompute BM25" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText("This control runs in DEV mode only.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
     fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));
     expect(handlers.onCompareSnapshots).toHaveBeenCalledTimes(1);

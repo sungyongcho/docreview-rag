@@ -9,6 +9,7 @@ export const CANNED_SUITES: GoldenSuite[] = [
 ].map(([suite_id, label, registry, question_language, corpus_language]) => ({
   suite_id: suite_id as GoldenSuite["suite_id"],
   label,
+  title: label,
   filename: ({ "sec-en": "retrieval.json", "sec-ko": "retrieval_ko.json", "dart-en": "dart_retrieval.json", "dart-ko": "dart_retrieval_ko.json" } as Record<string, string>)[suite_id],
   registry: registry as GoldenSuite["registry"],
   question_language: question_language as GoldenSuite["question_language"],

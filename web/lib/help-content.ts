@@ -214,7 +214,7 @@ const BUILD: HelpTopic[] = [
     body: [
       "Expand the compact runtime summary to inspect API, database, schema, data directory access, and answer model readiness.",
       "A problem turns into a notice with its fix: the command line to run, or Operations buttons (Start database, Plan and Apply migrations, Rebuild app) when a local operator is attached.",
-      "Refresh re-reads readiness and the administrator corpus snapshot; the public build shows a read-only label instead.",
+      "Refresh re-reads readiness and the corpus counts (documents, chunks, embedded, pending); the public build withholds only whether the corpus is writable.",
     ],
     seeAlso: ["build.next-step", "system.status"],
   },
@@ -316,7 +316,7 @@ const REVIEW: HelpTopic[] = [
     title: "Retrieval preset",
     body: [
       "Balanced is hybrid retrieval with ts_rank_cd, k 5, candidate_k 20 and rrf_k 60. Korean adds BM25, candidate_k 30 and route by language. Accuracy adds BM25, candidate_k 50 and the cross-encoder reranker.",
-      "Custom exposes every field and is editable on the local operator build only; a public build keeps the built-in presets.",
+      "Custom exposes every field. A public build saves custom presets in this browser and applies them within the server's public ranges.",
       "A result applied from Measure (Use selected set or Use for review) switches the session to Custom with that run's profile.",
     ],
     tune: "Try a preset in Measure › Playground on the same question before committing a session to it.",
@@ -337,14 +337,14 @@ const REVIEW: HelpTopic[] = [
     title: "Snapshot chip",
     body: [
       "Shown when the session queries a frozen evaluation snapshot instead of the live corpus, after Use for review in Measure › Snapshots.",
-      "Retrieval then reads the snapshot's own chunk, embedding and BM25 tables, so answers stay reproducible while the live corpus changes. Snapshot queries need the local operator build.",
+      "Retrieval then reads the snapshot's own chunk, embedding and BM25 tables, so answers stay reproducible while the live corpus changes. Snapshot queries run in DEV mode only.",
     ],
     tune: "Clear it with × to return to the live corpus.",
     seeAlso: ["measure.snapshots.list"],
     optional: true,
   },
   {
-    id: "review.readiness", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Read published corpus availability. Public document counts describe published filings, not private runtime totals."], "guide": {"summary": "Read published corpus availability. Public document counts describe published filings, not private runtime totals.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
+    id: "review.readiness", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Read corpus availability. The public build shows document, chunk and embedding counts; only whether the corpus is writable is withheld."], "guide": {"summary": "Read corpus availability. The public build shows document, chunk and embedding counts; only whether the corpus is writable is withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Readiness chip",
     body: [
       "Summarises what the corpus can do right now: empty, embeddings pending (lexical only), vector only when BM25 is not built, or the filing count with hybrid ready.",
@@ -417,6 +417,7 @@ const PLAYGROUND: HelpTopic[] = [
     title: "Preview retrieval",
     body: [
       "Calls /admin/retrieval/preview with the question and profile and shows the score stage, each lane's ranking and the fused results. Query embedding can call the configured provider.",
+      "On the public build it calls the public /retrieve endpoint with the same profile, bounded by the server: k ≤ 10, candidate_k ≤ 50, max_context_chars ≤ 12000.",
     ],
     seeAlso: ["measure.playground.rankings", "measure.playground.results"],
   },
@@ -426,6 +427,7 @@ const PLAYGROUND: HelpTopic[] = [
     body: [
       "Runs retrieval and then the answer model once through /admin/review/preview, returning the report label, answer and citations.",
       "It records provider usage like a real review, so use it to check the verdict after retrieval already looks right.",
+      "Answer previews run in DEV mode only.",
     ],
     seeAlso: ["measure.playground.review", "system.usage"],
   },
@@ -542,7 +544,7 @@ const RUNS: HelpTopic[] = [
     title: "Queue evaluation",
     body: [
       "Posts the request to /admin/evaluations/runs; a single worker runs jobs in order and the Results list updates as the job moves through golden validation, queries, artifact and persistence.",
-      "It is locked until the corpus is ready (Build steps 2–4 done) and on the public build.",
+      "It is locked until the corpus is ready (Build steps 2–4 done). Evaluation runs happen in DEV mode only.",
     ],
     seeAlso: ["measure.runs.results", "build.stage.evaluate"],
   },
@@ -651,7 +653,7 @@ const BUILD_JOBS: HelpTopic[] = [
 const SYSTEM: HelpTopic[] = [
 
   {
-    id: "system.status", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Inspect available service health and published corpus readiness. Private inventory totals are withheld."], "guide": {"summary": "Inspect available service health and published corpus readiness. Private inventory totals are withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
+    id: "system.status", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Inspect service health and corpus readiness. Document, chunk and embedding counts are shown; only whether the corpus is writable is withheld."], "guide": {"summary": "Inspect service health and corpus readiness. Document, chunk and embedding counts are shown; only whether the corpus is writable is withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "System status",
     body: [
       "The /ready payload as a page: overall status and mode, database and schema state, corpus counters (documents, chunks, embedded, pending, BM25) and the model policy per role.",
@@ -676,7 +678,7 @@ const SYSTEM: HelpTopic[] = [
     title: "Operations",
     body: [
       "Runs allowlisted verification and service commands through the local operator (rag-dev) without opening a shell; output streams into Latest run.",
-      "The tab appears only when NEXT_PUBLIC_OPERATOR_BASE_URL and its token are configured for this build.",
+      "The tab appears only on a DEV build with the local operator configured.",
       "Cards are grouped by category (Inspect, Verify, Service) with read-only commands first; the filter choice is remembered in this browser.",
     ],
     seeAlso: ["build.runtime"],

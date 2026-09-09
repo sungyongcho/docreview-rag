@@ -12,6 +12,7 @@ export type LexicalRanker = "ts_rank_cd" | "bm25";
 export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
 export type RetrievalProfile = components["schemas"]["RetrievalProfile"];
+export type CustomRetrievalProfile = components["schemas"]["CustomRetrievalProfile"];
 
 export type ReviewEngine = "openai" | "local";
 export type CorpusScope = "auto" | "sec" | "dart";
@@ -213,6 +214,8 @@ export interface PublishedSnapshot {
   corpus_fingerprint: string;
   profile: Record<string, unknown>;
   golden_revision_id: number | null;
+  /** Human name of a built-in suite, filled by the server when `eval_result.suite` is one. */
+  suite_title?: string | null;
   eval_result: {
     result_id: number;
     suite: string;

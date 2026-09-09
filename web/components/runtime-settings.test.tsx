@@ -57,7 +57,7 @@ const READINESS: Readiness = {
     const panel = screen.getByRole("heading", { name: "Local runtime" }).closest("section")!;
     // The Mode metric also reads "DEV", so look at the badge itself.
     const badge = panel.querySelector(".development-badge");
-    expect(badge).toHaveAttribute("title", "DEV only");
+    expect(badge).toHaveAttribute("aria-label", "DEV only");
     expect(badge).toHaveTextContent("DEV");
     expect(within(panel).getByText("Operations URL")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();

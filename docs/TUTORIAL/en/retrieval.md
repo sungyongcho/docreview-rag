@@ -6,7 +6,7 @@ is correct. Read a promising excerpt against the original report before choosing
 ## 8. Test retrieval and read the source {#step-8}
 
 > [!DEV]
-> Live Search trial and its answer preview require the local operator build. The public version links to published snapshots; normal public conversation requests follow their own release policy.
+> Search trial runs on the public build through the public `/retrieve` endpoint with a custom retrieval profile bounded by the server (`k` ≤ 10, `candidate_k` ≤ 50, `max_context_chars` ≤ 12000). Answer previews run in DEV mode only; normal public conversation requests follow their own release policy.
 
 - **Goal:** check that the prepared index finds evidence relevant to a concrete question.
 - **Prerequisites:** the report has chunks and the selected retrieval lanes are ready;

@@ -21,7 +21,7 @@ Every pipeline stage can be inspected: Filings, Parse & chunk, Embeddings, BM25,
 
 
 > [!DEV]
-> Ingestion, embedding backfill, and BM25 rebuilds require DEV. Reading an existing readiness indicator does not perform those operations.
+> Ingestion, embedding backfill, and BM25 rebuilds run in DEV mode only. Reading an existing readiness indicator does not perform those operations.
 
 Parsing creates documents and citable chunks. Embeddings support semantic matching; BM25 supplies
 lexical statistics. The two index paths can be prepared independently after chunking. A green connection

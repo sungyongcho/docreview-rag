@@ -54,7 +54,7 @@ Inspect request**. Mobile keeps scope and engine selection visible. Engine avail
 are separate checks; a displayed model name does not prove it is installed or callable.
 
 > [!DEV]
-> Changing the answer engine/model or configuring a local server requires DEV. Normal public questions use the configured release policy and do not need these controls.
+> Changing the answer engine/model or configuring a local server runs in DEV mode only. Normal public questions use the configured release policy and do not need these controls.
 
 OpenAI uses the configured answer policy and a valid local development key. Inspect current model IDs in
 [CLI configuration](cli.md#installation-and-configuration); do not change a model or budget just to make

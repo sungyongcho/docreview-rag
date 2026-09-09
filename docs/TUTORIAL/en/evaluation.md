@@ -1,7 +1,7 @@
 # Evaluate retrieval against known evidence
 
 > [!DEV]
-> The live evaluation workspace, Golden source/draft tools, and evaluation jobs require DEV. Visitors can use the separately published snapshot comparison.
+> The live evaluation workspace, Golden source/draft tools, and evaluation jobs run in DEV mode only. Visitors can use the separately published snapshot comparison.
 
 An evaluation asks whether the search system can find the evidence specified by a golden dataset. It records a dataset, retrieval configuration, progress, and results. It does not require a generated answer first, and its retrieval scores do not certify the factual accuracy of an answer model.
 
