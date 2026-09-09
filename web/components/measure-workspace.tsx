@@ -698,12 +698,15 @@ export function MeasureWorkspace({ capabilities, publicPreview, active = true, l
     else if (allGoldenFiles.some(file => `file:${file.revision_id}` === compareFile)) selectDataset(compareFile);
     changeTab("runs");
   }
+  function datasetExists(identity: ReturnType<typeof evaluationDataset>) {
+    return identity.builtin ? suites.some(item => `builtin:${item.suite_id}` === identity.key) : allGoldenFiles.some(item => `file:${item.revision_id}` === identity.key);
+  }
   function datasetLink(identity: ReturnType<typeof evaluationDataset>) {
     const value = identity.key.startsWith("builtin:") ? identity.key.slice(8) : identity.key;
-    const exists = identity.builtin ? suites.some(item => `builtin:${item.suite_id}` === identity.key) : allGoldenFiles.some(item => `file:${item.revision_id}` === identity.key);
-    return exists ? <button className="inline-link" type="button" title={t("Open the current dataset file")} onClick={() => { selectDataset(value); changeTab("golden"); }}>{filename(identity)}</button> : filename(identity);
+    if (datasetExists(identity)) return <button className="inline-link" type="button" title={t("Open the current dataset file")} onClick={() => { selectDataset(value); changeTab("golden"); }}>{filename(identity)}</button>;
+    return <>{filename(identity)}{!identity.builtin && <span className="dataset-deleted"> ({t("deleted")})</span>}</>;
   }
-  const filterOptions = <>{fileOptions.map(item => <option key={item.key} value={item.key}>{filename(item)}{item.builtin ? ` (${t("Built-in")})` : ""}</option>)}</>;
+  const filterOptions = <>{fileOptions.map(item => <option key={item.key} value={item.key}>{filename(item)}{item.builtin ? ` (${t("Built-in")})` : datasetExists(item) ? "" : ` (${t("deleted")})`}</option>)}</>;
 
   const existingSnapshot = snapshots.find(snapshot => snapshot.eval_result.result_id === selectedResultId);
   const baselineSnapshot = snapshots.find((snapshot) => snapshot.snapshot_id === snapshotIds[0]);

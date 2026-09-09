@@ -1190,6 +1190,7 @@ export const KO: Record<string, string> = {
   "Provider timing breakdown was not collected.": "모델 서버의 세부 시간 정보는 수집되지 않았습니다.",
   "Server-applied settings": "서버에서 적용한 설정",
   "Job domain": "작업 영역",
+  "deleted": "삭제됨",
   "Delete dataset file": "데이터셋 파일 삭제",
   "Delete dataset file {p0}? Its questions are removed from disk; built-in suites and evaluation results are kept.": "데이터셋 파일 {p0}을(를) 삭제하시겠습니까? 문항 파일이 디스크에서 지워지며, 내장 데이터셋과 평가 결과는 유지됩니다.",
   "Dataset file deleted.": "데이터셋 파일을 삭제했습니다.",
