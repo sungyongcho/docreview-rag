@@ -73,7 +73,7 @@ it.each<NotificationTarget>([
 it("does not repeat an error that already has an authoritative inline notice", () => {
   function Inline() {
     const {notify}=useNotifications();
-    return <><p role="alert">Inline source error</p><button onClick={()=>notify("Inline source error","error","build-refresh",undefined,{event:"build-refresh-error"})}>Refresh fixture</button></>;
+    return <><p role="alert">Inline source error</p><button onClick={()=>notify("Inline source error","error","document-facets",undefined,{event:"document-facets-error"})}>Refresh fixture</button></>;
   }
   render(<NotificationProvider><Inline/><NotificationCenter onNavigate={vi.fn()}/></NotificationProvider>);
   fireEvent.click(screen.getByText("Refresh fixture"));

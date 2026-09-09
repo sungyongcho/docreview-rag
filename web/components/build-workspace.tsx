@@ -109,7 +109,15 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   const { t, locale } = useI18n();
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
-  const { notify } = useNotifications();
+  const { notify, dismissNotice } = useNotifications();
+  // One toast per failing refresh source; repeats of the same message stay quiet until it changes or recovers.
+  const refreshWarnings = useRef<Record<string, string>>({});
+  function warnRefresh(key: string, message: string) {
+    if (refreshWarnings.current[key] === message) return;
+    refreshWarnings.current[key] = message;
+    notify(message, "warning", `build-refresh-${key}`, undefined, { event: "build-refresh-error" });
+  }
+  function clearRefresh(key: string) { delete refreshWarnings.current[key]; }
   const environment = deploymentLabel(readiness?.environment);
   const connectionConfirmed = healthKind !== "checking" && healthKind !== "api_down" && !connectionPending;
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
@@ -124,10 +132,6 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   const [snapshotCount, setSnapshotCount] = useState(0);
   const completedJobs = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
-  const [historyWarning, setHistoryWarning] = useState("");
-  const [corpusWarning, setCorpusWarning] = useState("");
-  const [facetWarning, setFacetWarning] = useState("");
-  const [duplicateEvaluation, setDuplicateEvaluation] = useState(false);
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
   const draftRevision = useRef<string | null>(null);
@@ -159,9 +163,6 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
    */
   async function refresh(mode: "auto" | "manual" = "auto") {
     if (!live) return;
-    setHistoryWarning("");
-    setCorpusWarning("");
-    setFacetWarning("");
     const [jobRows, corpusSnapshot, facets, snapshotRows] = await Promise.allSettled([
       getEvaluationJobs(), getCorpusSnapshot(), getDocumentFacets(), getAdminSnapshots(),
     ]);
@@ -172,23 +173,23 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     if (corpusSnapshot.status === "fulfilled") {
       setCorpus(corpusSnapshot.value);
       setAdminLoaded(true);
+      clearRefresh("corpus");
     } else {
-      setCorpusWarning(t("Corpus status could not be refreshed: {message}", { message: reasonOf(corpusSnapshot) }));
+      warnRefresh("corpus", t("Corpus status could not be refreshed: {message}", { message: reasonOf(corpusSnapshot) }));
       failures.push(reasonOf(corpusSnapshot));
     }
     if (facets.status === "fulfilled") {
       const registries = Array.isArray(facets.value.registries) ? facets.value.registries : [];
       setRegistryCounts(Object.fromEntries(registries.filter((item) => typeof item.value === "string" && typeof item.count === "number").map((item) => [item.value, item.count])));
+      clearRefresh("facets");
     } else {
-      setFacetWarning(t("Document filters could not be loaded: {message}", { message: reasonOf(facets) }));
+      warnRefresh("facets", t("Document filters could not be loaded: {message}", { message: reasonOf(facets) }));
       failures.push(reasonOf(facets));
     }
     if (snapshotRows.status === "fulfilled") setSnapshotCount(Array.isArray(snapshotRows.value) ? snapshotRows.value.length : 0);
     else failures.push(reasonOf(snapshotRows));
-    if (jobRows.status === "rejected" || snapshotRows.status === "rejected") {
-      setHistoryWarning(t("Some history could not be loaded. Corpus status is shown separately."));
-    }
-    if (mode === "manual" && failures.length) notify(failures[0], "error", "build-refresh", undefined, { event: "build-refresh-error" });
+    if (jobRows.status === "rejected" || snapshotRows.status === "rejected") warnRefresh("history", t("Some history could not be loaded. Corpus status is shown separately."));
+    else clearRefresh("history");
     return failures.length === 0;
   }
 
@@ -287,7 +288,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   async function runQuickEvaluation() {
     if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
     if (evaluationBlockedReason) { notify(t(evaluationBlockedReason), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
-    setDuplicateEvaluation(false);
+    dismissNotice("evaluation-duplicate");
     setBusy(true);
     try {
       const request = quickRequest;
@@ -296,8 +297,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
       if (prepared.state !== "ready") { notify(prepared.blockers.join("; ") || t("Evaluation prerequisites are not ready."), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
       const activeEvaluations = [...jobBoard.jobs.filter((job) => job.domain === "evaluation"), ...jobs];
       if (activeEvaluations.some((job) => ["queued", "running"].includes(job.status) && sameEvaluationRequest(job.request, request))) {
-        setDuplicateEvaluation(true);
-        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice", actionLabel: "Open Jobs", onAction: () => onTabChange("jobs") });
         return;
       }
       const job = await queueEvaluation(request);
@@ -311,8 +311,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
       onTabChange("jobs");
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === "evaluation_already_queued") {
-        setDuplicateEvaluation(true);
-        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice", actionLabel: "Open Jobs", onAction: () => onTabChange("jobs") });
         onRefreshJobs();
       } else notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Evaluation failed."), "error", "evaluation", undefined, { event: "evaluation-error", detail: notificationErrorDetail(reason) });
     } finally {
@@ -371,10 +370,6 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
 
   return (
     <section className="lab-shell build-workspace">
-      {historyWarning && <p className="notice" role="status">{historyWarning}</p>}
-      {corpusWarning && <p className="notice" role="status">{corpusWarning}</p>}
-      {facetWarning && <p className="notice" role="status">{facetWarning}</p>}
-      {duplicateEvaluation && <p className="notice" role="status">{t("The same evaluation is already queued.")} <button type="button" className="inline-link" onClick={() => onTabChange("jobs")}>{t("Open Jobs")}</button></p>}
       <header className="page-heading">
         <div>
           <h1>{t("From filings to verified answers.")}</h1>

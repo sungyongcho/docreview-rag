@@ -674,24 +674,22 @@ describe("refresh hygiene", () => {
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/admin/snapshots"))).toBe(true));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Corpus status could not be refreshed: Database is busy").closest(".notification-stack")).toHaveAttribute("data-placement", "overlay");
   });
 
-  it("surfaces a facet failure inline with the server message", async () => {
+  it("surfaces a facet failure as a toast with the server message", async () => {
     stubAdmin((url) => url.endsWith("/documents/facets") ? failure("schema_not_ready", "Schema is not ready") : undefined);
-    render(<Harness live />);
+    render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Document filters could not be loaded: Schema is not ready");
   });
 
-  it("keeps manual refresh failures in one authoritative inline notice", async () => {
+  it("keeps manual refresh failures in one toast per failing source", async () => {
     stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
     expect(screen.getAllByText("Corpus status could not be refreshed: Database is busy")).toHaveLength(1);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does not refetch evaluation runs when only a corpus job reports progress", async () => {

@@ -151,19 +151,18 @@ const USAGE_ROLE_LABELS: Record<string, string> = { gate: "Classification", rout
 function UsagePanel() {
   const { t, locale } = useI18n();
   const [usage, setUsage] = useState<ProviderUsage>(EMPTY_USAGE);
-  const [usageError, setUsageError] = useState<{ detail: string; appOwned: boolean } | null>(null);
+  const { notify } = useNotifications();
 
   useEffect(() => {
     let cancelled = false;
     getProviderUsage()
-      .then((value) => { if (!cancelled) { setUsage(value); setUsageError(null); } })
-      .catch((reason: unknown) => { if (!cancelled) setUsageError({ detail: reason instanceof Error ? reason.message : "Usage could not be loaded.", appOwned: !(reason instanceof Error) }); });
+      .then((value) => { if (!cancelled) setUsage(value); })
+      .catch((reason: unknown) => { if (!cancelled) notify(reason instanceof Error ? reason.message : t("Usage could not be loaded."), "error", "usage-refresh", undefined, { event: "usage-refresh-error" }); });
     return () => { cancelled = true; };
   }, []);
 
   return (
     <div className="panel-stack" data-help="system.usage">
-      {usageError && <div className="notice error" role="alert">{usageError.appOwned ? t(usageError.detail) : usageError.detail}</div>}
       <div className="metric-grid">
         <Metric icon={<Activity />} label={t("Runs")} value={usage.runs.toLocaleString(locale)} />
         <Metric icon={<Braces />} label={t("Requests")} value={usage.requests.toLocaleString(locale)} />

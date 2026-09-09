@@ -11,13 +11,22 @@ export const NOTIFICATION_EVENTS = {
   "snapshot-comparison-result": { classification: "persistent", title: "Snapshot comparison", target: { view: "measure", tab: "snapshots", resultId: null }, surface: "measure-snapshots" },
   "notification-target-unavailable": { classification: "transient", title: "Item unavailable", target: null, surface: null },
   "build-refresh-error": {
-    "classification": "inline-replaced",
+    "classification": "transient",
     "title": "Corpus activity",
     "target": {
       "view": "build",
       "tab": "documents"
     },
-    "surface": "build-documents"
+    "surface": "build-refresh"
+  },
+  "usage-refresh-error": {
+    "classification": "transient",
+    "title": "Usage",
+    "target": {
+      "view": "system",
+      "tab": "usage"
+    },
+    "surface": "system-usage-refresh"
   },
   "corpus-operation-notice": {
     "classification": "transient",
@@ -62,13 +71,13 @@ export const NOTIFICATION_EVENTS = {
     "surface": "measure-runs"
   },
   "evaluation-duplicate-notice": {
-    "classification": "inline-replaced",
+    "classification": "transient",
     "title": "Evaluation",
     "target": {
       "view": "measure",
       "tab": "runs"
     },
-    "surface": "measure-runs"
+    "surface": "build-refresh"
   },
   "evaluation-queued-notice": {
     "classification": "transient",
