@@ -242,7 +242,7 @@ export function BuildPipeline(props: BuildPipelineProps) {
             busy={props.busy}
             handler={handler}
             onDownload={props.onDownload}
-            onDeleteSources={props.onDeleteSources}
+            onDeleteSources={pipeline.readOnly ? undefined : props.onDeleteSources}
             sourceDeletionDisabled={props.sourceDeletionDisabled || !props.canOperateCorpus || pipeline.stages.some((item) => item.job?.domain === "corpus" && ["queued", "running"].includes(item.job.status))}
             disabled={disabled}
             acquisition={props.acquisition}

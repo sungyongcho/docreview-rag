@@ -243,7 +243,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const schemaHint = "Resolve database setup before continuing.";
 
   const drafts: Record<StageId, Draft> = {
-    filings: filingsDraft(manifests, documents, counts.writable, source, readOnly, input.sourceSelection),
+    filings: filingsDraft(manifests, documents, counts.writable, source, readOnly, input.sourceSelection, counts.documents != null),
     index: { status: "unknown" },
     embeddings: { status: "unknown" },
     lexical: { status: "unknown" },
@@ -430,11 +430,12 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   return { stages, next, corpusReady, readOnly, source };
 }
 
-function filingsDraft(manifests: ManifestSummary[], documents: number, writable: boolean | null, source: Pipeline["source"], readOnly: boolean, selection?: PipelineInput["sourceSelection"]): Draft {
+function filingsDraft(manifests: ManifestSummary[], documents: number, writable: boolean | null, source: Pipeline["source"], readOnly: boolean, selection?: PipelineInput["sourceSelection"], documentsKnown = true): Draft {
   const action: StageAction = { label: "Download missing filings", kind: "acquire" };
   if (readOnly || source === "readiness" || source === "pending") {
     const label = readOnly ? "filings in the published corpus" : "filings ingested";
-    const numbers = source === "pending" ? [] : [`${n(documents)} ${label}`];
+    // A public surface withholds the count; never print a fabricated zero for a published corpus.
+    const numbers = source === "pending" ? [] : documentsKnown ? [`${n(documents)} ${label}`] : readOnly ? ["Published corpus"] : [];
     return { status: readOnly ? "readonly" : "unknown", statusDetail: readOnly ? "" : "Checking…", numbers, action };
   }
   const total = manifests.reduce((sum, item) => sum + count(item.documents), 0);
