@@ -102,9 +102,18 @@ Click a selected Pin or Exclude again to deselect it. Both buttons sit in each c
 > [!DEV]
 > Editing Search, Evidence, and Run limits requires DEV. Public users can still use permitted scope, preset, and filter choices.
 
-Under **Settings and preview → Advanced → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
+Under **Settings and preview → Advanced → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run of one question, whichever answer engine (OpenAI or local) is selected. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
 
 For CPU-only local models, use the optional [CPU starting preset and hardware guidance](ollama.md#cpu-starting-preset). Existing defaults remain unchanged; apply a preset explicitly and inspect the next run’s timings.
+
+### OpenAI per-call caps {#openai-call-caps}
+
+Each OpenAI call is also capped by the server: `DOCREVIEW_OPENAI_MAX_INPUT_TOKENS` (default 12,000), `DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS` (default 600) and `DOCREVIEW_OPENAI_MAX_COST_USD` (default 0.04) in `.env` form the **ceiling**. A run limit above the ceiling does not raise it; the smaller value applies to every call. **System → System status** shows the caps in force under **OpenAI model policy**, and **Settings → Run limits** repeats them under **OpenAI per-call caps**.
+
+In DEV the editor saves lower working values on the server in `data/local-settings/openai-limits.json`; **Restore ceiling** deletes that file. The web cannot raise a cap above the ceiling: change the `.env` keys and restart with `rag-dev down` / `rag-dev up`. Public PROD always uses the ceiling and never reads the file.
+
+### SCREENSHOT NEEDED
+<!-- Feature: OpenAI per-call caps block under Settings → Run limits; locale=en; theme=light; state=DEV with ceiling facts, three editable inputs bounded by the ceiling and the .env guidance; preserve existing assets. -->
 
 ## Defaults and permissions {#defaults}
 

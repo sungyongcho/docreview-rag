@@ -4774,6 +4774,124 @@
         "title": "NodeError",
         "type": "object"
       },
+      "OpenAILimitsRequest": {
+        "additionalProperties": false,
+        "description": "Working per-call caps for Dev; each value must stay at or below the ceiling.",
+        "properties": {
+          "max_cost_usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Max Cost Usd"
+          },
+          "max_input_tokens": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Input Tokens",
+            "type": "integer"
+          },
+          "max_output_tokens": {
+            "maximum": 4000.0,
+            "minimum": 1.0,
+            "title": "Max Output Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_input_tokens",
+          "max_output_tokens",
+          "max_cost_usd"
+        ],
+        "title": "OpenAILimitsRequest",
+        "type": "object"
+      },
+      "OpenAILimitsResponse": {
+        "additionalProperties": false,
+        "description": "Effective caps, their ceiling and where to raise the ceiling outside the web.",
+        "properties": {
+          "ceiling_env_keys": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Ceiling Env Keys",
+            "type": "object"
+          },
+          "ceiling_max_cost_usd": {
+            "title": "Ceiling Max Cost Usd",
+            "type": "string"
+          },
+          "ceiling_max_input_tokens": {
+            "title": "Ceiling Max Input Tokens",
+            "type": "integer"
+          },
+          "ceiling_max_output_tokens": {
+            "title": "Ceiling Max Output Tokens",
+            "type": "integer"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "max_cost_usd": {
+            "title": "Max Cost Usd",
+            "type": "string"
+          },
+          "max_input_tokens": {
+            "title": "Max Input Tokens",
+            "type": "integer"
+          },
+          "max_output_tokens": {
+            "title": "Max Output Tokens",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "ceiling",
+              "saved",
+              "invalid"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_input_tokens",
+          "max_output_tokens",
+          "max_cost_usd",
+          "ceiling_max_input_tokens",
+          "ceiling_max_output_tokens",
+          "ceiling_max_cost_usd",
+          "source",
+          "editable",
+          "ceiling_env_keys",
+          "file_path"
+        ],
+        "title": "OpenAILimitsResponse",
+        "type": "object"
+      },
       "OperatorJobResource": {
         "additionalProperties": false,
         "description": "One persisted corpus or evaluation job with queue and progress state.",
@@ -9852,6 +9970,140 @@
           }
         },
         "summary": "Register Local Server",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/openai/limits": {
+      "get": {
+        "description": "Return the effective OpenAI per-call caps and the ceiling they may not exceed.",
+        "operationId": "openai_limits_state_admin_openai_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAILimitsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Openai Limits State",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Save lower working caps for Dev; raising the ceiling stays a .env change.",
+        "operationId": "save_openai_limits_admin_openai_limits_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenAILimitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAILimitsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Save Openai Limits",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/openai/limits/reset": {
+      "post": {
+        "description": "Remove the saved working caps so the ceiling applies again.",
+        "operationId": "reset_openai_limits_admin_openai_limits_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAILimitsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Reset Openai Limits",
         "tags": [
           "admin"
         ]

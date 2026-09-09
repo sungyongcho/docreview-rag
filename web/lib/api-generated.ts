@@ -660,6 +660,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/openai/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Openai Limits State
+         * @description Return the effective OpenAI per-call caps and the ceiling they may not exceed.
+         */
+        get: operations["openai_limits_state_admin_openai_limits_get"];
+        put?: never;
+        /**
+         * Save Openai Limits
+         * @description Save lower working caps for Dev; raising the ceiling stays a .env change.
+         */
+        post: operations["save_openai_limits_admin_openai_limits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/openai/limits/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Openai Limits
+         * @description Remove the saved working caps so the ceiling applies again.
+         */
+        post: operations["reset_openai_limits_admin_openai_limits_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/presets": {
         parameters: {
             query?: never;
@@ -3001,6 +3045,51 @@ export interface components {
              * @enum {string}
              */
             node: "gate" | "route" | "retrieve" | "chat" | "grade" | "check" | "report";
+        };
+        /**
+         * OpenAILimitsRequest
+         * @description Working per-call caps for Dev; each value must stay at or below the ceiling.
+         */
+        OpenAILimitsRequest: {
+            /** Max Cost Usd */
+            max_cost_usd: number | string;
+            /** Max Input Tokens */
+            max_input_tokens: number;
+            /** Max Output Tokens */
+            max_output_tokens: number;
+        };
+        /**
+         * OpenAILimitsResponse
+         * @description Effective caps, their ceiling and where to raise the ceiling outside the web.
+         */
+        OpenAILimitsResponse: {
+            /** Ceiling Env Keys */
+            ceiling_env_keys: {
+                [key: string]: string;
+            };
+            /** Ceiling Max Cost Usd */
+            ceiling_max_cost_usd: string;
+            /** Ceiling Max Input Tokens */
+            ceiling_max_input_tokens: number;
+            /** Ceiling Max Output Tokens */
+            ceiling_max_output_tokens: number;
+            /** Editable */
+            editable: boolean;
+            /** Error */
+            error?: string | null;
+            /** File Path */
+            file_path: string;
+            /** Max Cost Usd */
+            max_cost_usd: string;
+            /** Max Input Tokens */
+            max_input_tokens: number;
+            /** Max Output Tokens */
+            max_output_tokens: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ceiling" | "saved" | "invalid";
         };
         /**
          * OperatorJobResource
@@ -5694,6 +5783,124 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalConnectionResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    openai_limits_state_admin_openai_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAILimitsResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_openai_limits_admin_openai_limits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenAILimitsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAILimitsResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reset_openai_limits_admin_openai_limits_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenAILimitsResponse"];
                 };
             };
             /** @description Request validation failed. */

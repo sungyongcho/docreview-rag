@@ -1548,7 +1548,7 @@ it("opens default limits from System status", async () => {
   render(<LiveShell />);
   fireEvent.click(await screen.findByRole("button", { name: "Edit default limits" }));
   const dialog = await screen.findByRole("dialog", { name: "Run limits" });
-  expect(within(dialog).getByRole("button", { name: "Answer limits" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).getByLabelText("Maximum wall clock seconds").closest(".settings-form")).toBeNull();
   expect(within(dialog).queryByLabelText("Additional operator instructions")).toBeNull();
 });

@@ -22,7 +22,7 @@ import type {
   OperatorJobBoard,
   Readiness,
   Capabilities,
-  LocalLLMConnection,
+  LocalLLMConnection, OpenAILimits,
   LocalLLMDiagnostics,
   LocalLLMDiagnosticTarget,
   ReleaseLimits,
@@ -284,6 +284,18 @@ export async function checkEvaluationPreparation(requestBody: import("./types").
   const result = await request<import("./types").EvaluationPreparation>("/admin/evaluations/preparation", { method: "POST", body: JSON.stringify(requestBody), signal });
   if (!result || !["ready", "source_missing", "source_invalid", "draft_incomplete", "parsing_required", "index_update_required", "unavailable"].includes(result.state) || !Array.isArray(result.source_checks) || !Array.isArray(result.blockers)) throw new ApiError(502, "invalid_preparation_response", "Evaluation preparation status is unavailable.");
   return result;
+}
+
+export function getOpenAILimits(signal?: AbortSignal): Promise<OpenAILimits> {
+  return request<OpenAILimits>("/admin/openai/limits", { signal });
+}
+
+export function saveOpenAILimits(values: { max_input_tokens: number; max_output_tokens: number; max_cost_usd: string }): Promise<OpenAILimits> {
+  return request<OpenAILimits>("/admin/openai/limits", { method: "POST", body: JSON.stringify(values) });
+}
+
+export function resetOpenAILimits(): Promise<OpenAILimits> {
+  return request<OpenAILimits>("/admin/openai/limits/reset", { method: "POST" });
 }
 
 export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMConnection> {

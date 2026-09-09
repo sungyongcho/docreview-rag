@@ -93,7 +93,7 @@ it("links to both guides in the same tab without changing the current conversati
 it("opens the limits category separately from prompt settings", () => {
   renderSettings(DEV);
   expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
-  const tab = screen.getByRole("button", { name: "Answer limits" });
+  const tab = screen.getByRole("button", { name: "Run limits" });
   expect(tab).toHaveAttribute("title", "DEV only");
   fireEvent.click(tab);
   expect(tab).toHaveAttribute("aria-pressed", "true");
@@ -110,5 +110,5 @@ it("opens the limits category separately from prompt settings", () => {
 it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", (environment, can_edit_run_limits, visible) => {
   render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={vi.fn()} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
   expect(!!screen.queryByLabelText("Maximum wall clock seconds")).toBe(visible);
-  expect(!!screen.queryByRole("button", { name: "Answer limits" })).toBe(visible);
+  expect(!!screen.queryByRole("button", { name: "Run limits" })).toBe(visible);
 });

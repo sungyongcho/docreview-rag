@@ -102,9 +102,18 @@
 > [!DEV]
 > 검색·근거·실행 한도의 세부 편집은 개발 모드 전용입니다. 공개 사용자는 허용된 범위·프리셋·필터를 사용할 수 있습니다.
 
-**설정 및 미리보기 → 고급 → 근거**의 대화 이력 수·최대 근거 문자 수는 프롬프트 내용을, 추가 검색 배수와 문서별 최대 근거 수는 근거 선택을 조정합니다. **실행 한도**에서는 반복·입력 토큰·출력 토큰·실제 경과 시간의 전체 실행 한도를 정합니다. 기본 120초는 시간 한도이며 토큰 예산이 아닙니다. 실패 때문에 값을 바꾸기 전 [실행 한도 읽기](runtime.md#limits)를 확인하세요.
+**설정 및 미리보기 → 고급 → 근거**의 대화 이력 수·최대 근거 문자 수는 프롬프트 내용을, 추가 검색 배수와 문서별 최대 근거 수는 근거 선택을 조정합니다. **실행 한도**에서는 반복·입력 토큰·출력 토큰·실제 경과 시간의 전체 실행 한도를 정합니다. 이 한도는 답변 엔진이 OpenAI든 로컬이든 질문 하나의 전체 실행에 똑같이 적용됩니다. 기본 120초는 시간 한도이며 토큰 예산이 아닙니다. 실패 때문에 값을 바꾸기 전 [실행 한도 읽기](runtime.md#limits)를 확인하세요.
 
 CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨어 안내](ollama.md#cpu-starting-preset)를 참고하세요. 기존 기본값은 유지되며, 프리셋을 직접 적용한 뒤 다음 실행의 시간 기록을 확인합니다.
+
+### OpenAI 호출당 캡 {#openai-call-caps}
+
+OpenAI 호출 한 번에는 서버 캡도 적용됩니다. `.env`의 `DOCREVIEW_OPENAI_MAX_INPUT_TOKENS`(기본 12,000), `DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS`(기본 600), `DOCREVIEW_OPENAI_MAX_COST_USD`(기본 0.04)가 **상한**입니다. 실행 한도를 상한보다 높여도 상한은 올라가지 않고, 호출마다 더 작은 값이 적용됩니다. **시스템 → 시스템 상태**의 **OpenAI 모델 정책**에 현재 적용되는 캡이 표시되고, **설정 → 실행 한도**의 **OpenAI 호출당 캡**에도 같은 값이 나옵니다.
+
+DEV에서는 이 편집기가 더 낮은 작업값을 서버의 `data/local-settings/openai-limits.json`에 저장하고, **상한으로 복원**은 그 파일을 삭제합니다. 웹에서는 상한을 넘길 수 없습니다. 상한을 올리려면 `.env`의 키를 수정하고 `rag-dev down` / `rag-dev up`으로 재시작하세요. 공개 PROD는 항상 상한을 사용하며 파일을 읽지 않습니다.
+
+### SCREENSHOT NEEDED
+<!-- Feature: OpenAI per-call caps block under Settings → Run limits; locale=ko; theme=light; state=DEV with ceiling facts, three editable inputs bounded by the ceiling and the .env guidance; preserve existing assets. -->
 
 ## 기본값과 권한 {#defaults}
 

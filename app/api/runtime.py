@@ -71,6 +71,7 @@ from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import build_local_provider
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
+from app.llm.openai_limits import OpenAILimitsManager
 from app.llm.provider import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
 from app.observability.persistence import (
@@ -270,6 +271,7 @@ class RuntimeApiServices(ApiServices):
         provider_budgets: dict[str, ProviderBudget] | None = None,
         local_inventory: LocalModelInventory | None = None,
         local_connection: LocalConnectionManager | None = None,
+        openai_limits: OpenAILimitsManager | None = None,
         allow_local_engine: bool = True,
         local_timeout_s: float = DEFAULT_LOCAL_TIMEOUT_S,
         retrieval_service: RetrievalService = consistent_retrieve,
@@ -306,6 +308,7 @@ class RuntimeApiServices(ApiServices):
         self._provider_budgets = dict(provider_budgets or {})
         self._local_inventory = local_inventory
         self.local_connection = local_connection
+        self.openai_limits = openai_limits
         self._allow_local_engine = allow_local_engine
         self._local_request: ContextVar[_LocalRequest | None] = ContextVar(
             "local_request", default=None
@@ -1021,6 +1024,9 @@ class RuntimeApiServices(ApiServices):
         profile = await self._local_profile(request.session_profile)
         engine = profile.engine
         budget = self._provider_budgets.get(engine)
+        if engine == "openai" and budget is not None and self.openai_limits is not None:
+            # Dev may lower the per-call cap below the .env ceiling without a restart.
+            budget = self.openai_limits.effective()
         context = self._local_request.get()
         inventory = context.inventory if context is not None else self.local_inventory
         if engine == "local" and inventory is not None and budget is not None:
@@ -1637,6 +1643,11 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         )
         providers["openai"] = llm_provider
         budgets["openai"] = provider_budget
+    openai_limits = (
+        OpenAILimitsManager(provider_budget, enabled=configured.environment != "prod")
+        if provider_budget is not None
+        else None
+    )
     local_connection, local_budget = build_local_runtime(
         environment=configured.environment,
         base_url=configured.local_llm_base_url,
@@ -1666,6 +1677,7 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         llm_providers=providers,
         provider_budgets=budgets,
         local_connection=local_connection,
+        openai_limits=openai_limits,
         allow_local_engine=configured.environment != "prod",
         local_timeout_s=configured.local_llm_timeout_s,
         secret_values=secret_values,

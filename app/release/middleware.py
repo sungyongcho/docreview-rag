@@ -232,11 +232,12 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             return _forbidden("capability_disabled", "Administrator resources are private.")
         if (
             request.method in {"POST", "PUT", "PATCH", "DELETE"}
-            and request.url.path.startswith("/admin/local-llm/")
+            and request.url.path.startswith(("/admin/local-llm/", "/admin/openai/"))
             and not self._local_connection_origin_allowed(request)
         ):
             return _forbidden(
-                "origin_not_allowed", "Local LLM settings require the configured local web origin."
+                "origin_not_allowed",
+                "Local LLM and OpenAI cap settings require the configured local web origin.",
             )
         if request.url.path in {"/retrieve", "/review", "/review/stream"}:
             denied = await self._review_policy_response(request, public=public)

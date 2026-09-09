@@ -41,7 +41,7 @@ it("uses the API candidate and conversation fusion limits for custom retrieval",
 
 it("translates every conversation settings tab in the Korean interface", () => {
   render(<I18nProvider><ConversationSettings tab="limits" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} /></I18nProvider>);
-  for (const name of ["필터", "검색", "근거", "질문·답변 실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
+  for (const name of ["필터", "검색", "근거", "실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
 });
 
 it("keeps allowed filters but hides developer controls in public mode", async () => {
