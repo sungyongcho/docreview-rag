@@ -20,15 +20,14 @@ export function RunLimitFields({ budget, onChange, speed, onApplyCpuPreset, evid
       if (event.target.value === "balanced") onChange(structuredClone(DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget));
       if (event.target.value === "extended") onChange({ ...budget, max_wall_clock_s: 600 });
       if (event.target.value === "cpu" && suggestion) onChange(suggestion.budget);
-    }}><option value="">{t("Choose limits to apply…")}</option><option value="cpu-start">{t("Local CPU starting point")}</option><option value="fast">{t("Fast")}</option><option value="balanced">{t("Balanced")}</option><option value="extended">{t("More time")}</option><option value="cpu" disabled={!suggestion}>{t("Measured local CPU")}</option></select></label>
+    }}><option value="">{t("Choose limits to apply…")}</option><option value="cpu-start">{t("Slow local model start")}</option><option value="fast">{t("Fast")}</option><option value="balanced">{t("Balanced")}</option><option value="extended">{t("More time")}</option><option value="cpu" disabled={!suggestion}>{t("From measured local speed")}</option></select></label>
     <div className="run-limit-grid">
       {fields.map(([key, label, min, max, unit]) => <label key={key}><span>{t(label)}</span><span className="run-limit-input"><input type="number" aria-label={t(label)} aria-describedby={`${id}-${key}`} min={min} max={max} step={key === "max_wall_clock_s" ? "any" : 1} value={budget[key]} onChange={event => onChange({ ...budget, [key]: Number(event.target.value) })} /><span aria-hidden="true">{t(unit)}</span></span><small id={`${id}-${key}`}>{min.toLocaleString(locale)}–{max.toLocaleString(locale)} {t(unit)}</small></label>)}
       {evidenceChars !== undefined && onEvidenceChange && <label><span>{t("Maximum evidence characters")}</span><span className="run-limit-input"><input type="number" aria-label={t("Maximum evidence characters")} aria-describedby={`${id}-evidence`} min={1000} max={100000} step={1} value={evidenceChars} onChange={event => onEvidenceChange(Number(event.target.value))} /><span aria-hidden="true">{t("characters")}</span></span><small id={`${id}-evidence`}>{(1000).toLocaleString(locale)}–{(100000).toLocaleString(locale)} {t("characters")}</small></label>}
     </div>
     <div className="run-limit-help">
       <RunLimitGuidance />
-    <p className="helper">{t("These limits cover the entire run across all model calls. Zero blocks a resource for failure-path experiments; the wall clock must be at least one second.")}</p>
-    {suggestion && <p className="helper">{t("Generation estimate: {seconds} seconds at {speed} tok/s. Retrieval and prompt processing take additional time; this is not a completion guarantee.", { seconds: Math.ceil(suggestion.estimatedSeconds), speed: speed! })}</p>}
+    {suggestion && <p className="helper">{t("Generation estimate: {seconds} seconds at {speed} tok/s. Retrieval and prompt processing take additional time; this is not a completion guarantee.", { seconds: Math.ceil(suggestion.estimatedSeconds), speed: speed!.toLocaleString(locale, { maximumFractionDigits: 1 }) })}</p>}
     </div>
   </div>;
 }

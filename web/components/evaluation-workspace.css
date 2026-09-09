@@ -71,6 +71,7 @@
 .evaluation-golden-controls .golden-file-identity > code { font-size: 10px; overflow-wrap: anywhere; }
 .golden-file-header > button { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 34px; padding: 6px 9px; font-size: 12px; }
 .golden-file-header .expanded { transform: rotate(180deg); }
+.golden-file-header .golden-file-delete { padding: 6px; color: var(--muted); }.golden-file-header .golden-file-delete:hover:not(:disabled) { color: var(--bad); }
 .golden-file > .source-json { padding: 12px; border-top: 1px solid var(--border); min-width: 0; }
 .golden-file > .source-json h3 { margin: 0 0 8px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .golden-file > .source-json pre { margin: 0; padding: 12px; background: #121310; color: #eeeee8; border: 1px solid var(--border); border-radius: 7px; font-size: 11px; line-height: 1.55; max-height: 360px; }
@@ -101,6 +102,7 @@
 .golden-file-inline .golden-file-header { padding: 10px 16px; gap: 16px; }
 .golden-file-inline .golden-file-identity > strong { font-weight: 400; }
 .golden-builtin-badge { display: inline-block; margin-left: 8px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 5px; font-size: 10px; color: var(--muted); }
+.dataset-deleted { color: var(--muted); font-size: 11px; }
 .golden-question-actions { gap: 6px; flex-wrap: wrap; }
 .golden-question-actions .button { font-size: 11px; padding: 6px 9px; min-height: 32px; }
 .measure-workspace .golden-manager.has-selection { grid-template-columns: minmax(320px, var(--master-list-width, 600px)) 18px minmax(0, 1fr); }

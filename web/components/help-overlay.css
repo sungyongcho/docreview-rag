@@ -18,6 +18,8 @@
   animation: help-enter 140ms ease-out;
 }
 .service-shell.help-open .workspace { padding-right: 460px; }
+/* The floating panel sits below the topbar, so the topbar keeps its full width. */
+.service-shell.help-open .workspace > .topbar { margin-right: -460px; }
 .help-browser-header { flex: none; padding: 12px 22px 18px; border-bottom: 1px solid var(--border); }
 .help-browser-toolbar, .help-browser-toolbar > div { display: flex; align-items: center; gap: 6px; }
 .help-browser-toolbar { justify-content: space-between; min-height: 40px; margin-bottom: 12px; }
@@ -84,5 +86,6 @@
   .help-browser-search button { min-width: 44px; }
   .help-browser-search input { font-size: 16px; }
   .service-shell.help-open .workspace { padding-right: 0; padding-bottom: 0; }
+  .service-shell.help-open .workspace > .topbar { margin-right: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .help-panel.help-browser { animation: none; } }

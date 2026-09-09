@@ -233,7 +233,7 @@ Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.diagnostics.local_grade 
 
 ### Optional CPU starting preset {#cpu-starting-preset}
 
-Tune input/output tokens and evidence size to the selected model and available hardware. Application defaults remain **60,000 input tokens, 4,000 output tokens and 120 seconds** for the whole run. In **Settings and preview → Advanced → Run limits**, explicitly choose **Local CPU starting point** to apply **24,000 input tokens, 2,000 output tokens, 300 seconds, 6 steps and 8,000 evidence characters** to the current conversation. Opening settings alone changes nothing; saving new-conversation defaults is a separate action.
+Tune input/output tokens and evidence size to the selected model and available hardware. Application defaults remain **60,000 input tokens, 4,000 output tokens and 120 seconds** for the whole run. In **Settings and preview → Advanced → Run limits**, explicitly choose **Slow local model start** to apply **24,000 input tokens, 2,000 output tokens, 300 seconds, 6 steps and 8,000 evidence characters** to the current conversation. Opening settings alone changes nothing; saving new-conversation defaults is a separate action.
 
 This is an optional starting point, not a completion guarantee. The inspected Ryzen 7 8845HS host has 8 cores/16 threads and about 45 GiB usable memory. A bounded 128-token `gemma4:e4b` CPU check measured **10.3 tokens/s for generation only**; it did not demonstrate a successful filing answer. Prompt processing, retrieval, model loading and repeated calls also consume time. Compare the next real run's recorded timings before adjusting again.
 

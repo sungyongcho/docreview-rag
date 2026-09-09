@@ -166,7 +166,7 @@ describe("ComposerToolbar", () => {
     }
     expect(screen.queryByRole("button", { name: "Filters" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "RAG settings" })).not.toBeInTheDocument();
-    const readiness = screen.getByRole("button", { name: "View corpus readiness" });
+    const readiness = screen.getByRole("button", { name: /Corpus total/ });
     expect(readiness.closest(".composer-toolbar-secondary")).not.toBeNull();
     expect(primary).not.toContainElement(readiness);
     fireEvent.click(preview);
@@ -235,7 +235,7 @@ describe("ComposerToolbar", () => {
     const props = renderToolbar({ live: false });
     expect(screen.getByText("Published corpus")).toBeVisible();
     expect(screen.queryByText(/Corpus total ·/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "View corpus readiness" }));
+    fireEvent.click(screen.getByRole("button", { name: /Published corpus/ }));
     expect(props.onOpenBuild).toHaveBeenCalledTimes(1);
   });
 
@@ -288,7 +288,7 @@ it("keeps selected source filters distinct from the global corpus count and unco
   expect(screen.getByText("Corpus total · 29 filings")).toBeVisible();
   expect(screen.getByText("Readiness not confirmed")).not.toHaveClass("confirmed");
   expect(screen.queryByText("Hybrid search ready")).toBeNull();
-  expect(screen.getByRole("button", { name: "View corpus readiness" })).toBeVisible();
+  expect(screen.getByRole("button", { name: /Corpus total|Published corpus/ })).toBeVisible();
 });
 
  it("prioritizes the update notice over stale ready counts", () => {

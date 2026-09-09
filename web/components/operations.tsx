@@ -21,7 +21,6 @@ import {
 } from "@/lib/operator-api";
 import { loadOperationsFilter, saveOperationsFilter, loadOperationsTargetFilter, saveOperationsTargetFilter } from "@/lib/storage";
 import { useNotifications } from "@/components/notifications";
-import { Segmented } from "@/components/segmented";
 
 /** Consecutive failed polls tolerated before one persistent waiting notice replaces per-failure toasts. */
 export const POLL_NOTICE_AFTER_FAILURES = 3;
@@ -191,10 +190,15 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
             <div><p className="eyebrow">{t("Local checkout only")}</p><h1>{t("Operations")}</h1><p>{t("Run fixed verification and service commands without exposing a shell.")}</p></div>
             <button className="button" type="button" disabled={loading} onClick={() => void refresh()}><RefreshCw size={15} />{t("Refresh")}</button>
           </header>}
-      <div className="chip-group command-filter">
-        <Segmented<OperationsFilter> label="Command category" options={FILTER_OPTIONS} value={filter} onChange={changeFilter} />
-        <Segmented<OperationsTargetFilter> label="Command target" options={TARGET_FILTER_OPTIONS} value={targetFilter} onChange={changeTargetFilter} />
-      </div>
+      <nav className="lab-tabs workflow-tabs measure-tab-strip command-filter" aria-label={t("Command filters")}>
+        <div className="measure-tab-group" role="group" aria-label={t("Command category")}>
+          {FILTER_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={filter === option.value} onClick={() => changeFilter(option.value)}>{t(option.label)}</button>)}
+        </div>
+        <div className="measure-tab-group measure-management-group" role="group" aria-label={t("Command target")}>
+          <span className="measure-management-caption" aria-hidden="true">{t("Target")}</span>
+          {TARGET_FILTER_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={targetFilter === option.value} onClick={() => changeTargetFilter(option.value)}>{t(option.label)}</button>)}
+        </div>
+      </nav>
       {!loading && commands.length > 0 && visibleGroups.length === 0 && <p className="helper" role="status">{t("No commands match these filters.")}</p>}
       {visibleGroups.map((group) => (
         <section className="command-group" key={group.category}>
@@ -207,7 +211,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
                   <span className="command-badges">
                     <span className={`command-kind ${command.category}`}>{t(command.category)}</span>
                     <span className="command-kind target">{t(TARGET_LABELS[command.target] ?? "Target not reported")}</span>
-                    {command.confirmation && <span className="command-kind confirmation" title={command.confirmation}><TriangleAlert size={11} aria-hidden="true" />{t("Confirmation required")}</span>}
+                    {command.confirmation && <span className="command-kind confirmation" title={t(command.confirmation)}><TriangleAlert size={11} aria-hidden="true" />{t("Confirmation required")}</span>}
                   </span>
                 </div>
                 <h4>{t(command.label)}</h4><p>{t(command.description)}</p>
@@ -218,7 +222,7 @@ export function Operations({ embedded = false, helpId }: { embedded?: boolean; h
         </section>
       ))}
       <section className="surface operation-output">
-        <div className="operation-output-heading"><h2>{t("Latest run")}</h2>{active && <button className="button" type="button" onClick={() => void cancel()}><CircleStop size={14} />{t("Cancel")}</button>}</div>
+        <div className="operation-output-heading"><div className="operation-output-title"><h2>{t("Latest run")}</h2>{latest && <span className="operation-output-command">{t(latest.label)}</span>}</div>{active && <button className="button" type="button" onClick={() => void cancel()}><CircleStop size={14} />{t("Cancel")}</button>}</div>
         {latest ? <><p className="helper">{t(latest.label)} · {t(latest.status)}{latest.exit_code !== null ? t(" · exit {p0}", { p0: latest.exit_code }) : ""}</p><pre>{latest.output || t("Waiting for output…")}</pre></> : <p className="helper">{t("No local command has run in this session.")}</p>}
       </section>
     </section>

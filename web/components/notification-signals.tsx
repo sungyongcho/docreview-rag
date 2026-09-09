@@ -41,7 +41,7 @@ export function NotificationSignals({ enabled, healthKind, healthMessage, checke
   useEffect(() => {
     if (!enabled || !model || cpuSpeed === null) return;
     const measurement = `${model}:${cpuSpeed}`;if (speed.current === measurement) return;speed.current = measurement;
-    notify(t("Local model {model}: {speed} tokens/s.", { model, speed: cpuSpeed.toFixed(1) }), "warning", `local-cpu:${model}`, undefined, { event: "local-cpu", target: { view: "review", conversationId }, revision: measurement });
+    notify(t("Local model {model}: {speed} tokens/s.", { model, speed: cpuSpeed.toFixed(1) }), "warning", `local-cpu:${model}`, undefined, { event: "local-cpu", target: { view: "review", conversationId }, revision: measurement, silent: true });
   }, [enabled, model, cpuSpeed, conversationId, notify, t]);
   useEffect(() => {
     if (!enabled || !presets.loaded || presets.storageKind === "pending") return;

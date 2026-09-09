@@ -80,6 +80,7 @@ from app.evals.arms import make_retriever
 from app.evals.golden_admin import GoldenAdminService
 from app.evals.snapshots import SnapshotService
 from app.llm.local_connection import LocalConnectionError, LocalConnectionManager, LocalProtocol
+from app.llm.openai_limits import CEILING_ENV_KEYS, OpenAILimitsError, OpenAILimitsManager
 from app.observability.usage import USAGE_KEY, merge_usage, review_usage
 from app.operator.job_history import JobHistoryService
 from app.operator.jobs import JobExecutionCoordinator, JobStore, StoredJob
@@ -191,6 +192,57 @@ class RuntimeAdminApiServices:
             return await connection.reset()
         except LocalConnectionError as error:
             raise unavailable(error.code, str(error)) from error
+
+    def _openai_limits(self) -> OpenAILimitsManager:
+        """Require the Dev-only per-call cap manager; production keeps the ceiling."""
+        limits = self._runtime.openai_limits
+        if limits is None or not limits.enabled:
+            raise ApiProblemError(
+                status_code=403,
+                code="disabled_in_prod",
+                message="OpenAI per-call caps are adjustable only in Dev.",
+            )
+        return limits
+
+    def _openai_limits_payload(self, limits: OpenAILimitsManager) -> dict[str, Any]:
+        """Add the environment keys and file path the web tells the user about."""
+        return {
+            **limits.state().model_dump(),
+            "ceiling_env_keys": dict(CEILING_ENV_KEYS),
+            "file_path": str(limits.path),
+        }
+
+    def openai_limits_state(self) -> dict[str, Any]:
+        """Read effective and ceiling per-call caps without changing them."""
+        return self._openai_limits_payload(self._openai_limits())
+
+    async def update_openai_limits(
+        self, *, max_input_tokens: int, max_output_tokens: int, max_cost_usd: Decimal
+    ) -> dict[str, Any]:
+        """Persist working caps below the ceiling and translate safe failures."""
+        limits = self._openai_limits()
+        try:
+            await limits.save(
+                max_input_tokens=max_input_tokens,
+                max_output_tokens=max_output_tokens,
+                max_cost_usd=max_cost_usd,
+            )
+        except OpenAILimitsError as error:
+            if error.code in {"openai_limits_above_ceiling", "openai_limits_invalid"}:
+                raise ApiProblemError(
+                    status_code=422, code=error.code, message=str(error)
+                ) from error
+            raise unavailable(error.code, str(error)) from error
+        return self._openai_limits_payload(limits)
+
+    async def reset_openai_limits(self) -> dict[str, Any]:
+        """Delete the saved caps so the ceiling applies again."""
+        limits = self._openai_limits()
+        try:
+            await limits.reset()
+        except OpenAILimitsError as error:
+            raise unavailable(error.code, str(error)) from error
+        return self._openai_limits_payload(limits)
 
     async def prepare_local_model(self, model: str) -> dict[str, Any]:
         """Prepare the selected server's installed model under the developer-only guard."""
@@ -309,7 +361,14 @@ class RuntimeAdminApiServices:
     ) -> SourceDeletionPreviewResource:
         """Return the read-only source plan used by the confirmation dialog."""
         preview = await self._corpus.preview_source_deletion(request.document_ids)
-        return SourceDeletionPreviewResource.model_validate(preview)
+        # The plan keeps JSON lists for its fingerprint; the strict resource wants tuples.
+        return SourceDeletionPreviewResource.model_validate(
+            {
+                **preview,
+                "documents": tuple(preview["documents"]),
+                "files": tuple(preview["files"]),
+            }
+        )
 
     async def enqueue_corpus(self, request: CorpusOperationRequest) -> dict[str, Any]:
         """Queue one validated safe corpus operation."""
@@ -371,6 +430,18 @@ class RuntimeAdminApiServices:
             expected_sha256=expected_sha256,
             payload=payload,
         )
+
+    async def delete_golden_case(
+        self, revision_id: int, case_id: str, *, expected_sha256: str
+    ) -> GoldenRevisionResource:
+        """Remove one question from a draft under the optimistic digest check."""
+        return await self._golden.delete_case(revision_id, case_id, expected_sha256=expected_sha256)
+
+    async def delete_golden_revision(
+        self, revision_id: int, expected_sha256: str
+    ) -> GoldenRevisionResource:
+        """Delete one user dataset file under the optimistic digest check."""
+        return await self._golden.delete_draft(revision_id, expected_sha256=expected_sha256)
 
     async def validate_golden_revision(
         self, revision_id: int, expected_sha256: str

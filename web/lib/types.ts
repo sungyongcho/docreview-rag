@@ -141,6 +141,21 @@ export interface ReviewEngineState {
   checked_at?: string;
 }
 
+/** `/ready.openai_call_limits`: the per-call OpenAI cap in force and the .env ceiling above it. */
+export interface OpenAICallLimits {
+  max_input_tokens: number;
+  max_output_tokens: number;
+  max_cost_usd: string;
+  ceiling_max_input_tokens: number;
+  ceiling_max_output_tokens: number;
+  ceiling_max_cost_usd: string;
+  source: "ceiling" | "saved" | "invalid";
+  editable: boolean;
+  error?: string | null;
+}
+
+export type OpenAILimits = components["schemas"]["OpenAILimitsResponse"];
+
 export interface Readiness {
   environment?: "dev" | "prod";
   status: "ready" | "degraded";
@@ -151,6 +166,7 @@ export interface Readiness {
   review_enabled: boolean;
   active_review_model: string | null;
   review_engines?: Record<string, ReviewEngineState>;
+  openai_call_limits?: OpenAICallLimits | null;
   corpus: {
     availability: "ready" | "degraded" | "not_applicable" | "unavailable";
     database_connected: boolean | null;

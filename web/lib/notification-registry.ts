@@ -160,6 +160,24 @@ export const NOTIFICATION_EVENTS = {
     },
     "surface": "measure-golden"
   },
+  "golden-delete-notice": {
+    "classification": "persistent",
+    "title": "Golden dataset",
+    "target": {
+      "view": "measure",
+      "tab": "golden"
+    },
+    "surface": "measure-golden"
+  },
+  "golden-delete-error": {
+    "classification": "persistent",
+    "title": "Golden dataset",
+    "target": {
+      "view": "measure",
+      "tab": "golden"
+    },
+    "surface": "measure-golden"
+  },
   "golden-action-notice": {
     "classification": "persistent",
     "title": "Golden dataset",
@@ -545,6 +563,15 @@ export const NOTIFICATION_EVENTS = {
     },
     "surface": "local-model"
   },
+  "slow-cpu-notice": {
+    "classification": "transient",
+    "title": "Slow local CPU model",
+    "target": {
+      "view": "settings",
+      "category": "limits"
+    },
+    "surface": "slow-cpu-toast"
+  },
   "local-cpu": {
     "classification": "persistent",
     "title": "Local model speed",
@@ -619,6 +646,12 @@ export interface NotifyOptions {
   supersedes?: string[];
   revision?: string;
   update?: boolean;
+  /** Persist or update the history entry without showing a toast; the topbar and Job Center carry live state. */
+  silent?: boolean;
+  /** Custom action for the toast button; defaults to navigating to the entry target. */
+  onAction?: () => void;
+  /** Called when the user closes the toast explicitly, so a pinned notice can stay closed. */
+  onDismiss?: () => void;
 }
 
 /** Keep structured API text verbatim; UI chrome explains the stable cause separately. */

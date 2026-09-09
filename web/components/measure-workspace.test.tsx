@@ -600,3 +600,17 @@ it("keeps verdicts consistent and explains missing source evidence before sendin
   expect(screen.getByText("Choose a document chunk to fill its exact original-source coordinates.")).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Question?");
 });
+
+it("marks a dataset file that no longer exists as deleted in the run filter and detail", async () => {
+  const gone = { golden_provenance: { dataset_id: "file:4242", filename: "gone.json", golden_revision_id: 4242, golden_sha256: "b".repeat(64) } };
+  stubFetch((url) => {
+    if (url.endsWith("/admin/evaluations/suites")) return CANNED_SUITES;
+    if (url.endsWith("/admin/evaluations/runs")) return { jobs: [{ ...CANNED_JOB, request: { ...CANNED_JOB.request, golden_revision_id: 4242 }, result_summaries: [{ result_id: 16, suite: "sec-en", config: gone, metrics: {}, created_at: CANNED_JOB.created_at }] }] };
+    if (url.endsWith("/admin/snapshots")) return [];
+    if (url.includes("/admin/golden/")) return [];
+    return {};
+  });
+  render(<Host live initialTab="runs" />);
+  await screen.findByRole("option", { name: "gone.json (deleted)" });
+  expect(screen.queryByRole("option", { name: "retrieval.json (deleted)" })).toBeNull();
+});

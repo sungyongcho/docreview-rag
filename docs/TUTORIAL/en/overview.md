@@ -58,7 +58,7 @@ You can go from prepared retrieval directly to step 11.
 | Measure | Search trials, evaluation datasets, evaluation runs, and snapshot comparisons. |
 | System → System status | API availability, DB/schema, corpus readiness, and model availability as separate facts. |
 
-When you open **View corpus readiness** from a conversation, use **Back**
+When you open Build from a conversation's corpus status line, use **Back**
 to return to your question and retained state. See [Settings](settings.md) for request
 controls and [Runtime](runtime.md) for interpreting measured execution.
 

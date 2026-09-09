@@ -41,6 +41,15 @@ describe("SystemStatus", () => {
     expect(screen.queryByRole("heading", { name: "Local model policy" })).toBeNull();
   });
 
+  it("lists the OpenAI per-call caps beside the model policy with the .env guidance", () => {
+    const readiness: Readiness = { ...READINESS, openai_call_limits: { max_input_tokens: 12000, max_output_tokens: 600, max_cost_usd: "0.04", ceiling_max_input_tokens: 12000, ceiling_max_output_tokens: 600, ceiling_max_cost_usd: "0.04", source: "ceiling", editable: true, error: null } };
+    render(<SystemStatus readiness={readiness} loading={false} error="" onRefresh={vi.fn()} />);
+    const section = screen.getByRole("heading", { name: "OpenAI model policy" }).closest("section")!;
+    expect(within(section).getByText("Per-call output tokens")).toBeInTheDocument();
+    expect(within(section).getByText("600")).toBeInTheDocument();
+    expect(within(section).getByText("DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS")).toBeInTheDocument();
+  });
+
   it("lists the roles a local model serves and locks the embedding row", async () => {
     vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
     vi.resetModules();

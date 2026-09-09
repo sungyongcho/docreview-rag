@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
 import { localEngineStatus } from "@/lib/local-models";
 import type { Readiness } from "@/lib/types";
+import { emphasizeEnvKeys } from "@/components/default-run-limits";
 
 interface SystemStatusProps {
   readiness: Readiness | null;
@@ -18,6 +19,8 @@ interface SystemStatusProps {
   embedded?: boolean;
   /** `data-help` topic id for Help mode. */
   helpId?: string;
+  /** Opens Settings › Run limits, where DEV lowers the OpenAI per-call caps. */
+  onOpenLimits?: () => void;
 }
 
 function value(value: unknown, locale: string) {
@@ -27,7 +30,7 @@ function value(value: unknown, locale: string) {
   return String(value);
 }
 
-export function SystemStatus({ readiness, localModel, localAllowed = false, loading, error, onRefresh, embedded = false, helpId }: SystemStatusProps) {
+export function SystemStatus({ readiness, localModel, localAllowed = false, loading, error, onRefresh, embedded = false, helpId, onOpenLimits }: SystemStatusProps) {
   const { t, locale } = useI18n();
   const corpus = readiness?.corpus;
   const models = readiness?.models ?? {};
@@ -72,6 +75,14 @@ export function SystemStatus({ readiness, localModel, localAllowed = false, load
             ))}
           </div>
           <p className="helper">{t("Review capability:")}{" "}{readiness?.review_enabled ? readiness.active_review_model : t("disabled")}</p>
+          {readiness?.openai_call_limits && typeof readiness.openai_call_limits.max_input_tokens === "number" && <>
+            <dl className="request-facts"><div><dt>{t("Per-call input tokens")}</dt><dd>{readiness.openai_call_limits.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Per-call output tokens")}</dt><dd>{readiness.openai_call_limits.max_output_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Per-call cost cap")}</dt><dd>${readiness.openai_call_limits.max_cost_usd}</dd></div></dl>
+            <ul className="helper openai-cap-notes">
+              <li>{t("Per-call caps for one OpenAI request, separate from the whole-run limits.")}</li>
+              <li>{t("DEV can lower them in")}{" "}{onOpenLimits ? <button className="inline-link" type="button" onClick={onOpenLimits}>{t("Settings › Run limits")}</button> : <strong>{t("Settings › Run limits")}</strong>}.</li>
+              <li>{emphasizeEnvKeys(t("Raising them: edit DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env, then restart with rag-dev down/up."))}</li>
+            </ul>
+          </>}
         </section>
         {LOCAL_ENGINE_VISIBLE && localAllowed && readiness?.environment === "dev" && <LocalModelPolicy readiness={readiness} selected={localModel} />}
       </div>

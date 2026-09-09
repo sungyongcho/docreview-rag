@@ -64,6 +64,8 @@ export function useOperatorJobs(
           jobId: job.job_id,
           target: job.domain === "evaluation" && typeof resultId === "number" && resultId > 0 ? { view: "measure", tab: "runs", resultId } : { view: "build", tab: "jobs", jobId: job.job_id },
           desktop: ["succeeded", "failed", "interrupted", "cancelled"].includes(job.status),
+          // Queued/running live in the topbar pill and Job Center; only outcomes interrupt the user.
+          silent: !["succeeded", "failed", "interrupted", "cancelled"].includes(job.status),
           supersedes: ["corpus-operation", "evaluation-queued"],
         });
         if (["succeeded", "failed", "interrupted", "cancelled"].includes(job.status)) {

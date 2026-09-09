@@ -24,6 +24,7 @@ from app.corpus_admin import RuntimeCorpusAdminService
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
+from app.llm.openai_limits import OpenAICallLimits, OpenAILimitsManager
 from app.llm.provider import LLMProvider, OpenAILLMProvider
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
 from app.release.browser_reset import browser_reset_id
@@ -166,6 +167,7 @@ class ReleaseReadiness(BaseModel):
     active_review_model: str | None
     review_engines: dict[str, object]
     corpus: CorpusReadiness
+    openai_call_limits: OpenAICallLimits | None = None
 
 
 def build_runtime_services(
@@ -185,6 +187,10 @@ def build_runtime_services(
         providers["openai"] = provider
         budgets["openai"] = settings.provider_budget()
         secrets.append(api_key)
+    # The ceiling is known without a key, so Dev can inspect and lower it before enabling OpenAI.
+    openai_limits = OpenAILimitsManager(
+        settings.provider_budget(), enabled=settings.environment != "prod"
+    )
     local_connection, local_budget = build_local_runtime(
         environment=settings.environment,
         base_url=settings.local_llm_base_url,
@@ -213,9 +219,11 @@ def build_runtime_services(
         llm_providers=providers,
         provider_budgets=budgets,
         local_connection=local_connection,
+        openai_limits=openai_limits,
         allow_local_engine=settings.environment != "prod",
         local_timeout_s=settings.local_llm_timeout_s,
         secret_values=tuple(secrets),
+        credential_slot=settings.openai_key_slot,
         intent_classifier_enabled=True,
         query_routing_enabled=True,
         allow_custom_prompt_policy=settings.admin_mode == "live",
@@ -467,6 +475,10 @@ def create_release_app(
                 active_services.local_inventory if active_services else None,
                 active_services.local_connection if active_services else None,
             )
+        openai_limits = active_services.openai_limits if active_services is not None else None
+        call_limits = openai_limits.state() if openai_limits is not None else None
+        if call_limits is not None and public_surface:
+            call_limits = call_limits.model_copy(update={"editable": False})
         payload = ReleaseReadiness(
             status="ready" if corpus_ready else "degraded",
             mode="runtime",
@@ -494,6 +506,7 @@ def create_release_app(
                 },
             },
             corpus=corpus,
+            openai_call_limits=call_limits,
         )
         if corpus_ready:
             return payload

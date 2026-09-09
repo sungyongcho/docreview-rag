@@ -41,6 +41,8 @@ from app.api.admin_schemas import (
     LocalModelPrepareRequest,
     LocalServerRequest,
     LocalServerSelectionRequest,
+    OpenAILimitsRequest,
+    OpenAILimitsResponse,
     OperatorJobResource,
     OperatorJobsResponse,
     RetrievalPreviewRequest,
@@ -287,6 +289,37 @@ async def replace_golden_case(
             expected_sha256=request.expected_sha256,
             payload=request.case,
         )
+
+
+@router.post(
+    "/golden/revisions/{revision_id}/cases/{case_id}/delete",
+    response_model=GoldenRevisionResource,
+)
+async def delete_golden_case(
+    revision_id: int,
+    case_id: str,
+    request: GoldenRevisionActionRequest,
+    services: AdminServices,
+) -> GoldenRevisionResource:
+    """Remove one question from a draft using an expected draft digest."""
+    async with translate_runtime_errors(), golden_input_errors():
+        return await services.delete_golden_case(
+            revision_id, case_id, expected_sha256=request.expected_sha256
+        )
+
+
+@router.post(
+    "/golden/revisions/{revision_id}/delete",
+    response_model=GoldenRevisionResource,
+)
+async def delete_golden_revision(
+    revision_id: int,
+    request: GoldenRevisionActionRequest,
+    services: AdminServices,
+) -> GoldenRevisionResource:
+    """Delete one user dataset file using an expected draft digest."""
+    async with translate_runtime_errors(), golden_input_errors():
+        return await services.delete_golden_revision(revision_id, request.expected_sha256)
 
 
 @router.post(
@@ -567,6 +600,33 @@ async def reset_local_llm(services: AdminServices) -> dict[str, Any]:
     """Restore the endpoint selected by environment, dotenv, or startup defaults."""
     async with translate_runtime_errors():
         return await services.update_local_connection("reset")
+
+
+@router.get("/openai/limits", response_model=OpenAILimitsResponse)
+async def openai_limits_state(services: AdminServices) -> dict[str, Any]:
+    """Return the effective OpenAI per-call caps and the ceiling they may not exceed."""
+    async with translate_runtime_errors():
+        return services.openai_limits_state()
+
+
+@router.post("/openai/limits", response_model=OpenAILimitsResponse)
+async def save_openai_limits(
+    request: OpenAILimitsRequest, services: AdminServices
+) -> dict[str, Any]:
+    """Save lower working caps for Dev; raising the ceiling stays a .env change."""
+    async with translate_runtime_errors():
+        return await services.update_openai_limits(
+            max_input_tokens=request.max_input_tokens,
+            max_output_tokens=request.max_output_tokens,
+            max_cost_usd=request.max_cost_usd,
+        )
+
+
+@router.post("/openai/limits/reset", response_model=OpenAILimitsResponse)
+async def reset_openai_limits(services: AdminServices) -> dict[str, Any]:
+    """Remove the saved working caps so the ceiling applies again."""
+    async with translate_runtime_errors():
+        return await services.reset_openai_limits()
 
 
 def _require_preset_dev() -> None:

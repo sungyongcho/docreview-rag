@@ -201,3 +201,45 @@ def test_listing_skips_stray_files_and_get_reports_them(service, tmp_path):
     assert [row.filename for row in listed] == [draft.filename]
     with pytest.raises(ValueError):
         service.get(service._identity("notes.json"))
+
+
+def test_delete_case_removes_one_question_under_the_digest_check(service):
+    """Deleting needs the current digest, removes only that question, and reports unknown IDs."""
+
+    async def exercise():
+        draft = await service.create_draft("sec-en", filename="delete.json")
+        first = draft.payload[0]["id"]
+        second = await service.replace_case(
+            draft.revision_id,
+            "test-02",
+            expected_sha256=draft.sha256,
+            payload=absent_case("Two?") | {"id": "test-02"},
+        )
+        with pytest.raises(Exception, match="Dataset changed"):
+            await service.delete_case(draft.revision_id, first, expected_sha256=draft.sha256)
+        deleted = await service.delete_case(draft.revision_id, first, expected_sha256=second.sha256)
+        assert [case["id"] for case in deleted.payload] == ["test-02"]
+        assert deleted.status == "draft"
+        with pytest.raises(ValueError, match="does not exist"):
+            await service.delete_case(deleted.revision_id, first, expected_sha256=deleted.sha256)
+
+    asyncio.run(exercise())
+
+
+def test_delete_draft_removes_only_user_files_under_the_digest_check(service, tmp_path):
+    """A user file disappears from disk and listings; built-ins and stale digests are refused."""
+
+    async def exercise():
+        draft = await service.create_draft("sec-en", filename="gone.json")
+        with pytest.raises(Exception, match="Dataset changed"):
+            await service.delete_draft(draft.revision_id, expected_sha256="a" * 64)
+        builtin = service._identity("retrieval.json")
+        with pytest.raises(ValueError, match="Built-in"):
+            await service.delete_draft(builtin, expected_sha256="a" * 64)
+        deleted = await service.delete_draft(draft.revision_id, expected_sha256=draft.sha256)
+        assert deleted.filename == "gone.json"
+        assert not (tmp_path / "gone.json").exists()
+        assert (tmp_path / "retrieval.json").exists()
+        assert await service.list("sec-en") == ()
+
+    asyncio.run(exercise())

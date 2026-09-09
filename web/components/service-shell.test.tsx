@@ -322,7 +322,7 @@ describe("service shell", () => {
     seedAnsweredConversation();
     render(<ServiceShell />);
     await screen.findByText("Corpus total · 29 filings");
-    const readiness = screen.getByRole("button", { name: "View corpus readiness" });
+    const readiness = screen.getByRole("button", { name: /Corpus total|Published corpus/ });
     const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
     fireEvent.change(question, { target: { value: "Keep this unfinished question" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
@@ -1482,26 +1482,23 @@ it.each(["en", "ko"] as const)("shows the measured CPU warning before sending an
   const t = (key: string) => translate(locale, key);
   try {
     render(<I18nProvider><LiveShell /></I18nProvider>);
-    const warning = await screen.findByRole("status", { name: t("Slow local CPU model") });
-    expect(warning).toHaveTextContent("10 tok/s");
+    const warning = (await screen.findByText(/10 tok\/s/)).closest(".notification") as HTMLElement;
     expect(warning).toHaveTextContent("15 tok/s");
+    expect(warning.closest(".notification-stack")).toHaveAttribute("data-placement", "overlay");
     fireEvent.change(screen.getByPlaceholderText(t("Ask a question about the filing corpus")), { target: { value: "Revenue?" } });
     expect(screen.getByRole("button", { name: t("Send question") })).toBeEnabled();
-    fireEvent.click(within(warning).getByRole("button", { name: t("Run limits") }));
+    fireEvent.click(within(warning).getByRole("button", { name: new RegExp(`${t("Run limits")}|${t("Review recommended limits in settings")}`) }));
     expect(await screen.findByLabelText(t("Maximum wall clock seconds"))).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: t("Close conversation settings") }));
-    fireEvent.click(within(warning).getByRole("button", { name: t("Evidence") }));
-    expect(await screen.findByLabelText(t("Maximum evidence characters"))).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: t("Close conversation settings") }));
     expect(loadConversations()[0].profile).toEqual(original);
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/review/stream"))).toBe(true);
     fireEvent.change(screen.getByLabelText(t("Answer engine")), { target: { value: "openai" } });
-    expect(screen.queryByRole("status", { name: t("Slow local CPU model") })).toBeNull();
+    expect(screen.queryByText(/10 tok\/s/)).toBeNull();
     fireEvent.change(screen.getByLabelText(t("Answer engine")), { target: { value: "local" } });
-    expect(await screen.findByRole("status", { name: t("Slow local CPU model") })).toBeInTheDocument();
+    expect(await screen.findByText(/10 tok\/s/)).toBeInTheDocument();
     local = { ...local, models: [{ ...model, cpu_performance: null }] };
     await act(async () => { window.dispatchEvent(new Event("online")); });
-    await waitFor(() => expect(screen.queryByRole("status", { name: t("Slow local CPU model") })).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/10 tok\/s/)).toBeNull());
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
 });
 
@@ -1548,7 +1545,7 @@ it("opens default limits from System status", async () => {
   render(<LiveShell />);
   fireEvent.click(await screen.findByRole("button", { name: "Edit default limits" }));
   const dialog = await screen.findByRole("dialog", { name: "Run limits" });
-  expect(within(dialog).getByRole("button", { name: "Answer limits" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).getByLabelText("Maximum wall clock seconds").closest(".settings-form")).toBeNull();
   expect(within(dialog).queryByLabelText("Additional operator instructions")).toBeNull();
 });

@@ -38,33 +38,50 @@
 .composer-help-tooltip code { overflow-wrap: anywhere; font-size: 11px; }
 
 /* Available composer width controls the grid; actions share its field baseline. */
-.composer-toolbar.composer-toolbar-aligned { container: composer-controls / inline-size; display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-left: 0; }
+.composer-toolbar.composer-toolbar-aligned { container: composer-controls / inline-size; display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0 0 4px; }
 .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 10px 8px; overflow: visible; padding: 0; width: 100%; }
 .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
 .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
-.composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; max-width: 100%; font-size: 11px; }
+.composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field,
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-engine-placeholder { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; max-width: 100%; font-size: 11px; }
+.composer-toolbar-aligned .composer-engine-placeholder { display: none; }
 .composer-toolbar-aligned .composer-toolbar-primary .composer-control-label,
 .composer-toolbar-aligned .composer-toolbar-primary .composer-engine-label { display: flex; align-items: center; height: 20px; line-height: 20px; margin: 0; color: var(--text); font-size: 11px; font-weight: 600; }
 .composer-toolbar-aligned .composer-toolbar-primary select { height: 40px; min-height: 40px; padding: 7px 10px; font-size: 12px; }
 .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary select { width: 100%; max-width: 100%; min-width: 0; }
 .composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 40px; min-height: 40px; max-width: 100%; }
-.composer-toolbar-aligned .composer-toolbar-primary .segmented button { min-height: 0; height: 100%; min-width: 0; padding-inline: 6px; flex: 1; }
+.composer-toolbar-aligned .composer-toolbar-primary .composer-scope-tabs { display: flex; flex-wrap: nowrap; gap: 2px; height: 40px; min-width: max-content; margin: 0; overflow: visible; border-bottom: 1px solid var(--border); }
+.composer-toolbar-aligned .composer-toolbar-primary .composer-scope-tabs button { padding: 8px 12px; font-size: 13px; }
 .composer-toolbar-aligned .composer-toolbar-primary .composer-control-description { font-size: 10px; line-height: 16px; overflow-wrap: anywhere; }
+.composer-toolbar-aligned .composer-toolbar-primary .composer-control-description .answer-engine-light { font-size: 10px; }
 .composer-toolbar-aligned .composer-toolbar-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .composer-toolbar-aligned .composer-toolbar-actions > .chip { min-height: 40px; height: 40px; align-self: stretch; }
 .composer-toolbar-aligned .composer-toolbar-actions > .request-inspector-trigger { flex: 0 0 auto; justify-content: center; gap: 7px; margin-left: auto; min-width: 0; max-width: 100%; white-space: nowrap; font-size: 11px; line-height: 1.2; padding: 5px 10px; }
-.composer-toolbar-aligned .composer-toolbar-secondary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+.composer-toolbar-aligned .composer-toolbar-secondary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 2px 9px 0 17px; border-top: 1px solid var(--border); }
 .composer-toolbar-aligned .composer-corpus-readiness { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; min-width: 0; width: 100%; }
-.composer-toolbar-aligned .composer-readiness-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.composer-toolbar-aligned .composer-readiness-facts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 26px; padding: 0; border: 0; background: transparent; font: inherit; font-size: 11px; line-height: 1.5; color: var(--muted); cursor: pointer; }
+.composer-toolbar-aligned .composer-readiness-facts:is(:hover, :focus-visible) > span { text-decoration: underline; text-underline-offset: 3px; }
+.composer-toolbar-aligned .composer-readiness-facts > svg { opacity: .7; }
+.composer-toolbar-aligned .composer-key-hint { display: inline-flex; align-items: center; min-height: 26px; margin-left: auto; color: var(--muted); font-size: 11px; line-height: 1.5; white-space: nowrap; }
 .composer-toolbar-aligned .composer-readiness-facts > small { font-size: 10px; }
 .composer-toolbar-aligned .composer-readiness-facts > small.confirmed { color: var(--good); }
 .composer-toolbar-aligned button.corpus-readiness-action { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; min-height: 40px; padding: 5px 0; border: 0; }
 @container composer-controls (min-width: 860px) {
-  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: flex; flex-wrap: nowrap; }
-  .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
-  .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
-  .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { flex: 1 1 0; }
-  .composer-toolbar-aligned .composer-toolbar-actions { flex: 0 0 auto; max-width: 45%; padding-top: 25px; }
+  /* Scope, engine and the reserved local-model slot stay left; preset and settings stay right. */
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: max-content minmax(150px, 200px) minmax(130px, 170px) minmax(8px, 1fr) minmax(150px, 200px) max-content; align-items: start; gap: 10px 12px; }
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control { max-width: none; }
+  .composer-toolbar-aligned .composer-toolbar-actions > .chip { white-space: nowrap; }
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control { grid-column: 1; }
+  .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field:first-of-type { grid-column: 2; }
+  .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field:not(:first-of-type),
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-engine-placeholder { grid-column: 3; display: grid; }
+  .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control { grid-column: 5; }
+  .composer-toolbar-aligned .composer-toolbar-actions { grid-column: 6; flex: 0 0 auto; max-width: none; padding-top: 25px; }
+}
+@container composer-controls (min-width: 860px) and (max-width: 1099px) {
+  /* Keep the settings control an icon when the six columns leave no room for its label. */
+  .composer-toolbar-aligned .composer-toolbar-actions > .chip .composer-settings-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .composer-toolbar-aligned .composer-toolbar-actions > .chip { width: 40px; padding: 8px; justify-content: center; }
 }
 @media (max-width: 760px) {
   .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { gap: 10px; }
@@ -75,7 +92,6 @@
   .composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 44px; min-height: 44px; width: 100%; }
   .composer-toolbar-aligned .composer-toolbar-primary .segmented button { padding-inline: 6px; min-width: 0; }
   .composer-toolbar-aligned .composer-toolbar-actions > .chip { height: 44px; min-height: 44px; }
-  .composer-toolbar-aligned button.corpus-readiness-action,
   .composer-toolbar-aligned .request-inspector-trigger { min-height: 44px; }
 }
 @container composer-controls (max-width: 340px) {

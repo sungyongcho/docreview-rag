@@ -1,25 +1,34 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { SLOW_LOCAL_CPU_TOKENS_PER_SECOND } from "@/lib/local-models";
 import { suggestLocalLimits } from "@/lib/local-limit-suggestion";
 import type { ReviewSessionDraft } from "@/lib/types";
-import "./slow-cpu-notice.css";
+import { useNotifications } from "./notifications";
 
-/** Keep slow-model guidance inline; all changes are reviewed and applied in the settings editor. */
-export function SlowCpuNotice({ profile, model, speed, onOpenLimits, onOpenEvidence }: { profile: ReviewSessionDraft; model: string; speed: number; onOpenLimits: () => void; onOpenEvidence: () => void }) {
+export const SLOW_CPU_NOTICE_KEY = "slow-cpu";
+
+/** Surface the slow-model measurement as one pinned overlay toast whose action opens the limits editor.
+ *
+ * The parent keys this component by conversation and model, so an explicit close stays closed until
+ * either changes; speed refreshes and applied recommendations only update the visible text.
+ */
+export function SlowCpuNotice({ profile, model, speed, onOpenLimits }: { profile: ReviewSessionDraft; model: string; speed: number; onOpenLimits: () => void; onOpenEvidence?: () => void }) {
   const { t, locale } = useI18n();
-  const policy = profile.prompt_policy;
-  const current = policy.workflow_budget;
+  const { notify, dismissNotice } = useNotifications();
+  const [closed, setClosed] = useState(false);
+  const openLimits = useRef(onOpenLimits);
+  openLimits.current = onOpenLimits;
+  const current = profile.prompt_policy.workflow_budget;
   const suggestion = suggestLocalLimits(current, speed);
-  const changed = suggestion && (suggestion.budget.max_wall_clock_s !== current.max_wall_clock_s || suggestion.budget.max_output_tokens !== current.max_output_tokens);
-  return <div className="notice warning slow-cpu-notice" role="status" aria-label={t("Slow local CPU model")}>
-    <p className="slow-cpu-summary">{t("{model} is running on CPU. Its recent generation speed was {speed} tok/s, below the {threshold} tok/s warning threshold. Before sending, allow more time in Run limits or reduce Evidence. Sending remains available.", { model, speed: speed.toLocaleString(locale, { maximumFractionDigits: 1 }), threshold: SLOW_LOCAL_CPU_TOKENS_PER_SECOND })}</p>
-    {suggestion && <p className="slow-cpu-estimate">{t("Output ceiling: {tokens} tokens ≈ {seconds} seconds; current run time: {limit} seconds.", { tokens: current.max_output_tokens, seconds: Math.ceil(suggestion.estimatedSeconds), limit: current.max_wall_clock_s })}</p>}
-    <p className="helper">{t("Generation estimates exclude retrieval and prompt processing. Actual provider limits may be lower; completing within this time is not guaranteed.")}</p>
-    <div className="slow-cpu-actions">
-    {changed && <button className="button" type="button" onClick={onOpenLimits}>{t("Review recommended limits in settings")}</button>}
-    <button className="inline-link" type="button" onClick={onOpenLimits}>{t("Run limits")}</button>{" · "}<button className="inline-link" type="button" onClick={onOpenEvidence}>{t("Evidence")}</button>
-    </div>
-    <p className="helper">{t("Open settings to compare and apply changes. Opening the editor does not change values or send the question.")}</p>
-  </div>;
+  const changed = Boolean(suggestion && (suggestion.budget.max_wall_clock_s !== current.max_wall_clock_s || suggestion.budget.max_output_tokens !== current.max_output_tokens));
+  const summary = t("{model} on CPU · {speed} tok/s (threshold {threshold} tok/s)", { model, speed: speed.toLocaleString(locale, { maximumFractionDigits: 1 }), threshold: SLOW_LOCAL_CPU_TOKENS_PER_SECOND });
+  const estimate = suggestion ? " · " + t("Output {tokens} tokens ≈ {seconds} s · limit {limit} s", { tokens: current.max_output_tokens, seconds: Math.ceil(suggestion.estimatedSeconds), limit: current.max_wall_clock_s }) : "";
+  const message = summary + estimate;
+  useEffect(() => {
+    if (closed) return;
+    notify(message, "warning", SLOW_CPU_NOTICE_KEY, 0, { event: "slow-cpu-notice", actionLabel: changed ? "Review recommended limits in settings" : "Run limits", onAction: () => openLimits.current(), onDismiss: () => setClosed(true) });
+  }, [message, changed, closed, notify]);
+  useEffect(() => () => dismissNotice(SLOW_CPU_NOTICE_KEY), [dismissNotice]);
+  return null;
 }

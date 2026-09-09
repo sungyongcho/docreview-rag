@@ -96,7 +96,7 @@ do not rewrite the current answer.
 
 **Screenshot pending for the collapsed, section-titled candidate cards with the toolbar and pager. Existing screenshots remain unchanged.**
 
-Use **View corpus readiness** to inspect preparation and **Back** to return to the retained
+Click the corpus status line (**Corpus total · N filings**) to inspect preparation and **Back** to return to the retained
 draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated
 calls, uncollected fields, and legacy records.
 

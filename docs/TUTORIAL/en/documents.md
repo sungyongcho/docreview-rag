@@ -13,7 +13,7 @@ prepared for that source.
 documents are useful but not required: a confirmed empty catalog is a valid starting state.
 
 **Screen path:** sidebar **Build → Documents**. If you arrived from a conversation's
-**View corpus readiness** action, select the Documents tab in Build.
+corpus status line, select the Documents tab in Build.
 
 **Inputs and meaning:** search for a document ID, issuer, or stock code that belongs to
 the filing you want to inspect. `NVDA-FY2024` is an example document ID, not a record

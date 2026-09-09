@@ -50,17 +50,16 @@
 .compact .documentRow > div:nth-child(3) { grid-column: 1 / -1; grid-row: 3; display: flex; gap: 8px; align-items: center; }
 .compact .documentRow > span { grid-column: 2; grid-row: 2; }
 .compact .documentRow > div:nth-child(3) small { margin: 0; }
-.jobsFilters { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 20px 18px; }
-.jobsFilters > div { display: flex; flex-wrap: wrap; gap: 4px; }
-.jobsFilters button { border: 1px solid transparent; padding: 6px 10px; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
-.jobsFilters button[aria-pressed="true"] { border-color: var(--border); color: var(--text); background: var(--surface-2); }
-.jobRow.jobRow { width: 100%; display: grid; grid-template-columns: minmax(200px, 2fr) minmax(120px, 1fr) auto 65px 105px; align-items: center; gap: 14px; padding: 16px 20px; border: 0; border-bottom: 1px solid var(--border); color: var(--text); background: transparent; text-align: left; cursor: pointer; }
+.jobsFilters.jobsFilters { margin: 0 20px; border-bottom: 0; }
+.jobColumnLabels { position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: minmax(200px, 2fr) minmax(120px, 1fr) 132px 65px 105px; gap: 14px; padding: 10px 20px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
+.jobRow.jobRow { width: 100%; display: grid; grid-template-columns: minmax(200px, 2fr) minmax(120px, 1fr) 132px 65px 105px; align-items: center; gap: 14px; padding: 16px 20px; border: 0; border-bottom: 1px solid var(--border); color: var(--text); background: transparent; text-align: left; cursor: pointer; }
 .jobRow.jobRow:hover { background: var(--surface-2); }
 .jobRow.jobRow[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .jobRow > span { min-width: 0; }
 .jobRow strong { font-size: 13px; font-weight: 560; }
 .jobRow small { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .jobRow time, .jobTarget, .jobProgress { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.compact .jobColumnLabels { display: none; }
 .compact .jobRow { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 15px 16px; }
 .compact .jobRow > span:first-child { grid-column: 1 / -1; }
 .compact .jobTarget { grid-column: 1; }
@@ -79,6 +78,7 @@
   .documentRow > div:first-child { grid-column: 1 / -1; }
   .documentRow > div:nth-child(3) { grid-column: 1; }
   .documentRow > span { grid-column: 2; grid-row: 2; }
+  .jobColumnLabels { display: none; }
   .jobRow.jobRow { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
   .jobRow > span:first-child { grid-column: 1 / -1; }
   .jobTarget, .jobProgress { grid-column: 1; }

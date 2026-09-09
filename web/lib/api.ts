@@ -22,7 +22,7 @@ import type {
   OperatorJobBoard,
   Readiness,
   Capabilities,
-  LocalLLMConnection,
+  LocalLLMConnection, OpenAILimits,
   LocalLLMDiagnostics,
   LocalLLMDiagnosticTarget,
   ReleaseLimits,
@@ -286,6 +286,18 @@ export async function checkEvaluationPreparation(requestBody: import("./types").
   return result;
 }
 
+export function getOpenAILimits(signal?: AbortSignal): Promise<OpenAILimits> {
+  return request<OpenAILimits>("/admin/openai/limits", { signal });
+}
+
+export function saveOpenAILimits(values: { max_input_tokens: number; max_output_tokens: number; max_cost_usd: string }): Promise<OpenAILimits> {
+  return request<OpenAILimits>("/admin/openai/limits", { method: "POST", body: JSON.stringify(values) });
+}
+
+export function resetOpenAILimits(): Promise<OpenAILimits> {
+  return request<OpenAILimits>("/admin/openai/limits/reset", { method: "POST" });
+}
+
 export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMConnection> {
   return request<LocalLLMConnection>("/admin/local-llm/connection", { signal });
 }
@@ -433,6 +445,14 @@ export function createGoldenDraft(suiteId: SuiteId, parentId: number | null, fil
 
 export function saveGoldenCase(revisionId: number, caseId: string, expectedSha256: string, value: Record<string, unknown>): Promise<GoldenRevision> {
   return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/cases/${caseId}`, { method: "PUT", body: JSON.stringify({ expected_sha256: expectedSha256, case: value }) });
+}
+
+export function deleteGoldenCase(revisionId: number, caseId: string, expectedSha256: string): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/cases/${encodeURIComponent(caseId)}/delete`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
+}
+
+export function deleteGoldenRevision(revisionId: number, expectedSha256: string): Promise<GoldenRevision> {
+  return request<GoldenRevision>(`/admin/golden/revisions/${revisionId}/delete`, { method: "POST", body: JSON.stringify({ expected_sha256: expectedSha256 }) });
 }
 
 export function transitionGoldenRevision(revisionId: number, action: "validate", expectedSha256: string): Promise<GoldenRevision> {

@@ -171,11 +171,12 @@ export function JobCenter({ board, loading, stale = false, onRetry, onCancel, on
     <section id={layout.listPanelId} className={`surface ${styles.listPanel} ${compact ? styles.compact : ""}`} hidden={showDetail && layout.narrow}>
       <div className={styles.heading}><div><h2>{t("Job Center")}</h2><p className="helper">{t("{active} active · {queued} queued", { active: board.active_count.toLocaleString(locale), queued: board.queued_count.toLocaleString(locale) })}</p></div><div className="action-row">{historyEnabled && <JobHistoryControls onChanged={onRefresh} />}<button className="button" type="button" disabled={loading} onClick={onRefresh}><RefreshCw size={14} />{t("Refresh")}</button></div></div>
       {stale && <p className={styles.status} role="status">{t(board.jobs.length ? "Job activity may be out of date. Retrying…" : "Job activity could not be loaded. Retrying…")}</p>}
-      <div className={styles.jobsFilters}>
-        <div aria-label={t("Job domain")}>{(["all", "corpus", "evaluation"] as const).map((value) => <button key={value} type="button" aria-pressed={domain === value} onClick={() => setDomain(value)}>{t(value)}</button>)}</div>
-        <div aria-label={t("Job status")}>{(["all", "active", "queued", "failed", "history"] as const).map((value) => <button key={value} type="button" aria-pressed={group === value} onClick={() => setGroup(value)}>{t(value)}</button>)}</div>
-      </div>
+      <nav className={`lab-tabs workflow-tabs measure-tab-strip ${styles.jobsFilters}`} aria-label={t("Job filters")}>
+        <div className="measure-tab-group" role="group" aria-label={t("Job domain")}>{(["all", "corpus", "evaluation"] as const).map((value) => <button key={value} type="button" aria-pressed={domain === value} onClick={() => setDomain(value)}>{t(value)}</button>)}</div>
+        <div className="measure-tab-group measure-management-group" role="group" aria-label={t("Job status")}><span className="measure-management-caption" aria-hidden="true">{t("Status")}</span>{(["all", "active", "queued", "failed", "history"] as const).map((value) => <button key={value} type="button" aria-pressed={group === value} onClick={() => setGroup(value)}>{t(value)}</button>)}</div>
+      </nav>
       <div ref={layout.listRef} className={styles.list} aria-busy={loading}>
+        <div className={styles.jobColumnLabels} aria-hidden="true"><span>{t("Job")}</span><span>{t("Target")}</span><span>{t("Status")}</span><span>{t("Progress")}</span><span>{t("Started")}</span></div>
         {loading && !board.jobs.length && <p className={styles.status} role="status">{t("Loading job activity…")}</p>}
         {visible.map((job) => <button className={`job-list-row ${styles.jobRow}`} type="button" key={job.job_id} aria-pressed={selectedId === job.job_id} onClick={() => { setSelectedId(job.job_id); layout.openDetail(); }}>
           <span><strong>{t(jobCopy(job).label)}</strong><small>{job.queue_position ? t("Queue #{p0} · ", { p0: job.queue_position }) : ""}{t(job.progress_stage ?? job.stage)}</small></span>

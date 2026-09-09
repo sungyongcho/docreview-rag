@@ -12,8 +12,9 @@
 /* The title yields space; header actions never wrap or shrink when an inspector opens. */
 .workspace > .topbar { grid-template-columns: minmax(0, 1fr) auto; }
 .topbar-navigation > .icon-button { flex: none; }
-.topbar-navigation > .workspace-history { flex: 1; min-width: 0; }
-.workspace-history-title { flex: 1; overflow: hidden; }
+/* Title and arrows hug the left edge so the history list opens directly beneath the title. */
+.topbar-navigation > .workspace-history { flex: 0 1 auto; min-width: 0; max-width: min(640px, 100%); margin-right: auto; }
+.workspace-history-title { flex: 0 1 auto; justify-content: flex-start; overflow: hidden; }
 .workspace-history-title > strong { min-width: 0; }
 .workspace-history-title > svg { flex: none; }
 .topbar > .topbar-status { flex-wrap: nowrap; white-space: nowrap; }

@@ -22,6 +22,7 @@ from app.api.schemas import EvidenceHit, RunResponse
 from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, BM25Idf, LexicalRanker
 from app.evals.source_binding import SourceCheck
 from app.llm.local_connection import ConnectionSource, LocalProtocol, validate_base_url
+from app.llm.openai_limits import OpenAICallLimits
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.types import RetrievalFilters
 
@@ -869,6 +870,22 @@ class LocalServerResource(BaseModel):
     base_url: str
     protocol: LocalProtocol
     is_default: bool
+
+
+class OpenAILimitsRequest(BaseModel):
+    """Working per-call caps for Dev; each value must stay at or below the ceiling."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    max_input_tokens: int = Field(ge=1, le=100_000)
+    max_output_tokens: int = Field(ge=1, le=4_000)
+    max_cost_usd: Decimal = Field(gt=0, le=1)
+
+
+class OpenAILimitsResponse(OpenAICallLimits):
+    """Effective caps, their ceiling and where to raise the ceiling outside the web."""
+
+    ceiling_env_keys: dict[str, str]
+    file_path: str
 
 
 class LocalServerRequest(LocalConnectionRequest):

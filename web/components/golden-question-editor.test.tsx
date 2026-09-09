@@ -47,3 +47,17 @@ it("selects exact server source coordinates and prevents duplicate evidence", as
   fireEvent.click(await screen.findByRole("button", { name: /NVDA · FY2024/ }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Already selected" })).toBeDisabled());
 });
+
+it("deletes the draft question only after an explicit yes", async () => {
+  const onDelete = vi.fn();
+  render(<GoldenQuestionEditor filename="custom.json" registry="sec" json={JSON.stringify(empty)} readOnly={false} dirty={false} busy={false} error="" issues={[{ location: ["question"], message: "Enter the evaluation question." }]} onChange={vi.fn()} onSave={vi.fn()} onBack={vi.fn()} onDelete={onDelete} />);
+  const header = screen.getByRole("button", { name: "Delete draft" }).closest("header")!;
+  expect(header).toHaveTextContent("Incomplete");
+  expect(header).toContainElement(screen.getByRole("button", { name: "Save draft" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete draft" }));
+  fireEvent.click(await screen.findByRole("button", { name: "No" }));
+  expect(onDelete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Delete draft" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
+  await waitFor(() => expect(onDelete).toHaveBeenCalledOnce());
+});
