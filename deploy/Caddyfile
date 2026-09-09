@@ -1,4 +1,6 @@
-{$DOCREVIEW_ORIGIN_HOST} {
+# Public origin behind the Cloudflare Worker. Plain HTTP: TLS ends at Cloudflare and
+# the GCP firewall only admits Cloudflare IPv4 ranges on the published port.
+:80 {
 	encode zstd gzip
 
 	@blocked path /admin* /ingest
@@ -6,6 +8,8 @@
 
 	@public path /health /ready /release /limits /capabilities /openapi.json /docs /retrieve /review /review/stream /documents /runs/* /eval /snapshots /snapshots/*
 	reverse_proxy @public app:8000 {
+		# The app treats requests carrying this header as public; it is what hides
+		# the operator surface. Only the loopback operator port skips it.
 		header_up X-DocReview-Public true
 	}
 

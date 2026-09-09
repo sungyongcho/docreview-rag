@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Build the static Next export for visitors and publish it to Firebase Hosting.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -6,8 +7,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 cd "${repo_root}/web"
 npm ci
+# NEXT_PUBLIC_ADMIN_MODE is deliberately unset. The compiler inlines the guard
+# `process.env.NEXT_PUBLIC_ADMIN_MODE === "live"`, so any value other than `live`
+# yields the public bundle; unset is the canonical public build. Never export a
+# `live` value from this script.
 NEXT_PUBLIC_API_BASE_URL="https://sungyongcho.com/docreview-rag-agent/api" \
-NEXT_PUBLIC_ADMIN_MODE="canned" \
 npm run build
 
 source_dir="${repo_root}/web/out"

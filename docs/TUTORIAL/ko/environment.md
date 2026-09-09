@@ -68,7 +68,7 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 
 **화면 경로:** 사이드바 **시스템 → 시스템 상태**. 페이지 제목은 **실행 준비 상태**입니다.
 모드 표시를 읽고, 준비 과정을 실습하려면 개발 환경을 사용하세요.
-공개 모드는 권한이 달라 일부 조작이 보이지 않을 수 있습니다.
+공개 모드는 권한이 달라 일부 조작이 보이지 않을 수 있습니다. 코퍼스 수치는 두 빌드 모두 표시되며 쓰기 가능 여부만 감춥니다.
 
 **입력과 의미:** 상태를 읽는 단계이므로 질문이나 기업을 입력하지 않습니다.
 서비스 주소가 의도한 환경인지 확인하세요. 화면이 같아 보여도 API·DB 주소가
@@ -198,3 +198,70 @@ Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도
 
 준비 표시를 초록색으로 만들기 위해 파괴적 초기화를 사용하지 마세요.
 새로고침은 상태를 읽으며 복구·적재·인덱스 생성·답변 모델 호출을 실행하지 않습니다.
+
+## 운영 배포 (거의 무료 구성) {#production-deployment}
+
+위 내용은 모두 내 기계에서 돌아갑니다. 공개 사이트는 의도적으로 작게 잡은 별도
+대상입니다. Cloudflare Worker 뒤의 Always Free VM 한 대와 Firebase Hosting의 정적
+내보내기입니다. 스크립트는 `deploy/gcp/`와 `scripts/deploy/`에 있으며 튜토리얼 과정에서
+실행되는 것은 없습니다.
+
+```text
+visitor ──HTTPS──> sungyongcho.com/docreview-rag-agent/*
+                          │  Cloudflare Worker (gomoku repo)
+            ┌─────────────┴──────────────┐
+   /docreview-rag-agent/*        /docreview-rag-agent/api/*
+            │                              │  plain HTTP
+            ▼                              ▼
+   Firebase Hosting             GCP e2-micro (us-central1-a, ephemeral IP)
+   static Next export           firewall: tcp:8000 from Cloudflare IPv4 only
+                                  Caddy :80 → host 8000
+                                    allow-list + X-DocReview-Public: true
+                                      └─> FastAPI ──> pgvector Postgres
+                                  operator: 127.0.0.1:8001 via SSH tunnel only
+```
+
+TLS는 Cloudflare에서 끝납니다. VM은 `8000` 포트에서 평문 HTTP만 받고, GCP 방화벽은
+Cloudflare가 공개한 IPv4 대역만 허용하므로 다른 곳에서는 직접 닿을 수 없습니다. Caddy는
+공개 경로만 프록시하고 `X-DocReview-Public: true`를 붙입니다. `/admin/*`과 `/ingest`를
+숨기는 것은 이 헤더이므로 외부에서 닿는 모든 포트 앞에는 Caddy가 있어야 합니다. 운영자
+API는 `deploy/gcp/operator_tunnel.sh`로만 닿으며, 이 스크립트는 loopback 전용 포트 `8001`을
+전달합니다.
+
+### 실행 순서 {#production-order}
+
+1. `.env`에 `DEPLOY_GCP_PROJECT`(선택으로 `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`,
+   `DEPLOY_MACHINE_TYPE`)를 채우고 `deploy/gcp/backend.env.example`을
+   `deploy/gcp/backend.env`(gitignore 대상)로 복사합니다. `deploy/gcp/deploy_env_config.sh`가
+   두 파일을 읽어 마스킹된 요약을 출력합니다.
+2. `deploy/gcp/create_vm.sh`가 `pd-standard` 30 GB 부트 디스크, 임시 외부 IP, `tcp:8000`에
+   대한 Cloudflare 전용 방화벽 규칙을 갖춘 e2-micro VM을 만듭니다. 첫 부팅 때
+   `deploy/gcp/startup.sh`가 Docker와 2 GB 스왑 파일을 설치합니다.
+3. 준비된 코퍼스를 VM의 `/var/lib/docreview/corpus`에 복사한 뒤
+   `deploy/gcp/deploy_backend.sh`를 실행합니다. `docker-compose.deploy.yml`,
+   `deploy/Caddyfile`, `backend.env`(`/opt/docreview/.env`로)를 복사하고 스택을 띄웁니다.
+4. `deploy/gcp/print_origin.sh`가 `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000`과
+   `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`을 출력합니다.
+5. 그 줄들을 gomoku 저장소의 `.env`에 붙여 넣고 그쪽 `03_deploy_cloudflare.sh`를
+   실행합니다. Worker가 `/docreview-rag-agent/api/*`는 VM으로, 나머지
+   `/docreview-rag-agent/*`는 Firebase Hosting으로 보냅니다.
+6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh`가
+   `NEXT_PUBLIC_ADMIN_MODE`를 비운 채 공개 번들을 빌드하고 배포합니다.
+
+외부 IP는 임시입니다. VM을 멈췄다 켜면 바뀌므로 그 뒤에는 4·5단계를 반복합니다. 고정
+IP를 예약하면 이를 피할 수 있지만 월 약 $3가 듭니다.
+
+### 월 비용 {#production-cost}
+
+| 구성 요소 | 내용 | 비용 |
+|---|---|---|
+| GCP e2-micro | `us-central1`, `us-east1`, `us-west1`에서 Always Free: 공유 vCPU 1개, RAM 1 GB, `pd-standard` 30 GB, 북미 송신 월 1 GB | $0 |
+| 외부 IP | 임시 IP. 고정 IP를 예약하면 월 약 $3 | $0 |
+| Firebase Hosting | 무료 등급(정적 내보내기) | $0 |
+| Cloudflare Worker | 무료 등급, gomoku Worker와 공유 | $0 |
+| OpenAI | `DOCREVIEW_PUBLIC_DAILY_COST_USD`(compose 파일에서 `1.00`)로 UTC 하루 단위 상한 | ≤ $1/day |
+
+트레이드오프: VM이 북미에 있어 유럽 방문자는 약 100 ms의 지연이 더 붙습니다.
+데이터베이스(현재 약 430 MB)는 Postgres, Docker 이미지, 스왑을 두고도 30 GB 디스크에
+넉넉히 들어갑니다. RAM 1 GB에 맞춰 Postgres는 `shared_buffers=128MB`, `work_mem=4MB`로
+돌고, 2 GB 스왑 파일이 가끔의 급증을 받아냅니다.
