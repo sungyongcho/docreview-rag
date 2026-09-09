@@ -1,9 +1,8 @@
-/* A translucent bar that floats above the composer instead of stacking below it. */
-.composer-wrap { position: relative; }
+/* A translucent bar that floats above the composer, aligned to the toolbar column. */
 .slow-cpu-notice {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: max(24px, calc((100% - 900px) / 2));
+  right: max(24px, calc((100% - 900px) / 2));
   bottom: calc(100% + 8px);
   z-index: 5;
   display: grid;
