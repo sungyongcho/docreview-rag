@@ -57,6 +57,8 @@
 .run-limit-help { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.65; }
 .run-limit-help p { margin: 0 0 10px; }
 .run-limit-help > :last-child, .run-limit-help p:last-child { margin-bottom: 0; }
+.run-limit-guidance-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text); margin: 0 0 8px; }
+.run-limit-guidance ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .run-limit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 .run-limit-actions .button { min-height: 44px; }
 .run-limit-actions p { margin: 0; font-size: 13px; }

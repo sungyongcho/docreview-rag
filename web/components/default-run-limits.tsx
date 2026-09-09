@@ -15,25 +15,31 @@ export function emphasizeEnvKeys(text: string) {
   return text.split(/(DOCREVIEW_OPENAI_MAX_[A-Z_]+|data\/local-settings\/openai-limits\.json|\.env|rag-dev down\/up)/).map((part, index) => index % 2 === 1 ? <strong key={index}>{part}</strong> : part);
 }
 
+/** Accept only a complete caps payload; a stub or partial response must not render. */
+function validCaps(value: unknown): value is OpenAICallLimits {
+  const caps = value as Partial<OpenAICallLimits> | null;
+  return !!caps && [caps.max_input_tokens, caps.max_output_tokens, caps.ceiling_max_input_tokens, caps.ceiling_max_output_tokens].every((item) => typeof item === "number") && typeof caps.max_cost_usd === "string" && typeof caps.ceiling_max_cost_usd === "string";
+}
+
 /** Edit only new-conversation evidence and limits, preserving other saved defaults. */
 export function DefaultRunLimits({ summary = false, onOpen, speed, readiness = null, capsEditable = false }: { summary?: boolean; onOpen?: () => void; speed?: number | null; readiness?: Readiness | null; capsEditable?: boolean }) {
   const { t, locale } = useI18n();
-  const [caps, setCaps] = useState<OpenAICallLimits | null>(readiness?.openai_call_limits ?? null);
+  const [caps, setCaps] = useState<OpenAICallLimits | null>(validCaps(readiness?.openai_call_limits) ? readiness!.openai_call_limits! : null);
   const [capsForm, setCapsForm] = useState<{ max_input_tokens: number; max_output_tokens: number; max_cost_usd: string } | null>(null);
   const [capsNotice, setCapsNotice] = useState<string | null>(null);
   const [capsError, setCapsError] = useState<string | null>(null);
   const [capsBusy, setCapsBusy] = useState(false);
-  useEffect(() => { if (readiness?.openai_call_limits) setCaps(readiness.openai_call_limits); }, [readiness?.openai_call_limits]);
+  useEffect(() => { if (validCaps(readiness?.openai_call_limits)) setCaps(readiness!.openai_call_limits!); }, [readiness?.openai_call_limits]);
   useEffect(() => {
     if (summary || !capsEditable) return;
     const controller = new AbortController();
-    getOpenAILimits(controller.signal).then((live) => { setCaps(live); }).catch(() => undefined);
+    getOpenAILimits(controller.signal).then((live) => { if (validCaps(live)) setCaps(live); }).catch(() => undefined);
     return () => controller.abort();
   }, [summary, capsEditable]);
   useEffect(() => { if (caps && !capsForm) setCapsForm({ max_input_tokens: caps.max_input_tokens, max_output_tokens: caps.max_output_tokens, max_cost_usd: caps.max_cost_usd }); }, [caps, capsForm]);
   async function applyCaps(action: () => Promise<OpenAICallLimits>, notice: string) {
     setCapsBusy(true); setCapsNotice(null); setCapsError(null);
-    try { const saved = await action(); setCaps(saved); setCapsForm({ max_input_tokens: saved.max_input_tokens, max_output_tokens: saved.max_output_tokens, max_cost_usd: saved.max_cost_usd }); setCapsNotice(notice); }
+    try { const saved = await action(); if (!validCaps(saved)) throw new Error("OpenAI per-call caps response is incomplete."); setCaps(saved); setCapsForm({ max_input_tokens: saved.max_input_tokens, max_output_tokens: saved.max_output_tokens, max_cost_usd: saved.max_cost_usd }); setCapsNotice(notice); }
     catch (reason) { setCapsError(reason instanceof Error ? notificationErrorMessage(reason) : "OpenAI per-call caps could not be saved."); }
     finally { setCapsBusy(false); }
   }

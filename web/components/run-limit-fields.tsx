@@ -27,7 +27,6 @@ export function RunLimitFields({ budget, onChange, speed, onApplyCpuPreset, evid
     </div>
     <div className="run-limit-help">
       <RunLimitGuidance />
-    <p className="helper">{t("These limits cover the entire run across all model calls. Zero blocks a resource for failure-path experiments; the wall clock must be at least one second.")}</p>
     {suggestion && <p className="helper">{t("Generation estimate: {seconds} seconds at {speed} tok/s. Retrieval and prompt processing take additional time; this is not a completion guarantee.", { seconds: Math.ceil(suggestion.estimatedSeconds), speed: speed! })}</p>}
     </div>
   </div>;

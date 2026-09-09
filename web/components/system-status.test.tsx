@@ -47,7 +47,7 @@ describe("SystemStatus", () => {
     const section = screen.getByRole("heading", { name: "OpenAI model policy" }).closest("section")!;
     expect(within(section).getByText("Per-call output tokens")).toBeInTheDocument();
     expect(within(section).getByText("600")).toBeInTheDocument();
-    expect(within(section).getByText(/DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS/)).toBeInTheDocument();
+    expect(within(section).getByText("DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS")).toBeInTheDocument();
   });
 
   it("lists the roles a local model serves and locks the embedding row", async () => {

@@ -91,7 +91,7 @@ export function SystemWorkspace({ live, ready = true, readiness, localModel, loc
         ))}
       </nav>
 
-      <RetainedPanel active={activeTab === "status"}><SystemStatus readiness={readiness} localModel={localModel} localAllowed={localAllowed} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" />{live && <DefaultRunLimits summary onOpen={onOpenLimitDefaults} />}<RuntimeSettings readiness={readiness} live={live} /></RetainedPanel>
+      <RetainedPanel active={activeTab === "status"}><SystemStatus readiness={readiness} localModel={localModel} localAllowed={localAllowed} loading={checking} error="" onRefresh={onRefresh} embedded helpId="system.status" onOpenLimits={live ? onOpenLimitDefaults : undefined} />{live && <DefaultRunLimits summary onOpen={onOpenLimitDefaults} />}<RuntimeSettings readiness={readiness} live={live} /></RetainedPanel>
       {live && <RetainedPanel active={activeTab === "operations"}><DesktopJobNotifications />{operationsAvailable ? <Operations embedded helpId="system.operations" /> : <p className="helper">{t("Start rag-dev to connect Local Operations.")}</p>}</RetainedPanel>}
       {live && <RetainedPanel active={activeTab === "api"}><ApiInspector ready={ready} /></RetainedPanel>}
       {live && <RetainedPanel active={activeTab === "usage"}><UsagePanel /></RetainedPanel>}
