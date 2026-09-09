@@ -158,6 +158,14 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    // Grow with the draft up to the CSS max-height; browsers without field-sizing need the measurement.
+    const element = composerInput.current;
+    if (!element || "fieldSizing" in element.style) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+  }, [query]);
   const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
   const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
@@ -1082,7 +1090,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             />
 
             <label className="composer">
-              <textarea data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
+              <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
             {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} onOpenEvidence={() => openConversationSettings("evidence")} />}
@@ -1092,7 +1100,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {publicPreview ? <p id="production-preview-read-only" role="note">{t("Preview is read-only. Questions and server changes are disabled; your DEV conversation is preserved.")}</p> : banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline", stage: banner.step })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
-              : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")}</p>}
+              : <p>{t("Answers must cite retrieved filing evidence. Provider calls are rate- and cost-limited.")} <span className="composer-key-hint">{t("Enter sends · Shift+Enter adds a line")}</span></p>}
           </div>
         </RetainedPanel>
 

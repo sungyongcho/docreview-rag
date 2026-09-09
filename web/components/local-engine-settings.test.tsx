@@ -10,7 +10,7 @@ it("hides the engine picker in public builds and reports checking in development
   cleanup(); vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live"); vi.resetModules();
   const { LocalEngineSettings: LivePicker } = await import("./local-engine-settings");
   render(<LivePicker profile={DEFAULT_SESSION_PROFILE} readiness={null} onChange={vi.fn()} />);
-  expect(screen.getByRole("option", { name: "⚪ Local LLM (Checking…)" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "Local LLM (Checking…)" })).toBeDisabled();
 });
 /** Two discovered answer models, including enough metadata to exercise selection. */
 function model(name: string): LocalModelInfo {
@@ -30,7 +30,7 @@ it("keeps a limited local engine selectable and preserves a missing explicit mod
   };
   const props = { onChange };
   const { rerender } = render(<OperatorSettings {...props} readiness={readiness} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local" }} />);
-  expect(screen.getByRole("option", { name: "🟠 Local LLM (Selected)" })).toBeEnabled();
+  expect(screen.getByRole("option", { name: "Local LLM (Selected)" })).toBeEnabled();
   expect(screen.getByLabelText("Local model")).toHaveValue("");
   expect(screen.getByLabelText("Answer engine")).toHaveAttribute("title", "Choose a model");
   expect(screen.getByLabelText("Local: Choose a model")).toHaveAttribute("data-light", "amber");
@@ -50,7 +50,7 @@ it("keeps a limited local engine selectable and preserves a missing explicit mod
 
   const offline = { ...readiness, review_engines: { local: { enabled: false, reason: "unreachable", models: [] } } };
   rerender(<OperatorSettings {...props} readiness={offline} profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: "second" }} />);
-  expect(screen.getByRole("option", { name: "🟠 Local LLM (Unavailable)" })).toBeEnabled();
+  expect(screen.getByRole("option", { name: "Local LLM (Unavailable)" })).toBeEnabled();
   expect(screen.getByLabelText("Answer engine")).toHaveAttribute("title", "Server unreachable");
   expect(screen.getByLabelText("Local model")).toBeDisabled();
   expect(screen.getByLabelText("Answer engine")).toHaveValue("local");
@@ -96,7 +96,7 @@ it("keeps slow CPU amber selectable with the shared reason tooltip", async () =>
   const readiness: Readiness = { status: "ready", mode: "runtime", admin_mode: "live", policy_revision: "test", models: {}, review_enabled: true, active_review_model: null, review_engines: { local }, corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: null, documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true } };
   const onChange = vi.fn();
   render(<LocalEngineSettings profile={{ ...DEFAULT_SESSION_PROFILE, engine: "local", local_model: "answer" }} readiness={readiness} onChange={onChange} />);
-  const option = screen.getByRole("option", { name: "🟠 Local LLM (Selected)" });
+  const option = screen.getByRole("option", { name: "Local LLM (Selected)" });
   expect(option).toBeEnabled();
   expect(option).toHaveAttribute("title", "Slow CPU (below 15 tok/s)");
   const light = screen.getByLabelText("Local: Slow CPU (below 15 tok/s)");

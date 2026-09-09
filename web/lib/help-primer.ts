@@ -65,7 +65,7 @@ const PRIMERS: Record<string, HelpPrimer> = {
     "summary": "Check whether the corpus can support retrieval before running a question.",
     "steps": [
       "Read what the corpus total describes.",
-      "Open View corpus readiness.",
+      "Click the corpus status line to open Build.",
       "Return with Back to conversation."
     ]
   },

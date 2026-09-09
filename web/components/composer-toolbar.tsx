@@ -194,8 +194,7 @@ export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, o
       </div>
       <div className="composer-toolbar-secondary">
         <div className="composer-corpus-readiness">
-          <div className="composer-readiness-facts"><span>{typeof corpusCount === "number" ? t("Corpus total · {count} filings", { count: corpusCount.toLocaleString(locale) }) : t(corpusLabel)}</span><small className={readinessStatus === "Hybrid search ready" ? "confirmed" : ""}>{t(readinessStatus)}</small></div>
-          <button className="button ghost corpus-readiness-action" type="button" data-help="review.readiness" onClick={onOpenBuild}>{t("View corpus readiness")}<ChevronRight size={14} aria-hidden="true" /></button>
+          <button className="composer-readiness-facts" type="button" data-help="review.readiness" title={t("Open Build to inspect corpus readiness")} onClick={onOpenBuild}><span>{typeof corpusCount === "number" ? t("Corpus total · {count} filings", { count: corpusCount.toLocaleString(locale) }) : t(corpusLabel)}</span><small className={readinessStatus === "Hybrid search ready" ? "confirmed" : ""}>{t(readinessStatus)}</small><ChevronRight size={13} aria-hidden="true" /></button>
         </div>
       </div>
     </div>

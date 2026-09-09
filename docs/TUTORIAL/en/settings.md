@@ -86,7 +86,7 @@ Company, language, form, and fiscal-year choices come from the complete catalog 
 
 Choose values as removable chips. Incompatible saved selections stay visible until you remove them. Invalid typed drafts block Send while the filter editor is open. Switching editor tabs or closing the editor discards unfinished text, as its notice explains; committed selections remain. Workspace navigation and Back preserve committed settings and the question; close the editor before using background controls.
 
-The scope and preset **?** controls support hover, focus, touch and Escape. **View corpus readiness** opens Build; use **Back** to return to the draft. Preview uses the settings drawer’s scrolling and focus behavior. Invalid committed advanced values remain visible as an error and block sending even after closing the drawer.
+The scope and preset **?** controls support hover, focus, touch and Escape. The corpus status line above the input opens Build; use **Back** to return to the draft. Preview uses the settings drawer’s scrolling and focus behavior. Invalid committed advanced values remain visible as an error and block sending even after closing the drawer.
 
 ## Pin, Exclude, and reviewing again {#evidence}
 

@@ -164,10 +164,12 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .drawer-heading, .page-badges { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
 .drawer-heading h2 { margin: 4px 0 0; }
 .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); box-shadow: 0 10px 35px color-mix(in srgb, #000 9%, transparent); }
-.composer textarea { resize: none; max-height: 180px; border: 0; outline: 0; background: transparent; color: inherit; padding: 7px 8px; }
+.composer textarea { resize: none; min-height: 38px; max-height: 180px; overflow-y: auto; border: 0; outline: 0; background: transparent; color: inherit; padding: 7px 8px; field-sizing: content; }
 .composer button { width: 37px; height: 37px; display: grid; place-items: center; align-self: end; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
 .composer button:disabled { opacity: .35; cursor: default; }
 .composer-wrap > p { margin: 7px 8px 0; color: var(--muted); font-size: 10px; text-align: center; }
+.composer-key-hint { white-space: nowrap; opacity: .8; }
+.composer-key-hint::before { content: "·"; margin: 0 6px 0 2px; }
 
 .lab-shell, .status-page, .operations-page { min-height: 0; flex: 1; overflow: auto; padding: 26px; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }

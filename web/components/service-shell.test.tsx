@@ -322,7 +322,7 @@ describe("service shell", () => {
     seedAnsweredConversation();
     render(<ServiceShell />);
     await screen.findByText("Corpus total · 29 filings");
-    const readiness = screen.getByRole("button", { name: "View corpus readiness" });
+    const readiness = screen.getByRole("button", { name: /Corpus total|Published corpus/ });
     const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
     fireEvent.change(question, { target: { value: "Keep this unfinished question" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
