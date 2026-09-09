@@ -1,5 +1,5 @@
 "use client";
-import { NotificationOutlet } from "./notifications";
+import { NotificationOutlet, useNotificationSurface } from "./notifications";
 import { useI18n } from "@/lib/i18n";
 
 
@@ -40,6 +40,8 @@ interface Props {
 /** Keep one conversation editor independent of composer height and global Settings. */
 export function ConversationSettings(props: Props) {
   const { t, locale } = useI18n();
+  // The drawer shows the recommendation itself, so the pinned slow-CPU toast stays hidden while it is open.
+  useNotificationSurface("slow-cpu-toast");
   const active = useRetainedPanelActive();
   const [mode, setMode] = useState<"basic" | "advanced" | "preview">(props.tab === "preview" ? "preview" : props.editable && props.tab !== "filters" ? "advanced" : "basic");
   useEffect(() => { setMode(props.tab === "preview" ? "preview" : props.editable && props.tab !== "filters" ? "advanced" : "basic"); }, [props.tab, props.editable]);
