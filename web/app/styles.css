@@ -353,6 +353,7 @@ input[aria-invalid="true"],textarea[aria-invalid="true"] { border-color: var(--b
 .status-list dt { color: var(--muted); }
 .status-list dd { margin: 0; text-align: right; }
 .policy-list { display: grid; gap: 8px; margin-top: 12px; }
+.openai-cap-notes { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 4px; line-height: 1.55; }
 .policy-list > div { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .policy-list span, .policy-list small { color: var(--muted); }
 
