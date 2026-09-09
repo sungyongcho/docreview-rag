@@ -65,8 +65,12 @@ describe("corpus readiness summary", () => {
     expect(readinessStatusLabel(readiness({ pending_embeddings: 120 }))).toBe("Embeddings pending");
     expect(readinessStatusLabel(READINESS)).toBe("Hybrid search ready");
     expect(readinessStatusLabel(readiness({ bm25_ready: false }))).toBe("Vector search ready · BM25 unavailable");
-    for (const unknown of [{ bm25_ready: null }, { database_connected: null }, { pending_embeddings: null }, { documents: null }, { schema_status: null }] as const) {
+    for (const unknown of [{ bm25_ready: null }, { database_connected: null }, { pending_embeddings: null }, { documents: null, availability: "degraded" }, { schema_status: null }] as const) {
       expect(readinessStatusLabel(readiness(unknown))).toBe("Readiness not confirmed");
+    }
+    // A public surface withholds counts; the server's ready verdict still confirms hybrid search.
+    expect(readinessStatusLabel(readiness({ documents: null, chunks: null, pending_embeddings: null, availability: "ready" }))).toBe("Hybrid search ready");
+    {
     }
     expect(readinessStatusLabel(readiness({ database_connected: false }))).toBe("Corpus unavailable");
     expect(readinessStatusLabel(readiness({ availability: "not_applicable", database_connected: null, bm25_ready: null }))).toBe("Readiness not reported");

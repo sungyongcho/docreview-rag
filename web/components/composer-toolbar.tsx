@@ -91,6 +91,7 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
   const corpus = readiness.corpus;
   if (corpus.availability === "not_applicable") return "Readiness not reported";
   if (corpus.availability === "unavailable" || corpus.database_connected === false || (typeof corpus.schema_status === "string" && corpus.schema_status !== "compatible")) return "Corpus unavailable";
+  if (corpus.database_connected === true && corpus.schema_status === "compatible" && corpus.documents === null && corpus.availability === "ready" && typeof corpus.bm25_ready === "boolean") return corpus.bm25_ready ? "Hybrid search ready" : "Vector search ready · BM25 unavailable";
   if (corpus.database_connected !== true || corpus.schema_status !== "compatible" || typeof corpus.documents !== "number") return "Readiness not confirmed";
   if (corpus.documents === 0) return "Corpus empty";
   if ((corpus.pending_embeddings ?? 0) > 0) return "Embeddings pending";

@@ -894,3 +894,20 @@ it("retains completed parsing while flagging newly downloaded originals in a mix
   expect(processed.status).toBe("done");
   expect(processed.statusDetail).not.toBe("Complete · new originals available");
 });
+
+describe("public surface readiness", () => {
+  it("treats a ready verdict with withheld counts as a prepared corpus for asking and evaluation", () => {
+    const readiness = {
+      status: "ready", mode: "runtime", admin_mode: "readonly", policy_revision: "r", models: {}, review_enabled: true, active_review_model: "m",
+      review_engines: { openai: { enabled: true, model: "m" } },
+      corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: "ok", documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, bm25_ready: true, writable: null },
+    } as unknown as Readiness;
+    const pipeline = derivePipeline({ live: false, healthKind: "healthy", readiness, corpus: null, manifests: [], registryCounts: {}, jobs: [], evaluationResults: 0, snapshots: 0 });
+    expect(pipeline.source).toBe("readiness");
+    expect(stage(pipeline, "ask").status).toBe("done");
+    expect(stage(pipeline, "ask").statusDetail).toBe("hybrid ready");
+    expect(stage(pipeline, "evaluate").status).not.toBe("blocked");
+    const degraded = derivePipeline({ live: false, healthKind: "healthy", readiness: { ...readiness, corpus: { ...readiness.corpus, availability: "degraded", bm25_ready: false } } as Readiness, corpus: null, manifests: [], registryCounts: {}, jobs: [], evaluationResults: 0, snapshots: 0 });
+    expect(stage(degraded, "ask").status).not.toBe("done");
+  });
+});

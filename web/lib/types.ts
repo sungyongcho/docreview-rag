@@ -251,6 +251,8 @@ export interface CorpusCounts {
   bm25_rebuild_recorded?: boolean | null;
   writable: boolean | null;
   provider?: string | null;
+  /** Present on `/ready.corpus`; a public surface withholds counts but still reports availability. */
+  availability?: "ready" | "degraded" | "not_applicable" | "unavailable";
 }
 
 export type DocumentEmbeddingStatus = "complete" | "partial" | "missing";

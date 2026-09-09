@@ -182,6 +182,11 @@ export function retrievalReadiness(counts: CorpusCounts | null, strategy: Retrie
   hint: string;
 } {
   if (!counts) return { status: "unknown", blockedBy: null, hint: "Checking corpus…" };
+  // A public surface withholds counts; the server's own availability verdict is authoritative there.
+  if (counts.chunks == null && counts.availability === "ready" && counts.database_connected === true) {
+    if (strategy !== "vector" && counts.bm25_ready !== true) return { status: "blocked", blockedBy: "lexical", hint: "BM25 is not available on this server." };
+    return { status: "done", blockedBy: null, hint: "" };
+  }
   if (counts.database_connected === false || ["empty", "drifted", "unavailable"].includes(counts.schema_status ?? "")) {
     return { status: "blocked", blockedBy: "index", hint: "Resolve database setup before continuing." };
   }
@@ -232,6 +237,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const embedded = count(counts.embedded_chunks);
   const pending = count(counts.pending_embeddings);
   const bm25Ready = counts.bm25_ready === true;
+  // Public readiness withholds counts but states availability; treat a ready verdict as a prepared corpus.
+  const publicReady = readOnly && source === "readiness" && counts.availability === "ready" && counts.database_connected === true && counts.chunks == null;
   const schemaBroken = input.live && (counts.database_connected === false || counts.schema_status === "drifted" || counts.schema_status === "unavailable");
   const schemaHint = "Resolve database setup before continuing.";
 
@@ -316,6 +323,10 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: [], hint: schemaHint, blockedBy: "index" };
     } else if (drafts.index.status === "unknown") {
       drafts.ask = { ...checking };
+    } else if (publicReady) {
+      const strategy = input.profile?.strategy ?? "hybrid";
+      const readiness = retrievalReadiness(counts, strategy, []);
+      drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? ["Live retrieval on the published corpus"] : [] };
     } else if (chunks > 0) {
       const strategy = input.profile?.strategy ?? "hybrid";
       const readiness = source === "fixture"
@@ -338,7 +349,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     if (schemaBroken) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: schemaHint, blockedBy: "index" };
     else if (source === "pending" || drafts.index.status === "unknown") drafts.evaluate = { ...checking };
     else if (measured) drafts.evaluate = { status: "done", numbers };
-    else if (chunks === 0) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
+    else if (chunks === 0 && !publicReady) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
     else drafts.evaluate = { status: "action", statusDetail: succeeded ? "No results" : "Not run", numbers: readOnly ? ["Not measured yet."] : numbers, hint: succeeded ? "A job finished, but no evaluation results are available. Refresh results or run a quick evaluation to measure retrieval quality." : "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot." };
     drafts.evaluate.action = readOnly
       ? { label: "Compare published snapshots", kind: "compare" }
