@@ -29,7 +29,7 @@ export function NotificationSignals({ enabled, healthKind, healthMessage, checke
   useEffect(() => {
     if (!enabled || healthKind === "checking" || health.current === healthKind) return;
     const prior = health.current;health.current = healthKind;
-    const message = healthKind === "healthy" ? t(prior ? "API connection recovered." : "Connected to the API.") : healthKind === "api_down" ? t("The API connection is unavailable.") : healthMessage || t(healthKind === "preparation_needed" ? "Corpus preparation is needed." : "Database readiness is degraded.");
+    const message = healthKind === "healthy" ? t(prior ? "API connection recovered." : "Connected to the API.") : healthKind === "api_down" ? t("The API connection is unavailable.") : healthKind === "preparation_needed" ? t("Corpus preparation is needed.") : (healthMessage || t("Database readiness is degraded."));
     notify(message, healthKind === "healthy" ? "success" : healthKind === "api_down" ? "error" : "warning", "runtime-health", undefined, { event: "health-transition" });
   }, [enabled, healthKind, healthMessage, notify, t]);
   useEffect(() => {
