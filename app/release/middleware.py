@@ -15,9 +15,12 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.review_profile import (
     PUBLIC_MAX_CONTEXT_CHARS,
     PromptPolicy,
+    ReviewSessionProfile,
     public_custom_retrieval_violation,
+    resolve_retrieval_profile,
 )
 from app.observability.types import Budget
+from app.release.ai_allowance import SharedAIAllowance, active_allowance
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
 SECURITY_HEADERS = {
@@ -150,7 +153,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         self,
         app: ASGIApp,
         *,
-        limiter: InProcessRateLimiter,
+        limiter: InProcessRateLimiter | SharedAIAllowance,
         trust_proxy_headers: bool,
         allow_ingest: bool,
         enforce_rate_limit: bool = True,
@@ -158,6 +161,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         allow_local_engine: bool = True,
         local_connection_origin: str | None = None,
         cost_limiter: DailyCostLimiter | None = None,
+        shared_allowance: SharedAIAllowance | None = None,
         salt: bytes | None = None,
     ) -> None:
         super().__init__(app)
@@ -170,6 +174,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         self._local_connection_origin = (
             _loopback_origin(local_connection_origin) if local_connection_origin else None
         )
+        self._shared_allowance = shared_allowance
         self._cost_limiter = cost_limiter
         self._salt = salt or secrets.token_bytes(32)
 
@@ -263,6 +268,45 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             if denied is not None:
                 return denied
 
+        if self._shared_allowance is not None:
+            if request.method != "POST" or request.url.path not in {
+                "/retrieve",
+                "/review",
+                "/review/stream",
+            }:
+                return await call_next(request)
+            if request.url.path == "/retrieve":
+                try:
+                    payload = await request.json()
+                except ValueError:
+                    payload = {}
+                if isinstance(payload, dict):
+                    try:
+                        profile = ReviewSessionProfile.model_validate(
+                            payload.get("session_profile", {})
+                        )
+                    except ValidationError:
+                        return await call_next(request)
+                    if resolve_retrieval_profile(profile).strategy == "lexical":
+                        return await call_next(request)
+            remaining, reset = await self._shared_allowance.status()
+            if remaining <= 0:
+                from datetime import UTC, datetime
+
+                return JSONResponse(
+                    status_code=429,
+                    headers={
+                        "Retry-After": str(max(1, int((reset - datetime.now(UTC)).total_seconds())))
+                    },
+                    content={
+                        "error": {
+                            "code": "daily_cost_limit",
+                            "message": "The shared OpenAI allowance is exhausted.",
+                            "reset_at": reset.isoformat(),
+                            "details": [],
+                        }
+                    },
+                )
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not self._enforce_rate_limit and not public:
                 return await call_next(request)
@@ -300,7 +344,11 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                         },
                         headers={"X-DocReview-Daily-Cost-Remaining-USD": format(remaining, "f")},
                     )
-            response = await call_next(request)
+            token = active_allowance.set(self._shared_allowance)
+            try:
+                response = await call_next(request)
+            finally:
+                active_allowance.reset(token)
             response.headers["X-RateLimit-Remaining-Minute"] = str(decision.remaining_minute)
             response.headers["X-RateLimit-Remaining-Day"] = str(decision.remaining_day)
             return response

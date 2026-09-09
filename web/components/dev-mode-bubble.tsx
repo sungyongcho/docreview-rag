@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowUpRight } from "lucide-react";
 import { createContext, useContext, type ReactNode } from "react";
 import { useI18n } from "@/lib/i18n";
 import { DEV_ONLY_REASONS, SOURCE_REPOSITORY_LABEL, SOURCE_REPOSITORY_URL, type DevOnlyReason } from "@/lib/dev-mode";
@@ -19,9 +20,9 @@ export function DevModeBubble({ reason, children, inline = false, placement }: {
   const text = reason ? (reason in DEV_ONLY_REASONS ? DEV_ONLY_REASONS[reason as DevOnlyReason] : reason) : null;
   // Nothing to say on a DEV surface without a reason: keep the child bare instead of an empty bubble.
   if (!promote && !text) return <>{children}</>;
-  return <HoverBubble pinnable={Boolean(text)} label={t("DEV only")} inline={inline} placement={placement} bubble={<>
+  return <HoverBubble pinnable={Boolean(text)} label={t("DEV only")} inline={inline} placement={placement} bubble={<div className="dev-bubble-content">
     {promote && <strong>{t(text ? "Not available on this website." : "Try 'DEV MODE' now!")}</strong>}
-    {text && <em>{t(text)}</em>}
-    {promote && <a href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer">{text ? t("DEV mode: {repository}", { repository: SOURCE_REPOSITORY_LABEL }) : SOURCE_REPOSITORY_LABEL}</a>}
-  </>}>{children}</HoverBubble>;
+    {text && <p>{t(text)}</p>}
+    {promote && <a className="dev-bubble-link" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer">{text ? t("Open DEV project") : SOURCE_REPOSITORY_LABEL}<ArrowUpRight size={14} aria-hidden="true" /></a>}
+  </div>}>{children}</HoverBubble>;
 }

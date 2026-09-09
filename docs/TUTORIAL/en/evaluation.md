@@ -2,9 +2,17 @@
 
 ## Public exploration and recorded evidence
 
+Saved snapshots use a responsive card grid in DEV and PROD. Each card shows a short title, search settings and evidence hit rate; only DEV shows a visibility badge. Full titles, dataset files, document counts, timestamps and all metrics remain in the detail drawer. Select a card to open the existing right-side drawer with full metadata and configuration. Close with X, Escape or the backdrop; DEV actions remain available only in DEV.
+
+The question comparison reuses the dataset table: ID, question, BM25 baseline rank, ts_rank_cd candidate rank, and improvement/regression. Ranks are positions in the top 5; a dash means no relevant source was found. Select an ID to open the published reference answer and expected source spans in the read-only question detail view.
+
+In PROD, the result-comparison form follows the DEV layout with gray, fixed dataset, baseline, and candidate example selections. **Explore an example** reads two published real evaluations (BM25 and ts_rank_cd, k=5, identical DART Korean dataset and corpus) and their searchable question-level differences. It never reruns retrieval or a model. Real published snapshots remain in the separate snapshot view.
+
+The run list contains a compact recorded-result summary: evidence hit rate, MRR, mean search latency, and evaluated question count. Expand **Recorded configuration** for all parameters and metrics; select question IDs below to inspect individual results. These are retrieval measurements, not final-answer accuracy.
+
 PROD retains the evaluation workflow layout. Published dataset questions and expected source spans, recorded run settings, and case scores can be searched, sorted and paged. Only the exact published dataset version is shown; unavailable evidence is not replaced by today's editable file.
 
-Open **Explore evaluation settings** to change Quick/Matrix, chunk targets and retrieval parameters in the browser. The request preview is not submitted. Saving this exploration uses browser storage only and never changes recorded scores. Queueing evaluations, editing datasets, and creating snapshots keep their DEV badges and remain locked.
+Open **Explore evaluation settings** in the same side drawer layout as DEV. Dataset metadata and core search settings appear first; Quick/Matrix, chunk targets and tuning parameters are under **Advanced evaluation options**. The body scrolls independently above the fixed Cancel and locked evaluation actions. The request preview is not submitted. Saving this exploration uses browser storage only and never changes recorded scores. Queueing evaluations, editing datasets, and creating snapshots keep their DEV badges and remain locked.
 
 
 > [!DEV]

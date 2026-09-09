@@ -2,7 +2,8 @@
 
 import { PrepareLocalModel } from "./prepare-local-model";
 import type { ReviewEngineState } from "@/lib/types";
-import { ArrowRight } from "lucide-react";
+import { HoverBubble } from "./hover-bubble";
+import { ArrowRight, Info } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useDevPromotion } from "./dev-mode-bubble";
 import type { AnswerEngineState } from "@/lib/answer-engine-state";
@@ -16,7 +17,7 @@ export function AnswerEngineLight({ engine, showStatus = false }: { engine: Answ
 }
 
 /** Show each engine's actual metadata and its own configuration destination. */
-export function AnswerEngineRows({ engines, onOpenStatus, onOpenLocal, onLocalPrepared }: { onLocalPrepared?: (local: ReviewEngineState) => void; engines: AnswerEngineState[]; onOpenStatus: () => void; onOpenLocal?: () => void }) {
+export function AnswerEngineRows({ engines, onOpenStatus, onOpenLocal, onLocalPrepared, showLocalPreview = false }: { showLocalPreview?: boolean; onLocalPrepared?: (local: ReviewEngineState) => void; engines: AnswerEngineState[]; onOpenStatus: () => void; onOpenLocal?: () => void }) {
   const { t } = useI18n();
   // A visitor to the deployed screen sees the model, never which key slot serves it.
   const publicSurface = useDevPromotion();
@@ -29,5 +30,9 @@ export function AnswerEngineRows({ engines, onOpenStatus, onOpenLocal, onLocalPr
         <div><dt>{t("Last measured speed")}</dt><dd>{engine.speed == null ? t("Not measured") : `${engine.speed.toFixed(1)} tok/s`}</dd></div>
       </>}
     </dl>{engine.id === "local" && engine.server === "Ollama" && <PrepareLocalModel model={engine.model} ready={["Ready to answer", "Slow CPU (below 15 tok/s)"].includes(engine.reason)} onPrepared={(value) => onLocalPrepared?.(value.local)} />}<button className="button answer-engine-action" type="button" onClick={engine.id === "openai" ? onOpenStatus : onOpenLocal} disabled={engine.id === "local" && !onOpenLocal}>{t(engine.id === "openai" ? "Open System status" : "Open Local LLM settings")}<ArrowRight size={16} aria-hidden="true" /></button>
-  </section>)}</div>;
+  </section>)}{showLocalPreview && <section className="answer-engine-row public-local-preview" aria-label={t("Local")}>
+    <div className="public-local-heading"><strong className="answer-engine-light" data-light="amber"><i aria-hidden="true" />{t("Local")}</strong><HoverBubble label={t("Local LLM in DEV")} bubble={t("In DEV mode, you can connect a local LLM.")}><button type="button" className="public-local-info" aria-label={t("Local LLM in DEV")}><Info size={15} /></button></HoverBubble></div>
+    <span className="public-local-status">{t("Not supported in PROD mode")}</span>
+    <dl><div><dt>{t("Model")}</dt><dd>{t("Not configured")}</dd></div><div><dt>{t("Server")}</dt><dd>-</dd></div><div><dt>{t("CPU / GPU placement")}</dt><dd>-</dd></div><div><dt>{t("Last measured speed")}</dt><dd>-</dd></div></dl>
+  </section>}</div>;
 }

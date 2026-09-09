@@ -1,4 +1,4 @@
-import type { AdminDocumentPage, ReviewSessionDraft } from "./types";
+import type { AdminDocumentPage, ReviewSessionDraft, PublicTarget } from "./types";
 
 export type PublishedDocument = AdminDocumentPage["documents"][number];
 /** Fixed fiscal years from the tested default acquisition draft, not calendar years. */
@@ -44,4 +44,30 @@ export function publishedScopeStats(documents: PublishedDocument[], ids: string[
     ? selected.reduce((sum, doc) => sum + doc.embedded_chunks!, 0) : null;
   const chunks = selected.reduce((sum, doc) => sum + doc.chunk_count, 0);
   return { filings: selected.length, total: documents.length, chunks, embedded, pending: embedded === null ? null : Math.max(0, chunks - embedded) };
+}
+
+
+/** Persist browser intent without pretending that unpublished targets have document IDs. */
+export function createPublicTargets(documents: PublishedDocument[], pairs: PublicTarget[]): PublicTarget[] {
+  return [...new Map(pairs.filter((pair) => PORTFOLIO_FILINGS.some((row) => row.registry === pair.registry && row.issuer === pair.issuer && pair.year >= row.first && pair.year <= row.last)).map((pair) => {
+    const ids = documents.filter((doc) => doc.registry === pair.registry && doc.issuer === pair.issuer && doc.fiscal_year === pair.year).map((doc) => doc.doc_id);
+    const target: PublicTarget = { registry: pair.registry, issuer: pair.issuer, year: pair.year, ...(ids.length ? { document_ids: ids } : {}) };
+    return [`${pair.registry}:${pair.issuer}:${pair.year}`, target] as const;
+  })).values()];
+}
+
+/** Only actual published IDs can enter a request; legacy saved selections remain supported. */
+export function publicTargetIds(documents: PublishedDocument[], targets: PublicTarget[] | undefined, legacy?: string[]): string[] | undefined {
+  if (targets === undefined) return legacy;
+  return [...new Set(targets.flatMap((target) => target.document_ids ?? documents.filter((doc) => doc.registry === target.registry && doc.issuer === target.issuer && doc.fiscal_year === target.year).map((doc) => doc.doc_id)))];
+}
+
+/** Bind newly available targets once; do not replace previously selected document identities. */
+export function pinPublicTargets(documents: PublishedDocument[], targets: PublicTarget[]): PublicTarget[] {
+  const next = targets.map((target) => {
+    if (target.document_ids !== undefined) return target;
+    const ids = publicTargetIds(documents, [target])!;
+    return ids.length ? { ...target, document_ids: ids } : target;
+  });
+  return next.some((target, index) => target !== targets[index]) ? next : targets;
 }

@@ -132,3 +132,10 @@
 .composer-toolbar-aligned .composer-toolbar-primary > .composer-model-control { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; font-size: 11px; }
 .composer-model-chip { display: inline-flex; align-items: center; min-height: 40px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; cursor: default; }
 .composer-model-control .composer-control-description { color: var(--muted); font-size: 11px; }
+
+.review-scope-badge { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.review-scope-badge strong { font-weight: 500; }
+
+.settings-preview-content > .request-preview-disclosure { margin: 12px 0 20px; }
+.settings-preview-content > .request-preview-disclosure > summary { padding: 6px 0; font-size: 13px; font-weight: 500; line-height: 1.6; }
+.settings-preview-content > .request-preview-disclosure[open] > :not(summary) { margin-top: 12px; }

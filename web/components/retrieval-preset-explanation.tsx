@@ -18,7 +18,7 @@ export function RetrievalPresetExplanation({ profile }: { profile: ReviewSession
   const effective = resolvedRetrievalProfile(profile);
   const baseline = resolvedRetrievalProfile({ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "balanced" });
   function display(value: unknown) { return typeof value === "boolean" ? t(value ? "Enabled" : "Disabled") : value == null ? t("None") : String(value); }
-  return <details><summary>{t("Preset parameters and changes")}</summary><p className="helper">{t("Values are compared with Balanced. Wider retrieval can add latency; it does not guarantee a more accurate answer.")}</p><dl className="request-facts">{FIELDS.map(([key, label, description]) => {
+  return <details className="request-preview-disclosure"><summary>{t("Preset parameters and changes")}</summary><p className="helper">{t("Values are compared with Balanced. Wider retrieval can add latency; it does not guarantee a more accurate answer.")}</p><dl className="request-facts">{FIELDS.map(([key, label, description]) => {
     const inactive = (key === "rrf_k" || key === "reranker") && effective.strategy !== "hybrid" || key === "lexical_ranker" && effective.strategy === "vector";
     return <div key={key}><dt>{t(label)} (<code>{key}</code>)<p className="helper">{t(description)}</p></dt><dd>{effective[key] !== baseline[key] ? `${display(baseline[key])} → ` : ""}{display(effective[key])}{inactive && <p className="helper">{t("Not used by this search strategy.")}</p>}</dd></div>;
   })}</dl></details>;

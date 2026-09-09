@@ -91,3 +91,6 @@ data/golden/*.json
 
 # Production VM env copied by deploy/gcp/deploy_backend.sh; keep only the example.
 deploy/gcp/backend.env
+
+# Persistent public OpenAI allowance; private runtime state, never source data.
+/data/runtime/public-ai-limits.sqlite3*

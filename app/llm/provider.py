@@ -28,6 +28,7 @@ from app.llm.schemas import (
 )
 from app.observability.stages import record_model_call
 from app.openai_models import OpenAIModelRole, resolve_openai_model
+from app.release.ai_allowance import reserve_openai
 
 type Clock = Callable[[], int]
 
@@ -571,7 +572,7 @@ class OpenAILLMProvider(LLMProvider):
         self.reasoning_effort = selection.reasoning_effort
         self.api_url = api_url
         self._structured_output = structured_output
-        self._owned_client = AsyncOpenAI(api_key=api_key) if client is None else None
+        self._owned_client = AsyncOpenAI(api_key=api_key, max_retries=0) if client is None else None
         client_value: object = client if client is not None else self._owned_client
         self._client = cast(_OpenAIClient, client_value)
 
@@ -616,6 +617,7 @@ class OpenAILLMProvider(LLMProvider):
         ValueError
             If the response omits authoritative token usage.
         """
+        await reserve_openai(budget.max_cost_usd)
         if self._structured_output:
             response = await self._client.responses.create(
                 model=self.model_name,

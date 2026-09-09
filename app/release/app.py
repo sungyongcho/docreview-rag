@@ -28,6 +28,7 @@ from app.llm.local_runtime import build_local_runtime
 from app.llm.openai_limits import OpenAICallLimits, OpenAILimitsManager
 from app.llm.provider import LLMProvider, OpenAILLMProvider
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
+from app.release.ai_allowance import SharedAIAllowance
 from app.release.browser_reset import browser_reset_id
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
@@ -87,7 +88,7 @@ class ReleaseInfo(BaseModel):
     openai_enabled: bool
     key_handling: Literal["server_environment_only"] = "server_environment_only"
     key_persisted: Literal[False] = False
-    rate_limit_scope: Literal["single_process"] = "single_process"
+    rate_limit_scope: Literal["single_process", "shared_storage"] = "single_process"
     rate_limit_per_minute: int
     rate_limit_per_day: int
     max_input_tokens: int
@@ -133,7 +134,7 @@ class ReleaseLimits(BaseModel):
     daily_cost_reset_at_utc: datetime
     prompt_policy: PromptPolicy
     per_call: OpenAICallLimits
-    scope: Literal["single_process"] = "single_process"
+    scope: Literal["single_process", "shared_storage"] = "single_process"
 
 
 class CorpusReadiness(BaseModel):
@@ -282,8 +283,19 @@ def create_release_app(
         daily_limit_usd=active_settings.public_daily_cost_usd,
         reservation_usd=active_settings.openai_max_cost_usd,
     )
-    enforce_public_limits = active_settings.admin_mode != "live"
-    limiter_salt = secrets.token_bytes(32)
+    shared_allowance = None
+    if active_settings.mode == "runtime" and active_settings.environment == "prod":
+        shared_allowance = SharedAIAllowance(
+            active_settings.public_allowance_path,
+            active_settings.public_daily_cost_usd,
+            active_settings.rate_limit_per_minute,
+            active_settings.rate_limit_per_day,
+        )
+        limiter = shared_allowance
+    enforce_public_limits = (
+        active_settings.environment == "prod" or active_settings.admin_mode != "live"
+    )
+    limiter_salt = shared_allowance.salt if shared_allowance else secrets.token_bytes(32)
     application.add_middleware(
         ReleaseGuardMiddleware,
         limiter=limiter,
@@ -293,7 +305,10 @@ def create_release_app(
         public_read_only=active_settings.admin_mode != "live",
         allow_local_engine=active_settings.environment != "prod",
         local_connection_origin=active_settings.admin_cors_origin,
-        cost_limiter=cost_limiter if active_settings.mode == "runtime" else None,
+        cost_limiter=cost_limiter
+        if active_settings.mode == "runtime" and shared_allowance is None
+        else None,
+        shared_allowance=shared_allowance,
         salt=limiter_salt,
     )
     application.add_middleware(SecurityHeadersMiddleware)
@@ -342,7 +357,7 @@ def create_release_app(
         host = client_host(request, trust_proxy_headers=active_settings.trust_proxy_headers)
         key = blake2s(host.encode("utf-8"), key=limiter_salt, digest_size=16).hexdigest()
         rate = await limiter.peek(key)
-        remaining_cost, cost_reset = await cost_limiter.status()
+        remaining_cost, cost_reset = await (shared_allowance or cost_limiter).status()
         manager = active_services.openai_limits if active_services is not None else None
         call_limits = (
             manager or OpenAILimitsManager(active_settings.provider_budget(), enabled=False)
@@ -363,6 +378,7 @@ def create_release_app(
             minute_reset_seconds=rate.minute_reset_seconds,
             day_reset_seconds=rate.day_reset_seconds,
             daily_cost_reset_at_utc=cost_reset,
+            scope="shared_storage" if shared_allowance else "single_process",
         )
 
     fallback_corpus: RuntimeCorpusAdminService | None = None

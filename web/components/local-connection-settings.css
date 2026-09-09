@@ -61,3 +61,6 @@
 
 .connection-intro > a { padding: 3px 0; font-size: 12px; line-height: 1.5; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
 .connection-intro > a svg { width: 13px; height: 13px; flex: none; }
+
+fieldset.local-connection-settings { border: 0; padding: 0; margin: 0; min-width: 0; }
+.public-local-settings input:disabled, .public-local-settings select:disabled, .public-local-settings button:disabled { opacity: .55; color: var(--muted); cursor: not-allowed; }

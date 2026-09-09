@@ -1,4 +1,5 @@
 "use client";
+import { closeSidePanel } from "./side-panel-motion";
 import { NotificationOutlet, useNotificationSurface } from "./notifications";
 import { useI18n } from "@/lib/i18n";
 
@@ -71,7 +72,7 @@ export function ConversationSettings(props: Props) {
   const panel = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const close = useRef(props.onClose);
-  close.current = props.onClose;
+  close.current = () => closeSidePanel(panel.current, props.onClose);
   useEffect(() => {
     if (!active || !panel.current) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -119,9 +120,9 @@ export function ConversationSettings(props: Props) {
   const budget = props.profile.prompt_policy.workflow_budget;
   function patch(update: Partial<ReviewSessionDraft>) { props.onChange(update); }
   function patchPolicy(update: Partial<ReviewSessionDraft["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
-  return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+  return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) closeSidePanel(panel.current, props.onClose); }}>
     <div className="conversation-settings-dialog" role="dialog" aria-modal={active ? true : undefined} aria-labelledby={titleId} tabIndex={-1} ref={panel}>
-    <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={props.onClose}><X size={20} /></button></header><NotificationOutlet priority={50} active={active} />
+    <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={() => closeSidePanel(panel.current, props.onClose)}><X size={20} /></button></header><NotificationOutlet priority={50} active={active} />
     <nav className="conversation-settings-sections settings-mode" aria-label={t("Settings view")}>{(["basic", ...(props.editable ? ["advanced"] : []), "preview"] as const).map(value => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { if (value === "advanced" && tab === "filters") props.onTabChange("retrieval"); setMode(value as typeof mode); }}>{t(value === "basic" ? "Basic" : value === "advanced" ? "Advanced" : "Preview")}</button>)}</nav>
     {mode === "advanced" && <nav className="conversation-settings-sections" aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button key={id} type="button" aria-pressed={tab === id} title={id !== "filters" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => props.onTabChange(id)}>{t(label)}{id !== "filters" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>)}</nav>}
     <div className="conversation-settings-body">

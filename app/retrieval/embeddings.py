@@ -31,6 +31,7 @@ from app.observability.usage import (
     usage_record,
 )
 from app.openai_models import resolve_openai_model
+from app.release.ai_allowance import reserve_openai
 from app.retrieval.types import finite_float
 
 
@@ -295,7 +296,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         if client is None:
             from openai import AsyncOpenAI
 
-            client = cast(EmbeddingClient, AsyncOpenAI(api_key=api_key))
+            client = cast(EmbeddingClient, AsyncOpenAI(api_key=api_key, max_retries=0))
         self._client = client
 
     @property
@@ -333,6 +334,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 
     async def _embed_request(self, inputs: list[str]) -> list[list[float]]:
         """Issue one preflighted request and restore its exact input order."""
+        tokens = sum(validate_request(inputs, model=self.model))
+        await reserve_openai(Decimal(tokens) * self._input_price / Decimal(1_000_000))
         try:
             response = await self._client.embeddings.create(
                 input=inputs,

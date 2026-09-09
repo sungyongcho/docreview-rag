@@ -210,14 +210,16 @@ describe("BuildPipeline", () => {
 
     expect(document.querySelector(".pipeline-guidance")).toBeInTheDocument();
     expect(screen.getByText("Read-only portfolio · stored snapshots + live retrieval")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync selection" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: "Sync selection" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Embeddings" }));
-    expect(screen.getByRole("button", { name: "Backfill embeddings" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Next step" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Select Lexical index (BM25)" }));
-    expect(screen.getByRole("button", { name: "Recompute BM25" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByText("This control runs in DEV mode only.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Next step" })).toBeEnabled();
+    expect(document.querySelector(".stage-note")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));
+    expect(screen.getByText("Open Quality checks to explore datasets, try evaluation settings and compare published results. Running new evaluations is available in DEV mode.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Quality checks" })).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Open Quality checks" }));
     expect(handlers.onCompareSnapshots).toHaveBeenCalledTimes(1);
   });
 
@@ -297,7 +299,7 @@ it("links schema-blocked downstream selection back to step 2", () => {
   renderPipeline({ ...input, corpus: { ...input.corpus!, schema_status: "drifted" } }, {
     focusStage: "embeddings", databaseConnected: true, schemaStatus: "drifted", writable: true,
   });
-  expect(document.querySelector("#pipeline-execution > .helper")?.textContent).toContain("Parse & chunk");
+  expect(document.querySelector("#pipeline-execution > .pipeline-prerequisite")?.textContent).toContain("Parse & chunk");
   fireEvent.click(screen.getByRole("button", { name: "Go to prerequisite step" }));
   expect(document.querySelector("#pipeline-execution h2")?.textContent).toContain("2. Parse & chunk");
 });
@@ -523,4 +525,47 @@ it("groups only the left map while retaining the existing execution panel", () =
   expect([...map.querySelectorAll(".pipeline-node-number")].map((node) => node.textContent)).toEqual(["1-1", "1-2", "1-3", "1-4", "3-1", "3-2"]);
   fireEvent.click(within(map).getByRole("button", { name: "Select Answer model" }));
   expect(screen.getByRole("heading", { name: "2. Answer model" })).toBeVisible();
+});
+
+it.each(["embeddings", "lexical"] as const)("keeps %s teaching UI and locks only execution in PROD", (stageId) => {
+  const input = liveInput({ live: false, publicScope: { filings: 0, total: 18, chunks: 0, embedded: null, pending: null, status: "ready" } });
+  const handlers = renderPipeline(input, { focusStage: stageId });
+  const execution = screen.getByRole("region", { name: "Selected step execution" });
+  const scoped = within(execution);
+  expect(execution.querySelector(".stage-description")).toBeInTheDocument();
+  expect(execution.querySelector(".stage-numbers")).toBeInTheDocument();
+  expect(scoped.getByText("Why it matters")).toBeInTheDocument();
+  expect(scoped.queryByText("This control runs in DEV mode only.")).not.toBeInTheDocument();
+  expect(scoped.queryByText("Select at least one published filing to ask a question.")).not.toBeInTheDocument();
+  const reference = scoped.getByText("Implementation and terminal reference").closest("details")!;
+  fireEvent.click(scoped.getByText("Implementation and terminal reference"));
+  expect(within(reference).getByText("Mechanism")).toBeVisible();
+  expect(within(reference).getByText("Design trade-off")).toBeVisible();
+  expect(within(reference).getByText(stageId === "embeddings" ? "rag-corpus backfill_embeddings" : "rag-corpus rebuild_bm25")).toBeVisible();
+  const action = scoped.getByRole("button", { name: "Next step" });
+  expect(action).toBeEnabled();
+  fireEvent.click(action);
+  expect(scoped.getByRole("button", { name: /Continue/ })).toHaveTextContent("3");
+  expect(scoped.getByRole("heading", { name: stageId === "embeddings" ? "1-3. Embeddings" : "1-4. Lexical index (BM25)" })).toBeVisible();
+  fireEvent.click(scoped.getByRole("button", { name: /Continue/ }));
+  expect(scoped.getByRole("heading", { name: stageId === "embeddings" ? "1-4. Lexical index (BM25)" : "2. Answer model" })).toBeVisible();
+  expect(handlers.onBackfill).not.toHaveBeenCalled();
+  expect(handlers.onRebuildBm25).not.toHaveBeenCalled();
+
+});
+
+
+it("uses step-one scope as a read-only summary and navigates without parsing in PROD", () => {
+  const ask = vi.fn();
+  const handlers = renderPipeline(liveInput({ live: false }), { onAskScope: ask, sources: [], acquisition: acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]) });
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  const summary = screen.getByRole("region", { name: "Selected documents" });
+  expect(within(summary).getByRole("button", { name: /NVDA FY2024/ })).toBeEnabled();
+  expect(within(summary).getByRole("button", { name: /Remove/ })).toBeEnabled();
+  expect(summary).toHaveTextContent("FY2024");
+  fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+  expect(ask).not.toHaveBeenCalled();
+  expect(handlers.onIngestAll).not.toHaveBeenCalled();
+  expect(screen.getByRole("heading", { name: "1-3. Embeddings" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Next step" })).toBeEnabled();
 });

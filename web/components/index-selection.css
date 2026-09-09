@@ -26,3 +26,41 @@
 .index-repair-details { font-size: 11px; color: var(--muted); }
 .index-repair-details summary { cursor: pointer; padding: 3px 0; }
 .index-repair-details ul { margin: 5px 0; padding-left: 18px; overflow-wrap: anywhere; }
+
+.index-action-bar > .source-sync-actions { margin-left: auto; }
+
+.pipeline-public-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 16px; margin: 0 24px 16px; padding: 12px 0 4px; }
+.pipeline-public-actions .source-sync-actions { gap: 16px; }
+.pipeline-public-actions .button.primary { min-width: 112px; min-height: 40px; padding: 10px 18px; white-space: nowrap; }
+.pipeline-next { display: inline-flex; align-items: center; gap: 12px; }
+.pipeline-execution .stage-why { margin: 16px 0; }
+.pipeline-execution .stage-why summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: var(--muted); }
+.pipeline-execution .stage-why summary::after { content: "+"; margin-left: 4px; }
+.pipeline-execution .stage-why[open] summary::after { content: "−"; }
+.pipeline-execution .stage-why p { max-width: 68ch; margin: 10px 0 0 23px; line-height: 1.65; }
+.pipeline-execution .stage-note { max-width: 68ch; line-height: 1.65; }
+
+.pipeline-countdown-inline { margin-left: 10px; min-width: 1ch; font-variant-numeric: tabular-nums; }
+
+.pipeline-public-actions .button.pipeline-confirmed { color: var(--good); border-color: var(--good); background: color-mix(in srgb, var(--good) 14%, var(--surface)); }
+.pipeline-countdown-inline { position: relative; display: inline-grid; place-items: center; width: 28px; height: 28px; margin-left: 8px; }
+.pipeline-countdown-inline svg { position: absolute; inset: 0; width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 100; animation: pipeline-countdown-border 3s linear forwards; }
+@keyframes pipeline-countdown-border { to { stroke-dashoffset: 100; } }
+@media (prefers-reduced-motion: reduce) { .pipeline-countdown-inline svg { animation: none; } }
+
+.pipeline-execution .public-stage-why summary::after, .pipeline-execution .public-stage-why[open] summary::after { content: none; }
+.pipeline-execution .public-stage-why summary span { text-decoration: underline; text-underline-offset: 3px; }
+.pipeline-execution .public-stage-why summary::-webkit-details-marker { display: none; }
+
+.pipeline-prerequisite { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.pipeline-state-label { padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; white-space: nowrap; }
+.pipeline-scope-notice { display: flex; align-items: flex-start; gap: 10px; margin: 12px 24px; padding: 10px 12px; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, transparent); border-radius: 6px; }
+.pipeline-scope-notice > svg { flex: none; margin-top: 2px; color: var(--warn); }
+.pipeline-scope-notice > div { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 12px; line-height: 1.6; }
+.pipeline-scope-notice strong { color: var(--warn); font-weight: 500; }
+.pipeline-scope-notice span { color: var(--muted); }
+
+.pipeline-execution .index-action-bar { padding: 20px 0 12px; gap: 16px; margin-top: 16px; }
+.pipeline-execution .index-action-bar .button { min-height: 44px; padding: 10px 18px; font-size: 13px; line-height: 22px; }
+.pipeline-execution .index-action-bar .source-sync-actions { gap: 16px; }
+.pipeline-execution .pipeline-public-actions .button.primary { min-height: 44px; padding: 10px 18px; font-size: 13px; line-height: 22px; }

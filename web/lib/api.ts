@@ -75,6 +75,8 @@ async function request<T>(path: string, init?: PresentationInit): Promise<T> {
   }
   if (!response.ok) {
     const error = (payload.error ?? {}) as Record<string, unknown>;
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
     const details = Array.isArray(error.details) ? error.details.map(String) : [];
     const message = String(error.message ?? "The request failed.");
     throw new ApiError(
@@ -157,6 +159,8 @@ export async function streamReview(
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     const error = (payload.error ?? {}) as Record<string, unknown>;
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
     const details = Array.isArray(error.details)
       ? error.details.map((item) => {
           const detail = item as Record<string, unknown>;

@@ -45,7 +45,7 @@ export interface Pipeline {
 }
 
 export interface PipelineInput {
-  publicScope?: { filings: number; total: number; chunks: number; embedded: number | null; pending: number | null; status: "loading" | "ready" | "error" };
+  publicScope?: { confirmed?: boolean; filings: number; total: number; chunks: number; embedded: number | null; pending: number | null; status: "loading" | "ready" | "error" };
   live: boolean;
   healthKind: RuntimeHealthKind;
   /** A failed connection check is retrying while last-known readiness is retained. */
@@ -353,7 +353,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     else if (chunks === 0 && !publicReady) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
     else drafts.evaluate = { status: "action", statusDetail: succeeded ? "No results" : "Not run", numbers: readOnly ? ["Not measured yet."] : numbers, hint: succeeded ? "A job finished, but no evaluation results are available. Refresh results or run a quick evaluation to measure retrieval quality." : "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot." };
     drafts.evaluate.action = readOnly
-      ? { label: "Compare published snapshots", kind: "compare" }
+      ? { label: "Open Quality checks", kind: "compare" }
       : { label: "Run quick evaluation", kind: "evaluate" };
   }
 
@@ -401,13 +401,25 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     if (readOnly && input.publicScope && ["filings", "index", "embeddings", "lexical", "ask"].includes(id)) {
       const scope = input.publicScope;
       status = id === "ask" ? (scope.chunks > 0 && drafts.ask.status === "done" ? "done" : "blocked") : "readonly";
-      statusDetail = scope.status === "ready" ? "Published corpus" : scope.status === "error" ? "Published filings could not be loaded." : "Loading published filings…";
-      hint = scope.status === "ready" && !scope.filings ? "Select at least one published filing to ask a question." : "";
+      statusDetail = scope.status === "ready" ? scope.total === 0 ? "No published filings" : scope.filings === 0 ? "No filings in scope" : "Published corpus" : scope.status === "error" ? "Published filings could not be loaded." : "Loading published filings…";
+      hint = scope.status === "ready" && !scope.filings && id !== "embeddings" && id !== "lexical" ? "Select at least one published filing to ask a question." : "";
       numbers = scope.status !== "ready" ? [] : id === "filings" ? [`${n(scope.filings)} / ${n(scope.total)}`, "Published documents in scope"]
         : id === "index" ? [`${n(scope.chunks)}`, "Chunks in scope"]
         : id === "embeddings" ? scope.embedded === null ? ["Embedding coverage unknown"] : [`${n(scope.embedded)} embedded`, `${n(scope.pending ?? 0)} pending`]
         : id === "lexical" ? [bm25Ready ? "BM25 ready" : "BM25 not built", "Keyword statistics use the server corpus, grouped by language."]
         : [`${n(scope.chunks)}`, "Chunks in scope"];
+      if (scope.status === "ready" && scope.filings > 0) {
+        const prepared = id === "filings" || id === "index" && scope.chunks > 0 || id === "embeddings" && scope.embedded !== null && scope.embedded > 0 && scope.pending === 0 || id === "lexical" && bm25Ready || id === "ask" && scope.chunks > 0 && drafts.ask.status === "done";
+        status = prepared ? "done" : "blocked";
+        statusDetail = prepared ? "Ready" : id === "embeddings" ? "Embeddings required" : id === "lexical" ? "BM25 not built" : "Preparation required";
+        if (scope.confirmed === false && (id === "index" || id === "ask")) {
+          status = id === "index" ? "action" : "blocked";
+          statusDetail = "Scope confirmation needed";
+          hint = "Confirm your selection in step 1-2.";
+        }
+      } else if (scope.status === "ready") {
+        status = id === "filings" ? "action" : "blocked";
+      }
       if (id === "filings") action = { label: "Ask about this scope", kind: "ask" };
       if (scope.status !== "ready") { status = "unknown"; action = null; }
     }
@@ -425,7 +437,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       id,
       order: index + 1,
       title: copy.title,
-      description: readOnly && id === "filings" ? "Choose published filings to ask about. Downloading new filings runs in DEV mode." : copy.description,
+      description: readOnly && id === "filings" ? "Choose published filings to ask about." : readOnly && id === "index" ? "Inspect the precomputed text and table chunks for the scope selected in step 1-1. Selecting a scope does not reprocess documents." : readOnly && id === "embeddings" ? "Review the existing vectors for your selected scope. Confirming this step does not create embeddings." : readOnly && id === "lexical" ? "Review the existing BM25 keyword index. Statistics are grouped by language across the server corpus, not recalculated for your selection." : copy.description,
       why: readOnly && id === "filings" ? "The selected documents bound the evidence for your next question." : copy.why,
       status,
       statusDetail,

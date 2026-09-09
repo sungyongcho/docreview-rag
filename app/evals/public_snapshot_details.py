@@ -19,6 +19,8 @@ from app.api.public_snapshot_schemas import (
 from app.db.models import EvalResult, EvaluationSnapshot, GoldenRevision, SnapshotChunk
 from app.evals.admin import SUITES
 from app.evals.loader import GOLDEN_CASES, golden_payload_sha256
+from app.evals.regression import _comparable_config
+from app.evals.scoring import COVERAGE_THRESHOLD
 from app.evals.snapshots import SnapshotService, _golden_sha256
 from app.evals.types import GoldenCase
 
@@ -100,7 +102,17 @@ class PublicSnapshotDetails:
             if Path(result.raw_artifact_path).stat().st_size > MAX_ARTIFACT_BYTES:
                 raise _unavailable()
             artifact = self._snapshots._artifact(result.raw_artifact_path)
-            if artifact.get("suite") != result.suite or artifact.get("config") != result.config:
+            artifact_config = artifact.get("config")
+            if artifact_config != result.config and artifact.get("schema_version") == 1:
+                # Version-one files omit the scoring stamp added by persist_evaluation.
+                # Reconstruct only that documented stamp; all remaining fields must match.
+                metrics = artifact.get("metrics")
+                cutoff = metrics.get("k") if isinstance(metrics, dict) else None
+                if isinstance(artifact_config, dict) and type(cutoff) is int and cutoff > 0:
+                    artifact_config = _comparable_config(
+                        artifact_config, {"k": cutoff, "coverage_threshold": COVERAGE_THRESHOLD}
+                    )
+            if artifact.get("suite") != result.suite or artifact_config != result.config:
                 raise _unavailable()
             rows = artifact.get("cases")
             if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):

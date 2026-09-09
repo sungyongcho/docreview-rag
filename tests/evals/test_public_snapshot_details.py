@@ -216,3 +216,27 @@ def test_historical_source_bound_artifact_requires_exact_original_and_frozen_sou
         assert page.cases[0].answers[0].doc_id == "sec-filings-2019"
         assert page.golden_sha256 == digest
         assert page.cases[0].question == original[0]["question"]
+
+
+@pytest.mark.parametrize("tamper", [None, "cutoff", "threshold", "retrieval"])
+def test_version_one_scoring_stamp_matches_persisted_configuration(evidence, tamper):
+    """Accept the writer's scoring stamp while rejecting changed evaluation settings."""
+    artifact = json.loads(evidence.path.read_text())
+    artifact["schema_version"] = 1
+    artifact["metrics"] = {"k": 5}
+    evidence.result.config = {
+        **evidence.result.config,
+        "scoring": {"k": 5, "coverage_threshold": 0.5},
+    }
+    if tamper == "cutoff":
+        artifact["metrics"]["k"] = 10
+    elif tamper == "threshold":
+        evidence.result.config["scoring"]["coverage_threshold"] = 0.75
+    elif tamper == "retrieval":
+        artifact["config"]["retrieval_profile"]["k"] = 10
+    evidence.path.write_text(json.dumps(artifact))
+    if tamper:
+        with pytest.raises(ApiProblemError):
+            asyncio.run(evidence.service.dataset(1))
+    else:
+        assert asyncio.run(evidence.service.dataset(1)).total == 3

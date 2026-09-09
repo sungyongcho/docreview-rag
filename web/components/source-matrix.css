@@ -88,8 +88,8 @@
 .source-basket .source-matrix-row > .source-matrix-add { grid-column: 1 / -1; grid-row: 3; margin-top: 2px; padding-top: 8px; }
 
 .source-year-candidates { display: flex; flex-wrap: wrap; gap: 5px; }
-.source-year-candidates > button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 27px; padding: 4px 8px; border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); border-radius: 5px; background: transparent; color: var(--muted); font-size: 11px; }
-.source-year-candidates > button:hover { color: var(--text); border-style: solid; background: var(--surface-2); }
+.source-year-candidates > button, .source-year-candidates > .hover-bubble-wrap > button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 27px; padding: 4px 8px; border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); border-radius: 5px; background: transparent; color: var(--muted); font-size: 11px; }
+.source-year-candidates > button:hover, .source-year-candidates > .hover-bubble-wrap > button:hover { color: var(--text); border-style: solid; background: var(--surface-2); }
 .source-basket .source-selection-grid .source-matrix-year.missing.selected { color: light-dark(#96520e, #e9b976); border-color: color-mix(in srgb, #d69a48 55%, var(--border)); background: color-mix(in srgb, #d69a48 9%, var(--surface)); }
 .source-basket .source-matrix-year.missing.selected .year-missing-mark { color: inherit; }
 .source-year-pending { color: light-dark(#96520e, #e9b976); }

@@ -103,9 +103,9 @@ describe("Build workspace", () => {
     render(<Harness live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync selection" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: "Sync selection" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: "Parse & chunk selected sources" })).toBeNull();
   });
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
@@ -312,8 +312,8 @@ describe("Build workspace", () => {
     expect(screen.queryByText("Portfolio fixture")).not.toBeInTheDocument();
     expect(await screen.findByText("No portfolio filings have been published yet.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
-    expect(screen.getByRole("button", { name: "Compare published snapshots" })).toBeInTheDocument();
-    expect(screen.getAllByText("This control runs in DEV mode only.").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Open Quality checks" })).toBeInTheDocument();
+    expect(screen.getByText("Open Quality checks to explore datasets, try evaluation settings and compare published results. Running new evaluations is available in DEV mode.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
@@ -336,22 +336,31 @@ describe("Build workspace", () => {
 
     expect(screen.getByRole("button", { name: "Select Answer model" })).toHaveTextContent("Not configured");
     fireEvent.click(screen.getByRole("button", { name: "Select Answer model" }));
-    fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
-    expect(onRecheck).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Next step" })).toBeEnabled();
+    expect(onRecheck).not.toHaveBeenCalled();
   });
 
-  it("routes cross-workspace links through onNavigate", () => {
+  it("routes quality navigation and confirmed public questions through their handlers", () => {
     const onNavigate = vi.fn();
+    const onAskScope = vi.fn();
     const published = { ...CANNED_CORPUS.documents[0], chunk_count: 10, embedded_chunks: 10, embedding_status: "complete" as const, text_chunks: 10, table_chunks: 0, snapshot_count: 1 };
-    render(<Harness live={false} onNavigate={onNavigate} readiness={READY_RUNTIME} publishedCorpus={{ documents: [published], status: "ready", refresh: vi.fn() }} publicProfile={{ ...DEFAULT_SESSION_PROFILE, doc_ids: [published.doc_id] }} />);
+    render(<Harness live={false} onNavigate={onNavigate} onAskScope={onAskScope} readiness={READY_RUNTIME} publishedCorpus={{ documents: [published], status: "ready", refresh: vi.fn() }} publicProfile={{ ...DEFAULT_SESSION_PROFILE, doc_ids: [published.doc_id] }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));
-    expect(onNavigate).toHaveBeenCalledWith({ view: "measure", tab: "snapshots" });
-    // Select the Ask stage before using its navigation action.
-    fireEvent.click(screen.getByRole("button", { name: "Select Ask" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Ask a question" })[0]);
-    expect(onNavigate).toHaveBeenCalledWith({ view: "review" });
+    fireEvent.click(screen.getByRole("button", { name: "Open Quality checks" }));
+    expect(onNavigate).toHaveBeenCalledWith({ view: "measure", tab: "runs" });
+    // Confirm the public scope and acknowledge preparation before asking.
+    fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+    for (let step = 0; step < 2; step++) {
+      fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+    expect(screen.getByRole("button", { name: "Ask about this scope" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Ask about this scope" }));
+    expect(onAskScope).toHaveBeenCalledExactlyOnceWith({ registries: [], issuers: [], fiscal_years: [] });
   });
 
   it("queues a quick evaluation with a non-empty chunk target list", async () => {

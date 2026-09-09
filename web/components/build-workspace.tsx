@@ -1,6 +1,6 @@
 "use client";
 import { usePublishedCorpus, type PublishedCorpus } from "@/lib/use-published-corpus";
-import { selectedPublishedDocuments, publishedScopeStats } from "@/lib/published-scope";
+import { publicTargetIds, selectedPublishedDocuments, publishedScopeStats } from "@/lib/published-scope";
 import { DEFAULT_SESSION_PROFILE, type ReviewSessionDraft } from "@/lib/types";
 
 import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
@@ -62,7 +62,8 @@ export interface BuildWorkspaceProps {
   publishedCorpus?: PublishedCorpus;
   publicProfile?: ReviewSessionDraft;
   publicSelection?: string[];
-  onPublicSelectionChange?: (ids: string[]) => void;
+  publicTargets?: import("@/lib/types").PublicTarget[];
+  onPublicSelectionChange?: (ids: string[], targets?: import("@/lib/types").PublicTarget[]) => void;
   live: boolean;
   ready: boolean;
   readiness: Readiness | null;
@@ -90,6 +91,9 @@ export interface BuildWorkspaceProps {
   onLocalPrepared?: (local: ReviewEngineState) => void;
   onNavigate: (target: BuildNavigationTarget) => void;
   /** Read-only servers: scope the next question to the chosen published filings. */
+  publicProgress?: { candidates?: import("@/lib/types").PublicTarget[]; stage: string; checked: string[] };
+  onConfirmScope?: () => void;
+  onPublicProgressChange?: (progress: { stage: string; checked: string[] }) => void;
   onAskScope?: (filters: ScopeFilters) => void;
 }
 
@@ -116,16 +120,16 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSION_PROFILE, publicSelection, onPublicSelectionChange, live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onAskScope, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
+export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSION_PROFILE, publicSelection, publicTargets, publicProgress, onConfirmScope, onPublicProgressChange, onPublicSelectionChange, live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onAskScope, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
   const fallbackPublicCorpus = usePublishedCorpus(!live && !publishedCorpus);
   const publicCorpus = publishedCorpus ?? fallbackPublicCorpus;
-  const scopeStats = publishedScopeStats(publicCorpus.documents, publicProfile.doc_ids);
-  const publicDraft = acquisitionDraft(selectedPublishedDocuments(publicCorpus.documents, publicSelection).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year })));
+  const scopeStats = publishedScopeStats(publicCorpus.documents, publicTargetIds(publicCorpus.documents, publicTargets, publicSelection) ?? publicProfile.doc_ids);
+  const publicDraft = acquisitionDraft(publicTargets ?? selectedPublishedDocuments(publicCorpus.documents, publicSelection).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year })));
   /** Resolve selected pairs to exact published IDs; never update DEV acquisition storage. */
   function changePublicDraft(next: AcquisitionForm) {
     const pairs = acquisitionPairs(next);
-    onPublicSelectionChange?.(publicCorpus.documents.filter((doc) => pairs.some((pair) => pair.registry === doc.registry && pair.issuer === doc.issuer && pair.year === doc.fiscal_year)).map((doc) => doc.doc_id));
+    onPublicSelectionChange?.(publicCorpus.documents.filter((doc) => pairs.some((pair) => pair.registry === doc.registry && pair.issuer === doc.issuer && pair.year === doc.fiscal_year)).map((doc) => doc.doc_id), pairs);
   }
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
@@ -367,7 +371,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     readiness,
     corpus: live && adminLoaded ? status : null,
     manifests,
-    publicScope: live ? undefined : { ...scopeStats, status: publicCorpus.status },
+    publicScope: live ? undefined : { ...scopeStats, status: publicCorpus.status, confirmed: publicProgress?.checked.includes("index") ?? false },
     sourceSelection: selectedSourceState(corpus?.sources ?? [], live ? acquisition : publicDraft),
     sourceInventory: corpus?.sources,
     registryCounts,
@@ -375,7 +379,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
     evaluationResults,
     snapshots: snapshotCount,
     profile,
-  }), [live, healthKind, connectionPending, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile, publicCorpus.status, scopeStats.filings, scopeStats.total, scopeStats.chunks, scopeStats.embedded, scopeStats.pending]);
+  }), [publicProgress, publicTargets, publicSelection, live, healthKind, connectionPending, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile, publicCorpus.status, scopeStats.filings, scopeStats.total, scopeStats.chunks, scopeStats.embedded, scopeStats.pending]);
   /** Runtime flags for the strip: the administrator snapshot once loaded, otherwise `/ready`. */
   const runtimeCounts: CorpusCounts | null = !connectionConfirmed ? null : live && adminLoaded ? status : readiness?.corpus ?? null;
   const answerModelLabel = !connectionConfirmed || readiness === null
@@ -458,9 +462,12 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}
         onAsk={() => onNavigate({ view: "review" })}
         onAskScope={onAskScope}
+        publicProgress={publicProgress}
+        onConfirmScope={onConfirmScope}
+        onPublicProgressChange={onPublicProgressChange}
         onRecheck={onRecheck}
         onEvaluate={() => void runQuickEvaluation()}
-        onCompareSnapshots={() => onNavigate({ view: "measure", tab: "snapshots" })}
+        onCompareSnapshots={() => onNavigate({ view: "measure", tab: live ? "snapshots" : "runs" })}
         onOpenDocuments={() => onTabChange("documents")}
         onOpenJobs={() => onTabChange("jobs")}
         onOpenStatus={() => onNavigate({ view: "system", tab: "status" })}

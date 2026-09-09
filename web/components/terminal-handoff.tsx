@@ -1,4 +1,5 @@
 "use client";
+import { DevelopmentBadge } from "./development-badge";
 
 import { RefreshCw, LoaderCircle, CheckCircle2, Circle, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState } from "react";
@@ -10,7 +11,7 @@ export type { TerminalStep } from "@/lib/preparation-diagnostics";
 
 /** Present terminal prerequisites compactly beside the affected preparation step. */
 export function TerminalHandoff({ steps, onRefresh, blocking = true, diagnosis, onNavigate, technicalDetail, compact = false }: { compact?: boolean; steps: TerminalStep[]; onRefresh: () => unknown | Promise<unknown>; blocking?: boolean; diagnosis?: Diagnosis; technicalDetail?: string | null; onNavigate?: (target: NonNullable<Diagnosis["returnTo"]>) => void }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const tooltipId = useId();
   const [tooltip, setTooltip] = useState<"state" | "refresh" | null>(null);
   const [checking, setChecking] = useState(false);
@@ -47,7 +48,7 @@ export function TerminalHandoff({ steps, onRefresh, blocking = true, diagnosis, 
     {diagnosis && !compact && <p className="helper">{t(diagnosis.detail)}</p>}
     {technicalDetail && <details className="schema-technical-detail"><summary>{t("Schema technical details")}</summary><pre>{technicalDetail}</pre></details>}
     {steps.length > 0 && <details open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary>{t("Terminal instructions")}</summary>
+      <summary><span>{t("Terminal instructions")}</span><span className="terminal-reference-badge"><DevelopmentBadge locale={locale} compact /></span></summary>
       <p className="helper">{t("Run the command in this checkout, return to this step, then check the updated status.")}</p>
       {steps.map((step) => <div className={`terminal-handoff-step${step.danger ? " is-danger" : ""}`} key={step.command}>
         <p>{t(step.reason)}</p>

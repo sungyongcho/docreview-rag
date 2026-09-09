@@ -188,6 +188,14 @@ export type UsageModel = components["schemas"]["UsageModelResource"];
 
 export type ProviderUsage = components["schemas"]["UsageResponse"];
 
+/** Browser selection intent; resolved IDs are pinned once a target is published. */
+export interface PublicTarget {
+  registry: "sec" | "dart";
+  issuer: string;
+  year: number;
+  document_ids?: string[];
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -197,6 +205,8 @@ export interface Conversation {
   profile: ReviewSessionDraft | null;
   /** Browser-only exact public selection; absent means all, [] means explicitly empty. */
   publishedScope?: string[];
+  publishedTargets?: PublicTarget[];
+  pipelineDraft?: { candidates?: PublicTarget[]; targets: PublicTarget[]; stage: string; checked: string[] };
 }
 
 export type EvaluationPreparation = components["schemas"]["EvaluationPreparationResource"];
@@ -400,7 +410,7 @@ export interface ReleaseLimits {
   minute_reset_seconds: number;
   day_reset_seconds: number;
   daily_cost_reset_at_utc: string;
-  scope: "single_process";
+  scope: "single_process" | "shared_storage";
 }
 
 /** Session fields for choosing a preset: only Custom keeps an explicit retrieval profile. */

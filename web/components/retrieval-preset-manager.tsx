@@ -50,7 +50,7 @@ export function RetrievalPresetManager({ profile, onApply, canApply = true }: { 
   }
   const writeTitle = preview ? t(PREVIEW_PRESET_NOTICE) : pending ? t(PENDING_PRESET_NOTICE) : undefined;
   const row = (p: SavedPreset) => <PresetDetails key={p.id} label={p.builtin ? t(p.name) : p.name} summary={`${p.retrieval.strategy} · k ${p.retrieval.k} · ${t("Candidates")} ${p.retrieval.candidate_k} · ${p.retrieval.lexical_ranker ?? "—"}`} source={t(p.builtin ? "Built-in" : storageKind === "file" ? "File" : "Browser")}>
-    {p.description && <p>{p.description}</p>}<pre>{JSON.stringify(p.retrieval, null, 2)}</pre>
+    {p.description && <p>{p.description}</p>}<pre>{JSON.stringify(p.builtin ? { id: "", name: p.name, description: p.description ?? "", retrieval: p.retrieval } : p.retrieval, null, 2)}</pre>
     <div className="action-row">
       {!p.builtin && <button className="button" type="button" disabled={!onApply || !canApply || readOnly} title={!canApply ? t("Current server policy does not allow custom retrieval.") : undefined} onClick={() => onApply?.(structuredClone(p.retrieval))}>{t("Select for conversation")}</button>}
       <button className="button" type="button" disabled={readOnly || busy} title={writeTitle} onClick={() => edit(p, true)}>{t(p.builtin ? "Copy and edit" : "Copy preset")}</button>

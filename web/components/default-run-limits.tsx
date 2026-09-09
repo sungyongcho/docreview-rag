@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
-import { getOpenAILimits, resetOpenAILimits, saveOpenAILimits } from "@/lib/api";
-import type { OpenAICallLimits, Readiness } from "@/lib/types";
+import { getReleaseLimits, getOpenAILimits, resetOpenAILimits, saveOpenAILimits } from "@/lib/api";
+import type { OpenAICallLimits, Readiness, ReleaseLimits } from "@/lib/types";
 import { loadDefaultProfile, saveDefaultProfile } from "@/lib/storage";
 import { conversationSettingsError } from "@/lib/saved-presets";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { notificationErrorMessage } from "@/lib/notification-registry";
 import { LOCAL_CPU_STARTING_BUDGET, LOCAL_CPU_EVIDENCE_CHARS } from "@/lib/local-limit-suggestion";
+import "./public-default-limits.css";
 import { RunLimitFields } from "./run-limit-fields";
 
 /** Bold the .env keys and file paths inside translated guidance without changing the copy. */
@@ -81,5 +82,41 @@ export function DefaultRunLimits({ summary = false, onOpen, speed, readiness = n
         <p className="helper">{emphasizeEnvKeys(t(capsEditable ? "Working values for DEV only, saved on the server at data/local-settings/openai-limits.json. The web cannot exceed the ceiling: to raise it, edit DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env and restart with rag-dev down/up. Public PROD always uses the ceiling." : "These caps apply to each OpenAI call and come from .env on the server. They can be lowered only in a DEV build; raising them means editing .env and restarting the stack."))}</p>
       </div>}
     </>}
+  </section>;
+}
+
+
+/** Keep the DEV form layout while displaying only the server's immutable public policy. */
+export function PublicDefaultRunLimits() {
+  const { t, locale } = useI18n();
+  const [limits, setLimits] = useState<ReleaseLimits | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let current = true; setFailed(false); setLimits(null);
+    void getReleaseLimits().then(value => {
+      if (!value.prompt_policy || !value.per_call) throw new Error("Public policy unavailable");
+      if (current) setLimits(value);
+    }).catch(() => { if (current) setFailed(true); });
+    return () => { current = false; };
+  }, [revision]);
+  if (failed) return <section className="surface"><p>{t("Server execution limits could not be loaded. Browser defaults are not the applied policy.")}</p><button className="button" type="button" onClick={() => setRevision(value => value + 1)}>{t("Retry")}</button></section>;
+  if (!limits?.prompt_policy || !limits.per_call) return <p className="helper">{t("Loading server execution limits…")}</p>;
+  const policy = limits.prompt_policy; const caps = limits.per_call;
+  return <section className="surface default-run-limits public-default-limits"><h3>{t("New conversation defaults")}</h3>
+    <p className="helper">{t("These settings cannot be changed in the deployed service.")}</p>
+    <fieldset disabled>
+      <RunLimitFields budget={policy.workflow_budget} evidenceChars={policy.max_context_chars} onChange={() => {}} onEvidenceChange={() => {}} />
+      <div className="run-limit-actions"><button type="button" className="button primary">{t("Save default limits")}</button><button type="button" className="button">{t("Restore limit defaults")}</button></div>
+      <div className="openai-call-caps"><h3>{t("OpenAI per-call caps")}</h3>
+        <dl className="request-facts"><div><dt>{t("Ceiling input tokens")}</dt><dd>{caps.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Ceiling output tokens")}</dt><dd>{caps.max_output_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Ceiling cost cap")}</dt><dd>${caps.max_cost_usd}</dd></div><div><dt>{t("Cap source")}</dt><dd>{t("Server policy")}</dd></div></dl>
+        <div className="run-limit-grid">
+          <label><span>{t("Per-call input tokens")}</span><span className="run-limit-input"><input type="number" aria-label={t("Per-call input tokens")} value={caps.max_input_tokens} readOnly /><span>{t("tokens")}</span></span></label>
+          <label><span>{t("Per-call output tokens")}</span><span className="run-limit-input"><input type="number" aria-label={t("Per-call output tokens")} value={caps.max_output_tokens} readOnly /><span>{t("tokens")}</span></span></label>
+          <label><span>{t("Per-call cost cap")}</span><span className="run-limit-input"><input type="number" aria-label={t("Per-call cost cap")} value={caps.max_cost_usd} readOnly /><span>USD</span></span></label>
+        </div>
+        <div className="run-limit-actions"><button type="button" className="button primary">{t("Save per-call caps")}</button><button type="button" className="button">{t("Reset to ceiling")}</button></div>
+      </div>
+    </fieldset>
   </section>;
 }

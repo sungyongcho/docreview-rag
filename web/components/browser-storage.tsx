@@ -1,4 +1,6 @@
 "use client";
+import { TriangleAlert } from "lucide-react";
+import { HoverBubble } from "./hover-bubble";
 import { useConfirmation } from "./use-confirmation";
 
 import { useEffect, useRef, useState } from "react";
@@ -42,9 +44,9 @@ export function BrowserStorageSupport({ enabled }: { enabled: boolean }) {
 function sizeLabel(bytes: number): string { return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1024 / 1024).toFixed(2)} MiB`; }
 
 /** Export exact local payloads and confirm a fully validated import before overwriting. */
-export function BrowserStorageSettings({ disabled = false, onShowNotice }: { disabled?: boolean; onShowNotice?: () => void }) {
+export function BrowserStorageSettings({ disabled = false }: { disabled?: boolean }) {
   const { confirm, confirmationDialog } = useConfirmation();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const input = useRef<HTMLInputElement>(null);
   const [revision, setRevision] = useState(0);
@@ -73,7 +75,7 @@ export function BrowserStorageSettings({ disabled = false, onShowNotice }: { dis
     finally { setWorking(false); if (input.current) input.current.value = ""; }
   }
   return <section className="browser-storage-settings" aria-label={t("Browser storage")} data-revision={revision}>{confirmationDialog}
-    <header><h3>{t("Browser storage")}</h3><button className="icon-button" type="button" aria-label={t("Show browser storage notice")} onClick={() => { onShowNotice?.(); window.dispatchEvent(new Event(OPEN_NOTICE)); }}>⚠️</button></header>
+    <header><h3>{t("Browser storage")}</h3><HoverBubble pinnable showClose={false} width={360} align="end" placement="below" label={t("Browser storage")} bubble={<><strong>{t("Settings and conversations are saved only in this browser")}</strong><p>{t("They are not synced and can be removed when you clear browser data.")}</p><a className="inline-link" href={`${DOCUMENTATION_BASE}/docs/${locale}/settings/#browser-storage`} target="_blank" rel="noreferrer">{t("Learn more")}</a></>}><button className="icon-button browser-storage-info" type="button" aria-label={t("Show browser storage notice")}><TriangleAlert size={18} aria-hidden="true" /></button></HoverBubble></header>
     <p>{t("Estimated browser storage: {size}", { size: sizeLabel(total) })}</p>
     {total >= STORAGE_WARNING_BYTES && <p role="status">{t("Browser storage is nearing a common limit. Export a backup; the actual quota depends on your browser.")}</p>}
     <details><summary>{t("Storage by key")}</summary><dl>{rows.map(row => <div key={row.key}><dt><code>{row.key}</code></dt><dd>{sizeLabel(row.bytes)}</dd></div>)}</dl></details>

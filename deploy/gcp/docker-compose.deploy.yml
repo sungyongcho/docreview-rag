@@ -51,6 +51,7 @@ services:
     volumes:
       - /var/lib/docreview/corpus:/app/data/corpus
       - /var/lib/docreview/eval-runs:/app/data/eval_runs
+      - /var/lib/docreview/runtime:/app/data/runtime
       # data/golden, data/presets and data/local-settings are intentionally not
       # mounted: writes to them are DEV-only, so the image's built-in copies suffice.
     ports:

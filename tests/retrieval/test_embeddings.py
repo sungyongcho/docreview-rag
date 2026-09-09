@@ -236,7 +236,8 @@ created = []
 class SDKClient:
     embeddings = Resource()
 
-    def __init__(self, *, api_key):
+    def __init__(self, *, api_key, max_retries):
+        assert max_retries == 0
         created.append(api_key)
 
 fake_openai = ModuleType("openai")

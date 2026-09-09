@@ -300,3 +300,11 @@ it("keeps selected source filters distinct from the global corpus count and unco
     expect(banner?.kind).toBe("updating");
     expect(banner?.action).toBeUndefined();
  });
+
+
+it("does not show global green readiness when the public catalog or scope is empty", () => {
+  renderToolbar({ live: false, publicScopeStatus: "No published filings" });
+  const status = screen.getByText("No published filings");
+  expect(status).not.toHaveClass("confirmed");
+  expect(screen.queryByText("Hybrid search ready")).not.toBeInTheDocument();
+});

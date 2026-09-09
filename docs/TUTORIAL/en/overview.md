@@ -130,3 +130,9 @@ Locale/theme parameters, the application base path and tutorial links remain int
 ## Browser storage {#browser-storage}
 
 PROD keeps conversations, defaults, filters, presets, language/theme and help preferences in this browser and origin only. They are not synced and may disappear when site data or a private session is cleared. Use **Settings → Data & help → Browser storage** to inspect usage and export/import a backup before clearing. The first-visit ⚠️ notice links to the [complete inventory, recovery and clearing guide](settings.md#browser-storage). DEV and its memory-only production preview retain their existing behavior.
+
+## Public OpenAI allowance
+
+Limits & availability shows a conservative shared reservation allowance, not an invoice balance. Answer calls and query embeddings reserve capacity immediately before the OpenAI client call; SDK automatic retries are disabled so retries cannot escape the guard. Keyword-only retrieval and saved-result reads do not consume this allowance. IP windows recover after 60 seconds and 24 hours; the shared budget resets at UTC midnight.
+
+The ledger is `data/runtime/public-ai-limits.sqlite3`, persisted by the runtime volume. It survives application restarts and is atomic across processes on the same host and volume. It is not a multi-host distributed limiter. Preserve this volume across deployment; losing it loses reservation history. The first installation starts a new ledger and does not reconstruct earlier in-memory usage. The public dashboard displays actual server state only. Published price policy remains server-owned; the dashboard does not fetch account billing credentials or display dollars.

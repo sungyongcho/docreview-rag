@@ -1,6 +1,7 @@
 "use client";
+import { applyProdPolicy, newProdProfile } from "@/lib/prod-profile";
 import { usePublishedCorpus } from "@/lib/use-published-corpus";
-import { effectivePublishedProfile } from "@/lib/published-scope";
+import { effectivePublishedProfile, publicTargetIds, pinPublicTargets, createPublicTargets } from "@/lib/published-scope";
 import { HoverBubble } from "./hover-bubble";
 import { useConfirmation } from "./use-confirmation";
 import { SearchUpdateStatus } from "./search-update-status";
@@ -17,6 +18,7 @@ import { useI18n } from "@/lib/i18n";
 
 import { conversationSettingsError } from "@/lib/saved-presets";
 import { configurePresetStorage } from "@/lib/preset-storage";
+import { ProfileCompatibilityNotice } from "./profile-compatibility-notice";
 import { SlowCpuNotice } from "./slow-cpu-notice";
 import { ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
@@ -274,7 +276,11 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
         initialized.current = true;
         const saved = loadConversations();
         const restored = restoreInterruptedConversations(saved, t);
-        const initial = restored.length ? restored : [newConversation(value.environment === "prod" && !publicPreview || adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : DEFAULT_SESSION_PROFILE)];
+        const initial = restored.length ? restored : [newConversation(!publicPreview && adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : newProdProfile())];
+        if (!restored.length && (value.environment === "prod" || publicPreview)) {
+          initial[0].publishedTargets = ["AMD", "NVDA"].flatMap(issuer => [2019, 2020, 2021, 2022, 2023, 2024].map(year => ({ registry: "sec" as const, issuer, year })));
+          saveConversations(initial);
+        }
         setConversations(saved.some((conversation) => conversation.messages.some((message) => message.pending)) ? saveConversations(initial) : initial);
         const remembered = initial.find(item => item.id === loadActiveConversation()) ?? initial[0];
         const target = parseNavigationUrl(window.location.href, initial.map((item) => item.id), remembered.id);
@@ -338,29 +344,64 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     if (element && followReview.current) element.scrollTop = element.scrollHeight;
   }, [active?.messages, active?.id, view]);
 
+  const [publicPolicy, setPublicPolicy] = useState<ReviewSessionDraft["prompt_policy"] | null>(null);
+  const [publicPolicyFailed, setPublicPolicyFailed] = useState(false);
+  const [publicPolicyRevision, setPublicPolicyRevision] = useState(0);
+  useEffect(() => {
+    if (adminLive || !permissions) return;
+    let current = true;
+    setPublicPolicy(null); setPublicPolicyFailed(false);
+    void getReleaseLimits().then(limits => {
+      if (!limits.prompt_policy?.workflow_budget) throw new Error("Public execution policy unavailable");
+      if (current) setPublicPolicy(limits.prompt_policy);
+    }).catch(() => { if (current) setPublicPolicyFailed(true); });
+    return () => { current = false; };
+  }, [adminLive, permissions?.environment, publicPolicyRevision]);
+
   const storedSessionProfile = active?.profile ?? profile;
   const publicCorpus = usePublishedCorpus(!adminLive);
-  const activeSessionProfile = adminLive ? storedSessionProfile : effectivePublishedProfile(storedSessionProfile, publicCorpus.documents, active?.publishedScope);
+  const publicIds = publicTargetIds(publicCorpus.documents, active?.publishedTargets, active?.publishedScope);
+  const activeSessionProfile = adminLive ? storedSessionProfile : effectivePublishedProfile(applyProdPolicy(storedSessionProfile, publicPolicy ?? newProdProfile().prompt_policy), publicCorpus.documents, publicIds);
+  useEffect(() => {
+    if (adminLive || publicCorpus.status !== "ready" || !active?.publishedTargets) return;
+    const pinned = pinPublicTargets(publicCorpus.documents, active.publishedTargets);
+    if (pinned === active.publishedTargets) return;
+    setConversations((current) => saveConversations(current.map((conversation) => conversation.id === active.id && conversation.publishedTargets === active.publishedTargets ? { ...conversation, publishedTargets: pinned } : conversation)));
+  }, [adminLive, publicCorpus.status, publicCorpus.documents, active?.id, active?.publishedTargets]);
   const publicScopeBlocked = !adminLive && (publicCorpus.status !== "ready" || activeSessionProfile.doc_ids.length === 0);
-  const unavailableScope = !adminLive && publicCorpus.status === "ready" && active?.publishedScope?.some((id) => !publicCorpus.documents.some((doc) => doc.doc_id === id));
+  const unavailableScope = !adminLive && publicCorpus.status === "ready" && publicIds?.some((id) => !publicCorpus.documents.some((doc) => doc.doc_id === id));
 
   /** Update only this conversation's public selection, preserving messages and DEV drafts. */
-  function changePublishedScope(ids: string[]) {
+  function changePublishedScope(ids: string[], targets?: import("@/lib/types").PublicTarget[]) {
     const targetId = active?.id;
     if (!targetId) return;
     const reset = { doc_ids: [], registries: [], issuers: [], fiscal_years: [] };
     setConversations((current) => saveConversations(current.map((conversation) => conversation.id === targetId
-      ? { ...conversation, publishedScope: [...new Set(ids)], profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
+      ? { ...conversation, publishedScope: undefined, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
       : conversation)));
   }
+  /** Keep pipeline experiments separate from the committed search scope. */
+  function updatePipelineDraft(targets?: import("@/lib/types").PublicTarget[], progress?: { stage: string; checked: string[] }) {
+    if (!active) return;
+    setConversations(current => saveConversations(current.map(conversation => conversation.id !== active.id ? conversation : {
+      ...conversation,
+      pipelineDraft: {
+        targets: targets ?? conversation.pipelineDraft?.targets ?? conversation.publishedTargets ?? createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter(doc => publicIds?.includes(doc.doc_id) ?? true).map(doc => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))),
+        candidates: [...new Map([...(conversation.pipelineDraft?.candidates ?? conversation.pipelineDraft?.targets ?? conversation.publishedTargets ?? []), ...(targets ?? [])].map(target => [`${target.registry}:${target.issuer}:${target.year}`, target])).values()],
+        stage: targets ? conversation.pipelineDraft?.stage ?? "filings" : progress?.stage ?? "filings",
+        checked: targets ? (conversation.pipelineDraft?.checked ?? []).filter(step => step !== "index" && (step !== "filings" || conversation.pipelineDraft?.stage === "index")) : progress?.checked ?? [],
+      },
+    })));
+  }
+
   const latestEvidenceId = active?.messages.filter((message) => message.evidence?.length).at(-1)?.id ?? null;
   const banner = composerBanner({ readiness: runtimeHealth.readiness, live: adminLive, profile: activeSessionProfile, resetAt, jobs: operatorJobs.board.jobs });
-  const compatibilityIssue = profileCompatibilityIssue(activeSessionProfile, permissions);
+  const compatibilityIssue = adminLive ? profileCompatibilityIssue(activeSessionProfile, permissions) : null;
   const localIssue = localAllowed ? localModelIssue(activeSessionProfile, runtimeHealth.readiness) : null;
   const localModel = selectedLocalModel(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local);
   const localCpuSpeed = localAllowed && !localIssue && !compatibilityIssue ? localCpuWarning(activeSessionProfile, runtimeHealth.readiness?.review_engines?.local) : null;
   const settingsValidationError = conversationSettingsError(activeSessionProfile);
-  const sendBlocked = publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
+  const sendBlocked = (!adminLive && !publicPolicy) || publicScopeBlocked || settingsValidationError !== null || !conversationInputsValid || banner?.kind === "updating" || banner?.kind === "empty" || banner?.kind === "preparation" || localIssue !== null || compatibilityIssue !== null;
 
   useEffect(() => {
     if (!localAllowed || compatibilityIssue || !active || activeSessionProfile.local_model || !localModel) return;
@@ -587,7 +628,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   function createReview(confirmed = false) {
     if (!confirmed && view === "measure" && unsavedGolden && goldenLeaveGuard.current) { goldenLeaveGuard.current(() => createReview(true)); return; }
     const reusable = [active, ...conversations].find(item => item && item.messages.length === 0 && !profileCompatibilityIssue(item.profile ?? DEFAULT_SESSION_PROFILE, permissions));
-    const conversation = reusable ?? newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
+    const conversation = reusable ?? newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined));
     if (reusable && activeId === reusable.id && view === "review") return;
     if (!reusable) persist([conversation, ...conversations]);
     setActiveId(conversation.id);
@@ -598,14 +639,14 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
   function removeReview(id: string) {
     if (activeReview?.conversationId === id) reviewAbort.current?.abort();
     const remaining = conversations.filter((conversation) => conversation.id !== id);
-    const next = remaining.length ? remaining : [newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE)];
+    const next = remaining.length ? remaining : [newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined))];
     persist(next);
     if (activeId === id) setActiveId(next[0].id);
   }
 
   function clearReviews() {
     reviewAbort.current?.abort();
-    const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : DEFAULT_SESSION_PROFILE);
+    const conversation = newConversation(adminLive && permissions?.environment === "dev" ? undefined : newProdProfile(publicPolicy ?? undefined));
     persist([conversation]);
     setActiveId(conversation.id);
   }
@@ -743,7 +784,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       let evidence = preparedEvidence;
       // The provider gate and the daily cost limiter both reject before retrieval runs,
       // so fetch the evidence separately for the evidence-only reply.
-      if (reason instanceof ApiError && ["provider_unavailable", "daily_cost_limit"].includes(reason.code) && !evidence.length) {
+      if (reason instanceof ApiError && reason.code === "provider_unavailable" && !evidence.length) {
         try {
           const retrieved = await retrieveEvidence(question, selectedProfile);
           evidence = retrieved.candidates.length ? retrieved.candidates : retrieved.results;
@@ -756,7 +797,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       const message =
         controller.signal.aborted ? t("Request cancelled") :
         reason instanceof ApiError && reason.code === "daily_cost_limit"
-          ? "The daily answer budget is exhausted. Retrieved evidence is shown without an LLM answer."
+          ? notificationErrorMessage(reason)
           : reason instanceof ApiError && reason.code === "provider_unavailable" && evidence.length
             ? "No answer model is configured. Retrieved filing evidence is shown below without a generated answer. See Build › step 6."
           : reason instanceof Error
@@ -801,7 +842,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
     setProfile((current) => ({ ...current, ...update }));
     if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
-        ? { ...conversation, ...(dimensionsChanged ? { publishedScope: selection } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
+        ? { ...conversation, ...(dimensionsChanged ? { publishedScope: undefined, publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
         : conversation,
     )));
   }
@@ -863,7 +904,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
       // Reuse the context that produced this candidate snapshot, excluding its question and later turns.
       const messageIndex = active.messages.findIndex((item) => item.id === message.id);
       const questionIndex = active.messages.slice(0, Math.max(0, messageIndex)).findLastIndex((item) => item.role === "user" && item.text === message.question);
-      const historyTurns = (active.profile ?? profile).prompt_policy.history_turns;
+      const historyTurns = activeSessionProfile.prompt_policy.history_turns;
       const originalHistory = active.messages.slice(0, Math.max(0, questionIndex))
         .filter((item) => !item.pending && item.text.trim() && (item.role === "user" || item.role === "assistant"))
         .map((item) => ({ role: item.role, text: item.text }));
@@ -1117,6 +1158,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             {localCpuSpeed !== null && !publicPreview && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} />}
             {conversationTab && <ConversationSettings speed={localCpuSpeed} query={query} onManagePresets={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }} key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
             <ComposerToolbar
+              publicScopeStatus={adminLive ? null : publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No published filings" : activeSessionProfile.doc_ids.length === 0 ? "No filings in scope" : null}
               query={query}
               engineControls={localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
               settingsOpen={conversationTab !== null}
@@ -1133,13 +1175,14 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
             />
 
             {!adminLive && <p className="helper" role="status">{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : publicScopeBlocked ? "Select at least one published filing to ask a question." : "Questions use the selected published filings.")}{unavailableScope && <> {t("Some saved filings are no longer published. Review your selection.")}</>}{publicCorpus.status === "error" && <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Retry")}</button>}</p>}
+            {permissions && compatibilityIssue && <ProfileCompatibilityNotice key={`${activeId}:${compatibilityIssue}`} message={compatibilityIssue} conversationId={activeId} />}
+            {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={() => setPublicPolicyRevision(value => value + 1)}>{t("Retry")}</button>}</p>}
             <label className="composer">
               <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
 
             {settingsValidationError && <p role="alert" className="notice error">{t(settingsValidationError)} <button type="button" className="inline-link" onClick={() => openConversationSettings("retrieval")}>{t("Open settings")}</button></p>}
-            {compatibilityIssue && <p className="notice error" role="alert">{t(compatibilityIssue)}</p>}
             {localIssue && <p className="helper" role="status">{t(localIssue)} <button className="inline-link" type="button" onClick={() => openSettings("local")}>{t("Open Local LLM settings")}</button></p>}
             {banner
               ? <ComposerBanner banner={banner} onOpenBuild={() => navigate({ view: "build", tab: "pipeline", stage: banner.step })} onOpenAnswerModel={() => navigate({ view: "build", tab: "pipeline", stage: 6 })} />
@@ -1147,7 +1190,7 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           </div>
         </RetainedPanel>
 
-        <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace
+        <RetainedPanel active={view === "build"} className="retained-workspace" workspace="build"><BuildWorkspace key={active?.id}
           onLocalPrepared={runtimeHealth.refreshLocal}
           localModel={activeSessionProfile.local_model}
           focusStep={pendingStage}
@@ -1155,9 +1198,13 @@ function ServiceSession({ publicPreview = false, sessionActive = true, onPreview
           live={adminBuild && permissions?.can_build_snapshot === true}
           publishedCorpus={publicCorpus}
           publicProfile={activeSessionProfile}
-          publicSelection={active?.publishedScope ?? effectivePublishedProfile({ ...storedSessionProfile, corpus_scope: "auto" }, publicCorpus.documents, undefined).doc_ids}
-          onPublicSelectionChange={changePublishedScope}
-          onAskScope={() => { if (!publicScopeBlocked) navigate({ view: "review" }); }}
+          publicTargets={active?.pipelineDraft?.targets ?? active?.publishedTargets}
+          publicProgress={active?.pipelineDraft}
+          onPublicProgressChange={progress => updatePipelineDraft(undefined, progress)}
+          publicSelection={publicIds ?? effectivePublishedProfile({ ...storedSessionProfile, corpus_scope: "auto" }, publicCorpus.documents, undefined).doc_ids}
+          onPublicSelectionChange={(_ids, targets) => updatePipelineDraft(targets ?? [])}
+          onConfirmScope={() => { if (active?.pipelineDraft) changePublishedScope([], active.pipelineDraft.targets); }}
+          onAskScope={() => navigate({ view: "review" })}
           ready={runtimeHealth.kind === "healthy"}
           readiness={runtimeHealth.readiness}
           healthKind={runtimeHealth.kind}
@@ -1290,7 +1337,7 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
       <div className="message-role">{message.role === "user" ? t("You") : t("DocReview RAG")}</div>
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
-        {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} />}
+        {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} catalogMode={catalogMode} />}
         {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.scopeFailure ? t("Query scope metadata is unavailable.") : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
         {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
         {message.execution && <div className="review-execution-wrap"><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps showDetailsAction={false} catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{onOpenDetails && <div className="review-stage-actions"><button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails()}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button></div>}</div>}

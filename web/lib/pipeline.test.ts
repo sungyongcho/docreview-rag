@@ -599,7 +599,7 @@ describe("derivePipeline", () => {
     expect(stage(pipeline, "ask").status).toBe("done");
 
     const evaluate = stage(pipeline, "evaluate");
-    expect(evaluate.action).toEqual({ label: "Compare published snapshots", kind: "compare" });
+    expect(evaluate.action).toEqual({ label: "Open Quality checks", kind: "compare" });
     // No published snapshot yet, so the read-only card keeps the unmeasured numbers line.
     expect(evaluate.numbers).toEqual(["Not measured yet."]);
 
@@ -637,7 +637,7 @@ describe("derivePipeline", () => {
     expect(evaluate.status).toBe("readonly");
     expect(evaluate.statusDetail).toBe("stored");
     expect(evaluate.numbers).toEqual(["2 published snapshots"]);
-    expect(evaluate.action).toEqual({ label: "Compare published snapshots", kind: "compare" });
+    expect(evaluate.action).toEqual({ label: "Open Quality checks", kind: "compare" });
 
     expect(stage(pipeline, "ask").status).toBe("done");
     expect(stage(pipeline, "answer_model").status).toBe("done");
@@ -924,4 +924,15 @@ it("uses actual public selection statistics and never claims an empty scope is r
   const failed = derivePipeline({ ...input, publicScope: { ...input.publicScope!, status: "error" } });
   expect(failed.stages.find((stage) => stage.id === "index")?.numbers).toEqual([]);
   expect(failed.corpusReady).toBe(false);
+});
+
+it("uses DEV status colors for prepared public stages and scope confirmation", () => {
+  const scope = { status: "ready" as const, filings: 18, total: 18, chunks: 100, embedded: 100, pending: 0, confirmed: false };
+  const ready = derivePipeline(liveInput({ live: false, publicScope: scope, corpus: { ...liveInput().corpus!, bm25_ready: true } }));
+  expect(ready.stages.find(stage => stage.id === "filings")?.status).toBe("done");
+  expect(ready.stages.find(stage => stage.id === "index")?.status).toBe("action");
+  expect(ready.stages.find(stage => stage.id === "embeddings")?.status).toBe("done");
+  expect(ready.stages.find(stage => stage.id === "lexical")?.status).toBe("done");
+  const confirmed = derivePipeline(liveInput({ live: false, publicScope: { ...scope, confirmed: true } }));
+  expect(confirmed.stages.find(stage => stage.id === "index")?.status).toBe("done");
 });

@@ -15,6 +15,8 @@ import { retrievalReadiness } from "@/lib/pipeline";
 import type { OperatorJob } from "@/lib/types";
 
 export interface ComposerToolbarProps {
+  /** A public catalog/scope blocker takes precedence over global index readiness. */
+  publicScopeStatus?: string | null;
   engineControls?: ReactNode;
   query?: string;
   settingsOpen?: boolean;
@@ -168,14 +170,14 @@ export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: Compo
   );
 }
 
-export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef }: ComposerToolbarProps) {
+export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef }: ComposerToolbarProps) {
   const { t, locale } = useI18n();
   const filters = filterCount(profile);
   const preset = presetDescription(profile, profile.retrieval_preset);
   const effective = resolvedRetrievalProfile(profile);
   const corpusLabel = readinessChipLabel(readiness, live);
   const corpusCount = live && corpusLabel.startsWith("Corpus total · ") ? readiness?.corpus.documents : undefined;
-  const readinessStatus = readinessStatusLabel(readiness);
+  const readinessStatus = !live && publicScopeStatus ? publicScopeStatus : readinessStatusLabel(readiness);
   // A public surface has one answer model; show it with the chat allowances where DEV shows the engine picker.
   const publicModel = !live && !engineControls ? readiness?.active_review_model ?? null : null;
   const [limits, setLimits] = useState<ReleaseLimits | null>(null);

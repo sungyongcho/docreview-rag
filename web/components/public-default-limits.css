@@ -1,0 +1,6 @@
+.public-default-limits { display: block; }
+.public-default-limits fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.public-default-limits fieldset input:disabled, .public-default-limits fieldset select:disabled, .public-default-limits fieldset button:disabled { opacity: .55; color: var(--muted); cursor: not-allowed; }
+.public-default-limits .run-limit-actions { margin-top: 24px; }
+.public-default-limits .openai-call-caps { margin-top: 32px; }
+.public-default-limits .run-limit-help { display: none; }

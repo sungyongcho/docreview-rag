@@ -2,7 +2,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
+import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
 import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
@@ -93,7 +93,7 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
     if (url.endsWith("/health")) payload = { status: "ok" };
     else if (url.endsWith("/ready")) payload = await ready();
     else if (url.endsWith("/capabilities")) payload = { environment: "dev", can_configure_local_llm: true, can_edit_prompt_policy: true, can_edit_run_limits: true, can_edit_golden: true, can_build_snapshot: true, can_run_evaluation: true, can_change_custom_retrieval: true, can_query_snapshot: true, can_use_operations: true, can_compare_published_snapshots: true };
-    else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
+    else if (url.endsWith("/limits")) payload = { prompt_policy: structuredClone(DEFAULT_SESSION_PROFILE.prompt_policy), daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
     else if (url.endsWith("/snapshots")) payload = url.includes("/admin/") ? [] : { snapshots: [] };
     else if (url.endsWith("/admin/jobs")) payload = { jobs: [], active_count: 0, queued_count: 0 };
     else if (url.endsWith("/admin/evaluations/runs")) payload = { jobs: [] };
@@ -135,7 +135,8 @@ function noteTargets(seen: Set<string>) {
 }
 
 /** Public-build API stub: runtime endpoints plus the public `/snapshots` list; everything else is `{}`. */
-function stubPublicApi() {
+function stubPublicApi(firstVisit = false) {
+  if (!firstVisit && !loadConversations().length) saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
   configureBrowserStorage("prod");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -152,7 +153,7 @@ function stubPublicApi() {
       can_build_snapshot: false, can_run_evaluation: false, can_change_custom_retrieval: false,
       can_query_snapshot: false, can_use_operations: false, can_compare_published_snapshots: true,
     };
-    else if (url.endsWith("/limits")) payload = {
+    else if (url.endsWith("/limits")) payload = { prompt_policy: structuredClone(DEFAULT_SESSION_PROFILE.prompt_policy),
       per_minute: 5, per_day: 25, remaining_minute: 5, remaining_day: 25, max_input_tokens: 12000,
       max_output_tokens: 600, max_cost_usd: "0.04", daily_cost_usd: "1.00", remaining_daily_cost_usd: "1.00",
       retry_after_seconds: 0, minute_reset_seconds: 0, day_reset_seconds: 0,
@@ -167,51 +168,31 @@ function stubPublicApi() {
   return fetchMock;
 }
 
-it("keeps restored development settings intact in prod, blocks both review paths, and creates safe new conversations", async () => {
-  cleanup();
-  window.localStorage.clear();
-  window.localStorage.setItem(ONBOARDING_KEY, "done");
-  vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
-  vi.stubEnv("NEXT_PUBLIC_OPERATOR_BASE_URL", OPERATOR_URL);
-  vi.stubEnv("NEXT_PUBLIC_OPERATOR_TOKEN", "test-token");
-  const original = { ...DEFAULT_SESSION_PROFILE, engine: "local" as const, local_model: "saved-model", prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, additional_instructions: "Saved experiment" } };
-  saveDefaultProfile(original);
-  saveConversations([{ id: "saved-dev", title: "Saved dev review", createdAt: "2026-09-04", updatedAt: "2026-09-04", profile: original, messages: [{ id: "evidence", role: "assistant", text: "Prior evidence", question: "Saved question", candidateToken: "saved-token", pinnedChunkIds: [1], evidence: [{ chunk_id: 1, doc_id: "doc", item: "7", kind: "text", citation: "c1", start_char: 0, end_char: 1, source_sha256: "abc", body: "Evidence", context_header: "7", score: 1, section_title: null }] }] }]);
-  const fetchMock = stubPublicApi();
-  vi.resetModules();
-  const { ServiceShell: LiveShell } = await import("./service-shell");
-  try {
-    render(<LiveShell />);
-    await screen.findByRole("button", { name: "Saved dev review" });
-    expect(screen.getByRole("alert")).toHaveTextContent("Its saved settings have not been changed.");
-    fireEvent.change(screen.getByPlaceholderText("Ask a question about the filing corpus"), { target: { value: "New question" } });
-    expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
-    fireEvent.keyDown(screen.getByPlaceholderText("Ask a question about the filing corpus"), { key: "Enter" });
-    expect(screen.queryByLabelText("Answer engine")).not.toBeInTheDocument();
-    const modeBadge = screen.getByRole("link", { name: "PROD MODE" });
-    expect(modeBadge).toHaveAttribute("href", "https://github.com/sungyongcho/docreview-rag-agent");
-    fireEvent.mouseEnter(modeBadge.parentElement!);
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Try 'DEV MODE' now!github.com/sungyongcho/docreview-rag-agent");
-    fireEvent.mouseLeave(modeBadge.parentElement!);
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    expect(modeBadge.parentElement!.nextElementSibling).toHaveClass("sidebar-nav");
-    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "PROD MODE");
-    expect(screen.getByRole("button", { name: /Review again with selected evidence/, hidden: true })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
-    fireEvent.click(screen.getByRole("button", { name: /^System ·/ }));
-    expect(screen.queryByRole("button", { name: "Operations" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Local model policy" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("PROD").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-    expect(loadConversations().find((item) => item.id === "saved-dev")?.profile).toEqual(original);
-    expect(loadConversations().find((item) => item.id !== "saved-dev")?.profile).toEqual(DEFAULT_SESSION_PROFILE);
-    expect(loadDefaultProfile()).toEqual(original);
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).startsWith(OPERATOR_URL) && !String(url).includes("/review/stream"))).toBe(true);
-  } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); window.localStorage.clear(); }
+it("applies server policy to restored DEV conversations without rewriting saved settings", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+  const original = structuredClone(DEFAULT_SESSION_PROFILE);
+  original.engine = "local"; original.local_model = "saved-model";
+  original.prompt_policy.additional_instructions = "Saved DEV experiment";
+  original.prompt_policy.workflow_budget.max_wall_clock_s = 999;
+  original.retrieval_preset = "korean";
+  saveConversations([{ id: "saved-dev", title: "Saved dev review", createdAt: "2026-09-04", updatedAt: "2026-09-04", profile: original, messages: [{ id: "prior", role: "user", text: "Prior question" }] }]);
+  const fetchMock = stubPublicApi(); const view = render(<ServiceShell />);
+  await screen.findByRole("button", { name: "Saved dev review" });
+  const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(input, { target: { value: "What was NVIDIA revenue?" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+  expect(screen.queryByText(/Its saved settings have not been changed/)).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/review/stream"))).toBe(true));
+  const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/review/stream"))!;
+  const sent = JSON.parse(String((call[1] as RequestInit).body)).session_profile;
+  expect(sent.engine).toBe("openai"); expect(sent.local_model).toBeNull();
+  expect(sent.prompt_policy).toEqual(DEFAULT_SESSION_PROFILE.prompt_policy);
+  expect(sent.retrieval_preset).toBe("korean");
+  expect(loadConversations().find(item => item.id === "saved-dev")?.profile).toEqual(original);
+  view.unmount(); cleanup(); vi.unstubAllGlobals();
 });
+
 
 it("makes no administrator or local connection calls before capabilities are known", async () => {
   cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
@@ -225,7 +206,7 @@ it("makes no administrator or local connection calls before capabilities are kno
     await screen.findByRole("button", { name: "System · healthy" });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "Local LLM" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Local LLM" }).querySelector(".development-badge")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
     expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).startsWith(OPERATOR_URL))).toBe(true);
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); }
@@ -523,6 +504,7 @@ describe("service shell", () => {
   });
 
   it("shows the evidence-only banner and fallback when the answer model is off", async () => {
+    saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
@@ -536,7 +518,7 @@ describe("service shell", () => {
       if (url.endsWith("/health")) payload = { status: "ok" };
       else if (url.endsWith("/ready")) payload = { ...READY_RUNTIME, review_enabled: false, active_review_model: null };
       else if (url.endsWith("/capabilities")) payload = { environment: "prod", can_configure_local_llm: false, can_change_custom_retrieval: false, can_compare_published_snapshots: true };
-      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
+      else if (url.endsWith("/limits")) payload = { prompt_policy: structuredClone(DEFAULT_SESSION_PROFILE.prompt_policy), daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
       else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
       else if (url.endsWith("/retrieve")) payload = {
         results: [],
@@ -862,6 +844,7 @@ describe("service shell", () => {
   });
 
   it("shows a failed run's own numbers and a way to the limit it hit", async () => {
+    saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const failure = {
       code: "budget_exceeded", resource: "wall_clock_s", limit: 120, observed: 138.6, blocked_node: "check",
     };
@@ -880,7 +863,7 @@ describe("service shell", () => {
       if (url.endsWith("/health")) payload = { status: "ok" };
       else if (url.endsWith("/ready")) payload = READY_RUNTIME;
       else if (url.endsWith("/capabilities")) payload = { environment: "prod", can_configure_local_llm: false, can_change_custom_retrieval: false, can_compare_published_snapshots: true };
-      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
+      else if (url.endsWith("/limits")) payload = { prompt_policy: structuredClone(DEFAULT_SESSION_PROFILE.prompt_policy), daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
       else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
       return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
     });
@@ -904,10 +887,11 @@ describe("service shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open run limits" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Limits & availability" })).toBeInTheDocument();
-    expect(screen.getByText("Input token ceiling")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/Input token ceiling:/)).toHaveTextContent("12,000"));
   });
 
   it("renders a conversation reply without a verdict pill", async () => {
+    saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
@@ -923,7 +907,7 @@ describe("service shell", () => {
       if (url.endsWith("/health")) payload = { status: "ok" };
       else if (url.endsWith("/ready")) payload = READY_RUNTIME;
       else if (url.endsWith("/capabilities")) payload = { environment: "prod", can_configure_local_llm: false, can_change_custom_retrieval: false, can_compare_published_snapshots: true };
-      else if (url.endsWith("/limits")) payload = { daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
+      else if (url.endsWith("/limits")) payload = { prompt_policy: structuredClone(DEFAULT_SESSION_PROFILE.prompt_policy), daily_cost_reset_at_utc: "2026-09-02T00:00:00Z", max_input_tokens: 12000, max_output_tokens: 600, remaining_minute: 5, per_minute: 5, remaining_day: 25, per_day: 25, minute_reset_seconds: 0, day_reset_seconds: 0, max_cost_usd: "0.04", remaining_daily_cost_usd: "1.00", daily_cost_usd: "1.00" };
       else if (url.endsWith("/snapshots")) payload = { snapshots: [] };
       return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
     });
@@ -1654,10 +1638,23 @@ it("keeps exact Build scope in the request and persists an empty selection", asy
   const view = render(<ServiceShell />);
   await screen.findByText("Questions use the selected published filings.");
   fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
-  expect(screen.getByRole("button", { name: "Ask about this scope" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Review parsing and chunks" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "NVDA FY2023 · Not in scope" }));
   fireEvent.click(screen.getByRole("button", { name: "AMD FY2024 · Not in scope" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  expect(screen.getByRole("status", { name: "Moving in 3 seconds" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continue\?/ }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("embeddings");
+  expect(loadConversations()[0].pipelineDraft?.stage).toBe("lexical");
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  expect(screen.getByRole("status", { name: "Moving in 3 seconds" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continue\?/ }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("lexical");
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
   fireEvent.click(screen.getByRole("button", { name: "Ask about this scope" }));
   const query = screen.getByPlaceholderText("Ask a question about the filing corpus");
   fireEvent.change(query, { target: { value: "Compare the selected filings" } });
@@ -1666,11 +1663,156 @@ it("keeps exact Build scope in the request and persists an empty selection", asy
   const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/review/stream"))!;
   expect(JSON.parse(String((request[1] as RequestInit).body)).session_profile.doc_ids.sort()).toEqual(["AMD-2024", "NVDA-2023"]);
   fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
   fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
-  expect(loadConversations()[0].publishedScope).toEqual([]);
+  expect(loadConversations()[0].pipelineDraft?.targets).toEqual([]);
   view.unmount(); window.history.replaceState(null, "", "/"); render(<ServiceShell />);
-  await screen.findAllByText("Select at least one published filing to ask a question.");
-  expect(loadConversations()[0].publishedScope).toEqual([]);
-  expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+  await screen.findByRole("button", { name: "Send question" });
+  expect(loadConversations()[0].pipelineDraft?.targets).toEqual([]);
+  expect(loadConversations()[0].publishedTargets).toHaveLength(2);
   cleanup(); vi.unstubAllGlobals();
+});
+
+
+it("restores unpublished target selection after reload without starting server preparation", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubPublicApi(); const ordinary = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/public/documents?")
+    ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
+  let view = render(<ServiceShell />);
+  await screen.findByText("No portfolio filings have been published yet.");
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.change(screen.getByLabelText("Search/add company or year"), { target: { value: "NVDA" } });
+  fireEvent.click(screen.getByRole("button", { name: /NVIDIA.*Published years: 0 \/ 6/ }));
+  fireEvent.click(screen.getByRole("button", { name: "NVDA FY2023 · Not published" }));
+  expect(loadConversations()[0].pipelineDraft?.targets).toEqual([{ registry: "sec", issuer: "NVDA", year: 2023 }]);
+  view.unmount(); view = render(<ServiceShell />);
+  expect(await screen.findByRole("button", { name: "NVDA FY2023 · Selected · Not published" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "NVDA FY2023 · Selected · Not published" }));
+  expect(screen.getByRole("button", { name: "NVDA FY2023 · Not published" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByRole("button", { name: "Review parsing and chunks" })).toBeDisabled();
+  expect(fetchMock.mock.calls.every(([, init]) => !(init as RequestInit | undefined)?.method || (init as RequestInit).method === "GET")).toBe(true);
+  view.unmount(); cleanup(); vi.unstubAllGlobals();
+});
+
+it("defaults a first public visit to AMD and NVDA and allows navigation before publication", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  window.history.replaceState(null, "", "/");
+  const fetchMock = stubPublicApi(true); const ordinary = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/public/documents?")
+    ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
+  const view = render(<ServiceShell />);
+  await screen.findByText("No portfolio filings have been published yet.");
+  expect(loadConversations()[0].publishedTargets).toEqual(["AMD", "NVDA"].flatMap(issuer => [2019, 2020, 2021, 2022, 2023, 2024].map(year => ({ registry: "sec", issuer, year }))));
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · Selected · Not published" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: /Sync selection/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  expect(screen.getByRole("status", { name: "Moving in 3 seconds" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continue\?/ }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("embeddings");
+  expect(loadConversations()[0].pipelineDraft?.stage).toBe("lexical");
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  expect(screen.getByRole("status", { name: "Moving in 3 seconds" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continue\?/ }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("lexical");
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask about this scope" }));
+  expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
+  view.unmount(); cleanup(); vi.unstubAllGlobals();
+});
+
+it("persists confirmed scope and completed preparation steps across reload", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+  stubPublicApi(true);
+  let view = render(<ServiceShell />);
+  await screen.findByRole("button", { name: "Build" });
+  await waitFor(() => expect(loadConversations()[0]?.publishedTargets).toHaveLength(12));
+  const original = loadConversations()[0].publishedTargets;
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(loadConversations()[0].publishedTargets).toEqual(original);
+  expect(loadConversations()[0].pipelineDraft?.targets).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: /NVDA FY2024/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+  expect(loadConversations()[0].publishedTargets).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024, document_ids: ["NVDA-FY2024"] }]);
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  expect(screen.getByRole("status", { name: "Moving in 3 seconds" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continue\?/ }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("embeddings");
+  view.unmount(); view = render(<ServiceShell />);
+  expect(await screen.findByRole("button", { name: "Next step" })).toBeEnabled();
+  expect(loadConversations()[0].pipelineDraft?.stage).toBe("lexical");
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("embeddings");
+  expect(loadConversations()[0].pipelineDraft?.checked).not.toContain("lexical");
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  expect(screen.getByRole("status", { name: "Moving in 3 seconds" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continue\?/ }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toContain("lexical");
+  fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask about this scope" }));
+  expect(loadConversations()[0].publishedTargets).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024, document_ids: ["NVDA-FY2024"] }]);
+  expect(screen.getByRole("button", { name: "Send question" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(loadConversations()[0].pipelineDraft?.checked).toEqual(expect.arrayContaining(["embeddings", "lexical"]));
+  expect(loadConversations()[0].pipelineDraft?.checked).not.toContain("index");
+  expect(loadConversations()[0].publishedTargets).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024, document_ids: ["NVDA-FY2024"] }]);
+  view.unmount(); cleanup(); vi.unstubAllGlobals();
+});
+
+
+it("preserves edited first-visit scope across Filings, chunks and reload including empty selection", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+  const fetchMock = stubPublicApi(true); const ordinary = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/public/documents?") ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
+  let view = render(<ServiceShell />);
+  await screen.findByText("No portfolio filings have been published yet.");
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "AMD FY2019 · Selected · Not published" }));
+  expect(loadConversations()[0].pipelineDraft?.targets).toHaveLength(11);
+  fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+  expect(within(screen.getByRole("region", { name: "Selected documents" })).queryByLabelText("AMD FY2019 · Selected · Not published")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
+  expect(screen.getByRole("button", { name: "AMD FY2019 · Not published" })).toHaveAttribute("aria-pressed", "false");
+  view.unmount(); view = render(<ServiceShell />);
+  expect(await screen.findByRole("button", { name: "AMD FY2019 · Not published" })).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(screen.getByRole("button", { name: "AMD FY2019 · Not published" }));
+  expect(loadConversations()[0].pipelineDraft?.targets).toHaveLength(12);
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  view.unmount(); view = render(<ServiceShell />);
+  await screen.findByRole("button", { name: "Review parsing and chunks" });
+  expect(loadConversations()[0].pipelineDraft?.targets).toEqual([]);
+  expect(screen.getByRole("button", { name: "Review parsing and chunks" })).toBeDisabled();
+  view.unmount(); cleanup(); vi.unstubAllGlobals();
+});
+
+
+it("shares selection between steps and commits scope at step two without deleting candidates", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+  stubPublicApi(true); const view = render(<ServiceShell />);
+  await waitFor(() => expect(loadConversations()[0]?.publishedTargets).toHaveLength(12));
+  fireEvent.click(screen.getByRole("button", { name: "Build" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+  const summary = screen.getByRole("region", { name: "Selected documents" });
+  fireEvent.click(within(summary).getByRole("button", { name: /AMD FY2019/ }));
+  expect(loadConversations()[0].pipelineDraft?.targets).toHaveLength(11);
+  expect(loadConversations()[0].publishedTargets).toHaveLength(12);
+  expect(within(summary).getByRole("button", { name: /AMD FY2019/ })).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(screen.getByRole("button", { name: "Change selection in Filings" }));
+  expect(screen.getByRole("button", { name: /AMD FY2019/ })).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+  expect(loadConversations()[0].publishedTargets).toHaveLength(11);
+  fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
+  fireEvent.click(screen.getByRole("button", { name: /AMD FY2019/ }));
+  expect(loadConversations()[0].pipelineDraft?.targets).toHaveLength(12);
+  expect(loadConversations()[0].pipelineDraft?.checked).not.toContain("index");
+  expect(loadConversations()[0].publishedTargets).toHaveLength(11);
+  view.unmount(); cleanup(); vi.unstubAllGlobals();
 });

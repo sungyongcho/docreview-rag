@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from ipaddress import ip_address
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import (
@@ -77,6 +78,7 @@ class ReleaseSettings(DotenvFirstSettings):
     openai_max_input_tokens: int = Field(default=12_000, ge=1, le=100_000)
     openai_max_output_tokens: int = Field(default=600, ge=1, le=4_000)
     openai_max_cost_usd: Decimal = Field(default=Decimal("0.04"), gt=0, le=1)
+    public_allowance_path: Path = Path("data/runtime/public-ai-limits.sqlite3")
     public_daily_cost_usd: Decimal = Field(default=Decimal("1.00"), gt=0, le=100)
     openai_input_per_million_usd: Decimal | None = Field(default=None, ge=0)
     openai_output_per_million_usd: Decimal | None = Field(default=None, ge=0)

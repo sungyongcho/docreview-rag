@@ -7,6 +7,7 @@ import { I18nProvider } from "@/lib/i18n";
 
 import "./styles.css";
 import "./v2.css";
+import "@/components/side-panels.css";
 
 export const metadata: Metadata = {
   title: "DocReview RAG",

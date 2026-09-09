@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SESSION_PROFILE } from "./types";
-import { portfolioDocuments, effectivePublishedProfile, publishedScopeStats, PORTFOLIO_FILINGS, type PublishedDocument } from "./published-scope";
+import { portfolioDocuments, effectivePublishedProfile, createPublicTargets, publicTargetIds, pinPublicTargets, publishedScopeStats, PORTFOLIO_FILINGS, type PublishedDocument } from "./published-scope";
 
 /** Minimal real-shaped inventory row; tests vary identity and coverage independently. */
 function doc(issuer: string, fiscal_year: number): PublishedDocument {
@@ -42,4 +42,18 @@ describe("published portfolio scope", () => {
   it("intersects manual company/year filters with exact saved IDs", () => {
     expect(effectivePublishedProfile({ ...DEFAULT_SESSION_PROFILE, issuers: ["AMD"], fiscal_years: [2024] }, documents, undefined).doc_ids).toEqual(["AMD-2024"]);
   });
+});
+
+
+it("keeps pending targets out of requests, then pins their first published identities", () => {
+  const pending = createPublicTargets([], [{ registry: "sec", issuer: "NVDA", year: 2024 }]);
+  expect(pending).toEqual([{ registry: "sec", issuer: "NVDA", year: 2024 }]);
+  expect(publicTargetIds([], pending)).toEqual([]);
+  const pinned = pinPublicTargets(documents, pending);
+  expect(publicTargetIds(documents, pinned)).toEqual(["NVDA-2024"]);
+  const replacement = [{ ...doc("NVDA", 2024), doc_id: "different-filing" }];
+  expect(publicTargetIds(replacement, pinned)).toEqual(["NVDA-2024"]);
+  expect(effectivePublishedProfile(DEFAULT_SESSION_PROFILE, replacement, publicTargetIds(replacement, pinned)).doc_ids).toEqual([]);
+  expect(pinPublicTargets(replacement, pinned)).toBe(pinned);
+  expect(publicTargetIds(documents, [])).toEqual([]);
 });

@@ -11,6 +11,7 @@ import "./source-matrix.css";
 interface Props {
   sources: SourceInventory[];
   pairs: AcquisitionPair[];
+  availablePairs?: AcquisitionPair[];
   companies: AcquisitionCompany[];
   disabled?: boolean;
   scopeMode?: boolean;
@@ -25,11 +26,11 @@ interface Props {
 }
 
 /** Render a compact, accessible company/year grid for selection or a read-only summary. */
-export function SourceSelectionGrid({ sources, pairs, companies, disabled, scopeMode = false, corpusScope = "auto", selectedOnly = false, eligibleOnly = false, onToggle, addedCompanies = [], onEditCompany, onRemoveCompany, renderYearEditor }: Props) {
+export function SourceSelectionGrid({ sources, pairs, availablePairs = [], companies, disabled, scopeMode = false, corpusScope = "auto", selectedOnly = false, eligibleOnly = false, onToggle, addedCompanies = [], onEditCompany, onRemoveCompany, renderYearEditor }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const selected = new Set(pairs.map(pairKey));
-  const groups = sourceSelectionRows(sources, pairs, companies, selectedOnly);
+  const groups = sourceSelectionRows(sources, [...pairs, ...availablePairs], companies, selectedOnly);
   for (const company of addedCompanies) {
     const group = groups.find((group) => group.registry === company.registry)!;
     if (!group.rows.some((row) => row.issuer === company.issuer)) {
@@ -56,10 +57,10 @@ export function SourceSelectionGrid({ sources, pairs, companies, disabled, scope
           <div className={`source-matrix-years${columns ? " aligned" : ""}`} style={{ "--year-columns": years.length } as CSSProperties}>{row.cells.map((cell) => {
             const key = pairKey(cell.pair); const onDisk = ready.includes(cell); const included = selected.has(key);
             const blocked = cell.documents.some((source) => source.on_disk && source.ready === false);
-            const label = `${row.issuer} FY${cell.pair.year} · ${t(scopeMode ? outsideScope ? "Outside current scope" : included ? "In scope" : "Not in scope" : blocked ? "Source blocked" : onDisk ? "On disk" : "Missing source")}`;
+            const label = `${row.issuer} FY${cell.pair.year} · ${t(scopeMode ? outsideScope ? "Outside current scope" : !onDisk ? included ? "Selected · Not published" : "Not published" : included ? "In scope" : "Not in scope" : blocked ? "Source blocked" : onDisk ? "On disk" : "Missing source")}`;
             const title = `${cell.documents.find((source) => source.blocker)?.blocker ?? label}${cell.documents.length ? ` · ${cell.documents.map((source) => source.document_id).join(", ")}` : ""}`;
             const style = columns ? { gridColumn: years.indexOf(cell.pair.year) + 1 } : undefined;
-            const content = <><span className={onDisk && !blocked ? "year-downloaded-mark" : "year-missing-mark"} aria-hidden="true">{onDisk && !blocked ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}</>;
+            const content = <><span className={onDisk && !blocked ? "year-downloaded-mark" : "year-missing-mark"} aria-hidden="true">{onDisk && !blocked ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{scopeMode && !onDisk && <small>{t("Not published")}</small>}{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}</>;
             const className = `source-matrix-year ${onDisk ? "on-disk" : "missing"}${included ? " selected" : ""}${blocked ? " source-blocked" : ""}`;
             return onToggle ? <button key={key} type="button" disabled={disabled || outsideScope} style={style} title={title} className={className} aria-pressed={included} aria-label={label} onClick={() => onToggle([cell.pair], !included)}>{content}</button> : <span key={key} style={style} title={title} className={className} aria-label={label}>{content}</span>;
           })}</div>

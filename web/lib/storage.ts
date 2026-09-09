@@ -1,3 +1,4 @@
+import { newProdProfile } from "./prod-profile";
 import { OPERATION_CATEGORIES, OPERATION_TARGETS, type OperatorCommand, type OperationsFilter, type OperationsTargetFilter, type OperatorTarget } from "./operator-api";
 import { browserStorage as rawBrowserStorage, previewState } from "./production-preview";
 import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./types";
@@ -58,6 +59,7 @@ export function newConversation(profile: ReviewSessionDraft = loadDefaultProfile
 }
 
 export function loadDefaultProfile(): ReviewSessionDraft {
+  if (productionBrowserStorageEnabled()) return newProdProfile();
   if (typeof window === "undefined") return DEFAULT_SESSION_PROFILE;
   try {
     const value = JSON.parse(browserStorage().getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionDraft> | null;
@@ -68,6 +70,7 @@ export function loadDefaultProfile(): ReviewSessionDraft {
 }
 
 export function saveDefaultProfile(profile: ReviewSessionDraft): void {
+  if (productionBrowserStorageEnabled()) throw new Error("PROD defaults are fixed by server policy.");
   if (typeof window !== "undefined") browserStorage().setItem(DEFAULT_PROFILE_KEY, JSON.stringify(profile));
 }
 
@@ -189,6 +192,8 @@ function isConversation(value: unknown): value is Conversation {
     typeof item.title === "string" &&
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string" &&
+    (item.publishedTargets === undefined || Array.isArray(item.publishedTargets) && item.publishedTargets.every((target) => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year) && (target.document_ids === undefined || Array.isArray(target.document_ids) && target.document_ids.every((id) => typeof id === "string")))) &&
+    (item.pipelineDraft === undefined || objectValue(item.pipelineDraft) && Array.isArray(item.pipelineDraft.targets) && item.pipelineDraft.targets.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year)) && (item.pipelineDraft.candidates === undefined || Array.isArray(item.pipelineDraft.candidates) && item.pipelineDraft.candidates.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year))) && typeof item.pipelineDraft.stage === "string" && Array.isArray(item.pipelineDraft.checked) && item.pipelineDraft.checked.every(step => typeof step === "string")) &&
     (item.publishedScope === undefined || Array.isArray(item.publishedScope) && item.publishedScope.every((id) => typeof id === "string")) &&
     Array.isArray(item.messages)
   );

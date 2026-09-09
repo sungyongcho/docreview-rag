@@ -50,11 +50,11 @@ export function RequestPreviewContent({ profile, query, editable = true }: { pro
         <div><dt>{t("Language routing")}</dt><dd>{t(effective.route_by_language ? "Enabled" : "Disabled")}</dd></div>
         <div><dt>{t("Answer engine")}</dt><dd>{profile.engine}{profile.engine === "local" && profile.local_model ? ` · ${profile.local_model}` : ""}</dd></div>
       </dl>
-      <details><summary>{t("Filters")}</summary><pre>{JSON.stringify(filters, null, 2)}</pre></details>
+      <details className="request-preview-disclosure"><summary>{t("Filters")}</summary><pre>{JSON.stringify(filters, null, 2)}</pre></details>
       <h3>{t("Evidence and run limits")}</h3>
       {!editable ? <PublicRunLimits /> : <dl className="request-facts">{Object.entries(profile.prompt_policy).filter(([key]) => key !== "workflow_budget").map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value) || t("None")}</dd></div>)}{Object.entries(profile.prompt_policy.workflow_budget).map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value)}</dd></div>)}</dl>}
-      <details><summary>{t("Prompt composition")}</summary><p className="helper">{t("Server policy + conversation history + question + retrieved evidence. The evidence is selected after execution begins.")}</p><pre>{JSON.stringify({ question: query, prompt_policy: profile.prompt_policy }, null, 2)}</pre></details>
-      <details><summary>{t("Request payload")}</summary><pre>{JSON.stringify({ query, session_profile: profile }, null, 2)}</pre></details>
+      <details className="request-preview-disclosure"><summary>{t("Prompt composition")}</summary><p className="helper">{t("Server policy + conversation history + question + retrieved evidence. The evidence is selected after execution begins.")}</p><pre>{JSON.stringify({ question: query, prompt_policy: profile.prompt_policy }, null, 2)}</pre></details>
+      <details className="request-preview-disclosure"><summary>{t("Request payload")}</summary><pre>{JSON.stringify({ query, session_profile: profile }, null, 2)}</pre></details>
       <p className="helper">{t("Preview of this next request. Server-applied settings appear with the completed result.")}</p>
 </div>;
 }

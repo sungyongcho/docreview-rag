@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, expect, it, vi } from "vitest";
 import { enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
 import { loadSavedPresets, savePreset } from "@/lib/saved-presets";
-import { DEFAULT_PROFILE } from "@/lib/types";
+import { BUILTIN_PRESETS, DEFAULT_PROFILE } from "@/lib/types";
 import { RetrievalPresetManager } from "./retrieval-preset-manager";
 
 afterEach(() => { cleanup(); exitProductionPreview(); localStorage.clear(); vi.unstubAllEnvs(); });
@@ -77,4 +77,13 @@ it("imports a file into the same editor and exports the saved shape", async () =
     expect(loadSavedPresets()).toHaveLength(1);
     expect(loadSavedPresets()[0].description).toBe("Updated");
   } finally { click.mockRestore(); URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke; }
+});
+
+it.each(["balanced", "korean", "accuracy"])("renders %s with empty display ID and its canonical English name", id => {
+  const preset = BUILTIN_PRESETS.find(item => item.id === id)!;
+  render(<RetrievalPresetManager />);
+  fireEvent.click(screen.getByRole("button", { name: preset.name }));
+  const row = screen.getByRole("region", { name: preset.name });
+  expect(JSON.parse(row.querySelector("pre")!.textContent!)).toEqual({ id: "", name: preset.name, description: preset.description ?? "", retrieval: preset.retrieval });
+  expect(preset.id).toBe(id);
 });

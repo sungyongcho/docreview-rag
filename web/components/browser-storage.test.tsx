@@ -15,7 +15,7 @@ it("hides the support notice and settings in DEV", () => {
   expect(screen.queryByRole("region", { name: "Browser storage" })).not.toBeInTheDocument();
 });
 
-it("shows a nonmodal PROD notice, persists dismissal, and reopens through the settings reminder", () => {
+it("preserves notice dismissal and shows the settings reminder in an anchored bubble", () => {
   configureBrowserStorage("prod");
   const view = render(<><BrowserStorageSupport enabled /><BrowserStorageSettings /></>);
   expect(screen.getByRole("status", { name: "Browser storage" })).toHaveTextContent("Settings and conversations are saved only in this browser");
@@ -27,8 +27,13 @@ it("shows a nonmodal PROD notice, persists dismissal, and reopens through the se
   view.unmount();
   render(<><BrowserStorageSupport enabled /><BrowserStorageSettings /></>);
   expect(screen.queryByRole("status", { name: "Browser storage" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Show browser storage notice" }));
-  expect(screen.getByRole("status", { name: "Browser storage" })).toBeInTheDocument();
+  const trigger = screen.getByRole("button", { name: "Show browser storage notice" });
+  fireEvent.mouseEnter(trigger.parentElement!);
+  expect(screen.getByRole("tooltip", { name: "Browser storage" })).toHaveTextContent("Settings and conversations are saved only in this browser");
+  fireEvent.click(trigger);
+  expect(screen.getByRole("dialog", { name: "Browser storage" })).toBeVisible();
+  expect(screen.queryByRole("status", { name: "Browser storage" })).toBeNull();
+  expect(browserStorage().getItem(STORAGE_NOTICE_KEY)).toBe("done");
 });
 
 it("dismisses explicitly with Escape without a modal", () => {

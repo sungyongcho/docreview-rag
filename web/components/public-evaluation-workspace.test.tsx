@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PublishedSnapshot } from "@/lib/types";
+import { NotificationProvider } from "./notifications";
 import { PublicEvaluationWorkspace } from "./public-evaluation-workspace";
 
 const snapshots: PublishedSnapshot[] = [1, 2].map(id => ({
@@ -19,7 +20,7 @@ const evaluation = { snapshot_id: 1, eval_result_id: 11, suite: "sec-en", create
   config: { k: 5, mode: "hybrid" }, metrics: { mrr: 0.625 }, total: 26, offset: 0, limit: 25,
   cases: [{ case_id: "case-01", question: question.question, latency_ms: 12.5,
     first_relevant_rank: 2, recall_at_k: 0.5, hit_at_k: 1, reciprocal_rank: 0.5 }] };
-const comparison = { comparable: true, warning: null,
+const comparison = { directly_comparable: true, warning: null,
   metrics: [{ name: "mrr", baseline: 0.5, candidate: 0.625, delta: 0.125 }],
   cases: [{ case_id: "case-01", baseline_question: question.question, candidate_question: question.question,
     baseline_rank: 3, candidate_rank: 2, transition: "stable_hit", rank_delta: -1 }] };
@@ -48,69 +49,78 @@ it("reads exact expected evidence and sends dataset search, sort and page parame
   render(<PublicEvaluationWorkspace tab="golden" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} />);
   await requested("/public/snapshots/1/dataset", { offset: "0", limit: "25" });
   fireEvent.click(await screen.findByRole("button", { name: "case-01" }));
-  expect(screen.getByText("Recorded reference answer")).toBeVisible();
-  expect(screen.getByText(/NVDA-FY2024/)).toBeVisible();
+  expect(screen.getByLabelText("Reference answer")).toHaveValue("Recorded reference answer");
+  expect(screen.getByLabelText("Question")).toHaveAttribute("readonly");
+  expect(screen.getByText("NVDA-FY2024", { selector: "strong" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Question list" }));
   fireEvent.click(screen.getByRole("button", { name: /Create draft/ }));
   fireEvent.click(screen.getByRole("button", { name: /Evaluate this dataset/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Previous" })).toBeNull();
+  fireEvent.scroll(screen.getByRole("button", { name: "case-01" }).closest(".golden-table-scroll")!);
   await requested("/public/snapshots/1/dataset", { offset: "25" });
   fireEvent.change(screen.getByLabelText("Search"), { target: { value: "revenue" } });
   fireEvent.change(screen.getByLabelText("Sort by"), { target: { value: "question" } });
   await requested("/public/snapshots/1/dataset", { offset: "0", query: "revenue", sort: "question" });
-  expect(requests.every(row => row.method === "GET")).toBe(true);
+  expect(requests.every(row => row.method === "GET" && !row.url.pathname.includes("/admin/"))).toBe(true);
 });
 
 it("reads evaluation pages while settings remain a browser-only experiment and keep recorded scores", async () => {
-  render(<PublicEvaluationWorkspace tab="runs" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} />);
+  render(<NotificationProvider><PublicEvaluationWorkspace tab="runs" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} /></NotificationProvider>);
   await requested("/public/snapshots/1/evaluation");
-  expect(await screen.findByText("0.625")).toBeVisible();
+  expect((await screen.findAllByText("0.625"))[0]).toBeVisible();
+  const overview = screen.getByRole("heading", { name: "Evaluation runs" }).closest("section")!;
+  expect(within(overview).getByRole("heading", { name: "Published run 1" })).toBeInTheDocument();
+  expect(screen.getByText("Recorded configuration", { selector: "summary" }).parentElement).not.toHaveAttribute("open");
   fireEvent.click(screen.getByRole("button", { name: "Explore evaluation settings" }));
+  expect(screen.getByRole("dialog", { name: "Explore evaluation settings" })).toHaveClass("evaluation-setup");
+  fireEvent.click(screen.getByText("Advanced evaluation options"));
   fireEvent.change(screen.getByLabelText("Evaluation mode"), { target: { value: "matrix" } });
   fireEvent.change(screen.getByLabelText("Chunk targets (tokens)"), { target: { value: "512 1024" } });
   fireEvent.change(screen.getByLabelText("k"), { target: { value: "9" } });
   fireEvent.click(screen.getByText("Request preview · not submitted"));
   expect(screen.getByText(/"target_tokens":/)).toHaveTextContent('"k": 9');
-  expect(screen.getByText("0.625")).toBeVisible();
-  const recorded = screen.getByRole("heading", { name: "Recorded configuration" }).parentElement!;
+  expect(screen.getAllByText("0.625")[0]).toBeVisible();
+  fireEvent.click(screen.getByText("Recorded configuration", { selector: "summary" }));
+  const recorded = screen.getByText("Recorded configuration", { selector: "summary" }).parentElement!;
   expect(within(recorded).getByText("5")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Save exploration in this browser" }));
   expect(screen.getByText("Exploration saved in this browser. No evaluation was run.")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /Queue evaluation/ }));
-  fireEvent.click(screen.getByRole("button", { name: /Save result as snapshot/ }));
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Explore evaluation settings" }), { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Explore evaluation settings" })).toBeNull();
   expect(requests).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  fireEvent.scroll(screen.getByRole("button", { name: "case-01" }).closest(".golden-table-scroll")!);
   await requested("/public/snapshots/1/evaluation", { offset: "25" });
   fireEvent.change(screen.getByLabelText("Search"), { target: { value: "case-01" } });
   await requested("/public/snapshots/1/evaluation", { offset: "0", query: "case-01" });
   expect(requests.every(row => row.method === "GET")).toBe(true);
 });
 
-it("compares only on demand and reuses the same stored result without another request", async () => {
-  render(<PublicEvaluationWorkspace tab="compare" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} />);
-  fireEvent.change(screen.getByLabelText("Baseline"), { target: { value: "1" } });
-  fireEvent.change(screen.getByLabelText("Candidate"), { target: { value: "2" } });
-  expect(requests).toHaveLength(0);
-  fireEvent.click(screen.getByRole("button", { name: "Compare selected results" }));
-  await requested("/snapshots/compare", { baseline_id: "1", candidate_id: "2" });
-  expect(await screen.findByText("Recorded results")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Compare selected results" }));
-  expect(requests).toHaveLength(1);
-  fireEvent.change(screen.getByLabelText("Search ID or question"), { target: { value: "revenue" } });
-  fireEvent.click(screen.getByText(/case-01 ·/));
-  expect(screen.getByText(/3 → 2/)).toBeVisible();
-  expect(requests).toHaveLength(1);
-});
-
-it("opens an explicitly labeled interactive example without fetching or treating it as real evidence", () => {
-  render(<PublicEvaluationWorkspace tab="compare" snapshots={[]} loading={false} error={false} onRefresh={vi.fn()} />);
-  expect(screen.queryByText("Example baseline")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Explore an example" }));
-  expect(screen.getAllByText("Illustrative example only — not an evaluation result.").length).toBeGreaterThan(0);
-  fireEvent.change(screen.getByLabelText("Baseline"), { target: { value: "candidate" } });
-  expect(screen.getByRole("table")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Return to published results" }));
+it("reads the registered measured pair without executing evaluations", async () => {
+  const registered = snapshots.map((row, index) => ({ ...row, label: index === 0 ? "DART Korean comparison example — baseline — bm25 k5" : "DART Korean comparison example — candidate — ts_rank_cd k5" }));
+  render(<PublicEvaluationWorkspace tab="compare" snapshots={registered} loading={false} error={false} onRefresh={vi.fn()} />);
+  expect(screen.getByLabelText("Evaluation dataset")).toBeDisabled();
+  expect(screen.getByLabelText("Baseline")).toBeDisabled();
+  expect(screen.getByLabelText("Candidate")).toBeDisabled();
+  expect(screen.getByLabelText("Baseline")).toHaveValue("baseline");
+  expect(screen.getByLabelText("Candidate")).toHaveValue("candidate");
+  expect(screen.queryByRole("button", { name: "Compare selected results" })).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
-  expect(requests).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Explore an example" }));
+  expect((await screen.findAllByRole("table"))[0]).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Recorded results" })).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Search ID or question"), { target: { value: "case-01" } });
+  expect(screen.getByRole("columnheader", { name: /Baseline rank/ })).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: /Candidate rank/ })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "case-01" }));
+  expect(await screen.findByLabelText("Reference answer")).toHaveValue("Recorded reference answer");
+  expect(screen.getByLabelText("Question")).toHaveAttribute("readonly");
+  expect(requests).toHaveLength(2);
+  expect(requests.every(row => row.method === "GET" && !row.url.pathname.includes("/admin/"))).toBe(true);
+  expect(requests[0].method).toBe("GET");
+  expect(requests[0].url.pathname).toMatch(/snapshots\/compare$/);
 });
 
 it("does not replace failed published evidence with an illustrative example", async () => {
@@ -133,4 +143,15 @@ it("restores the versioned browser experiment before runtime permissions arrive"
   expect(screen.getByLabelText("Evaluation mode")).toHaveValue("matrix");
   expect(screen.getByLabelText("Chunk targets (tokens)")).toHaveValue("512 1024");
   expect(requests).toHaveLength(0);
+});
+
+it("closes the settings experiment with the header icon without executing evaluation", () => {
+  render(<PublicEvaluationWorkspace tab="runs" snapshots={snapshots} loading={false} error={false} onRefresh={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Explore evaluation settings" }));
+  const close = screen.getByRole("button", { name: "Close evaluation settings" });
+  expect(close).toHaveClass("button", "icon");
+  expect(screen.getByRole("note")).toHaveClass("evaluation-experiment-note");
+  fireEvent.click(close);
+  expect(screen.queryByRole("button", { name: "Close evaluation settings" })).toBeNull();
+  expect(requests.every(request => request.method === "GET")).toBe(true);
 });

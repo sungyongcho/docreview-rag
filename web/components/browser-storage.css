@@ -6,3 +6,5 @@
 .browser-storage-settings dl > div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; padding:4px 0; }
 .browser-storage-settings dt { min-width:0; overflow-wrap:anywhere; }
 .browser-storage-settings dd { margin:0; }
+
+.browser-storage-info { color: var(--warn); display: inline-flex; align-items: center; justify-content: center; }

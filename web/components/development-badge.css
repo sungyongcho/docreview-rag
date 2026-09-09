@@ -3,3 +3,5 @@
 /* DEV-only controls stay visible on a public surface but read as inert. */
 .button.dev-locked, .button.primary.dev-locked { border-color: var(--border); background: color-mix(in srgb, var(--text) 9%, var(--surface)); color: var(--muted); cursor: not-allowed; box-shadow: none; }
 .button.dev-locked:hover { background: color-mix(in srgb, var(--text) 12%, var(--surface)); color: var(--muted); }
+
+.terminal-reference-badge { display: inline-flex; margin-inline-start: 10px; vertical-align: middle; }

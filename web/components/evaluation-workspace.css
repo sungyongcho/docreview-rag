@@ -230,3 +230,35 @@
 .measure-workspace .evaluation-comparison-table { table-layout: fixed; width: 100%; }
 .measure-workspace .evaluation-comparison-table th:first-child { width: 40%; }
 .measure-workspace .evaluation-comparison-table th:not(:first-child) { width: 20%; }
+
+.snapshot-selection-hint { display: flex; align-items: center; gap: 9px; margin: 4px 0 8px; padding: 10px 12px; border-left: 2px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.6; }
+.snapshot-selection-hint > svg { flex: 0 0 16px; }
+
+/* Compact snapshot thumbnails share the existing surfaces, typography and drawer shell. */
+.snapshot-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 20px; }
+.snapshot-card { min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; text-align: left; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; font: inherit; }
+.snapshot-card:hover, .snapshot-card[data-selected="true"] { border-color: var(--border); background: var(--surface); }
+.snapshot-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.snapshot-card-preview { display: flex; flex: 1; flex-direction: column; gap: 10px; min-width: 0; width: 100%; }
+.snapshot-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.snapshot-card-preview > strong { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.snapshot-card-metrics { margin-top: auto; padding-top: 12px; display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font-size: 11px; }
+.snapshot-card-metrics b { color: var(--text); font-size: 16px; margin-left: 5px; }
+.snapshot-card-title { padding: 0; font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.snapshot-card-file, .snapshot-card-date { padding: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.snapshot-detail-drawer .snapshot-manager-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.snapshot-detail-drawer .action-row { flex-wrap: wrap; }
+.snapshot-detail-drawer pre { max-width: 100%; overflow: auto; padding: 12px; border-radius: 7px; background: #121310; color: #eeeee8; font-size: 11px; }
+.snapshot-detail-drawer code { overflow-wrap: anywhere; }
+
+.snapshot-card-date { border-top: 1px solid var(--border); padding-top: 10px; }
+
+/* The snapshot disclosure uses spacing instead of stacked separators. */
+.snapshot-detail-drawer .evaluation-setup-body > details { border: 0; padding-top: 0; margin-top: 4px; }
+.snapshot-detail-drawer .evaluation-setup-body > details > summary { border: 0; box-shadow: none; background: transparent; border-radius: 0; padding: 8px 0; }
+
+.snapshot-card { min-height: 172px; gap: 10px; }
+.snapshot-card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 39px; }
+.snapshot-card-settings { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.snapshot-card > .snapshot-card-metrics { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 8px; }
+.snapshot-card > .snapshot-card-metrics > b { font-size: 22px; margin: 0; }

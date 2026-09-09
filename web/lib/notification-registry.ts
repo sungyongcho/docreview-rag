@@ -8,6 +8,9 @@ export interface NotificationSpec { classification: "persistent" | "transient" |
 
 /** Every production call declares a registered delivery class and its owning surface. */
 export const NOTIFICATION_EVENTS = {
+  "evaluation-exploration-saved": { classification: "transient", title: "Evaluation setup", target: null, surface: null },
+  "snapshot-dataset-mismatch": { classification: "transient", title: "Snapshot comparison", target: null, surface: "measure-snapshots" },
+  "profile-compatibility-warning": { classification: "persistent", title: "Conversation settings", target: null, surface: null },
   "snapshot-comparison-result": { classification: "persistent", title: "Snapshot comparison", target: { view: "measure", tab: "snapshots", resultId: null }, surface: "measure-snapshots" },
   "notification-target-unavailable": { classification: "transient", title: "Item unavailable", target: null, surface: null },
   "build-refresh-error": {
@@ -679,6 +682,14 @@ export function notificationErrorDetail(error: unknown): NotificationDetail | un
 
 /** Prefer the API's original message over client-added validation or Error prefixes. */
 export function notificationErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "failure" in error && error.failure && typeof error.failure === "object") {
+    const failure = error.failure as Record<string, unknown>;
+    if (failure.code === "daily_cost_limit" || failure.code === "rate_limited") {
+      const message = failure.code === "daily_cost_limit" ? "The shared OpenAI allowance is exhausted." : "This connection has reached its request limit.";
+      const reset = typeof failure.reset_at === "string" ? new Date(failure.reset_at) : null;
+      return message + (reset && Number.isFinite(reset.getTime()) ? ` Resets: ${reset.toLocaleString()}.` : typeof failure.retry_after_seconds === "number" ? ` Retry in ${Math.ceil(failure.retry_after_seconds)} seconds.` : "");
+    }
+  }
   if (error && typeof error === "object" && "failure" in error && error.failure && typeof error.failure === "object" && "message" in error.failure && typeof error.failure.message === "string") return error.failure.message;
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   if (error && typeof error === "object" && "detail" in error && typeof error.detail === "string") return error.detail;

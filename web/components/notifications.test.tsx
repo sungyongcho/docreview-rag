@@ -253,3 +253,14 @@ describe("silent job updates", () => {
     expect(JSON.parse(localStorage.getItem("docreview:notifications:v1") ?? "{}").entries).toHaveLength(1);
   });
 });
+
+it("lets a settings outlet own a compact overlay without a second inline rail", () => {
+  render(<NotificationProvider><Probe /><NotificationOutlet priority={50} placement="overlay" /></NotificationProvider>);
+  fireEvent.click(screen.getByText("Wait"));
+  const stacks = document.querySelectorAll(".notification-stack");
+  expect(stacks).toHaveLength(1);
+  expect(stacks[0]).toHaveAttribute("data-placement", "overlay");
+  expect(stacks[0].parentElement).toHaveAttribute("data-placement", "overlay");
+  fireEvent.click(screen.getByText("Recover"));
+  expect(document.querySelector(".notification-stack")).toBeNull();
+});

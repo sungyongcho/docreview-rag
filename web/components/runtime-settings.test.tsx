@@ -42,8 +42,10 @@ const READINESS: Readiness = {
 
     expect(await screen.findByText("12,000")).toBeInTheDocument();
     expect(screen.getByText("600")).toBeInTheDocument();
-    expect(screen.getAllByText("42s").length).toBeGreaterThan(0);
-    expect(screen.getByText(/reset 1h 0m/)).toBeInTheDocument();
+    expect(screen.getByText(/Next recovery: 42s/)).toBeInTheDocument();
+    expect(screen.getByText(/Next recovery: 1h 0m/)).toBeInTheDocument();
+    expect(screen.getByText("80%")).toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
     expect(screen.getByText(/12:00:00 AM UTC$/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Limits & availability" })).toBeInTheDocument();
     expect(document.querySelector(".development-badge")).toBeNull();
