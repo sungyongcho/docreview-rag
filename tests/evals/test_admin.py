@@ -68,6 +68,15 @@ def test_suite_catalog_preserves_unapproved_provenance(tmp_path: Path) -> None:
         "sec-ko_v2_astra",
         "sec-mixed_v2_astra",
     }
+    assert {suite.suite_id: suite.title for suite in suites} == {
+        "sec-en": "SEC retrieval",
+        "sec-ko": "SEC retrieval · Korean",
+        "dart-en": "DART retrieval",
+        "dart-ko": "DART retrieval · Korean",
+        "sec-en_v2_astra": "SEC · English v2",
+        "sec-ko_v2_astra": "SEC · Korean v2",
+        "sec-mixed_v2_astra": "SEC · Mixed v2",
+    }
     assert all(suite.approval_status == "pending-author-approval" for suite in suites)
     assert all(suite.human_verified is False for suite in suites)
     assert all(suite.source_ready is False for suite in suites)

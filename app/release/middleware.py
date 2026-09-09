@@ -12,7 +12,11 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.review_profile import PromptPolicy
+from app.api.review_profile import (
+    PUBLIC_MAX_CONTEXT_CHARS,
+    PromptPolicy,
+    public_custom_retrieval_violation,
+)
 from app.observability.types import Budget
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
@@ -72,28 +76,44 @@ def _forbidden(code: str, message: str) -> JSONResponse:
     )
 
 
-def _custom_controls(payload: object, profile: dict[str, object]) -> bool:
-    """Detect developer controls while leaving malformed fields to route validation."""
+PUBLIC_LOCK_MESSAGE = "This control runs in DEV mode only."
+
+
+def _control_denial(payload: object, profile: dict[str, object]) -> str | None:
+    """Name the developer control a public request may not use, or None when it may proceed.
+
+    Bounded Custom retrieval is public; malformed fields are left to route validation.
+    """
     policy = profile.get("prompt_policy")
     try:
-        custom_policy = policy is not None and PromptPolicy.model_validate(policy) != PromptPolicy()
+        if policy is not None and PromptPolicy.model_validate(policy) != PromptPolicy():
+            return PUBLIC_LOCK_MESSAGE
     except ValidationError:
-        custom_policy = False  # The route returns its normal typed validation error.
-    legacy_limits = False
+        pass  # The route returns its normal typed validation error.
     if isinstance(payload, dict):
         try:
-            legacy_limits = (
-                payload.get("budget") is not None
-                and Budget.model_validate(payload["budget"]) != Budget()
-            ) or payload.get("max_context_chars", 12_000) != 12_000
+            if payload.get("budget") is not None and Budget.model_validate(payload["budget"]) != (
+                Budget()
+            ):
+                return PUBLIC_LOCK_MESSAGE
         except ValidationError:
             pass  # Request validation still reports malformed values.
-    return (
-        legacy_limits
-        or custom_policy
-        or profile.get("retrieval_preset") == "custom"
-        or profile.get("snapshot_id") is not None
-    )
+        context_chars = payload.get("max_context_chars")
+        if isinstance(context_chars, int) and context_chars > PUBLIC_MAX_CONTEXT_CHARS:
+            return (
+                f"{PUBLIC_LOCK_MESSAGE} max_context_chars must be at most "
+                f"{PUBLIC_MAX_CONTEXT_CHARS} on the public surface; received {context_chars}."
+            )
+    if profile.get("snapshot_id") is not None:
+        return PUBLIC_LOCK_MESSAGE
+    if profile.get("retrieval_preset") == "custom":
+        retrieval = profile.get("custom_retrieval")
+        violation = (
+            public_custom_retrieval_violation(retrieval) if isinstance(retrieval, dict) else None
+        )
+        if violation is not None:
+            return f"{PUBLIC_LOCK_MESSAGE} {violation}."
+    return None
 
 
 def _loopback_origin(value: str) -> tuple[str, str, int] | None:
@@ -190,14 +210,13 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             payload = {}
         profile = payload.get("session_profile", {}) if isinstance(payload, dict) else {}
         profile = profile if isinstance(profile, dict) else {}
-        custom = _custom_controls(payload, profile)
         local = profile.get("engine") == "local"
         if local and not self._allow_local_engine:
             return _forbidden("disabled_in_prod", "Local LLM is disabled in production.")
-        if public and (custom or local):
-            return _forbidden(
-                "capability_disabled", "Production experiment controls are read-only."
-            )
+        if public:
+            denial = PUBLIC_LOCK_MESSAGE if local else _control_denial(payload, profile)
+            if denial is not None:
+                return _forbidden("capability_disabled", denial)
         return None
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:

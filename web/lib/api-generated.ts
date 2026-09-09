@@ -2717,6 +2717,8 @@ export interface components {
             /** Source Ready */
             source_ready: boolean;
             suite_id: components["schemas"]["GoldenSuiteId"];
+            /** Title */
+            title: string;
         };
         /**
          * GradeCoverageIncomplete
@@ -3859,6 +3861,8 @@ export interface components {
              * @enum {string}
              */
             status: "ready" | "archived";
+            /** Suite Title */
+            suite_title?: string | null;
         };
         /**
          * SnapshotVisibilityRequest

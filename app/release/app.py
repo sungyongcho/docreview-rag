@@ -134,7 +134,7 @@ class ReleaseLimits(BaseModel):
 
 
 class CorpusReadiness(BaseModel):
-    """Runtime readiness with nullable counts withheld from public surfaces."""
+    """Runtime readiness; only write access is withheld from public surfaces."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -328,7 +328,7 @@ def create_release_app(
             can_edit_golden=live,
             can_build_snapshot=live,
             can_run_evaluation=live,
-            can_change_custom_retrieval=live,
+            can_change_custom_retrieval=True,
             can_query_snapshot=live,
             can_use_operations=live and active_settings.environment != "prod",
         )
@@ -449,15 +449,8 @@ def create_release_app(
             or request.headers.get("x-docreview-public") == "true"
         )
         if public_surface:
-            corpus = corpus.model_copy(
-                update={
-                    "documents": None,
-                    "chunks": None,
-                    "embedded_chunks": None,
-                    "pending_embeddings": None,
-                    "writable": None,
-                }
-            )
+            # Counts are public reading material; only write access stays private.
+            corpus = corpus.model_copy(update={"writable": None})
 
         if active_settings.environment == "prod":
             local_readiness = {"enabled": False, "reason": "disabled_in_prod"}

@@ -302,6 +302,42 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
         await setup_engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("suite", "title"),
+    [("sec-en", "SEC retrieval"), ("dart-ko", "DART retrieval · Korean"), ("custom-suite", None)],
+)
+def test_snapshot_resource_carries_the_built_in_suite_title(suite, title):
+    """Attach a display title only for built-in suites so custom suite ids stay untitled."""
+    from datetime import UTC, datetime
+
+    from app.db.models import EvaluationSnapshot
+
+    recorded = datetime(2026, 1, 1, tzinfo=UTC)
+    snapshot = EvaluationSnapshot(
+        id=7,
+        label="Baseline",
+        status="ready",
+        public=True,
+        corpus_fingerprint="b" * 64,
+        profile={},
+        golden_revision_id=None,
+        created_at=recorded,
+    )
+    result = EvalResult(
+        id=3,
+        suite=suite,
+        config={},
+        metrics={"mrr": 0.5},
+        raw_artifact_path="artifact.json",
+        created_at=recorded,
+    )
+
+    resource = SnapshotService._resource(snapshot, result, 2)
+
+    assert resource.eval_result.suite == suite
+    assert resource.suite_title == title
+
+
 @pytest.mark.live_postgres
 def test_snapshot_comparison_reads_only_persisted_results(tmp_path):
     """Require live PostgreSQL for snapshot creation and metric comparison."""

@@ -1,7 +1,8 @@
 """Strict conversation-level review settings and server-owned retrieval presets."""
 
+from collections.abc import Mapping
 from decimal import Decimal
-from typing import Annotated, Literal, Self
+from typing import Annotated, Final, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -66,6 +67,23 @@ class CustomRetrievalProfile(StrictProfileModel):
         if self.reranker is not None and self.strategy != "hybrid":
             raise ValueError("reranking requires the hybrid strategy")
         return self
+
+
+# Public surfaces may run the Custom preset only inside the cost envelope the
+# built-in presets already spend: k stays within twice the preset default (5),
+# candidate_k within the Accuracy preset's 50, and any legacy context ceiling
+# within the default prompt policy's 12,000 characters.
+PUBLIC_CUSTOM_RETRIEVAL_MAXIMA: Final[Mapping[str, int]] = {"k": 10, "candidate_k": 50}
+PUBLIC_MAX_CONTEXT_CHARS: Final[int] = 12_000
+
+
+def public_custom_retrieval_violation(retrieval: Mapping[str, object]) -> str | None:
+    """Name the first Custom retrieval field above its public ceiling, or None."""
+    for field, ceiling in PUBLIC_CUSTOM_RETRIEVAL_MAXIMA.items():
+        value = retrieval.get(field)
+        if isinstance(value, int) and not isinstance(value, bool) and value > ceiling:
+            return f"custom_retrieval.{field} must be at most {ceiling} on the public surface"
+    return None
 
 
 class PromptPolicy(StrictProfileModel):

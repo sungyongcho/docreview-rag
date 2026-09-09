@@ -35,6 +35,7 @@ from app.db.models import (
     SnapshotLexemeStat,
 )
 from app.db.queries import join_current_parse
+from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
 from app.evals.index_identity import index_fingerprint
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
@@ -522,6 +523,7 @@ class SnapshotService:
                     "raw_artifact_path": result.raw_artifact_path,
                     "created_at": result.created_at,
                 },
+                "suite_title": (SUITES[result.suite].title if result.suite in SUITES else None),
                 "document_count": document_count,
                 "created_at": snapshot.created_at,
             }

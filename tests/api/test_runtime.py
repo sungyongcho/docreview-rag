@@ -143,6 +143,31 @@ def test_production_rejects_local_and_custom_controls_before_retrieval() -> None
         assert error.value.status_code == 403
 
 
+def test_public_runtime_admits_bounded_custom_retrieval_and_rejects_oversized_depth() -> None:
+    """Apply the same public retrieval ceilings inside the service as the release guard."""
+    from app.api.review_profile import CustomRetrievalProfile
+
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
+        allow_custom_prompt_policy=False,
+    )
+    bounded = ReviewSessionProfile(
+        retrieval_preset="custom",
+        custom_retrieval=CustomRetrievalProfile(k=10, candidate_k=50),
+    )
+    services._validate_session_profile(bounded)
+
+    oversized = ReviewSessionProfile(
+        retrieval_preset="custom",
+        custom_retrieval=CustomRetrievalProfile(k=5, candidate_k=51),
+    )
+    with pytest.raises(ApiProblemError) as error:
+        services._validate_session_profile(oversized)
+    assert error.value.status_code == 403
+    assert error.value.error.code == "capability_disabled"
+    assert "custom_retrieval.candidate_k" in error.value.error.message
+
+
 def test_resolved_scope_is_observed_before_retrieval_without_model_or_database_calls() -> None:
     """Emit real alias resolution before entering the database retrieval boundary."""
     from app.api.schemas import RetrieveRequest

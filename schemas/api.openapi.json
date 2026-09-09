@@ -3852,11 +3852,16 @@
           },
           "suite_id": {
             "$ref": "#/components/schemas/GoldenSuiteId"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
           }
         },
         "required": [
           "suite_id",
           "label",
+          "title",
           "filename",
           "registry",
           "question_language",
@@ -6720,6 +6725,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "suite_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suite Title"
           }
         },
         "required": [
