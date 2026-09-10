@@ -6,7 +6,6 @@ import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConve
 import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
-import { enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
@@ -1098,15 +1097,14 @@ it("keeps confirmed routing with its submitted profile while next-request contro
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
 });
 
-describe("isolated production presentation preview", () => {
+describe("development release interface", () => {
   beforeEach(() => {
-    exitProductionPreview();
     window.localStorage.clear();
     window.localStorage.setItem(ONBOARDING_KEY, "done");
   });
-  afterEach(() => { cleanup(); exitProductionPreview(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-  it("retains the DEV draft, profile, history, and scroll behind the preview frame", async () => {
+  it("keeps the DEV draft, profile and answer visible without an embedded production preview", async () => {
     stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     seedAnsweredConversation();
     render(<ServiceShell />);
@@ -1114,50 +1112,16 @@ describe("isolated production presentation preview", () => {
     const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
     fireEvent.change(question, { target: { value: "Keep this DEV draft" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
-    const original = JSON.stringify(window.localStorage);
     const messages = document.querySelector<HTMLElement>(".messages")!;
     messages.scrollTop = 240;
-    const trigger = screen.getByRole("button", { name: "Production preview" });
-    trigger.focus();
-    fireEvent.click(trigger);
-    expect(screen.getByTitle("Production preview interface")).toHaveAttribute("src", "/docreview-rag-agent/production-preview/");
-    expect(question).not.toBeVisible();
-    expect(screen.getByText("Data center revenue grew on Hopper demand.")).not.toBeVisible();
-    expect(screen.queryByRole("button", { name: "System · healthy" })).toBeNull();
-    expect(screen.getByText(/PROD interface · local DEV backend/)).toBeVisible();
-    expect(JSON.stringify(window.localStorage)).toBe(original);
-    fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
-    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole("button", { name: "Production preview" })).toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
     expect(question).toBeVisible();
     expect(question).toHaveValue("Keep this DEV draft");
+    expect(screen.getByText("Data center revenue grew on Hopper demand.")).toBeVisible();
     expect(messages.scrollTop).toBe(240);
     expect(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" })).toHaveAttribute("aria-pressed", "true");
-    expect(JSON.stringify(window.localStorage)).toBe(original);
-  });
-
-  it("mounts the PROD interface using public DEV requests and isolated persistent storage", async () => {
-    const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
-    seedAnsweredConversation();
-    const original = JSON.stringify(window.localStorage);
-    enterProductionPreview("document");
-    localStorage.setItem("docreview:preview:docreview:onboarding:v1", JSON.stringify({ version: 1, value: "done" }));
-    render(<ServiceShell publicPreview />);
-    await screen.findByText("Published corpus");
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "Production preview details" }).parentElement!);
-    expect(screen.getByRole("tooltip", { name: "Production preview" })).toHaveTextContent("The same PROD interface sends real requests to this local DEV backend under public limits.");
-    expect(screen.queryByText("Data center revenue grew on Hopper demand.")).toBeNull();
-    expect(screen.queryByText("NVIDIA data center")).toBeNull();
-    expect(screen.queryByText(/Corpus total · 29/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Production preview" })).toBeNull();
-    expect(screen.queryByLabelText("Answer engine")).toBeNull();
-    const question = screen.getByPlaceholderText("Ask a question about the filing corpus");
-    fireEvent.change(question, { target: { value: "Preview draft only" } });
-    expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
-    fireEvent.keyDown(question, { key: "Enter" });
-    fireEvent.click(screen.getByRole("button", { name: /^Settings and preview/ }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/public/documents/facets"))).toBe(true));
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).includes("/review/stream"))).toBe(true);
-    expect(Object.entries(JSON.parse(original)).every(([key, value]) => window.localStorage.getItem(key) === value)).toBe(true);
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "DEV MODE");
   });
 });
 

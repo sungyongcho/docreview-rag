@@ -14,13 +14,11 @@ it("keeps every existing control reachable exactly once through four compact tas
   for (const group of HELP_GROUPS) expect(group.clusters.length).toBeLessThanOrEqual(4);
 });
 
-it("keeps public and read-only preview guides translated and documentation links readable", () => {
-  for (const access of [{}, { publicPreview: true }]) {
-    for (const { topic } of helpEntriesForAccess(access)) {
-      const primer = getHelpPrimer(topic);
-      expect(documentationDocument(primer.documentId!, "en")).toBeDefined();
-      for (const text of [...topic.body, primer.summary, ...primer.steps]) expect(KO[text], text).toBeTruthy();
-    }
+it("keeps public guides translated and documentation links readable", () => {
+  for (const { topic } of helpEntriesForAccess()) {
+    const primer = getHelpPrimer(topic);
+    expect(documentationDocument(primer.documentId!, "en")).toBeDefined();
+    for (const text of [...topic.body, primer.summary, ...primer.steps]) expect(KO[text], text).toBeTruthy();
   }
 });
 

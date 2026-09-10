@@ -1,17 +1,27 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
+import { configurePresetStorage } from "@/lib/preset-storage";
 import { loadSavedPresets, savePreset } from "@/lib/saved-presets";
 import { BUILTIN_PRESETS, DEFAULT_PROFILE } from "@/lib/types";
 import { RetrievalPresetManager } from "./retrieval-preset-manager";
 
-afterEach(() => { cleanup(); exitProductionPreview(); localStorage.clear(); vi.unstubAllEnvs(); });
+afterEach(() => { cleanup(); configurePresetStorage(null); localStorage.clear(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-it("allows preset editing in isolated preview browser storage", () => {
-  enterProductionPreview("document");
+it("allows PROD presets to be saved and deleted without the DEV file API", () => {
+  configurePresetStorage({ environment: "prod", can_change_custom_retrieval: false });
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   render(<RetrievalPresetManager />);
-  expect(screen.queryByText(/not saved in preview/)).not.toBeInTheDocument();
   for (const name of ["Save current search as a preset", "Register new preset", "Import preset JSON"]) expect(screen.getByRole("button", { name })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Register new preset" }));
+  fireEvent.change(screen.getByLabelText("Preset name"), { target: { value: "Browser research" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+  expect(loadSavedPresets()[0]).toMatchObject({ name: "Browser research", retrieval: DEFAULT_PROFILE });
+  fireEvent.click(screen.getByRole("button", { name: "Browser research" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
+  expect(loadSavedPresets()).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+  expect(loadSavedPresets()).toEqual([]);
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it("registers balanced defaults through JSON with inline validation", () => {

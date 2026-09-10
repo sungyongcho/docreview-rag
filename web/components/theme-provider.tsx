@@ -6,7 +6,7 @@ import { subscribeStorageRestored, storageEventValue } from "@/lib/storage";
 
 const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void }>({ theme: "system", setTheme: () => undefined });
 
-/** App, documentation and production previews share one preference. */
+/** App and documentation share one theme preference. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, updateTheme] = useState<Theme>("system");
   const current = useRef<Theme>("system");

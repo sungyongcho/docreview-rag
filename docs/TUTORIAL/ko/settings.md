@@ -170,7 +170,7 @@ DEV에서는 이 편집기가 더 낮은 작업값을 서버의 `data/local-sett
 
 유효한 이전 버전은 PROD에서 한 번 변환합니다. 읽을 수 없거나 미래 버전인 데이터는 내보내기의 복구 항목에 보존하고 안내와 함께 안전한 기본값을 사용합니다. 용량 부족·비공개 모드·저장 차단 시 현재 탭에서는 변경 사항을 사용할 수 있지만 영구 저장되지 않았다는 안내가 표시됩니다. 닫기 전에 내보내세요. 비공개 창을 닫으면 해당 데이터가 사라질 수 있습니다.
 
-PROD 첫 방문에 **⚠️ 설정과 대화는 이 브라우저에만 저장됩니다** 안내가 표시됩니다. **확인**은 닫은 상태를 기억하고, **데이터와 도움말 → 브라우저 저장소**의 ⚠️ 버튼은 안내를 다시 엽니다. **자세히**는 이 절로 이동합니다. DEV는 기존 저장 동작을 유지하며 **배포 화면 미리보기**도 격리된 메모리 저장을 사용합니다.
+PROD 첫 방문에 **⚠️ 설정과 대화는 이 브라우저에만 저장됩니다** 안내가 표시됩니다. **확인**은 닫은 상태를 기억하고, **데이터와 도움말 → 브라우저 저장소**의 ⚠️ 버튼은 안내를 다시 엽니다. **자세히**는 이 절로 이동합니다. DEV는 기존 저장 동작을 유지합니다.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: PROD browser-storage notice, Data & help per-key usage, export/import confirmation and reminder; locale=ko; light mode; show real deployed state. Preserve existing assets. -->
@@ -186,10 +186,10 @@ PROD 첫 방문에 **⚠️ 설정과 대화는 이 브라우저에만 저장됩
 
 **현재 검색 설정을 프리셋으로 저장** 또는 **새 프리셋 등록하기**(균형 기본값)를 선택하세요. 하나의 편집기에서 이름, 설명, 검색 필드를 수정하거나 **JSON** 모드에서 직접 편집하고 오류를 확인하며 JSON을 복사할 수 있습니다. JSON 파일을 가져오면 새 복사본으로 편집합니다. 저장한 행의 **프리셋 JSON 내보내기**로 파일을 내려받습니다. 각 저장한 행에서 대화에 적용, 복사, 편집, 삭제 확인을 사용할 수 있습니다. 저장·삭제는 기존 대화의 설정을 변경하지 않습니다. 대화에 적용은 현재 서버의 사용자 정의 검색 권한을 따릅니다.
 
-PROD에서는 버전이 지정된 브라우저 설정 모듈로 저장하며 파일 API를 노출하지 않습니다. 브라우저 설정 내보내기·가져오기에 프리셋도 포함됩니다. **배포 화면 미리보기**에서는 메모리 전용이며 저장되지 않는다는 안내와 함께 저장·등록 등 쓰기 버튼을 비활성화합니다. 실제 배포 화면에서는 해당 브라우저에 저장합니다.
+PROD에서는 버전이 지정된 브라우저 설정 모듈로 저장하며 파일 API를 노출하지 않습니다. 브라우저 설정 내보내기·가져오기에 프리셋도 포함됩니다.
 
 ### SCREENSHOT NEEDED
-<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and production-preview notice; locale ko. Capture after implementation. -->
+<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and PROD browser-storage notice; locale ko. Capture after implementation. -->
 
 ### 새 대화 검색 기본값
 

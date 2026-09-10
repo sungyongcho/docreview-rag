@@ -1,6 +1,6 @@
 import type { components } from "./api-generated";
 import { DEFAULT_SESSION_PROFILE } from "./types";
-import { presentationFetch, type PresentationInit } from "./production-preview";
+import { requestFetch, type TimedRequestInit } from "./http-request";
 import type {
   EvaluationComparison,
   CorpusSnapshot,
@@ -50,12 +50,12 @@ export class ApiError extends Error {
 /** Deadline for read requests; writes and streams keep none because they may legitimately wait on a busy worker. */
 export const REQUEST_TIMEOUT_MS = 15_000;
 
-async function request<T>(path: string, init?: PresentationInit): Promise<T> {
+async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const read = method === "GET" || method === "HEAD";
   let response: Response;
   try {
-    response = await presentationFetch(`${API_BASE}${path}`, {
+    response = await requestFetch(`${API_BASE}${path}`, {
       timeoutMs: read ? REQUEST_TIMEOUT_MS : undefined,
       ...init,
       headers: { "content-type": "application/json", ...init?.headers },
@@ -141,7 +141,7 @@ export async function streamReview(
   onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<Record<string, unknown>> {
   const historyTurns = sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns;
-  const response = await presentationFetch(`${API_BASE}/review/stream`, {
+  const response = await requestFetch(`${API_BASE}/review/stream`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
     body: JSON.stringify({
@@ -248,7 +248,7 @@ export interface HealthResponse {
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await presentationFetch(`${API_BASE}/health`, { signal });
+  const response = await requestFetch(`${API_BASE}/health`, { signal });
   if (!response.ok) {
     throw new ApiError(response.status, "health_failed", "DocReview API health check failed.");
   }
@@ -256,7 +256,7 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
 }
 
 export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
-  const response = await presentationFetch(`${API_BASE}/ready`, { signal });
+  const response = await requestFetch(`${API_BASE}/ready`, { signal });
   const payload = await response.json() as Readiness;
   if (response.status !== 200 && response.status !== 503) {
     throw new ApiError(response.status, "readiness_failed", "Runtime readiness could not be loaded.");
@@ -266,11 +266,6 @@ export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
 
 export function getCapabilities(): Promise<Capabilities> {
   return request<Capabilities>("/capabilities");
-}
-
-/** Preview uses the same public readiness request; the transport selects public policy on DEV. */
-export function getProductionPreviewReadiness(signal?: AbortSignal): Promise<Readiness> {
-  return getReadiness(signal);
 }
 
 export async function checkEvaluationPreparation(requestBody: import("./types").EvaluationRequest, signal?: AbortSignal): Promise<import("./types").EvaluationPreparation> {

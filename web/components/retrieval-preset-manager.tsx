@@ -3,13 +3,13 @@ import { useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useSavedPresets } from "@/lib/use-saved-presets";
 import { parsePresetJSON, presetError, type SavedPreset } from "@/lib/saved-presets";
-import { deleteStoredPreset, saveStoredPreset, PREVIEW_PRESET_NOTICE, PENDING_PRESET_NOTICE } from "@/lib/preset-storage";
+import { deleteStoredPreset, saveStoredPreset, PENDING_PRESET_NOTICE } from "@/lib/preset-storage";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type RetrievalProfile } from "@/lib/types";
 import { PresetDetails } from "./preset-details";
 import { ProfileFields } from "./profile-fields";
 import "./review-controls.css";
 
-/** One editor and list serve DEV files, deployed browser storage and preview. */
+/** One editor and list serve DEV files and PROD browser storage. */
 export function RetrievalPresetManager({ profile, onApply, canApply = true }: { profile?: RetrievalProfile; onApply?: (profile: RetrievalProfile) => void; canApply?: boolean } = {}) {
   const { t } = useI18n();
   const { presets, builtins, fileErrors, error: loadError, storageKind } = useSavedPresets();
@@ -21,9 +21,8 @@ export function RetrievalPresetManager({ profile, onApply, canApply = true }: { 
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const preview = storageKind === "preview";
   const pending = storageKind === "pending";
-  const readOnly = preview || pending;
+  const readOnly = pending;
   let parsed = draft, error = draft ? presetError(draft) : null;
   if (draft && jsonMode) {
     try { parsed = parsePresetJSON(json); error = parsed.id !== draft.id || parsed.builtin ? "The editor cannot change a preset ID or built-in status." : null; }
@@ -48,7 +47,7 @@ export function RetrievalPresetManager({ profile, onApply, canApply = true }: { 
     const url = URL.createObjectURL(new Blob([JSON.stringify(preset, null, 2)], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = `${preset.id}.json`; link.click(); URL.revokeObjectURL(url);
   }
-  const writeTitle = preview ? t(PREVIEW_PRESET_NOTICE) : pending ? t(PENDING_PRESET_NOTICE) : undefined;
+  const writeTitle = pending ? t(PENDING_PRESET_NOTICE) : undefined;
   const row = (p: SavedPreset) => <PresetDetails key={p.id} label={p.builtin ? t(p.name) : p.name} summary={`${p.retrieval.strategy} · k ${p.retrieval.k} · ${t("Candidates")} ${p.retrieval.candidate_k} · ${p.retrieval.lexical_ranker ?? "—"}`} source={t(p.builtin ? "Built-in" : storageKind === "file" ? "File" : "Browser")}>
     {p.description && <p>{p.description}</p>}<pre>{JSON.stringify(p.builtin ? { id: "", name: p.name, description: p.description ?? "", retrieval: p.retrieval } : p.retrieval, null, 2)}</pre>
     <div className="action-row">
@@ -61,7 +60,6 @@ export function RetrievalPresetManager({ profile, onApply, canApply = true }: { 
   return <section className="surface preset-manager">
     <div className="preset-manager-heading"><h3>{t("Retrieval presets")}</h3>{storageKind === "file" && <span className="mode-badge">DEV</span>}</div>
     <p className="helper">{t(storageKind === "file" ? "Saved as JSON files in data/presets/. File changes appear automatically." : "Saved in this browser. Saving a preset does not change existing conversations; select it to apply its values.")}</p>
-    {preview && <p className="notice warning" role="note">{t(PREVIEW_PRESET_NOTICE)}</p>}
     {pending && <p className="notice" role="status">{t(PENDING_PRESET_NOTICE)}</p>}
     {loadError && <p className="notice error" role="alert">{t(loadError)}</p>}
     {!!fileErrors.length && <div className="notice error" role="alert"><strong>{t("Some preset files could not be read.")}</strong><ul>{fileErrors.map(item => <li key={item.file}><code>{item.file}</code>: {t(item.error)}</li>)}</ul></div>}

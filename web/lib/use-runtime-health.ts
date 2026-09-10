@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getHealth, getProductionPreviewReadiness, getReadiness } from "./api";
+import { getHealth, getReadiness } from "./api";
 import type { Readiness, ReviewEngineState } from "./types";
 
 export type RuntimeHealthKind = "checking" | "healthy" | "api_down" | "db_degraded" | "preparation_needed";
@@ -32,7 +32,7 @@ function unavailableReadiness(readiness: Readiness | null): Readiness | null {
   return { ...readiness, review_engines: { ...readiness.review_engines, local: { ...readiness.review_engines.local, enabled: false, reason: "api_unavailable" } } };
 }
 
-export function useRuntimeHealth({ active = true, publicPreview = false }: { active?: boolean; publicPreview?: boolean } = {}) {
+export function useRuntimeHealth({ active = true }: { active?: boolean } = {}) {
   const [state, setState] = useState<RuntimeHealthState>({
     kind: "checking",
     readiness: null,
@@ -72,7 +72,7 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
       if (!force && Date.now() < readinessRetryAt.current) { retry = true; return; }
       window.clearTimeout(timeout);
       timeout = window.setTimeout(() => request.abort(), HEALTH_TIMEOUT_MS);
-      const readiness = await (publicPreview ? getProductionPreviewReadiness : getReadiness)(request.signal);
+      const readiness = await getReadiness(request.signal);
       const healthy = readiness.status === "ready" || readiness.corpus.availability === "not_applicable";
       if (!mounted.current || !activity.current || controller.current !== request) return;
       if (request.signal.aborted) throw new Error("Runtime readiness check timed out.");
@@ -104,16 +104,16 @@ export function useRuntimeHealth({ active = true, publicPreview = false }: { act
         if (retry && mounted.current && activity.current) retryTimer.current = window.setTimeout(() => void check(), HEALTH_RETRY_MS);
       }
     }
-  }, [publicPreview]);
+  }, []);
 
   /** Invalidate an older poll before exposing a successful connection change. */
   const refreshLocal = useCallback((local: ReviewEngineState) => {
-    if (!activity.current || publicPreview) return;
+    if (!activity.current) return;
     setState((current) => ({ ...current, readiness: current.readiness ? {
       ...current.readiness, review_engines: { ...current.readiness.review_engines, local },
     } : null }));
     void check(true);
-  }, [check, publicPreview]);
+  }, [check]);
 
   useEffect(() => {
     mounted.current = true;

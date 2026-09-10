@@ -170,7 +170,7 @@ Use **Clear conversations** to clear only conversations, **Reset saved defaults*
 
 Valid old records migrate once in PROD. Unreadable or future records are retained in a recovery entry in the export, with a notice and safe defaults. Quota or private-mode failures keep changes usable in the current tab and report that they are not durably saved: export before closing. Private browsing may discard its data when the session ends.
 
-The first PROD visit displays **⚠️ Settings and conversations are saved only in this browser**. **Got it** remembers dismissal. The ⚠️ button in **Data & help → Browser storage** reopens it; **Learn more** opens this section. DEV keeps its existing writes; its **Production preview** still uses isolated memory and cannot persist changes to the deployed browser store.
+The first PROD visit displays **⚠️ Settings and conversations are saved only in this browser**. **Got it** remembers dismissal. The ⚠️ button in **Data & help → Browser storage** reopens it; **Learn more** opens this section. DEV keeps its existing storage behavior.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: PROD browser-storage notice, Data & help per-key usage, export/import confirmation and reminder; locale=en; light mode; show real deployed state. Preserve existing assets. -->
@@ -186,10 +186,10 @@ Open **Measure → Retrieval presets**. DEV uses `data/presets/<id>.json`, next 
 
 Use **Save current search as a preset** or **Register new preset** (Balanced defaults). The same editor supports a name, description, search fields, and a **JSON** view with inline validation and **Copy JSON**. Import one JSON file to edit a new copy; export a saved row with **Export preset JSON**. Each saved row offers explicit selection, copy, edit and confirmed deletion. Saving or deleting does not change existing conversations. Selection remains subject to the current server's custom-retrieval permission.
 
-PROD stores presets through the versioned browser settings module; it exposes no file API. Browser settings export/import includes these presets. In **Production preview**, the page explains its memory-only storage and disables save, register and other write actions; actual deployment saves to that browser.
+PROD stores presets through the versioned browser settings module; it exposes no file API. Browser settings export/import includes these presets.
 
 ### SCREENSHOT NEEDED
-<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and production-preview notice; locale en. Capture after implementation. -->
+<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and PROD browser-storage notice; locale en. Capture after implementation. -->
 
 ### Default search settings for new chats
 

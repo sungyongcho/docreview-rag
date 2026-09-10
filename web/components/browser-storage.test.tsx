@@ -2,11 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { browserStorage, configureBrowserStorage, exportBrowserSettings, STORAGE_NOTICE_KEY } from "@/lib/storage";
-import { exitProductionPreview } from "@/lib/production-preview";
 import { BrowserStorageSettings, BrowserStorageSupport } from "./browser-storage";
 import { NotificationProvider } from "./notifications";
 
-beforeEach(() => { vi.restoreAllMocks(); exitProductionPreview(); configureBrowserStorage("dev"); localStorage.clear(); });
+beforeEach(() => { vi.restoreAllMocks(); configureBrowserStorage("dev"); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); configureBrowserStorage(undefined); });
 
 it("hides the support notice and settings in DEV", () => {

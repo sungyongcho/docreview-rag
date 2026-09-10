@@ -137,7 +137,7 @@ uv run python -m scripts.schema check
 
 Normal Compose startup now prepares an empty database automatically after DB health succeeds.
 The image entrypoint inspects an existing database without schema changes and refuses to launch
-the API on drift. This applies to dev, prod preview and the deployment Compose using this image.
+the API on drift. This applies to DEV, local PROD mode and the deployment Compose using this image.
 The web container may still open while the API is blocked; inspect `rag-dev logs --tail 80 app`
 for the schema diagnosis and local `check`/`recover` commands. Database-free canned images skip
 the gate. Source acquisition and indexing remain separate prerequisites.
@@ -188,26 +188,9 @@ The development stack supports source reload and live documentation updates. API
 restarts can interrupt queued work; check Jobs before deciding that an interrupted
 operation needs a retry. [Runtime](runtime.md) explains job and execution states.
 
-> [!DEV]
-> Production preview is a DEV-only inspection tool. It leaves the backend in DEV and does not grant production operator permissions.
+This release supports DEV and PROD as separate runtime modes. The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211) and is not available in this release.
 
-In a running DEV environment, **Production preview** opens the same PROD interface against the current DEV backend. Public reads, bounded search and answers execute through the public request policy. Administrator actions and local engines stay unavailable. Finish an active DEV request before opening the preview; **Exit preview** restores the retained DEV tree.
-
-Conversations, document scope, settings and browser-only experiments persist under a preview-specific localStorage namespace. They survive re-entry and reload without importing DEV conversations. Language and theme are shared. No preview database is created or copied: published source data is read from the DEV backend's database, and DEV reprocessing can change it.
-
-Click the struck PROD badge to pin its explanation; Close, Escape or an outside click dismisses it. Hover and keyboard focus also expose the explanation. Model calls are real and can consume usage.
-
-<!-- capture:28-production-preview -->
-
-![The isolated public-interface preview is explicitly labeled as using a DEV backend.](../assets/28-production-preview.en.jpg)
-
-*Earlier preview layout; the current preview supports public requests and persistent isolated storage as described above.*
-
-### SCREENSHOT NEEDED
-<!-- feature=interactive-production-preview; locale=en; theme=light; state=pinned-PROD-explanation-with-public-interface; preserve-existing-assets=true -->
-The public bundle and production backend remain separate release checks; the preview does not change server credentials or deployment settings.
-
-`rag-prod` opens a local public preview with different permissions; it does not publish
+`rag-prod` starts standalone local PROD mode with public permissions; it does not publish
 the site. A working local-model connection in development does not make Local LLM
 available in public mode. See [CLI environment commands](cli.md#development-and-local-prod-preview)
 for deliberate mode changes, and [Settings](settings.md) for saved connection settings.

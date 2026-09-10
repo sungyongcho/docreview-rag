@@ -43,9 +43,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .runtime-mode-badge.prod { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); color: var(--text); }
 a.runtime-mode-badge { text-decoration: none; cursor: pointer; }
 a.runtime-mode-badge:hover, a.runtime-mode-badge:focus-visible { color: var(--accent); }
-/* A previewed PROD badge strikes its label: the screen is deployed-shaped, the server behind it is still DEV. */
-.runtime-mode-badge.preview .runtime-mode-label { display: inline-flex; gap: 5px; text-decoration: line-through; text-decoration-thickness: 2px; }
-.runtime-mode-badge.preview svg { flex: none; opacity: .75; }
 
 .workspace { height: 100dvh; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .topbar { height: 58px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--border); }

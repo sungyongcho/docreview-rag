@@ -8,7 +8,7 @@ import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import type { Capabilities } from "./types";
 
 export type HelpCapability = Exclude<keyof Capabilities, "environment">;
-export interface HelpAccess { capabilities?: Capabilities | null; publicPreview?: boolean }
+export interface HelpAccess { capabilities?: Capabilities | null }
 export interface HelpGuide { summary: string; steps: readonly string[] }
 
 export type HelpScreen =
@@ -35,14 +35,12 @@ export interface HelpTopic {
   /** The actual capability required to use this control; omitted for public browsing. */
   capability?: HelpCapability;
   requiredCapabilities?: readonly HelpCapability[];
-  availableInPreview?: boolean;
   publicContent?: { capabilities: readonly HelpCapability[]; body: string[]; guide: HelpGuide };
   guide?: HelpGuide;
 }
 
 /** Match effective UI permissions, with a hard local-operation boundary in production. */
 function capabilityAllowed(capability: HelpCapability, access: HelpAccess): boolean {
-  if (access.publicPreview && capability !== "can_compare_published_snapshots") return false;
   if ((capability === "can_configure_local_llm" || capability === "can_use_operations") && access.capabilities?.environment !== "dev") return false;
   return access.capabilities?.[capability] === true;
 }
@@ -53,12 +51,10 @@ export function developmentHelpTopic(topic: HelpTopic): boolean {
 
 /** Use one topic policy for search, recommendations, details, links, and page help. */
 export function accessibleHelpTopic(topic: HelpTopic, access: HelpAccess = {}): HelpTopic | null {
-  if (access.publicPreview && topic.availableInPreview === false) return null;
   if (topic.capability && !capabilityAllowed(topic.capability, access)) return null;
   if (topic.requiredCapabilities?.some((capability) => !capabilityAllowed(capability, access))) return null;
-  const visible = topic.publicContent?.capabilities.some((capability) => !capabilityAllowed(capability, access))
+  return topic.publicContent?.capabilities.some((capability) => !capabilityAllowed(capability, access))
     ? { ...topic, body: topic.publicContent.body, tune: undefined, guide: topic.publicContent.guide } : topic;
-  return access.publicPreview ? { ...visible, guide: { summary: visible.guide?.summary ?? visible.body[0], steps: ["Open the related control.", "Read the available values or recorded results.", "This preview is read-only; questions and server changes are not executed."] } } : visible;
 }
 
 /** Attach the owning workspace permission while preserving narrower per-control requirements. */
@@ -353,7 +349,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["build.stage.embeddings", "build.stage.lexical"],
   },
   {
-    id: "review.composer", availableInPreview: false,
+    id: "review.composer",
     title: "Question",
     body: [
       "Enter sends, Shift+Enter adds a line. The last six turns of the conversation travel with the question so follow-ups keep their context.",
@@ -362,7 +358,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.send", "review.evidence"],
   },
   {
-    id: "review.send", availableInPreview: false,
+    id: "review.send",
     title: "Send",
     body: [
       "Disabled while a review runs, while the API is down or still being checked, when the corpus is empty, or when Vector retrieval is selected but embeddings are pending.",
@@ -372,7 +368,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.readiness", "build.stage.answer_model"],
   },
   {
-    id: "review.run-trace", publicContent: {"capabilities": ["can_edit_run_limits"], "body": ["Read the recorded stages, measurements, and failure details without changing execution limits."], "guide": {"summary": "Read the recorded stages, measurements, and failure details without changing execution limits.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}}, availableInPreview: false,
+    id: "review.run-trace", publicContent: {"capabilities": ["can_edit_run_limits"], "body": ["Read the recorded stages, measurements, and failure details without changing execution limits."], "guide": {"summary": "Read the recorded stages, measurements, and failure details without changing execution limits.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Run trace",
     body: [
       "What the run actually did: its identifier, how many provider requests it made, tokens in and out, elapsed seconds, and the node path it took.",
@@ -385,7 +381,7 @@ const REVIEW: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "review.evidence", availableInPreview: false,
+    id: "review.evidence",
     title: "Evidence, pins and exclusions",
     body: [
       "Each answer lists its candidate chunks as collapsed cards titled by filing section, with the document id, a table badge and the character span; pinned cards start open and ten cards show per page.",

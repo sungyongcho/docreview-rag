@@ -1,11 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { configurePresetStorage, deleteStoredPreset, presetStorageKind, readPresetCatalog, refreshFilePresets, saveStoredPreset } from "./preset-storage";
 import { parsePresetJSON } from "./saved-presets";
-import { enterProductionPreview, exitProductionPreview } from "./production-preview";
 import { BUILTIN_PRESETS, DEFAULT_PROFILE } from "./types";
 
 const preset = { id: "research", name: "Research", description: "Detailed", retrieval: DEFAULT_PROFILE };
-afterEach(() => { configurePresetStorage(null); exitProductionPreview(); localStorage.clear(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => { configurePresetStorage(null); localStorage.clear(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 it("validates direct JSON and reserves built-in identities", () => {
   expect(parsePresetJSON(JSON.stringify(preset))).toEqual(preset);
@@ -16,23 +15,15 @@ it("validates direct JSON and reserves built-in identities", () => {
   for (const retrieval of [5, true, "hybrid", [], null]) expect(() => parsePresetJSON(JSON.stringify({ ...preset, retrieval }))).toThrow("Include all retrieval fields and no unknown fields.");
 });
 
-it("persists PROD and preview presets in separate browser namespaces", () => {
+it("saves, updates and deletes PROD presets without the DEV file API", () => {
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "off");
+  configurePresetStorage({ environment: "prod", can_change_custom_retrieval: false });
   const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   expect(presetStorageKind()).toBe("browser");
   saveStoredPreset(preset);
   expect(readPresetCatalog().presets[0].description).toBe("Detailed");
-  enterProductionPreview("document");
-  expect(readPresetCatalog().presets).toEqual([]);
-  expect(presetStorageKind()).toBe("browser");
-  saveStoredPreset({ ...preset, description: "Preview research" });
-  expect(readPresetCatalog().presets[0].description).toBe("Preview research");
-  exitProductionPreview();
-  enterProductionPreview("document");
-  expect(readPresetCatalog().presets[0].description).toBe("Preview research");
-  deleteStoredPreset(preset.id);
-  expect(readPresetCatalog().presets).toEqual([]);
-  exitProductionPreview();
+  saveStoredPreset({ ...preset, description: "Updated research" });
+  expect(readPresetCatalog().presets[0].description).toBe("Updated research");
   expect(readPresetCatalog().presets).toHaveLength(1);
   deleteStoredPreset(preset.id);
   expect(readPresetCatalog().presets).toEqual([]);

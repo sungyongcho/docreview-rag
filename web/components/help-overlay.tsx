@@ -22,7 +22,6 @@ export interface HelpOverlayProps {
   location: string;
   onNavigateTopic?: (id: string) => void;
   capabilities?: Capabilities | null;
-  publicPreview?: boolean;
 }
 
 type HelpPage = { kind: "home" } | { kind: "topic"; topicId: string };
@@ -62,9 +61,9 @@ function modalOwnsFocus() {
   return [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].some((dialog) => !dialog.closest("[hidden], [inert]"));
 }
 
-export function HelpOverlay({ screen, open, keyboard = true, onClose, location, onNavigateTopic, capabilities, publicPreview = false }: HelpOverlayProps) {
+export function HelpOverlay({ screen, open, keyboard = true, onClose, location, onNavigateTopic, capabilities }: HelpOverlayProps) {
   const { t, locale } = useI18n();
-  const allowed = useMemo(() => helpEntriesForAccess({ capabilities, publicPreview }), [capabilities, publicPreview]);
+  const allowed = useMemo(() => helpEntriesForAccess({ capabilities }), [capabilities]);
   const byId = useMemo(() => new Map(allowed.map((entry) => [entry.topic.id, entry.topic])), [allowed]);
   const topics = useMemo(() => screen ? allowed.filter((entry) => entry.screen === screen).map((entry) => entry.topic) : NO_TOPICS, [allowed, screen]);
   const [rects, setRects] = useState<Record<string, TargetRect>>({});

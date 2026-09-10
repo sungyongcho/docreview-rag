@@ -88,7 +88,6 @@ export interface MeasureWorkspaceProps {
   publicProfile?: import("@/lib/types").ReviewSessionDraft;
   publicScopeBlocked?: boolean;
   capabilities?: Capabilities | null;
-  publicPreview?: boolean;
   active?: boolean;
   environment?: "dev" | "prod";
   live: boolean;
@@ -127,7 +126,7 @@ function toCanonical(value: unknown): GoldenCanonical | null {
     : null;
 }
 
-export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabilities, publicPreview, active = true, live, ready, readiness, onOpenPreparation, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange, onLeaveGuard }: MeasureWorkspaceProps) {
+export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabilities, active = true, live, ready, readiness, onOpenPreparation, profile, onProfileChange, onApplyProfile, onApplySnapshot, jobBoard, onRefreshJobs, tab, onTabChange, focusResultId = null, onResultSelectionChange, helpTarget = null, environment, onDirtyChange, onLeaveGuard }: MeasureWorkspaceProps) {
   const { confirm, confirmationDialog } = useConfirmation();
   const { t, locale } = useI18n();
   const sourceJsonId = useId();
@@ -777,7 +776,7 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
           <button type="button" aria-pressed={tab === "presets"} onClick={() => changeTab("presets")}>{t("Presets")}</button>
         </div>
       </nav>
-      <div className="workflow-section-heading" data-help={tab === "presets" ? "measure.presets.manage" : undefined}><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "snapshots" ? t(live ? "Snapshot management" : "Published snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp active={active} screen={`measure.${tab}`} capabilities={capabilities} publicPreview={publicPreview} /></div>
+      <div className="workflow-section-heading" data-help={tab === "presets" ? "measure.presets.manage" : undefined}><h2>{tab === "presets" ? t("Retrieval presets") : tab === "playground" ? t("Search trial") : tab === "golden" ? t("Prepare a golden dataset") : tab === "runs" ? t("Run evaluation") : tab === "snapshots" ? t(live ? "Snapshot management" : "Published snapshots") : t("Compare evaluation results")}</h2>{live && ["golden", "runs"].includes(tab) && <DevelopmentBadge locale={locale} compact />}<WorkflowHelp active={active} screen={`measure.${tab}`} capabilities={capabilities} /></div>
       {(live || tab === "playground" || tab === "presets") && <p className="data-origin">{t(live ? "Live workspace · results come from recorded runs" : tab === "playground" ? "Live search within the selected published scope" : "Explore published records. Reading and filtering do not run an evaluation.")}</p>}
       {!live && !(tab === "golden" && goldenDetailOpen) && (tab === "golden" || tab === "runs" || tab === "compare" || tab === "snapshots") && <PublicQualityAccess section={tab} />}
       {(live || tab === "playground" || tab === "presets") && <p className="workflow-intro">{tab === "presets" ? t("Create reusable search settings, then select them in a conversation.") : tab === "playground" ? t("Try one question and inspect its evidence before evaluating a whole dataset.") : tab === "golden" ? t(live ? "Select a JSON dataset and inspect its questions. Create a separate file to edit, save changes, then check format and sources." : "Inspect published questions and expected evidence. Editing runs in DEV mode.") : tab === "runs" ? t("Choose the questions and search settings to measure. A run records what was tested and how well the evidence was retrieved.") : tab === "snapshots" ? t("A snapshot preserves search data and an evaluation result so you can reuse a known configuration later.") : t("Choose a baseline and a candidate. Compare evidence hits, rank, and latency. Saving a snapshot is optional.")}</p>}

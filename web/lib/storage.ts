@@ -1,6 +1,5 @@
 import { newProdProfile } from "./prod-profile";
 import { OPERATION_CATEGORIES, OPERATION_TARGETS, type OperatorCommand, type OperationsFilter, type OperationsTargetFilter, type OperatorTarget } from "./operator-api";
-import { browserStorage as rawBrowserStorage, previewState } from "./production-preview";
 import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./types";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE, DEFAULT_PROFILE } from "./types";
 
@@ -255,7 +254,7 @@ export function configureBrowserStorage(environment?: "dev" | "prod"): void {
   }
 }
 
-/** PROD and its preview share validation and persistence over different raw storage namespaces. */
+/** Enable validated, versioned browser persistence for PROD. */
 export function productionBrowserStorageEnabled(): boolean {
   return storageEnvironment === "prod";
 }
@@ -275,7 +274,7 @@ export function subscribeStorageWarnings(listener: (warning: StorageWarning) => 
   return () => window.removeEventListener(STORAGE_WARNING_EVENT, changed);
 }
 
-/** Match only this application's browser keys, including its legacy locale spelling. */
+/** Match active application keys; preserve archived preview records for a future release. */
 function ownedStorageKey(key: string): boolean { return !key.startsWith("docreview:preview:") && (key.startsWith("docreview:") || key === "docreview.locale"); }
 
 /** Keep current versioned keys; migrate only the previous unversioned preference names. */
@@ -539,14 +538,13 @@ export function subscribeStorageRestored(listener: () => void): () => void {
 }
 
 /** Keep raw destructive browser-reset access centralized; callers retain existing confirmation. */
-export function browserResetStores(): Storage[] { return previewState().mode === "document" ? [rawBrowserStorage()] : [rawBrowserStorage(), window.sessionStorage]; }
+export function browserResetStores(): Storage[] { return [rawBrowserStorage(), window.sessionStorage]; }
 
 // Kept outside portable preference keys so imports cannot replay a fresh-start receipt.
 export const FRESH_START_RECEIPT_KEY = "docreview.fresh-start";
 
 /** Consume an explicit server reset once, clearing only this application's browser keys. */
 export function applyFreshStartReset(resetId: string | null | undefined): boolean {
-  if (previewState().mode === "document") return false;
   if (!resetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resetId) || typeof window === "undefined") return false;
   const [local, session] = browserResetStores();
   const resetLocal = local.getItem(FRESH_START_RECEIPT_KEY) !== resetId;
@@ -577,7 +575,7 @@ export function browserThemeBootstrap(legacyKey: string): string {
 
 /** Raw-value boundary shared with the browser-local preset implementation. */
 export function readStoredValue(key: string): string | null { return browserStorage().getItem(key); }
-/** Persist a serialized setting through the selected DEV, PROD or preview transport. */
+/** Persist a serialized setting through the selected DEV or PROD storage. */
 export function writeStoredValue(key: string, value: string): void { browserStorage().setItem(key, value); }
 
 /** Decode cross-tab preference events through the same version and payload checks. */
@@ -595,3 +593,6 @@ export function storageEventValue(event: StorageEvent, key: string): string | nu
   return validStoredValue(versionedKey(key), raw) ? raw : undefined;
 
 }
+
+/** Access this origin's storage without adopting any archived preview namespace. */
+function rawBrowserStorage(): Storage { return window.localStorage; }

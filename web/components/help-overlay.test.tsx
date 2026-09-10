@@ -8,6 +8,7 @@ import { HelpOverlay as HelpOverlayComponent, type HelpOverlayProps } from "./he
 import type { Capabilities } from "@/lib/types";
 
 const DEV_CAPABILITIES: Capabilities = { environment: "dev", can_configure_local_llm: true, can_edit_prompt_policy: true, can_edit_run_limits: true, can_edit_golden: true, can_build_snapshot: true, can_run_evaluation: true, can_change_custom_retrieval: true, can_query_snapshot: true, can_use_operations: true, can_compare_published_snapshots: true };
+const PROD_CAPABILITIES: Capabilities = { environment: "prod", can_configure_local_llm: false, can_edit_prompt_policy: false, can_edit_run_limits: false, can_edit_golden: false, can_build_snapshot: false, can_run_evaluation: false, can_change_custom_retrieval: false, can_query_snapshot: false, can_use_operations: false, can_compare_published_snapshots: true };
 
 function HelpOverlay(props: HelpOverlayProps) {
   return <HelpOverlayComponent capabilities={DEV_CAPABILITIES} {...props} />;
@@ -76,13 +77,13 @@ describe("HelpOverlay", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("keeps preview help read-only even if development permissions were accidentally supplied", () => {
-    render(<HelpOverlay publicPreview capabilities={DEV_CAPABILITIES} screen="review" open onClose={vi.fn()} location="review" />);
-    const panel = screen.getByRole("complementary", { name: "Help" });
-    fireEvent.change(within(panel).getByRole("textbox", { name: "Search help" }), { target: { value: "review.send" } });
-    expect(panel.querySelector('[data-help-item="review.send"]')).toBeNull();
-    openTopic("review.filters");
-    expect(panel.querySelector(".help-topic-detail")).toHaveTextContent("This preview is read-only; questions and server changes are not executed.");
+  it("keeps public question and request inspection help available with actual PROD capabilities", () => {
+    render(<HelpOverlay capabilities={PROD_CAPABILITIES} screen="review" open onClose={vi.fn()} location="review" />);
+    const panel = openTopic("review.send");
+    expect(panel.querySelector(".help-topic-detail")).toHaveTextContent("The request preview shows effective preset differences, filters, prompt composition, and the next request payload.");
+    openTopic("review.run-trace");
+    expect(panel.querySelector(".help-topic-detail")).toHaveTextContent("Read the recorded stages, measurements, and failure details without changing execution limits.");
+    expect(panel.querySelector('[data-help-item="review.run-limits"]')).toBeNull();
     expect(panel.querySelector(".development-badge")).toBeNull();
   });
 

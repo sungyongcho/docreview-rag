@@ -2,8 +2,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useRuntimeHealth } from "./use-runtime-health";
-import * as api from "./api";
-import type { Readiness, ReviewEngineState } from "./types";
+import type { ReviewEngineState } from "./types";
 
 const READY = {
   status: "ready",
@@ -106,24 +105,6 @@ describe("useRuntimeHealth", () => {
     rerender({ active: false });
     await act(async () => release(response({ status: "ok" })));
     expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses only the explicit public preview adapter after liveness succeeds", async () => {
-    const preview = { ...READY, environment: "prod", admin_mode: "readonly", corpus: { ...READY.corpus, documents: 0, chunks: null, embedded_chunks: null } } as Readiness;
-    const readPreview = vi.spyOn(api, "getProductionPreviewReadiness").mockResolvedValue(preview);
-    const fetch = vi.fn(async (input: RequestInfo | URL) => {
-      expect(String(input)).toMatch(/\/health$/);
-      return response({ status: "ok" });
-    });
-    vi.stubGlobal("fetch", fetch);
-    const { result } = renderHook(() => useRuntimeHealth({ publicPreview: true }));
-    await waitFor(() => expect(result.current.readiness).toBe(preview));
-    expect(readPreview).toHaveBeenCalledTimes(1);
-    expect(readPreview.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    act(() => result.current.refreshLocal({ enabled: true, model: "private-dev-model" }));
-    expect(result.current.readiness).toBe(preview);
-    expect(readPreview).toHaveBeenCalledTimes(1);
   });
 
   it("separates healthy, DB-degraded, and dismissed warning state", async () => {

@@ -16,7 +16,7 @@ import { DesktopJobNotifications, RuntimeSettings } from "@/components/runtime-s
 import { Operations } from "@/components/operations";
 import { SystemStatus } from "@/components/system-status";
 import { apiBase, getProviderUsage } from "@/lib/api";
-import { presentationFetch } from "@/lib/production-preview";
+import { requestFetch } from "@/lib/http-request";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type { EvaluationRequest, ProviderUsage, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
@@ -113,7 +113,7 @@ function ApiInspector({ ready }: { ready: boolean }) {
   async function sendRawRequest() {
     try {
       const body = JSON.parse(rawRequest) as Record<string, unknown>;
-      const response = await presentationFetch(`${apiBase()}/admin/evaluations/runs`, {
+      const response = await requestFetch(`${apiBase()}/admin/evaluations/runs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

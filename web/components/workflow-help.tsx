@@ -10,15 +10,15 @@ import { useI18n } from "@/lib/i18n";
 import "./workflow-help.css";
 
 /** Keep page help inside the visible workspace and close it whenever its owner changes. */
-export function WorkflowHelp({ screen, capabilities, publicPreview, active = true }: { screen: HelpScreen; active?: boolean } & HelpAccess) {
+export function WorkflowHelp({ screen, capabilities, active = true }: { screen: HelpScreen; active?: boolean } & HelpAccess) {
   const { t, locale } = useI18n();
-  const topics = helpEntriesForAccess({ capabilities, publicPreview }).filter((entry) => entry.screen === screen).slice(0, 3);
+  const topics = helpEntriesForAccess({ capabilities }).filter((entry) => entry.screen === screen).slice(0, 3);
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
   const [position, setPosition] = useState({ left: 12, top: 12, width: 430, maxHeight: 440 });
-  useLayoutEffect(() => { setOpen(false); }, [screen, active, publicPreview, topics.length]);
+  useLayoutEffect(() => { setOpen(false); }, [screen, active, topics.length]);
   useLayoutEffect(() => {
     if (!open || !active) return;
     const align = () => {

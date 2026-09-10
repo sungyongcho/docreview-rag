@@ -2,12 +2,10 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { PRESETS_CHANGED } from "./saved-presets";
 import { presetStorageKind, readPresetCatalog, serverPresetStorageKind, subscribeFilePresets, subscribePresetStorage } from "./preset-storage";
-import { previewState, serverPreviewState, subscribePreview } from "./production-preview";
 import { BUILTIN_PRESETS } from "./types";
 
 /** Keep every selector on the same storage adapter and directory version. */
 export function useSavedPresets() {
-  const preview = useSyncExternalStore(subscribePreview, previewState, serverPreviewState);
   const storageKind = useSyncExternalStore(subscribePresetStorage, presetStorageKind, serverPresetStorageKind);
   const [state, setState] = useState<ReturnType<typeof readPresetCatalog>>({ loaded: false, presets: [], builtins: BUILTIN_PRESETS, fileErrors: [], error: null });
   useEffect(() => {
@@ -20,6 +18,6 @@ export function useSavedPresets() {
     window.addEventListener(PRESETS_CHANGED, refresh);
     window.addEventListener("storage", refresh);
     return () => { unsubscribe(); window.removeEventListener(PRESETS_CHANGED, refresh); window.removeEventListener("storage", refresh); };
-  }, [preview.mode, storageKind]);
+  }, [storageKind]);
   return { ...state, storageKind };
 }

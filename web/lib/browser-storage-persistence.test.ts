@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enterProductionPreview, exitProductionPreview } from "./production-preview";
 import { browserStorage, configureBrowserStorage, exportBrowserSettings, importBrowserSettings, loadConversations, loadDefaultProfile, productionBrowserStorageEnabled, saveConversations, saveDefaultProfile, subscribeStorageWarnings, validateBrowserSettings } from "./storage";
+import { newProdProfile } from "./prod-profile";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "./types";
 
 const conversations = [{ id: "saved-review", title: "Retained review", createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z", messages: [{ id: "message-1", role: "user" as const, text: "한글 question" }], profile: DEFAULT_SESSION_PROFILE }];
@@ -10,8 +10,8 @@ function physicalEntries() {
   return Object.fromEntries(Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).sort().map(key => [key, localStorage.getItem(key)]));
 }
 
-beforeEach(() => { vi.restoreAllMocks(); exitProductionPreview(); configureBrowserStorage("dev"); localStorage.clear(); });
-afterEach(() => { vi.restoreAllMocks(); configureBrowserStorage(undefined); exitProductionPreview(); });
+beforeEach(() => { vi.restoreAllMocks(); configureBrowserStorage("dev"); localStorage.clear(); });
+afterEach(() => { vi.restoreAllMocks(); configureBrowserStorage(undefined); });
 
 describe("production browser persistence", () => {
   it("keeps DEV writes in their original raw format", () => {
@@ -22,17 +22,36 @@ describe("production browser persistence", () => {
     expect(localStorage.getItem("docreview:theme:v1")).toBeNull();
   });
 
-  it("keeps preview session data in persistent isolated storage while sharing the theme preference", () => {
-    localStorage.setItem("docreview:theme", "light");
-    enterProductionPreview("document"); configureBrowserStorage("prod");
-    browserStorage().setItem("docreview:theme", "dark"); saveConversations(conversations);
+  it("uses fixed PROD defaults without overwriting the saved DEV defaults", () => {
+    const devProfile = { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "accuracy" as const, sections: ["7"] };
+    saveDefaultProfile(devProfile);
+    configureBrowserStorage("prod");
+    const snapshot = physicalEntries();
+    expect(loadDefaultProfile()).toEqual(newProdProfile());
+    expect(() => saveDefaultProfile(devProfile)).toThrow("PROD defaults are fixed by server policy.");
+    expect(physicalEntries()).toEqual(snapshot);
+    configureBrowserStorage("dev");
+    expect(loadDefaultProfile()).toEqual(devProfile);
+  });
+
+  it("does not adopt, export or modify archived preview keys when saving in PROD", () => {
+    const archived = {
+      "docreview:preview:docreview:conversations:v2": JSON.stringify({ version: 2, value: JSON.stringify(conversations) }),
+      "docreview:preview:docreview:theme:v1": JSON.stringify({ version: 1, value: "dark" }),
+    };
+    for (const [key, value] of Object.entries(archived)) localStorage.setItem(key, value);
+    configureBrowserStorage("prod");
     expect(productionBrowserStorageEnabled()).toBe(true);
-    expect(localStorage.getItem("docreview:preview:docreview:conversations:v2")).not.toBeNull();
-    expect(browserStorage().getItem("docreview:theme")).toBe("dark");
-    expect(localStorage.getItem("docreview:theme")).toBe("dark");
-    expect(localStorage.getItem("docreview:conversations:v2")).toBeNull();
-    exitProductionPreview(); configureBrowserStorage("dev");
-    expect(browserStorage().getItem("docreview:theme")).toBe("dark");
+    expect(loadConversations()).toEqual([]);
+    expect(browserStorage().getItem("docreview:theme")).toBeNull();
+    const current = conversations.map(conversation => ({ ...conversation, id: "prod-review", title: "Current PROD review" }));
+    saveConversations(current);
+    browserStorage().setItem("docreview:theme", "light");
+    expect(loadConversations()).toEqual(current);
+    const backup = validateBrowserSettings(exportBrowserSettings());
+    expect(backup.entries.some(entry => entry.key === "docreview:conversations:v2")).toBe(true);
+    expect(backup.entries.some(entry => entry.key.startsWith("docreview:preview:"))).toBe(false);
+    for (const [key, value] of Object.entries(archived)) expect(localStorage.getItem(key)).toBe(value);
   });
 
   it("migrates valid legacy conversations, theme and locale once", () => {
@@ -89,9 +108,10 @@ describe("production browser persistence", () => {
     configureBrowserStorage("prod");
     const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Unavailable", name); });
     const warning = vi.fn(); const unsubscribe = subscribeStorageWarnings(warning);
-    saveConversations(conversations); saveDefaultProfile(DEFAULT_SESSION_PROFILE);
+    saveConversations(conversations);
+    expect(() => saveDefaultProfile(DEFAULT_SESSION_PROFILE)).toThrow("PROD defaults are fixed by server policy.");
     expect(loadConversations()).toEqual(conversations);
-    expect(loadDefaultProfile()).toEqual(DEFAULT_SESSION_PROFILE);
+    expect(loadDefaultProfile()).toEqual(newProdProfile());
     const backup = exportBrowserSettings();
     expect(validateBrowserSettings(backup).entries.some(entry => entry.key === "docreview:conversations:v2")).toBe(true);
     expect(warning).toHaveBeenCalledTimes(1);
@@ -139,7 +159,7 @@ describe("production browser persistence", () => {
   });
 
   it("restores exact serialized bytes to fresh storage and preserves another application's keys", () => {
-    configureBrowserStorage("prod"); saveConversations(conversations); saveDefaultProfile(DEFAULT_SESSION_PROFILE);
+    configureBrowserStorage("prod"); saveConversations(conversations);
     browserStorage().setItem("docreview:theme", "dark");
     const snapshot = physicalEntries(); const backup = exportBrowserSettings();
     configureBrowserStorage("dev"); localStorage.clear(); localStorage.setItem("another-app:session", "untouched");
@@ -224,22 +244,22 @@ it.each([{ fiscal_years: 42 }, { issuers: [12] }, { prompt_policy: { history_tur
   expect(physicalEntries()).toEqual(prior);
 });
 
-it("preserves the normal unsectioned filter through persistence and import", () => {
+it("preserves the conversation's unsectioned filter through persistence and import", () => {
   configureBrowserStorage("prod");
   const profile = { ...DEFAULT_SESSION_PROFILE, sections: [null, "7"] };
-  saveDefaultProfile(profile);
+  saveConversations([{ ...conversations[0], profile }]);
   const backup = exportBrowserSettings();
   configureBrowserStorage("dev"); localStorage.clear(); configureBrowserStorage("prod");
   importBrowserSettings(backup, true);
-  expect(loadDefaultProfile().sections).toEqual([null, "7"]);
+  expect(loadConversations()[0].profile?.sections).toEqual([null, "7"]);
 });
 
-it("round-trips vector-only retrieval with its intentionally absent lexical ranker", () => {
+it("round-trips conversation vector-only retrieval with its intentionally absent lexical ranker", () => {
   configureBrowserStorage("prod");
   const profile = { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom" as const, custom_retrieval: { ...DEFAULT_PROFILE, strategy: "vector" as const, lexical_ranker: null } };
-  saveDefaultProfile(profile);
+  saveConversations([{ ...conversations[0], profile }]);
   const backup = exportBrowserSettings();
   configureBrowserStorage("dev"); localStorage.clear(); configureBrowserStorage("prod");
   importBrowserSettings(backup, true);
-  expect(loadDefaultProfile().custom_retrieval).toEqual(profile.custom_retrieval);
+  expect(loadConversations()[0].profile?.custom_retrieval).toEqual(profile.custom_retrieval);
 });
