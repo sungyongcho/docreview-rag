@@ -25,7 +25,7 @@ rag-start-quick
 source 한 번으로 설치와 활성화를 진행합니다. Y는 자동 등록을 저장하고 로그인 셸로 재시작하며 배너에서 rag-help 입력을 안내합니다. N은 이번 셸만 불러옵니다. 다시 source하면 버전과 등록된 정의를 비교해 [already installed] 또는 [update required]를 표시하며 이후 변경은 `rag-alias update`로 반영합니다.
 
 Helper는 저장소에 포함됩니다. `source`는 현재 터미널에 등록하며,
-선택적인 [영구 등록 방법](cli.md)은 명령 안내를 참고하세요.
+선택적인 [영구 등록 방법](cli.md#명령-등록과-도움말)은 명령 안내를 참고하세요.
 첫 실행은 `.env`가 없을 때만 생성합니다. 파일을 로컬에서 편집하고 `rag-start-quick`를 다시 실행하세요.
 
 ```dotenv
@@ -56,29 +56,19 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 시작·readiness 실패 시 기존 읽기 전용 진단을 실행하고, 확인 후 볼륨을 보존하는
 종료·빌드·시작 복구를 한 번 제안합니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: guided Quick Start configuration repair; locale=ko; TTY color/bold or NO_COLOR plain text; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
-
 ## 1. 실행 환경 열고 확인하기 {#step-1}
 
-**목표:** 현재 환경에서 문서를 살펴보고 필요한 준비 작업을 할 수 있는지 확인합니다.
+> [!GOAL]
+> 현재 환경에서 문서를 살펴보고 필요한 준비 작업을 할 수 있는지 확인합니다.
+>
+> **준비** [Part 1: 환경 준비](#qs-setup) 또는 호환되는 DB가 연결된 실행 중인 서비스 · **완료** API가 응답하고 DB가 연결되며 스키마를 사용할 수 있습니다.
 
-**선행 조건:** 위 설치를 완료했거나 호환되는 DB가 연결된 실행 중인 서비스가 있어야
-합니다. 이 확인을 위해 원문 수집·임베딩·답변 요청을 실행할 필요는 없습니다.
+사이드바 **시스템 → 시스템 상태**를 엽니다. 페이지 제목은 **실행 준비 상태**입니다. 모드 표시를 읽고 준비 과정을 실습하려면 개발 환경을 사용하세요. 공개 모드는 권한이 달라 일부 조작이 보이지 않을 수 있습니다. 이 확인을 위해 원문 수집·임베딩·답변 요청을 실행할 필요는 없으며, 질문이나 기업을 입력하지 않습니다. 대신 서비스 주소가 의도한 환경인지 확인하세요. 화면이 같아 보여도 API·DB 주소가 다르면 다른 데이터를 사용하는 환경일 수 있습니다. 코퍼스 수치는 두 빌드 모두 표시되며 쓰기 가능 여부만 감춥니다.
 
-**화면 경로:** 사이드바 **시스템 → 시스템 상태**. 페이지 제목은 **실행 준비 상태**입니다.
-모드 표시를 읽고, 준비 과정을 실습하려면 개발 환경을 사용하세요.
-공개 모드는 권한이 달라 일부 조작이 보이지 않을 수 있습니다. 코퍼스 수치는 두 빌드 모두 표시되며 쓰기 가능 여부만 감춥니다.
-
-**입력과 의미:** 상태를 읽는 단계이므로 질문이나 기업을 입력하지 않습니다.
-서비스 주소가 의도한 환경인지 확인하세요. 화면이 같아 보여도 API·DB 주소가
-다르면 다른 데이터를 사용하는 환경일 수 있습니다.
-
-**주요 동작:** **새로고침**을 한 번 누르고 **확인 중…**이 끝날 때까지 기다립니다.
-
-**화면 변화:** 상태 정보가 갱신됩니다. 시스템 메뉴나 연결 경고에서 API 상태를
-읽고, 데이터베이스·스키마 항목을 확인하세요. 코퍼스 수치와 모델 정책은 같은
-환경의 다른 준비 항목입니다.
+1. **새로고침**을 한 번 누르고 **확인 중…**이 끝날 때까지 기다립니다. 상태 정보가 갱신되며, 시스템 메뉴나 연결 경고에서 API 상태를 읽습니다.
+2. 데이터베이스·스키마 항목을 확인합니다. 코퍼스 수치와 모델 정책은 같은 환경의 다른 준비 항목입니다.
+3. 완료 여부를 확인합니다. API가 응답하고 DB가 연결되며 스키마를 사용할 수 있으면 현재 환경에서 문서 준비를 허용하는지도 파악한 것입니다. 코퍼스가 비어 있어도 이 조건은 충족할 수 있으며, 기존 데이터 확인은 다음 단계에서 합니다. 알 수 없는 항목은 확인되지 않은 상태이므로 통과로 해석하지 않습니다.
+4. 페이지는 열리는데 API 확인이 실패하면 `rag-dev ps`와 `rag-dev logs --tail=80 app`을 확인하고, [문제 해결](troubleshooting.md)에서 기록된 증상에 맞는 조치를 적용한 뒤 다시 새로고침합니다. 새 DB라면 위의 스키마 준비를 따르고, 스키마 불일치가 있다고 기존 DB를 삭제하지 않습니다.
 
 | 항목 | 확인할 내용 | 이것만으로 알 수 없는 것 |
 |---|---|---|
@@ -89,38 +79,16 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 | 코퍼스 | 빈 상태·일부 준비 상태를 포함해 실제 수치가 수집되었는지. | 모든 벡터가 의도한 모델로 만들어졌는지. |
 | 모델 가용성 | 선택한 엔진이 사용 가능하거나 빠진 조건이 설명되는지. | 모델 요청의 성공이나 답변 근거의 충분함. |
 
-<!-- capture:01-system-status -->
-
-![시스템 상태에서 실제 API·DB·스키마 상태, 코퍼스 준비, 모델 사용 가능 여부를 나누어 확인합니다.](../assets/01-system-status.ko.jpg)
-
-*시스템 상태에서 실제 API·DB·스키마 상태, 코퍼스 준비, 모델 사용 가능 여부를 나누어 확인합니다. 개발 코퍼스에는 공시 30건이 있으며 준비 작업을 다시 실행하지 않았습니다.*
-
 ### SCREENSHOT NEEDED
+<!-- feature=runtime-readiness-status; mode=dev; locale=ko; theme=light; state=checked-runtime-readiness-with-api-database-schema-and-mode-facts; expected-evidence=system-status-heading-connection-warning-refresh-control-and-fact-rows -->
 
-<!-- SCREENSHOT NEEDED: feature=system-status-dev-badges; locale=ko; theme=light; capture=system-status-tab-showing-dev-badges-on-local-model-policy-and-local-runtime-panels; issue=79; preserve-existing-assets=true -->
-
-**로컬 모델 구성과 로컬 실행 환경 패널의 DEV 배지 스크린샷이 필요합니다. 기존 스크린샷은 유지합니다.**
-
-**완료 조건:** API가 응답하고 DB가 연결되며 스키마를 사용할 수 있습니다.
-현재 환경에서 문서 준비를 허용하는지도 파악했습니다. 코퍼스가 비어 있어도 이
-조건은 충족할 수 있으며, 기존 데이터 확인은 다음 단계에서 합니다.
-알 수 없는 항목은 확인되지 않은 상태이므로 통과로 해석하지 않습니다.
-
-**흔한 실패와 복구:** 페이지는 열리는데 API 확인이 실패하면 `rag-dev ps`와
-`rag-dev logs --tail=80 app`을 확인하세요. [문제 해결](troubleshooting.md)에서
-기록된 증상에 맞는 조치를 적용하고 다시 새로고침합니다. 새 DB라면 위의 스키마
-준비를 따릅니다. 스키마 불일치가 있다고 기존 DB를 삭제하지 않습니다.
-
-**다음:** 데이터 준비 화면을 열고 아래 개발용 준비 안내로 이어갑니다.
+데이터 준비 화면을 열고 아래 개발용 준비 안내로 이어갑니다.
 
 ## 데이터 준비 화면을 열고 이어가기 {#open-build}
 
 출력된 앱 주소를 열고 **데이터 준비 → 파이프라인**을 선택합니다. 준비 단계 그래프와 선택한 단계를 살펴볼 수 있는지 확인하세요. 데이터 준비 화면을 여는 것만으로 원문을 다운로드하거나 모델을 실행하지 않습니다.
 
-**서비스 준비와 데이터 준비는 다릅니다.** [Quick Start — DEV ONLY](quickstart-dev.md#qs-web-1)에서 CLI 또는 Web을 선택해 환경 확인, 예제 보고서 두 건 수집, 파싱·청킹, 임베딩·BM25 준비, 질문 전 준비 확인을 이어갑니다. 이미 끝난 작업은 재사용하세요. 이후 [12단계 학습 경로](overview.md#learning-path)에서 질문·설정·평가로 이어집니다.
-
-### SCREENSHOT NEEDED
-<!-- Feature: fresh-clone environment setup handoff; locale=ko; light mode; show successful redacted service readiness and Build → Pipeline open before acquiring sources, with separate API/database/schema facts and the DEV Quick Start continuation. Preserve existing assets. -->
+**서비스 준비와 데이터 준비는 다릅니다.** [Quick Start for DEV MODE](quickstart-dev.md#qs-web-1)에서 CLI 또는 Web을 선택해 환경 확인, 예제 보고서 두 건 수집, 파싱·청킹, 임베딩·BM25 준비, 질문 전 준비 확인을 이어갑니다. 이미 끝난 작업은 재사용하세요. 이후 [12단계 학습 경로](overview.md#learning-path)에서 질문·설정·평가로 이어집니다.
 
 ## 준비 단계가 막혔을 때 {#schema-recovery}
 
@@ -160,13 +128,6 @@ uv run python -m scripts.schema prepare
 컨테이너의 기본 그룹이나 실행 명령이 바뀌지는 않습니다. [초기화 복구](cli.md)를 참고하세요.
 
 오류의 **이 단계 점검**으로 관련 파이프라인 단계에 이동합니다. DB·스키마 문제는 설치 안내로 연결합니다. 도착한 단계에서 현재 진단과 터미널 안내를 확인하며, 다른 오류 영역에는 원인과 이동 링크만 간단히 표시합니다.
-
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=schema-and-terminal-handoff-recheck; locale=ko; theme=light; capture=blocked-and-resolved-states; issue=17; preserve-existing-assets=true -->
-
-**변경된 조작과 결과 상태의 스크린샷이 필요합니다. 기존 스크린샷은 변경하지 않았습니다.**
-
 
 스키마가 호환되지 않으면 `.venv/bin/python -m scripts.schema check`로 진단하세요. Quickstart는 외부 `DATABASE_URL`이 아니라 로컬 `DB_PORT`를 사용합니다. 안전한 대상 선택 복구는 [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25)에서 다룹니다. 이 중단을 해결하려고 데이터베이스를 초기화하지 마세요.
 

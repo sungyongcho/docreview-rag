@@ -1,7 +1,8 @@
 # Troubleshoot from the recorded failure
 
-Start with the exact screen, operation, and error. Separate the observed symptom from a confirmed cause; if the cause is unknown, retain that uncertainty. Check the smallest relevant state, make the corresponding correction, and verify the original action again. Resetting the runtime is not a general remedy for a failed request.
+Start with the exact screen, operation, and error. Separate the observed symptom from a confirmed cause; if the cause is unknown, retain that uncertainty.
 
+Check the smallest relevant state, make the corresponding correction, and verify the original action again. Resetting the runtime is not a general remedy for a failed request.
 
 ## Manifest scope metadata is unavailable {#manifest-scope}
 
@@ -10,14 +11,14 @@ A `query_scope_unavailable` failure before the path decision belongs to **0. Pat
 Inspect the named file and run `rag-schema check` / `rag-corpus status`. Correct that input, then submit the question again; an unsuccessful lazy load is not cached and an API restart is unnecessary. Acquisition publishes manifests atomically, so readers see a complete committed file. **Run details → Trace** retains the original sanitized exception text. Production shows only the localized headline and a generic retry hint.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: manifest diagnosis and correct stage-zero versus stage-one failure; locale=en; light mode; show cause, relative path, one fix action and technical detail in Run details. -->
+<!-- feature=manifest-failure-diagnosis; mode=dev; locale=en; theme=light; state=query_scope_unavailable-failure-card; expected-evidence=cause-relative-path-one-action-and-trace-exception -->
 
 ## The page, API, or database is unavailable {#connection}
 
 > [!DEV]
 > Restoring local services or diagnosing an incompatible schema is an operator action in the development environment. Public users may inspect the displayed connection error.
 
-**Where to look:** **System → System status**, or terminal logs when the page cannot load.
+Open **System → System status**, or read the terminal logs when the page cannot load.
 
 ```bash
 rag-dev ps
@@ -41,7 +42,7 @@ compatible database for this checkout, then verify the original operation.
 
 ## Filters or retrieved evidence do not match the question {#retrieval}
 
-**Where to look:** conversation scope and Filters, **Build → Documents**, then **Measure → 1. Search trial**.
+Check the conversation scope and Filters, then **Build → Documents**, then **Measure → 1. Search trial**.
 
 | Symptom | Evidence and cause | Remedy | Verification |
 |---|---|---|---|
@@ -56,7 +57,7 @@ An empty public catalog can be correct even with a populated development DB. [Sn
 
 ## A review failed or is taking longer than expected {#execution}
 
-**Where to look:** the answer's **Run trace** and **Execution performance**. Preserve the run ID, original node names, and exact failure fields.
+Open the answer's **Run trace** and **Execution performance**. Preserve the run ID, original node names, and exact failure fields.
 
 | Failure | Evidence | Correction to consider | Verification |
 |---|---|---|---|
@@ -72,7 +73,7 @@ For a local server, inspect **Settings → Local LLM** and the selected answer-c
 
 ## Evaluation, drafts, or snapshots are blocked {#evaluation}
 
-**Where to look:** **Measure → 2. Golden dataset / 3. Run evaluation / 4. Compare and save**, plus **Build → Jobs**.
+Use **Measure → 2. Golden dataset / 3. Run evaluation / 4. Compare and save**, plus **Build → Jobs**.
 
 | Symptom | Evidence and cause | Remedy | Verification |
 |---|---|---|---|
@@ -92,25 +93,16 @@ Open **Manage history** in Jobs. **Sync history** reads the server again; it doe
 **Delete job history** permanently removes both visible and archived terminal job records only. Review the displayed count and type `DELETE JOB HISTORY`. The server must first create a private backup of the complete records; a backup failure leaves the records intact. Download the backup through **Download job history backup** after success. If the eligible count changed, sync and review again. Restoring an archive does not reimport a deleted backup, and no action automatically reruns a job.
 
 ### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=job-history-and-reset-dialogs; locale=en; theme=light; capture=history-dialog-visible-archived-active-counts-confirmation-and-backup-link-using-test-records-plus-reset-dialog-read-only-eligibility; issues=20,21; preserve-existing-assets=true -->
-
-**Screenshots pending for the history controls and reset dialog. Existing captures below document earlier states, not the updated dialog layout.**
+<!-- feature=job-history-and-reset-dialogs; mode=dev; locale=en; theme=light; state=history-controls-and-blocked-reset-eligibility; expected-evidence=archived-and-active-counts-confirmation-backup-link-and-blocked-diagnosis -->
 
 ## Runtime reset: inspect eligibility before deletion {#reset}
 
 > [!DEV]
 > Runtime reset, its eligibility checks, and recovery controls require DEV and the local operator. The public interface cannot delete runtime data.
 
-**Screen path:** **Build → Pipeline**, upper-left red **Reset runtime data** button. It opens a modal dialog; opening or closing the dialog does not reset data. **Check reset availability** performs read-only checks and shows checking, available/blocked state, and **Last checked**. Eligibility covers relevant runtime-file permissions, active database jobs, and active application requests, as deletion preview does.
+In **Build → Pipeline**, the upper-left red **Reset runtime data** button opens a modal dialog; opening or closing the dialog does not reset data. **Check reset availability** performs read-only checks and shows checking, available/blocked state, and **Last checked**. Eligibility covers relevant runtime-file permissions, active database jobs, and active application requests, as deletion preview does.
 
 When blocked, read **Reset diagnosis**, the blocking code, file and parent details, and manual remediation. A permission diagnosis identifies the actual operator UID/GID and file/directory ownership and modes. A file writable by the application may still be inaccessible to a different host operator. The check does not change ownership, permissions, or ACLs.
-
-<!-- capture:17-reset-blocked -->
-
-![This records permission-blocked reset eligibility before the user authorized an access repair.](../assets/17-reset-blocked.en.png)
-
-*This records permission-blocked reset eligibility before the user authorized an access repair. The native crop omits machine-specific remediation commands. No reset was executed.*
 
 Resolve only the stated cause with the owner's approval, then check again. If running source differs from the checked-in fix, a source reload may be required. Operator restart is a separate action: first verify no work or reset is active, then reload only the intended operator while preserving the development service and database. A blocked reset does not prevent unrelated application work.
 
@@ -119,7 +111,6 @@ If deletion is truly intended, **Wipe everything** opens **Delete all runtime da
 The reset covers runtime DB records, downloaded filings, generated evaluation artifacts, and saved connections. Code, credentials, `.env`, tutorial assets, and manifest/golden/profile sources are preserved as listed in the preview. Only after server success does **Clear browser data and start again** clear this application's browser state.
 
 On failure or interruption, read completed stages and recovery instructions before another action; some data may already be gone. Release a reset hold only through the documented recovery action after inspecting the recorded state. Normal shutdown and restarting with retained data use [runtime resume](runtime.md#resume), not reset.
-
 
 ## Transient status failures
 
@@ -168,4 +159,4 @@ Connection delay appears in a compact in-flow status row with **Retry connection
 Repeated identical keyed events keep one notice without restarting its timer. Hover, keyboard focus and explicit expansion pause dismissal until all reading interactions end. Close a notice with its dismiss button; persistent warnings remain until dismissed or resolved. Backend retries and job delivery rules are unchanged.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: unconfirmed Build readiness, separate connection-status row, reserved notification rail in main workspace and active dialog; locale=en; light mode; show multiple notices and mobile keyboard layout. Preserve existing assets. -->
+<!-- feature=connection-status-and-notification-rail; mode=both; locale=en; theme=light; state=unconfirmed-build-readiness-with-multiple-notices; expected-evidence=neutral-readiness-status-row-and-reserved-notification-rail -->

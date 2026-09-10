@@ -107,12 +107,9 @@ rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
 이미 올바른 줄은 다시 쓰지 않습니다. 소유 등록이 없으면 이번 셸만 갱신하고 그 사실을 알립니다.
 자동 등록은 source 설치 경로로 진행하세요. 호환 파일은 만들지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: sourced helper installation, loaded/check-out hash update and default-No login offer; locale=ko; plain terminal; show isolated startup registration and unchanged/moved update, without credentials. Preserve historical installer assets. -->
-
 ## 설치와 초기 설정
 
-**목적:** 실행 도구와 개발용 키를 준비합니다.
+이 절에서는 실행 도구와 개발용 키를 준비합니다.
 
 **CLI 실행·설정:** uv, Docker Engine과 Compose 2.24.4 이상, Node.js 24 이상과 npm 11 이상이 필요합니다.
 Python은 프로젝트의 고정 의존성과 함께 uv로 준비합니다.
@@ -162,10 +159,10 @@ Compose가 내부 서비스 이름 `db`로 지정합니다.
 서비스를 시작한 뒤에는 시스템 → 시스템 상태에서 API·DB와 OpenAI 사용 가능 상태를 확인합니다.
 웹에 키를 입력하거나 `.env`를 업로드하지 않습니다.
 
-**예상 결과:** 의존성 설치가 끝나고, `.env`에는 실제 SEC 연락처와 개발용 키, OpenAI embedding 설정이 있습니다.
+의존성 설치가 끝나면 `.env`에는 실제 SEC 연락처와 개발용 키, OpenAI embedding 설정이 있습니다.
 아직 OpenAI 호출은 하지 않았습니다.
 
-**완료 조건:** 도구·키·대상 DB가 확인되면 아래 초기 schema 준비를 진행합니다.
+도구·키·대상 DB가 확인되면 아래 초기 schema 준비를 진행합니다.
 
 ## 초기 schema 준비
 
@@ -209,16 +206,10 @@ rag-dev up -d
 ```
 
 **튜토리얼 라이브 편집:** `docs/TUTORIAL/ko/`와 `en/`의 Markdown을 VS Code에서 저장하면
-열려 있는 개발용 Documentation도 자동 갱신됩니다. 공유 이미지는 `docs/TUTORIAL/assets/`에 두고
-다음처럼 연결합니다. VS Code Markdown 미리보기와 웹이 같은 원본을 사용합니다.
-
-```markdown
-![화면에서 확인할 내용을 설명하는 대체 텍스트](../assets/02-pipeline.ko.jpg)
-```
-
-참조 이미지 추가·같은 파일 교체도 자동 반영되며 이미지를 누르면 원본 크기로 열립니다. 잘못된
-링크나 누락된 원문은 오류를 표시하고 수정해 저장하면 복구됩니다. 이 자동 반영은 개발 서비스용이며,
-prod 정적 미리보기에는 다시 빌드한 번들이 필요합니다.
+열려 있는 개발용 Documentation도 자동 갱신됩니다. 새 시각 자료는 `SCREENSHOT NEEDED` 제목과
+기능·상태·로케일 주석으로 시작하고, 캡처가 승인되면 `docs/TUTORIAL/assets/`의 이미지로 교체합니다.
+잘못된 링크나 누락된 원문은 오류를 표시하고 수정해 저장하면 복구됩니다. 이 자동 반영은 개발
+서비스용이며, prod 정적 미리보기에는 다시 빌드한 번들이 필요합니다.
 
 prod에서는 로컬 LLM과 개발용 변경 작업이 차단됩니다. 기존 dev 대화가 차단되면 새 대화를
 만들고, 키가 없어서 API가 실패한 것을 화면만 보고 정상이라고 판단하지 않습니다.
@@ -298,9 +289,6 @@ rag-corpus status
 함께 수행합니다. 격리 평가용 코퍼스도 자체 통계를 준비합니다. 이 경로들은 Build/CLI
 파싱 작업과 별개입니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: explicit BM25 stage; state: ingest succeeded, BM25 action needed; locale: ko; evidence: CLI ingest history ends at cleanup, followed by explicit rebuild_bm25 success. -->
-
 ## Python CLI 참고
 
 ### DB 적재
@@ -346,7 +334,7 @@ uv run python -m app.cli retrieve --help
 
 ### 보존하며 종료하고 다시 시작하기
 
-**목적:** 실습 결과를 유지한 채 서비스를 끕니다.
+일반 종료는 실습 결과를 유지한 채 서비스를 끕니다.
 
 **CLI 실행:**
 
@@ -357,14 +345,14 @@ source ./rag-alias.sh
 rag-dev up -d
 ```
 
-**예상 결과:** 일반 `down`은 컨테이너·네트워크를 정리하고 named volume을 보존합니다.
+일반 `down`은 컨테이너·네트워크를 정리하고 named volume을 보존합니다.
 문서·청크·embedding과 run/eval/job 기록은 재시작 후 남습니다. 원문·설정 파일과 브라우저 데이터도 남습니다.
 
-**완료 조건:** 재시작 후 데이터 준비 → 문서와 기존 대화를 확인합니다. 데이터가 준비됐다면 수집과 유료 embedding을 반복하지 않습니다.
+재시작 후 데이터 준비 → 문서와 기존 대화를 확인합니다. 데이터가 준비됐다면 수집과 유료 embedding을 반복하지 않습니다.
 
 ### 삭제 전 범위 선택
 
-**목적:** 지우려는 대상만 선택합니다. 다음 절차는 모두 선택 사항입니다.
+삭제는 선택 사항입니다. 지우려는 대상만 선택합니다.
 
 | 범위 | 지워지는 것 | 남는 것 |
 |---|---|---|
@@ -375,22 +363,22 @@ rag-dev up -d
 
 ### 브라우저 대화 삭제
 
-**목적:** 이 브라우저의 대화만 비웁니다.
+이 작업은 이 브라우저의 대화만 비웁니다.
 
-**클릭 전:** 보관할 답변과 인용은 먼저 별도로 저장합니다. 이 삭제에 자동 복구 기능은 없습니다.
+보관할 답변과 인용은 먼저 별도로 저장합니다. 이 삭제에 자동 복구 기능은 없습니다.
 설정 → 데이터와 도움말 → **대화 삭제**에서 대상을 확인하고 승인합니다.
 Reset conversation settings와 Reset saved defaults는 각각 대화 설정·새 대화와 실험 기본값 초기화이며 대화 삭제와 다릅니다.
 
-**예상 결과와 확인:** 대화 목록이 비워집니다. 데이터 준비 → 문서와 작업의 DB 기록은 남아 있어야 합니다.
+작업 후 대화 목록은 비워집니다. 데이터 준비 → 문서와 작업의 DB 기록은 남아 있어야 합니다.
 다른 브라우저·포트의 대화는 별도 origin 저장소이므로 이 작업으로 함께 지워지지 않습니다.
 
-**완료 조건:** 대화만 사라졌으면 종료합니다. DB 삭제까지 이어서 할 필요는 없습니다.
+대화만 사라졌으면 종료합니다. DB 삭제까지 이어서 할 필요는 없습니다.
 
 ### 로컬 Compose DB 볼륨 삭제
 
-**목적:** 실습용 DB 전체를 버리고 빈 DB에서 다시 시작합니다.
+이 작업은 실습용 DB 전체를 버리고 빈 DB에서 다시 시작합니다.
 
-**명령 전:** `--project-directory . -f docker/docker-compose.yml`이 이번 실습 스택인지 확인합니다.
+먼저 `--project-directory . -f docker/docker-compose.yml`이 이번 실습 스택인지 확인합니다.
 다른 `-p` 이름으로 운영한 스택에 그대로 적용하지 않습니다. `down -v`는 이 프로젝트의
 `pg_data`뿐 아니라 `web_node_modules`, `web_next` 캐시 볼륨도 제거합니다.
 필요한 기록은 아래처럼 DB를 백업하고, 백업 파일이 유효한지 검사합니다. 백업 없이 삭제하면
@@ -408,7 +396,7 @@ rag-dev exec -T db pg_restore --list < "$docreview_backup"
 `/tmp`는 재부팅·시스템 정리로 없어질 수 있습니다. 복구하려면 호환되는 PostgreSQL/pgvector의
 빈 DB에 이 덤프를 `pg_restore`로 복원해야 합니다. 목록 검사는 실제 복원 시험을 대신하지 않습니다.
 
-**파괴적 명령 — 위 대상과 백업을 확인한 경우에만 실행:**
+다음 명령은 파괴적입니다. 위 대상과 백업을 확인한 경우에만 실행하세요.
 
 ```bash
 rag-dev down
@@ -417,18 +405,18 @@ rag-dev up -d db
 rag-dev exec -T db psql -U filing -d filing -c '\dt'
 ```
 
-**예상 결과와 확인:** 새 DB에는 아직 앱 테이블이 없습니다. 원문과 `.env` 등은 그대로 있어야 합니다.
+새 DB에는 아직 앱 테이블이 없습니다. 원문과 `.env` 등은 그대로 있어야 합니다.
 [초기 schema 준비](#초기-schema-준비)로 빈 DB에 테이블을 만들고 [실습 가이드](walkthrough.md)의 DB 적재부터 다시 진행합니다.
 embedding 재생성은 다시 유료입니다. 웹 재시작 후 DB 문서와 과거 job/eval 기록 상태를 확인합니다.
 브라우저의 예전 대화는 남지만 삭제된 DB 근거·run을 더 이상 조회하지 못할 수 있습니다.
 
-**완료 조건:** 빈 DB 또는 재DB 적재 후 의도한 상태가 확인되면 종료합니다.
+빈 DB 또는 재DB 적재 후 의도한 상태가 확인되면 종료합니다.
 
 ### 다운로드 원문만 삭제
 
-**목적:** 실습에서 받은 특정 원문 파일만 제거합니다.
+이 작업은 실습에서 받은 특정 원문 파일만 제거합니다.
 
-**명령 전:** 진행 중인 수집·DB 적재·평가를 종료하고 해당 파일이 삭제 대상인지 확인합니다.
+먼저 진행 중인 수집·DB 적재·평가를 종료하고 해당 파일이 삭제 대상인지 확인합니다.
 다른 실습이 같은 원문을 쓸 수 있습니다. 원문을 보존할 위치에 백업하거나 SEC에서 다시 받을 수
 있음을 확인한 뒤에만 삭제합니다. `data/corpus` 전체를 지우지 않습니다.
 
@@ -439,22 +427,22 @@ rm -i -- data/corpus/NVDA/2024-02-21_0001045810-24-000029.html
 test ! -e data/corpus/NVDA/2024-02-21_0001045810-24-000029.html && echo 'Source removed'
 ```
 
-**예상 결과와 확인:** 그 원문만 사라지고 manifest·golden·profiles와 DB는 남습니다.
+그 원문만 사라지고 manifest·golden·profiles와 DB는 남습니다.
 원문을 참조하는 검증·재DB 적재는 실패할 수 있습니다. 복구할 때는 위 한 건 수집 명령으로
 다시 받은 뒤 원문 존재와 데이터 준비 상태를 확인합니다. 현재 개별 DB 문서를 삭제하는 버튼이나 API는 제공하지 않습니다.
 
-**완료 조건:** 파일 부재와 보존 대상 존재를 확인하면 종료합니다.
+파일 부재와 보존 대상 존재를 확인하면 종료합니다.
 
 ### 로컬 연결 설정 초기화 또는 삭제
 
-**목적:** 저장된 로컬 LLM 연결을 해제하거나 초기값으로 돌립니다.
+저장된 로컬 LLM 연결을 해제하거나 초기값으로 돌립니다.
 
-**클릭:** 설정 → 로컬 LLM에서 **연결 해제**는 명시적 비활성 상태를 저장하므로
+설정 → 로컬 LLM에서 **연결 해제**는 명시적 비활성 상태를 저장하므로
 자동으로 기본 주소에 재연결하지 않습니다. **Default로 복귀**는 프로세스 환경변수 →
 `.env` → 기본값으로 정해진 초기 서버를 검사한 뒤 전환합니다. 검사·저장 실패 시 동작하던
 연결을 보존하며, 추가한 서버 목록도 유지합니다. 둘 다 파일 삭제와 다릅니다.
 
-**예상 결과:** 연결 해제 후 비활성, Default 전환 성공 후 기본 서버가 표시됩니다. OpenAI 키나 대화는 지우지 않습니다.
+연결 해제 후에는 비활성 상태가, Default 전환에 성공하면 기본 서버가 표시됩니다. OpenAI 키나 대화는 지우지 않습니다.
 
 저장 파일 자체를 지워야 할 때만 다음 절차를 사용합니다. 대상은 기본 경로
 `data/local-settings/local-llm.json` 하나입니다. 보관할 서버 목록·연결 주소·프로토콜은 먼저 안전하게
@@ -470,7 +458,7 @@ test ! -e data/local-settings/local-llm.json && echo 'Saved connection file remo
 rag-dev up -d
 ```
 
-**확인과 완료 조건:** 설정에서 초기 연결이 적용됐는지 확인합니다. 잘못 지웠다면 앱을 중지하고
+설정에서 초기 연결이 적용됐는지 확인합니다. 잘못 지웠다면 앱을 중지하고
 백업을 원래 경로에 복원한 뒤 재시작합니다. `.env`나 브라우저의 모델 선택은 별도로 남습니다.
 
 ## 문제가 생겼을 때
@@ -480,7 +468,7 @@ rag-dev up -d
 제안은 자동 실행되지 않습니다. 앱의 기존 접근 권한을 유지하고 소유자와 필요한 권한을 확인한 뒤
 조치하고 다시 점검하세요. 초기화가 차단돼 있어도 실습을 위해 반드시 초기화할 필요는 없습니다.
 
-**목적:** 증상에 맞는 확인만 수행하고 무조건 DB를 지우지 않습니다.
+증상에 맞는 확인만 수행하고 무조건 DB를 지우지 않습니다.
 
 **CLI에서 확인:** 먼저 서비스 상태·로그의 실제 실패 위치와 메시지를 읽습니다.
 
@@ -517,15 +505,9 @@ job의 `queued`·`running`은 진행 중, `succeeded`·`failed`·`cancelled`는 
 `interrupted`는 재시작으로 끊긴 상태이며 Retry는 failed·interrupted에 제공됩니다.
 유료 embedding 작업을 재시도할 때는 이미 처리된 수와 남은 범위를 먼저 확인합니다.
 
-**예상 결과:** 실패가 발생한 단계와 조치가 연결되고, schema 재생성이나 원문 삭제를 진단 대신 쓰지 않습니다.
+실패가 발생한 단계와 조치가 연결되고, schema 재생성이나 원문 삭제를 진단 대신 쓰지 않습니다.
 
-**완료 조건:** 해당 상태가 복구되면 실패했던 단계부터 이어갑니다. 웹 실습은 [첫 공시부터 인용 답변까지](walkthrough.md)에서 이어갑니다.
-
-<!-- capture:16-run-trace -->
-
-![저장된 성공 실행의 원래 ID, 반복 4회, 제공자 요청 2회, 토큰 수와 약 119.6초의 경과 시간이 표시됩니다.](../assets/16-run-trace.ko.jpg)
-
-*저장된 성공 실행의 원래 ID, 반복 4회, 제공자 요청 2회, 토큰 수와 약 119.6초의 경과 시간이 표시됩니다. 과거에 기록된 값이며 새로 측정한 결과가 아닙니다.*
+해당 상태가 복구되면 실패했던 단계부터 이어갑니다. 웹 실습은 [첫 공시부터 인용 답변까지](walkthrough.md)에서 이어갑니다.
 
 ## 명령 등록 해제
 
@@ -542,7 +524,6 @@ rag-alias-delete
 해제하지만 별도로 실행한 `--uninstall`은 부모 셸을 바꿀 수 없으므로 안내된 후속 명령을 따릅니다.
 백업 경로를 보관하고 새 터미널에서 자동 로드되지 않는지 확인합니다. 다시 등록하려면
 [명령 등록과 도움말](#명령-등록과-도움말)을 따릅니다.
-
 
 ## Quick Start와 데이터 초기화
 
@@ -630,10 +611,6 @@ reset 상태는 기존 operator가 연결될 때 이전 웹/extreme 증거도 �
 `[e]`는 두 공개 임베딩 설정 저장, `[r]`은 로컬 수정 후 재검사, `[q]`는 취소입니다.
 부모 셸은 변경하지 않으며 시작 실패 시 볼륨을 보존하는 확인된 복구를 제안합니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: styled rag-help and three separate start/reset paths; locale=ko; light mode; actual terminal preview counts, uppercase Y gates, quiet completed build/readiness, verbose failure tail, and preserved environment; disposable checkout only. Existing screenshot assets are preserved. -->
-
-
 ## 호환되지 않는 로컬 스키마 복구
 
 재시작이나 스키마 확인은 드리프트를 고치지 않습니다. 기존 DB를 보존하면서 사용 가능한 빈 환경을 만들려면 다음 순서로 진행하세요.
@@ -654,10 +631,7 @@ uv run python -m scripts.schema recover --return-stage index
 
 평가 오류에는 재시도·상세정보와 함께 준비 이동 버튼이 표시됩니다. 확인된 원문 부재는 수집, 청크 부재는 인덱싱, 임베딩 대기는 임베딩, 어휘 인덱스 부재는 BM25로 이동합니다. 스키마·원인 불명 오류와 원문 계약 오류는 설정 진단으로 이동합니다. 이동만으로 작업은 시작되지 않습니다. 도착한 곳에서 새로고침해 실제 상태를 확인하세요.
 
-### SCREENSHOT NEEDED
-<!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
 새 스크린샷 증거는 아직 없으며 기존 이미지는 유지합니다.
-
 
 ## 명시적 로컬 DB 재생성
 
@@ -672,10 +646,6 @@ uv run python -m scripts.schema recreate
 코드·`.env`·평가 내보내기 파일·DB 볼륨·무관한 테이블·호스트 Ollama는 보존합니다. 백업은 만들지 않습니다. 알 수 없는 외래키 의존성이 있으면 연쇄 삭제 대신 트랜잭션을 롤백합니다. 실패 후 API는 중지된 상태일 수 있으므로 재시도 전에 스키마를 확인하세요. 성공 후 `rag-up`으로 시작하고 Build를 다시 확인한 뒤 파싱·임베딩·BM25를 명시적으로 다시 준비합니다. 유료 임베딩은 재생성 명령이 실행하지 않습니다.
 
 DB 경고 모달의 원문 오류는 **에러를 확인해주세요** 아래 접힌 터미널 형태 박스에 표시됩니다. 펼쳐서 원문을 확인할 수 있고 기존 상태·이동·닫기 버튼 동작은 유지합니다.
-
-
-### SCREENSHOT NEEDED
-<!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=ko; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->
 
 ## 새 시작 명령의 범위
 

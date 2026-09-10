@@ -13,7 +13,7 @@ const BUBBLE_WIDTH = 280;
  * The bubble is portaled to the document body and positioned from the trigger's viewport rectangle,
  * so sidebars, dialogs and scroll panes with clipped overflow never cut it off.
  */
-export function HoverBubble({ bubble, children, inline = false, pinnable = false, showClose = true, width = BUBBLE_WIDTH, label, align = "start", placement }: { bubble: ReactNode; children: ReactNode; inline?: boolean; pinnable?: boolean; showClose?: boolean; width?: number; label?: string; align?: "start" | "end"; placement?: "above" | "below" }) {
+export function HoverBubble({ bubble, children, inline = false, pinnable = false, showClose = true, width = BUBBLE_WIDTH, label, align = "start", placement, className }: { bubble: ReactNode; children: ReactNode; inline?: boolean; pinnable?: boolean; showClose?: boolean; width?: number; label?: string; align?: "start" | "end"; placement?: "above" | "below"; className?: string }) {
   const { t } = useI18n();
   const [pinned, setPinned] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
@@ -50,6 +50,6 @@ export function HoverBubble({ bubble, children, inline = false, pinnable = false
   }, [open, pinned, pinnable]);
   return <div ref={wrap} className={`hover-bubble-wrap${inline ? " is-inline" : ""}`} onClick={pinnable ? (event) => { if (wrap.current?.contains(event.target as Node)) { if (pinned) setOpen(false); setPinned((value) => !value); } } : undefined} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} aria-describedby={open || pinned ? id : undefined}>
     {children}
-    {(open || pinned) && style && typeof document !== "undefined" && createPortal(<div ref={dialog} id={id} className={`hover-bubble${pinnable && showClose ? " has-close" : ""}`} data-placement={style.placement} data-align={align} role={pinned ? "dialog" : "tooltip"} aria-label={label} style={{ width: style.width, maxWidth: style.width, minWidth: 0, left: style.left, top: style.top, bottom: style.bottom, "--bubble-arrow-left": `${style.arrow}px` } as CSSProperties}>{pinnable && showClose && <button type="button" className="hover-bubble-close" aria-label={t("Close")} onClick={(event) => { event.stopPropagation(); setPinned(false); setOpen(false); }}><X size={15} aria-hidden="true" /></button>}{bubble}</div>, document.body)}
+    {(open || pinned) && style && typeof document !== "undefined" && createPortal(<div ref={dialog} id={id} className={`hover-bubble${pinnable && showClose ? " has-close" : ""}${className ? ` ${className}` : ""}`} data-placement={style.placement} data-align={align} role={pinned ? "dialog" : "tooltip"} aria-label={label} style={{ width: style.width, maxWidth: style.width, minWidth: 0, left: style.left, top: style.top, bottom: style.bottom, "--bubble-arrow-left": `${style.arrow}px` } as CSSProperties}>{pinnable && showClose && <button type="button" className="hover-bubble-close" aria-label={t("Close")} onClick={(event) => { event.stopPropagation(); setPinned(false); setOpen(false); }}><X size={15} aria-hidden="true" /></button>}{bubble}</div>, document.body)}
   </div>;
 }

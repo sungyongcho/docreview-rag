@@ -1,7 +1,8 @@
 # 기록된 오류에서 원인 찾기
 
-정확한 화면·작업·오류부터 확인합니다. 보이는 증상과 확인된 원인을 구분하고, 원인을 모르면 모르는 상태로 둡니다. 직접 관련된 상태부터 확인해 해당 문제만 고친 뒤 원래 동작을 다시 검증합니다. 요청 실패의 일반적인 해결책으로 전체 초기화를 사용하지 않습니다.
+정확한 화면·작업·오류부터 확인합니다. 보이는 증상과 확인된 원인을 구분하고, 원인을 모르면 모르는 상태로 둡니다.
 
+직접 관련된 상태부터 확인해 해당 문제만 고친 뒤 원래 동작을 다시 검증합니다. 요청 실패의 일반적인 해결책으로 전체 초기화를 사용하지 않습니다.
 
 ## 질문 범위 정보를 불러올 수 없음 {#manifest-scope}
 
@@ -10,14 +11,14 @@
 표시된 파일을 확인하고 `rag-schema check` / `rag-corpus status`로 점검하세요. 입력을 고친 뒤 질문을 다시 제출하면 됩니다. 실패한 지연 로드는 캐시되지 않으므로 API를 재시작할 필요가 없습니다. 수집은 manifest를 원자적으로 게시하므로 독자는 완전히 기록된 파일을 읽습니다. **실행 상세 → 트레이스**에는 민감 정보를 제거한 원래 예외 문구가 남습니다. PROD에서는 현지화된 제목과 일반적인 재시도 안내만 표시합니다.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: manifest diagnosis and correct stage-zero versus stage-one failure; locale=ko; light mode; show cause, relative path, one fix action and technical detail in Run details. -->
+<!-- feature=manifest-failure-diagnosis; mode=dev; locale=ko; theme=light; state=query_scope_unavailable-failure-card; expected-evidence=cause-relative-path-one-action-and-trace-exception -->
 
 ## 페이지·API·DB에 연결되지 않을 때 {#connection}
 
 > [!DEV]
 > 로컬 서비스 복구나 호환되지 않는 스키마 진단은 개발 환경 운영자의 작업입니다. 공개 사용자는 표시된 연결 오류를 확인할 수 있습니다.
 
-**확인 위치:** **시스템 → 시스템 상태**를 봅니다. 페이지가 열리지 않으면 터미널 로그를 확인합니다.
+**시스템 → 시스템 상태**를 보고, 페이지가 열리지 않으면 터미널 로그를 확인합니다.
 
 ```bash
 rag-dev ps
@@ -41,7 +42,7 @@ DB를 변경하기 전에 중단됩니다. 기존 DB를 보존하고 이 체크�
 
 ## 필터나 검색 근거가 질문과 맞지 않을 때 {#retrieval}
 
-**확인 위치:** 대화의 범위·필터, **데이터 준비 → 문서**, **품질 검증 → 1. 검색 테스트**를 확인합니다.
+대화의 범위·필터와 **데이터 준비 → 문서**, **품질 검증 → 1. 검색 테스트**를 확인합니다.
 
 | 증상 | 근거와 원인 | 조치 | 확인 |
 |---|---|---|---|
@@ -56,13 +57,13 @@ DB를 변경하기 전에 중단됩니다. 기존 DB를 보존하고 이 체크�
 
 ## 검토가 실패하거나 오래 걸릴 때 {#execution}
 
-**확인 위치:** 답변의 **실행 트레이스·실행 성능**입니다. Run ID·원래 노드 이름·정확한 실패 필드를 보존합니다.
+답변의 **실행 트레이스·실행 성능**을 열고, Run ID·원래 노드 이름·정확한 실패 필드를 보존합니다.
 
 | 실패 | 근거 | 검토할 수정 | 확인 |
 |---|---|---|---|
 | `budget_exceeded` | `resource`, `limit`, `observed`, `blocked_node` | 필요에 맞게 대화 설정 → 실행 한도의 해당 누적 한도만 조정합니다. | 의도한 새 실행이 정한 한도 내에서 동작합니다. |
 | `provider_failure` | `status`, `attempts`, `details`, `node` | 보고된 인증·주소·제공자 한도·시간 초과·출력 형식 문제를 고칩니다. | 관련 없는 설정 변경 없이 해당 제공자 호출이 성공합니다. |
-| `budget.projected_input_tokens`가 있는 `provider_failure` | 프롬프트가 남은 입력 허용량을 넘길 것으로 추정돼 전송하지 않았습니다. | 대화 설정 → 근거의 최대 컨텍스트를 낮추거나 `budget_source`가 가리키는 입력 한도를 올립니다. | 다시 실행하면 호출이 전송되고 실제 사용량이 기록됩니다. |
+| `provider_failure`에 `budget.projected_input_tokens`가 있는 경우 | 프롬프트가 남은 입력 허용량을 넘길 것으로 추정돼 전송하지 않았습니다. | 대화 설정 → 근거의 최대 컨텍스트를 낮추거나 `budget_source`가 가리키는 입력 한도를 올립니다. | 다시 실행하면 호출이 전송되고 실제 사용량이 기록됩니다. |
 | `node_error` | `error_type`, `message`, `node` | 지정된 비모델 단계에서 구체적인 원인을 확인합니다. | 새 시도에서 그 단계가 완료됩니다. |
 | 측정 정보 없음 | 미수집 필드나 오래된 저장 기록입니다. | 누락 상태를 유지하고 적합한 실제 실행의 측정값이 있을 때 사용합니다. | 시간 관련 설명이 수집된 근거와 맞습니다. |
 
@@ -72,7 +73,7 @@ DB를 변경하기 전에 중단됩니다. 기존 DB를 보존하고 이 체크�
 
 ## 평가·초안·스냅샷이 막혔을 때 {#evaluation}
 
-**확인 위치:** **품질 검증 → 2. 평가 데이터셋 준비 / 3. 평가 실행 / 4. 결과 비교·보관**, **데이터 준비 → 작업**입니다.
+**품질 검증 → 2. 평가 데이터셋 준비 / 3. 평가 실행 / 4. 결과 비교·보관**과 **데이터 준비 → 작업**을 확인합니다.
 
 | 증상 | 근거와 원인 | 조치 | 확인 |
 |---|---|---|---|
@@ -92,25 +93,16 @@ DB를 변경하기 전에 중단됩니다. 기존 DB를 보존하고 이 체크�
 **작업 이력 삭제**는 표시 중이거나 보관된 종료 작업의 기록만 영구 삭제합니다. 표시된 개수를 확인하고 `DELETE JOB HISTORY`를 입력합니다. 서버는 먼저 전체 기록의 비공개 백업을 만들어야 하며, 백업에 실패하면 기록을 그대로 유지합니다. 성공 후 **작업 이력 백업 다운로드**로 백업을 받을 수 있습니다. 대상 개수가 달라지면 동기화한 뒤 다시 확인하세요. 보관 복원은 삭제한 백업을 다시 가져오지 않으며 어떤 동작도 작업을 자동으로 재실행하지 않습니다.
 
 ### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=job-history-and-reset-dialogs; locale=ko; theme=light; capture=history-dialog-visible-archived-active-counts-confirmation-and-backup-link-using-test-records-plus-reset-dialog-read-only-eligibility; issues=20,21; preserve-existing-assets=true -->
-
-**작업 이력 조작과 초기화 모달의 스크린샷이 필요합니다. 아래 기존 캡처는 이전 상태를 기록하며 변경된 모달 배치의 증거가 아닙니다.**
+<!-- feature=job-history-and-reset-dialogs; mode=dev; locale=ko; theme=light; state=history-controls-and-blocked-reset-eligibility; expected-evidence=archived-and-active-counts-confirmation-backup-link-and-blocked-diagnosis -->
 
 ## 전체 초기화: 삭제 전에 사용 가능 여부 확인 {#reset}
 
 > [!DEV]
 > 실행 데이터 초기화·가능 여부 검사·복구 조작은 개발 모드와 로컬 운영자 권한이 필요합니다. 공개 화면에서는 실행 데이터를 삭제할 수 없습니다.
 
-**화면 경로:** **데이터 준비 → 파이프라인** 왼쪽 위의 빨간 **실행 데이터 초기화** 버튼입니다. 버튼은 모달 창을 열며 창을 열거나 닫는 것만으로 데이터가 초기화되지는 않습니다. **초기화 가능 여부 확인**은 읽기 전용 검사이며 확인 중·가능/차단·**마지막 점검** 시간을 표시합니다. 삭제 미리보기와 마찬가지로 관련 런타임 파일 권한·실행 중인 DB 작업·활성 앱 요청을 확인합니다.
+**데이터 준비 → 파이프라인** 왼쪽 위의 빨간 **실행 데이터 초기화** 버튼을 누르면 모달 창이 열립니다. 창을 열거나 닫는 것만으로 데이터가 초기화되지는 않습니다. **초기화 가능 여부 확인**은 읽기 전용 검사이며 확인 중·가능/차단·**마지막 점검** 시간을 표시합니다. 삭제 미리보기와 마찬가지로 관련 런타임 파일 권한·실행 중인 DB 작업·활성 앱 요청을 확인합니다.
 
 차단되면 **초기화 진단**의 코드·파일과 부모 디렉터리 정보·수동 해결 방법을 읽습니다. 권한 진단에는 실제 운영자 UID/GID와 파일·폴더 소유자 및 모드가 나옵니다. 앱이 쓸 수 있는 파일도 다른 사용자로 실행되는 호스트 운영자에게는 접근 불가일 수 있습니다. 검사는 소유권·권한·ACL을 바꾸지 않습니다.
-
-<!-- capture:17-reset-blocked -->
-
-![사용자가 접근 권한 조정을 승인하기 전에 기록한 초기화 차단 상태입니다.](../assets/17-reset-blocked.ko.png)
-
-*사용자가 접근 권한 조정을 승인하기 전에 기록한 초기화 차단 상태입니다. 권한 부족 진단을 원본 그대로 잘랐으며 기기별 복구 명령은 제외했습니다. 실제 초기화는 실행하지 않았습니다.*
 
 소유자의 승인 아래 보고된 원인만 해결하고 다시 확인합니다. 실행 중인 코드와 저장소의 수정본이 다르면 소스 재로딩이 필요할 수 있습니다. 운영자 재시작은 별도 작업입니다. 먼저 활성 작업·초기화가 없는지 확인한 뒤 개발 서비스와 DB를 보존하며 해당 운영자만 다시 올립니다. 초기화가 막혀도 관련 없는 앱 작업은 계속할 수 있습니다.
 
@@ -120,12 +112,11 @@ DB를 변경하기 전에 중단됩니다. 기존 DB를 보존하고 이 체크�
 
 실패·중단 시에는 이미 삭제된 데이터가 있을 수 있으므로 완료 단계와 복구 안내를 먼저 읽습니다. 기록 상태를 확인한 다음 제공된 복구 동작으로만 초기화 잠금을 해제합니다. 데이터를 유지하는 일반 종료와 재시작은 [다시 시작하기](runtime.md#resume)를 사용합니다.
 
-
 ## 일시적인 상태 확인 실패
 
 첫 실패 검사를 시작한 시각부터 20초 유예를 두고 다음 재확인 시 장애를 확정합니다. 재시도 간격은 3초이며 health와 readiness에는 각각 5초 제한을 적용합니다. 유예 중에는 마지막 확인 상태를 유지하고 화면을 막지 않는 대기 알림을 표시합니다. 실행·대기 중인 작업이 있으면 알림에 함께 안내하며 정상 확인 후 제거합니다.
 
-`/health`가 성공하고 `/ready`만 실패하면 API가 살아 있으므로 중단으로 표시하지 않습니다. liveness는 3초 간격, readiness는 최소 10초 간격으로 확인합니다. 브라우저 offline 이벤트는 루프백 API 중단의 증거로 삼지 않고 즉시 재검사합니다. 실제 실패에는 같은 유예 시간을 적용합니다. 정기 검사는 이미 정상인 상태를 checking으로 바꾸거나 전송 버튼을 비활성화하지 않으며 변경 작업을 자동 재시도하지 않습니다.
+`/health`가 성공하고 `/ready`만 실패하면 API가 살아 있으므로 중단으로 표시하지 않습니다. liveness는 3초 간격, readiness는 최소 10초 간격으로 확인합니다. 브라우저 offline 이벤트는 루프백 API 중단의 증거로 삼지 않고 즉시 재검사합니다. 실제 실패에는 같은 유예 시간을 적용합니다. 정기 검사는 이미 정상인 `kind`를 checking으로 바꾸거나 전송 버튼을 비활성화하지 않으며 변경 작업을 자동 재시도하지 않습니다.
 
 로컬 명령이 실행되는 동안 **시스템 → 로컬 작업**은 1초 간격(숨긴 탭에서는 5초)으로 상태를 확인합니다. 실패하면 간격을 2·4·8·10초로 늘리고, 세 번 연속 실패하면 실패마다 오류 알림을 띄우는 대신 대기 알림 하나만 표시하며 다음 성공 시 제거합니다. 수동 **새로 고침**의 오류는 그대로 표시합니다. [로컬 작업](runtime.md#operations)을 참고하세요.
 
@@ -142,4 +133,4 @@ API 연결 확인은 상태이며 별도의 환경이 아닙니다. 서버에서
 같은 내용의 반복 알림은 하나만 유지하며 타이머를 재시작하지 않습니다. 마우스를 올리거나 키보드 초점을 두거나 메시지를 펼친 동안에는 자동 닫기를 멈춥니다. 닫기 버튼으로 제거할 수 있고 지속 경고는 해결되거나 직접 닫을 때까지 유지됩니다. 백엔드 재시도·작업 전달 규칙은 바뀌지 않습니다.
 
 ### SCREENSHOT NEEDED
-<!-- Feature: unconfirmed Build readiness, separate connection-status row, reserved notification rail in main workspace and active dialog; locale=ko; light mode; show multiple notices and mobile keyboard layout. Preserve existing assets. -->
+<!-- feature=connection-status-and-notification-rail; mode=both; locale=ko; theme=light; state=unconfirmed-build-readiness-with-multiple-notices; expected-evidence=neutral-readiness-status-row-and-reserved-notification-rail -->

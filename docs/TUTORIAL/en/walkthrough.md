@@ -1,6 +1,6 @@
 # From your first filing to a cited answer
 
-**Legacy walkthrough.** This page preserves the earlier nine-step sequence for existing links. Follow the [current twelve-step guide](overview.md#learning-path) for current navigation and setup. Refreshed figures show actual saved or unexecuted states; this walkthrough was not run again for the screenshots.
+**Legacy walkthrough.** This page preserves the earlier nine-step sequence for existing links. Follow the [current twelve-step guide](overview.md#learning-path) for current navigation and setup. This walkthrough is not maintained as a current screen-by-screen capture.
 
 Prepare NVIDIA filings, inspect retrieved evidence, and verify your first answer against the original report.
 This preserves the earlier local development sequence; use the focused guides for current control labels and navigation.
@@ -11,11 +11,9 @@ Check completed work in the dashboard and continue from there; do not repeat ing
 switch between the terminal and the UI. Downloading source files and ingesting them into the DB are separate steps.
 
 The default path uses **OpenAI embeddings and answers**. Downloads and ingestion do not call OpenAI.
-Embedding, questions, and evaluations can incur charges. The screenshots were captured from the actual
-local service on 2026-09-05. Both language editions share these Korean-interface images; click an image
-on the website to open it at full size. The capture environment reuses 30 existing filings and prior runs,
-so its counts differ from a fresh database. Its embedding provider is `deterministic`: a Done badge in
-these images does not establish OpenAI readiness or semantic-search quality. Follow the OpenAI setup
+Embedding, questions, and evaluations can incur charges. The archived environment reused 30 existing
+filings and prior runs, so its counts differ from a fresh database. Its embedding provider was `deterministic`:
+a Done badge alone does not establish OpenAI readiness or semantic-search quality. Follow the OpenAI setup
 and each **Screen check** in this guide.
 
 Use the 한국어 / EN switch to change interface and documentation language. Stored questions, answers,
@@ -58,18 +56,6 @@ mean the corpus or embeddings are ready.
 
 **Completion:** continue when the services and schema are ready. Otherwise use [diagnostics](cli.md#troubleshooting).
 
-<!-- capture:01-system-status -->
-
-![System status separates actual API/database/schema health, corpus readiness and model availability.](../assets/01-system-status.en.jpg)
-
-*System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.*
-
-<!-- capture:02-pipeline -->
-
-![Pipeline combines the dependency graph with the selected step.](../assets/02-pipeline.en.jpg)
-
-*Pipeline combines the dependency graph with the selected step. Embeddings and BM25 are parallel preparation paths; evaluation needs an index and dataset, not a generated answer.*
-
 ## 2. Check existing data
 
 **Purpose:** reuse completed preparation and run only missing work.
@@ -90,12 +76,6 @@ An embedding count alone does not verify the producing model identity.
 
 **Completion:** identify the remaining work. CLI ingestion into the same DB appears here, even though a
 CLI operation may not appear in Jobs because it did not use the web queue.
-
-<!-- capture:03-document -->
-
-![A real Samsung Electronics filing highlights its supplied company name and FY 2022.](../assets/03-document.en.jpg)
-
-*A real Samsung Electronics filing highlights its supplied company name and FY 2022. The document ID, issuer code, source, and 1,393 chunks remain available below.*
 
 ## 3. Download NVIDIA filings
 
@@ -127,12 +107,6 @@ remain incomplete when other companies in the main manifest have missing sources
 **Completion:** every source in the processing selection you will ingest must exist. CLI acquisition performs the
 same source-preparation step; database storage happens next.
 
-<!-- capture:04-sec-inputs -->
-
-![Valid SEC company and fiscal-year chips with the Download missing filings action.](../assets/04-sec-inputs.en.jpg)
-
-*Valid SEC company and fiscal-year chips with the Download missing filings action. Existing NVDA/AMD and FY2023/FY2024 inputs are shown; no download was started. Used for steps 3 and 4.*
-
 ## 4. Ingest the source into documents and chunks
 
 **Purpose:** parse the downloaded report, create citable chunks, and persist them.
@@ -150,18 +124,6 @@ selection; existing documents remain in the database.
 
 **Completion:** proceed to embedding. Ingestion also recalculates BM25, but it does not fill OpenAI vectors.
 The `app.cli ingest --manifest …` command performs this storage step too; do not repeat a completed CLI ingest.
-
-<!-- capture:05-manifest-ingest -->
-
-![Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts.](../assets/05-manifest-ingest.en.jpg)
-
-*Parse & chunk lists the actual DART and SEC manifests with source and ingestion counts. Each row has its own Ingest action; no ingestion was started.*
-
-<!-- capture:08-jobs -->
-
-![An existing successful SEC manifest ingestion job is selected.](../assets/08-jobs.en.jpg)
-
-*An existing successful SEC manifest ingestion job is selected. Its actual target, progress and result are shown; this is historical work, not a job started for the guide.*
 
 ## 5. Prepare embeddings and BM25
 
@@ -182,18 +144,6 @@ checks, not proof that an evaluation has been completed.
 
 **Completion:** proceed to retrieval inspection. The CLI `retrieve --provider openai --embed-missing …`
 also backfills but then performs a query; the web backfill button only prepares embeddings.
-
-<!-- capture:06-embeddings -->
-
-![The actual development index reports deterministic embeddings and zero pending chunks.](../assets/06-embeddings.en.jpg)
-
-*The actual development index reports deterministic embeddings and zero pending chunks. This is not evidence of OpenAI embedding readiness or semantic quality. The recorded cost notice and explicit backfill action remain visible.*
-
-<!-- capture:07-bm25 -->
-
-![BM25 is already ready for the current corpus.](../assets/07-bm25.en.jpg)
-
-*BM25 is already ready for the current corpus. The rebuild action is available but was not executed.*
 
 ## 6. Read evidence before generating an answer
 
@@ -216,12 +166,6 @@ answer-model call; do not click it merely to inspect retrieval.
 
 The CLI retrieval command also returns evidence, but Search trial has no equivalent input to `--doc-id`.
 Its profile and any other documents in the DB can therefore produce different ranks and results.
-
-<!-- capture:09-retrieval-inputs -->
-
-![Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5.](../assets/09-retrieval-inputs.en.jpg)
-
-*Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5. Retrieval and answer preview remain separate explicit actions.*
 
 ## 7. Configure and ask your first question
 
@@ -276,12 +220,6 @@ No live Gemma timing measurement was performed for this guide.
 run has no operational failure. `NOT_IN_DOCS` means insufficient document evidence and is distinct from
 connectivity or provider errors. A CLI search result alone is not a generated answer.
 
-<!-- capture:15-cited-answer -->
-
-![An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown.](../assets/15-cited-answer.en.jpg)
-
-*An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown. It was not rerun for this guide; candidate count and the single actual citation are distinct, and old evidence selections may be read-only.*
-
 ## 8. Change settings and evaluate
 
 ### Try Ollama answers
@@ -299,12 +237,6 @@ Saving a connection does not automatically switch the answer engine.
 **Screen check and completion:** inspect connection, model, and engine, then repeat the question and verify
 citations. A successful connection alone does not establish answer quality. Disconnect persists an off state;
 Restore defaults uses startup settings. See [connection cleanup](cli.md#reset-local-connection-settings).
-
-<!-- capture:13-local-model -->
-
-![Default resolves the configured local Ollama endpoint without an address field.](../assets/13-local-model.en.jpg)
-
-*Default resolves the configured local Ollama endpoint without an address field. Actual connection health, three installed models and one answer-capable model are distinguished; addresses remain in Connection details.*
 
 ### Add DART
 
@@ -351,24 +283,6 @@ and save, select a baseline and candidate with matching suite, golden/corpus ide
 illustrative, not an actual evaluation. A snapshot preserves search data plus an evaluation result for reuse.
 Evaluation settings apply to the next new evaluation and do not change existing results.
 
-<!-- capture:10-golden-question -->
-
-![The mixed-language SEC suite is selected with an actual canonical question open.](../assets/10-golden-question.en.jpg)
-
-*The mixed-language SEC suite is selected with an actual canonical question open. Canonical JSON is read-only; viewing a source question is separate from creating or editing a draft.*
-
-<!-- capture:11-evaluation-inputs -->
-
-![New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index.](../assets/11-evaluation-inputs.en.jpg)
-
-*New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index. Hybrid/BM25/k=5 is visible; Queue evaluation was not pressed.*
-
-<!-- capture:12-compare -->
-
-![The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated.](../assets/12-compare.en.jpg)
-
-*The actual comparison workspace has no selectable results yet, so comparison stays unavailable and no metrics are fabricated. Saving a snapshot requires a suitable recorded result.*
-
 ### Find help for a control
 
 Open **Help**. The home view keeps four task-group filters and topic rows together; select a topic once for its short summary and three steps. **Back** returns to that home view. **Recommended** follows visible controls, and **Search help** searches Korean and English locally. Only the selected visible control receives an outline. **Reference** contains the longer explanation; **Read the full guide** opens its document in a new tab. See [using Help](overview.md#help) for navigation and scope. No answer model is called.
@@ -387,13 +301,7 @@ prepared data again. Optionally inspect [local prod preview](cli.md#development-
 Deletion is optional. Read [shutdown and selective cleanup](cli.md#shutdown-and-selective-cleanup) for the
 separate boundaries of browser conversations, DB volume, source files, and connection settings.
 
-**Completion:** record where the exercise succeeded or failed and share feedback. When a screen or workflow changes, update its screenshot and instructions together without exposing keys or personal data.
-
-<!-- capture:14-browser-data -->
-
-![Data & help separates browser conversations and preference resets from server documents and job history.](../assets/14-browser-data.en.jpg)
-
-*Data & help separates browser conversations and preference resets from server documents and job history. No cleanup or reset action was executed.*
+**Completion:** record where the exercise succeeded or failed and share feedback. When a screen or workflow changes, update its instructions and any future visual evidence together without exposing keys or personal data.
 
 ## When you need to reset everything
 
@@ -411,9 +319,3 @@ The DB, downloaded sources, generated evaluation artifacts, and saved connection
 success, clear DocReview browser data and return to setup. Code, keys, `.env`, documents/images, and
 manifest/golden/profile sources are preserved. Changed targets or external DBs are refused. On partial failure,
 read the completed stages before retrying. Reset is never required merely to start this tutorial.
-
-<!-- capture:17-reset-blocked -->
-
-![This records permission-blocked reset eligibility before the user authorized an access repair.](../assets/17-reset-blocked.en.png)
-
-*This records permission-blocked reset eligibility before the user authorized an access repair. The native crop omits machine-specific remediation commands. No reset was executed.*

@@ -2766,7 +2766,7 @@ export const KO: Record<string, string> = {
   "Implementation and terminal reference": "구현 설명과 터미널 참고",
   "Mechanism": "구현 원리",
   "Design trade-off": "설계 선택과 고려점",
-  "Read the walkthrough": "실습 가이드 읽기",
+  "Read the guide": "실습 가이드 읽기",
   "CLI manifest reference": "CLI 참고용 manifest",
   "CLI question reference": "CLI 참고용 질문",
   "Configured embedding provider": "설정된 임베딩 제공자",

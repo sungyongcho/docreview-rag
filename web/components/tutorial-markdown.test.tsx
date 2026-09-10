@@ -45,6 +45,19 @@ describe("Tutorial Markdown", () => {
     expect(parsed.codes[0].code).toBe("> [!DEV]");
     expect(container.querySelector("aside")).not.toHaveTextContent("[!DEV]");
   });
+  it.each([["en", "Goal"], ["ko", "목표"]] as const)("groups the section goal and its preparation meta into one callout in %s", (locale, label) => {
+    const source = "> [!GOAL]\n> Prepare two example filings for retrieval.\n>\n> **Prerequisites** [Environment setup](environment.md#step-1) · **Done** chunks and BM25 exist\n\n> An ordinary quotation.";
+    const parsed = renderTutorial(source, { locale });
+    const { container } = render(<TutorialMarkdown content={parsed.content} />);
+    const goal = container.querySelector(".docs-goal")!;
+    expect(goal.querySelector(".docs-goal-label")).toHaveTextContent(label);
+    expect(goal.querySelectorAll("p")).toHaveLength(2);
+    expect(goal).toHaveTextContent("Prepare two example filings for retrieval.");
+    expect(goal).toHaveTextContent("chunks and BM25 exist");
+    expect(goal).not.toHaveTextContent("[!GOAL]");
+    expect(goal.querySelector("a")).toHaveAttribute("href", `/docreview-rag-agent/docs/${locale}/environment/#step-1`);
+    expect(container.querySelector("blockquote")).toHaveTextContent("An ordinary quotation.");
+  });
   it("expands the beginner path from the registry at the authored marker", () => {
     const parsed = renderTutorial("# Overview\n\n## Learning path {#learning-path}\n\n<!-- tutorial-steps -->", { locale: "en" });
     expect(parsed.links).toHaveLength(12);

@@ -1,6 +1,8 @@
 # Architecture
 
-DocReview prepares SEC and DART filings through one source-preserving pipeline. The [Quick Start — DEV ONLY](quickstart-dev.md) prepares its first two reports; [retrieval testing](retrieval.md) checks the evidence before the [first answer](answers.md).
+DocReview prepares SEC and DART filings through one source-preserving pipeline. This page explains the contracts and records behind that pipeline, so you can tell where a dependency, an identity, or a failure belongs before you change a running system.
+
+The [Quick Start for DEV MODE](quickstart-dev.md) prepares its first two reports; [retrieval testing](retrieval.md) checks the evidence before the [first answer](answers.md). The sections below describe the structures those steps rely on.
 
 ## Common corpus contract {#contracts}
 
@@ -15,7 +17,11 @@ Reading an artifact checks its confined path and exact bytes before decoding. An
 
 ## Shared processing {#processing}
 
-Both adapters return the same source-linked filing structure. Common processing retains headings, paragraphs, tables, cells, row/column spans, and units. Small tables remain intact. Larger tables become row groups with repeated headers and units; oversized rows split at cells and oversized narrative cells split at sentences.
+Both adapters return the same source-linked filing structure. Common processing retains headings, paragraphs, tables, cells, row/column spans, and units. A table or cell that is too large splits only at safe boundaries:
+
+- Small tables remain intact.
+- Larger tables become row groups with repeated headers and units.
+- Oversized rows split at cells, and oversized narrative cells split at sentences.
 
 The target is 2,048 tokens over **context plus body**. The hard maximum is 8,192 tokens and the default character bound is 12,000, matching the default evidence budget. A model with a smaller input window uses its own tokenizer and tighter maximum. Content that cannot fit at a valid boundary raises an explicit error.
 

@@ -170,19 +170,7 @@ Before these changes the same question failed after 77–144 s at the grade step
 
 Open **Settings → Local LLM** and use the server selector. **Default** obtains its address from the current DocReview environment. **Add a server…** reveals a server name, alternate address, and protocol. The name is a label that helps you recognize this endpoint later.
 
-<!-- capture:13-local-model -->
-
-![Default resolves the configured local Ollama endpoint without an address field.](../assets/13-local-model.en.jpg)
-
-*Default resolves the configured local Ollama endpoint without an address field. Actual connection health, three installed models and one answer-capable model are distinguished; addresses remain in Connection details.*
-
 Select **Run connection diagnostics** first. Its title identifies the candidate being checked; the active connection remains unchanged. Check the backend-to-server result and answer-model status, and open **Connection details** to inspect the active/default addresses. Use **Connect** for an existing choice or **Add & connect** for a new server only when you intend to apply it. A failed probe or save keeps the prior working configuration. Connecting an answer server does not change the embedding provider.
-
-<!-- capture:25-add-server -->
-
-![Add a server reveals name, URL and protocol fields.](../assets/25-add-server.en.jpg)
-
-*Add a server reveals name, URL and protocol fields. This unsubmitted draft keeps Add & connect disabled while the existing Default connection remains active.*
 
 **Disconnect** disables local answers. **Use Default** checks the startup server before switching and keeps added servers. If that check or save fails, the current working connection remains active.
 
@@ -191,9 +179,6 @@ Return to the conversation and select the installed model in the answer-engine c
 The **Next step for local answers** card appears at the top of Local LLM settings, including when you open it from Build step 6. **Choose or use a model in conversation** closes settings, returns to the current conversation and focuses the answer-engine selector. Choose **Local LLM**, then an installed answer model. Your existing question stays a draft until you send it.
 
 A reachable server and installed answer models do not establish that a model is loaded or measured. The card names the conversation engine, local model and load state separately. If the saved model disappeared, select an available model; if the server is unreachable or no answer model exists, use the recovery guide or connection diagnostics. First actual use may load a model. After the request, readiness refreshes; Build follows the conversation's local model and shows CPU/GPU placement and recent speed only when reported. Unknown or stale measurements remain unknown. With OpenAI ready and the local model unloaded, the answer stage remains usable and explicitly says that only OpenAI is ready.
-
-### SCREENSHOT NEEDED
-<!-- Local LLM next-action flow: real connected/unloaded state, conversation selection, and Build after actual use; English light mode at 360px, 768px and desktop. Capture current observed metadata and compact navigation controls without synthesizing readiness. -->
 
 ## Run read-only diagnostics {#diagnostics}
 
@@ -224,13 +209,6 @@ For logs and measured execution, continue with [runtime](runtime.md#local-models
 
 Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001` loads and runs the model: it builds the workflow's grade prompt from `/retrieve`, calls Ollama with the structured-output schema across thinking on/off and output ceilings, and reports prompt tokens, tokens per second, hidden-reasoning length and JSON validity. Run it only against an isolated stack; it refuses to run in production mode. The [supported configurations](#configurations) table comes from it.
 
-<!-- capture:24-connection-diagnostics -->
-
-![A real read-only Default connection check passed server selection, connectivity and answer-model availability.](../assets/24-connection-diagnostics.en.jpg)
-
-*A real read-only Default connection check passed server selection, connectivity and answer-model availability. No settings, models or services were changed.*
-
-
 ### Optional CPU starting preset {#cpu-starting-preset}
 
 Tune input/output tokens and evidence size to the selected model and available hardware. Application defaults remain **60,000 input tokens, 4,000 output tokens and 120 seconds** for the whole run. In **Settings and preview → Advanced → Run limits**, explicitly choose **Slow local model start** to apply **24,000 input tokens, 2,000 output tokens, 300 seconds, 6 steps and 8,000 evidence characters** to the current conversation. Opening settings alone changes nothing; saving new-conversation defaults is a separate action.
@@ -246,9 +224,6 @@ With a local Ollama model selected, the composer shows **Slow local CPU model** 
 The inline notice shows the measured speed and current output/time ceilings; its actions open the settings editor. Recommendations reserve 30% over estimated generation time; they extend the wall clock up to 600 seconds and reduce the output ceiling if needed. Retrieval and prompt processing add time, and actual provider ceilings may be lower, so this is not a completion guarantee. The warning’s **Review recommended limits in settings** button opens **Advanced → Run limits** without changing values or sending. Review the before/after values there and press **Apply recommended limits** explicitly. **Evidence** opens its editor and offers the fixed CPU starting point of **8,000 characters** when the current limit is higher. Applying it does not lead to another reduction suggestion. At or below that value, the editor explains that no further reduction is suggested; manual adjustment remains available. Changes affect only this conversation and never send the question or save defaults automatically. Sending with unchanged values remains available. **Run limits** and **Evidence** open the corresponding Advanced section.
 
 The first run after a backend restart or server change has no measurement and produces no speed warning. Samples stay in the active backend's memory, belong to one server and model digest, and disappear when too old, the model changes/unloads, or placement/timing is unavailable. GPU and mixed placement do not trigger this CPU warning. No benchmark or model load is started to obtain a sample; readiness refreshes after a local run and during normal polling.
-
-### SCREENSHOT NEEDED
-<!-- Feature: slow CPU composer warning with measured speed and Run limits/Evidence actions; locale=en; theme=light; state=selected loaded CPU Ollama model below 15 tok/s with a recent real measurement; preserve existing assets. -->
 
 ## Which local Ollama settings can I change? {#editable-options}
 

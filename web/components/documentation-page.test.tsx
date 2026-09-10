@@ -37,7 +37,7 @@ it.each(["en", "ko"] as const)("renders separate visitor and DEV quick starts wi
   expect(visitor.container.querySelector('a[rel="next"]')).toHaveAttribute("href", expect.stringMatching(new RegExp(`^/docs/${locale}/answers/?$`)));
   cleanup();
   const developer = render(await DocumentationPage({ documentId: "quickstart-dev", locale }));
-  expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toHaveTextContent("Quick Start — DEV ONLY");
+  expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toHaveTextContent("Quick Start for DEV MODE");
   expect(screen.getByRole("complementary", { name: availability }).querySelector(".development-badge")).not.toBeNull();
   expect(screen.getByRole("tab", { name: "Web" })).toHaveAttribute("aria-selected", "true");
   expect(developer.container.querySelectorAll('[id^="qs-web-"]')).toHaveLength(7);

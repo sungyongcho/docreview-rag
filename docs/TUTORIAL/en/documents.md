@@ -12,32 +12,21 @@ prepared for that source.
 
 ## 2. Inspect the existing corpus {#step-2}
 
-**Goal:** identify work you can reuse and the first preparation step that is still missing.
+> [!GOAL]
+> Identify work you can reuse and the first preparation step that is still missing.
+>
+> **Prerequisites** [Environment verification](environment.md#step-1) · **Done** the intended source and its missing preparation are identified, or the catalog is confirmed empty.
 
-**Prerequisites:** complete [environment verification](environment.md#step-1). Existing
-documents are useful but not required: a confirmed empty catalog is a valid starting state.
+Open sidebar **Build → Documents**, or select the Documents tab in Build if you arrived from a conversation's corpus status line. Search for a document ID, issuer, or stock code that belongs to the filing you want to inspect; `NVDA-FY2024` is an example document ID, not a record guaranteed to exist. Company and Fiscal year narrow the catalog using available values, so leave them unrestricted if you are still exploring what is present. Existing documents are useful but not required: a confirmed empty catalog is a valid starting state.
 
-**Screen path:** sidebar **Build → Documents**. If you arrived from a conversation's
-corpus status line, select the Documents tab in Build.
+1. Select a matching document row or its document name. The list starts at full width before selection and does not preselect the first filing.
+2. Read the details: original filing identity, source link when available, chunk counts, embedding identities, snapshot membership, and related work. The detail header makes the company name and **FY** badge prominent, with the stable document ID, issuer code, and form underneath; if a company name is unavailable, the identifier remains visible and the interface does not invent a name.
+3. Check the missing preparation in the table below. A positive embedding count is not enough: inspect the recorded embedding identity, and check BM25 in Pipeline even when the document's embedding coverage is complete.
+4. If no document exists, wait for loading to finish and confirm the empty state after clearing filters. Proceed to acquisition instead of selecting an unrelated record. No matches can mean active filters, no ingested data, or no published data in public mode, so follow [visibility](#visibility) and remove the relevant filter chips; a load error is not an empty catalog, so use **Retry** or **Retry filters** and follow [Troubleshooting](troubleshooting.md) if it persists.
 
-**Inputs and meaning:** search for a document ID, issuer, or stock code that belongs to
-the filing you want to inspect. `NVDA-FY2024` is an example document ID, not a record
-guaranteed to exist. Company and Fiscal year narrow the catalog using available values.
-Leave them unrestricted if you are still exploring what is present.
+![The opened Samsung Electronics FY2022 filing shows its company name, 2022 fiscal year, 1,175 stored chunks and complete embeddings.](../assets/document-detail.en.png)
 
-**Primary action:** select a matching document row or its document name to open details.
-If no document exists, wait for loading to finish and confirm the empty state after
-clearing filters; proceed to acquisition instead of selecting an unrelated record.
-
-**What visibly changes:** details show the original filing identity, source link when
-available, chunk counts, embedding identities, snapshot membership, and related work.
-The list starts at full width before selection; it does not preselect the first filing. The detail header makes the company name and **FY** badge prominent, with the stable document ID, issuer code, and form underneath. If a company name is unavailable, the identifier remains visible; the interface does not invent a name.
-
-<!-- capture:03-document -->
-
-![A real Samsung Electronics filing highlights its supplied company name and FY 2022.](../assets/03-document.en.jpg)
-
-*A real Samsung Electronics filing highlights its supplied company name and FY 2022. The document ID, issuer code, source, and 1,393 chunks remain available below.*
+*Use the detail panel to confirm the filing identity and the stored chunk and embedding counts, then continue with the preparation step named below.*
 
 | Inspect | What it tells you | Next missing work |
 |---|---|---|
@@ -47,24 +36,9 @@ The list starts at full width before selection; it does not preselect the first 
 | Pipeline lexical readiness | Whether the BM25 preparation path is ready. | [Inspect BM25](indexing.md#step-7). |
 | Snapshot membership | Which recorded snapshots include this document. | [Read snapshot visibility and reuse](snapshots.md). |
 
-The detail panel's **Next step** opens the relevant Pipeline stage; **Open Jobs** shows
-related preparation records. Opening either view does not start the operation.
-Check BM25 in Pipeline even if the document's embedding coverage is complete.
+The detail panel's **Next step** opens the relevant Pipeline stage, and **Open Jobs** shows related preparation records. Opening either view does not start the operation. Other companies and years do not need to be deleted to complete this check.
 
-**Completion criteria:** you have identified the intended source and its missing
-preparation, or established that the applicable catalog has no document to reuse.
-A positive embedding count is not enough: inspect the recorded embedding identity.
-Other companies and years do not need to be deleted to complete this check.
-
-**Common failure and recovery:** no matches can mean active filters, no ingested data,
-or no published data in public mode. Follow [visibility](#visibility) and remove the
-relevant filter chips. A load error is not an empty catalog: use **Retry** or
-**Retry filters** and follow [Troubleshooting](troubleshooting.md) if it persists.
-
-**Next:** choose [source, companies, and years in step 3](acquisition.md#step-3).
-When those originals already exist, skip the matching download and continue with the
-first missing [indexing](indexing.md) step. If both retrieval paths are prepared,
-continue to [step 8: retrieval](retrieval.md#step-8).
+Choose [source, companies, and years in step 3](acquisition.md#step-3) next. When those originals already exist, skip the matching download and continue with the first missing [indexing](indexing.md) step; if both retrieval paths are prepared, continue to [step 8: retrieval](retrieval.md#step-8).
 
 ## Search and filters {#filters}
 
@@ -81,12 +55,6 @@ Company labels use the available source metadata. Codes remain the actual reques
 and filter values; a missing or conflicting company name can leave only the code.
 Fiscal year describes the report's fiscal period, which need not match the calendar
 year in its filing date. Read the report period and filing date in details.
-
-<!-- capture:22-company-filters -->
-
-![Company and fiscal-year filters use actual catalog values.](../assets/22-company-filters.en.jpg)
-
-*Company and fiscal-year filters use actual catalog values. Samsung Electronics and FY2022 are selected, with removable filter chips and the advanced filters visible.*
 
 ## Lists, details, and returning to work {#navigation}
 

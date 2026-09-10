@@ -1,26 +1,25 @@
 # Inspect retrieval before trusting an answer
 
-Retrieval returns candidate passages, rankings, and source identity. It does not establish that an answer
-is correct. Read a promising excerpt against the original report before choosing a retrieval profile.
+Search trial runs one real query against the prepared index and shows every returned passage with its
+component ranks and source identity. Retrieval does not establish that an answer is correct; read a
+promising excerpt against the original report before choosing a retrieval profile.
 
 ## 8. Test retrieval and read the source {#step-8}
+
+> [!GOAL]
+> Test the prepared indexes against a real question and read the ranked passages that will support an answer.
+>
+> **Prerequisites** prepared chunks and the intended retrieval lane ready · **Done** a relevant passage whose original text addresses the question
 
 > [!DEV]
 > Search trial runs on the public build through the public `/retrieve` endpoint with a custom retrieval profile bounded by the server (`k` ≤ 10, `candidate_k` ≤ 50, `max_context_chars` ≤ 12000). Answer previews run in DEV mode only; normal public conversation requests follow their own release policy.
 
-- **Goal:** check that the prepared index finds evidence relevant to a concrete question.
-- **Prerequisites:** the report has chunks and the selected retrieval lanes are ready;
-  complete [index preparation](indexing.md) as needed.
-- **Screen:** Measure → Search trial.
-- **Inputs:** enter the question below; choose Hybrid, BM25, `k=5`, and no reranker for the initial inspection.
-- **Primary action:** **Preview retrieval**.
-- **Visible result:** the previously full-width input workspace gains actual results after execution.
-  Component rankings, document IDs, excerpts, and final ranks explain the selected passages.
-- **Completion:** inspect a relevant passage and its original source; check company, fiscal year, and whether
-  the text actually addresses the question. A high score alone is insufficient.
-- **Recovery:** if results are empty or irrelevant, verify document readiness and scope before changing the
-  question or retrieval profile. Use [search troubleshooting](troubleshooting.md) and [settings](settings.md).
-- **Next:** [ask the first question](answers.md#step-9), or go directly to [retrieval evaluation](evaluation.md#step-11).
+1. Open **Measure → Search trial** and confirm that the report has chunks and the selected retrieval lanes are ready; complete [index preparation](indexing.md) as needed.
+2. Enter the question below and choose Hybrid, BM25, `k=5`, and no reranker for the initial inspection.
+3. Choose **Preview retrieval**. The previously full-width input workspace gains actual results after execution; component rankings, document IDs, excerpts, and final ranks explain the selected passages.
+4. Inspect a relevant passage and its original source. Check the company, fiscal year, and whether the text actually addresses the question; a high score alone is insufficient.
+5. If results are empty or irrelevant, verify document readiness and scope before changing the question or retrieval profile, using [search troubleshooting](troubleshooting.md) and [settings](settings.md).
+6. Continue to [ask the first question](answers.md#step-9), or go directly to [retrieval evaluation](evaluation.md#step-11).
 
 ```text
 What drove NVIDIA data center revenue growth in fiscal 2024?
@@ -30,16 +29,10 @@ OpenAI query embeddings can incur cost even when corpus embeddings are ready. **
 separate answer operation with provider usage and a recorded run. Do not invoke it just to inspect
 retrieval. Preview retrieval does not persist an evaluation result or alter a conversation profile.
 
-<!-- capture:09-retrieval-inputs -->
-
-![Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5.](../assets/09-retrieval-inputs.en.jpg)
-
-*Search trial shows a real, unexecuted NVIDIA FY2024 query with Hybrid, BM25 and k=5. Retrieval and answer preview remain separate explicit actions.*
-
+### SCREENSHOT NEEDED
+<!-- feature=search-trial-input-and-ranked-results; mode=both; locale=en; theme=light; state=executed-nvidia-fy2024-query-with-hybrid-bm25-and-k5; expected-evidence=input-row-component-ranks-document-ids-excerpts-source-provenance-and-final-ranks -->
 
 Example: `NVIDIA fiscal 2024 revenue` returns five NVIDIA FY2024 passages in the prepared corpus. Each result retains its source offsets and SHA-256. This is retrieval only; no answer is generated.
-
-![NVIDIA FY2024 retrieval results with source provenance.](../assets/quickstart/08-retrieval.en.png)
 
 ## Read the ranking information {#rankings}
 

@@ -1,5 +1,4 @@
 import { ProductBrand } from "@/components/product-brand";
-import { CreatorSignature } from "@/components/creator-signature";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { LanguageSwitch } from "@/lib/i18n";
 import { ThemeSwitch } from "@/components/theme-switch";
@@ -28,7 +27,7 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const parsed = renderTutorial(source, { locale });
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
-  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} /><div>{content}</div></aside>, renderCode: (block) => <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
+  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
   const tutorial = render(source);
   const sections = document.id === "quickstart-dev" ? splitQuickStart(source) : null;
   const body = sections ? <><TutorialMarkdown content={render(sections.common).content} /><QuickStartPanels locale={locale} cli={<TutorialMarkdown content={render(sections.cli).content} />} web={<TutorialMarkdown content={render(sections.web).content} />} /><TutorialMarkdown content={render(sections.after).content} /></> : <TutorialMarkdown content={tutorial.content} />;
@@ -42,7 +41,7 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
     <a className="docs-skip" href="#docs-content">{locale === "ko" ? "본문으로 바로가기" : "Skip to content"}</a>
     <header className="docs-header">
       <div className="docs-header-inner">
-      <Link className="docs-brand" href="/"><ProductBrand /></Link>
+      <Link className="docs-brand" href={`/docs/${locale}/`}><ProductBrand /></Link>
       <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><LanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
       <Link className="docs-back" href="/" aria-label={locale === "ko" ? "서비스로 돌아가기" : "Return to service"}><ArrowLeft size={15} /><span className="docs-back-long">{locale === "ko" ? "서비스로 돌아가기" : "Return to service"}</span><span className="docs-back-short">{locale === "ko" ? "서비스" : "Service"}</span></Link>
       </div>
@@ -56,7 +55,7 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
           <span className="docs-mode-shared">{locale === "ko" ? "초안 · 개요" : "Draft / Outline"}</span>
           <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "This draft is available in the public demo and DEV. The article below is the Korean source; an English translation is not available yet."}</p>
         </aside> : <aside className="docs-mode-guide" aria-label={locale === "ko" ? "이 안내의 사용 범위" : "Guide availability"}>
-          {document.developmentOnly ? <DevelopmentBadge locale={locale} /> : <span className="docs-mode-shared">{locale === "ko" ? "공통 안내" : "Shared guide"}</span>}
+          {document.developmentOnly ? <DevelopmentBadge locale={locale} tooltip={false} /> : <span className="docs-mode-shared">{locale === "ko" ? "공통 안내" : "Shared guide"}</span>}
           <p>{document.developmentOnly
             ? (locale === "ko" ? "이 문서의 실습은 로컬 DEV 환경에서 실행합니다. 문서 전체는 공개 데모와 DEV 어디서든 읽을 수 있습니다." : "Run the exercises in this guide in a local DEV environment. The complete guide remains readable in both the public demo and DEV.")
             : (locale === "ko" ? "공개 데모와 DEV에서 함께 사용하는 안내입니다. 본문에서 스패너가 붙은 작업만 개발 모드 전용이며, 모든 문서는 두 환경에서 읽을 수 있습니다." : "This guide covers both the public demo and DEV. Only actions marked with a wrench require development mode; every document remains readable in both environments.")}</p>
@@ -70,7 +69,6 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
       </main>
       <aside className="docs-toc">{sections ? <QuickStartOutline headings={tutorial.headings} locale={locale} /> : <DocumentationOutline headings={tutorial.headings} locale={locale} />}</aside>
     </div>
-    <footer className="docs-footer"><div className="docs-footer-inner"><span>{locale === "ko" ? "DocReview RAG · 원문 근거와 함께 읽는 공시" : "DocReview RAG · Filings with verifiable evidence"}</span><CreatorSignature variant="footer" /></div></footer>
   </div>;
   return sections ? <QuickStartProvider>{page}</QuickStartProvider> : page;
 }

@@ -3,7 +3,7 @@
   "groups": [
     { "id": "start", "title": { "ko": "시작하기", "en": "Get started" } },
     { "id": "review", "title": { "ko": "앱 사용", "en": "Use" } },
-    { "id": "prepare", "title": { "ko": "데이터 준비 (DEV)", "en": "Prepare data (DEV)" } },
+    { "id": "prepare", "title": { "ko": "데이터 준비", "en": "Prepare data" } },
     { "id": "measure", "title": { "ko": "평가", "en": "Measure" } },
     { "id": "reference", "title": { "ko": "참고", "en": "Reference" } }
   ],
@@ -31,7 +31,7 @@
     },
     {
       "id": "quickstart-dev", "developmentOnly": true, "icon": "Terminal", "slug": "quickstart-dev", "group": "start", "order": 4, "source": "quickstart-dev.md",
-      "title": { "ko": "Quick Start — DEV ONLY", "en": "Quick Start — DEV ONLY" },
+      "title": { "ko": "Quick Start for", "en": "Quick Start for" },
       "summary": { "ko": "준비된 로컬 환경에서 CLI/Web 7단계로 원문과 검색 인덱스 준비", "en": "Prepare filings and search indexes in seven CLI/Web steps after local setup" },
       "related": ["environment", "retrieval", "answers", "troubleshooting"], "steps": [],
       "legacyAnchors": { "ko": { "qs-cli": "qs-cli", "qs-cli-1": "qs-cli-1", "qs-cli-2": "qs-cli-2", "qs-cli-3": "qs-cli-3", "qs-cli-4": "qs-cli-4", "qs-cli-5": "qs-cli-5", "qs-cli-6": "qs-cli-6", "qs-cli-7": "qs-cli-7", "qs-web": "qs-web", "qs-web-1": "qs-web-1", "qs-web-2": "qs-web-2", "qs-web-3": "qs-web-3", "qs-web-4": "qs-web-4", "qs-web-5": "qs-web-5", "qs-web-6": "qs-web-6", "qs-web-7": "qs-web-7", "qs-next": "qs-next" }, "en": { "qs-cli": "qs-cli", "qs-cli-1": "qs-cli-1", "qs-cli-2": "qs-cli-2", "qs-cli-3": "qs-cli-3", "qs-cli-4": "qs-cli-4", "qs-cli-5": "qs-cli-5", "qs-cli-6": "qs-cli-6", "qs-cli-7": "qs-cli-7", "qs-web": "qs-web", "qs-web-1": "qs-web-1", "qs-web-2": "qs-web-2", "qs-web-3": "qs-web-3", "qs-web-4": "qs-web-4", "qs-web-5": "qs-web-5", "qs-web-6": "qs-web-6", "qs-web-7": "qs-web-7", "qs-next": "qs-next" } }

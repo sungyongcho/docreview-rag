@@ -25,7 +25,7 @@ rag-start-quick
 Source is the one-command install and activation path. Choose Y to save startup registration and restart the login shell; its banner reminds you to type rag-help. N loads only this session. Re-sourcing reports [already installed] or [update required] by comparing the version and registered definitions.
 
 The Helper is included in the clone. `rag-alias update` refreshes it when the checkout changes. Use `source` for shell registration.
-See [helper installation and updates](cli.md) for moved paths and the optional default-No login-shell offer after executed installation.
+See [helper installation and updates](cli.md#register-commands-and-open-help) for moved paths and the optional default-No login-shell offer after executed installation.
 The first run creates `.env` only if absent. Edit it locally and rerun `rag-start-quick`:
 
 ```dotenv
@@ -60,30 +60,19 @@ at the same step. `[q]` cancels. The parent shell is unchanged; use the printed 
 for future invocations. For startup/readiness failures, existing read-only diagnostics run and
 the command offers one confirmed, volume-preserving down/build/start recovery.
 
-### SCREENSHOT NEEDED
-<!-- Feature: guided Quick Start configuration repair; locale=en; TTY color/bold or NO_COLOR plain text; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
-
 ## 1. Open and verify the environment {#step-1}
 
-**Goal:** establish that the current environment is ready for document inspection and
-the preparation operations you intend to use.
+> [!GOAL]
+> Establish that the current environment is ready for document inspection and the preparation operations you intend to use.
+>
+> **Prerequisites** [Part 1: Setup](#qs-setup) or a running service with a compatible database · **Done** the API responds, the DB is connected, and the schema is usable.
 
-**Prerequisites:** complete the setup above, or reuse a running service with a compatible
-database. No document acquisition, embedding, or answer request is needed for this check.
+Open sidebar **System → System status**; the page heading is **Runtime readiness**. Read the mode indicator and use the development environment for the preparation tutorial, because public mode can expose fewer controls with different permissions. This is a read-only check that makes no document acquisition, embedding, or answer request, so no question or company selection is required; confirm that the service address is the intended environment, because a different API/database address can refer to different data even when the interface looks familiar. Corpus counts are shown on both builds; only whether the corpus is writable is withheld.
 
-**Screen path:** sidebar **System → System status**. The page heading is **Runtime readiness**.
-Read the mode indicator; use the development environment for the preparation tutorial.
-Public mode can expose fewer controls because it has different permissions. Corpus counts are shown on both builds; only whether the corpus is writable is withheld.
-
-**Inputs and meaning:** this is a read-only check; no question or company selection is
-required. Confirm that the service address is the intended environment. A different
-API/database address can refer to different data even when the interface looks familiar.
-
-**Primary action:** click **Refresh** once and wait for **Checking…** to finish.
-
-**What visibly changes:** the status facts refresh. Read the API condition shown in the
-System navigation or connection warning, then inspect the Database and Schema facts.
-Corpus counts and model policy describe separate aspects of the same environment.
+1. Select **Refresh** once and wait for **Checking…** to finish. The status facts refresh, and the API condition appears in the System navigation or connection warning.
+2. Inspect the Database and Schema facts. Corpus counts and model policy describe separate aspects of the same environment.
+3. Confirm completion: the API responds, the DB is connected, and the schema is usable. You now know whether this environment allows document preparation; an empty corpus does not invalidate those checks, and identifying existing data is the next step. Unknown fields remain unresolved and should not be counted as passed.
+4. If the page opens but API checks fail, inspect `rag-dev ps` and `rag-dev logs --tail=80 app`, follow [Troubleshooting](troubleshooting.md) for the recorded symptom, apply the relevant fix, and repeat Refresh. For a fresh DB, use the linked schema setup; a schema-drift error is not a reason to delete an existing DB.
 
 | Fact | What to verify | What it does not prove |
 |---|---|---|
@@ -94,38 +83,16 @@ Corpus counts and model policy describe separate aspects of the same environment
 | Corpus | Counts and readiness are collected, including honest empty or partial states. | That all displayed vectors were produced by the intended model. |
 | Model availability | The selected engine is available, or its missing prerequisite is explained. | That a model request has succeeded or that an answer will be supported. |
 
-<!-- capture:01-system-status -->
-
-![System status separates actual API/database/schema health, corpus readiness and model availability.](../assets/01-system-status.en.jpg)
-
-*System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.*
-
 ### SCREENSHOT NEEDED
+<!-- feature=runtime-readiness-status; mode=dev; locale=en; theme=light; state=checked-runtime-readiness-with-api-database-schema-and-mode-facts; expected-evidence=system-status-heading-connection-warning-refresh-control-and-fact-rows -->
 
-<!-- SCREENSHOT NEEDED: feature=system-status-dev-badges; locale=en; theme=light; capture=system-status-tab-showing-dev-badges-on-local-model-policy-and-local-runtime-panels; issue=79; preserve-existing-assets=true -->
-
-**Screenshot pending for the DEV badges on the Local model policy and Local runtime panels. Existing screenshots remain unchanged.**
-
-**Completion criteria:** the API responds, the DB is connected, and the schema is usable.
-You know whether this environment allows document preparation. An empty corpus does not
-invalidate those checks; identifying existing data is the next step. Unknown fields
-remain unresolved and should not be counted as passed.
-
-**Common failure and recovery:** if the page opens but API checks fail, inspect
-`rag-dev ps` and `rag-dev logs --tail=80 app`. Follow [Troubleshooting](troubleshooting.md)
-for the recorded symptom, apply the relevant fix, and repeat Refresh. For a fresh DB,
-use the linked schema setup. A schema-drift error is not a reason to delete an existing DB.
-
-**Next:** open Build and continue with the developer preparation guide below.
+Open Build and continue with the developer preparation guide below.
 
 ## Open Build and continue {#open-build}
 
 Open the printed application URL and select **Build → Pipeline**. Confirm that you can inspect the preparation graph and the selected step. Opening Build does not download a filing or run a model.
 
-**Service ready is not data ready.** Continue with [Quick Start — DEV ONLY](quickstart-dev.md#qs-web-1): choose CLI or Web to verify the environment, acquire the two example reports, parse and chunk them, prepare embeddings and BM25, and check readiness before asking. Reuse completed work. The existing [twelve-step learning path](overview.md#learning-path) then covers questions, settings, and evaluation.
-
-### SCREENSHOT NEEDED
-<!-- Feature: fresh-clone environment setup handoff; locale=en; light mode; show successful redacted service readiness and Build → Pipeline open before acquiring sources, with separate API/database/schema facts and the DEV Quick Start continuation. Preserve existing assets. -->
+**Service ready is not data ready.** Continue with [Quick Start for DEV MODE](quickstart-dev.md#qs-web-1): choose CLI or Web to verify the environment, acquire the two example reports, parse and chunk them, prepare embeddings and BM25, and check readiness before asking. Reuse completed work. The existing [twelve-step learning path](overview.md#learning-path) then covers questions, settings, and evaluation.
 
 ## Recover a blocked preparation step {#schema-recovery}
 
@@ -167,13 +134,6 @@ Compose policy, recreate the app with `rag-dev up -d`; an existing container doe
 primary group or command merely from a source reload. See [reset recovery](cli.md).
 
 An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
-
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=schema-and-terminal-handoff-recheck; locale=en; theme=light; capture=blocked-and-resolved-states; issue=17; preserve-existing-assets=true -->
-
-**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
-
 
 For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart ignores an external `DATABASE_URL` and uses the local `DB_PORT`. Safe target-selection

@@ -1,5 +1,7 @@
 # Evaluate retrieval against known evidence
 
+Evaluation asks whether the search system can find the evidence specified by a golden dataset. A run records its dataset, retrieval configuration, progress, and results; it does not require a generated answer first, and its retrieval scores do not certify the factual accuracy of an answer model.
+
 ## Public exploration and recorded evidence
 
 Saved snapshots use a responsive card grid in DEV and PROD. Each card shows a short title, search settings and evidence hit rate; only DEV shows a visibility badge. Full titles, dataset files, document counts, timestamps and all metrics remain in the detail drawer. Select a card to open the existing right-side drawer with full metadata and configuration. Close with X, Escape or the backdrop; DEV actions remain available only in DEV.
@@ -18,50 +20,37 @@ Open **Explore evaluation settings** in the same side drawer layout as DEV. Data
 > [!DEV]
 > Evaluation execution and dataset editing run in DEV only. Visitors can explore settings and read published questions, recorded evaluations and comparisons.
 
-An evaluation asks whether the search system can find the evidence specified by a golden dataset. It records a dataset, retrieval configuration, progress, and results. It does not require a generated answer first, and its retrieval scores do not certify the factual accuracy of an answer model.
-
 ## 11. Run a retrieval evaluation {#step-11}
 
-**Goal:** obtain one recorded retrieval result whose dataset and search conditions you understand.
+> [!GOAL]
+> Record one retrieval evaluation whose dataset and search conditions you understand.
+>
+> **Prerequisites** evaluation permission, a working index, and the filings your suite covers · **Done** one saved result with its dataset, settings, and scores
 
-**Prerequisites:** a local development environment with evaluation permission, a working index, and the source filings required by your chosen suite. A corpus containing only one tutorial filing is insufficient for a suite covering several companies. Reuse a matching existing result if the required evaluation was already completed.
-
-**Screen path:** **Measure → 2. Golden dataset**, then **3. Run evaluation → New evaluation**.
+1. Confirm that you are in a local development environment with evaluation permission, a working index, and the source filings required by your chosen suite. A corpus containing only one tutorial filing is insufficient for a suite covering several companies. Reuse a matching existing result if the required evaluation was already completed.
+2. Open **Measure → 2. Golden dataset**, select a question and read it, including its source spans. Then open **3. Run evaluation → New evaluation** and verify readiness and case count.
+3. Choose the golden suite, the dataset file, and the core search settings that identify the experiment:
 
 | Input | What to verify |
 |---|---|
 | Golden suite | The company coverage and question language match what you intend to measure. |
-| Dataset file | Select a `.json` file. Bundled files carry `(Built-in)`; user files appear by filename. |
+| Dataset file | Select a `.json` file. Bundled files carry a **Built-in** marker; user files appear by filename. |
 | Core search settings | Strategy, lexical ranker, and `k` identify the experiment. |
 | Advanced evaluation options → Run mode | Start with **Quick · current index**. It measures the current prepared index. |
 
-Select and read a question in Golden dataset, including its source spans. Open New evaluation and verify readiness and case count. **Primary action:** click **Queue evaluation** once. Query embedding and configured search components may incur provider costs.
-
-**Visible result:** the setup closes and a queued job appears in Evaluation runs. Select its row to inspect request settings and actual progress. A successful run exposes Result details, recorded configuration, metrics, and case ranks. No result means no measured scores yet.
-
-Selecting an evaluation opens its focused details. While the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
-
-**Completion:** the selected run succeeded, the result ID and dataset are correct, and you inspected at least one hit/miss against its source evidence. Do not treat a successful job from another suite as the result of this setup.
-
-**Common failure:** Sources unavailable or Corpus not ready. Read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
-
-**Next:** [12. Compare results and save a snapshot](snapshots.md#step-12).
+4. Choose **Queue evaluation** once. Query embedding and configured search components may incur provider costs.
+5. Watch the run. The setup closes and a queued job appears in Evaluation runs; select its row to inspect request settings and actual progress. A successful run exposes Result details, recorded configuration, metrics, and case ranks; no result means no measured scores yet. Selecting an evaluation opens its focused details, and while the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
+6. Read the outcome against its source evidence. The selected run succeeded, the result ID and dataset are correct, and you inspected at least one hit/miss. Do not treat a successful job from another suite as the result of this setup.
+7. If sources are unavailable or the corpus is not ready, read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
 
 ### SCREENSHOT NEEDED
+<!-- feature=focused-evaluation-detail; mode=dev; locale=en; theme=light; state=selected-evaluation-with-result-details-and-return-to-list; expected-evidence=result-details-recorded-configuration-metrics-case-ranks-and-back-to-list-without-empty-history-message -->
 
-<!-- SCREENSHOT NEEDED: feature=focused-evaluation-detail; locale=en; theme=light; capture=selected-evaluation-with-result-details-and-back-to-list-without-empty-history-message; issue=21; preserve-existing-assets=true -->
-
-**Screenshot pending for the focused evaluation detail and return-to-list state. Existing screenshots remain unchanged.**
-
-<!-- capture:11-evaluation-inputs -->
-
-![New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index.](../assets/11-evaluation-inputs.en.jpg)
-
-*New evaluation setup uses the real mixed-language canonical suite: 20 cases and a ready current index. Hybrid/BM25/k=5 is visible; Queue evaluation was not pressed.*
+Continue to [12. Compare results and save a snapshot](snapshots.md#step-12).
 
 ## Golden-set identity and readiness
 
-Select one JSON filename in Golden, new evaluation setup, or the pipeline. Bundled files carry `(Built-in)` and are read-only. Source, question language, review status, and execution readiness remain separate; source checks do not imply human approval.
+Select one JSON filename in Golden, new evaluation setup, or the pipeline. Bundled files carry a **Built-in** marker and are read-only. Source, question language, review status, and execution readiness remain separate; source checks do not imply human approval.
 
 The read-only preparation check matches required official filing identities, verifies source SHA-256 and answer intervals, and binds answer document IDs to the current acquisition IDs. It does not create `sec-evaluation` or `dart-evaluation` selections, change reference answers, or download missing files. Missing-original links open source preparation. Source details show company names and fiscal years.
 
@@ -105,13 +94,7 @@ Start with the question and choose whether original documents can answer it. Evi
 Bundled filenames display a gray, noninteractive lock: create a draft to edit. New evaluation parameters are grouped into candidates/fusion, BM25, and reranking/language. Small information icons explain their purpose on hover or keyboard focus.
 
 ### SCREENSHOT NEEDED
-<!-- Capture DEV, English: wide question editor with answerability unselected, fixed save bar, and source chunk picker; also show a narrow viewport. -->
-
-<!-- capture:10-golden-question -->
-
-![The mixed-language SEC suite is selected with an actual canonical question open.](../assets/10-golden-question.en.jpg)
-
-*The mixed-language SEC suite is selected with an actual canonical question open. Canonical JSON is read-only; viewing a source question is separate from creating or editing a draft.*
+<!-- feature=golden-question-editor; mode=dev; locale=en; theme=light; state=wide-editor-with-answerability-unselected-fixed-save-bar-and-chunk-picker; expected-evidence=wide-and-narrow-viewports-draft-editability-and-source-chunk-selection -->
 
 ## Modes, results, and interpretation {#metrics}
 
@@ -130,9 +113,6 @@ Follow per-case changes rather than only the aggregate score. **Use selected set
 ## Workflow and management tabs
 
 The four workflow steps are Search trial, Golden dataset, Run evaluation, and Compare & snapshots. Manage contains Presets. Save future dataset and mode defaults explicitly inside New evaluation; snapshot comparison starts with no selected pair.
-
-### SCREENSHOT NEEDED
-<!-- Feature: Measure workflow and Manage groups, active presets and page help; locale=en; theme=light; widths=1440,720; show numbered chips, divider, caption and DEV badge. Preserve existing assets. -->
 
 ## Find runs by dataset file
 
@@ -154,7 +134,7 @@ another result still follows its exact ID. A question table only shows scores ma
 selected dataset's recorded content hash.
 
 ### SCREENSHOT NEEDED
-<!-- Capture DEV, English: dataset-filtered run history and file-first comparison with two matching results; show filenames/settings/times without result-number labels. -->
+<!-- feature=dataset-filtered-history-and-comparison; mode=dev; locale=en; theme=light; state=file-filtered-run-history-and-two-matching-results-selected; expected-evidence=filenames-settings-execution-times-and-matching-content-hash-comparison -->
 
 In **New evaluation**, use **Save as evaluation defaults** to remember only the selected dataset and run mode. **Reset evaluation defaults** resets future defaults without changing this form. Neither action starts a job or changes chat presets.
 
