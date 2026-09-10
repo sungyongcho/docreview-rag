@@ -124,11 +124,11 @@ export function useNotificationSurface(surface: string, active = true, modal = f
   useEffect(() => active ? registerSurface(id, surface, modal) : undefined, [active, id, surface, modal, registerSurface]);
 }
 
-/** A dialog or inspector reserves feedback space without covering controls. */
-export function NotificationOutlet({ priority = 0, active = true }: { priority?: number; active?: boolean }) {
+/** A dialog or inspector selects feedback ownership and its inline or overlay placement. */
+export function NotificationOutlet({ priority = 0, active = true, placement = "inline" }: { priority?: number; active?: boolean; placement?: "inline" | "overlay" }) {
   const id = useId();const { register, selected, items, dismiss, expire } = useContext(Context);
   useEffect(() => active ? register(id, priority) : undefined, [active, id, priority, register]);
-  return <div className="notification-outlet">{selected === id && items.length > 0 && <NotificationTray items={items} onDismiss={dismiss} onExpire={expire} />}</div>;
+  return <div className="notification-outlet" data-placement={placement}>{selected === id && items.length > 0 && <NotificationTray items={items} onDismiss={dismiss} onExpire={expire} placement={placement} />}</div>;
 }
 
 /** Bound the rail by the visual viewport as well as dynamic viewport units and safe areas. */

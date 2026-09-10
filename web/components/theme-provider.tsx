@@ -3,11 +3,10 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { applyTheme, normalizeTheme, readTheme, saveTheme, THEME_KEY, type Theme } from "@/lib/theme";
 import { subscribeStorageRestored, storageEventValue } from "@/lib/storage";
-import { previewState, subscribePreview } from "@/lib/production-preview";
 
 const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void }>({ theme: "system", setTheme: () => undefined });
 
-/** App and documentation share one preference; previews use their isolated memory store. */
+/** App and documentation share one theme preference. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, updateTheme] = useState<Theme>("system");
   const current = useRef<Theme>("system");
@@ -17,16 +16,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     apply(readTheme());
     const restored = subscribeStorageRestored(() => apply(readTheme()));
     const systemChanged = () => { if (current.current === "system") applyTheme("system", media?.matches ?? false); };
-    const stored = (event: StorageEvent) => { const value = storageEventValue(event, THEME_KEY); if (value !== undefined && previewState().mode === "normal") apply(normalizeTheme(value)); };
-    let previousMode = previewState().mode;
-    const unsubscribe = subscribePreview(() => {
-      const mode = previewState().mode;
-      if (previousMode !== "normal" && mode === "normal") apply(readTheme());
-      previousMode = mode;
-    });
+    const stored = (event: StorageEvent) => { const value = storageEventValue(event, THEME_KEY); if (value !== undefined) apply(normalizeTheme(value)); };
     media?.addEventListener("change", systemChanged);
     window.addEventListener("storage", stored);
-    return () => { restored(); unsubscribe(); media?.removeEventListener("change", systemChanged); window.removeEventListener("storage", stored); };
+    return () => { restored(); media?.removeEventListener("change", systemChanged); window.removeEventListener("storage", stored); };
   }, []);
   const setTheme = useCallback((value: Theme) => {
     saveTheme(value);

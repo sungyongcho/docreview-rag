@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OperatorJob, OperatorJobStatus } from "@/lib/types";
@@ -255,4 +255,25 @@ it("distinguishes the company directory from a company-year original download", 
   expect(screen.getByText("Current stage · Original report download")).toBeInTheDocument();
   expect(screen.getByText("Current item · Samsung (005930) FY2024")).toBeInTheDocument();
   expect(screen.queryByText("Samsung (005930) FY2024", { exact: true })).not.toBeInTheDocument();
+});
+
+
+it("omits null request options while preserving false, zero, and the recorded request", () => {
+  const request = Object.freeze({ years: [2022, 2023, 2024], manifest: null, selection_id: null, expected_documents: null, enabled: false, max_results: 0 });
+  renderCenter([job({ request })]);
+  fireEvent.click(document.querySelector(".job-list-row")!);
+  const options = within(screen.getByRole("heading", { name: "Request options" }).closest("section")!);
+  expect(options.queryByText("manifest")).toBeNull();
+  expect(options.queryByText("selection id")).toBeNull();
+  expect(options.queryByText("expected documents")).toBeNull();
+  expect(options.getByText("false", { selector: "code" })).toBeVisible();
+  expect(options.getByText("0", { selector: "code" })).toBeVisible();
+  expect(options.getByText(/2022/, { selector: "code" })).toBeVisible();
+  expect(request.manifest).toBeNull();
+});
+
+it("shows the empty-options message when every recorded option is null", () => {
+  renderCenter([job({ request: { manifest: null } })]);
+  fireEvent.click(document.querySelector(".job-list-row")!);
+  expect(screen.getByText("No request options were recorded.")).toBeVisible();
 });

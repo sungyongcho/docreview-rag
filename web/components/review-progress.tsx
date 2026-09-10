@@ -126,11 +126,16 @@ export function resolvedScopeFromServer(value: unknown): ReviewResolvedScope | u
 }
 
 /** Keep the server scope outcome visible alongside the answer verdict. */
-export function PathDecisionBadge({ decision }: { decision: ReviewPathDecision }) {
+export function PathDecisionBadge({ decision, catalogMode }: { decision: ReviewPathDecision; catalogMode?: CompanyCatalogMode }) {
   const { t } = useI18n();
   const scope = decision.resolved_scope;
   const outcome = decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved";
-  return <p className="review-scope-outcome"><strong>{t(outcome)}</strong> · {t(decision.selected_scope === "auto" ? "Auto" : "Pinned")} {decision.selected_scope !== "auto" && decision.selected_scope.toUpperCase()}{scope && <> → {scope.filters.registries.join(" / ").toUpperCase()} / {scope.filters.issuers.join(", ") || t("No company restriction")}</>}</p>;
+  const registryKey = (scope?.filters.registries ?? []).join(",");
+  const names = useStageCompanyLabels(Boolean(scope), catalogMode, registryKey);
+  const issuers = scope?.filters.issuers.map(issuer => scope.filters.registries.map(registry => names.labels[`${registry}:${issuer.toUpperCase()}`]).find(Boolean) ?? issuer) ?? [];
+  const years = [...new Set(scope?.filters.fiscal_years ?? [])].sort((a, b) => a - b);
+  const yearLabel = years.length > 1 && years.every((year, index) => index === 0 || year === years[index - 1] + 1) ? `FY${years[0]}–${years[years.length - 1]}` : years.map(year => `FY${year}`).join(", ");
+  return <p className="review-scope-outcome review-scope-badge"><strong>{t(outcome)}</strong>{scope && <span>{[scope.filters.registries.join(" / ").toUpperCase(), issuers.join(" · ") || t("No company restriction"), yearLabel].filter(Boolean).join(" · ")}</span>}</p>;
 }
 
 /** The requested mode and confirmed applied routing remain distinct throughout execution. */

@@ -18,6 +18,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.admin_runtime import READINESS_STATUS_MAX_AGE_S, RuntimeAdminApiServices
 from app.api.app import create_api_app
+from app.api.review_profile import PromptPolicy
 from app.api.runtime import RuntimeApiServices
 from app.config import Settings
 from app.corpus_admin import RuntimeCorpusAdminService
@@ -27,6 +28,7 @@ from app.llm.local_runtime import build_local_runtime
 from app.llm.openai_limits import OpenAICallLimits, OpenAILimitsManager
 from app.llm.provider import LLMProvider, OpenAILLMProvider
 from app.openai_models import POLICY_REVISION, openai_policy_snapshot
+from app.release.ai_allowance import SharedAIAllowance
 from app.release.browser_reset import browser_reset_id
 from app.release.config import AdminMode, ReleaseSettings
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
@@ -86,7 +88,7 @@ class ReleaseInfo(BaseModel):
     openai_enabled: bool
     key_handling: Literal["server_environment_only"] = "server_environment_only"
     key_persisted: Literal[False] = False
-    rate_limit_scope: Literal["single_process"] = "single_process"
+    rate_limit_scope: Literal["single_process", "shared_storage"] = "single_process"
     rate_limit_per_minute: int
     rate_limit_per_day: int
     max_input_tokens: int
@@ -130,11 +132,13 @@ class ReleaseLimits(BaseModel):
     minute_reset_seconds: int
     day_reset_seconds: int
     daily_cost_reset_at_utc: datetime
-    scope: Literal["single_process"] = "single_process"
+    prompt_policy: PromptPolicy
+    per_call: OpenAICallLimits
+    scope: Literal["single_process", "shared_storage"] = "single_process"
 
 
 class CorpusReadiness(BaseModel):
-    """Runtime readiness with nullable counts withheld from public surfaces."""
+    """Runtime readiness; only write access is withheld from public surfaces."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -226,8 +230,8 @@ def build_runtime_services(
         credential_slot=settings.openai_key_slot,
         intent_classifier_enabled=True,
         query_routing_enabled=True,
-        allow_custom_prompt_policy=settings.admin_mode == "live",
-        allow_snapshot_query=settings.admin_mode == "live",
+        allow_custom_prompt_policy=settings.admin_enabled,
+        allow_snapshot_query=settings.admin_enabled,
     )
 
 
@@ -236,8 +240,13 @@ def _release_info(settings: ReleaseSettings) -> ReleaseInfo:
     return ReleaseInfo(
         mode=settings.mode,
         environment=settings.environment,
-        admin_mode=settings.admin_mode,
+        admin_mode=settings.admin_mode if settings.environment == "dev" else "readonly",
         openai_enabled=settings.openai_enabled,
+        rate_limit_scope=(
+            "shared_storage"
+            if settings.mode == "runtime" and settings.environment == "prod"
+            else "single_process"
+        ),
         rate_limit_per_minute=settings.rate_limit_per_minute,
         rate_limit_per_day=settings.rate_limit_per_day,
         max_input_tokens=settings.openai_max_input_tokens,
@@ -262,13 +271,15 @@ def create_release_app(
 
     admin_services = (
         RuntimeAdminApiServices(runtime=active_services)
-        if active_settings.admin_mode == "live" and active_services is not None
+        if active_settings.admin_enabled and active_services is not None
         else None
     )
     application = create_api_app(
         active_services,
         admin_services,
-        enable_reset=active_settings.environment == "dev" and active_settings.admin_mode == "live",
+        enable_reset=active_settings.admin_enabled,
+        enable_docs_execution=active_settings.environment != "prod",
+        include_admin_schema=active_settings.environment == "prod",
     )
     limiter = InProcessRateLimiter(
         per_minute=active_settings.rate_limit_per_minute,
@@ -279,22 +290,36 @@ def create_release_app(
         daily_limit_usd=active_settings.public_daily_cost_usd,
         reservation_usd=active_settings.openai_max_cost_usd,
     )
-    enforce_public_limits = active_settings.admin_mode != "live"
-    limiter_salt = secrets.token_bytes(32)
+    shared_allowance = None
+    if active_settings.mode == "runtime" and active_settings.environment == "prod":
+        shared_allowance = SharedAIAllowance(
+            active_settings.public_allowance_path,
+            active_settings.public_daily_cost_usd,
+            active_settings.rate_limit_per_minute,
+            active_settings.rate_limit_per_day,
+        )
+        limiter = shared_allowance
+    enforce_public_limits = (
+        active_settings.environment == "prod" or not active_settings.admin_enabled
+    )
+    limiter_salt = shared_allowance.salt if shared_allowance else secrets.token_bytes(32)
     application.add_middleware(
         ReleaseGuardMiddleware,
         limiter=limiter,
         trust_proxy_headers=active_settings.trust_proxy_headers,
-        allow_ingest=active_settings.allow_ingest,
+        allow_ingest=active_settings.allow_ingest and active_settings.environment != "prod",
         enforce_rate_limit=enforce_public_limits,
-        public_read_only=active_settings.admin_mode != "live",
+        public_read_only=not active_settings.admin_enabled,
         allow_local_engine=active_settings.environment != "prod",
         local_connection_origin=active_settings.admin_cors_origin,
-        cost_limiter=cost_limiter if active_settings.mode == "runtime" else None,
+        cost_limiter=cost_limiter
+        if active_settings.mode == "runtime" and shared_allowance is None
+        else None,
+        shared_allowance=shared_allowance,
         salt=limiter_salt,
     )
     application.add_middleware(SecurityHeadersMiddleware)
-    if active_settings.admin_mode == "live" and active_settings.admin_cors_origin is not None:
+    if active_settings.admin_enabled and active_settings.admin_cors_origin is not None:
         application.add_middleware(
             CORSMiddleware,
             allow_origins=[active_settings.admin_cors_origin],
@@ -315,10 +340,7 @@ def create_release_app(
     @application.get("/capabilities", response_model=ReleaseCapabilities, tags=["release"])
     async def capabilities(request: Request) -> ReleaseCapabilities:
         """Publish authoritative UI capabilities without exposing credentials."""
-        live = (
-            active_settings.admin_mode == "live"
-            and request.headers.get("x-docreview-public") != "true"
-        )
+        live = active_settings.admin_enabled and request.headers.get("x-docreview-public") != "true"
         return ReleaseCapabilities(
             environment=active_settings.environment,
             browser_reset_id=browser_reset_id() if active_settings.environment == "dev" else None,
@@ -328,7 +350,7 @@ def create_release_app(
             can_edit_golden=live,
             can_build_snapshot=live,
             can_run_evaluation=live,
-            can_change_custom_retrieval=live,
+            can_change_custom_retrieval=True,
             can_query_snapshot=live,
             can_use_operations=live and active_settings.environment != "prod",
         )
@@ -339,8 +361,14 @@ def create_release_app(
         host = client_host(request, trust_proxy_headers=active_settings.trust_proxy_headers)
         key = blake2s(host.encode("utf-8"), key=limiter_salt, digest_size=16).hexdigest()
         rate = await limiter.peek(key)
-        remaining_cost, cost_reset = await cost_limiter.status()
+        remaining_cost, cost_reset = await (shared_allowance or cost_limiter).status()
+        manager = active_services.openai_limits if active_services is not None else None
+        call_limits = (
+            manager or OpenAILimitsManager(active_settings.provider_budget(), enabled=False)
+        ).state()
         return ReleaseLimits(
+            prompt_policy=PromptPolicy(),
+            per_call=call_limits.model_copy(update={"editable": False}),
             per_minute=active_settings.rate_limit_per_minute,
             per_day=active_settings.rate_limit_per_day,
             remaining_minute=rate.remaining_minute,
@@ -354,6 +382,7 @@ def create_release_app(
             minute_reset_seconds=rate.minute_reset_seconds,
             day_reset_seconds=rate.day_reset_seconds,
             daily_cost_reset_at_utc=cost_reset,
+            scope="shared_storage" if shared_allowance else "single_process",
         )
 
     fallback_corpus: RuntimeCorpusAdminService | None = None
@@ -390,7 +419,9 @@ def create_release_app(
                 status="ready",
                 mode="canned",
                 environment=active_settings.environment,
-                admin_mode=active_settings.admin_mode,
+                admin_mode=active_settings.admin_mode
+                if active_settings.environment == "dev"
+                else "readonly",
                 policy_revision=POLICY_REVISION,
                 models=models,
                 review_enabled=False,
@@ -445,19 +476,11 @@ def create_release_app(
             )
 
         public_surface = (
-            active_settings.admin_mode != "live"
-            or request.headers.get("x-docreview-public") == "true"
+            not active_settings.admin_enabled or request.headers.get("x-docreview-public") == "true"
         )
         if public_surface:
-            corpus = corpus.model_copy(
-                update={
-                    "documents": None,
-                    "chunks": None,
-                    "embedded_chunks": None,
-                    "pending_embeddings": None,
-                    "writable": None,
-                }
-            )
+            # Counts are public reading material; only write access stays private.
+            corpus = corpus.model_copy(update={"writable": None})
 
         if active_settings.environment == "prod":
             local_readiness = {"enabled": False, "reason": "disabled_in_prod"}
@@ -483,7 +506,9 @@ def create_release_app(
             status="ready" if corpus_ready else "degraded",
             mode="runtime",
             environment=active_settings.environment,
-            admin_mode=active_settings.admin_mode,
+            admin_mode=active_settings.admin_mode
+            if active_settings.environment == "dev"
+            else "readonly",
             policy_revision=POLICY_REVISION,
             models=models,
             review_enabled=(

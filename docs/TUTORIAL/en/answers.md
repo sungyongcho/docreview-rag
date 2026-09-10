@@ -1,5 +1,10 @@
 # Ask a question and verify its citations
 
+## Shared published evidence scope
+
+Build selection, conversation settings, next-request preview and Search trial share the effective published document scope. A sparse selection such as NVDA FY2023 and AMD FY2024 never adds NVDA FY2024 or AMD FY2023. Answers and citations use actual retrieval within the existing public request limits. Returning to an old answer retains its recorded scope.
+
+
 An answer joins source selection, retrieval, evidence review, and model execution. The result can be a
 supported answer, insufficient evidence (`NOT_IN_DOCS`), or an operational failure. Read those outcomes
 separately instead of treating every completed request as a successful answer.
@@ -54,7 +59,7 @@ Inspect request**. Mobile keeps scope and engine selection visible. Engine avail
 are separate checks; a displayed model name does not prove it is installed or callable.
 
 > [!DEV]
-> Changing the answer engine/model or configuring a local server requires DEV. Normal public questions use the configured release policy and do not need these controls.
+> Changing the answer engine/model or configuring a local server runs in DEV mode only. Normal public questions use the configured release policy and do not need these controls.
 
 OpenAI uses the configured answer policy and a valid local development key. Inspect current model IDs in
 [CLI configuration](cli.md#installation-and-configuration); do not change a model or budget just to make
@@ -62,7 +67,7 @@ an execution appear quicker.
 
 For Ollama, open **Settings → Local LLM**. Keep a working connection; otherwise select **Default** and use **Run connection diagnostics** to inspect the backend connection and answer-model availability. Choose **Connect** only when you intend to apply that server, then select an installed answer-capable model in the conversation. **Add a server…** is for a named alternate endpoint, not a required setup step.
 
-The [macOS/Linux Ollama guide](ollama.md#connect) explains installation, network access, and recovery. Diagnostics do not generate an answer or load a model. Embedding-only models cannot answer questions; a production preview can intentionally disable local models. See [settings](settings.md#local-server) and [runtime](runtime.md#local-models) for the configuration and measured-state boundaries.
+The [macOS/Linux Ollama guide](ollama.md#connect) explains installation, network access, and recovery. Diagnostics do not generate an answer or load a model. Embedding-only models cannot answer questions; PROD does not support local answer models. See [settings](settings.md#local-server) and [runtime](runtime.md#local-models) for the configuration and measured-state boundaries.
 
 ## Inspect scope, evidence, and the request {#inspection}
 

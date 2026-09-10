@@ -1,4 +1,5 @@
 "use client";
+import { loadPublishedPortfolio } from "@/lib/use-published-corpus";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
@@ -31,6 +32,8 @@ type DocumentGroup = "none" | "registry" | "issuer" | "fiscal_year";
 
 interface DocumentInventoryProps {
   live: boolean;
+  active?: boolean;
+  refreshRevision?: string;
   /** Initial inventory supplied by the enclosing workspace. */
   fallbackDocuments: AdminDocument[];
   onOpenPipeline?: (stage?: string) => void;
@@ -38,7 +41,7 @@ interface DocumentInventoryProps {
   onOpenJobs?: () => void;
 }
 
-export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onOpenJobs, onInspectPipeline }: DocumentInventoryProps) {
+export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onOpenJobs, onInspectPipeline, active = true, refreshRevision = "" }: DocumentInventoryProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
   const [documents, setDocuments] = useState<AdminDocument[]>(fallbackDocuments);
@@ -64,6 +67,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedRequestKey, setLoadedRequestKey] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -83,15 +87,17 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
   }, [documentQuery, documentRegistry, documentIssuer, documentYear, documentLanguage, documentForm, documentParseStatus, documentEmbeddingStatus, documentSnapshot, documentSort, documentDescending]);
 
   useEffect(() => {
+    if (!active) return;
     const generation = ++requestGeneration.current;
     setLoading(true);
     setLoadingMore(false);
     setListError(null);
     setDocumentNextCursor(null);
     const timer = window.setTimeout(() => {
-      const getPage = live ? getAdminDocuments : getPublishedDocuments;
+      const getPage = live ? getAdminDocuments : async (params: URLSearchParams) => { const documents = await loadPublishedPortfolio(params); return { documents, total: documents.length, next_cursor: null }; };
       void getPage(new URLSearchParams(queryKey)).then((page) => {
         if (generation !== requestGeneration.current) return;
+        setLoadedRequestKey(`${live}:${queryKey}`);
         setDocuments(page.documents);
         setDocumentTotal(page.total);
         setDocumentNextCursor(page.next_cursor);
@@ -105,11 +111,11 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
       });
     }, 200);
     return () => { window.clearTimeout(timer); ++requestGeneration.current; };
-  }, [live, queryKey, refresh]);
+  }, [live, active, refreshRevision, queryKey, refresh]);
 
   useEffect(() => {
+    if (!active) return;
     let current = true;
-    setDocumentFacets(EMPTY_DOCUMENT_FACETS);
     setFacetError(null);
     void (live ? getDocumentFacets : getPublishedDocumentFacets)().then((facets) => {
       if (!isDocumentFacets(facets)) throw new Error("Invalid document filter response");
@@ -118,11 +124,12 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
       if (current) { setFacetError(String(reason)); notify(reason instanceof Error ? notificationErrorMessage(reason) : String(reason), "error", "document-facets", undefined, { event: "document-facets-error", detail: notificationErrorDetail(reason) }); }
     });
     return () => { current = false; };
-  }, [live, notify, facetRefresh]);
+  }, [live, active, refreshRevision, notify, facetRefresh]);
 
   useEffect(() => {
+    if (!active) return;
     let current = true;
-    setDocumentDetail(null);
+    setDocumentDetail(current => current?.document.doc_id === selectedId ? current : null);
     setDetailError(null);
     if (!selectedId) return;
     setDetailLoading(true);
@@ -132,7 +139,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
       if (current) setDetailLoading(false);
     });
     return () => { current = false; };
-  }, [selectedId, live, detailRefresh]);
+  }, [selectedId, live, active, refreshRevision, detailRefresh]);
 
   async function loadMoreDocuments() {
     if (!documentNextCursor || loadingMore || loading) return;
@@ -181,7 +188,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
     setDocumentGroup("none");
   }
 
-  const visibleDocuments = loading ? [] : documents;
+  const visibleDocuments = loading && loadedRequestKey !== `${live}:${queryKey}` ? [] : documents;
   const documentGroups = groupDocuments(visibleDocuments, documentGroup, t);
   const selectedExcluded = selectedId !== null && !loading && !listError && !documents.some((document) => document.doc_id === selectedId);
   const showDetail = selectedId !== null && layout.detailOpen;
@@ -201,7 +208,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
   return <div ref={layout.workspaceRef} style={layout.splitStyle} className={`document-workspace ${styles.workspace} ${compact ? styles.split : ""}`} data-detail-open={showDetail}>
     <section id={layout.listPanelId} data-help="build.documents.list" className={`surface document-inventory ${styles.listPanel} ${compact ? styles.compact : ""}`} hidden={showDetail && layout.narrow}>
       <div className={styles.heading}>
-        <div><h2>{t("Document inventory")}</h2><p className="helper">{t("Showing {shown} of {total} filings", { shown: visibleDocuments.length.toLocaleString(locale), total: documentTotal.toLocaleString(locale) })}</p></div>
+        <div><h2>{t("Document inventory")}</h2>{!live && <p className="helper">{t("Same published portfolio set as the Filings scope.")}</p>}<p className="helper">{t("Showing {shown} of {total} filings", { shown: visibleDocuments.length.toLocaleString(locale), total: documentTotal.toLocaleString(locale) })}</p></div>
         {activeFilters.length > 0 && <button className="button ghost" type="button" onClick={resetDocumentFilters}>{t("Reset filters")}</button>}
       </div>
       <div className={styles.toolbar} data-help="build.documents.filters">
@@ -224,7 +231,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
         <label>{t("Direction")}<select aria-label={t("Sort direction")} value={documentDescending ? "descending" : "ascending"} onChange={(event) => setDocumentDescending(event.target.value === "descending")}><option value="ascending">{t("Ascending")}</option><option value="descending">{t("Descending")}</option></select></label>
       </div>}
       <div ref={layout.listRef} className={styles.list} aria-busy={loading || loadingMore}>
-        {loading ? <p className={styles.status} role="status">{t("Loading documents…")}</p> : <div role="table" aria-label={t("Document inventory")}>
+        {loading && !visibleDocuments.length ? <p className={styles.status} role="status">{t("Loading documents…")}</p> : <div role="table" aria-label={t("Document inventory")}>
           <div className={styles.columnLabels} role="row"><span role="columnheader">{t("Document")}</span><span role="columnheader">{t("Company / year")}</span><span role="columnheader">{t("Readiness")}</span><span role="columnheader">{t("Chunks")}</span></div>
           {documentGroups.map(([groupLabel, rows]) => <div role="rowgroup" key={groupLabel || "all"}>
             {groupLabel && <div className={styles.group}>{groupLabel}<span>{t("{count} filings", { count: rows.length.toLocaleString(locale) })}</span></div>}
@@ -249,7 +256,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
     {showDetail && <div className={styles.detailWrap} data-help="build.documents.detail">
       <button className="button ghost" type="button" onClick={layout.closeDetail}><ArrowLeft size={15} />{t("Back to documents")}</button>
       {selectedExcluded ? <section className="surface" role="status"><h2>{t("Document outside current filters")}</h2><p className="helper">{t("The selected document is not in these results. Clear filters or choose another document.")}</p><button className="button" type="button" onClick={() => { resetDocumentFilters(); layout.closeDetail(); }}>{t("Reset filters")}</button></section>
-        : detailLoading ? <section className="surface" role="status">{t("Loading document details…")}</section>
+        : detailLoading && !documentDetail ? <section className="surface" role="status">{t("Loading document details…")}</section>
         : detailError ? <section className="surface" role="alert"><h2>{t("Could not load document details.")}</h2><p className="helper">{detailError}</p><button className="button" type="button" onClick={() => setDetailRefresh((value) => value + 1)}>{t("Retry")}</button>{live && onInspectPipeline && <button className="button" type="button" onClick={onInspectPipeline}>{t("Inspect this step")}</button>}</section>
         : documentDetail && <DocumentDetailPanel detail={documentDetail} onOpenPipeline={live ? onOpenPipeline : undefined} onOpenJobs={live ? onOpenJobs : undefined} />}
     </div>}

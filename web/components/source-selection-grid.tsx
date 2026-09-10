@@ -11,8 +11,11 @@ import "./source-matrix.css";
 interface Props {
   sources: SourceInventory[];
   pairs: AcquisitionPair[];
+  availablePairs?: AcquisitionPair[];
   companies: AcquisitionCompany[];
   disabled?: boolean;
+  scopeMode?: boolean;
+  corpusScope?: string;
   selectedOnly?: boolean;
   eligibleOnly?: boolean;
   addedCompanies?: Array<{ registry: "sec" | "dart"; issuer: string }>;
@@ -23,11 +26,11 @@ interface Props {
 }
 
 /** Render a compact, accessible company/year grid for selection or a read-only summary. */
-export function SourceSelectionGrid({ sources, pairs, companies, disabled, selectedOnly = false, eligibleOnly = false, onToggle, addedCompanies = [], onEditCompany, onRemoveCompany, renderYearEditor }: Props) {
+export function SourceSelectionGrid({ sources, pairs, availablePairs = [], companies, disabled, scopeMode = false, corpusScope = "auto", selectedOnly = false, eligibleOnly = false, onToggle, addedCompanies = [], onEditCompany, onRemoveCompany, renderYearEditor }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const selected = new Set(pairs.map(pairKey));
-  const groups = sourceSelectionRows(sources, pairs, companies, selectedOnly);
+  const groups = sourceSelectionRows(sources, [...pairs, ...availablePairs], companies, selectedOnly);
   for (const company of addedCompanies) {
     const group = groups.find((group) => group.registry === company.registry)!;
     if (!group.rows.some((row) => row.issuer === company.issuer)) {
@@ -38,6 +41,7 @@ export function SourceSelectionGrid({ sources, pairs, companies, disabled, selec
   return <div className="source-selection-grid">{groups.map(({ registry, rows: allRows }) => {
     const rows = eligibleOnly ? allRows.map((row) => ({ ...row, cells: row.cells.filter((cell) => cell.documents.length > 0 && cell.documents.every((source) => source.on_disk && source.ready === true)) })).filter((row) => row.cells.length > 0) : allRows;
     if (!rows.length) return null;
+    const outsideScope = scopeMode && corpusScope !== "auto" && corpusScope !== registry;
     const years = [...new Set(rows.flatMap((row) => row.cells.map((cell) => cell.pair.year)))].sort((a, b) => a - b);
     const columns = years.length <= 6;
     return <section key={registry} className="source-matrix-registry" aria-label={registry.toUpperCase()}>
@@ -47,25 +51,26 @@ export function SourceSelectionGrid({ sources, pairs, companies, disabled, selec
         const ready = row.cells.filter((cell) => cell.documents.length > 0 && cell.documents.every((source) => source.on_disk));
         return <div className="source-matrix-row" key={row.issuer} role="group" aria-label={row.label}>
           <label className="source-matrix-company">
-            {onToggle && !selectedOnly && !onRemoveCompany && <input type="checkbox" disabled={disabled} checked={count === row.cells.length} ref={(node) => { if (node) node.indeterminate = count > 0 && count < row.cells.length; }} aria-label={t("Select all years for {company}", { company: row.label })} onChange={(event) => onToggle(row.cells.map((cell) => cell.pair), event.target.checked)} />}
+            {onToggle && !selectedOnly && !onRemoveCompany && <input type="checkbox" disabled={disabled || outsideScope} checked={count === row.cells.length} ref={(node) => { if (node) node.indeterminate = count > 0 && count < row.cells.length; }} aria-label={t("Select all years for {company}", { company: row.label })} onChange={(event) => onToggle(row.cells.map((cell) => cell.pair), event.target.checked)} />}
             <span>{row.label}</span>
           </label>
           <div className={`source-matrix-years${columns ? " aligned" : ""}`} style={{ "--year-columns": years.length } as CSSProperties}>{row.cells.map((cell) => {
             const key = pairKey(cell.pair); const onDisk = ready.includes(cell); const included = selected.has(key);
             const blocked = cell.documents.some((source) => source.on_disk && source.ready === false);
-            const label = `${row.issuer} FY${cell.pair.year} · ${t(blocked ? "Source blocked" : onDisk ? "On disk" : "Missing source")}`;
+            const label = `${row.issuer} FY${cell.pair.year} · ${t(scopeMode ? outsideScope ? "Outside current scope" : !onDisk ? included ? "Selected · Not published" : "Not published" : included ? "In scope" : "Not in scope" : blocked ? "Source blocked" : onDisk ? "On disk" : "Missing source")}`;
             const title = `${cell.documents.find((source) => source.blocker)?.blocker ?? label}${cell.documents.length ? ` · ${cell.documents.map((source) => source.document_id).join(", ")}` : ""}`;
             const style = columns ? { gridColumn: years.indexOf(cell.pair.year) + 1 } : undefined;
-            const content = <><span className={onDisk && !blocked ? "year-downloaded-mark" : "year-missing-mark"} aria-hidden="true">{onDisk && !blocked ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}</>;
+            const checked = onDisk && !blocked && (!scopeMode || included && !outsideScope);
+            const content = <><span className={checked ? "year-downloaded-mark" : "year-missing-mark"} aria-hidden="true">{checked ? "✓" : "!"}</span><span>FY{cell.pair.year}</span>{scopeMode && !onDisk && <small>{t("Not published")}</small>}{cell.documents.length > 1 && <small>{cell.documents.filter((source) => source.on_disk).length}/{cell.documents.length}</small>}</>;
             const className = `source-matrix-year ${onDisk ? "on-disk" : "missing"}${included ? " selected" : ""}${blocked ? " source-blocked" : ""}`;
-            return onToggle ? <button key={key} type="button" disabled={disabled} style={style} title={title} className={className} aria-pressed={included} aria-label={label} onClick={() => onToggle([cell.pair], !included)}>{content}</button> : <span key={key} style={style} title={title} className={className} aria-label={label}>{content}</span>;
+            return onToggle ? <button key={key} type="button" disabled={disabled || outsideScope} style={style} title={title} className={className} aria-pressed={included} aria-label={label} onClick={() => onToggle([cell.pair], !included)}>{content}</button> : <span key={key} style={style} title={title} className={className} aria-label={label}>{content}</span>;
           })}</div>
           {(onEditCompany || onRemoveCompany) && <div className="source-company-controls">
-            {onEditCompany && <button type="button" disabled={disabled} aria-label={t("Add years for {company}", { company: row.label })} onClick={() => onEditCompany({ registry, issuer: row.issuer })}><Plus size={14} aria-hidden="true" /></button>}
-            {onRemoveCompany && <button type="button" disabled={disabled} aria-label={t("Remove {company} from basket", { company: row.label })} onClick={() => onRemoveCompany({ registry, issuer: row.issuer })}><X size={14} aria-hidden="true" /></button>}
+            {onEditCompany && <button type="button" disabled={disabled || outsideScope} aria-label={t("Add years for {company}", { company: row.label })} onClick={() => onEditCompany({ registry, issuer: row.issuer })}><Plus size={14} aria-hidden="true" /></button>}
+            {onRemoveCompany && <button type="button" disabled={disabled || outsideScope} aria-label={t("Remove {company} from basket", { company: row.label })} onClick={() => onRemoveCompany({ registry, issuer: row.issuer })}><X size={14} aria-hidden="true" /></button>}
           </div>}
           {renderYearEditor?.({ registry, issuer: row.issuer })}
-          <span className="source-matrix-row-summary" aria-label={t("{ready} of {total} years on disk", { ready: ready.length, total: row.cells.length })}>{ready.length}/{row.cells.length}</span>
+          <span className="source-matrix-row-summary" aria-label={t(scopeMode ? "{ready} of {total} years in scope" : "{ready} of {total} years on disk", { ready: scopeMode ? outsideScope ? 0 : count : ready.length, total: row.cells.length })}>{scopeMode ? outsideScope ? 0 : count : ready.length}/{row.cells.length}</span>
         </div>;
       })}
       {rows.length > 8 && <button type="button" className="source-matrix-expand" aria-expanded={Boolean(expanded[registry])} onClick={() => setExpanded((current) => ({ ...current, [registry]: !current[registry] }))}>{t(expanded[registry] ? "Show fewer companies" : "Show all companies")} ({rows.length})</button>}

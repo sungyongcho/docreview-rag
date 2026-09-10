@@ -12,8 +12,19 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.review_profile import PromptPolicy
+from app.api.review_profile import (
+    PUBLIC_MAX_CONTEXT_CHARS,
+    PromptPolicy,
+    public_custom_retrieval_violation,
+)
 from app.observability.types import Budget
+from app.release.ai_allowance import (
+    AIAllowanceError,
+    RequestAIAllowance,
+    SharedAIAllowance,
+    active_allowance,
+    active_request_allowance,
+)
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
 SECURITY_HEADERS = {
@@ -72,28 +83,44 @@ def _forbidden(code: str, message: str) -> JSONResponse:
     )
 
 
-def _custom_controls(payload: object, profile: dict[str, object]) -> bool:
-    """Detect developer controls while leaving malformed fields to route validation."""
+PUBLIC_LOCK_MESSAGE = "This control runs in DEV mode only."
+
+
+def _control_denial(payload: object, profile: dict[str, object]) -> str | None:
+    """Name the developer control a public request may not use, or None when it may proceed.
+
+    Bounded Custom retrieval is public; malformed fields are left to route validation.
+    """
     policy = profile.get("prompt_policy")
     try:
-        custom_policy = policy is not None and PromptPolicy.model_validate(policy) != PromptPolicy()
+        if policy is not None and PromptPolicy.model_validate(policy) != PromptPolicy():
+            return PUBLIC_LOCK_MESSAGE
     except ValidationError:
-        custom_policy = False  # The route returns its normal typed validation error.
-    legacy_limits = False
+        pass  # The route returns its normal typed validation error.
     if isinstance(payload, dict):
         try:
-            legacy_limits = (
-                payload.get("budget") is not None
-                and Budget.model_validate(payload["budget"]) != Budget()
-            ) or payload.get("max_context_chars", 12_000) != 12_000
+            if payload.get("budget") is not None and Budget.model_validate(payload["budget"]) != (
+                Budget()
+            ):
+                return PUBLIC_LOCK_MESSAGE
         except ValidationError:
             pass  # Request validation still reports malformed values.
-    return (
-        legacy_limits
-        or custom_policy
-        or profile.get("retrieval_preset") == "custom"
-        or profile.get("snapshot_id") is not None
-    )
+        context_chars = payload.get("max_context_chars")
+        if isinstance(context_chars, int) and context_chars > PUBLIC_MAX_CONTEXT_CHARS:
+            return (
+                f"{PUBLIC_LOCK_MESSAGE} max_context_chars must be at most "
+                f"{PUBLIC_MAX_CONTEXT_CHARS} on the public surface; received {context_chars}."
+            )
+    if profile.get("snapshot_id") is not None:
+        return PUBLIC_LOCK_MESSAGE
+    if profile.get("retrieval_preset") == "custom":
+        retrieval = profile.get("custom_retrieval")
+        violation = (
+            public_custom_retrieval_violation(retrieval) if isinstance(retrieval, dict) else None
+        )
+        if violation is not None:
+            return f"{PUBLIC_LOCK_MESSAGE} {violation}."
+    return None
 
 
 def _loopback_origin(value: str) -> tuple[str, str, int] | None:
@@ -130,7 +157,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         self,
         app: ASGIApp,
         *,
-        limiter: InProcessRateLimiter,
+        limiter: InProcessRateLimiter | SharedAIAllowance,
         trust_proxy_headers: bool,
         allow_ingest: bool,
         enforce_rate_limit: bool = True,
@@ -138,6 +165,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         allow_local_engine: bool = True,
         local_connection_origin: str | None = None,
         cost_limiter: DailyCostLimiter | None = None,
+        shared_allowance: SharedAIAllowance | None = None,
         salt: bytes | None = None,
     ) -> None:
         super().__init__(app)
@@ -150,6 +178,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         self._local_connection_origin = (
             _loopback_origin(local_connection_origin) if local_connection_origin else None
         )
+        self._shared_allowance = shared_allowance
         self._cost_limiter = cost_limiter
         self._salt = salt or secrets.token_bytes(32)
 
@@ -190,14 +219,13 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             payload = {}
         profile = payload.get("session_profile", {}) if isinstance(payload, dict) else {}
         profile = profile if isinstance(profile, dict) else {}
-        custom = _custom_controls(payload, profile)
         local = profile.get("engine") == "local"
         if local and not self._allow_local_engine:
             return _forbidden("disabled_in_prod", "Local LLM is disabled in production.")
-        if public and (custom or local):
-            return _forbidden(
-                "capability_disabled", "Production experiment controls are read-only."
-            )
+        if public:
+            denial = PUBLIC_LOCK_MESSAGE if local else _control_denial(payload, profile)
+            if denial is not None:
+                return _forbidden("capability_disabled", denial)
         return None
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -244,6 +272,38 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
             if denied is not None:
                 return denied
 
+        if self._shared_allowance is not None:
+            if request.method != "POST" or request.url.path not in {
+                "/retrieve",
+                "/review",
+                "/review/stream",
+            }:
+                return await call_next(request)
+            admission = RequestAIAllowance(self._shared_allowance, self._client_key(request))
+            token = active_allowance.set(self._shared_allowance)
+            request_token = active_request_allowance.set(admission)
+            try:
+                response = await call_next(request)
+            except AIAllowanceError as error:
+                detail = {"code": error.code, "message": str(error), "details": []}
+                if error.reset is not None:
+                    detail["reset_at"] = error.reset.isoformat()
+                response = JSONResponse(
+                    status_code=429,
+                    content={"error": detail},
+                    headers={"Retry-After": str(error.retry_after)},
+                )
+            finally:
+                active_request_allowance.reset(request_token)
+                active_allowance.reset(token)
+            if admission.decision is not None:
+                response.headers["X-RateLimit-Remaining-Minute"] = str(
+                    admission.decision.remaining_minute
+                )
+                response.headers["X-RateLimit-Remaining-Day"] = str(
+                    admission.decision.remaining_day
+                )
+            return response
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not self._enforce_rate_limit and not public:
                 return await call_next(request)
@@ -281,7 +341,11 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                         },
                         headers={"X-DocReview-Daily-Cost-Remaining-USD": format(remaining, "f")},
                     )
-            response = await call_next(request)
+            token = active_allowance.set(self._shared_allowance)
+            try:
+                response = await call_next(request)
+            finally:
+                active_allowance.reset(token)
             response.headers["X-RateLimit-Remaining-Minute"] = str(decision.remaining_minute)
             response.headers["X-RateLimit-Remaining-Day"] = str(decision.remaining_day)
             return response

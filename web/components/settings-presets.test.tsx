@@ -88,9 +88,10 @@ it("saves presets with 500 candidates and fractional BM25 values", () => {
   expect(screen.getByRole("button", { name: "Wide fractional search" })).toBeVisible();
 });
 
-it("keeps CPU guidance readable in public mode without enabling limit editing", () => {
+it("shows server policy guidance in public mode without local CPU advice", () => {
   render(<ConversationSettings profile={DEFAULT_SESSION_PROFILE} tab="filters" editable={false} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
-  expect(screen.getByText(/PROD uses server policy/)).toBeVisible();
+  expect(screen.getByText("Question execution limits")).toBeVisible();
+  expect(screen.queryByText(/CPU start:/)).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox", { name: "Limit preset" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
 });

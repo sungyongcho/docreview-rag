@@ -1,6 +1,6 @@
 import type { components } from "./api-generated";
 import { DEFAULT_SESSION_PROFILE } from "./types";
-import { presentationFetch, type PresentationInit } from "./production-preview";
+import { requestFetch, type TimedRequestInit } from "./http-request";
 import type {
   EvaluationComparison,
   CorpusSnapshot,
@@ -50,12 +50,12 @@ export class ApiError extends Error {
 /** Deadline for read requests; writes and streams keep none because they may legitimately wait on a busy worker. */
 export const REQUEST_TIMEOUT_MS = 15_000;
 
-async function request<T>(path: string, init?: PresentationInit): Promise<T> {
+async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const read = method === "GET" || method === "HEAD";
   let response: Response;
   try {
-    response = await presentationFetch(`${API_BASE}${path}`, {
+    response = await requestFetch(`${API_BASE}${path}`, {
       timeoutMs: read ? REQUEST_TIMEOUT_MS : undefined,
       ...init,
       headers: { "content-type": "application/json", ...init?.headers },
@@ -75,6 +75,8 @@ async function request<T>(path: string, init?: PresentationInit): Promise<T> {
   }
   if (!response.ok) {
     const error = (payload.error ?? {}) as Record<string, unknown>;
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
     const details = Array.isArray(error.details) ? error.details.map(String) : [];
     const message = String(error.message ?? "The request failed.");
     throw new ApiError(
@@ -139,7 +141,7 @@ export async function streamReview(
   onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<Record<string, unknown>> {
   const historyTurns = sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns;
-  const response = await presentationFetch(`${API_BASE}/review/stream`, {
+  const response = await requestFetch(`${API_BASE}/review/stream`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
     body: JSON.stringify({
@@ -157,6 +159,8 @@ export async function streamReview(
   if (!response.ok || !response.body) {
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     const error = (payload.error ?? {}) as Record<string, unknown>;
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
     const details = Array.isArray(error.details)
       ? error.details.map((item) => {
           const detail = item as Record<string, unknown>;
@@ -244,7 +248,7 @@ export interface HealthResponse {
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await presentationFetch(`${API_BASE}/health`, { signal });
+  const response = await requestFetch(`${API_BASE}/health`, { signal });
   if (!response.ok) {
     throw new ApiError(response.status, "health_failed", "DocReview API health check failed.");
   }
@@ -252,7 +256,7 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
 }
 
 export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
-  const response = await presentationFetch(`${API_BASE}/ready`, { signal });
+  const response = await requestFetch(`${API_BASE}/ready`, { signal });
   const payload = await response.json() as Readiness;
   if (response.status !== 200 && response.status !== 503) {
     throw new ApiError(response.status, "readiness_failed", "Runtime readiness could not be loaded.");
@@ -262,22 +266,6 @@ export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
 
 export function getCapabilities(): Promise<Capabilities> {
   return request<Capabilities>("/capabilities");
-}
-
-/** A preview knows only published catalog facts; uncollected runtime fields stay unknown. */
-export async function getProductionPreviewReadiness(signal?: AbortSignal): Promise<Readiness> {
-  const page = await request<AdminDocumentPage>("/public/documents?limit=1", { signal });
-  if (!Number.isInteger(page.total) || page.total < 0) throw new Error("Invalid public catalog count.");
-  return {
-    status: "ready", mode: "runtime", admin_mode: "readonly", policy_revision: "—",
-    models: {}, review_enabled: false, active_review_model: null,
-    review_engines: { openai: { enabled: false, reason: "preview_read_only" }, local: { enabled: false, reason: "public_surface" } },
-    corpus: {
-      availability: "not_applicable", database_connected: null, schema_status: null,
-      schema_message: null, documents: page.total, chunks: null, embedded_chunks: null,
-      pending_embeddings: null, bm25_ready: null, writable: false,
-    },
-  };
 }
 
 export async function checkEvaluationPreparation(requestBody: import("./types").EvaluationRequest, signal?: AbortSignal): Promise<import("./types").EvaluationPreparation> {
@@ -535,4 +523,15 @@ export function previewSourceDeletion(documentIds: string[]): Promise<import("./
 
 export function getGoldenEvidence(docId: string, query: string, after: number, signal?: AbortSignal) {
   return request<components["schemas"]["GoldenEvidencePage"]>(`/admin/documents/${encodeURIComponent(docId)}/golden-evidence?${new URLSearchParams({ query, after: String(after), limit: "20" })}`, { signal });
+}
+
+
+/** Read an exact published golden version without exposing an administrator catalog. */
+export function getPublicSnapshotDataset(snapshotId: number, params: URLSearchParams) {
+  return request<import("./types").PublicSnapshotDataset>(`/public/snapshots/${snapshotId}/dataset?${params}`);
+}
+
+/** Read a page of recorded evaluation cases; this never starts a run. */
+export function getPublicSnapshotEvaluation(snapshotId: number, params: URLSearchParams) {
+  return request<import("./types").PublicSnapshotEvaluation>(`/public/snapshots/${snapshotId}/evaluation?${params}`);
 }

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PROFILE } from "@/lib/types";
+import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { Playground } from "./playground";
 
 const HIT = {
@@ -81,15 +81,33 @@ describe("Playground", () => {
     expect(screen.getByText("NVDA FY2024 · Item 7")).toBeInTheDocument();
   });
 
-  it("shows the locked state and opens Snapshots in the public build", () => {
-    const fetchMock = vi.fn();
+  it("searches through the public retrieve endpoint and locks the answer preview in the public build", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [], candidates: [], candidate_token: null, candidate_expires_at: 0, component_rankings: { vector: [1], lexical: [] } }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    const onOpenSnapshots = vi.fn();
-    render(<Playground live={false} profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={onOpenSnapshots} />);
+    render(<Playground live={false} profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={vi.fn()} />);
 
-    expect(screen.getByText("Playground runs on the local operator build.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Snapshots" }));
-    expect(onOpenSnapshots).toHaveBeenCalledTimes(1);
+    const review = screen.getByRole("button", { name: "Preview review" });
+    expect(review).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(review);
     expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Preview retrieval" }));
+    await screen.findByText("Retrieval preview");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/retrieve");
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/admin/");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body)).session_profile.retrieval_preset).toBe("custom");
   });
+});
+
+
+it("sends the exact public scope and disables empty-scope retrieval", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [], candidates: [], candidate_token: null, resolved_scope: null }), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  const props = { live: false, profile: DEFAULT_PROFILE, onProfileChange: vi.fn(), onOpenSnapshots: vi.fn(), publicProfile: { ...DEFAULT_SESSION_PROFILE, doc_ids: ["NVDA-2023", "AMD-2024"] } };
+  const view = render(<Playground {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Preview retrieval" }));
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).session_profile.doc_ids).toEqual(["NVDA-2023", "AMD-2024"]);
+  await screen.findByRole("button", { name: "Preview retrieval" });
+  view.rerender(<Playground {...props} publicScopeBlocked />);
+  expect(screen.getByRole("button", { name: "Preview retrieval" })).toBeDisabled();
+  cleanup(); vi.unstubAllGlobals();
 });

@@ -34,6 +34,7 @@ from app.observability.types import (
     derived_totals,
     validate_elapsed_seconds,
 )
+from app.release.ai_allowance import AIAllowanceError
 from app.retrieval.embeddings import EmbeddingProvider as RetrievalEmbeddingProvider
 from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.rerank import RerankProvider
@@ -450,6 +451,8 @@ async def run_workflow(
                         build_check_prompt(current), AnswerDecision, allowance
                     )
                     current = check_node(_traced(current, decided, node), decided)
+            except AIAllowanceError:
+                raise
             except Exception as error:
                 current = _committed_failure(current, node, error)
             measurement.failed = current.failure is not None
@@ -461,6 +464,8 @@ async def run_workflow(
     async with stage("retrieve") as measurement:
         try:
             retrieval = await retriever(state.query, evidence_fetch_k(state), state.filters)
+        except AIAllowanceError:
+            raise
         except Exception as error:
             state = _committed_failure(state, "retrieve", error)
             await notify("retrieve", state)

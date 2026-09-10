@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from ipaddress import ip_address
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import (
@@ -52,8 +53,8 @@ class ReleaseSettings(DotenvFirstSettings):
     mode: Literal["canned", "runtime"] = "canned"
     host: str = "0.0.0.0"
     port: int = Field(default=7860, ge=1, le=65_535)
-    rate_limit_per_minute: int = Field(default=5, ge=1, le=1_000)
-    rate_limit_per_day: int = Field(default=25, ge=1, le=100_000)
+    rate_limit_per_minute: int = Field(default=2, ge=1, le=1_000)
+    rate_limit_per_day: int = Field(default=5, ge=1, le=100_000)
     rate_limit_max_clients: int = Field(default=1_024, ge=1, le=100_000)
     trust_proxy_headers: bool = False
     allow_ingest: bool = False
@@ -73,11 +74,12 @@ class ReleaseSettings(DotenvFirstSettings):
     )
     _openai_key_slot: KeySlot | None = PrivateAttr(default=None)
     _resolved_openai_key: SecretStr | None = PrivateAttr(default=None)
-    openai_model: str = "gpt-5.6-terra"
+    openai_model: str = "gpt-5.6-luna"
     openai_max_input_tokens: int = Field(default=12_000, ge=1, le=100_000)
     openai_max_output_tokens: int = Field(default=600, ge=1, le=4_000)
-    openai_max_cost_usd: Decimal = Field(default=Decimal("0.04"), gt=0, le=1)
-    public_daily_cost_usd: Decimal = Field(default=Decimal("1.00"), gt=0, le=100)
+    openai_max_cost_usd: Decimal = Field(default=Decimal("0.005"), gt=0, le=1)
+    public_allowance_path: Path = Path("data/runtime/public-ai-limits.sqlite3")
+    public_daily_cost_usd: Decimal = Field(default=Decimal("0.10"), gt=0, le=100)
     openai_input_per_million_usd: Decimal | None = Field(default=None, ge=0)
     openai_output_per_million_usd: Decimal | None = Field(default=None, ge=0)
     local_llm_base_url: str | None = Field(
@@ -178,6 +180,8 @@ class ReleaseSettings(DotenvFirstSettings):
         if not self.openai_model.strip():
             raise ValueError("openai_model must not be blank")
         resolve_openai_model("review", self.openai_model)
+        if self.environment == "prod" and self.openai_model != "gpt-5.6-luna":
+            raise ValueError("production text calls require gpt-5.6-luna")
         if (
             self.openai_input_per_million_usd is not None
             or self.openai_output_per_million_usd is not None
@@ -199,6 +203,11 @@ class ReleaseSettings(DotenvFirstSettings):
     def openai_enabled(self) -> bool:
         """Report secret presence without exposing the secret value."""
         return self.mode == "runtime" and self.openai_api_key is not None
+
+    @property
+    def admin_enabled(self) -> bool:
+        """Permit administrator services only in the explicitly live DEV runtime."""
+        return self.environment == "dev" and self.admin_mode == "live"
 
     @property
     def local_llm_enabled(self) -> bool:

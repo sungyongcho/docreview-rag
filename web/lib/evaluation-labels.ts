@@ -1,5 +1,5 @@
 import { translate, type Locale } from "./i18n";
-import type { GoldenRevision, GoldenSuite, RetrievalProfile } from "./types";
+import type { GoldenRevision, GoldenSuite, RetrievalProfile, PublishedSnapshot } from "./types";
 
 /** Read only objects that can hold persisted evaluation metadata. */
 export function evaluationRecord(value: unknown): Record<string, unknown> {
@@ -43,4 +43,13 @@ export function evaluationSettings(config: unknown, locale: Locale, fallback?: R
   if (typeof profile.reranker === "string") parts.push(translate(locale, profile.reranker.replaceAll("_", " ")));
   if ("target_tokens" in profile && typeof profile.target_tokens === "number") parts.push(`${profile.target_tokens} ${translate(locale, "tokens")}`);
   return parts.join(" · ") || translate(locale, "Settings not recorded");
+}
+
+
+/** Use the dataset identity in selectors, keeping run labels in result cards. */
+export function publishedDatasetLabel(snapshot: PublishedSnapshot, locale: Locale): string {
+  const provenance = evaluationRecord(snapshot.eval_result.config.golden_provenance);
+  const filename = typeof provenance.filename === "string" ? provenance.filename : snapshot.label;
+  const kind = provenance.kind === "builtin" ? "Built-in" : "Published";
+  return `${snapshot.suite_title ?? snapshot.eval_result.suite} · ${filename} (${translate(locale, kind)})`;
 }

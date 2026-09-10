@@ -1,12 +1,10 @@
 import { getFilePresets, putFilePreset, deleteFilePreset } from "./api";
-import { previewState } from "./production-preview";
 import { loadSavedPresets, savePreset, deletePreset, PRESETS_CHANGED, presetError, type SavedPreset } from "./saved-presets";
 import { BUILTIN_PRESETS, type Capabilities } from "./types";
 
 export interface PresetCatalog { presets_version: string; unchanged?: boolean; presets: SavedPreset[]; errors: Array<{ file: string; error: string }> }
-export const PREVIEW_PRESET_NOTICE = "Presets are not saved in preview (memory only). On the deployed screen, they are saved in this browser.";
 export const PENDING_PRESET_NOTICE = "Preset storage is unavailable until server permissions are confirmed.";
-export type PresetStorageKind = "file" | "browser" | "preview" | "pending";
+export type PresetStorageKind = "file" | "browser" | "pending";
 type PresetPermissions = Pick<Capabilities, "environment" | "can_change_custom_retrieval">;
 let permissions: PresetPermissions | null = null;
 let permissionRevision = 0;
@@ -31,9 +29,8 @@ export function serverPresetStorageKind(): PresetStorageKind {
   return process.env.NEXT_PUBLIC_ADMIN_MODE === "live" ? "pending" : "browser";
 }
 
-/** Preview and effective PROD never reach the DEV file API, including in a live bundle. */
+/** Effective PROD never reaches the DEV file API, including in a live bundle. */
 export function presetStorageKind(): PresetStorageKind {
-  if (previewState().mode !== "normal") return "preview";
   if (process.env.NEXT_PUBLIC_ADMIN_MODE !== "live" || permissions?.environment === "prod") return "browser";
   return permissions?.environment === "dev" && permissions.can_change_custom_retrieval ? "file" : "pending";
 }
@@ -96,7 +93,6 @@ export function readPresetCatalog() {
 /** Preserve synchronous browser updates and return a completion promise for file writes. */
 export function saveStoredPreset(preset: SavedPreset): void | Promise<void> {
   const kind = presetStorageKind();
-  if (kind === "preview") throw new Error(PREVIEW_PRESET_NOTICE);
   if (kind === "pending") throw new Error(PENDING_PRESET_NOTICE);
   const invalid = presetError(preset);
   if (invalid) throw new Error(invalid);
@@ -107,7 +103,6 @@ export function saveStoredPreset(preset: SavedPreset): void | Promise<void> {
 
 export function deleteStoredPreset(id: string): void | Promise<void> {
   const kind = presetStorageKind();
-  if (kind === "preview") throw new Error(PREVIEW_PRESET_NOTICE);
   if (kind === "pending") throw new Error(PENDING_PRESET_NOTICE);
   if (kind === "browser") return deletePreset(id);
   return deleteFilePreset(id).then(async next => { await inflight; catalog = next; error = null; window.dispatchEvent(new Event(PRESETS_CHANGED)); for (const listener of listeners) listener(); });

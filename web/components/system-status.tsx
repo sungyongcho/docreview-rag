@@ -79,8 +79,8 @@ export function SystemStatus({ readiness, localModel, localAllowed = false, load
             <dl className="request-facts"><div><dt>{t("Per-call input tokens")}</dt><dd>{readiness.openai_call_limits.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Per-call output tokens")}</dt><dd>{readiness.openai_call_limits.max_output_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Per-call cost cap")}</dt><dd>${readiness.openai_call_limits.max_cost_usd}</dd></div></dl>
             <ul className="helper openai-cap-notes">
               <li>{t("Per-call caps for one OpenAI request, separate from the whole-run limits.")}</li>
-              <li>{t("DEV can lower them in")}{" "}{onOpenLimits ? <button className="inline-link" type="button" onClick={onOpenLimits}>{t("Settings › Run limits")}</button> : <strong>{t("Settings › Run limits")}</strong>}.</li>
-              <li>{emphasizeEnvKeys(t("Raising them: edit DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env, then restart with rag-dev down/up."))}</li>
+              {readiness.openai_call_limits.editable && <li>{t("DEV can lower them in")}{" "}{onOpenLimits ? <button className="inline-link" type="button" onClick={onOpenLimits}>{t("Settings › Run limits")}</button> : <strong>{t("Settings › Run limits")}</strong>}.</li>}
+              {readiness.openai_call_limits.editable && <li>{emphasizeEnvKeys(t("Raising them: edit DOCREVIEW_OPENAI_MAX_INPUT_TOKENS, DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS or DOCREVIEW_OPENAI_MAX_COST_USD in .env, then restart with rag-dev down/up."))}</li>}
             </ul>
           </>}
         </section>

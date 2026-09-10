@@ -1,5 +1,10 @@
 # Turn sources into searchable evidence
 
+## Published pipeline statistics
+
+PROD shows actual chunk and embedding counts for the selected published documents. Loading, an empty catalog and a failed listing are distinct states, never sample results. BM25 keyword statistics are computed over the server corpus by language; scope selection restricts candidates without rebuilding those statistics. Existing evaluation results and snapshot comparisons keep their original scope.
+
+
 When verified downloaded originals outnumber ingested documents in a registry, Parse & chunk retains completion for existing data and displays **Complete · new originals available**. Select the new originals to process them. Running jobs still show their actual progress; the additional-source notice clears after the current counts agree.
 
 ## Return from terminal preparation
@@ -21,7 +26,7 @@ Every pipeline stage can be inspected: Filings, Parse & chunk, Embeddings, BM25,
 
 
 > [!DEV]
-> Ingestion, embedding backfill, and BM25 rebuilds require DEV. Reading an existing readiness indicator does not perform those operations.
+> Ingestion, embedding backfill, and BM25 rebuilds run in DEV mode only. Reading an existing readiness indicator does not perform those operations.
 
 Parsing creates documents and citable chunks. Embeddings support semantic matching; BM25 supplies
 lexical statistics. The two index paths can be prepared independently after chunking. A green connection

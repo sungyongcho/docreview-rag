@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SourceSelectionGrid } from "./source-selection-grid";
 import { SourceMatrix } from "./source-matrix";
 import type { AcquisitionForm, AcquisitionPair } from "./build-pipeline";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
@@ -314,4 +315,78 @@ it("shows supported companies and default fiscal years in the basket information
   expect(hint).toHaveTextContent(`Default: ${new Date().getFullYear() - 6}–${new Date().getFullYear() - 1}`);
   fireEvent.keyDown(info, { key: "Escape" });
   expect(screen.queryByText("DocReview RAG v2.0")).toBeNull();
+});
+
+
+it("uses the published grid for exact selection and blocks asking after clearing", () => {
+  const changed = vi.fn();
+  function PublicHarness() {
+    const [draft, setDraft] = useState(acquisitionDraft([{ registry: "sec", issuer: "NVDA", year: 2024 }]));
+    return <SourceMatrix locked sources={[source("NVDA", 2024), source("AMD", 2023)]} companies={[]} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} onDownload={vi.fn()} downloadDisabled onAskScope={vi.fn()} />;
+  }
+  render(<PublicHarness />);
+  expect(screen.queryByText("To download:")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "AMD FY2023 · Not in scope" }));
+  expect(changed.mock.lastCall?.[0].pairs).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(changed.mock.lastCall?.[0].pairs).toEqual([]);
+  expect(screen.getByRole("button", { name: "Review parsing and chunks" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Select all target years" }));
+  expect(changed.mock.lastCall?.[0].pairs).toHaveLength(12);
+  expect(screen.getByText(/Published company-years: 2/)).toBeInTheDocument();
+});
+
+
+it("allows pending target navigation without server preparation", () => {
+  const changed = vi.fn(); const download = vi.fn();
+  function PendingHarness() {
+    const [draft, setDraft] = useState(acquisitionDraft([]));
+    return <SourceMatrix locked sources={[]} companies={[]} acquisition={draft} onChange={(next) => { changed(next); setDraft(next); }} onDownload={download} downloadDisabled onAskScope={vi.fn()} />;
+  }
+  render(<PendingHarness />);
+  fireEvent.change(screen.getByLabelText("Search/add company or year"), { target: { value: "NVDA" } });
+  fireEvent.click(screen.getByRole("button", { name: /NVIDIA.*Published years: 0 \/ 6/ }));
+  const year = screen.getByRole("button", { name: "NVDA FY2019 · Not published" });
+  expect(year).toBeEnabled();
+  fireEvent.click(year);
+  expect(changed.mock.lastCall?.[0].pairs).toEqual([{ registry: "sec", issuer: "NVDA", year: 2019 }]);
+  expect(screen.getByRole("button", { name: "NVDA FY2019 · Selected · Not published" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Review parsing and chunks" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Select all target years" }));
+  expect(changed.mock.lastCall?.[0].pairs).toHaveLength(6);
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(changed.mock.lastCall?.[0].pairs).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: /Remove .*NVDA.* from basket/ }));
+  expect(screen.queryByRole("group", { name: /NVDA.*NVIDIA/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Published corpus" }));
+  expect(screen.getByRole("dialog", { name: "Published corpus" })).toBeVisible();
+  expect(download).not.toHaveBeenCalled();
+});
+
+
+it("shows the four default companies without unselected legacy catalog companies", () => {
+  const pairs: AcquisitionPair[] = [
+    ...["NVDA", "AMD"].flatMap(issuer => [2019, 2020, 2021, 2022, 2023, 2024].map(year => ({ registry: "sec" as const, issuer, year }))),
+    ...["005930", "000660"].flatMap(issuer => [2022, 2023, 2024].map(year => ({ registry: "dart" as const, issuer, year }))),
+  ];
+  const sources = [...pairs.map(pair => source(pair.issuer, pair.year, pair.issuer === "NVDA" && pair.year === 2019)), source("INTC", 2023, false), source("MU", 2024, false), source("035420", 2024, false)];
+  const download = vi.fn();
+  render(<Harness sources={sources} initialPairs={pairs} download={download} />);
+  for (const issuer of ["NVDA", "AMD", "005930", "000660"]) expect(screen.getByRole("group", { name: new RegExp(`^${issuer}( ·|$)`) })).toBeVisible();
+  for (const issuer of ["INTC", "MU", "035420"]) expect(screen.queryByRole("group", { name: new RegExp(`^${issuer}( ·|$)`) })).toBeNull();
+  expect(screen.getByText("To download: 17")).toBeVisible();
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeEnabled();
+  fireEvent.click(sync);
+  expect(download).toHaveBeenCalledWith(acquisitionDraft(pairs));
+});
+
+
+it("matches public scope markers to selection while keeping DEV download markers", () => {
+  const props = { sources: [source("NVDA", 2024), source("NVDA", 2022)], pairs: [{ registry: "sec" as const, issuer: "NVDA", year: 2024 }], companies: [], disabled: false, onToggle: vi.fn() };
+  const view = render(<SourceSelectionGrid {...props} scopeMode />);
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · In scope" }).querySelector(".year-downloaded-mark")).toHaveTextContent("✓");
+  expect(screen.getByRole("button", { name: "NVDA FY2022 · Not in scope" }).querySelector(".year-missing-mark")).toHaveTextContent("!");
+  view.rerender(<SourceSelectionGrid {...props} scopeMode={false} />);
+  expect(screen.getByRole("button", { name: "NVDA FY2022 · On disk" }).querySelector(".year-downloaded-mark")).toHaveTextContent("✓");
 });

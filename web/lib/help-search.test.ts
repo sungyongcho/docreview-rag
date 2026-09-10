@@ -5,6 +5,7 @@ import { getHelpPrimer } from "./help-primer";
 import type { Capabilities } from "./types";
 
 const DEV: Capabilities = { environment: "dev", can_configure_local_llm: true, can_edit_prompt_policy: true, can_edit_run_limits: true, can_edit_golden: true, can_build_snapshot: true, can_run_evaluation: true, can_change_custom_retrieval: true, can_query_snapshot: true, can_use_operations: true, can_compare_published_snapshots: true };
+const PROD: Capabilities = { environment: "prod", can_configure_local_llm: false, can_edit_prompt_policy: false, can_edit_run_limits: false, can_edit_golden: false, can_build_snapshot: false, can_run_evaluation: false, can_change_custom_retrieval: false, can_query_snapshot: false, can_use_operations: false, can_compare_published_snapshots: true };
 
 describe("local bilingual help search", () => {
   it.each(["en", "ko"] as const)("finds Korean and English terms in %s UI", (locale) => {
@@ -21,10 +22,10 @@ describe("local bilingual help search", () => {
     expect(helpDestinationScreen("build.documents.filters")).toBe("build.documents");
   });
 
-  it.each([{}, { publicPreview: true, capabilities: DEV }])("keeps public documents while excluding restricted topics in public or preview help", (access) => {
+  it.each([{}, { capabilities: PROD }])("keeps public documents while excluding restricted topics without capabilities or in PROD", (access) => {
     const entries = helpEntriesForAccess(access);
     const ids = entries.map(({ topic }) => topic.id);
-    for (const id of ["build.documents.filters", "build.documents.list", "build.documents.detail", "measure.snapshots.list", "review.preset", "review.rag"]) expect(ids).toContain(id);
+    for (const id of ["build.documents.filters", "build.documents.list", "build.documents.detail", "measure.snapshots.list", "review.preset", "review.rag", "review.composer", "review.send", "review.run-trace", "review.evidence"]) expect(ids).toContain(id);
     for (const id of ["build.stage.filings", "build.jobs.center", "review.retrieval", "review.run-limits", "measure.runs.queue", "measure.golden.revision", "measure.snapshots.freeze", "system.operations", "system.api"]) expect(ids).not.toContain(id);
     expect(entries.some(({ topic }) => developmentHelpTopic(topic))).toBe(false);
     for (const locale of ["en", "ko"] as const) expect(searchHelp("실행 한도", locale, entries).some(({ topic }) => topic.id === "review.run-limits")).toBe(false);

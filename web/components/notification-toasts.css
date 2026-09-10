@@ -1,4 +1,4 @@
-/* Transient feedback: an overlay rail under the topbar in the shell, an in-flow rail inside dialogs. */
+/* Reuse the overlay rail in the shell and settings; other outlets may remain inline. */
 .notification-outlet { flex: none; min-width: 0; }
 .notification-outlet:empty { display: none; }
 .notification-stack { position: relative; display: grid; gap: 8px; min-width: 0; max-height: min(180px, 28dvh); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left)); }
@@ -26,3 +26,5 @@
   .notification-stack[data-placement="overlay"] { top: 64px; left: 12px; right: 12px; width: auto; }
   .notification button { width: 34px; height: 34px; }
 }
+
+.notification-outlet[data-placement="overlay"] { height: 0; padding: 0; margin: 0; border: 0; }

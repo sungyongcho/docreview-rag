@@ -1,17 +1,27 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
+import { configurePresetStorage } from "@/lib/preset-storage";
 import { loadSavedPresets, savePreset } from "@/lib/saved-presets";
-import { DEFAULT_PROFILE } from "@/lib/types";
+import { BUILTIN_PRESETS, DEFAULT_PROFILE } from "@/lib/types";
 import { RetrievalPresetManager } from "./retrieval-preset-manager";
 
-afterEach(() => { cleanup(); exitProductionPreview(); localStorage.clear(); vi.unstubAllEnvs(); });
+afterEach(() => { cleanup(); configurePresetStorage(null); localStorage.clear(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-it("shows the preview persistence notice and disables visible write actions", () => {
-  enterProductionPreview("document");
+it("allows PROD presets to be saved and deleted without the DEV file API", () => {
+  configurePresetStorage({ environment: "prod", can_change_custom_retrieval: false });
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   render(<RetrievalPresetManager />);
-  expect(screen.getByRole("note")).toHaveTextContent("not saved in preview (memory only)");
-  for (const name of ["Save current search as a preset", "Register new preset", "Import preset JSON"]) expect(screen.getByRole("button", { name })).toBeDisabled();
+  for (const name of ["Save current search as a preset", "Register new preset", "Import preset JSON"]) expect(screen.getByRole("button", { name })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Register new preset" }));
+  fireEvent.change(screen.getByLabelText("Preset name"), { target: { value: "Browser research" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+  expect(loadSavedPresets()[0]).toMatchObject({ name: "Browser research", retrieval: DEFAULT_PROFILE });
+  fireEvent.click(screen.getByRole("button", { name: "Browser research" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete preset" }));
+  expect(loadSavedPresets()).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+  expect(loadSavedPresets()).toEqual([]);
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it("registers balanced defaults through JSON with inline validation", () => {
@@ -77,4 +87,13 @@ it("imports a file into the same editor and exports the saved shape", async () =
     expect(loadSavedPresets()).toHaveLength(1);
     expect(loadSavedPresets()[0].description).toBe("Updated");
   } finally { click.mockRestore(); URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke; }
+});
+
+it.each(["balanced", "korean", "accuracy"])("renders %s with empty display ID and its canonical English name", id => {
+  const preset = BUILTIN_PRESETS.find(item => item.id === id)!;
+  render(<RetrievalPresetManager />);
+  fireEvent.click(screen.getByRole("button", { name: preset.name }));
+  const row = screen.getByRole("region", { name: preset.name });
+  expect(JSON.parse(row.querySelector("pre")!.textContent!)).toEqual({ id: "", name: preset.name, description: preset.description ?? "", retrieval: preset.retrieval });
+  expect(preset.id).toBe(id);
 });

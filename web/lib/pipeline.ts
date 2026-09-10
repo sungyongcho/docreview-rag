@@ -45,6 +45,7 @@ export interface Pipeline {
 }
 
 export interface PipelineInput {
+  publicScope?: { confirmed?: boolean; filings: number; total: number; chunks: number; embedded: number | null; pending: number | null; status: "loading" | "ready" | "error" };
   live: boolean;
   healthKind: RuntimeHealthKind;
   /** A failed connection check is retrying while last-known readiness is retained. */
@@ -182,6 +183,11 @@ export function retrievalReadiness(counts: CorpusCounts | null, strategy: Retrie
   hint: string;
 } {
   if (!counts) return { status: "unknown", blockedBy: null, hint: "Checking corpus…" };
+  // A public surface withholds counts; the server's own availability verdict is authoritative there.
+  if (counts.chunks == null && counts.availability === "ready" && counts.database_connected === true) {
+    if (strategy !== "vector" && counts.bm25_ready !== true) return { status: "blocked", blockedBy: "lexical", hint: "BM25 is not available on this server." };
+    return { status: "done", blockedBy: null, hint: "" };
+  }
   if (counts.database_connected === false || ["empty", "drifted", "unavailable"].includes(counts.schema_status ?? "")) {
     return { status: "blocked", blockedBy: "index", hint: "Resolve database setup before continuing." };
   }
@@ -223,7 +229,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     ? input.readiness.corpus
     : null;
   // A live build never derives real state from the portfolio fixture; it waits.
-  const fixtureAllowed = !input.live;
+  const fixtureAllowed = !input.live && !input.publicScope;
   const source: Pipeline["source"] = input.corpus ? "admin" : readinessCorpus ? "readiness" : fixtureAllowed ? "fixture" : "pending";
   const counts: CorpusCounts = input.corpus ?? readinessCorpus ?? (fixtureAllowed ? CANNED_CORPUS.status : PENDING_COUNTS);
   const manifests = source === "admin" ? input.manifests.filter((item) => item.valid) : source === "fixture" ? CANNED_CORPUS.manifests : [];
@@ -232,11 +238,13 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const embedded = count(counts.embedded_chunks);
   const pending = count(counts.pending_embeddings);
   const bm25Ready = counts.bm25_ready === true;
+  // Public readiness withholds counts but states availability; treat a ready verdict as a prepared corpus.
+  const publicReady = readOnly && source === "readiness" && counts.availability === "ready" && counts.database_connected === true && counts.chunks == null;
   const schemaBroken = input.live && (counts.database_connected === false || counts.schema_status === "drifted" || counts.schema_status === "unavailable");
   const schemaHint = "Resolve database setup before continuing.";
 
   const drafts: Record<StageId, Draft> = {
-    filings: filingsDraft(manifests, documents, counts.writable, source, readOnly, input.sourceSelection),
+    filings: filingsDraft(manifests, documents, counts.writable, source, readOnly, input.sourceSelection, counts.documents != null),
     index: { status: "unknown" },
     embeddings: { status: "unknown" },
     lexical: { status: "unknown" },
@@ -316,6 +324,10 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: [], hint: schemaHint, blockedBy: "index" };
     } else if (drafts.index.status === "unknown") {
       drafts.ask = { ...checking };
+    } else if (publicReady) {
+      const strategy = input.profile?.strategy ?? "hybrid";
+      const readiness = retrievalReadiness(counts, strategy, []);
+      drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? ["Live retrieval on the published corpus"] : [] };
     } else if (chunks > 0) {
       const strategy = input.profile?.strategy ?? "hybrid";
       const readiness = source === "fixture"
@@ -338,10 +350,10 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     if (schemaBroken) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers, hint: schemaHint, blockedBy: "index" };
     else if (source === "pending" || drafts.index.status === "unknown") drafts.evaluate = { ...checking };
     else if (measured) drafts.evaluate = { status: "done", numbers };
-    else if (chunks === 0) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
+    else if (chunks === 0 && !publicReady) drafts.evaluate = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Not measured yet."], hint: "Finish retrieval (steps 1–4) first.", blockedBy: "index" };
     else drafts.evaluate = { status: "action", statusDetail: succeeded ? "No results" : "Not run", numbers: readOnly ? ["Not measured yet."] : numbers, hint: succeeded ? "A job finished, but no evaluation results are available. Refresh results or run a quick evaluation to measure retrieval quality." : "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot." };
     drafts.evaluate.action = readOnly
-      ? { label: "Compare published snapshots", kind: "compare" }
+      ? { label: "Open Quality checks", kind: "compare" }
       : { label: "Run quick evaluation", kind: "evaluate" };
   }
 
@@ -386,6 +398,31 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       }
     }
 
+    if (readOnly && input.publicScope && ["filings", "index", "embeddings", "lexical", "ask"].includes(id)) {
+      const scope = input.publicScope;
+      status = id === "ask" ? (scope.chunks > 0 && drafts.ask.status === "done" ? "done" : "blocked") : "readonly";
+      statusDetail = scope.status === "ready" ? scope.total === 0 ? "No published filings" : scope.filings === 0 ? "No filings in scope" : "Published corpus" : scope.status === "error" ? "Published filings could not be loaded." : "Loading published filings…";
+      hint = scope.status === "ready" && !scope.filings && id !== "embeddings" && id !== "lexical" ? "Select at least one published filing to ask a question." : "";
+      numbers = scope.status !== "ready" ? [] : id === "filings" ? [`${n(scope.filings)} / ${n(scope.total)}`, "Published documents in scope"]
+        : id === "index" ? [`${n(scope.chunks)}`, "Chunks in scope"]
+        : id === "embeddings" ? scope.embedded === null ? ["Embedding coverage unknown"] : [`${n(scope.embedded)} embedded`, `${n(scope.pending ?? 0)} pending`]
+        : id === "lexical" ? [bm25Ready ? "BM25 ready" : "BM25 not built", "Keyword statistics use the server corpus, grouped by language."]
+        : [`${n(scope.chunks)}`, "Chunks in scope"];
+      if (scope.status === "ready" && scope.filings > 0) {
+        const prepared = id === "filings" || id === "index" && scope.chunks > 0 || id === "embeddings" && scope.embedded !== null && scope.embedded > 0 && scope.pending === 0 || id === "lexical" && bm25Ready || id === "ask" && scope.chunks > 0 && drafts.ask.status === "done";
+        status = prepared ? "done" : "blocked";
+        statusDetail = prepared ? "Ready" : id === "embeddings" ? "Embeddings required" : id === "lexical" ? "BM25 not built" : "Preparation required";
+        if (scope.confirmed === false && (id === "index" || id === "ask")) {
+          status = id === "index" ? "action" : "blocked";
+          statusDetail = "Scope confirmation needed";
+          hint = "Confirm your selection in step 1-2.";
+        }
+      } else if (scope.status === "ready") {
+        status = id === "filings" ? "action" : "blocked";
+      }
+      if (id === "filings") action = { label: "Ask about this scope", kind: "ask" };
+      if (scope.status !== "ready") { status = "unknown"; action = null; }
+    }
     if (input.healthKind === "api_down" || connectionUnconfirmed) {
       status = "unknown";
       statusDetail = input.healthKind === "api_down" ? "API unavailable" : "Checking…";
@@ -400,8 +437,8 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       id,
       order: index + 1,
       title: copy.title,
-      description: copy.description,
-      why: copy.why,
+      description: readOnly && id === "filings" ? "Choose published filings to ask about." : readOnly && id === "index" ? "Inspect the precomputed text and table chunks for the scope selected in step 1-1. Selecting a scope does not reprocess documents." : readOnly && id === "embeddings" ? "Review the existing vectors for your selected scope. Confirming this step does not create embeddings." : readOnly && id === "lexical" ? "Review the existing BM25 keyword index. Statistics are grouped by language across the server corpus, not recalculated for your selection." : copy.description,
+      why: readOnly && id === "filings" ? "The selected documents bound the evidence for your next question." : copy.why,
       status,
       statusDetail,
       numbers,
@@ -414,16 +451,17 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     };
   });
 
-  const next = stages.find((stage) => stage.status === "action" || stage.status === "failed" || (stage.status === "blocked" && stage.id !== "answer_model")) ?? null;
-  const corpusReady = stages.slice(0, 4).every((stage) => stage.status === "done" || stage.status === "readonly");
+  const next = readOnly && input.publicScope && (input.publicScope.status !== "ready" || input.publicScope.filings === 0) ? stages[0] : stages.find((stage) => stage.status === "action" || stage.status === "failed" || (stage.status === "blocked" && stage.id !== "answer_model")) ?? null;
+  const corpusReady = (!input.publicScope || input.publicScope.status === "ready" && input.publicScope.chunks > 0 && input.publicScope.pending === 0 && bm25Ready) && stages.slice(0, 4).every((stage) => stage.status === "done" || stage.status === "readonly");
   return { stages, next, corpusReady, readOnly, source };
 }
 
-function filingsDraft(manifests: ManifestSummary[], documents: number, writable: boolean | null, source: Pipeline["source"], readOnly: boolean, selection?: PipelineInput["sourceSelection"]): Draft {
+function filingsDraft(manifests: ManifestSummary[], documents: number, writable: boolean | null, source: Pipeline["source"], readOnly: boolean, selection?: PipelineInput["sourceSelection"], documentsKnown = true): Draft {
   const action: StageAction = { label: "Download missing filings", kind: "acquire" };
   if (readOnly || source === "readiness" || source === "pending") {
     const label = readOnly ? "filings in the published corpus" : "filings ingested";
-    const numbers = source === "pending" ? [] : [`${n(documents)} ${label}`];
+    // A public surface withholds the count; never print a fabricated zero for a published corpus.
+    const numbers = source === "pending" ? [] : documentsKnown ? [`${n(documents)} ${label}`] : readOnly ? ["Published corpus"] : [];
     return { status: readOnly ? "readonly" : "unknown", statusDetail: readOnly ? "" : "Checking…", numbers, action };
   }
   const total = manifests.reduce((sum, item) => sum + count(item.documents), 0);

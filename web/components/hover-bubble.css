@@ -1,0 +1,26 @@
+.hover-bubble-wrap { position: relative; display: flex; }
+.hover-bubble-wrap.is-inline { display: inline-flex; vertical-align: middle; }
+.hover-bubble { position: fixed; z-index: 240; display: grid; gap: 2px; width: max-content; min-width: 200px; max-width: 280px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: 400 12px/1.45 var(--font-sans, inherit); letter-spacing: 0; text-align: left; white-space: normal; box-shadow: 0 12px 32px #0003; animation: hover-bubble-enter 140ms ease-out; pointer-events: none; }
+@keyframes hover-bubble-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.hover-bubble::after { content: ""; position: absolute; left: var(--bubble-arrow-left, 18px); width: 10px; height: 10px; background: var(--surface); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); transform: rotate(45deg); }
+.hover-bubble[data-placement="above"]::after { bottom: -6px; }
+.hover-bubble[data-placement="below"]::after { top: -6px; transform: rotate(225deg); }
+.hover-bubble strong { font-size: 13px; }
+.hover-bubble em { font-style: normal; color: var(--muted); }
+.hover-bubble span { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .hover-bubble { animation: none; } }
+
+/* Pinned explanations contain real close and repository controls. */
+.hover-bubble[role="dialog"] { pointer-events: auto; max-width: calc(100vw - 16px); }
+
+.hover-bubble[data-align="end"]::after { left: var(--bubble-arrow-left); right: auto; }
+
+.hover-bubble.has-close { padding: 14px 38px 14px 14px; }
+.hover-bubble-close { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; cursor: pointer; }
+.hover-bubble-close:hover { color: var(--text); background: var(--surface-2); }
+.hover-bubble-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dev-bubble-content { display: grid; gap: 8px; min-width: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.dev-bubble-content > strong { font-size: 12px; font-weight: 600; }
+.dev-bubble-content > p { margin: 0; color: var(--muted); font-size: 12px; }
+.dev-bubble-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-top: 2px; color: var(--text); text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
+.dev-bubble-link svg { flex: none; }

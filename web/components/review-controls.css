@@ -68,7 +68,11 @@
 .composer-toolbar-aligned button.corpus-readiness-action { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; min-height: 40px; padding: 5px 0; border: 0; }
 @container composer-controls (min-width: 860px) {
   /* Scope, engine and the reserved local-model slot stay left; preset and settings stay right. */
-  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: max-content minmax(150px, 200px) minmax(130px, 170px) minmax(8px, 1fr) minmax(150px, 200px) max-content; align-items: start; gap: 10px 12px; }
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary { display: grid; grid-template-columns: max-content minmax(150px, 190px) minmax(130px, 160px) minmax(8px, 1fr) minmax(150px, 190px) max-content; align-items: start; gap: 10px 12px; }
+  /* Without an engine column (public bundle) the preset and settings still hug the right edge. */
+  .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary:not(.has-engine) { grid-template-columns: max-content minmax(8px, 1fr) minmax(150px, 190px) max-content; }
+  .composer-toolbar-aligned .composer-toolbar-primary:not(.has-engine) > .composer-preset-control { grid-column: 3; }
+  .composer-toolbar-aligned .composer-toolbar-primary:not(.has-engine) > .composer-toolbar-actions { grid-column: 4; }
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control { max-width: none; }
   .composer-toolbar-aligned .composer-toolbar-actions > .chip { white-space: nowrap; }
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control { grid-column: 1; }
@@ -78,7 +82,7 @@
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control { grid-column: 5; }
   .composer-toolbar-aligned .composer-toolbar-actions { grid-column: 6; flex: 0 0 auto; max-width: none; padding-top: 25px; }
 }
-@container composer-controls (min-width: 860px) and (max-width: 1099px) {
+@container composer-controls (min-width: 860px) and (max-width: 899px) {
   /* Keep the settings control an icon when the six columns leave no room for its label. */
   .composer-toolbar-aligned .composer-toolbar-actions > .chip .composer-settings-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .composer-toolbar-aligned .composer-toolbar-actions > .chip { width: 40px; padding: 8px; justify-content: center; }
@@ -123,3 +127,15 @@
 .review-routing > .review-routing-query { order: 4; }
 
 @container (max-width: 560px) { .review-routing { grid-template-columns: minmax(0, 1fr); } }
+
+/* Public surfaces: the fixed answer model occupies the engine column. */
+.composer-toolbar-aligned .composer-toolbar-primary > .composer-model-control { display: grid; grid-template-rows: 20px 40px auto; align-content: start; gap: 5px; margin: 0; min-width: 0; font-size: 11px; }
+.composer-model-chip { display: inline-flex; align-items: center; min-height: 40px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; cursor: default; }
+.composer-model-control .composer-control-description { color: var(--muted); font-size: 11px; }
+
+.review-scope-badge { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.review-scope-badge strong { font-weight: 500; }
+
+.settings-preview-content > .request-preview-disclosure { margin: 12px 0 20px; }
+.settings-preview-content > .request-preview-disclosure > summary { padding: 6px 0; font-size: 13px; font-weight: 500; line-height: 1.6; }
+.settings-preview-content > .request-preview-disclosure[open] > :not(summary) { margin-top: 12px; }

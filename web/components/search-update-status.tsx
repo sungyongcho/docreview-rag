@@ -18,7 +18,7 @@ export function searchUpdateProgress(job: OperatorJob, t: (text: string) => stri
 
 /** A temporary header indicator explains the same server admission gate as the composer. */
 export function SearchUpdateStatus({ updating, preparation, jobs, stale = false, blocked = false, onOpenJobs }: {
-  updating: boolean; preparation: string | null; jobs: OperatorJob[]; stale?: boolean; blocked?: boolean; onOpenJobs: (jobId?: string) => void;
+  updating: boolean; preparation: string | null; jobs: OperatorJob[]; stale?: boolean; blocked?: boolean; onOpenJobs?: (jobId?: string) => void;
 }) {
   const { t } = useI18n();
   const [engaged, setEngaged] = useState(false);
@@ -62,7 +62,7 @@ export function SearchUpdateStatus({ updating, preparation, jobs, stale = false,
       <header><strong>{t(label)}</strong>{open && <button type="button" className="icon-button" aria-label={t("Close")} onClick={() => { trigger.current?.focus(); setOpen(false); setHover(false); }}><X size={15} /></button>}</header>
       <p>{detail}</p>
       {updating && job && !stale && overallJobPercent(job) !== null && <progress aria-label={t("Overall progress")} max={100} value={overallJobPercent(job)!} />}
-      {open && <><p className="helper">{t(updating ? "Existing answers can finish. New questions pause while search data is updated." : "Check the pipeline for the next required step.")}</p><button type="button" className="inline-link" onClick={() => { setOpen(false); setHover(false); onOpenJobs(job?.job_id ?? latest?.job_id); }}>{t("View jobs")}</button></>}
+      {open && <><p className="helper">{t(updating ? "Existing answers can finish. New questions pause while search data is updated." : "Check the pipeline for the next required step.")}</p>{onOpenJobs && <button type="button" className="inline-link" onClick={() => { setOpen(false); setHover(false); onOpenJobs(job?.job_id ?? latest?.job_id); }}>{t("View jobs")}</button>}</>}
     </div>}
   </div>;
 }

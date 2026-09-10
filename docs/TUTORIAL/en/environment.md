@@ -73,7 +73,7 @@ database. No document acquisition, embedding, or answer request is needed for th
 
 **Screen path:** sidebar **System → System status**. The page heading is **Runtime readiness**.
 Read the mode indicator; use the development environment for the preparation tutorial.
-Public mode can expose fewer controls because it has different permissions.
+Public mode can expose fewer controls because it has different permissions. Corpus counts are shown on both builds; only whether the corpus is writable is withheld.
 
 **Inputs and meaning:** this is a read-only check; no question or company selection is
 required. Confirm that the service address is the intended environment. A different
@@ -137,7 +137,7 @@ uv run python -m scripts.schema check
 
 Normal Compose startup now prepares an empty database automatically after DB health succeeds.
 The image entrypoint inspects an existing database without schema changes and refuses to launch
-the API on drift. This applies to dev, prod preview and the deployment Compose using this image.
+the API on drift. This applies to DEV, local PROD mode and the deployment Compose using this image.
 The web container may still open while the API is blocked; inspect `rag-dev logs --tail 80 app`
 for the schema diagnosis and local `check`/`recover` commands. Database-free canned images skip
 the gate. Source acquisition and indexing remain separate prerequisites.
@@ -188,23 +188,79 @@ The development stack supports source reload and live documentation updates. API
 restarts can interrupt queued work; check Jobs before deciding that an interrupted
 operation needs a retry. [Runtime](runtime.md) explains job and execution states.
 
-> [!DEV]
-> Production preview is a DEV-only inspection tool. It leaves the backend in DEV and does not grant production operator permissions.
+This release supports DEV and PROD as separate runtime modes. The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211) and is not available in this release.
 
-In a running DEV environment, **Production preview** in the top bar opens the visitor interface while the backend remains DEV. It is read-only: question execution and server changes are disabled. Finish the current request and close dialogs before opening it. **Exit preview** returns to the retained DEV conversation, selections, and scroll position. The preview uses separate temporary browser state, so inspecting it does not overwrite your DEV conversations.
-
-<!-- capture:28-production-preview -->
-
-![The isolated public-interface preview is explicitly labeled as using a DEV backend.](../assets/28-production-preview.en.jpg)
-
-*The isolated public-interface preview is explicitly labeled as using a DEV backend. It has no private conversation history and disables question execution and server changes; Exit preview returns to retained DEV work.*
-
-Open **Preview limits** to distinguish this interface check from a production-image check. The preview reuses the public interface in the development bundle; actual production permissions and build-time exclusions still require verification in the production image.
-
-`rag-prod` opens a local public preview with different permissions; it does not publish
+`rag-prod` starts standalone local PROD mode with public permissions; it does not publish
 the site. A working local-model connection in development does not make Local LLM
 available in public mode. See [CLI environment commands](cli.md#development-and-local-prod-preview)
 for deliberate mode changes, and [Settings](settings.md) for saved connection settings.
 
 Do not use a destructive reset to make a readiness indicator turn green. Refresh reads
 state; it does not repair, ingest, index, or call an answer model.
+
+## Production deployment (near-zero cost) {#production-deployment}
+
+Everything above runs on your machine. The public site is a separate, deliberately
+small target: one Always Free VM behind a Cloudflare Worker, and a static export on
+Firebase Hosting. The scripts live in `deploy/gcp/` and `scripts/deploy/`; none of them
+runs as part of the tutorial.
+
+```text
+visitor ──HTTPS──> sungyongcho.com/docreview-rag-agent/*
+                          │  Cloudflare Worker (gomoku repo)
+            ┌─────────────┴──────────────┐
+   /docreview-rag-agent/*        /docreview-rag-agent/api/*
+            │                              │  plain HTTP
+            ▼                              ▼
+   Firebase Hosting             GCP e2-micro (us-central1-a, ephemeral IP)
+   static Next export           firewall: tcp:8000 from Cloudflare IPv4 only
+                                  Caddy :80 → host 8000
+                                    allow-list + X-DocReview-Public: true
+                                      └─> FastAPI ──> pgvector Postgres
+                                  operator: 127.0.0.1:8001 via SSH tunnel only
+```
+
+TLS ends at Cloudflare. The VM speaks plain HTTP on port `8000`, and the GCP firewall
+admits only Cloudflare's published IPv4 ranges, so nothing else can reach it directly.
+Caddy proxies only the public paths and adds `X-DocReview-Public: true`; that header is
+what hides `/admin/*` and `/ingest`, so Caddy must stay in front of every externally
+reachable port. The operator API is reachable only through
+`deploy/gcp/operator_tunnel.sh`, which forwards the loopback-only port `8001`.
+
+### Order of operations {#production-order}
+
+1. Fill `.env` with `DEPLOY_GCP_PROJECT` (and optionally `DEPLOY_GCP_ZONE`,
+   `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`) and copy `deploy/gcp/backend.env.example`
+   to `deploy/gcp/backend.env` (gitignored). `deploy/gcp/deploy_env_config.sh` loads
+   both and prints a masked summary.
+2. `deploy/gcp/create_vm.sh` creates the e2-micro VM with a `pd-standard` 30 GB boot
+   disk, an ephemeral external IP, and the Cloudflare-only firewall rule for `tcp:8000`.
+   `deploy/gcp/startup.sh` installs Docker and a 2 GB swap file on first boot.
+3. Copy the prepared corpus into `/var/lib/docreview/corpus` on the VM, then run
+   `deploy/gcp/deploy_backend.sh`. It copies `docker-compose.deploy.yml`,
+   `deploy/Caddyfile` and `backend.env` (as `/opt/docreview/.env`) and starts the stack.
+4. `deploy/gcp/print_origin.sh` prints `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000` and
+   `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`.
+5. Paste those lines into the gomoku repo's `.env` and run its
+   `03_deploy_cloudflare.sh`; the Worker routes `/docreview-rag-agent/api/*` to the
+   VM and everything else under `/docreview-rag-agent/*` to Firebase Hosting.
+6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds the public
+   bundle with `NEXT_PUBLIC_ADMIN_MODE` unset and deploys it.
+
+The external IP is ephemeral: stopping and starting the VM changes it, so repeat
+steps 4 and 5 afterwards. A reserved static IP avoids that at roughly $3/month.
+
+### Monthly cost {#production-cost}
+
+| Component | Detail | Cost |
+|---|---|---|
+| GCP e2-micro | Always Free in `us-central1`, `us-east1`, `us-west1`: 1 shared vCPU, 1 GB RAM, 30 GB `pd-standard`, 1 GB/month North America egress | $0 |
+| External IP | Ephemeral; a reserved static IP would be about $3/month | $0 |
+| Firebase Hosting | Free tier (static export) | $0 |
+| Cloudflare Worker | Free tier, shared with the gomoku Worker | $0 |
+| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`1.00` in the compose file) | ≤ $1/day |
+
+Trade-offs: visitors in Europe see roughly 100 ms of added latency because the VM sits
+in North America. The database (about 430 MB today) fits the 30 GB disk with room for
+Postgres, Docker images and swap. With 1 GB of RAM, Postgres runs with
+`shared_buffers=128MB` and `work_mem=4MB`; the 2 GB swap file absorbs the occasional spike.

@@ -1,2 +1,7 @@
 .development-badge { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); font: 600 10px/1.4 ui-monospace, monospace; letter-spacing: .02em; vertical-align: middle; white-space: nowrap; }
 .development-badge svg { flex: none; }
+/* DEV-only controls stay visible on a public surface but read as inert. */
+.button.dev-locked, .button.primary.dev-locked { border-color: var(--border); background: color-mix(in srgb, var(--text) 9%, var(--surface)); color: var(--muted); cursor: not-allowed; box-shadow: none; }
+.button.dev-locked:hover { background: color-mix(in srgb, var(--text) 12%, var(--surface)); color: var(--muted); }
+
+.terminal-reference-badge { display: inline-flex; margin-inline-start: 10px; vertical-align: middle; }

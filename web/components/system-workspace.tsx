@@ -16,7 +16,7 @@ import { DesktopJobNotifications, RuntimeSettings } from "@/components/runtime-s
 import { Operations } from "@/components/operations";
 import { SystemStatus } from "@/components/system-status";
 import { apiBase, getProviderUsage } from "@/lib/api";
-import { presentationFetch } from "@/lib/production-preview";
+import { requestFetch } from "@/lib/http-request";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type { EvaluationRequest, ProviderUsage, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
@@ -113,7 +113,7 @@ function ApiInspector({ ready }: { ready: boolean }) {
   async function sendRawRequest() {
     try {
       const body = JSON.parse(rawRequest) as Record<string, unknown>;
-      const response = await presentationFetch(`${apiBase()}/admin/evaluations/runs`, {
+      const response = await requestFetch(`${apiBase()}/admin/evaluations/runs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -151,19 +151,18 @@ const USAGE_ROLE_LABELS: Record<string, string> = { gate: "Classification", rout
 function UsagePanel() {
   const { t, locale } = useI18n();
   const [usage, setUsage] = useState<ProviderUsage>(EMPTY_USAGE);
-  const [usageError, setUsageError] = useState<{ detail: string; appOwned: boolean } | null>(null);
+  const { notify } = useNotifications();
 
   useEffect(() => {
     let cancelled = false;
     getProviderUsage()
-      .then((value) => { if (!cancelled) { setUsage(value); setUsageError(null); } })
-      .catch((reason: unknown) => { if (!cancelled) setUsageError({ detail: reason instanceof Error ? reason.message : "Usage could not be loaded.", appOwned: !(reason instanceof Error) }); });
+      .then((value) => { if (!cancelled) setUsage(value); })
+      .catch((reason: unknown) => { if (!cancelled) notify(reason instanceof Error ? reason.message : t("Usage could not be loaded."), "error", "usage-refresh", undefined, { event: "usage-refresh-error" }); });
     return () => { cancelled = true; };
   }, []);
 
   return (
     <div className="panel-stack" data-help="system.usage">
-      {usageError && <div className="notice error" role="alert">{usageError.appOwned ? t(usageError.detail) : usageError.detail}</div>}
       <div className="metric-grid">
         <Metric icon={<Activity />} label={t("Runs")} value={usage.runs.toLocaleString(locale)} />
         <Metric icon={<Braces />} label={t("Requests")} value={usage.requests.toLocaleString(locale)} />

@@ -65,8 +65,12 @@ describe("corpus readiness summary", () => {
     expect(readinessStatusLabel(readiness({ pending_embeddings: 120 }))).toBe("Embeddings pending");
     expect(readinessStatusLabel(READINESS)).toBe("Hybrid search ready");
     expect(readinessStatusLabel(readiness({ bm25_ready: false }))).toBe("Vector search ready · BM25 unavailable");
-    for (const unknown of [{ bm25_ready: null }, { database_connected: null }, { pending_embeddings: null }, { documents: null }, { schema_status: null }] as const) {
+    for (const unknown of [{ bm25_ready: null }, { database_connected: null }, { pending_embeddings: null }, { documents: null, availability: "degraded" }, { schema_status: null }] as const) {
       expect(readinessStatusLabel(readiness(unknown))).toBe("Readiness not confirmed");
+    }
+    // A public surface withholds counts; the server's ready verdict still confirms hybrid search.
+    expect(readinessStatusLabel(readiness({ documents: null, chunks: null, pending_embeddings: null, availability: "ready" }))).toBe("Hybrid search ready");
+    {
     }
     expect(readinessStatusLabel(readiness({ database_connected: false }))).toBe("Corpus unavailable");
     expect(readinessStatusLabel(readiness({ availability: "not_applicable", database_connected: null, bm25_ready: null }))).toBe("Readiness not reported");
@@ -84,7 +88,7 @@ describe("composerBanner", () => {
 
   it.each([false, true])("keeps redacted degraded corpus readiness blocked (live=%s)", (live) => {
     const degraded = readiness({ availability: "degraded", documents: null, chunks: null, embedded_chunks: null, pending_embeddings: null, writable: null }, { status: "degraded", admin_mode: live ? "live" : "readonly" });
-    expect(composerBanner({ readiness: degraded, live, profile: DEFAULT_SESSION_PROFILE, resetAt: null })).toMatchObject({ kind: "preparation", text: "Readiness not confirmed" });
+    expect(composerBanner({ readiness: degraded, live, profile: DEFAULT_SESSION_PROFILE, resetAt: null })).toMatchObject({ kind: "preparation", text: live ? "Readiness not confirmed" : "Published search is not ready yet." });
   });
 
   it("gates the active strategy and preserves canned and not-applicable readiness", () => {
@@ -296,3 +300,11 @@ it("keeps selected source filters distinct from the global corpus count and unco
     expect(banner?.kind).toBe("updating");
     expect(banner?.action).toBeUndefined();
  });
+
+
+it("does not show global green readiness when the public catalog or scope is empty", () => {
+  renderToolbar({ live: false, publicScopeStatus: "No published filings" });
+  const status = screen.getByText("No published filings");
+  expect(status).not.toHaveClass("confirmed");
+  expect(screen.queryByText("Hybrid search ready")).not.toBeInTheDocument();
+});

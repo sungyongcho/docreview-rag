@@ -6,6 +6,7 @@ import sys
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+import pytest
 
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 from app.release.middleware import (
@@ -163,6 +164,107 @@ def test_public_proxy_marker_blocks_dev_only_review_policy() -> None:
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "capability_disabled"
+    assert response.json()["error"]["message"] == "This control runs in DEV mode only."
+
+
+def _review_app() -> FastAPI:
+    """Build one guarded review route that reports whether the guard admitted the request."""
+    app = FastAPI()
+    app.add_middleware(
+        ReleaseGuardMiddleware,
+        limiter=InProcessRateLimiter(per_minute=50, per_day=50, max_clients=4),
+        trust_proxy_headers=False,
+        allow_ingest=False,
+    )
+
+    @app.post("/review")
+    async def review() -> dict[str, str]:
+        """Stand in for the provider route behind the guard."""
+        return {"status": "admitted"}
+
+    return app
+
+
+def _custom_profile(**retrieval: object) -> dict[str, object]:
+    """Compose one Custom preset profile around the Balanced defaults."""
+    return {
+        "retrieval_preset": "custom",
+        "custom_retrieval": {
+            "strategy": "hybrid",
+            "k": 5,
+            "candidate_k": 20,
+            "lexical_ranker": "ts_rank_cd",
+            **retrieval,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "retrieval",
+    [
+        {},
+        {"k": 10, "candidate_k": 50, "lexical_ranker": "bm25", "reranker": "cross_encoder"},
+        {"strategy": "vector", "lexical_ranker": None},
+    ],
+)
+def test_public_custom_retrieval_within_bounds_reaches_the_route(retrieval) -> None:
+    """Admit the Custom preset publicly while its depth stays inside the built-in envelope."""
+    with TestClient(_review_app()) as client:
+        response = client.post(
+            "/review",
+            headers={"X-DocReview-Public": "true"},
+            json={"query": "Revenue?", "session_profile": _custom_profile(**retrieval)},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "admitted"}
+
+
+@pytest.mark.parametrize(
+    ("retrieval", "field"),
+    [
+        ({"k": 11, "candidate_k": 50}, "custom_retrieval.k"),
+        ({"k": 5, "candidate_k": 51}, "custom_retrieval.candidate_k"),
+    ],
+)
+def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, field) -> None:
+    """Reject oversized Custom depth with the shared lock message naming the exceeded field."""
+    with TestClient(_review_app()) as client:
+        response = client.post(
+            "/review",
+            headers={"X-DocReview-Public": "true"},
+            json={"query": "Revenue?", "session_profile": _custom_profile(**retrieval)},
+        )
+
+    assert response.status_code == 403
+    error = response.json()["error"]
+    assert error["code"] == "capability_disabled"
+    assert error["message"].startswith("This control runs in DEV mode only.")
+    assert field in error["message"]
+
+
+@pytest.mark.parametrize(
+    ("payload", "profile"),
+    [
+        ({}, {"prompt_policy": {"additional_instructions": "Be concise."}}),
+        ({"budget": {"max_iterations": 1}}, {}),
+        ({}, {"engine": "local"}),
+        ({}, {"snapshot_id": 3}),
+    ],
+)
+def test_public_prompt_budget_local_and_snapshot_controls_stay_locked(payload, profile) -> None:
+    """Keep every non-retrieval developer control behind the one DEV-mode lock."""
+    with TestClient(_review_app()) as client:
+        response = client.post(
+            "/review",
+            headers={"X-DocReview-Public": "true"},
+            json={"query": "Revenue?", "session_profile": profile, **payload},
+        )
+
+    assert response.status_code == 403
+    error = response.json()["error"]
+    assert error["code"] == "capability_disabled"
+    assert error["message"] == "This control runs in DEV mode only."
 
 
 def test_forwarded_client_input_requires_explicit_trust() -> None:

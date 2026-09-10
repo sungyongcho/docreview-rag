@@ -29,6 +29,7 @@ from app.api.evidence import (
 from app.api.review_profile import (
     ResolvedRetrievalProfile,
     ReviewSessionProfile,
+    public_custom_retrieval_violation,
     resolve_retrieval_profile,
 )
 from app.api.schemas import (
@@ -395,15 +396,21 @@ class RuntimeApiServices(ApiServices):
                 code="disabled_in_prod",
                 message="Local LLM is disabled in production.",
             )
-        if not self._allow_custom_prompt_policy and (
-            profile.prompt_policy != type(profile.prompt_policy)()
-            or profile.retrieval_preset == "custom"
-        ):
-            raise ApiProblemError(
-                status_code=403,
-                code="capability_disabled",
-                message="Custom prompt, retrieval, and run policies are available only in Dev.",
-            )
+        if not self._allow_custom_prompt_policy:
+            if profile.prompt_policy != type(profile.prompt_policy)():
+                raise ApiProblemError(
+                    status_code=403,
+                    code="capability_disabled",
+                    message="Custom prompt and run policies are available only in Dev.",
+                )
+            if profile.custom_retrieval is not None:
+                violation = public_custom_retrieval_violation(
+                    profile.custom_retrieval.model_dump(mode="python")
+                )
+                if violation is not None:
+                    raise ApiProblemError(
+                        status_code=403, code="capability_disabled", message=violation
+                    )
         if profile.snapshot_id is not None and not self._allow_snapshot_query:
             raise ApiProblemError(
                 status_code=403,

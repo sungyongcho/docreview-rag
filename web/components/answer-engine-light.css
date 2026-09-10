@@ -30,3 +30,8 @@
   .answer-engine-row:has(> .model-prepare-control) { grid-template-columns: minmax(0, 1fr); }
   .answer-engine-row:has(> .model-prepare-control) > .answer-engine-action { grid-column: 1; grid-row: 5; }
 }
+
+.answer-engine-light[data-light="red"] i { background: var(--bad); }
+.public-local-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.public-local-status { color: var(--muted); }
+.public-local-info { display: inline-flex; align-items: center; justify-content: center; padding: 6px; border: 0; background: transparent; color: var(--muted); cursor: help; }

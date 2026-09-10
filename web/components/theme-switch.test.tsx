@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ThemeProvider } from "./theme-provider";
 import { ThemeSwitch } from "./theme-switch";
-import { browserStorage, enterProductionPreview, exitProductionPreview } from "@/lib/production-preview";
+import { browserStorage, configureBrowserStorage } from "@/lib/storage";
 import { THEME_BOOTSTRAP, THEME_KEY } from "@/lib/theme";
 import { runInNewContext } from "node:vm";
 import { readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import { transform } from "lightningcss";
 let dark = false;
 const changes = new Set<() => void>();
 beforeEach(() => {
-  exitProductionPreview();
+  configureBrowserStorage("dev");
   localStorage.clear();
   dark = false;
   changes.clear();
@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  exitProductionPreview();
+  configureBrowserStorage(undefined);
   vi.unstubAllGlobals();
   localStorage.clear();
   delete document.documentElement.dataset.theme;
@@ -55,32 +55,29 @@ it("follows OS changes in System mode but keeps an explicit Light choice", () =>
   expect(screen.getByRole("button", { name: "Theme: Dark" })).toBeInTheDocument();
 });
 
-it("writes preview theme choices only to isolated memory", () => {
-  localStorage.setItem(THEME_KEY, "light");
-  enterProductionPreview("document");
-  browserStorage().setItem(THEME_KEY, "dark");
+it("persists PROD theme choices and receives versioned cross-tab changes", () => {
+  configureBrowserStorage("prod");
+  browserStorage().setItem(THEME_KEY, "light");
+  expect(browserStorage().getItem(THEME_KEY)).toBe("light");
   render(<ThemeProvider><ThemeSwitch locale="en" /></ThemeProvider>);
-  fireEvent.click(screen.getByRole("button", { name: "Theme: Dark" }));
+  fireEvent.click(screen.getByRole("button", { name: "Theme: Light" }));
   fireEvent.click(screen.getByRole("menuitemradio", { name: "System" }));
   expect(browserStorage().getItem(THEME_KEY)).toBe("system");
-  expect(localStorage.getItem(THEME_KEY)).toBe("light");
-  fireEvent(window, new StorageEvent("storage", { key: THEME_KEY, newValue: "dark" }));
-  expect(screen.getByRole("button", { name: "Theme: System" })).toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem(`${THEME_KEY}:v1`)!)).toEqual({ version: 1, value: "system" });
+  fireEvent(window, new StorageEvent("storage", { key: `${THEME_KEY}:v1`, newValue: JSON.stringify({ version: 1, value: "dark" }) }));
+  expect(screen.getByRole("button", { name: "Theme: Dark" })).toBeInTheDocument();
 });
 
-it("applies the first-paint preference without reading DEV preferences inside preview frames", () => {
+it.each(["dark", JSON.stringify({ version: 1, value: "dark" })])("applies saved theme %s before first paint", (saved) => {
   const html = { dataset: {} as Record<string, string>, style: {} as Record<string, string> };
-  const getItem = vi.fn(() => "dark");
-  const sandbox = { window: { name: "", matchMedia: () => ({ matches: false }) }, document: { documentElement: html }, localStorage: { getItem }, URLSearchParams, location: { search: "" } };
+  const key = saved === "dark" ? THEME_KEY : `${THEME_KEY}:v1`;
+  const getItem = vi.fn((name: string) => name === key ? saved : null);
+  const sandbox = { window: { matchMedia: () => ({ matches: false }) }, document: { documentElement: html }, localStorage: { getItem } };
   runInNewContext(THEME_BOOTSTRAP, sandbox);
   expect(html.style.colorScheme).toBe("dark");
   expect(html.dataset.theme).toBe("dark");
-  getItem.mockClear();
-  sandbox.window.name = "docreview-production-preview";
-  sandbox.location.search = "?theme=light";
-  runInNewContext(THEME_BOOTSTRAP, sandbox);
-  expect(html.style.colorScheme).toBe("light");
-  expect(getItem).not.toHaveBeenCalled();
+  expect(html.dataset.colorMode).toBe("dark");
+  expect(getItem).toHaveBeenCalledWith(key);
 });
 
 it("closes the theme menu with Escape without changing the selection", () => {

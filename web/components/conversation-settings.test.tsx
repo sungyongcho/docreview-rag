@@ -6,7 +6,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { ConversationSettings } from "./conversation-settings";
 import { RetainedPanel } from "./retained-panel";
 
-const api = vi.hoisted(() => ({ getDocumentFacets: vi.fn(), getPublishedDocumentFacets: vi.fn() }));
+const api = vi.hoisted(() => ({ getDocumentFacets: vi.fn(), getPublishedDocumentFacets: vi.fn(), getReleaseLimits: vi.fn() }));
 vi.mock("@/lib/api", () => api);
 
 const facets: DocumentFacets = {

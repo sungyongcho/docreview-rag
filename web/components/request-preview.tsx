@@ -1,6 +1,8 @@
 "use client";
 
 import "./review-controls.css";
+import { PublicRunLimits } from "./public-run-limits";
+import { RetrievalPresetExplanation } from "./retrieval-preset-explanation";
 import { RunLimitGuidance } from "./run-limit-guidance";
 import { PresetDetails } from "./preset-details";
 import { useI18n } from "@/lib/i18n";
@@ -28,11 +30,12 @@ export function presetDescription(profile: ReviewSessionDraft, preset: Retrieval
 const POLICY_LABELS: Record<string, string> = { additional_instructions: "Additional instructions", history_turns: "Conversation history turns", max_context_chars: "Maximum evidence characters", evidence_overfetch: "Evidence overfetch", max_hits_per_document: "Maximum hits per document", max_iterations: "Maximum iterations", max_input_tokens: "Maximum input tokens", max_output_tokens: "Maximum output tokens", max_wall_clock_s: "Maximum wall clock seconds" };
 
 /** Show the next request independently of any historical run in the surrounding panel. */
-export function RequestPreviewContent({ profile, query }: { profile: ReviewSessionDraft; query: string }) {
+export function RequestPreviewContent({ profile, query, editable = true }: { profile: ReviewSessionDraft; query: string; editable?: boolean }) {
   const { t } = useI18n();
   const effective = resolvedRetrievalProfile(profile);
-  const filters = { corpus_scope: profile.corpus_scope, issuers: profile.issuers, fiscal_years: profile.fiscal_years, forms: profile.forms, sections: profile.sections, languages: profile.languages, snapshot_id: profile.snapshot_id };
-  return <div className="settings-preview-content"><h3>{t("Next request preview")}</h3><RunLimitGuidance /><p className="helper">{t("These are the next question’s settings, not the selected run’s recorded settings.")}</p><p>{query || t("No question entered yet.")}</p>
+  const filters = { doc_ids: profile.doc_ids, registries: profile.registries, corpus_scope: profile.corpus_scope, issuers: profile.issuers, fiscal_years: profile.fiscal_years, forms: profile.forms, sections: profile.sections, languages: profile.languages, snapshot_id: profile.snapshot_id };
+  return <div className="settings-preview-content"><h3>{t("Next request preview")}</h3><RunLimitGuidance editable={editable} /><p className="helper">{t("These are the next question’s settings, not the selected run’s recorded settings.")}</p><p>{query || t("No question entered yet.")}</p>
+      <RetrievalPresetExplanation profile={profile} />
       <h3>{t("Retrieval presets")}</h3>
       <div className="preset-list">{PRESETS.map(([id, label]) => {
         const description = presetDescription(profile, id);
@@ -47,11 +50,11 @@ export function RequestPreviewContent({ profile, query }: { profile: ReviewSessi
         <div><dt>{t("Language routing")}</dt><dd>{t(effective.route_by_language ? "Enabled" : "Disabled")}</dd></div>
         <div><dt>{t("Answer engine")}</dt><dd>{profile.engine}{profile.engine === "local" && profile.local_model ? ` · ${profile.local_model}` : ""}</dd></div>
       </dl>
-      <details><summary>{t("Filters")}</summary><pre>{JSON.stringify(filters, null, 2)}</pre></details>
+      <details className="request-preview-disclosure"><summary>{t("Filters")}</summary><pre>{JSON.stringify(filters, null, 2)}</pre></details>
       <h3>{t("Evidence and run limits")}</h3>
-      <dl className="request-facts">{Object.entries(profile.prompt_policy).filter(([key]) => key !== "workflow_budget").map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value) || t("None")}</dd></div>)}{Object.entries(profile.prompt_policy.workflow_budget).map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value)}</dd></div>)}</dl>
-      <details><summary>{t("Prompt composition")}</summary><p className="helper">{t("Server policy + conversation history + question + retrieved evidence. The evidence is selected after execution begins.")}</p><pre>{JSON.stringify({ question: query, prompt_policy: profile.prompt_policy }, null, 2)}</pre></details>
-      <details><summary>{t("Request payload")}</summary><pre>{JSON.stringify({ query, session_profile: profile }, null, 2)}</pre></details>
+      {!editable ? <PublicRunLimits /> : <dl className="request-facts">{Object.entries(profile.prompt_policy).filter(([key]) => key !== "workflow_budget").map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value) || t("None")}</dd></div>)}{Object.entries(profile.prompt_policy.workflow_budget).map(([key, value]) => <div key={key}><dt>{t(POLICY_LABELS[key] ?? key)}</dt><dd>{String(value)}</dd></div>)}</dl>}
+      <details className="request-preview-disclosure"><summary>{t("Prompt composition")}</summary><p className="helper">{t("Server policy + conversation history + question + retrieved evidence. The evidence is selected after execution begins.")}</p><pre>{JSON.stringify({ question: query, prompt_policy: profile.prompt_policy }, null, 2)}</pre></details>
+      <details className="request-preview-disclosure"><summary>{t("Request payload")}</summary><pre>{JSON.stringify({ query, session_profile: profile }, null, 2)}</pre></details>
       <p className="helper">{t("Preview of this next request. Server-applied settings appear with the completed result.")}</p>
 </div>;
 }

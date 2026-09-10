@@ -1,4 +1,5 @@
 "use client";
+import { DevelopmentBadge } from "./development-badge";
 
 import { useEffect, useState } from "react";
 import { acquisitionGroups, type AcquisitionCompany } from "@/lib/acquisition-catalog";
@@ -51,7 +52,7 @@ export function PipelineReference({ stage, acquisition, manifests, provider }: {
     try { await navigator.clipboard.writeText(command); setCopyStatus("Copied"); }
     catch { setCopyStatus("Copy failed. Select the code and copy it manually."); }
   }
-  return <details className="pipeline-reference"><summary>{t("Implementation and terminal reference")}</summary>
+  return <details className="pipeline-reference"><summary><span>{t("Implementation and terminal reference")}</span><span className="terminal-reference-badge"><DevelopmentBadge locale={locale} compact /></span></summary>
     <dl className="step-design"><div><dt>{t("Mechanism")}</dt><dd>{t(design.mechanism)}</dd></div><div><dt>{t("Design trade-off")}</dt><dd>{t(design.tradeoff)}</dd></div></dl>
     <a href={`/docreview-rag-agent/docs/${locale}/`} target="_blank" rel="noreferrer noopener">{t("Read the walkthrough")}</a>
     <p>{t("The controls above run a server job. These commands are a separate reference for your terminal; do not run completed work twice.")}</p>

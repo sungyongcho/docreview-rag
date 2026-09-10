@@ -89,6 +89,7 @@ class GoldenSuiteDefinition:
 
     suite_id: GoldenSuiteId
     label: str
+    title: str
     registry: Literal["sec", "dart"]
     question_language: Literal["en", "ko", "mixed"]
     corpus_language: Literal["en", "ko"]
@@ -100,6 +101,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
     "sec-en_v2_astra": GoldenSuiteDefinition(
         "sec-en_v2_astra",
         "SEC 10-K · English _v2_astra",
+        "SEC · English v2",
         "sec",
         "en",
         "en",
@@ -109,6 +111,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
     "sec-ko_v2_astra": GoldenSuiteDefinition(
         "sec-ko_v2_astra",
         "SEC 10-K · Korean _v2_astra",
+        "SEC · Korean v2",
         "sec",
         "ko",
         "en",
@@ -118,6 +121,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
     "sec-mixed_v2_astra": GoldenSuiteDefinition(
         "sec-mixed_v2_astra",
         "SEC 10-K · Mixed EN/KO _v2_astra",
+        "SEC · Mixed v2",
         "sec",
         "mixed",
         "en",
@@ -125,11 +129,19 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
         "manifest.json",
     ),
     "sec-en": GoldenSuiteDefinition(
-        "sec-en", "SEC 10-K · English", "sec", "en", "en", "retrieval.json", "manifest.json"
+        "sec-en",
+        "SEC 10-K · English",
+        "SEC retrieval",
+        "sec",
+        "en",
+        "en",
+        "retrieval.json",
+        "manifest.json",
     ),
     "sec-ko": GoldenSuiteDefinition(
         "sec-ko",
         "SEC 10-K · Korean questions",
+        "SEC retrieval · Korean",
         "sec",
         "ko",
         "en",
@@ -139,6 +151,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
     "dart-en": GoldenSuiteDefinition(
         "dart-en",
         "DART · English questions",
+        "DART retrieval",
         "dart",
         "en",
         "ko",
@@ -148,6 +161,7 @@ SUITES: Final[dict[GoldenSuiteId, GoldenSuiteDefinition]] = {
     "dart-ko": GoldenSuiteDefinition(
         "dart-ko",
         "DART · Korean",
+        "DART retrieval · Korean",
         "dart",
         "ko",
         "ko",
@@ -262,6 +276,7 @@ class EvaluationAdminService:
                     filename=golden_path.name,
                     suite_id=definition.suite_id,
                     label=definition.label,
+                    title=definition.title,
                     registry=definition.registry,
                     question_language=definition.question_language,
                     corpus_language=definition.corpus_language,

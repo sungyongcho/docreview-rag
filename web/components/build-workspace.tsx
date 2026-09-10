@@ -1,4 +1,10 @@
 "use client";
+import { usePublishedCorpus, type PublishedCorpus } from "@/lib/use-published-corpus";
+import { publicTargetIds, selectedPublishedDocuments, publishedScopeStats } from "@/lib/published-scope";
+import { DEFAULT_SESSION_PROFILE, type ReviewSessionDraft } from "@/lib/types";
+
+import { DEV_ONLY_REASONS } from "@/lib/dev-mode";
+import type { ScopeFilters } from "@/lib/scope-filters";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
 
@@ -23,10 +29,9 @@ import {
   queueCorpusOperation,
   queueEvaluation,
 } from "@/lib/api";
-import { CANNED_CORPUS, CANNED_JOB } from "@/lib/canned";
 import { deploymentLabel } from "@/lib/deployment";
 import { derivePipeline } from "@/lib/pipeline";
-import { acquisitionBatches, acquisitionDraft, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState } from "@/lib/source-selection";
+import { acquisitionBatches, acquisitionDraft, acquisitionPairs, loadAcquisitionDraft, saveAcquisitionDraft, selectedSourceState } from "@/lib/source-selection";
 import { loadExperimentDefaults } from "@/lib/storage";
 import type {
   ReviewEngineState,
@@ -54,6 +59,11 @@ export type BuildNavigationTarget =
   | { view: "measure"; tab: "snapshots" | "runs" | "golden"; resultId?: number };
 
 export interface BuildWorkspaceProps {
+  publishedCorpus?: PublishedCorpus;
+  publicProfile?: ReviewSessionDraft;
+  publicSelection?: string[];
+  publicTargets?: import("@/lib/types").PublicTarget[];
+  onPublicSelectionChange?: (ids: string[], targets?: import("@/lib/types").PublicTarget[]) => void;
   live: boolean;
   ready: boolean;
   readiness: Readiness | null;
@@ -80,6 +90,11 @@ export interface BuildWorkspaceProps {
   onOpenLocalSettings?: () => void;
   onLocalPrepared?: (local: ReviewEngineState) => void;
   onNavigate: (target: BuildNavigationTarget) => void;
+  /** Read-only servers: scope the next question to the chosen published filings. */
+  publicProgress?: { candidates?: import("@/lib/types").PublicTarget[]; stage: string; checked: string[] };
+  onConfirmScope?: () => void;
+  onPublicProgressChange?: (progress: { stage: string; checked: string[] }) => void;
+  onAskScope?: (filters: ScopeFilters) => void;
 }
 
 const TABS: Array<[BuildTab, string]> = [
@@ -105,29 +120,43 @@ function sameEvaluationRequest(left: unknown, right: unknown): boolean {
   return canonical(submitted) === canonical(right);
 }
 
-export function BuildWorkspace({ live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
+export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSION_PROFILE, publicSelection, publicTargets, publicProgress, onConfirmScope, onPublicProgressChange, onPublicSelectionChange, live, readiness, localModel, healthKind, connectionPending = false, profile, jobBoard, jobsLoading, jobsStale = false, onRetryJob, onCancelJob, onRefreshJobs, onRecheck, operationsAvailable = false, onRunOperation, tab, onTabChange, onNavigate, onAskScope, onOpenLocalSettings, onLocalPrepared, focusStep, focusJobId }: BuildWorkspaceProps) {
   const { t, locale } = useI18n();
+  const fallbackPublicCorpus = usePublishedCorpus(!live && !publishedCorpus);
+  const publicCorpus = publishedCorpus ?? fallbackPublicCorpus;
+  const scopeStats = publishedScopeStats(publicCorpus.documents, publicTargetIds(publicCorpus.documents, publicTargets, publicSelection) ?? publicProfile.doc_ids);
+  const publicDraft = acquisitionDraft(publicTargets ?? selectedPublishedDocuments(publicCorpus.documents, publicSelection).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year })));
+  /** Resolve selected pairs to exact published IDs; never update DEV acquisition storage. */
+  function changePublicDraft(next: AcquisitionForm) {
+    const pairs = acquisitionPairs(next);
+    onPublicSelectionChange?.(publicCorpus.documents.filter((doc) => pairs.some((pair) => pair.registry === doc.registry && pair.issuer === doc.issuer && pair.year === doc.fiscal_year)).map((doc) => doc.doc_id), pairs);
+  }
   const [focusStage, setFocusStage] = useState<string | null>(null);
   useEffect(() => { setFocusStage(focusStep == null ? null : String(focusStep)); }, [focusStep]);
-  const { notify } = useNotifications();
+  const { notify, dismissNotice } = useNotifications();
+  // One toast per failing refresh source; repeats of the same message stay quiet until it changes or recovers.
+  const refreshWarnings = useRef<Record<string, string>>({});
+  function warnRefresh(key: string, message: string) {
+    if (refreshWarnings.current[key] === message) return;
+    refreshWarnings.current[key] = message;
+    notify(message, "warning", `build-refresh-${key}`, undefined, { event: "build-refresh-error" });
+  }
+  function clearRefresh(key: string) { delete refreshWarnings.current[key]; }
   const environment = deploymentLabel(readiness?.environment);
   const connectionConfirmed = healthKind !== "checking" && healthKind !== "api_down" && !connectionPending;
   const [experimentDefaults, setExperimentDefaults] = useState<ExperimentDefaults>(DEFAULT_EXPERIMENT_DEFAULTS);
   const [evaluationPreparation, setEvaluationPreparation] = useState<EvaluationPreparation | null>(null);
   const quickRequest = useMemo<EvaluationRequest>(() => ({ suite_id: experimentDefaults.suite_id, golden_revision_id: experimentDefaults.golden_revision_id, mode: "quick", profile, target_tokens: [1024, 2048], strategies: ["lexical", "vector", "hybrid"], lexical_rankers: ["ts_rank_cd", "bm25"] }), [experimentDefaults.suite_id, experimentDefaults.golden_revision_id, profile]);
-  // Fixtures seed only the public build; a live build waits for the administrator API.
-  const [corpus, setCorpus] = useState<CorpusSnapshot | null>(() => (live ? null : { mode: "canned", ...CANNED_CORPUS, sources: [], acquisition_companies: [] }));
-  /** True once `/admin/corpus` replaced the portfolio fixture. */
+  // Neither mode invents inventory: public rows and administrator rows load separately.
+  const [corpus, setCorpus] = useState<(Omit<CorpusSnapshot, "status"> & { status: CorpusCounts }) | null>(() => (live ? null : { mode: "live", status: UNKNOWN_CORPUS, documents: [], manifests: [], sources: [], acquisition_companies: [] }));
+  /** True once the administrator inventory has loaded. */
   const [adminLoaded, setAdminLoaded] = useState(false);
   const [registryCounts, setRegistryCounts] = useState<Record<string, number>>({});
-  const [jobs, setJobs] = useState<EvaluationJob[]>(() => (live ? [] : [CANNED_JOB]));
+  const [jobs, setJobs] = useState<EvaluationJob[]>([]);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const completedJobs = useRef(new Set<string>());
+  const documentRevision = jobBoard.jobs.filter(job => job.domain === "corpus" && ["succeeded", "failed", "cancelled", "interrupted"].includes(job.status)).map(job => `${job.job_id}:${job.status}:${job.updated_at}`).sort().join("|");
   const [busy, setBusy] = useState(false);
-  const [historyWarning, setHistoryWarning] = useState("");
-  const [corpusWarning, setCorpusWarning] = useState("");
-  const [facetWarning, setFacetWarning] = useState("");
-  const [duplicateEvaluation, setDuplicateEvaluation] = useState(false);
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
   const draftRevision = useRef<string | null>(null);
@@ -137,7 +166,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   }, [corpus]);
   const revision = corpus?.acquisition_draft?.revision ?? "default-v1";
   useEffect(() => {
-    if (!corpus || (live && !adminLoaded) || draftRevision.current === revision) return;
+    if (!live || !corpus || !adminLoaded || draftRevision.current === revision) return;
     setAcquisition(loadAcquisitionDraft(revision) ?? serverDraft);
     draftRevision.current = revision;
   }, [corpus, adminLoaded, live, revision, serverDraft]);
@@ -152,6 +181,19 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     setExperimentDefaults(loadExperimentDefaults());
   }, []);
 
+  /** A read-only server has no administrator inventory: rebuild the company grid from the published listing. */
+  useEffect(() => {
+    if (live) return;
+    const documents = publicCorpus.documents;
+    const companies = new Map<string, CorpusSnapshot["acquisition_companies"][number]>();
+    for (const document of documents) {
+      const key = `${document.registry}:${document.issuer}`;
+      companies.set(key, { registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer });
+    }
+    const sources = documents.map((document) => ({ registry: document.registry as "sec" | "dart", issuer: document.issuer, name: document.issuer_name ?? document.issuer, fiscal_year: document.fiscal_year, filing_id: document.filing_id, document_id: document.doc_id, manifest: "", on_disk: true, ready: true, can_redownload: false, blocker: null }));
+    setCorpus({ mode: "live", status: UNKNOWN_CORPUS, manifests: [], documents, sources, acquisition_companies: [...companies.values()] });
+  }, [live, publicCorpus.documents]);
+
   /**
    * Reload the four administrator reads independently: a failed read keeps the last known state and
    * leaves an inline notice, so one busy endpoint never blanks the others. Only a refresh the user
@@ -159,9 +201,6 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
    */
   async function refresh(mode: "auto" | "manual" = "auto") {
     if (!live) return;
-    setHistoryWarning("");
-    setCorpusWarning("");
-    setFacetWarning("");
     const [jobRows, corpusSnapshot, facets, snapshotRows] = await Promise.allSettled([
       getEvaluationJobs(), getCorpusSnapshot(), getDocumentFacets(), getAdminSnapshots(),
     ]);
@@ -172,23 +211,23 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     if (corpusSnapshot.status === "fulfilled") {
       setCorpus(corpusSnapshot.value);
       setAdminLoaded(true);
+      clearRefresh("corpus");
     } else {
-      setCorpusWarning(t("Corpus status could not be refreshed: {message}", { message: reasonOf(corpusSnapshot) }));
+      warnRefresh("corpus", t("Corpus status could not be refreshed: {message}", { message: reasonOf(corpusSnapshot) }));
       failures.push(reasonOf(corpusSnapshot));
     }
     if (facets.status === "fulfilled") {
       const registries = Array.isArray(facets.value.registries) ? facets.value.registries : [];
       setRegistryCounts(Object.fromEntries(registries.filter((item) => typeof item.value === "string" && typeof item.count === "number").map((item) => [item.value, item.count])));
+      clearRefresh("facets");
     } else {
-      setFacetWarning(t("Document filters could not be loaded: {message}", { message: reasonOf(facets) }));
+      warnRefresh("facets", t("Document filters could not be loaded: {message}", { message: reasonOf(facets) }));
       failures.push(reasonOf(facets));
     }
     if (snapshotRows.status === "fulfilled") setSnapshotCount(Array.isArray(snapshotRows.value) ? snapshotRows.value.length : 0);
     else failures.push(reasonOf(snapshotRows));
-    if (jobRows.status === "rejected" || snapshotRows.status === "rejected") {
-      setHistoryWarning(t("Some history could not be loaded. Corpus status is shown separately."));
-    }
-    if (mode === "manual" && failures.length) notify(failures[0], "error", "build-refresh", undefined, { event: "build-refresh-error" });
+    if (jobRows.status === "rejected" || snapshotRows.status === "rejected") warnRefresh("history", t("Some history could not be loaded. Corpus status is shown separately."));
+    else clearRefresh("history");
     return failures.length === 0;
   }
 
@@ -285,9 +324,9 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   }
 
   async function runQuickEvaluation() {
-    if (!live) { notify(t("Production experiment controls are locked. Compare published snapshots instead."), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
+    if (!live) { notify(t(DEV_ONLY_REASONS.evaluation), "warning", "prod-eval", undefined, { event: "prod-eval-warning" }); return; }
     if (evaluationBlockedReason) { notify(t(evaluationBlockedReason), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
-    setDuplicateEvaluation(false);
+    dismissNotice("evaluation-duplicate");
     setBusy(true);
     try {
       const request = quickRequest;
@@ -296,8 +335,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
       if (prepared.state !== "ready") { notify(prepared.blockers.join("; ") || t("Evaluation prerequisites are not ready."), "warning", "evaluation", undefined, { event: "evaluation-warning" }); return; }
       const activeEvaluations = [...jobBoard.jobs.filter((job) => job.domain === "evaluation"), ...jobs];
       if (activeEvaluations.some((job) => ["queued", "running"].includes(job.status) && sameEvaluationRequest(job.request, request))) {
-        setDuplicateEvaluation(true);
-        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice", actionLabel: "Open Jobs", onAction: () => onTabChange("jobs") });
         return;
       }
       const job = await queueEvaluation(request);
@@ -311,8 +349,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
       onTabChange("jobs");
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === "evaluation_already_queued") {
-        setDuplicateEvaluation(true);
-        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice" });
+        notify(t("The same evaluation is already queued."), "info", "evaluation-duplicate", undefined, { event: "evaluation-duplicate-notice", actionLabel: "Open Jobs", onAction: () => onTabChange("jobs") });
         onRefreshJobs();
       } else notify(reason instanceof Error ? notificationErrorMessage(reason) : t("Evaluation failed."), "error", "evaluation", undefined, { event: "evaluation-error", detail: notificationErrorDetail(reason) });
     } finally {
@@ -323,9 +360,9 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
   const status = useMemo(() => corpus?.status ?? UNKNOWN_CORPUS, [corpus]);
   const manifests = useMemo(() => corpus?.manifests ?? [], [corpus]);
   const corpusDocuments = useMemo<CorpusDocument[]>(() => {
-    if (!live) return CANNED_CORPUS.documents;
+    if (!live) return publicCorpus.documents;
     return corpus?.documents ?? [];
-  }, [live, corpus]);
+  }, [live, corpus, publicCorpus.documents]);
   const referenceCompanies = corpus?.acquisition_companies ?? [];
   const evaluationResults = jobs.filter((job) => job.status === "succeeded" && job.result_id !== null).length;
   const pipeline = useMemo(() => derivePipeline({
@@ -335,14 +372,15 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
     readiness,
     corpus: live && adminLoaded ? status : null,
     manifests,
-    sourceSelection: selectedSourceState(corpus?.sources ?? [], acquisition),
+    publicScope: live ? undefined : { ...scopeStats, status: publicCorpus.status, confirmed: publicProgress?.checked.includes("index") ?? false },
+    sourceSelection: selectedSourceState(corpus?.sources ?? [], live ? acquisition : publicDraft),
     sourceInventory: corpus?.sources,
     registryCounts,
     jobs: Array.isArray(jobBoard.jobs) ? jobBoard.jobs : [],
     evaluationResults,
     snapshots: snapshotCount,
     profile,
-  }), [live, healthKind, connectionPending, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile]);
+  }), [publicProgress, publicTargets, publicSelection, live, healthKind, connectionPending, readiness, adminLoaded, status, manifests, corpus, acquisition, registryCounts, jobBoard.jobs, evaluationResults, snapshotCount, profile, publicCorpus.status, scopeStats.filings, scopeStats.total, scopeStats.chunks, scopeStats.embedded, scopeStats.pending]);
   /** Runtime flags for the strip: the administrator snapshot once loaded, otherwise `/ready`. */
   const runtimeCounts: CorpusCounts | null = !connectionConfirmed ? null : live && adminLoaded ? status : readiness?.corpus ?? null;
   const answerModelLabel = !connectionConfirmed || readiness === null
@@ -371,14 +409,10 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
 
   return (
     <section className="lab-shell build-workspace">
-      {historyWarning && <p className="notice" role="status">{historyWarning}</p>}
-      {corpusWarning && <p className="notice" role="status">{corpusWarning}</p>}
-      {facetWarning && <p className="notice" role="status">{facetWarning}</p>}
-      {duplicateEvaluation && <p className="notice" role="status">{t("The same evaluation is already queued.")} <button type="button" className="inline-link" onClick={() => onTabChange("jobs")}>{t("Open Jobs")}</button></p>}
       <header className="page-heading">
         <div>
           <h1>{t("From filings to verified answers.")}</h1>
-          <p>{t("Complete corpus setup to ask questions. Evaluation measures retrieval quality separately.")}</p>
+          <p>{t(live ? "Complete corpus setup to ask questions. Evaluation measures retrieval quality separately." : "Pick published filings to ask about, then explore how the corpus was prepared. Evaluation compares stored snapshots.")}</p>
         </div>
         <div className="page-badges">
           {environment && <span className="mode-badge">{environment}</span>}
@@ -386,11 +420,12 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         </div>
       </header>
       <nav className="lab-tabs" aria-label={t("Build sections")}>
-        {TABS.map(([id, label]) => (
+        {TABS.filter(([id]) => live || id !== "jobs").map(([id, label]) => (
           <button key={id} type="button" aria-pressed={tab === id} title={live && id === "jobs" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => onTabChange(id)}>{t(label)}{live && id === "jobs" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>
         ))}
       </nav>
 
+      {!live && <p className="helper" role={publicCorpus.status === "error" ? "alert" : "status"}>{t(publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No portfolio filings have been published yet." : "Choose from the published portfolio filings.")} <button type="button" className="button ghost" onClick={publicCorpus.refresh}>{t("Refresh")}</button></p>}
       <RetainedPanel active={tab === "pipeline"}><BuildPipeline
         pipeline={pipeline}
         documents={corpusDocuments}
@@ -402,9 +437,10 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         evaluationBlockedReason={evaluationBlockedReason}
         evaluationPreparationReady={!live || evaluationPreparation?.state === "ready"}
         evaluationSetup={live ? (action) => <PipelineGoldenPicker action={action} onManage={() => onNavigate({ view: "measure", tab: "golden" })} request={quickRequest} onOpenSources={() => { setFocusStage("filings"); onTabChange("pipeline"); }} onChecked={setEvaluationPreparation} onSelect={(suite_id, golden_revision_id) => { setEvaluationPreparation(null); setExperimentDefaults((current) => ({ ...current, suite_id, golden_revision_id })); }} /> : undefined}
-        acquisition={acquisition}
+        acquisition={live ? acquisition : publicDraft}
+        corpusScope={publicProfile.corpus_scope}
         companies={referenceCompanies}
-        onAcquisitionChange={changeAcquisition}
+        onAcquisitionChange={live ? changeAcquisition : changePublicDraft}
         sources={corpus?.sources ?? []}
         manifests={manifests}
         answerModel={answerModelLabel}
@@ -426,16 +462,20 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
         onBackfill={() => void queueCorpus({ kind: "backfill_embeddings", identifiers: [], years: [] })}
         onRebuildBm25={() => void queueCorpus({ kind: "rebuild_bm25", identifiers: [], years: [] })}
         onAsk={() => onNavigate({ view: "review" })}
+        onAskScope={onAskScope}
+        publicProgress={publicProgress}
+        onConfirmScope={onConfirmScope}
+        onPublicProgressChange={onPublicProgressChange}
         onRecheck={onRecheck}
         onEvaluate={() => void runQuickEvaluation()}
-        onCompareSnapshots={() => onNavigate({ view: "measure", tab: "snapshots" })}
+        onCompareSnapshots={() => onNavigate({ view: "measure", tab: live ? "snapshots" : "runs" })}
         onOpenDocuments={() => onTabChange("documents")}
         onOpenJobs={() => onTabChange("jobs")}
         onOpenStatus={() => onNavigate({ view: "system", tab: "status" })}
-        onRefresh={() => refresh("manual")}
+        onRefresh={() => live ? refresh("manual") : publicCorpus.refresh()}
       /></RetainedPanel>
 
-      <RetainedPanel active={tab === "documents"}><DocumentInventory onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={live ? [] : CANNED_CORPUS.documents} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
+      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={[]} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter
@@ -450,7 +490,7 @@ export function BuildWorkspace({ live, readiness, localModel, healthKind, connec
             onRefresh={onRefreshJobs}
             onOpenResult={(resultId) => onNavigate({ view: "measure", tab: "runs", resultId })}
           />
-        : <div className="empty-state"><h2>{t("Jobs")}</h2><p>{t("Jobs run on the local operator build.")}</p></div>)}</RetainedPanel>
+        : <div className="empty-state"><h2>{t("Jobs")}</h2><p>{t(DEV_ONLY_REASONS.jobs)}</p></div>)}</RetainedPanel>
     </section>
   );
 }

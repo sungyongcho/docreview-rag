@@ -850,9 +850,10 @@ docker compose --project-directory . -f docker/docker-compose.yml up --build -d
 sungyongcho.com/docreview-rag-agent/*
         │
         ▼
-Cloudflare Worker
+Cloudflare Worker (TLS ends here)
         ├─ static UI ──> Firebase Hosting
-        └─ /api/* ─────> GCP e2-small → Caddy → FastAPI → PostgreSQL
+        └─ /api/* ──plain HTTP──> GCP e2-micro (Always Free, ephemeral IP)
+                                  └─ Caddy :8000 (Cloudflare IPs only) → FastAPI → PostgreSQL
 ```
 
 Firebase용 Next 정적 파일 생성과 배포:
@@ -861,19 +862,22 @@ Firebase용 Next 정적 파일 생성과 배포:
 FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh
 ```
 
-GCP VM 준비·배포 스크립트:
+GCP VM 준비·배포 스크립트(`.env`의 `DEPLOY_GCP_PROJECT`와 `deploy/gcp/backend.env`를 읽음):
 
 ```bash
-GCP_PROJECT_ID=<project-id> deploy/gcp/create_vm.sh
-GCP_PROJECT_ID=<project-id> deploy/gcp/deploy_backend.sh
+deploy/gcp/create_vm.sh
+deploy/gcp/deploy_backend.sh
+deploy/gcp/print_origin.sh   # Worker 변수 → gomoku 저장소 .env
 ```
 
 실관리 UI는 SSH tunnel 뒤에서 실행합니다.
 
 ```bash
-GCP_PROJECT_ID=<project-id> deploy/gcp/operator_tunnel.sh
+deploy/gcp/operator_tunnel.sh
 scripts/stack/operator_web.sh
 ```
+
+순서·비용표는 [운영 배포](docs/TUTORIAL/ko/environment.md#production-deployment)에 있습니다.
 
 배포 스크립트는 비용과 외부 상태를 변경하므로 값을 검토한 뒤 별도로 실행해야 합니다.
 

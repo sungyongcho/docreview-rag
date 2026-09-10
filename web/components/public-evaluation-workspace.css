@@ -1,0 +1,32 @@
+.evaluation-setup-experiment { min-width: 0; }
+.evaluation-setup-experiment > .evaluation-experiment-heading { padding: 0; gap: 16px; align-items: center; }
+.evaluation-experiment-heading h2 { margin: 0; min-width: 0; }
+.evaluation-experiment-heading .icon-button { flex: 0 0 34px; margin-left: auto; }
+.evaluation-experiment-note { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 8px; padding: 10px 12px; border-left: 2px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.65; }
+.evaluation-experiment-note > svg { flex: 0 0 16px; margin-top: 2px; }
+.evaluation-setup-experiment label, .evaluation-setup-experiment .profile-grid { min-width: 0; }
+.evaluation-setup-experiment select, .evaluation-setup-experiment input { min-width: 0; max-width: 100%; }
+
+/* Public run summaries lead with measured outcomes inside the run list panel. */
+.public-evaluation-result { min-width: 0; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.public-evaluation-result > .surface-heading { padding: 0; margin-bottom: 12px; }
+.public-evaluation-result > .surface-heading h2 { font-size: 16px; overflow-wrap: anywhere; }
+.public-evaluation-purpose { margin: 0 0 10px; font-size: 14px; line-height: 1.7; }
+.public-evaluation-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 12px; }
+.public-evaluation-metrics > div { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.public-evaluation-metrics .metric { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.public-evaluation-metrics .helper { margin: 10px 0 0; font-size: 12px; line-height: 1.6; }
+.public-evaluation-technical { margin: 18px 0 22px; padding-block: 12px; border-block: 1px solid var(--border); }
+.public-evaluation-technical summary { color: var(--muted); cursor: pointer; font-size: 13px; }
+.public-evaluation-technical dd { overflow-wrap: anywhere; }
+.public-evaluation-result > h3 { margin: 18px 0 6px; font-size: 14px; }
+.public-evaluation-result .golden-table-scroll { max-height: 320px; }
+@media (max-width: 1100px) { .public-evaluation-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .public-evaluation-metrics { grid-template-columns: minmax(0, 1fr); } }
+
+.public-evaluation-result > .golden-table-tools { display: flex; justify-content: flex-end; margin: 0 0 6px; padding: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+
+.public-comparison-example select:disabled { color: var(--muted); opacity: 0.65; cursor: default; }
+
+.public-case-comparison th:nth-child(n+3), .public-case-comparison td:nth-child(n+3) { white-space: nowrap; text-align: center; }
+.public-case-comparison th:first-child { min-width: 80px; }

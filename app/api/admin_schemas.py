@@ -133,6 +133,7 @@ class GoldenSuiteResource(StrictAdminModel):
 
     suite_id: GoldenSuiteId
     label: str
+    title: str
     filename: str
     registry: Literal["sec", "dart"]
     question_language: Literal["en", "ko", "mixed"]

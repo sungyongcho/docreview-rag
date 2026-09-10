@@ -22,6 +22,7 @@ const SECTIONS: Array<{ id: Section; label: string }> = [
 ];
 
 interface RunDetailsPanelProps {
+  editable?: boolean;
   message: ChatMessage | null;
   draftProfile?: ReviewSessionDraft;
   draftQuery?: string;
@@ -33,7 +34,7 @@ interface RunDetailsPanelProps {
 }
 
 /** Inspect one message over its conversation, preserving its last selected section. */
-export function RunDetailsPanel({ message: incomingMessage, onClose, onOpenFix, draftProfile, draftQuery = "", stageRequest }: RunDetailsPanelProps) {
+export function RunDetailsPanel({ editable = true, message: incomingMessage, onClose, onOpenFix, draftProfile, draftQuery = "", stageRequest }: RunDetailsPanelProps) {
 
   const { t } = useI18n();
   const uid = useId();
@@ -141,7 +142,7 @@ export function RunDetailsPanel({ message: incomingMessage, onClose, onOpenFix, 
         <div className="run-details-tabs" role="tablist" aria-label={t("Run detail sections")}>{SECTIONS.map((item, index) => <button key={item.id} id={`${uid}-${item.id}-tab`} role="tab" type="button" aria-selected={section === item.id} aria-controls={`${uid}-${item.id}`} tabIndex={section === item.id ? 0 : -1} onClick={() => setSections((previous) => ({ ...previous, [message.id]: item.id }))} onKeyDown={(event) => moveTab(event, index)}>{t(item.label)}</button>)}</div>
       </header><NotificationOutlet priority={20} active={!leaving} />
       <div className="run-details-content" ref={content}>
-        <section id={`${uid}-preview`} role="tabpanel" aria-labelledby={`${uid}-preview-tab`} hidden={section !== "preview"} tabIndex={0}>{section === "preview" && (draftProfile ? <RequestPreviewContent profile={draftProfile} query={draftQuery} /> : <p>{t("No next-request settings available.")}</p>)}</section>
+        <section id={`${uid}-preview`} role="tabpanel" aria-labelledby={`${uid}-preview-tab`} hidden={section !== "preview"} tabIndex={0}>{section === "preview" && (draftProfile ? <RequestPreviewContent editable={editable} profile={draftProfile} query={draftQuery} /> : <p>{t("No next-request settings available.")}</p>)}</section>
         <section id={`${uid}-performance`} role="tabpanel" aria-labelledby={`${uid}-performance-tab`} hidden={section !== "performance"} tabIndex={0}>
           <h3>{t("Execution performance")}</h3>
           {message.execution ? <ExecutionPerformance data={message.performance} state={message.execution} selectedNodes={stageRequest?.stage ? disclosureNodes(stageRequest.stage, message.execution) : []} embedded /> : <p className="helper">{t("Execution measurements were not recorded for this message.")}</p>}

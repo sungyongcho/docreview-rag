@@ -8,7 +8,7 @@ import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
 import type { Capabilities } from "./types";
 
 export type HelpCapability = Exclude<keyof Capabilities, "environment">;
-export interface HelpAccess { capabilities?: Capabilities | null; publicPreview?: boolean }
+export interface HelpAccess { capabilities?: Capabilities | null }
 export interface HelpGuide { summary: string; steps: readonly string[] }
 
 export type HelpScreen =
@@ -35,14 +35,12 @@ export interface HelpTopic {
   /** The actual capability required to use this control; omitted for public browsing. */
   capability?: HelpCapability;
   requiredCapabilities?: readonly HelpCapability[];
-  availableInPreview?: boolean;
   publicContent?: { capabilities: readonly HelpCapability[]; body: string[]; guide: HelpGuide };
   guide?: HelpGuide;
 }
 
 /** Match effective UI permissions, with a hard local-operation boundary in production. */
 function capabilityAllowed(capability: HelpCapability, access: HelpAccess): boolean {
-  if (access.publicPreview && capability !== "can_compare_published_snapshots") return false;
   if ((capability === "can_configure_local_llm" || capability === "can_use_operations") && access.capabilities?.environment !== "dev") return false;
   return access.capabilities?.[capability] === true;
 }
@@ -53,12 +51,10 @@ export function developmentHelpTopic(topic: HelpTopic): boolean {
 
 /** Use one topic policy for search, recommendations, details, links, and page help. */
 export function accessibleHelpTopic(topic: HelpTopic, access: HelpAccess = {}): HelpTopic | null {
-  if (access.publicPreview && topic.availableInPreview === false) return null;
   if (topic.capability && !capabilityAllowed(topic.capability, access)) return null;
   if (topic.requiredCapabilities?.some((capability) => !capabilityAllowed(capability, access))) return null;
-  const visible = topic.publicContent?.capabilities.some((capability) => !capabilityAllowed(capability, access))
+  return topic.publicContent?.capabilities.some((capability) => !capabilityAllowed(capability, access))
     ? { ...topic, body: topic.publicContent.body, tune: undefined, guide: topic.publicContent.guide } : topic;
-  return access.publicPreview ? { ...visible, guide: { summary: visible.guide?.summary ?? visible.body[0], steps: ["Open the related control.", "Read the available values or recorded results.", "This preview is read-only; questions and server changes are not executed."] } } : visible;
 }
 
 /** Attach the owning workspace permission while preserving narrower per-control requirements. */
@@ -209,17 +205,17 @@ function profileFieldTopics(prefix: string, optional: boolean): HelpTopic[] {
 
 const BUILD: HelpTopic[] = [
   {
-    id: "build.runtime",
+    id: "build.runtime", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Published document counts describe the current selection. Corpus preparation runs in DEV mode."], "guide": {"summary": "Published document counts describe the current selection. Corpus preparation runs in DEV mode.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Runtime strip",
     body: [
       "Expand the compact runtime summary to inspect API, database, schema, data directory access, and answer model readiness.",
       "A problem turns into a notice with its fix: the command line to run, or Operations buttons (Start database, Plan and Apply migrations, Rebuild app) when a local operator is attached.",
-      "Refresh re-reads readiness and the administrator corpus snapshot; the public build shows a read-only label instead.",
+      "Refresh re-reads readiness and the corpus counts (documents, chunks, embedded, pending); the public build withholds only whether the corpus is writable.",
     ],
     seeAlso: ["build.next-step", "system.status"],
   },
   {
-    id: "build.next-step",
+    id: "build.next-step", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Choose published filings in Build, then explore the real chunks, retrieval results and citations."], "guide": {"summary": "Choose published filings in Build, then explore the real chunks, retrieval results and citations.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Next step",
     body: [
       "This callout always names the first stage that needs you: the first stage in action or failed state, a running job with its progress, or a blocked stage with the reason.",
@@ -228,7 +224,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.filings", "build.stage.evaluate"],
   },
   {
-    id: "build.stage.filings",
+    id: "build.stage.filings", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Choose published filings to ask about. Downloading new filings runs in DEV mode.", "Keyword statistics use the server corpus, grouped by language."], "guide": {"summary": "Choose published filings to ask about. Downloading new filings runs in DEV mode.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "1 · Filings",
     body: [
       "Downloads SEC 10-K and DART business reports into data/corpus. Everything downstream cites these files by SHA-256, and re-running only fetches what is missing.",
@@ -238,7 +234,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.index"],
   },
   {
-    id: "build.stage.index",
+    id: "build.stage.index", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["The selected documents bound the evidence for your next question.", "Chunks in scope"], "guide": {"summary": "The selected documents bound the evidence for your next question.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "2 · Parse & chunk",
     body: [
       "Reads each filing, splits it into citable text and table chunks, and loads them into PostgreSQL. Chunk boundaries decide what can be cited, so every answer must point to a chunk from this step.",
@@ -248,7 +244,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.embeddings", "build.stage.lexical"],
   },
   {
-    id: "build.stage.embeddings",
+    id: "build.stage.embeddings", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Embedding counts describe the selected published documents. Selecting documents does not generate vectors."], "guide": {"summary": "Embedding counts describe the selected published documents. Selecting documents does not generate vectors.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "3 · Embeddings",
     body: [
       "Turns every chunk into a vector so questions can match by meaning, not only by exact words. Vector search is what lets a Korean question find an English filing.",
@@ -258,7 +254,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["build.stage.ask", "measure.playground.strategy"],
   },
   {
-    id: "build.stage.lexical",
+    id: "build.stage.lexical", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Keyword statistics use the server corpus, grouped by language."], "guide": {"summary": "Keyword statistics use the server corpus, grouped by language.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "4 · Lexical index (BM25)",
     body: [
       "Keyword statistics for exact terms, tickers, numbers and Korean bigram tokens: term frequencies, chunk lengths and per-lexeme document frequencies.",
@@ -267,7 +263,7 @@ const BUILD: HelpTopic[] = [
     seeAlso: ["measure.playground.lexical_ranker", "build.stage.index"],
   },
   {
-    id: "build.stage.ask",
+    id: "build.stage.ask", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Questions use the selected published filings."], "guide": {"summary": "Questions use the selected published filings.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "5 · Ask",
     body: [
       "Retrieves evidence for a question across both indexes, then lets the model answer only from it. Unsupported answers end as NOT_IN_DOCS.",
@@ -316,7 +312,7 @@ const REVIEW: HelpTopic[] = [
     title: "Retrieval preset",
     body: [
       "Balanced is hybrid retrieval with ts_rank_cd, k 5, candidate_k 20 and rrf_k 60. Korean adds BM25, candidate_k 30 and route by language. Accuracy adds BM25, candidate_k 50 and the cross-encoder reranker.",
-      "Custom exposes every field and is editable on the local operator build only; a public build keeps the built-in presets.",
+      "Custom exposes every field. A public build saves custom presets in this browser and applies them within the server's public ranges.",
       "A result applied from Measure (Use selected set or Use for review) switches the session to Custom with that run's profile.",
     ],
     tune: "Try a preset in Measure › Playground on the same question before committing a session to it.",
@@ -337,14 +333,14 @@ const REVIEW: HelpTopic[] = [
     title: "Snapshot chip",
     body: [
       "Shown when the session queries a frozen evaluation snapshot instead of the live corpus, after Use for review in Measure › Snapshots.",
-      "Retrieval then reads the snapshot's own chunk, embedding and BM25 tables, so answers stay reproducible while the live corpus changes. Snapshot queries need the local operator build.",
+      "Retrieval then reads the snapshot's own chunk, embedding and BM25 tables, so answers stay reproducible while the live corpus changes. Snapshot queries run in DEV mode only.",
     ],
     tune: "Clear it with × to return to the live corpus.",
     seeAlso: ["measure.snapshots.list"],
     optional: true,
   },
   {
-    id: "review.readiness", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Read published corpus availability. Public document counts describe published filings, not private runtime totals."], "guide": {"summary": "Read published corpus availability. Public document counts describe published filings, not private runtime totals.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
+    id: "review.readiness", publicContent: {"capabilities": ["can_build_snapshot"], "body": ["Read corpus availability. The public build shows document, chunk and embedding counts; only whether the corpus is writable is withheld."], "guide": {"summary": "Read corpus availability. The public build shows document, chunk and embedding counts; only whether the corpus is writable is withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Readiness chip",
     body: [
       "Summarises what the corpus can do right now: empty, embeddings pending (lexical only), vector only when BM25 is not built, or the filing count with hybrid ready.",
@@ -353,7 +349,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["build.stage.embeddings", "build.stage.lexical"],
   },
   {
-    id: "review.composer", availableInPreview: false,
+    id: "review.composer",
     title: "Question",
     body: [
       "Enter sends, Shift+Enter adds a line. The last six turns of the conversation travel with the question so follow-ups keep their context.",
@@ -362,7 +358,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.send", "review.evidence"],
   },
   {
-    id: "review.send", availableInPreview: false,
+    id: "review.send",
     title: "Send",
     body: [
       "Disabled while a review runs, while the API is down or still being checked, when the corpus is empty, or when Vector retrieval is selected but embeddings are pending.",
@@ -372,7 +368,7 @@ const REVIEW: HelpTopic[] = [
     seeAlso: ["review.readiness", "build.stage.answer_model"],
   },
   {
-    id: "review.run-trace", publicContent: {"capabilities": ["can_edit_run_limits"], "body": ["Read the recorded stages, measurements, and failure details without changing execution limits."], "guide": {"summary": "Read the recorded stages, measurements, and failure details without changing execution limits.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}}, availableInPreview: false,
+    id: "review.run-trace", publicContent: {"capabilities": ["can_edit_run_limits"], "body": ["Read the recorded stages, measurements, and failure details without changing execution limits."], "guide": {"summary": "Read the recorded stages, measurements, and failure details without changing execution limits.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "Run trace",
     body: [
       "What the run actually did: its identifier, how many provider requests it made, tokens in and out, elapsed seconds, and the node path it took.",
@@ -385,7 +381,7 @@ const REVIEW: HelpTopic[] = [
     optional: true,
   },
   {
-    id: "review.evidence", availableInPreview: false,
+    id: "review.evidence",
     title: "Evidence, pins and exclusions",
     body: [
       "Each answer lists its candidate chunks as collapsed cards titled by filing section, with the document id, a table badge and the character span; pinned cards start open and ten cards show per page.",
@@ -417,6 +413,7 @@ const PLAYGROUND: HelpTopic[] = [
     title: "Preview retrieval",
     body: [
       "Calls /admin/retrieval/preview with the question and profile and shows the score stage, each lane's ranking and the fused results. Query embedding can call the configured provider.",
+      "On the public build it calls the public /retrieve endpoint with the same profile, bounded by the server: k ≤ 10, candidate_k ≤ 50, max_context_chars ≤ 12000.",
     ],
     seeAlso: ["measure.playground.rankings", "measure.playground.results"],
   },
@@ -426,6 +423,7 @@ const PLAYGROUND: HelpTopic[] = [
     body: [
       "Runs retrieval and then the answer model once through /admin/review/preview, returning the report label, answer and citations.",
       "It records provider usage like a real review, so use it to check the verdict after retrieval already looks right.",
+      "Answer previews run in DEV mode only.",
     ],
     seeAlso: ["measure.playground.review", "system.usage"],
   },
@@ -542,7 +540,7 @@ const RUNS: HelpTopic[] = [
     title: "Queue evaluation",
     body: [
       "Posts the request to /admin/evaluations/runs; a single worker runs jobs in order and the Results list updates as the job moves through golden validation, queries, artifact and persistence.",
-      "It is locked until the corpus is ready (Build steps 2–4 done) and on the public build.",
+      "It is locked until the corpus is ready (Build steps 2–4 done). Evaluation runs happen in DEV mode only.",
     ],
     seeAlso: ["measure.runs.results", "build.stage.evaluate"],
   },
@@ -651,7 +649,7 @@ const BUILD_JOBS: HelpTopic[] = [
 const SYSTEM: HelpTopic[] = [
 
   {
-    id: "system.status", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Inspect available service health and published corpus readiness. Private inventory totals are withheld."], "guide": {"summary": "Inspect available service health and published corpus readiness. Private inventory totals are withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
+    id: "system.status", publicContent: {"capabilities": ["can_edit_prompt_policy"], "body": ["Inspect service health and corpus readiness. Document, chunk and embedding counts are shown; only whether the corpus is writable is withheld."], "guide": {"summary": "Inspect service health and corpus readiness. Document, chunk and embedding counts are shown; only whether the corpus is writable is withheld.", "steps": ["Open the related control.", "Read the available values or recorded results.", "Open the full guide for details."]}},
     title: "System status",
     body: [
       "The /ready payload as a page: overall status and mode, database and schema state, corpus counters (documents, chunks, embedded, pending, BM25) and the model policy per role.",
@@ -676,7 +674,7 @@ const SYSTEM: HelpTopic[] = [
     title: "Operations",
     body: [
       "Runs allowlisted verification and service commands through the local operator (rag-dev) without opening a shell; output streams into Latest run.",
-      "The tab appears only when NEXT_PUBLIC_OPERATOR_BASE_URL and its token are configured for this build.",
+      "The tab appears only on a DEV build with the local operator configured.",
       "Cards are grouped by category (Inspect, Verify, Service) with read-only commands first; the filter choice is remembered in this browser.",
     ],
     seeAlso: ["build.runtime"],

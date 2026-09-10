@@ -41,6 +41,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .runtime-mode-badge { display: flex; align-items: center; justify-content: center; gap: 5px; flex: none; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 11px; letter-spacing: .06em; }
 .runtime-mode-badge.dev { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
 .runtime-mode-badge.prod { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); color: var(--text); }
+a.runtime-mode-badge { text-decoration: none; cursor: pointer; }
+a.runtime-mode-badge:hover, a.runtime-mode-badge:focus-visible { color: var(--accent); }
 
 .workspace { height: 100dvh; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .topbar { height: 58px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--border); }
@@ -832,3 +834,51 @@ select.chip { appearance: auto; padding-right: 6px; }
   .measure-workflow-group { flex-basis: 100%; flex-wrap: wrap; }
   .measure-management-group { flex-basis: 100%; margin-left: 0; padding: 8px 0 0; border-left: 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
 }
+
+/* Public Measure › Datasets: the built-in sets named by published snapshots. */
+.golden-public-suites { display: grid; gap: 6px; margin: 8px 0 12px; padding: 0; list-style: none; }
+.golden-public-suites li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.golden-public-suites li svg { flex: none; color: var(--muted); }
+.golden-public-suites li .mode-badge { margin-left: auto; }
+
+.settings-reset-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 4px; }
+.settings-actions .settings-reset-actions .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; white-space: nowrap; }
+.settings-reset-actions .button svg { width: 16px; height: 16px; flex: none; }
+
+.settings-form-readonly > .hover-bubble-wrap:has(textarea) { grid-column: 1 / -1; min-width: 0; }
+.settings-form-readonly > .hover-bubble-wrap > label:has(textarea) { width: 100%; min-width: 0; }
+
+.settings-form-readonly > label > textarea[readonly] { color: var(--muted); }
+
+/* Shared single-select chevrons keep the same inset across DEV and PROD. */
+select:not([multiple]):not([size]), select[size="1"] {
+  appearance: none !important;
+  padding-right: 40px !important;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%) !important;
+  background-position: calc(100% - 21px) 50%, calc(100% - 16px) 50% !important;
+  background-size: 5px 5px !important;
+  background-repeat: no-repeat !important;
+}
+.comparison-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 16px; align-items: end; min-width: 0; }
+.comparison-picker > label { min-width: 0; }
+.comparison-picker select { width: 100%; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.comparison-picker > .button { min-height: 40px; padding: 9px 16px; white-space: nowrap; justify-self: end; }
+@media (max-width: 720px) {
+  .comparison-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .comparison-picker > .button { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) { .comparison-picker { grid-template-columns: minmax(0, 1fr); } }
+
+/* Make the existing job shortcut recognizable without adding work or polling. */
+.job-health { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; transition: background-color 160ms ease, border-color 160ms ease; }
+.job-health::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--warn); }
+.job-health[data-running="true"]::before { background: var(--good); }
+.job-health:hover { background: var(--surface-2); border-color: var(--accent); }
+.job-health:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) { .job-health[data-running="true"]::before { animation: job-shortcut-pulse 1.6s ease-in-out infinite; } }
+@keyframes job-shortcut-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.job-health-detail { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .job-health-detail { display: none; } }
+
+.job-progress .job-terminal-output { display: block; flex: 1 1 100%; box-sizing: border-box; min-width: 0; max-width: 100%; margin: 4px 0 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: #0d0f0d; color: #eeeee8; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

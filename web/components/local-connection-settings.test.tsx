@@ -218,3 +218,13 @@ it.each([
   render(<LocalConnectionSettings localModel="removed" selectedEngine="local" onOpenModelSelection={vi.fn()} />);
   expect(await screen.findByRole("status", { name: "Local model status" })).toHaveTextContent(message);
 });
+
+it("renders disconnected public controls without any local backend requests", () => {
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  render(<LocalConnectionSettings readOnly />);
+  expect(screen.getByRole("combobox", { name: "Model server" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "Not connected" })).toBeInTheDocument();
+  for (const button of screen.getAllByRole("button")) expect(button).toBeDisabled();
+  expect(fetchMock).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
+});

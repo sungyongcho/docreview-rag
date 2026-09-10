@@ -206,15 +206,17 @@ describe("Measure workspace", () => {
     for (const label of ["Search trial", "Golden dataset", "Run evaluation", "Compare & snapshots"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByText("Playground runs on the local operator build.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview review" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("button", { name: "Run evaluation" }));
-    expect(screen.getByText("Runs happen on the local operator build.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Snapshots" }));
-    expect(screen.getByRole("heading", { name: "Published snapshots" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Explore evaluation settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Explore evaluation settings" }));
+    expect(screen.getByText("Settings exploration only. These changes do not execute on the server or change recorded results.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Queue evaluation" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" }));
-    expect(screen.getByText("No comparison loaded yet. Queue a run, then click Compare on a succeeded result that has a baseline.")).toBeInTheDocument();
-    expect(screen.getByText("Illustrative example only — not an evaluation result.")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Case changes", level: 2 })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Explore an example" })).toBeDisabled();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Explore an example" }));
+    expect(screen.getByText("The recorded comparison pair is not available yet.")).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -339,15 +341,28 @@ describe("evaluation preparation boundaries", () => {
     expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).endsWith("/admin/evaluations/preparation"))).toBe(true);
   });
 
-  it("shows snapshot provenance and clears old metrics when either selection changes", async () => {
+  it.each([false, true])("opens snapshot cards and preserves comparison behavior (live=%s)", async (live) => {
     const snapshots = [1, 2, 3].map((id) => ({ snapshot_id: id, label: `Snapshot ${id}`, status: "ready", public: true, corpus_fingerprint: String(id).repeat(64), profile: DEFAULT_PROFILE, golden_revision_id: id, eval_result: { result_id: id, suite: "sec-en", config: { k: 5, golden_provenance: { filename: "retrieval.json", dataset_id: "builtin:sec-en" } }, metrics: { mrr: 0.5 }, created_at: "2026-09-01T00:00:00Z" }, document_count: 29, created_at: "2026-09-01T00:00:00Z" }));
     stubFetch((url) => {
       if (url.includes("/snapshots/compare")) return { baseline_id: 1, candidate_id: 2, directly_comparable: false, warning: "Golden source hashes differ.", metrics: [{ name: "mrr", baseline: 0.5, candidate: 0.7, delta: null }], common_case_count: 0, cases: [] };
+      if (url.endsWith("/admin/snapshots")) return snapshots;
       if (url.endsWith("/snapshots")) return { snapshots };
       return [];
     });
-    render(<Host live={false} initialTab="snapshots" />);
+    render(<Host live={live} initialTab="snapshots" />);
     await screen.findAllByRole("option", { name: "Snapshot 1 · retrieval.json" });
+    const card = screen.getByRole("button", { name: "Snapshot details: Snapshot 1" });
+    card.focus();
+    fireEvent.click(card);
+    const drawer = screen.getByRole("dialog", { name: "Snapshot details" });
+    expect(within(drawer).getByText("Corpus fingerprint", { exact: false })).toBeInTheDocument();
+    expect(Boolean(within(drawer).queryByRole("button", { name: "Use for review" }))).toBe(live);
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Snapshot details" })).toBeNull();
+    expect(card).toHaveFocus();
+    fireEvent.click(card);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Snapshot details" })).getAllByRole("button", { name: "Close" })[0]);
+    expect(screen.queryByRole("dialog", { name: "Snapshot details" })).toBeNull();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Baseline"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("Candidate"), { target: { value: "2" } });
@@ -443,7 +458,7 @@ it("creates a named empty JSON dataset beside the selector without a publication
     return [];
   });
   render(<Host live initialTab="golden" />);
-  await screen.findByRole("option", { name: "retrieval.json (Built-in)" });
+  await screen.findByRole("option", { name: /· retrieval\.json \(Built-in\)$/ });
   expect(screen.queryByLabelText("Golden revision")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Create draft" }));
   fireEvent.change(screen.getByLabelText("JSON filename"), { target: { value: "my-eval.json" } });
@@ -499,7 +514,9 @@ it("opens the existing snapshot from an evaluated result without another save re
   expect(screen.getByRole("heading", { name: "Snapshot management" })).toBeVisible();
   const row = document.getElementById("managed-snapshot-12")!;
   expect(row).toHaveFocus();
-  expect(within(row).getByText("retrieval.json")).toBeVisible();
+  fireEvent.click(row);
+  expect(within(screen.getByRole("dialog", { name: "Snapshot details" })).getByText("retrieval.json")).toBeVisible();
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Snapshot details" }), { key: "Escape" });
   expect(within(row).getByText(/k 7/)).toBeVisible();
   expect(screen.getByText("Stored in this database. Execution data reset deletes these snapshots.")).toBeVisible();
   expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/snapshots") && init?.method === "POST")).toHaveLength(0);
@@ -511,7 +528,7 @@ it("filters comparisons by dataset and clears both selections when the file chan
   stubFetch(url => url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/admin/evaluations/runs") ? { jobs } : []);
   render(<Host live initialTab="compare" />);
   const dataset = await screen.findByLabelText("Evaluation dataset");
-  await screen.findByRole("option", { name: "dart_retrieval.json (Built-in)" });
+  await screen.findByRole("option", { name: /· dart_retrieval\.json \(Built-in\)$/ });
   expect(screen.getByLabelText("Baseline")).toBeDisabled();
   fireEvent.change(dataset, { target: { value: "builtin:dart-en" } });
   await waitFor(() => expect(screen.getByLabelText("Baseline").querySelectorAll("option")).toHaveLength(3));
@@ -556,8 +573,11 @@ it("filters saved snapshots using recorded dataset filenames", async () => {
   render(<Host live initialTab="snapshots" />);
   await screen.findByText("Saved dart-ko");
   fireEvent.change(screen.getByLabelText("Dataset file"), { target: { value: "builtin:dart-en" } });
-  expect(document.querySelectorAll(".snapshot-manager-row")).toHaveLength(1);
-  expect(document.querySelector(".snapshot-manager-row")).toHaveTextContent("dart_retrieval.json");
+  expect(document.querySelectorAll(".snapshot-card")).toHaveLength(1);
+  expect(document.querySelector(".snapshot-card")).toHaveTextContent("Saved dart-en");
+  fireEvent.click(screen.getByRole("button", { name: "Snapshot details: Saved dart-en" }));
+  expect(within(screen.getByRole("dialog", { name: "Snapshot details" })).getByText("dart_retrieval.json")).toBeVisible();
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Snapshot details" }), { key: "Escape" });
   fireEvent.change(screen.getByPlaceholderText("Search filename or snapshot name"), { target: { value: "missing" } });
   expect(screen.getByText("No snapshots match these filters.")).toBeVisible();
 });
@@ -570,7 +590,7 @@ it("saves evaluation defaults explicitly without changing current inputs or chat
   stubFetch(url => url.endsWith("/suites") ? CANNED_SUITES : url.endsWith("/runs") ? { jobs: [] } : []);
   render(<Host live initialTab="runs" />);
   fireEvent.click(screen.getByRole("button", { name: "New evaluation" }));
-  await within(screen.getByRole("dialog", { name: "New evaluation" })).findByRole("option", { name: "dart_retrieval_ko.json (Built-in)" });
+  await within(screen.getByRole("dialog", { name: "New evaluation" })).findByRole("option", { name: /· dart_retrieval_ko\.json \(Built-in\)$/ });
   fireEvent.change(screen.getByLabelText("Golden suite"), { target: { value: "dart-ko" } });
   fireEvent.click(screen.getByText("Advanced evaluation options"));
   fireEvent.change(screen.getByLabelText("Run mode"), { target: { value: "matrix" } });

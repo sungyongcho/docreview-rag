@@ -8,12 +8,15 @@ import { ChevronRight, SlidersHorizontal, LoaderCircle } from "lucide-react";
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import type { CorpusScope, Readiness, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
+import type { CorpusScope, Readiness, ReleaseLimits, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
+import { getReleaseLimits } from "@/lib/api";
 import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
 import { retrievalReadiness } from "@/lib/pipeline";
 import type { OperatorJob } from "@/lib/types";
 
 export interface ComposerToolbarProps {
+  /** A public catalog/scope blocker takes precedence over global index readiness. */
+  publicScopeStatus?: string | null;
   engineControls?: ReactNode;
   query?: string;
   settingsOpen?: boolean;
@@ -91,6 +94,7 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
   const corpus = readiness.corpus;
   if (corpus.availability === "not_applicable") return "Readiness not reported";
   if (corpus.availability === "unavailable" || corpus.database_connected === false || (typeof corpus.schema_status === "string" && corpus.schema_status !== "compatible")) return "Corpus unavailable";
+  if (corpus.database_connected === true && corpus.schema_status === "compatible" && corpus.documents === null && corpus.availability === "ready" && typeof corpus.bm25_ready === "boolean") return corpus.bm25_ready ? "Hybrid search ready" : "Vector search ready · BM25 unavailable";
   if (corpus.database_connected !== true || corpus.schema_status !== "compatible" || typeof corpus.documents !== "number") return "Readiness not confirmed";
   if (corpus.documents === 0) return "Corpus empty";
   if ((corpus.pending_embeddings ?? 0) > 0) return "Embeddings pending";
@@ -100,7 +104,7 @@ export function readinessStatusLabel(readiness: Readiness | null): string {
 
 /** Number of active session filters shown on the Filters chip. */
 export function filterCount(profile: ReviewSessionDraft): number {
-  return profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
+  return profile.doc_ids.length + profile.registries.length + profile.issuers.length + profile.fiscal_years.length + profile.forms.length + profile.sections.length + profile.languages.length;
 }
 
 export type ComposerBannerKind = "updating" | "empty" | "preparation" | "answer-model" | "budget";
@@ -131,7 +135,7 @@ export function composerBanner({ readiness, live, profile, resetAt, jobs = [] }:
   if (readiness?.mode === "runtime" && readiness.corpus.availability !== "not_applicable"
     && (live || readiness.corpus.availability !== "ready")) {
     const requirement = retrievalReadiness(readiness.corpus, resolvedRetrievalProfile(profile).strategy, jobs);
-    if (requirement.status !== "done") return { kind: "preparation", text: requirement.hint, action: "build", step: requirement.blockedBy === "embeddings" ? 3 : requirement.blockedBy === "lexical" ? 4 : 2 };
+    if (requirement.status !== "done") return live ? { kind: "preparation", text: requirement.hint, action: "build", step: requirement.blockedBy === "embeddings" ? 3 : requirement.blockedBy === "lexical" ? 4 : 2 } : { kind: "preparation", text: "Published search is not ready yet.", action: "build" };
   }
   if (readiness?.mode === "runtime" && readiness.review_enabled === false) {
     return {
@@ -166,21 +170,39 @@ export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: Compo
   );
 }
 
-export function ComposerToolbar({ profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef }: ComposerToolbarProps) {
+export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef }: ComposerToolbarProps) {
   const { t, locale } = useI18n();
   const filters = filterCount(profile);
   const preset = presetDescription(profile, profile.retrieval_preset);
   const effective = resolvedRetrievalProfile(profile);
   const corpusLabel = readinessChipLabel(readiness, live);
   const corpusCount = live && corpusLabel.startsWith("Corpus total · ") ? readiness?.corpus.documents : undefined;
-  const readinessStatus = readinessStatusLabel(readiness);
+  const readinessStatus = !live && publicScopeStatus ? publicScopeStatus : readinessStatusLabel(readiness);
+  // A public surface has one answer model; show it with the chat allowances where DEV shows the engine picker.
+  const publicModel = !live && !engineControls ? readiness?.active_review_model ?? null : null;
+  const [limits, setLimits] = useState<ReleaseLimits | null>(null);
+  useEffect(() => {
+    if (!publicModel) return;
+    let cancelled = false;
+    getReleaseLimits().then((value) => { if (!cancelled) setLimits(value); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [publicModel]);
+  const modelControls = publicModel && <div className="composer-model-control composer-engine-field">
+    <span className="composer-control-label">{t("Answer model")}<ControlHelp label={t("About chat limits")}>
+      <p>{t("Questions on this website call OpenAI on the server. Model choice and per-call caps are fixed here; DEV mode adds local models.")}</p>
+      {limits && <p>{t("{minute} questions per minute · {day} per day · shared daily budget ${cost}", { minute: limits.per_minute, day: limits.per_day, cost: limits.daily_cost_usd })}</p>}
+      {limits && <p>{t("Per call: up to {input} input tokens, {output} output tokens, ${cost}", { input: limits.max_input_tokens.toLocaleString(locale), output: limits.max_output_tokens.toLocaleString(locale), cost: limits.max_cost_usd })}</p>}
+    </ControlHelp></span>
+    <span className="chip composer-model-chip" title={publicModel}>{publicModel}</span>
+    <span className="composer-control-description">{limits ? t("{minute}/min · {day}/day", { minute: limits.per_minute, day: limits.per_day }) : t("OpenAI · fixed model")}</span>
+  </div>;
 
 
   return (
     <div className="composer-toolbar composer-toolbar-aligned">
-      <div className="chip-group composer-toolbar-primary">
+      <div className={`chip-group composer-toolbar-primary${engineControls || modelControls ? " has-engine" : ""}`}>
         <div className="composer-scope-control"><span className="composer-control-label">{t("Corpus scope")}<ControlHelp label={t("About corpus scope")}><p><strong>{t("Auto")}</strong> — {t("Auto chooses SEC or DART from the question and filters. The server result appears in progress.")}</p><p><strong>SEC</strong> — {t("Search SEC filings from U.S. registrants.")}</p><p><strong>DART</strong> — {t("Search Korean DART filings.")}</p></ControlHelp></span><div className="lab-tabs composer-scope-tabs" role="group" aria-label={t("Corpus scope")} data-help="review.scope">{SCOPE_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={profile.corpus_scope === option.value} onClick={() => onChange({ corpus_scope: option.value })}>{t(option.label)}</button>)}</div><p className="composer-control-description">{t(profile.corpus_scope === "auto" ? "Automatic source routing" : profile.corpus_scope === "sec" ? "U.S. SEC filings" : "Korean DART filings")}</p></div>
-        {engineControls}
+        {engineControls}{modelControls}
         <div className="composer-preset-control"><div className="composer-control-label"><label htmlFor="composer-retrieval-preset">{t("Retrieval preset")}</label><ControlHelp label={t("About retrieval presets")}><p>{t(preset.purpose)}</p><code>{preset.settings}</code><p>{t("Open Settings and preview to inspect the next request.")}</p></ControlHelp></div><RetrievalPresetSelect id="composer-retrieval-preset" profile={profile} editable={canUseCustom} onChange={onChange} onManage={onOpenCustom} onLocked={onLocked} /><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p></div>
         <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip" type="button" data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={16} aria-hidden="true" /><span className="composer-settings-label">{filters > 0 ? t("Settings and preview · {p0}", { p0: filters }) : t("Settings and preview")}</span></button>
         {profile.snapshot_id !== null && (

@@ -23,7 +23,7 @@ interface TourStep {
 }
 
 const STEPS: readonly TourStep[] = [
-  { title: "Start with Build", description: "The pipeline runs top to bottom: filings, chunks, embeddings, BM25 index, then asking, answering and evaluating.", targets: ["build"], view: "build" },
+  { title: "Start with Build", description: LOCAL_ENGINE_VISIBLE ? "The pipeline runs top to bottom: filings, chunks, embeddings, BM25 index, then asking, answering and evaluating." : "Choose published filings in Build, then explore the real chunks, retrieval results and citations.", targets: ["build"], view: "build" },
   { title: "Seven steps, in order", description: "Build setup steps 1–7 keep their numbers even when done. Each card explains its result and dependencies; these are separate from the answer progress steps.", targets: ["stage-list"], view: "build", tab: "pipeline" },
   { title: "One obvious next action", description: "This callout always points at the first step that needs you.", targets: ["next-step"], view: "build", tab: "pipeline" },
   { title: "Start a new review", description: "Create a clean review thread from the sidebar.", targets: ["new-review"], view: "review" },
@@ -39,11 +39,13 @@ export const TOUR_TARGETS: readonly string[] = [...new Set(STEPS.flatMap((item) 
 export function Onboarding({
   onClose,
   includeOperations = false,
+  publicMode = !LOCAL_ENGINE_VISIBLE,
   onStepChange,
   location,
 }: {
   onClose: () => void;
   includeOperations?: boolean;
+  publicMode?: boolean;
   /** Lets the shell switch workspace and tab before the step's target is measured. */
   onStepChange?: (step: { view: TourView; tab?: string }) => void;
   /** The shell's committed workspace and tab; a change re-measures the step's target once the shell has navigated. */
@@ -51,8 +53,8 @@ export function Onboarding({
 }) {
   const { t, locale } = useI18n();
   const steps = useMemo(
-    () => STEPS.filter((item) => item.optional !== "operations" || includeOperations),
-    [includeOperations],
+    () => STEPS.filter((item) => item.optional !== "operations" || includeOperations).map((item) => !publicMode ? item : item.title === "Start with Build" ? { ...item, description: "Choose published filings in Build, then explore the real chunks, retrieval results and citations." } : item.title === "Ask or adjust the session" ? { ...item, description: "Pick scope and preset inline, then type. The readiness chip tells you what the corpus can do right now." } : item),
+    [includeOperations, publicMode],
   );
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<TargetRect | null>(null);

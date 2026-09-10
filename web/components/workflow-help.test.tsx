@@ -18,13 +18,13 @@ it("does not bypass public restrictions through the page-level help disclosure",
   expect(container.querySelector(".development-badge")).toBeNull();
 });
 
-it("uses the same effective capability and preview gates for page help", () => {
+it("uses the effective workspace capabilities for DEV and PROD page help", () => {
   const capabilities = { environment: "dev", can_run_evaluation: true, can_edit_golden: true } as Capabilities;
   const { rerender, container } = render(<WorkflowHelp screen="measure.runs" capabilities={capabilities} />);
   expect(screen.getByLabelText("How to use this page")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "How to use this page" }));
   expect(document.querySelector(".workflow-help-panel .development-badge")).toHaveAttribute("aria-label", "DEV only");
-  rerender(<WorkflowHelp screen="measure.runs" capabilities={capabilities} publicPreview />);
+  rerender(<WorkflowHelp screen="measure.runs" capabilities={{ ...capabilities, environment: "prod", can_run_evaluation: false, can_edit_golden: false }} />);
   expect(container).toBeEmptyDOMElement();
 });
 

@@ -34,7 +34,7 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
 
   it("shows developer prompt policy while preserving the immutable guard", () => {
     renderSettings(DEV);
-    expect(screen.getByRole("button", { name: "Prompt" })).toHaveAttribute("title", "DEV only");
+    expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).toHaveAttribute("aria-label", "DEV only");
     expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
@@ -46,7 +46,11 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
     const onClose = vi.fn();
     renderSettings({ ...DEV, can_edit_prompt_policy: false }, onClose);
 
-    expect(screen.queryByRole("button", { name: "Prompt" })).not.toBeInTheDocument();
+    // A public surface keeps Prompt listed as a read-only page whose edit control is locked.
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+    expect(screen.getByLabelText("Additional instructions example")).toBeDisabled();
+    expect(screen.getByLabelText("Additional instructions example")).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Save prompt for new conversations" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Data & help" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
@@ -94,7 +98,7 @@ it("opens the limits category separately from prompt settings", () => {
   renderSettings(DEV);
   expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
   const tab = screen.getByRole("button", { name: "Run limits" });
-  expect(tab).toHaveAttribute("title", "DEV only");
+  expect(tab.querySelector(".development-badge")).toHaveAttribute("aria-label", "DEV only");
   fireEvent.click(tab);
   expect(tab).toHaveAttribute("aria-pressed", "true");
   const input = screen.getByLabelText("Maximum wall clock seconds");
@@ -106,9 +110,36 @@ it("opens the limits category separately from prompt settings", () => {
   expect(screen.queryByLabelText("Maximum wall clock seconds")).toBeNull();
 });
 
-/** Deep links require the independent DEV limit capability. */
-it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", (environment, can_edit_run_limits, visible) => {
-  render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={vi.fn()} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
-  expect(!!screen.queryByLabelText("Maximum wall clock seconds")).toBe(visible);
-  expect(!!screen.queryByRole("button", { name: "Run limits" })).toBe(visible);
+/** Editing needs the independent DEV limit capability; the page itself stays listed read-only. */
+it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", async (environment, can_edit_run_limits, editable) => {
+  const onChange = vi.fn();
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, max_context_chars: 4321, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 73 } },
+    per_call: { max_input_tokens: 1234, max_output_tokens: 432, max_cost_usd: "0.02" },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  if (!editable) vi.stubGlobal("fetch", fetchMock);
+  render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={onChange} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
+  if (editable) {
+    expect(screen.getByLabelText("Maximum wall clock seconds")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save default limits" })).toBeEnabled();
+    return;
+  }
+  expect(screen.getByText("Loading server execution limits…")).toBeVisible();
+  expect(screen.queryByLabelText("Maximum wall clock seconds")).not.toBeInTheDocument();
+  expect(await screen.findByLabelText("Maximum wall clock seconds")).toHaveValue(73);
+  expect(screen.getByLabelText("Maximum evidence characters")).toHaveValue(4321);
+  expect(screen.getByLabelText("Per-call input tokens")).toHaveValue(1234);
+  for (const control of screen.getAllByRole("spinbutton")) expect(control).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Limit preset" })).toBeDisabled();
+  const saveDefaults = screen.getByRole("button", { name: "Save default limits" });
+  const saveCaps = screen.getByRole("button", { name: "Save per-call caps" });
+  expect(saveDefaults).toBeDisabled();
+  expect(saveCaps).toBeDisabled();
+  fireEvent.click(saveDefaults);
+  fireEvent.click(saveCaps);
+  expect(onChange).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledWith("/docreview-rag-agent/api/limits", expect.objectContaining({ headers: { "content-type": "application/json" } }));
+  expect(fetchMock.mock.calls[0][1].method ?? "GET").toBe("GET");
 });

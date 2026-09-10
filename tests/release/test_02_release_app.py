@@ -41,10 +41,10 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
     assert release.json()["openai_enabled"] is False
     assert release.json()["admin_mode"] == "readonly"
     assert release.json()["key_persisted"] is False
-    assert release.json()["max_cost_usd"] == "0.04"
+    assert release.json()["max_cost_usd"] == "0.005"
     assert ready.status_code == 200
     assert ready.json()["corpus"]["availability"] == "not_applicable"
-    assert ready.json()["models"]["agent"]["default"] == "gpt-5.6-terra"
+    assert ready.json()["models"]["agent"]["default"] == "gpt-5.6-luna"
     assert secret not in release.text
     assert home.status_code == 200
     assert "Evidence-first SEC and DART filing review" in home.text
@@ -125,10 +125,10 @@ def test_runtime_readiness_returns_typed_200_or_503_without_provider_calls(monke
     ],
 )
 @pytest.mark.parametrize("ready", [True, False])
-def test_public_readiness_withholds_private_counts_without_faking_catalog_totals(
+def test_public_readiness_publishes_counts_and_withholds_only_write_access(
     environment, admin_mode, headers, public, ready
 ) -> None:
-    """Public views retain health evidence while only private live views receive corpus totals."""
+    """Public views receive corpus totals and health evidence; only write access stays private."""
     status = {
         "database_connected": True,
         "schema_status": "compatible" if ready else "drifted",
@@ -164,9 +164,17 @@ def test_public_readiness_withholds_private_counts_without_faking_catalog_totals
     payload = response.json()
     assert payload["status"] == ("ready" if ready else "degraded")
     corpus = payload["corpus"]
-    for field in ("documents", "chunks", "embedded_chunks", "pending_embeddings", "writable"):
-        assert corpus[field] == (None if public else status[field])
-    for field in ("database_connected", "schema_status", "schema_message", "bm25_ready"):
+    assert corpus["writable"] == (None if public else status["writable"])
+    for field in (
+        "documents",
+        "chunks",
+        "embedded_chunks",
+        "pending_embeddings",
+        "database_connected",
+        "schema_status",
+        "schema_message",
+        "bm25_ready",
+    ):
         assert corpus[field] == status[field]
     assert corpus["availability"] == ("ready" if ready else "degraded")
     assert "PRIVATE_COMPANY_FIXTURE" not in response.text
@@ -213,13 +221,14 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
         provider_factory=provider_factory,
     )
 
-    assert captured == {"model_name": "gpt-5.6-terra", "api_key": secret}
+    assert captured == {"model_name": "gpt-5.6-luna", "api_key": secret}
     assert services._secret_values == (secret,)
     assert secret not in repr(services)
 
 
-def test_runtime_without_key_keeps_review_fail_closed(monkeypatch) -> None:
+def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> None:
     """Leave the provider and its budget unset when no key was configured."""
+    monkeypatch.chdir(tmp_path)
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
@@ -291,6 +300,7 @@ def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slot
         second = client.get("/limits")
 
     assert capabilities.json()["can_edit_prompt_policy"] is False
+    assert capabilities.json()["can_change_custom_retrieval"] is True
     assert capabilities.json()["can_compare_published_snapshots"] is True
     assert first.json()["remaining_minute"] == 2
     assert second.json()["remaining_day"] == 3

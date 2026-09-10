@@ -12,6 +12,7 @@ export type LexicalRanker = "ts_rank_cd" | "bm25";
 export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
 export type RetrievalProfile = components["schemas"]["RetrievalProfile"];
+export type CustomRetrievalProfile = components["schemas"]["CustomRetrievalProfile"];
 
 export type ReviewEngine = "openai" | "local";
 export type CorpusScope = "auto" | "sec" | "dart";
@@ -187,6 +188,14 @@ export type UsageModel = components["schemas"]["UsageModelResource"];
 
 export type ProviderUsage = components["schemas"]["UsageResponse"];
 
+/** Browser selection intent; resolved IDs are pinned once a target is published. */
+export interface PublicTarget {
+  registry: "sec" | "dart";
+  issuer: string;
+  year: number;
+  document_ids?: string[];
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -194,6 +203,10 @@ export interface Conversation {
   updatedAt: string;
   messages: ChatMessage[];
   profile: ReviewSessionDraft | null;
+  /** Browser-only exact public selection; absent means all, [] means explicitly empty. */
+  publishedScope?: string[];
+  publishedTargets?: PublicTarget[];
+  pipelineDraft?: { candidates?: PublicTarget[]; targets: PublicTarget[]; stage: string; checked: string[] };
 }
 
 export type EvaluationPreparation = components["schemas"]["EvaluationPreparationResource"];
@@ -213,6 +226,8 @@ export interface PublishedSnapshot {
   corpus_fingerprint: string;
   profile: Record<string, unknown>;
   golden_revision_id: number | null;
+  /** Human name of a built-in suite, filled by the server when `eval_result.suite` is one. */
+  suite_title?: string | null;
   eval_result: {
     result_id: number;
     suite: string;
@@ -251,6 +266,8 @@ export interface CorpusCounts {
   bm25_rebuild_recorded?: boolean | null;
   writable: boolean | null;
   provider?: string | null;
+  /** Present on `/ready.corpus`; a public surface withholds counts but still reports availability. */
+  availability?: "ready" | "degraded" | "not_applicable" | "unavailable";
 }
 
 export type DocumentEmbeddingStatus = "complete" | "partial" | "missing";
@@ -262,6 +279,9 @@ export type DocumentFacetValue = components["schemas"]["DocumentFacetValue"];
 export type DocumentFacets = components["schemas"]["DocumentFacetsResponse"];
 
 export type DocumentDetail = components["schemas"]["DocumentDetailResponse"];
+
+export type PublicSnapshotDataset = components["schemas"]["PublicSnapshotDataset"];
+export type PublicSnapshotEvaluation = components["schemas"]["PublicSnapshotEvaluation"];
 
 export type AdminDocumentPage = components["schemas"]["DocumentInventoryResponse"];
 
@@ -375,6 +395,8 @@ export interface LocalLLMDiagnostics {
 }
 
 export interface ReleaseLimits {
+  prompt_policy?: ReviewSessionDraft["prompt_policy"];
+  per_call?: { max_input_tokens: number; max_output_tokens: number; max_cost_usd: string };
   per_minute: number;
   per_day: number;
   remaining_minute: number;
@@ -388,7 +410,7 @@ export interface ReleaseLimits {
   minute_reset_seconds: number;
   day_reset_seconds: number;
   daily_cost_reset_at_utc: string;
-  scope: "single_process";
+  scope: "single_process" | "shared_storage";
 }
 
 /** Session fields for choosing a preset: only Custom keeps an explicit retrieval profile. */

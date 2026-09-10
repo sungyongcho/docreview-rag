@@ -499,6 +499,7 @@ class SnapshotResource(StrictApiModel):
     profile: JsonObject
     golden_revision_id: PositiveInt | None
     eval_result: EvalResultResource
+    suite_title: NonBlank | None = None
     document_count: NonnegativeInt
     created_at: datetime
 

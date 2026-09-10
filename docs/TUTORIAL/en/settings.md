@@ -1,5 +1,12 @@
 # Settings for the next request
 
+## Preset explanations and server limits
+
+Preset parameters show their names, purpose, current values and differences from Balanced. The canonical preset files remain unchanged. A setting that is not used by the selected strategy is identified explicitly. Wider candidate pools and reranking may cost more time; Accuracy is a configuration name, not an accuracy guarantee.
+
+Question execution limits are separate from search presets. PROD reads actual server-owned question budgets and per-model-call ceilings; browser defaults are not presented as applied policy when that read fails. DEV retains its local-model guidance.
+
+
 Conversation settings determine where to search, how to rank evidence, and how much work a review may do. They belong to the active conversation. Changing a control does not rewrite an existing answer or change the settings already submitted with a running request.
 
 The primary composer row follows **Corpus scope → answer engine/local model → retrieval preset → Settings and preview**. The last action opens one drawer with **Basic**, **Advanced** (DEV) and **Preview** views. Switching views preserves configured values. The secondary row shows corpus readiness for the whole catalog, not the selected SEC/DART subset.
@@ -47,7 +54,7 @@ The primary composer row follows **Corpus scope → answer engine/local model �
 ## Presets and effective values {#presets}
 
 > [!DEV]
-> Custom retrieval editing requires DEV. The permitted Balanced, Korean, and Accuracy presets remain available in the public interface.
+> Saving presets as server files runs in DEV mode only. The public build keeps the Balanced, Korean, and Accuracy presets, allows custom retrieval values within the server's bounds (`k` ≤ 10, `candidate_k` ≤ 50, `max_context_chars` ≤ 12000), and saves custom presets in this browser.
 
 The following values come from the current preset definitions. All three built-in presets use hybrid retrieval and return `k=5` results.
 
@@ -100,7 +107,7 @@ Click a selected Pin or Exclude again to deselect it. Both buttons sit in each c
 ## Evidence size and execution limits {#budgets}
 
 > [!DEV]
-> Editing Search, Evidence, and Run limits requires DEV. Public users can still use permitted scope, preset, and filter choices.
+> Editing Search, Evidence, and Run limits in the conversation drawer runs in DEV mode only. Public users can still use permitted scope, preset, and filter choices, plus custom presets within the server's public bounds.
 
 Under **Settings and preview → Advanced → Evidence**, history turns and maximum evidence characters control prompt content; overfetch and the per-document hit cap control evidence selection. Under **Run limits**, iterations, input/output tokens, and wall-clock seconds limit the whole run of one question, whichever answer engine (OpenAI or local) is selected. The default wall clock is 120 seconds, not a token budget. See [runtime limits](runtime.md#limits) before changing a value to address a failure.
 
@@ -118,16 +125,16 @@ In DEV the editor saves lower working values on the server in `data/local-settin
 ## Defaults and permissions {#defaults}
 
 > [!DEV]
-> Saving experiment defaults and editing the prompt policy require DEV. Browser language and permitted conversation choices remain separate.
+> Saving experiment defaults and editing the prompt policy run in DEV mode only. **Settings → Prompt** and **Settings → Run limits** stay listed on the public build as read-only pages: the guard text and final prompt preview are visible, while **Additional operator instructions** and the save buttons are locked with a bubble that says the control runs in DEV mode only and links to the source repository. Browser language and permitted conversation choices remain separate.
 
 **Measure → Evaluation settings** saves experiment defaults and the retrieval preset for new conversations. Existing conversations and recorded results keep their settings. Global **Settings → Prompt** applies to the current conversation's prompt policy; local-server connection settings are managed separately under **Local LLM**.
 
-Public mode exposes permitted scope, preset, and filter choices but locks development-only editing and local-model configuration. A saved development profile that is incompatible with the current deployment is reported explicitly; it is not silently rewritten into a different experiment.
+Public mode exposes permitted scope, preset, and filter choices and the read-only Prompt and Run limits pages, but locks DEV-only editing and local-model configuration. A saved development profile that is incompatible with the current deployment is reported explicitly; it is not silently rewritten into a different experiment.
 
 ## Local server selection {#local-server}
 
 > [!DEV]
-> Adding, connecting, disconnecting, or diagnosing a local model server requires DEV. This guide stays readable in the public manual.
+> Adding, connecting, disconnecting, or diagnosing a local model server runs in DEV mode only. This guide stays readable in the public manual.
 
 In **Settings → Local LLM**, **Default** uses the address prepared for the current DocReview environment. Selecting a server alone does not change the active connection. **Run connection diagnostics** checks the selected candidate without saving settings, downloading/loading models, or generating answers. Inspect the named diagnostic result and checked time; active settings remain in **Connection status**.
 
@@ -163,7 +170,7 @@ Use **Clear conversations** to clear only conversations, **Reset saved defaults*
 
 Valid old records migrate once in PROD. Unreadable or future records are retained in a recovery entry in the export, with a notice and safe defaults. Quota or private-mode failures keep changes usable in the current tab and report that they are not durably saved: export before closing. Private browsing may discard its data when the session ends.
 
-The first PROD visit displays **⚠️ Settings and conversations are saved only in this browser**. **Got it** remembers dismissal. The ⚠️ button in **Data & help → Browser storage** reopens it; **Learn more** opens this section. DEV keeps its existing writes; its **Production preview** still uses isolated memory and cannot persist changes to the deployed browser store.
+The first PROD visit displays **⚠️ Settings and conversations are saved only in this browser**. **Got it** remembers dismissal. The ⚠️ button in **Data & help → Browser storage** reopens it; **Learn more** opens this section. DEV keeps its existing storage behavior.
 
 ### SCREENSHOT NEEDED
 <!-- Feature: PROD browser-storage notice, Data & help per-key usage, export/import confirmation and reminder; locale=en; light mode; show real deployed state. Preserve existing assets. -->
@@ -179,10 +186,10 @@ Open **Measure → Retrieval presets**. DEV uses `data/presets/<id>.json`, next 
 
 Use **Save current search as a preset** or **Register new preset** (Balanced defaults). The same editor supports a name, description, search fields, and a **JSON** view with inline validation and **Copy JSON**. Import one JSON file to edit a new copy; export a saved row with **Export preset JSON**. Each saved row offers explicit selection, copy, edit and confirmed deletion. Saving or deleting does not change existing conversations. Selection remains subject to the current server's custom-retrieval permission.
 
-PROD stores presets through the versioned browser settings module; it exposes no file API. Browser settings export/import includes these presets. In **Production preview**, the page explains its memory-only storage and disables save, register and other write actions; actual deployment saves to that browser.
+PROD stores presets through the versioned browser settings module; it exposes no file API. Browser settings export/import includes these presets.
 
 ### SCREENSHOT NEEDED
-<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and production-preview notice; locale en. Capture after implementation. -->
+<!-- Retrieval presets: actual light-mode DEV file rows, JSON editor with validation error, and PROD browser-storage notice; locale en. Capture after implementation. -->
 
 ### Default search settings for new chats
 

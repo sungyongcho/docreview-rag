@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
 import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
-import { DEFAULT_PROFILE } from "@/lib/types";
+import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
@@ -103,9 +103,9 @@ describe("Build workspace", () => {
     render(<Harness live={false} />);
 
     expect(screen.getByText("Read-only portfolio")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync selection" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Sync selection" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Select Parse & chunk" }));
-    expect(screen.getByRole("button", { name: "Parse & chunk selected sources" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Parse & chunk selected sources" })).toBeNull();
   });
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
@@ -164,7 +164,7 @@ describe("Build workspace", () => {
       else if (url.endsWith("/admin/corpus")) payload = { status: {}, documents: [] };
       else if (url.endsWith(`${prefix}/documents/facets`)) payload = {
         registries: [{ value: "sec", count: 1 }],
-        issuers: [{ value: "ACME", count: 1 }],
+        issuers: [{ value: "NVDA", count: 1 }],
         years: [{ value: "2024", count: 1 }],
         languages: [{ value: "en", count: 1 }],
         forms: [{ value: "10-K", count: 1 }],
@@ -174,7 +174,7 @@ describe("Build workspace", () => {
       };
       else if (url.includes(`${prefix}/documents?`)) payload = {
         documents: [{
-          doc_id: "ACME-FY2024", registry: "sec", language: "en", issuer: "ACME",
+          doc_id: "NVDA-FY2024", registry: "sec", language: "en", issuer: "NVDA",
           issuer_id: "123", fiscal_year: 2024, form: "10-K", filing_date: "2025-02-01",
           report_period: "2024-12-31", filing_id: "filing-1", source_url: "https://example.invalid/acme",
           parse_status: "parsed", source_length: 1000, source_sha256: "d".repeat(64),
@@ -184,15 +184,15 @@ describe("Build workspace", () => {
         total: 1,
         next_cursor: null,
       };
-      else if (url.endsWith(`${prefix}/documents/ACME-FY2024`)) payload = {
+      else if (url.endsWith(`${prefix}/documents/NVDA-FY2024`)) payload = {
         document: {
-          doc_id: "ACME-FY2024", registry: "sec", language: "en", issuer: "ACME",
+          doc_id: "NVDA-FY2024", registry: "sec", language: "en", issuer: "NVDA",
           issuer_id: "123", fiscal_year: 2024, form: "10-K", parse_status: "parsed",
           filing_date: "2025-02-01", report_period: "2024-12-31", filing_id: "filing-1",
           source_url: "https://example.invalid/acme", source_length: 1000,
           source_sha256: "d".repeat(64), chunk_count: 2,
         },
-        chunks: [{ chunk_id: 7, ordinal: 0, citation: "ACME FY2024 · Item 7", span: "chars 0-20", source_sha256: "d".repeat(64), body: "Revenue grew." }],
+        chunks: [{ chunk_id: 7, ordinal: 0, citation: "NVDA FY2024 · Item 7", span: "chars 0-20", source_sha256: "d".repeat(64), body: "Revenue grew." }],
         text_chunks: 1,
         table_chunks: 1,
         embedded_chunks: 2,
@@ -209,29 +209,29 @@ describe("Build workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByRole("combobox", { name: "Filter company" })).toBeInTheDocument();
-    await screen.findByRole("option", { name: "ACME (1)" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "ACME" } });
+    await screen.findByRole("option", { name: "NVDA (1)" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "NVDA" } });
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Group documents" }), { target: { value: "issuer" } });
-    await waitFor(() => expect(fetchMock.mock.calls.some(([value]) => String(value).includes("issuer=ACME"))).toBe(true));
-    expect(await screen.findByText("Company · ACME")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([value]) => String(value).includes("issuer=NVDA"))).toBe(true));
+    expect(await screen.findByText("Company · NVDA")).toBeInTheDocument();
     const list = screen.getByRole("table", { name: "Document inventory" }).parentElement!;
     list.scrollTop = 120;
-    fireEvent.click(screen.getByRole("button", { name: "ACME-FY2024" }));
+    fireEvent.click(screen.getByRole("button", { name: "NVDA-FY2024" }));
 
     expect(await screen.findByRole("heading", { name: "Original filing" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Index revisions & snapshot membership" })).toBeInTheDocument();
     expect(screen.getByText("Revision #3 · Baseline")).toBeInTheDocument();
-    expect(screen.getByText("ACME FY2024 · Item 7")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    expect(screen.getByText("NVDA FY2024 · Item 7")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: live ? "Jobs" : "Pipeline" }));
     expect(screen.queryByRole("heading", { name: "Original filing" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(screen.getByRole("heading", { name: "Original filing" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Filter company" })).toHaveValue("ACME");
+    expect(screen.getByRole("combobox", { name: "Filter company" })).toHaveValue("NVDA");
     expect(screen.getByRole("combobox", { name: "Group documents" })).toHaveValue("issuer");
     fireEvent.click(screen.getByRole("button", { name: "Back to documents" }));
     expect(list.scrollTop).toBe(120);
-    expect(screen.getByRole("row", { name: /ACME-FY2024/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("row", { name: /NVDA-FY2024/ })).toHaveAttribute("aria-selected", "true");
     if (!live) expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
   });
 
@@ -309,10 +309,11 @@ describe("Build workspace", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
-    expect(screen.getAllByText("Portfolio fixture").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Portfolio fixture")).not.toBeInTheDocument();
+    expect(await screen.findByText("No portfolio filings have been published yet.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
-    expect(screen.getByRole("button", { name: "Compare published snapshots" })).toBeInTheDocument();
-    expect(screen.getAllByText("Runs on the local operator build.").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Open Quality checks" })).toBeInTheDocument();
+    expect(screen.getByText("Open Quality checks to explore datasets, try evaluation settings and compare published results. Running new evaluations is available in DEV mode.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
@@ -320,8 +321,7 @@ describe("Build workspace", () => {
     expect(screen.queryByText("NVDA-FY2024")).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Jobs" }));
-    expect(screen.getByText("Jobs run on the local operator build.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Jobs" })).not.toBeInTheDocument();
   });
 
   it("shows the answer-model fix when review is disabled", () => {
@@ -336,20 +336,31 @@ describe("Build workspace", () => {
 
     expect(screen.getByRole("button", { name: "Select Answer model" })).toHaveTextContent("Not configured");
     fireEvent.click(screen.getByRole("button", { name: "Select Answer model" }));
-    fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
-    expect(onRecheck).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Next step" })).toBeEnabled();
+    expect(onRecheck).not.toHaveBeenCalled();
   });
 
-  it("routes cross-workspace links through onNavigate", () => {
+  it("routes quality navigation and confirmed public questions through their handlers", () => {
     const onNavigate = vi.fn();
-    render(<Harness live={false} onNavigate={onNavigate} />);
+    const onAskScope = vi.fn();
+    const published = { ...CANNED_CORPUS.documents[0], chunk_count: 10, embedded_chunks: 10, embedding_status: "complete" as const, text_chunks: 10, table_chunks: 0, snapshot_count: 1 };
+    render(<Harness live={false} onNavigate={onNavigate} onAskScope={onAskScope} readiness={READY_RUNTIME} publishedCorpus={{ documents: [published], status: "ready", refresh: vi.fn() }} publicProfile={{ ...DEFAULT_SESSION_PROFILE, doc_ids: [published.doc_id] }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
-    fireEvent.click(screen.getByRole("button", { name: "Compare published snapshots" }));
-    expect(onNavigate).toHaveBeenCalledWith({ view: "measure", tab: "snapshots" });
-    // The next-step callout and the Ask stage card both offer the same action.
-    fireEvent.click(screen.getAllByRole("button", { name: "Ask a question" })[0]);
-    expect(onNavigate).toHaveBeenCalledWith({ view: "review" });
+    fireEvent.click(screen.getByRole("button", { name: "Open Quality checks" }));
+    expect(onNavigate).toHaveBeenCalledWith({ view: "measure", tab: "runs" });
+    // Confirm the public scope and acknowledge preparation before asking.
+    fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review parsing and chunks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm search scope" }));
+    for (let step = 0; step < 2; step++) {
+      fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Next step" }));
+    expect(screen.getByRole("button", { name: "Ask about this scope" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Ask about this scope" }));
+    expect(onAskScope).toHaveBeenCalledExactlyOnceWith({ registries: [], issuers: [], fiscal_years: [] });
   });
 
   it("queues a quick evaluation with a non-empty chunk target list", async () => {
@@ -674,24 +685,22 @@ describe("refresh hygiene", () => {
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/admin/snapshots"))).toBe(true));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Corpus status could not be refreshed: Database is busy").closest(".notification-stack")).toHaveAttribute("data-placement", "overlay");
   });
 
-  it("surfaces a facet failure inline with the server message", async () => {
+  it("surfaces a facet failure as a toast with the server message", async () => {
     stubAdmin((url) => url.endsWith("/documents/facets") ? failure("schema_not_ready", "Schema is not ready") : undefined);
-    render(<Harness live />);
+    render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Document filters could not be loaded: Schema is not ready");
   });
 
-  it("keeps manual refresh failures in one authoritative inline notice", async () => {
+  it("keeps manual refresh failures in one toast per failing source", async () => {
     stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
     expect(screen.getAllByText("Corpus status could not be refreshed: Database is busy")).toHaveLength(1);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does not refetch evaluation runs when only a corpus job reports progress", async () => {

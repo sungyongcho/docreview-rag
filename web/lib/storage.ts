@@ -1,5 +1,5 @@
+import { newProdProfile } from "./prod-profile";
 import { OPERATION_CATEGORIES, OPERATION_TARGETS, type OperatorCommand, type OperationsFilter, type OperationsTargetFilter, type OperatorTarget } from "./operator-api";
-import { browserStorage as rawBrowserStorage, previewState } from "./production-preview";
 import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./types";
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE, DEFAULT_PROFILE } from "./types";
 
@@ -58,6 +58,7 @@ export function newConversation(profile: ReviewSessionDraft = loadDefaultProfile
 }
 
 export function loadDefaultProfile(): ReviewSessionDraft {
+  if (productionBrowserStorageEnabled()) return newProdProfile();
   if (typeof window === "undefined") return DEFAULT_SESSION_PROFILE;
   try {
     const value = JSON.parse(browserStorage().getItem(DEFAULT_PROFILE_KEY) ?? "null") as Partial<ReviewSessionDraft> | null;
@@ -68,6 +69,7 @@ export function loadDefaultProfile(): ReviewSessionDraft {
 }
 
 export function saveDefaultProfile(profile: ReviewSessionDraft): void {
+  if (productionBrowserStorageEnabled()) throw new Error("PROD defaults are fixed by server policy.");
   if (typeof window !== "undefined") browserStorage().setItem(DEFAULT_PROFILE_KEY, JSON.stringify(profile));
 }
 
@@ -189,6 +191,9 @@ function isConversation(value: unknown): value is Conversation {
     typeof item.title === "string" &&
     typeof item.createdAt === "string" &&
     typeof item.updatedAt === "string" &&
+    (item.publishedTargets === undefined || Array.isArray(item.publishedTargets) && item.publishedTargets.every((target) => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year) && (target.document_ids === undefined || Array.isArray(target.document_ids) && target.document_ids.every((id) => typeof id === "string")))) &&
+    (item.pipelineDraft === undefined || objectValue(item.pipelineDraft) && Array.isArray(item.pipelineDraft.targets) && item.pipelineDraft.targets.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year)) && (item.pipelineDraft.candidates === undefined || Array.isArray(item.pipelineDraft.candidates) && item.pipelineDraft.candidates.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year))) && typeof item.pipelineDraft.stage === "string" && Array.isArray(item.pipelineDraft.checked) && item.pipelineDraft.checked.every(step => typeof step === "string")) &&
+    (item.publishedScope === undefined || Array.isArray(item.publishedScope) && item.publishedScope.every((id) => typeof id === "string")) &&
     Array.isArray(item.messages)
   );
 }
@@ -249,9 +254,9 @@ export function configureBrowserStorage(environment?: "dev" | "prod"): void {
   }
 }
 
-/** Preview sessions always retain their existing isolated memory storage. */
+/** Enable validated, versioned browser persistence for PROD. */
 export function productionBrowserStorageEnabled(): boolean {
-  return storageEnvironment === "prod" && previewState().mode === "normal";
+  return storageEnvironment === "prod";
 }
 
 /** Record only one warning per cause; never include user payloads in notifications. */
@@ -269,8 +274,8 @@ export function subscribeStorageWarnings(listener: (warning: StorageWarning) => 
   return () => window.removeEventListener(STORAGE_WARNING_EVENT, changed);
 }
 
-/** Match only this application's browser keys, including its legacy locale spelling. */
-function ownedStorageKey(key: string): boolean { return key.startsWith("docreview:") || key === "docreview.locale"; }
+/** Match active application keys; preserve archived preview records for a future release. */
+function ownedStorageKey(key: string): boolean { return !key.startsWith("docreview:preview:") && (key.startsWith("docreview:") || key === "docreview.locale"); }
 
 /** Keep current versioned keys; migrate only the previous unversioned preference names. */
 function versionedKey(key: string): string {
@@ -342,6 +347,7 @@ function validStoredValue(key: string, raw: string): boolean {
     if (key === DEFAULT_PROFILE_KEY) return validProfile(value);
     if (key === "docreview:retrieval-presets:v1") return Array.isArray(value) && value.every(item => objectValue(item) && typeof item.id === "string" && typeof item.name === "string" && validRetrieval(item.retrieval));
     if (key === EXPERIMENT_DEFAULTS_KEY || key === RECOVERY_KEY) return objectValue(value);
+    if (key === "docreview:notifications:v1") return objectValue(value) && value.version === 1 && Array.isArray(value.entries) && value.entries.every(entry => objectValue(entry) && typeof entry.id === "string" && typeof entry.title === "string" && typeof entry.body === "string");
     return value !== null && typeof value === "object";
   } catch { return false; }
 }
@@ -466,7 +472,6 @@ const developmentStorage: Storage = {
 
 /** All consumers share this boundary; only real PROD migrates or uses quota fallback. */
 export function browserStorage(): Storage {
-  if (previewState().mode !== "normal") return rawBrowserStorage();
   return productionBrowserStorageEnabled() ? productionStorage : storageEnvironment === "dev" ? developmentStorage : rawBrowserStorage();
 }
 
@@ -565,12 +570,12 @@ export function applyFreshStartReset(resetId: string | null | undefined): boolea
 /** Pre-paint preference read, generated here so components never access localStorage directly. */
 export function browserThemeBootstrap(legacyKey: string): string {
   const allowVersioned = process.env.NEXT_PUBLIC_ADMIN_MODE !== "live";
-  return `(function(){var t="system";try{var p=window.name==="docreview-production-preview";var v=p?new URLSearchParams(location.search).get("theme"):localStorage.getItem(${JSON.stringify(legacyKey)});if(!p&&!v&&${allowVersioned}){var s=JSON.parse(localStorage.getItem("docreview:theme:v1")||"null");if(s&&s.version===1)v=s.value;}if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
+  return `(function(){var t="system";try{var v=localStorage.getItem(${JSON.stringify(legacyKey)});if(!v&&${allowVersioned}){var s=JSON.parse(localStorage.getItem("docreview:theme:v1")||"null");if(s&&s.version===1)v=s.value;}if(v==="light"||v==="dark")t=v;}catch(e){}var d=t==="system"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;document.documentElement.dataset.theme=t;document.documentElement.dataset.colorMode=d;document.documentElement.style.colorScheme=d;})();`;
 }
 
 /** Raw-value boundary shared with the browser-local preset implementation. */
 export function readStoredValue(key: string): string | null { return browserStorage().getItem(key); }
-/** Persist a serialized setting through the selected DEV, PROD or preview transport. */
+/** Persist a serialized setting through the selected DEV or PROD storage. */
 export function writeStoredValue(key: string, value: string): void { browserStorage().setItem(key, value); }
 
 /** Decode cross-tab preference events through the same version and payload checks. */
@@ -588,3 +593,6 @@ export function storageEventValue(event: StorageEvent, key: string): string | nu
   return validStoredValue(versionedKey(key), raw) ? raw : undefined;
 
 }
+
+/** Access this origin's storage without adopting any archived preview namespace. */
+function rawBrowserStorage(): Storage { return window.localStorage; }
