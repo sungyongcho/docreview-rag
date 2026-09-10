@@ -15,6 +15,9 @@ docs/TUTORIAL/*
 !docs/TUTORIAL/en/
 !docs/TUTORIAL/assets/
 data/eval_runs
+data/corpus
+data/runtime
+data/prod-embedding-budget.json
 data/local-settings
 **/__pycache__
 **/*.pyc

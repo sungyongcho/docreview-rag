@@ -48,7 +48,8 @@ function renderSettings(capabilities: Capabilities, onClose = vi.fn()) {
 
     // A public surface keeps Prompt listed as a read-only page whose edit control is locked.
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
-    expect(screen.getByLabelText("Additional operator instructions")).toBeDisabled();
+    expect(screen.getByLabelText("Additional instructions example")).toBeDisabled();
+    expect(screen.getByLabelText("Additional instructions example")).toHaveAttribute("readonly");
     expect(screen.getByRole("button", { name: "Save prompt for new conversations" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Data & help" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Data & help" }).querySelector(".development-badge")).toBeNull();
@@ -110,9 +111,35 @@ it("opens the limits category separately from prompt settings", () => {
 });
 
 /** Editing needs the independent DEV limit capability; the page itself stays listed read-only. */
-it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", (environment, can_edit_run_limits, editable) => {
-  render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={vi.fn()} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
-  expect(!!screen.queryByLabelText("Maximum wall clock seconds")).toBe(editable);
+it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as const)("gates limits deep links for %s / %s", async (environment, can_edit_run_limits, editable) => {
+  const onChange = vi.fn();
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, max_context_chars: 4321, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 73 } },
+    per_call: { max_input_tokens: 1234, max_output_tokens: 432, max_cost_usd: "0.02" },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  if (!editable) vi.stubGlobal("fetch", fetchMock);
+  render(<SettingsModal open initialCategory="limits" profile={DEFAULT_SESSION_PROFILE} capabilities={{ ...DEV, environment, can_edit_run_limits }} onChange={onChange} onClose={vi.fn()} onOpenTour={vi.fn()} onClear={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
-  if (!editable) expect(screen.getByRole("button", { name: "Save default limits" })).toHaveAttribute("aria-disabled", "true");
+  if (editable) {
+    expect(screen.getByLabelText("Maximum wall clock seconds")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save default limits" })).toBeEnabled();
+    return;
+  }
+  expect(screen.getByText("Loading server execution limits…")).toBeVisible();
+  expect(screen.queryByLabelText("Maximum wall clock seconds")).not.toBeInTheDocument();
+  expect(await screen.findByLabelText("Maximum wall clock seconds")).toHaveValue(73);
+  expect(screen.getByLabelText("Maximum evidence characters")).toHaveValue(4321);
+  expect(screen.getByLabelText("Per-call input tokens")).toHaveValue(1234);
+  for (const control of screen.getAllByRole("spinbutton")) expect(control).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Limit preset" })).toBeDisabled();
+  const saveDefaults = screen.getByRole("button", { name: "Save default limits" });
+  const saveCaps = screen.getByRole("button", { name: "Save per-call caps" });
+  expect(saveDefaults).toBeDisabled();
+  expect(saveCaps).toBeDisabled();
+  fireEvent.click(saveDefaults);
+  fireEvent.click(saveCaps);
+  expect(onChange).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledWith("/docreview-rag-agent/api/limits", expect.objectContaining({ headers: { "content-type": "application/json" } }));
+  expect(fetchMock.mock.calls[0][1].method ?? "GET").toBe("GET");
 });

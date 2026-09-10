@@ -119,6 +119,12 @@ class Settings(DotenvFirstSettings):
         validation_alias=AliasChoices("LOCAL_LLM_TIMEOUT_S", "DOCREVIEW_LOCAL_LLM_TIMEOUT_S"),
     )
 
+    @field_validator("embed_dim", mode="before")
+    @classmethod
+    def parse_embedding_dimension(cls, value: object) -> object:
+        """Accept the fixed dimension from string-valued environment settings."""
+        return 384 if isinstance(value, str) and value.strip() == "384" else value
+
     @field_validator("local_llm_base_url", mode="before")
     @classmethod
     def blank_local_values_are_unset(cls, value: object) -> object:

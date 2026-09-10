@@ -15,12 +15,16 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.review_profile import (
     PUBLIC_MAX_CONTEXT_CHARS,
     PromptPolicy,
-    ReviewSessionProfile,
     public_custom_retrieval_violation,
-    resolve_retrieval_profile,
 )
 from app.observability.types import Budget
-from app.release.ai_allowance import SharedAIAllowance, active_allowance
+from app.release.ai_allowance import (
+    AIAllowanceError,
+    RequestAIAllowance,
+    SharedAIAllowance,
+    active_allowance,
+    active_request_allowance,
+)
 from app.release.limiter import DailyCostLimiter, InProcessRateLimiter
 
 SECURITY_HEADERS = {
@@ -275,38 +279,31 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                 "/review/stream",
             }:
                 return await call_next(request)
-            if request.url.path == "/retrieve":
-                try:
-                    payload = await request.json()
-                except ValueError:
-                    payload = {}
-                if isinstance(payload, dict):
-                    try:
-                        profile = ReviewSessionProfile.model_validate(
-                            payload.get("session_profile", {})
-                        )
-                    except ValidationError:
-                        return await call_next(request)
-                    if resolve_retrieval_profile(profile).strategy == "lexical":
-                        return await call_next(request)
-            remaining, reset = await self._shared_allowance.status()
-            if remaining <= 0:
-                from datetime import UTC, datetime
-
-                return JSONResponse(
+            admission = RequestAIAllowance(self._shared_allowance, self._client_key(request))
+            token = active_allowance.set(self._shared_allowance)
+            request_token = active_request_allowance.set(admission)
+            try:
+                response = await call_next(request)
+            except AIAllowanceError as error:
+                detail = {"code": error.code, "message": str(error), "details": []}
+                if error.reset is not None:
+                    detail["reset_at"] = error.reset.isoformat()
+                response = JSONResponse(
                     status_code=429,
-                    headers={
-                        "Retry-After": str(max(1, int((reset - datetime.now(UTC)).total_seconds())))
-                    },
-                    content={
-                        "error": {
-                            "code": "daily_cost_limit",
-                            "message": "The shared OpenAI allowance is exhausted.",
-                            "reset_at": reset.isoformat(),
-                            "details": [],
-                        }
-                    },
+                    content={"error": detail},
+                    headers={"Retry-After": str(error.retry_after)},
                 )
+            finally:
+                active_request_allowance.reset(request_token)
+                active_allowance.reset(token)
+            if admission.decision is not None:
+                response.headers["X-RateLimit-Remaining-Minute"] = str(
+                    admission.decision.remaining_minute
+                )
+                response.headers["X-RateLimit-Remaining-Day"] = str(
+                    admission.decision.remaining_day
+                )
+            return response
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not self._enforce_rate_limit and not public:
                 return await call_next(request)

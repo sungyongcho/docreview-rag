@@ -33,6 +33,8 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
         'if [ "$*" = "run build" ]; then\n'
         '  [ "$BUILD_SUCCEEDS" = true ] || exit 19\n'
         '  [ "$NEXT_PUBLIC_ADMIN_MODE" = canned ] || exit 20\n'
+        '  [ -z "${NEXT_PUBLIC_OPERATOR_BASE_URL-}${NEXT_PUBLIC_OPERATOR_TOKEN-}'
+        '${NEXT_PUBLIC_DB_ENDPOINT-}" ] || exit 24\n'
         '  [ "$NEXT_PUBLIC_API_BASE_URL" = '
         "https://sungyongcho.com/docreview-rag-agent/api ] || exit 21\n"
         "  mkdir -p out; printf new-application > out/index.html\n"
@@ -57,6 +59,10 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
             "COMMAND_LOG": str(log),
             "BUILD_SUCCEEDS": str(build_succeeds).lower(),
             "FIREBASE_PROJECT_ID": "fixture-project",
+            "NEXT_PUBLIC_ADMIN_MODE": "live",
+            "NEXT_PUBLIC_OPERATOR_BASE_URL": "http://operator.invalid",
+            "NEXT_PUBLIC_OPERATOR_TOKEN": "fixture-token",
+            "NEXT_PUBLIC_DB_ENDPOINT": "private.invalid:5432",
         },
         capture_output=True,
         text=True,

@@ -7,12 +7,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 cd "${repo_root}/web"
 npm ci
-# NEXT_PUBLIC_ADMIN_MODE is deliberately unset. The compiler inlines the guard
-# `process.env.NEXT_PUBLIC_ADMIN_MODE === "live"`, so any value other than `live`
-# yields the public bundle; unset is the canonical public build. Never export a
-# `live` value from this script.
-NEXT_PUBLIC_API_BASE_URL="https://sungyongcho.com/docreview-rag-agent/api" \
-npm run build
+# Pin the public build even when the calling shell contains DEV settings.
+env -u NEXT_PUBLIC_OPERATOR_BASE_URL -u NEXT_PUBLIC_OPERATOR_TOKEN -u NEXT_PUBLIC_DB_ENDPOINT \
+  NEXT_PUBLIC_ADMIN_MODE=canned \
+  NEXT_PUBLIC_API_BASE_URL="https://sungyongcho.com/docreview-rag-agent/api" \
+  npm run build
 
 source_dir="${repo_root}/web/out"
 public_root="${repo_root}/deploy/firebase/public"

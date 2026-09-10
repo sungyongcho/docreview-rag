@@ -26,6 +26,7 @@ from app.api.schemas import (
 )
 from app.observability.stages import StageEvent, record_stages
 from app.observability.types import WorkflowNode
+from app.release.ai_allowance import AIAllowanceError
 from app.workflow.types import WorkflowState
 
 router = APIRouter(tags=["review"])
@@ -148,6 +149,15 @@ async def review_stream(
                 report = await services.review(active_request, on_node)
                 payload = RunResponse.from_run_report(report).model_dump_json()
                 await queue.put(("report", payload))
+            except AIAllowanceError as error:
+                payload = ErrorResponse(
+                    error=ApiError(
+                        code=error.code,
+                        message=str(error),
+                        detail=f"Retry after {error.retry_after} seconds.",
+                    )
+                ).model_dump_json()
+                await queue.put(("error", payload))
             except ApiProblemError as error:
                 payload = ErrorResponse(error=error.error).model_dump_json()
                 await queue.put(("error", payload))

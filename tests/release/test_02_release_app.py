@@ -41,10 +41,10 @@ def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> N
     assert release.json()["openai_enabled"] is False
     assert release.json()["admin_mode"] == "readonly"
     assert release.json()["key_persisted"] is False
-    assert release.json()["max_cost_usd"] == "0.04"
+    assert release.json()["max_cost_usd"] == "0.005"
     assert ready.status_code == 200
     assert ready.json()["corpus"]["availability"] == "not_applicable"
-    assert ready.json()["models"]["agent"]["default"] == "gpt-5.6-terra"
+    assert ready.json()["models"]["agent"]["default"] == "gpt-5.6-luna"
     assert secret not in release.text
     assert home.status_code == 200
     assert "Evidence-first SEC and DART filing review" in home.text
@@ -221,13 +221,14 @@ def test_runtime_composition_passes_key_only_to_provider_and_redaction(monkeypat
         provider_factory=provider_factory,
     )
 
-    assert captured == {"model_name": "gpt-5.6-terra", "api_key": secret}
+    assert captured == {"model_name": "gpt-5.6-luna", "api_key": secret}
     assert services._secret_values == (secret,)
     assert secret not in repr(services)
 
 
-def test_runtime_without_key_keeps_review_fail_closed(monkeypatch) -> None:
+def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> None:
     """Leave the provider and its budget unset when no key was configured."""
+    monkeypatch.chdir(tmp_path)
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 

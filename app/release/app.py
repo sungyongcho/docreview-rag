@@ -230,8 +230,8 @@ def build_runtime_services(
         credential_slot=settings.openai_key_slot,
         intent_classifier_enabled=True,
         query_routing_enabled=True,
-        allow_custom_prompt_policy=settings.admin_mode == "live",
-        allow_snapshot_query=settings.admin_mode == "live",
+        allow_custom_prompt_policy=settings.admin_enabled,
+        allow_snapshot_query=settings.admin_enabled,
     )
 
 
@@ -240,8 +240,13 @@ def _release_info(settings: ReleaseSettings) -> ReleaseInfo:
     return ReleaseInfo(
         mode=settings.mode,
         environment=settings.environment,
-        admin_mode=settings.admin_mode,
+        admin_mode=settings.admin_mode if settings.environment == "dev" else "readonly",
         openai_enabled=settings.openai_enabled,
+        rate_limit_scope=(
+            "shared_storage"
+            if settings.mode == "runtime" and settings.environment == "prod"
+            else "single_process"
+        ),
         rate_limit_per_minute=settings.rate_limit_per_minute,
         rate_limit_per_day=settings.rate_limit_per_day,
         max_input_tokens=settings.openai_max_input_tokens,
@@ -266,13 +271,15 @@ def create_release_app(
 
     admin_services = (
         RuntimeAdminApiServices(runtime=active_services)
-        if active_settings.admin_mode == "live" and active_services is not None
+        if active_settings.admin_enabled and active_services is not None
         else None
     )
     application = create_api_app(
         active_services,
         admin_services,
-        enable_reset=active_settings.environment == "dev" and active_settings.admin_mode == "live",
+        enable_reset=active_settings.admin_enabled,
+        enable_docs_execution=active_settings.environment != "prod",
+        include_admin_schema=active_settings.environment == "prod",
     )
     limiter = InProcessRateLimiter(
         per_minute=active_settings.rate_limit_per_minute,
@@ -293,16 +300,16 @@ def create_release_app(
         )
         limiter = shared_allowance
     enforce_public_limits = (
-        active_settings.environment == "prod" or active_settings.admin_mode != "live"
+        active_settings.environment == "prod" or not active_settings.admin_enabled
     )
     limiter_salt = shared_allowance.salt if shared_allowance else secrets.token_bytes(32)
     application.add_middleware(
         ReleaseGuardMiddleware,
         limiter=limiter,
         trust_proxy_headers=active_settings.trust_proxy_headers,
-        allow_ingest=active_settings.allow_ingest,
+        allow_ingest=active_settings.allow_ingest and active_settings.environment != "prod",
         enforce_rate_limit=enforce_public_limits,
-        public_read_only=active_settings.admin_mode != "live",
+        public_read_only=not active_settings.admin_enabled,
         allow_local_engine=active_settings.environment != "prod",
         local_connection_origin=active_settings.admin_cors_origin,
         cost_limiter=cost_limiter
@@ -312,7 +319,7 @@ def create_release_app(
         salt=limiter_salt,
     )
     application.add_middleware(SecurityHeadersMiddleware)
-    if active_settings.admin_mode == "live" and active_settings.admin_cors_origin is not None:
+    if active_settings.admin_enabled and active_settings.admin_cors_origin is not None:
         application.add_middleware(
             CORSMiddleware,
             allow_origins=[active_settings.admin_cors_origin],
@@ -333,10 +340,7 @@ def create_release_app(
     @application.get("/capabilities", response_model=ReleaseCapabilities, tags=["release"])
     async def capabilities(request: Request) -> ReleaseCapabilities:
         """Publish authoritative UI capabilities without exposing credentials."""
-        live = (
-            active_settings.admin_mode == "live"
-            and request.headers.get("x-docreview-public") != "true"
-        )
+        live = active_settings.admin_enabled and request.headers.get("x-docreview-public") != "true"
         return ReleaseCapabilities(
             environment=active_settings.environment,
             browser_reset_id=browser_reset_id() if active_settings.environment == "dev" else None,
@@ -415,7 +419,9 @@ def create_release_app(
                 status="ready",
                 mode="canned",
                 environment=active_settings.environment,
-                admin_mode=active_settings.admin_mode,
+                admin_mode=active_settings.admin_mode
+                if active_settings.environment == "dev"
+                else "readonly",
                 policy_revision=POLICY_REVISION,
                 models=models,
                 review_enabled=False,
@@ -470,8 +476,7 @@ def create_release_app(
             )
 
         public_surface = (
-            active_settings.admin_mode != "live"
-            or request.headers.get("x-docreview-public") == "true"
+            not active_settings.admin_enabled or request.headers.get("x-docreview-public") == "true"
         )
         if public_surface:
             # Counts are public reading material; only write access stays private.
@@ -501,7 +506,9 @@ def create_release_app(
             status="ready" if corpus_ready else "degraded",
             mode="runtime",
             environment=active_settings.environment,
-            admin_mode=active_settings.admin_mode,
+            admin_mode=active_settings.admin_mode
+            if active_settings.environment == "dev"
+            else "readonly",
             policy_revision=POLICY_REVISION,
             models=models,
             review_enabled=(

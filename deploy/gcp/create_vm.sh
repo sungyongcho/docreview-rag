@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create the single Always Free origin VM and its Cloudflare-only firewall rule.
+# Create the single 4 GB origin VM and its Cloudflare-only firewall rule.
 # Idempotent: every resource is described before it is created.
 # This command creates GCP resources; review deploy_env_config.sh output first.
 set -euo pipefail
@@ -10,7 +10,7 @@ source "${SCRIPT_DIR}/deploy_env_config.sh"
 
 log() { echo "[$(date +'%F %T')] $*"; }
 
-# ----- VM: e2-micro, pd-standard 30 GB, ephemeral external IP (no --address) -----
+# ----- VM: e2-medium, pd-standard 30 GB, ephemeral external IP (no --address) -----
 if gcloud compute instances describe "${VM_NAME}" \
   --project "${PROJECT_ID}" --zone "${ZONE}" >/dev/null 2>&1; then
   log "VM exists: ${VM_NAME} (${ZONE})"
@@ -55,26 +55,9 @@ else
     --description "Allow DocReview API traffic from Cloudflare to port ${ORIGIN_PORT}"
 fi
 
-# ----- SSH through Identity-Aware Proxy (gcloud compute ssh --tunnel-through-iap) -----
-# The default network usually ships with default-allow-ssh; this rule keeps SSH
-# working if that rule was removed, without opening port 22 to the internet.
-SSH_RULE="docreview-allow-ssh-iap"
-if gcloud compute firewall-rules describe "${SSH_RULE}" \
-  --project "${PROJECT_ID}" >/dev/null 2>&1; then
-  log "Firewall rule exists: ${SSH_RULE}"
-else
-  log "Creating firewall rule ${SSH_RULE}..."
-  gcloud compute firewall-rules create "${SSH_RULE}" \
-    --project "${PROJECT_ID}" \
-    --direction INGRESS \
-    --priority 1000 \
-    --network default \
-    --action ALLOW \
-    --rules tcp:22 \
-    --source-ranges 35.235.240.0/20 \
-    --target-tags "${NETWORK_TAG}" \
-    --description "Allow SSH to DocReview origin through IAP"
-fi
+# SSH firewall access is configured separately by the user for their own PC.
+# Existing default-network rules are not evidence of a PC-only restriction.
+log "SSH policy is not configured by this script; inspect existing rules and restrict access to your PC before deployment."
 
 log "Done. Next: deploy_backend.sh, then print_origin.sh for the Worker variables."
 log "The external IP is ephemeral: it changes when the VM is stopped and started."

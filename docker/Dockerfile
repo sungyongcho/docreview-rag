@@ -27,10 +27,11 @@ WORKDIR /app
 
 COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-dev --no-install-project --extra cpu
 
-RUN useradd --create-home --uid 10001 appuser
+RUN groupadd --gid 10001 appuser && useradd --create-home --uid 10001 --gid 10001 appuser
 COPY --chown=appuser:appuser data ./data
+RUN install -d -o appuser -g appuser /app/data/corpus /app/data/runtime
 COPY --chown=appuser:appuser app ./app
 COPY --from=web --chown=appuser:appuser /web/out ./web/out
 

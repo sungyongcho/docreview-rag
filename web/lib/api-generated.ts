@@ -1016,6 +1016,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/portfolio/preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preparation
+         * @description Expose only fixed company-year aggregate readiness, never unpublished content.
+         */
+        get: operations["preparation_public_portfolio_preparation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/snapshots/{snapshot_id}/dataset": {
         parameters: {
             query?: never;
@@ -3418,6 +3438,44 @@ export interface components {
             reference_answer: string;
             /** Tags */
             tags: string[];
+        };
+        /**
+         * PublicPortfolioPreparation
+         * @description A measured preparation view; this does not grant publication or search access.
+         */
+        PublicPortfolioPreparation: {
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Pairs */
+            pairs: components["schemas"]["PublicPortfolioPreparationPair"][];
+        };
+        /**
+         * PublicPortfolioPreparationPair
+         * @description Aggregate preparation for one fixed portfolio company and fiscal year.
+         */
+        PublicPortfolioPreparationPair: {
+            /** Chunks */
+            chunks: number;
+            /** Embedded Chunks */
+            embedded_chunks: number;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Issuer */
+            issuer: string;
+            /** Parsed Documents */
+            parsed_documents: number;
+            /** Pending Embeddings */
+            pending_embeddings: number;
+            /**
+             * Registry
+             * @enum {string}
+             */
+            registry: "sec" | "dart";
+            /** Source Documents */
+            source_documents: number;
         };
         /**
          * PublicSnapshotDataset
@@ -6896,6 +6954,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request validation failed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal server error. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    preparation_public_portfolio_preparation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPortfolioPreparation"];
                 };
             };
             /** @description Request validation failed. */

@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.schemas import ApiError, ErrorResponse, ValidationIssue
 from app.observability.types import JsonObject
+from app.release.ai_allowance import AIAllowanceError
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,8 @@ async def translate_runtime_errors() -> AsyncIterator[None]:
     """
     try:
         yield
+    except AIAllowanceError:
+        raise
     except ApiProblemError:
         raise
     except ValueError as error:
@@ -142,6 +145,15 @@ def install_error_handlers(app: FastAPI) -> None:
     Client-safe 4xx detail and transport headers are preserved. Every 5xx response
     uses a fixed public message while unexpected exceptions retain server-side logs.
     """
+
+    @app.exception_handler(AIAllowanceError)
+    async def ai_allowance_handler(request: Request, error: AIAllowanceError) -> JSONResponse:
+        """Keep actual-call allowance denials typed with retry metadata."""
+        return _response(
+            429,
+            ApiError(code=error.code, message=str(error)),
+            headers={"Retry-After": str(error.retry_after)},
+        )
 
     @app.exception_handler(ApiProblemError)
     async def api_problem_handler(request: Request, error: ApiProblemError) -> JSONResponse:

@@ -20,16 +20,16 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert settings.openai_enabled is False
     assert settings.allow_ingest is False
     assert settings.admin_mode == "readonly"
-    assert settings.rate_limit_per_minute == 5
-    assert settings.rate_limit_per_day == 25
-    assert settings.public_daily_cost_usd == Decimal("1.00")
+    assert settings.rate_limit_per_minute == 2
+    assert settings.rate_limit_per_day == 5
+    assert settings.public_daily_cost_usd == Decimal("0.10")
     assert settings.trust_proxy_headers is False
     budget = settings.provider_budget()
     assert budget.pricing.estimate(
         budget.max_input_tokens,
         budget.max_output_tokens,
-    ) == Decimal("0.0312")
-    assert Decimal("0.0312") <= budget.max_cost_usd
+    ) == Decimal("0.00312")
+    assert Decimal("0.00312") <= budget.max_cost_usd
 
 
 def test_operator_key_is_secret_and_only_enables_explicit_runtime(monkeypatch) -> None:
@@ -83,7 +83,7 @@ def test_provider_budget_uses_explicit_caps_and_policy_prices() -> None:
     assert budget.max_input_tokens == 1_200
     assert budget.max_output_tokens == 300
     assert budget.max_cost_usd == Decimal("0.01")
-    assert budget.pricing.estimate(1_200, 300) == Decimal("0.006")
+    assert budget.pricing.estimate(1_200, 300) == Decimal("0.0006")
 
 
 def test_manual_release_prices_are_rejected() -> None:
@@ -171,3 +171,11 @@ def test_local_budgets_accept_blank_compose_substitutions(monkeypatch) -> None:
     assert settings.local_llm_timeout_s == 120.0
     assert settings.local_llm_max_input_tokens == 12_000
     assert settings.local_llm_max_output_tokens == 600
+
+
+def test_production_requires_luna_but_retains_explicit_dev_terra() -> None:
+    """A stale model override cannot silently spend Terra prices on the public server."""
+    with pytest.raises(ValidationError, match="production text calls require gpt-5.6-luna"):
+        ReleaseSettings(_env_file=None, DOCREVIEW_ENVIRONMENT="prod", openai_model="gpt-5.6-terra")
+    dev = ReleaseSettings(_env_file=None, DOCREVIEW_ENVIRONMENT="dev", openai_model="gpt-5.6-terra")
+    assert dev.provider_budget().pricing.output_per_million_usd == Decimal("12.00")

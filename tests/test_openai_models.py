@@ -19,8 +19,8 @@ def test_policy_defaults_are_role_scoped_and_price_exact_models():
     translation = resolve_openai_model("translation")
     embedding = resolve_openai_model("embedding")
 
-    assert agent.model == "gpt-5.6-terra" and agent.reasoning_effort == "medium"
-    assert agent.pricing.cache_write_input_per_million_usd == Decimal("2.50")
+    assert agent.model == "gpt-5.6-luna" and agent.reasoning_effort == "medium"
+    assert agent.pricing.cache_write_input_per_million_usd == Decimal("0.25")
     assert translation.model == "gpt-5.6-luna" and translation.reasoning_effort == "low"
     assert embedding.model == "text-embedding-3-large" and embedding.dimensions == 384
     assert embedding.pricing.input_per_million_usd == Decimal("0.13")
@@ -36,7 +36,7 @@ def test_policy_rejects_models_outside_the_role_allowlist(model):
 def test_translation_allows_only_luna_and_terra_and_snapshot_is_public():
     """Expose a deterministic non-secret policy snapshot for both UIs."""
     assert allowed_openai_models("translation") == ("gpt-5.6-luna", "gpt-5.6-terra")
-    assert default_openai_model("review") == "gpt-5.6-terra"
+    assert default_openai_model("review") == "gpt-5.6-luna"
     snapshot = openai_policy_snapshot()
-    assert snapshot["revision"] == "2026-09-01"
+    assert snapshot["revision"] == "2026-09-10"
     assert snapshot["roles"]["embedding"]["dimensions"] == 384

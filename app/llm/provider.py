@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
+from decimal import Decimal
 from functools import cache
 import json
 import time
@@ -28,9 +29,18 @@ from app.llm.schemas import (
 )
 from app.observability.stages import record_model_call
 from app.openai_models import OpenAIModelRole, resolve_openai_model
-from app.release.ai_allowance import reserve_openai
+from app.release.ai_allowance import AIAllowanceError, active_allowance, reserve_openai
 
 type Clock = Callable[[], int]
+
+
+class _OpenAIPreflightError(ValueError):
+    """Return a structured budget refusal without counting an unsent provider call."""
+
+    def __init__(self, failure: BudgetExceeded):
+        """Retain the preflight resource and conservative projected bound."""
+        super().__init__("OpenAI request exceeds its configured preflight allowance")
+        self.failure = failure
 
 
 class _ResponsesAPI(Protocol):
@@ -280,6 +290,28 @@ class LLMProvider(ABC):
             started = self._clock()
             try:
                 raw = await self._request(current_prompt, schema, remaining)
+            except AIAllowanceError:
+                raise
+            except _OpenAIPreflightError as error:
+                return failed(
+                    error.failure.model_copy(
+                        update={
+                            "attempts": len(raw_outputs),
+                            "schema_errors": repair_errors,
+                            "used": total_input_tokens
+                            if error.failure.which == "input_tokens"
+                            else budget.pricing.estimate(
+                                total_input_tokens,
+                                total_output_tokens,
+                                cached_input_tokens=total_cached_input_tokens,
+                                cache_write_input_tokens=total_cache_write_input_tokens,
+                            ),
+                            "limit": budget.max_input_tokens
+                            if error.failure.which == "input_tokens"
+                            else budget.max_cost_usd,
+                        }
+                    )
+                )
             except Exception as error:
                 elapsed_ms = (self._clock() - started) / 1_000_000
                 if elapsed_ms < 0:
@@ -617,7 +649,48 @@ class OpenAILLMProvider(LLMProvider):
         ValueError
             If the response omits authoritative token usage.
         """
-        await reserve_openai(budget.max_cost_usd)
+        # Include the exact output schema, instructions, input and framing in the
+        # configured-price reservation. Token estimates are not a provider billing proof.
+        serialized_schema = json.dumps(strict_response_format(schema), ensure_ascii=False)
+        projected = estimate_prompt_tokens(
+            Prompt(system=prompt.system, user=prompt.user + "\n" + serialized_schema),
+            model_name=self.model_name,
+        )
+        if projected is None:
+            if active_allowance.get() is not None:
+                raise ValueError("OpenAI cost preflight requires the model tokenizer")
+            reservation = budget.max_cost_usd
+        else:
+            projected += 128  # Conservative extra room for provider framing around the schema.
+            if projected > budget.max_input_tokens:
+                raise _OpenAIPreflightError(
+                    BudgetExceeded(
+                        which="input_tokens",
+                        used=0,
+                        limit=budget.max_input_tokens,
+                        attempts=0,
+                        projected_input_tokens=projected,
+                    )
+                )
+            input_price = max(
+                budget.pricing.input_per_million_usd,
+                budget.pricing.cached_input_per_million_usd or Decimal(0),
+                budget.pricing.cache_write_input_per_million_usd or Decimal(0),
+            )
+            reservation = (
+                Decimal(projected) * input_price
+                + Decimal(budget.max_output_tokens) * budget.pricing.output_per_million_usd
+            ) / Decimal(1_000_000)
+            if reservation > budget.max_cost_usd:
+                raise _OpenAIPreflightError(
+                    BudgetExceeded(
+                        which="estimated_cost_usd",
+                        used=0,
+                        limit=budget.max_cost_usd,
+                        attempts=0,
+                    )
+                )
+        await reserve_openai(reservation)
         if self._structured_output:
             response = await self._client.responses.create(
                 model=self.model_name,

@@ -6,10 +6,10 @@
 	@blocked path /admin* /ingest
 	respond @blocked 404
 
-	@public path /health /ready /release /limits /capabilities /openapi.json /docs /retrieve /review /review/stream /documents /runs/* /eval /snapshots /snapshots/*
+	@public path /health /ready /release /limits /capabilities /openapi.json /docs /retrieve /review /review/stream /documents /runs/* /eval /snapshots /snapshots/* /public/documents /public/documents/* /public/portfolio/preparation /public/portfolio/preparation/ /public/snapshots/*
 	reverse_proxy @public app:8000 {
 		# The app treats requests carrying this header as public; it is what hides
-		# the operator surface. Only the loopback operator port skips it.
+		# DEV controls; the production app also blocks administrator APIs itself.
 		header_up X-DocReview-Public true
 	}
 

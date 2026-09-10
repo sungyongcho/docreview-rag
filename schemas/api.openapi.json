@@ -5553,6 +5553,89 @@
         "title": "PublicGoldenCase",
         "type": "object"
       },
+      "PublicPortfolioPreparation": {
+        "additionalProperties": false,
+        "description": "A measured preparation view; this does not grant publication or search access.",
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/PublicPortfolioPreparationPair"
+            },
+            "title": "Pairs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observed_at",
+          "pairs"
+        ],
+        "title": "PublicPortfolioPreparation",
+        "type": "object"
+      },
+      "PublicPortfolioPreparationPair": {
+        "additionalProperties": false,
+        "description": "Aggregate preparation for one fixed portfolio company and fiscal year.",
+        "properties": {
+          "chunks": {
+            "minimum": 0.0,
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "embedded_chunks": {
+            "minimum": 0.0,
+            "title": "Embedded Chunks",
+            "type": "integer"
+          },
+          "fiscal_year": {
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "parsed_documents": {
+            "minimum": 0.0,
+            "title": "Parsed Documents",
+            "type": "integer"
+          },
+          "pending_embeddings": {
+            "minimum": 0.0,
+            "title": "Pending Embeddings",
+            "type": "integer"
+          },
+          "registry": {
+            "enum": [
+              "sec",
+              "dart"
+            ],
+            "title": "Registry",
+            "type": "string"
+          },
+          "source_documents": {
+            "minimum": 0.0,
+            "title": "Source Documents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "registry",
+          "issuer",
+          "fiscal_year",
+          "source_documents",
+          "parsed_documents",
+          "chunks",
+          "embedded_chunks",
+          "pending_embeddings"
+        ],
+        "title": "PublicPortfolioPreparationPair",
+        "type": "object"
+      },
       "PublicSnapshotDataset": {
         "description": "One filtered page from the exact published golden version.",
         "properties": {
@@ -11617,6 +11700,48 @@
           }
         },
         "summary": "Document Detail",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/public/portfolio/preparation": {
+      "get": {
+        "description": "Expose only fixed company-year aggregate readiness, never unpublished content.",
+        "operationId": "preparation_public_portfolio_preparation_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicPortfolioPreparation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error."
+          }
+        },
+        "summary": "Preparation",
         "tags": [
           "documents"
         ]

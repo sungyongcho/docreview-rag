@@ -35,12 +35,11 @@ set +a
 export PROJECT_ID="${DEPLOY_GCP_PROJECT:?DEPLOY_GCP_PROJECT is required}"
 export OPENAI_API_KEY_PROD="${OPENAI_API_KEY_PROD:?OPENAI_API_KEY_PROD is required}"
 
-# ===== Defaults tuned for the Always Free tier =====
-# e2-micro is free only in us-west1, us-central1 and us-east1.
+# ===== Single production origin: e2-medium, 4 GB RAM =====
 export ZONE="${DEPLOY_GCP_ZONE:-us-central1-a}"
 export REGION="${ZONE%-*}"
 export VM_NAME="${DEPLOY_VM_NAME:-docreview-rag-agent}"
-export MACHINE_TYPE="${DEPLOY_MACHINE_TYPE:-e2-micro}"
+export MACHINE_TYPE="${DEPLOY_MACHINE_TYPE:-e2-medium}"
 export BOOT_DISK_SIZE="${DEPLOY_BOOT_DISK_SIZE:-30GB}"
 export NETWORK_TAG="docreview-origin"
 export ORIGIN_PORT="${DEPLOY_ORIGIN_PORT:-8000}"

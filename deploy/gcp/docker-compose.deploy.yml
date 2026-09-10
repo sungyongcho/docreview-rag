@@ -1,12 +1,11 @@
-# Production compose for the single e2-micro VM (1 shared vCPU, 1 GB RAM + 2 GB swap).
+# Production compose for the single e2-medium VM (4 GB RAM + 2 GB swap).
 # deploy_backend.sh copies this file to /opt/docreview/docker-compose.yml and
 # deploy/gcp/backend.env to /opt/docreview/.env.
 services:
   db:
     image: pgvector/pgvector:pg16
-    # Tuned for the 1 GB box: the default 128 MB shared_buffers is already the ceiling
-    # we want, and work_mem=4MB keeps hybrid retrieval sorts from spilling into swap.
-    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "work_mem=4MB"]
+    # Bound database memory so the API and CPU reranker share the 4 GB VM.
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "work_mem=4MB"]
     environment:
       POSTGRES_DB: filing
       POSTGRES_USER: filing
@@ -23,25 +22,28 @@ services:
 
   app:
     image: ${DOCREVIEW_IMAGE:?Set DOCREVIEW_IMAGE}
+    user: "10001:10001"
     environment:
       CORPUS_DIR: /app/data/corpus
       DATABASE_URL: postgresql+asyncpg://filing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/filing
-      EMBEDDING_PROVIDER: deterministic
+      EMBEDDING_PROVIDER: openai
+      EMBEDDING_MODEL: text-embedding-3-large
+      EMBED_DIM: "384"
       DOCREVIEW_MODE: runtime
       MODE: prod
-      # `live` keeps the operator API available through the SSH tunnel. It is NOT what
-      # makes the visitor surface public: Caddy adds X-DocReview-Public on every
-      # proxied request, and that header is what hides /admin/* and /ingest. Caddy
-      # must therefore stay in front of every externally reachable port.
-      DOCREVIEW_ADMIN_MODE: live
+      DOCREVIEW_ADMIN_MODE: "off"
       DOCREVIEW_HOST: 127.0.0.1
-      DOCREVIEW_ADMIN_CORS_ORIGIN: ${DOCREVIEW_ADMIN_CORS_ORIGIN:-http://127.0.0.1:3000}
       DOCREVIEW_TRUST_PROXY_HEADERS: "true"
-      DOCREVIEW_RATE_LIMIT_PER_MINUTE: "5"
-      DOCREVIEW_RATE_LIMIT_PER_DAY: "25"
+      DOCREVIEW_RATE_LIMIT_PER_MINUTE: "2"
+      DOCREVIEW_RATE_LIMIT_PER_DAY: "5"
       OPENAI_API_KEY_PROD: ${OPENAI_API_KEY_PROD:?Set OPENAI_API_KEY_PROD}
-      DOCREVIEW_PUBLIC_DAILY_COST_USD: "1.00"
-      DOCREVIEW_OPENAI_MAX_COST_USD: "0.01"
+      DOCREVIEW_PUBLIC_DAILY_COST_USD: "0.10"
+      DOCREVIEW_OPENAI_MAX_COST_USD: "0.005"
+      REVIEW_MAX_COST_USD: "0.005"
+      DOCREVIEW_OPENAI_MODEL: gpt-5.6-luna
+      REVIEW_MODEL: gpt-5.6-luna
+      DOCREVIEW_PUBLIC_ALLOWANCE_PATH: /app/data/runtime/public-ai-limits.sqlite3
+      HF_HOME: /app/data/runtime/huggingface
       # SEC_USER_AGENT and DART_API_KEY are intentionally unset: acquisition never runs
       # in production. The corpus is prepared locally and copied into
       # /var/lib/docreview/corpus.
@@ -49,16 +51,11 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - /var/lib/docreview/corpus:/app/data/corpus
-      - /var/lib/docreview/eval-runs:/app/data/eval_runs
+      - /var/lib/docreview/corpus:/app/data/corpus:ro
+      - /var/lib/docreview/eval-runs:/app/data/eval_runs:ro
       - /var/lib/docreview/runtime:/app/data/runtime
       # data/golden, data/presets and data/local-settings are intentionally not
       # mounted: writes to them are DEV-only, so the image's built-in copies suffice.
-    ports:
-      # Loopback-only operator port for deploy/gcp/operator_tunnel.sh. It bypasses
-      # Caddy on purpose (no public header, so /admin/* answers) and is never reachable
-      # from outside the VM. The Cloudflare-facing port is published by caddy below.
-      - "127.0.0.1:${DOCREVIEW_OPERATOR_PORT:-8001}:8000"
     restart: unless-stopped
     init: true
     security_opt: ["no-new-privileges:true"]

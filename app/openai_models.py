@@ -17,7 +17,7 @@ type OpenAIModelRole = Literal[
 ]
 type ReasoningEffort = Literal["low", "medium"]
 
-POLICY_REVISION = "2026-09-01"
+POLICY_REVISION = "2026-09-10"
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,18 +66,18 @@ _EMBEDDING_LARGE = OpenAIModelPricing(
 
 _DEFAULTS: MappingProxyType[OpenAIModelRole, str] = MappingProxyType(
     {
-        "agent": "gpt-5.6-terra",
-        "review": "gpt-5.6-terra",
-        "decomposition": "gpt-5.6-terra",
+        "agent": "gpt-5.6-luna",
+        "review": "gpt-5.6-luna",
+        "decomposition": "gpt-5.6-luna",
         "translation": "gpt-5.6-luna",
         "embedding": "text-embedding-3-large",
     }
 )
 _ALLOWED: MappingProxyType[OpenAIModelRole, tuple[str, ...]] = MappingProxyType(
     {
-        "agent": ("gpt-5.6-terra",),
-        "review": ("gpt-5.6-terra",),
-        "decomposition": ("gpt-5.6-terra",),
+        "agent": ("gpt-5.6-luna", "gpt-5.6-terra"),
+        "review": ("gpt-5.6-luna", "gpt-5.6-terra"),
+        "decomposition": ("gpt-5.6-luna", "gpt-5.6-terra"),
         "translation": ("gpt-5.6-luna", "gpt-5.6-terra"),
         "embedding": ("text-embedding-3-large",),
     }

@@ -104,7 +104,7 @@ def test_the_deployment_artifact_moved_out_of_the_root() -> None:
     assert (
         not (ROOT / "docker" / "docker-compose.prod.yml").read_text(encoding="utf-8").count("caddy")
     )
-    assert "deploy/gcp/docker-compose.deploy.yml" in script
+    assert '"${SCRIPT_DIR}/docker-compose.deploy.yml"' in script
     assert "LOCAL_LLM" not in deploy.read_text(encoding="utf-8")
 
 
