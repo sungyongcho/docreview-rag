@@ -871,3 +871,17 @@ select:not([multiple]):not([size]), select[size="1"] {
   .comparison-picker > .button { grid-column: 1 / -1; }
 }
 @media (max-width: 480px) { .comparison-picker { grid-template-columns: minmax(0, 1fr); } }
+
+/* Make the existing job shortcut recognizable without adding work or polling. */
+.job-health { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; transition: background-color 160ms ease, border-color 160ms ease; }
+.job-health::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--warn); }
+.job-health[data-running="true"]::before { background: var(--good); }
+.job-health:hover { background: var(--surface-2); border-color: var(--accent); }
+.job-health:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) { .job-health[data-running="true"]::before { animation: job-shortcut-pulse 1.6s ease-in-out infinite; } }
+@keyframes job-shortcut-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.job-health-detail { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .job-health-detail { display: none; } }
+
+.job-progress .job-terminal-output { display: block; flex: 1 1 100%; box-sizing: border-box; min-width: 0; max-width: 100%; margin: 4px 0 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: #0d0f0d; color: #eeeee8; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

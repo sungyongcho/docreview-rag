@@ -1570,6 +1570,9 @@ it("keeps the draft visible and blocks submission during corpus updates without 
   window.localStorage.setItem(ONBOARDING_KEY, "done");
   const corpus = { ...READY_RUNTIME.corpus, writable: true, updating: true };
   const fetchMock = stubLiveApi(corpus, async () => ({ ...liveReadiness(corpus), status: "degraded" }));
+  const originalFetch = fetchMock.getMockImplementation()!;
+  const embeddingJob = { job_id: "embedding-active", domain: "corpus", kind: "backfill_embeddings", status: "running", stage: "embeddings", request: {}, result_refs: {}, current: 43, total: 100, overall_current: 43, overall_total: 100, message: "Embedding chunks", created_at: "2026-09-09T00:00:00Z", started_at: "2026-09-09T00:00:00Z", updated_at: "2026-09-09T00:00:00Z", finished_at: null, can_retry: false, can_cancel: true, error_code: null, queue_position: null };
+  fetchMock.mockImplementation(input => String(input).endsWith("/admin/jobs") ? Promise.resolve(new Response(JSON.stringify({ jobs: [embeddingJob], active_count: 1, queued_count: 0 }), { headers: { "content-type": "application/json" } })) : originalFetch(input));
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");
   render(<LiveShell />);
@@ -1579,6 +1582,9 @@ it("keeps the draft visible and blocks submission during corpus updates without 
   expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
   expect(input).toHaveValue("Keep this question");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector(".job-health")).toHaveTextContent("Embeddings · 43%"));
+  expect(document.querySelectorAll(".job-health")).toHaveLength(1);
+  expect(document.querySelector(".search-update-status")).toBeNull();
   fireEvent.keyDown(input, { key: "Enter" });
   expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url)))).toBe(false);
 });

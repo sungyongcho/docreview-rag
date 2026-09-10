@@ -48,9 +48,9 @@
 @keyframes pipeline-countdown-border { to { stroke-dashoffset: 100; } }
 @media (prefers-reduced-motion: reduce) { .pipeline-countdown-inline svg { animation: none; } }
 
-.pipeline-execution .public-stage-why summary::after, .pipeline-execution .public-stage-why[open] summary::after { content: none; }
-.pipeline-execution .public-stage-why summary span { text-decoration: underline; text-underline-offset: 3px; }
-.pipeline-execution .public-stage-why summary::-webkit-details-marker { display: none; }
+.pipeline-execution .stage-why summary::after, .pipeline-execution .stage-why[open] summary::after { content: none; }
+.pipeline-execution .stage-why summary span { text-decoration: underline; text-underline-offset: 3px; }
+.pipeline-execution .stage-why summary::-webkit-details-marker { display: none; }
 
 .pipeline-prerequisite { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .pipeline-state-label { padding: 2px 7px; border: 1px solid var(--border); border-radius: 6px; font-size: 11px; white-space: nowrap; }
@@ -64,3 +64,14 @@
 .pipeline-execution .index-action-bar .button { min-height: 44px; padding: 10px 18px; font-size: 13px; line-height: 22px; }
 .pipeline-execution .index-action-bar .source-sync-actions { gap: 16px; }
 .pipeline-execution .pipeline-public-actions .button.primary { min-height: 44px; padding: 10px 18px; font-size: 13px; line-height: 22px; }
+
+.model-setup-guide { margin: 18px 0; padding: 16px 18px; background: var(--surface-2); border-left: 2px solid var(--border); border-radius: 0 10px 10px 0; font-size: 12px; line-height: 1.65; }
+.model-setup-guide > strong { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.model-setup-guide dl { display: grid; gap: 14px; margin: 14px 0; }
+.model-setup-guide dl > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; }
+.model-setup-guide dt { color: var(--text); font-weight: 500; }
+.model-setup-guide dd { display: flex; flex-wrap: wrap; gap: 5px 14px; margin: 0; color: var(--muted); }
+.model-setup-guide small { flex-basis: 100%; font-size: 11px; }
+.model-setup-guide code { padding: 2px 5px; border-radius: 4px; background: var(--surface); font-size: 11px; overflow-wrap: anywhere; }
+.model-setup-guide > p { margin: 0; color: var(--muted); font-size: 11px; }
+@media (max-width: 520px) { .model-setup-guide dl > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }

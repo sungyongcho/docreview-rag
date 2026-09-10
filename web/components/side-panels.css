@@ -5,7 +5,7 @@
   background: rgb(190 193 190 / 24%);
   backdrop-filter: none;
 }
-:is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) > :is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) {
+:is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) > :is(section, div):is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) {
   box-sizing: border-box;
   width: min(760px, calc(100vw - 32px));
   height: calc(100dvh - 84px);
@@ -46,12 +46,12 @@
 .conversation-settings-dialog > .conversation-settings-sections button { flex: 1; font-size: 12px; }
 .conversation-settings-dialog > .conversation-settings-sections button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px #0001; }
 @media (prefers-reduced-motion: no-preference) {
-  :is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) > :is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) { animation: shared-side-panel-in 200ms ease-out both; }
+  :is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) > :is(section, div):is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) { animation: shared-side-panel-in 200ms ease-out both; }
 }
 @keyframes shared-side-panel-in { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: translateX(0); } }
 @media (max-width: 900px) {
   :is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) { padding: 0; }
-  :is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) > :is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) { width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+  :is(.conversation-settings-overlay, .request-inspector-overlay, .evaluation-setup-backdrop) > :is(section, div):is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) { width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
   :is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) > :is(.conversation-settings-header, .request-inspector-header, .surface-heading) { padding-top: calc(18px + env(safe-area-inset-top)); }
   :is(.conversation-settings-dialog, .request-inspector-panel, .evaluation-setup) > :is(.conversation-settings-body, .request-inspector-body, .evaluation-setup-body) { padding: 22px 16px calc(24px + env(safe-area-inset-bottom)); }
 }

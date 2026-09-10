@@ -168,7 +168,7 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
           <span className="source-basket-tool"><button type="button" disabled={disabled || !pairs.length} aria-label={t("Clear selection")} onClick={() => onChange(acquisitionDraft([]))}><ListX size={16} /></button><span role="tooltip">{t("Clear selection")}</span></span>
         </div></header>
         <p className="source-matrix-summary" role="status">{t("Selected company-years: {count}", { count: effective.length })} · {t("Published company-years: {count}", { count: new Set(sources.map((source) => `${source.registry}:${source.issuer}:${source.fiscal_year}`)).size })}</p>
-        <div className="source-year-legend"><span>{t("In scope")}</span><span>{t("Not in scope")}</span><span><MousePointer2 size={11} />{t("Click to select or deselect")}</span></div>
+        <div className="source-year-legend"><span><span className="year-downloaded-mark" aria-hidden="true">✓</span>{t("In scope")}</span><span><span className="year-missing-mark" aria-hidden="true">!</span>{t("Not in scope")}</span><span><MousePointer2 size={11} />{t("Click to select or deselect")}</span></div>
         <SourceSelectionGrid sources={visible} availablePairs={allPairs} pairs={pairs.filter((pair) => !hiddenCompanies.includes(`${pair.registry}:${pair.issuer}`))} companies={publicCompanies} disabled={disabled} scopeMode corpusScope={corpusScope} onToggle={toggle}
           addedCompanies={basket.filter((company) => !hiddenCompanies.includes(`${company.registry}:${company.issuer}`))}
           onRemoveCompany={(company) => {
@@ -202,8 +202,11 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
     {onDeleteSources && <SourceDeleteDialog documentIds={sources.map((source) => source.document_id)} disabled={disabled || deleteDisabled} onConfirm={onDeleteSources} onOpenJobs={onOpenJobs} />}
     </div></header>
     <p className="source-matrix-summary" role="status"><span>{t("Selected on disk: {count}", { count: state.present.length })}</span> · <span>{t("To download: {count}", { count: state.downloadPairs.length })}</span> · <span>{t("On disk not selected: {count}", { count: state.excluded.length })}</span></p>
-    <div className="source-year-legend"><span><span className="year-downloaded-mark" aria-hidden="true">✓</span>{t("Downloaded")}</span><span><span className="source-year-pending" aria-hidden="true">✓</span>{t("Awaiting download")}</span><span><MousePointer2 size={11} aria-hidden="true" />{t("Click to select or deselect")}</span></div>
-    <SourceSelectionGrid sources={sources.filter((source) => !hiddenCompanies.includes(`${source.registry}:${source.issuer}`))} pairs={merged} companies={companies} disabled={disabled} onToggle={toggle}
+    <div className="source-year-legend"><span><span className="year-downloaded-mark" aria-hidden="true">✓</span>{t("Downloaded")}</span><span><span className="source-year-pending" aria-hidden="true">!</span>{t("Awaiting download")}</span><span><MousePointer2 size={11} aria-hidden="true" />{t("Click to select or deselect")}</span></div>
+    <SourceSelectionGrid sources={sources.filter((source) => !hiddenCompanies.includes(`${source.registry}:${source.issuer}`) && (
+        source.on_disk || PORTFOLIO_FILINGS.some(company => company.registry === source.registry && company.issuer === source.issuer)
+        || [...merged, ...basket].some(company => company.registry === source.registry && company.issuer === source.issuer)
+      ))} pairs={merged} companies={companies} disabled={disabled} onToggle={toggle}
       addedCompanies={basket} onRemoveCompany={removeCompany}
       onEditCompany={(company) => { setChosen((current) => current.length === 1 && current[0].registry === company.registry && current[0].issuer === company.issuer ? [] : [company]); setPickerValid(true); }}
       renderYearEditor={(company) => chosen[0]?.registry === company.registry && chosen[0]?.issuer === company.issuer && <div className="source-matrix-add">

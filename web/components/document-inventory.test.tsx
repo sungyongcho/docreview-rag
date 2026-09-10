@@ -224,3 +224,23 @@ it.each(["filters", "documents", "details"] as const)("offers pipeline inspectio
   expect(inspect).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: failure === "filters" ? "Retry filters" : "Retry" })).toBeEnabled();
 });
+
+
+it("refreshes retained inventory on activation and corpus completion without resetting filters", async () => {
+  api.getAdminDocuments.mockResolvedValue(page([]));
+  const view = render(<DocumentInventory live active={false} refreshRevision="" fallbackDocuments={[]} />);
+  expect(api.getAdminDocuments).not.toHaveBeenCalled();
+  view.rerender(<DocumentInventory live active refreshRevision="" fallbackDocuments={[]} />);
+  await waitFor(() => expect(api.getAdminDocuments).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByLabelText("Search"), { target: { value: "NVDA" } });
+  await waitFor(() => expect(api.getAdminDocuments).toHaveBeenCalledTimes(2));
+  api.getAdminDocuments.mockResolvedValue(page(["doc-after-ingest"]));
+  view.rerender(<DocumentInventory live active refreshRevision="ingest:succeeded" fallbackDocuments={[]} />);
+  expect(await screen.findByRole("button", { name: "doc-after-ingest" })).toBeVisible();
+  expect(screen.getByLabelText("Search")).toHaveValue("NVDA");
+  expect(api.getAdminDocuments.mock.calls.at(-1)?.[0].get("query")).toBe("NVDA");
+  view.rerender(<DocumentInventory live active={false} refreshRevision="ingest:succeeded" fallbackDocuments={[]} />);
+  api.getAdminDocuments.mockResolvedValue(page(["doc-after-return"]));
+  view.rerender(<DocumentInventory live active refreshRevision="ingest:succeeded" fallbackDocuments={[]} />);
+  expect(await screen.findByRole("button", { name: "doc-after-return" })).toBeVisible();
+});

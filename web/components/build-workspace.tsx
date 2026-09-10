@@ -155,6 +155,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
   const [jobs, setJobs] = useState<EvaluationJob[]>([]);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const completedJobs = useRef(new Set<string>());
+  const documentRevision = jobBoard.jobs.filter(job => job.domain === "corpus" && ["succeeded", "failed", "cancelled", "interrupted"].includes(job.status)).map(job => `${job.job_id}:${job.status}:${job.updated_at}`).sort().join("|");
   const [busy, setBusy] = useState(false);
   const [acquisition, setAcquisition] = useState<AcquisitionForm>(DEFAULT_ACQUISITION);
 
@@ -474,7 +475,7 @@ export function BuildWorkspace({ publishedCorpus, publicProfile = DEFAULT_SESSIO
         onRefresh={() => live ? refresh("manual") : publicCorpus.refresh()}
       /></RetainedPanel>
 
-      <RetainedPanel active={tab === "documents"}><DocumentInventory onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={[]} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
+      <RetainedPanel active={tab === "documents"}><DocumentInventory active={tab === "documents"} refreshRevision={documentRevision} onInspectPipeline={() => { setFocusStage("index"); onTabChange("pipeline"); }} live={live} fallbackDocuments={[]} onOpenPipeline={(stage = "index") => { setFocusStage(stage); onTabChange("pipeline"); }} onOpenJobs={() => onTabChange("jobs")} /></RetainedPanel>
 
       <RetainedPanel active={tab === "jobs"}>{(live
         ? <JobCenter

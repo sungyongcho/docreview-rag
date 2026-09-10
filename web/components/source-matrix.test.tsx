@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SourceSelectionGrid } from "./source-selection-grid";
 import { SourceMatrix } from "./source-matrix";
 import type { AcquisitionForm, AcquisitionPair } from "./build-pipeline";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
@@ -360,4 +361,32 @@ it("allows pending target navigation without server preparation", () => {
   fireEvent.click(screen.getByRole("button", { name: "Published corpus" }));
   expect(screen.getByRole("dialog", { name: "Published corpus" })).toBeVisible();
   expect(download).not.toHaveBeenCalled();
+});
+
+
+it("shows the four default companies without unselected legacy catalog companies", () => {
+  const pairs: AcquisitionPair[] = [
+    ...["NVDA", "AMD"].flatMap(issuer => [2019, 2020, 2021, 2022, 2023, 2024].map(year => ({ registry: "sec" as const, issuer, year }))),
+    ...["005930", "000660"].flatMap(issuer => [2022, 2023, 2024].map(year => ({ registry: "dart" as const, issuer, year }))),
+  ];
+  const sources = [...pairs.map(pair => source(pair.issuer, pair.year, pair.issuer === "NVDA" && pair.year === 2019)), source("INTC", 2023, false), source("MU", 2024, false), source("035420", 2024, false)];
+  const download = vi.fn();
+  render(<Harness sources={sources} initialPairs={pairs} download={download} />);
+  for (const issuer of ["NVDA", "AMD", "005930", "000660"]) expect(screen.getByRole("group", { name: new RegExp(`^${issuer}( ·|$)`) })).toBeVisible();
+  for (const issuer of ["INTC", "MU", "035420"]) expect(screen.queryByRole("group", { name: new RegExp(`^${issuer}( ·|$)`) })).toBeNull();
+  expect(screen.getByText("To download: 17")).toBeVisible();
+  const sync = screen.getByRole("button", { name: "Sync selection" });
+  expect(sync).toBeEnabled();
+  fireEvent.click(sync);
+  expect(download).toHaveBeenCalledWith(acquisitionDraft(pairs));
+});
+
+
+it("matches public scope markers to selection while keeping DEV download markers", () => {
+  const props = { sources: [source("NVDA", 2024), source("NVDA", 2022)], pairs: [{ registry: "sec" as const, issuer: "NVDA", year: 2024 }], companies: [], disabled: false, onToggle: vi.fn() };
+  const view = render(<SourceSelectionGrid {...props} scopeMode />);
+  expect(screen.getByRole("button", { name: "NVDA FY2024 · In scope" }).querySelector(".year-downloaded-mark")).toHaveTextContent("✓");
+  expect(screen.getByRole("button", { name: "NVDA FY2022 · Not in scope" }).querySelector(".year-missing-mark")).toHaveTextContent("!");
+  view.rerender(<SourceSelectionGrid {...props} scopeMode={false} />);
+  expect(screen.getByRole("button", { name: "NVDA FY2022 · On disk" }).querySelector(".year-downloaded-mark")).toHaveTextContent("✓");
 });

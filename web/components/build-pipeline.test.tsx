@@ -181,7 +181,7 @@ describe("BuildPipeline", () => {
       expect(node).toBeVisible();
       fireEvent.click(node);
       expect(screen.getByRole("heading", { name: `${["1-1", "1-2", "1-3", "1-4", "3-1", "2", "3-2"][index]}. ${title}` })).toBeVisible();
-      expect(screen.getByText("Why it matters:")).toBeVisible();
+      expect(screen.getByText("Why it matters")).toBeVisible();
       expect(document.querySelectorAll("ol.stage-list article.stage-card")).toHaveLength(1);
     });
     for (const handler of Object.values(handlers)) expect(handler).not.toHaveBeenCalled();

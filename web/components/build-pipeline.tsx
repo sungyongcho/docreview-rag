@@ -429,7 +429,8 @@ interface StageCardProps {
 function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, corpusScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
   const { t, locale } = useI18n();
   const job = stage.job;
-  const showHint = Boolean(stage.hint) && stage.hint !== job?.message;
+  const repeatsJobMessage = job && (stage.hint === job.message || stage.hint === `Last run ${job.status}: ${job.message}`);
+  const showHint = Boolean(stage.hint) && !repeatsJobMessage;
   const readOnlyNote = readOnly && !["filings", "embeddings", "lexical"].includes(stage.id) && OPERATOR_STAGES.has(stage.id);
   const sourceState = selectedSourceState(sources, acquisition);
   const activeJob = job && (job.status === "running" || job.status === "queued");
@@ -459,6 +460,7 @@ function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrep
               {stage.numbers.map((item, index) => <Fragment key={`${index}:${t(item)}`}>{index > 0 && <span className="sep" aria-hidden="true">·</span>}<span>{t(item)}</span></Fragment>)}
             </p>
           )}
+          {readOnly && stage.id === "embeddings" && <p className="helper">{t("DocReview generated its document embeddings with OpenAI’s text-embedding-3-large model.")}</p>}
           {stage.id === "evaluate" && (evaluationSetup ? evaluationSetup(stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null) : stage.action ? <ActionButton stage={stage} primary={true} handler={handler} disabled={disabled} /> : null)}
           {stage.id === "filings" && <SourceMatrix locked={readOnly} corpusScope={corpusScope} onAskScope={onAskScope} sources={sources} companies={companies} acquisition={acquisition} onChange={onAcquisitionChange} disabled={busy} onValidityChange={onAcquisitionValidityChange} onDownload={onDownload} downloadDisabled={disabled("acquire")} onDeleteSources={onDeleteSources} deleteDisabled={sourceDeletionDisabled} onOpenJobs={onOpenJobs} />}
           {job && !(stage.id === "index" && activeJob) && (
@@ -466,10 +468,15 @@ function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrep
               <JobProgress job={job} />
             </div>
           )}
-          {showHint && <p className="stage-hint">{t(stage.hint)}</p>}
+          {showHint && (!readOnly && stage.id === "answer_model" && stage.statusDetail === "No answer model" ? <aside className="model-setup-guide" role="note">
+            <strong><Info size={15} aria-hidden="true" />{t("Model connection guide")}</strong>
+            <dl><div><dt>OpenAI</dt><dd><span>DEV <code>OPENAI_API_KEY_LOCAL</code></span><span>PROD <code>OPENAI_API_KEY_PROD</code></span><small>{t("Set the matching key in .env, then restart the app with the Compose configuration for that environment.")}</small></dd></div>
+            {LOCAL_ENGINE_VISIBLE && <div><dt>{t("Local model")}</dt><dd>{t("Connect a server in Settings › Local LLM, then choose a model in the conversation's model settings.")}</dd></div>}</dl>
+            <p>{t("Evidence search remains available without an answer model.")}</p>
+          </aside> : <p className="stage-hint">{t(stage.hint)}</p>)}
           {recovery}
           {readOnlyNote && <p className="stage-note">{t(stage.id === "evaluate" ? "Open Quality checks to explore datasets, try evaluation settings and compare published results. Running new evaluations is available in DEV mode." : stage.id === "index" ? "Use prepared chunks. Adjust the selection below, then confirm your search scope." : DEV_ONLY_NOTE)}</p>}
-          <details className={`stage-why${readOnly ? " public-stage-why" : ""}`}><summary><Lightbulb size={15} aria-hidden="true" /><span>{t(readOnly ? "Why it matters" : "Why it matters:")}</span></summary><p>{t(stage.why)}</p></details>
+          <details className="stage-why"><summary><Lightbulb size={15} aria-hidden="true" /><span>{t("Why it matters")}</span></summary><p>{t(stage.why)}</p></details>
           {stage.id === "index" && <section className="index-selection source-basket" aria-label={t("Selected documents")}>
             <header className="index-selection-heading">
               <h3>{t("Selected documents")}</h3>
