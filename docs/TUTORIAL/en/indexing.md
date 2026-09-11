@@ -4,7 +4,6 @@
 
 PROD shows actual chunk and embedding counts for the selected published documents. Loading, an empty catalog and a failed listing are distinct states, never sample results. BM25 keyword statistics are computed over the server corpus by language; scope selection restricts candidates without rebuilding those statistics. Existing evaluation results and snapshot comparisons keep their original scope.
 
-
 When verified downloaded originals outnumber ingested documents in a registry, Parse & chunk retains completion for existing data and displays **Complete · new originals available**. Select the new originals to process them. Running jobs still show their actual progress; the additional-source notice clears after the current counts agree.
 
 ## Return from terminal preparation
@@ -12,7 +11,6 @@ When verified downloaded originals outnumber ingested documents in a registry, P
 When a prerequisite needs terminal work, the selected preparation step displays its diagnosis, terminal instructions, a copyable command and the expected result. Complete that command in this checkout, return to the same step, and click **Check updated status**. Continue only when the reported prerequisite has actually changed; the refresh button does not execute setup or fabricate completion.
 
 Schema checking is read-only. Empty-schema preparation preserves existing databases and refuses incompatible schemas. Unarchived historical jobs remain visible in the unified Jobs view; an old ingestion request without a selection ID cannot be retried. Start a new ingestion from a current manifest selection instead.
-
 
 The terminal panel is compact and collapsible. It opens for a prerequisite blocking the selected step. Source acquisition can remain available while indexing needs schema recovery; open setup checks to inspect that separate condition. Company and year suggestions open directly below their input and may temporarily cover hints or quick-add controls.
 

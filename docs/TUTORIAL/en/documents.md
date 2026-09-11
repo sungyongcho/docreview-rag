@@ -4,7 +4,6 @@
 
 The PROD inventory uses the same fixed published portfolio set as Filings. Open a document to inspect real chunk text and citations. A missing publication does not mean its DEV source was deleted. Publishing the prepared target documents is a separate operator action.
 
-
 Use Documents to connect a company and fiscal year to a specific original filing,
 its stored chunks, and its indexing state. The list and details answer different
 questions: the list finds a filing; the details establish what has actually been

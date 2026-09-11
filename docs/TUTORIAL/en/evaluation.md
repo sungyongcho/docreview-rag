@@ -16,7 +16,6 @@ PROD retains the evaluation workflow layout. Published dataset questions and exp
 
 Open **Explore evaluation settings** in the same side drawer layout as DEV. Dataset metadata and core search settings appear first; Quick/Matrix, chunk targets and tuning parameters are under **Advanced evaluation options**. The body scrolls independently above the fixed Cancel and locked evaluation actions. The request preview is not submitted. Saving this exploration uses browser storage only and never changes recorded scores. Queueing evaluations, editing datasets, and creating snapshots keep their DEV badges and remain locked.
 
-
 > [!DEV]
 > Evaluation execution and dataset editing run in DEV only. Visitors can explore settings and read published questions, recorded evaluations and comparisons.
 
@@ -57,7 +56,6 @@ The read-only preparation check matches required official filing identities, ver
 Quick evaluations require chunks for each exact evidence-source version and the selected search indexes. Matrix evaluations require a compatible database, writable source storage, and verified originals; they build isolated indexes themselves. Submission repeats the same check before creating a job, and execution checks again after waiting for its turn. Unready input returns `evaluation_not_ready` rather than registering a job destined to fail.
 
 Results record golden-set identity and review provenance separately from search scope. Quick search uses the current index for the suite's registry and corpus language. Matrix search uses a temporary explicit selection of all registered originals in that registry; temporary references do not modify the acquisition manifest. Changing corpus scope can change the validity of absent-evidence cases, which remain review candidates.
-
 
 ## Choose among seven suites {#suites}
 

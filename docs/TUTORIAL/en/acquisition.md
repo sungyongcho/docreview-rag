@@ -6,8 +6,6 @@ On PROD, this same company/year grid selects the next question's evidence scope.
 
 Selection is stored per conversation and passed as exact `doc_ids`. Select all remains bounded to this portfolio; Clear selection disables questions and search until a filing is selected. SEC/DART tabs temporarily intersect the selection, and Auto restores it. Unavailable saved documents are reported without widening the selection. No download, parsing, embedding or evaluation runs when toggling a year.
 
-
-
 The company picker also lets visitors add the four portfolio companies to inspect their target years before publication. Unpublished years are labeled and open DEV preparation help; they never enter searchable document filters or prepared counts.
 
 ## Reference acquisition scope

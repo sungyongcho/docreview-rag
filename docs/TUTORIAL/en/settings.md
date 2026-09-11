@@ -90,7 +90,7 @@ For CPU-only local models, use the optional [CPU starting preset and hardware gu
 
 ### OpenAI per-call caps {#openai-call-caps}
 
-Each OpenAI call is also capped by the server. In `.env`, `DOCREVIEW_OPENAI_MAX_INPUT_TOKENS` (default 12,000), `DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS` (default 600) and `DOCREVIEW_OPENAI_MAX_COST_USD` (default 0.04) form the **ceiling**. A run limit above the ceiling does not raise it; the smaller value applies to every call. **System → System status** shows the caps in force under **OpenAI model policy**, and **Settings → Run limits** repeats them under **OpenAI per-call caps**.
+Each OpenAI call is also capped by the server. In `.env`, `DOCREVIEW_OPENAI_MAX_INPUT_TOKENS` (default 12,000), `DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS` (default 600) and `DOCREVIEW_OPENAI_MAX_COST_USD` (default 0.005) form the **ceiling**. A run limit above the ceiling does not raise it; the smaller value applies to every call. **System → System status** shows the caps in force under **OpenAI model policy**, and **Settings → Run limits** repeats them under **OpenAI per-call caps**.
 
 In DEV the editor saves lower working values on the server in `data/local-settings/openai-limits.json`; **Restore ceiling** deletes that file. The web cannot raise a cap above the ceiling: change the `.env` keys and restart with `rag-dev down` / `rag-dev up`. Public PROD always uses the ceiling and never reads the file.
 

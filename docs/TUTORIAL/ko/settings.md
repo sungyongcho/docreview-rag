@@ -90,7 +90,7 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 
 ### OpenAI 호출당 캡 {#openai-call-caps}
 
-OpenAI 호출 한 번에는 서버 캡도 적용됩니다. `.env`의 `DOCREVIEW_OPENAI_MAX_INPUT_TOKENS`(기본 12,000), `DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS`(기본 600), `DOCREVIEW_OPENAI_MAX_COST_USD`(기본 0.04)가 **상한**입니다. 실행 한도를 상한보다 높여도 상한은 올라가지 않고, 호출마다 더 작은 값이 적용됩니다. **시스템 → 시스템 상태**의 **OpenAI 모델 정책**에 현재 적용되는 캡이 표시되고, **설정 → 실행 한도**의 **OpenAI 호출당 캡**에도 같은 값이 나옵니다.
+OpenAI 호출 한 번에는 서버 캡도 적용됩니다. `.env`의 `DOCREVIEW_OPENAI_MAX_INPUT_TOKENS`(기본 12,000), `DOCREVIEW_OPENAI_MAX_OUTPUT_TOKENS`(기본 600), `DOCREVIEW_OPENAI_MAX_COST_USD`(기본 0.005)가 **상한**입니다. 실행 한도를 상한보다 높여도 상한은 올라가지 않고, 호출마다 더 작은 값이 적용됩니다. **시스템 → 시스템 상태**의 **OpenAI 모델 정책**에 현재 적용되는 캡이 표시되고, **설정 → 실행 한도**의 **OpenAI 호출당 캡**에도 같은 값이 나옵니다.
 
 DEV에서는 이 편집기가 더 낮은 작업값을 서버의 `data/local-settings/openai-limits.json`에 저장하고, **상한으로 복원**은 그 파일을 삭제합니다. 웹에서는 상한을 넘길 수 없습니다. 상한을 올리려면 `.env`의 키를 수정하고 `rag-dev down` / `rag-dev up`으로 재시작하세요. 공개 PROD는 항상 상한을 사용하며 파일을 읽지 않습니다.
 
