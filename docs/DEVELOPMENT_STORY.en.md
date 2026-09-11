@@ -18,11 +18,11 @@
 
 The goal was to apply RAG to documents where evidence matters — filings — while still learning the concept. In this domain, "where did this sentence come from" matters more than the answer, so retrieval, citation and evaluation could all be exercised end to end. It was also the right time to build a public project that directly demonstrates the LLM/RAG experience the market asks for.
 
-After studying in parallel (LangChain basics, then a RAG course, parts of KodeKloud and freeCodeCamp, and a BM25 video), the June work done by following lectures was kept on the `lecture-tuto` and `lecture2-tuto` branches. By July 8 I recorded that the copied code still did not feel fully mine — that note changed how I studied.
+After studying in parallel (LangChain basics, then a RAG course, parts of KodeKloud and freeCodeCamp, and a BM25 video), the work done by following lectures stayed on the `lecture-tuto` and `lecture2-tuto` branches. A note recorded along the way — that the copied code still did not feel fully mine — changed how I studied.
 
 ### Learning by rebuilding
 
-In August I split the finished version (`new`) and a learning version (`zero`), and rebuilt the code by typing it out. Moving from parsing, tables, chunking and DB loading into embeddings and vector/keyword search, I verified concepts through questions — ORM usage, how far embeddings must be understood, BM25 and IDF. After retrieval evaluation came reassembling, reviewing, fixing and testing.
+I started by splitting the finished version (`new`) and a learning version (`zero`), and rebuilt the code by typing it out. Moving from parsing, tables, chunking and DB loading into embeddings and vector/keyword search, I verified concepts through questions — ORM usage, how far embeddings must be understood, BM25 and IDF. After retrieval evaluation came reassembling, reviewing, fixing and testing.
 
 - Archive provenance: `101bae7d37a7f2002a533b15a08ca9bbbcda25bd` (table parser), `df094df2a57601d1eec5dc4a8c507c98c84ea63f` (M2.3–2.4)
 - Current history: `2b47b71` (parsing → chunking), `7532b72` (BM25 and local models), `dd4cc60` (evaluation framework)
@@ -274,5 +274,5 @@ This project is also an **experiment in improving the development process itself
 - [Retrieval Augmented Generation (RAG)](https://www.coursera.org/learn/retrieval-augmented-generation-rag) — modules covered.
 - [KodeKloud RAG Crash Course](https://www.youtube.com/watch?v=swvzKSOEluc) — codebase structure review.
 - [freeCodeCamp: Learn RAG From Scratch](https://www.youtube.com/watch?v=sVcwVQRHIc8) — first 30 minutes.
-- [BM25 study video](https://www.youtube.com/watch?v=ziiF1eFM3_4) — August 24.
+- [BM25 study video](https://www.youtube.com/watch?v=ziiF1eFM3_4)
 - [Gomoku Minimax/AlphaZero documentation](https://sungyongcho.com/gomoku/docs) — development-log structure reference.
