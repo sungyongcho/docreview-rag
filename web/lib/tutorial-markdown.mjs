@@ -1,8 +1,8 @@
 import { createElement } from "react";
 import Markdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import { DOCUMENTATION_REGISTRY, documentationDocuments, documentationLink } from "./documentation-registry.mjs";
 export { DOCUMENTS } from "./documentation-registry.mjs";
 
@@ -31,6 +31,7 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
         }
         if (node.children) node.children = node.children.map((child) => child.type === "html" && child.value.trim() === "<!-- tutorial-steps -->" ? {
           type: "list", ordered: true, start: 1, spread: false,
+          data: { hProperties: { className: "docs-steps" } },
           children: steps.map((step) => ({ type: "listItem", spread: false, children: [{ type: "paragraph", children: [{ type: "link", url: `${step.source}#${step.anchor}`, children: [{ type: "text", value: step.title }] }] }] })),
         } : child);
         if (node.type === "imageReference" || node.type === "linkReference") {
@@ -113,7 +114,7 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
       },
       blockquote: ({ children, node }) => node.properties["data-goal"] === "true"
         ? createElement("aside", { className: "docs-goal" },
-            createElement("span", { className: "docs-goal-label" }, locale === "ko" ? "목표" : "Goal"), children)
+          createElement("span", { className: "docs-goal-label" }, locale === "ko" ? "목표" : "Goal"), children)
         : node.properties["data-development-only"] === "true"
           ? (renderDevelopmentNotice?.(children) ?? createElement("aside", { className: "docs-development-notice" }, createElement("strong", null, locale === "ko" ? "개발 모드 전용" : "DEV only"), children))
           : createElement("blockquote", null, children),
