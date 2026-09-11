@@ -73,7 +73,7 @@ For a local server, inspect **Settings → Local LLM** and the selected answer-c
 
 ## Evaluation, drafts, or snapshots are blocked {#evaluation}
 
-Use **Measure → 2. Golden dataset / 3. Run evaluation / 4. Compare and save**, plus **Build → Jobs**.
+Use **Measure → 2. Golden dataset / 3. Run evaluation / 4. Compare & snapshots**, plus **Build → Jobs**.
 
 | Symptom | Evidence and cause | Remedy | Verification |
 |---|---|---|---|

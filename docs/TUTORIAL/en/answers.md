@@ -29,7 +29,7 @@ remaining. Returning to an earlier phase can make later phases wait again.
 
 The pending assistant message appears directly below your question. Its **Execution summary** shows the live stages, counts, elapsed time and **Stop request** action in that same message. Completion replaces the pending content with the answer or failure while retaining the summary; there is no separate progress card above the composer.
 
-If no evidence meets the relevance threshold, **Verify answer and citations** is marked **Skipped: threshold not met** in a warning tone. A skipped step is different from a failed or cancelled request's unperformed step; the result-preparation stage can still complete. Older records without the reason do not invent a skipped state.
+If no evidence meets the relevance threshold, **Verify answer and citations** is marked **Skipped: relevance threshold not met** in a warning tone. A skipped step is different from a failed or cancelled request's unperformed step; the result-preparation stage can still complete. Older records without the reason do not invent a skipped state.
 
 ### SCREENSHOT NEEDED
 <!-- feature=live-execution-summary-and-skipped-verification; mode=both; locale=en; theme=light; state=pending-answer-message-with-live-stages-and-completed-threshold-failure; expected-evidence=question-pending-stages-stop-request-visible-composer-and-skipped-verification-in-warning-tone -->

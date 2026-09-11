@@ -85,7 +85,7 @@ The filename and small source/language summary sit directly under the selector. 
 
 All active dataset files live in `data/golden/`. User files use a `docreview-golden-set` envelope with `suite_id`, `registry`, `question_language`, timestamps, `checked_sha256`, and `cases`. Files survive database resets and `rag-start-fresh`; DB draft rows are not the source of truth.
 
-Selecting a question opens a wide editor in the same area. The header keeps the file name, the completion state, **Delete draft** and **Save draft** visible while the fields scroll. **Question list** restores the previous search, sort, and scroll position. Unsaved navigation offers **Save draft and leave**, **Discard changes and leave**, or **Keep editing**.
+Selecting a question opens a wide editor in the same area. The header keeps the file name, the completion state, **Delete draft** and **Save draft** visible while the fields scroll. **Question list** restores the previous search, sort, and scroll position. Unsaved navigation offers **Save draft and leave**, **Discard and leave**, or **Continue editing**.
 
 Start with the question and choose whether original documents can answer it. Evidence-backed questions need a reference answer and source evidence before evaluation. **Select evidence from documents** searches documents and paged chunks; selecting a chunk records its exact document ID, SHA-256, and character interval. Unparsed documents link to preparation. Switching to no evidence asks before clearing an existing answer or source spans.
 

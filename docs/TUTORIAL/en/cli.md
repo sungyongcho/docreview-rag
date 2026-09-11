@@ -404,7 +404,7 @@ Verify that only the file disappeared; manifests, golden/profile sources, and DB
 validation or re-ingestion may fail until you re-download with the one-filing example. There is no individual
 DB-document deletion button/API in this walkthrough.
 
-## Reset local connection settings
+### Reset local connection settings
 
 In Settings → Local LLM, **Disconnect** persists an explicit off state and prevents default reconnection.
 **Use Default** checks the startup endpoint selected by process environment → `.env` → defaults

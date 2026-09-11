@@ -102,7 +102,7 @@ Reuse services that are already running. Refresh System, inspect Documents and J
 
 Saved conversations and their profiles remain in that browser. In-page workspace navigation preserves open editors, selections, and scroll; an unfinished question draft is not a promise of persistence across a page reload or browser-data deletion. Ordinary shutdown does not require [runtime reset](troubleshooting.md#reset). **Data & help** separates browser conversations and preference resets from server documents and job history; no cleanup or reset action is required for an ordinary shutdown.
 
-**Production preview** does not switch the running backend to production or submit a review. Its header identifies the DEV backend and read-only scope. Use **Exit preview** to resume your retained DEV workspace. A preview of the interface does not create execution timings or prove the production image's permissions; inspect real run records and the final image separately. See [environment boundaries](environment.md#environment-boundaries).
+The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211) and is not available in this release. See [environment boundaries](environment.md#environment-boundaries).
 
 ## Recorded provider usage
 
@@ -116,7 +116,7 @@ After an explicitly requested backfill, revisit Usage and find its embedding mod
 
 ## Notification center {#notification-center}
 
-Open the bell in the top bar, next to the production-preview and language controls. Its badge counts unread entries. The panel groups entries into **In progress** (live corpus jobs), **New notifications** (unread) and a collapsed **Past notifications · N** section; marking an entry read moves it into the past section instead of dimming it in place. The newest 100 entries remain in this browser: closing the panel or letting a toast expire does not delete them. Dismissing a toast marks that entry read. **Mark all read** keeps the history; **Delete** and **Clear all notifications** remove notification records only, not conversations, source files or job results.
+Open the bell in the top bar, next to the language and theme controls. Its badge counts unread entries. The panel groups entries into **In progress** (live corpus jobs), **New notifications** (unread) and a collapsed **Past notifications · N** section; marking an entry read moves it into the past section instead of dimming it in place. The newest 100 entries remain in this browser: closing the panel or letting a toast expire does not delete them. Dismissing a toast marks that entry read. **Mark all read** keeps the history; **Delete** and **Clear all notifications** remove notification records only, not conversations, source files or job results.
 
 Select an entry to mark it read and open its related job, evaluation result, conversation, settings category or System status. An entry without a destination only changes its read state. Escape closes the panel and returns focus to the bell; arrow keys move between entries. Long messages expand without discarding text. Error pictograms and accents identify failures; when the API supplies a cause, file and fix action, expand **Technical details** to inspect them. Server-originated messages remain exactly as received.
 

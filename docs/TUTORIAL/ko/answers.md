@@ -76,7 +76,7 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 ### SCREENSHOT NEEDED
 <!-- feature=collapsed-titled-paginated-evidence-candidates; mode=both; locale=ko; theme=light; state=expanded-retrieved-evidence-candidates-with-section-titled-cards; expected-evidence=collapsed-cards-section-titles-sticky-toolbar-pinned-excluded-counts-expand-collapse-and-pager -->
 
-코퍼스 상태 문구(**전체 코퍼스 · 공시 N건**)를 눌러 준비 화면에 이동하고 **뒤로**로 초안·설정·메시지·스크롤을
+코퍼스 상태 문구(**전체 코퍼스 · 공시 N건**)를 눌러 준비 화면에 이동하고 **이전**으로 초안·설정·메시지·스크롤을
 보존한 대화로 복귀합니다. [실행 성능 안내](runtime.md)는 실측 막대·반복 호출·미수집 값·이전 기록을 설명합니다.
 
 CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨어 안내](ollama.md#cpu-starting-preset)를 참고하세요. 기존 기본값은 유지되며, 프리셋을 직접 적용한 뒤 다음 실행의 시간 기록을 확인합니다.
