@@ -264,7 +264,7 @@ This project is also an **experiment in improving the development process itself
 
 - I did not use a framework because I wanted to understand RAG directly through this project. I studied LangChain/LangGraph through tutorials but chose to implement core RAG and the workflow myself, so that nothing important stayed hidden behind abstractions.
 - A RAG pipeline looks simple as a concept: split documents, vectorize them, search with a question, hand the result to a model. **Improving performance and deploying it is a different problem.** Tuning the pipeline, algorithms and hyperparameters one by one shows why it gets complex. Building the retrieval-generation loop myself also led me to think about agentic flows — tool calls and state.
-- Ultimately, **quality is decided by data — parsing, chunking, evaluation sets — more than by swapping models**. That is why most of the schedule went into table parsing, Korean retrieval, goldens and cross-language parity.
+- Ultimately, **quality is decided by data — parsing, chunking, evaluation sets — more than by swapping models**. What AI shortened was the typing of implementations and tests; deciding what counts as correct — how to restore tables, how to index Korean queries, what belongs in the golden set — still needed my judgment. That is why most of the schedule went into table parsing, Korean retrieval, goldens and cross-language parity.
 - I learned a great deal about using AI. Judgment and approval stay with me; repetition and execution go with AI. Unknown and difficult things have become areas I can solve by finding a way.
 
 ## References
