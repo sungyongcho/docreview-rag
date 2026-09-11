@@ -167,6 +167,8 @@ k=60이며, 각 리스트에서 처음 등장한 순위만 합산합니다.
 
 응답은 JSON 스키마 strict 디코딩을 사용하고, 검증 실패 시 1회만 복구를 시도합니다. 예산을 넘길 것으로 예상되면 호출을 보내지 않고 실패시킵니다. 로컬 Ollama는 `num_ctx`를 명시해 원문이 조용히 잘리는 것을 막고, 개발 모드에서만 활성화됩니다.
 
+답변 판정은 `SUPPORTED`와 `NOT_IN_DOCS` 둘 중 하나입니다. `SUPPORTED`는 "근거가 있어 보인다"가 아니라 "인용이 검증을 통과했다"는 신호이고, 스키마가 인용 없는 지지 답변 자체를 거부합니다. 모델이 요청한 인용이 검증에서 걸러지면 부분 인용 답변을 보내는 대신 `support_downgraded`로 전체 결과를 부재로 내립니다. 근거 부족 판정(`NOT_IN_DOCS`)과 운영 실패(provider·노드·예산)는 서로 다른 결과로 기록됩니다.
+
 ### 1-6. 평가와 실행 기록
 
 검색 품질을 감으로 판단하지 않기 위해 골든 데이터셋과 평가 프레임워크를 만들었습니다. 정답 span을 원문 위치(`doc_id + sha256 + start/end`)로 고정하고, span 커버리지 0.5 이상을 적중으로 봅니다.
@@ -174,9 +176,9 @@ k=60이며, 각 리스트에서 처음 등장한 순위만 합산합니다.
 $$
 \begin{aligned}
 \mathrm{span\_coverage} &= \frac{|\mathrm{overlap}|}{|\mathrm{gold\ span}|}\\
-\mathrm{recall@}k &= \frac{\text{hit gold spans}}{\text{gold spans}}\\
-\mathrm{hit\_rate@}k &= \mathbf{1}\big[\text{top-}k\text{ contains a hit}\big]\\
-\mathrm{RR} &= \frac{1}{\text{first hit rank}}, \qquad \mathrm{MRR} = \mathrm{mean}(\mathrm{RR})
+\mathrm{recall@}k &= \frac{\text{적중한 정답 span}}{\text{정답 span 수}}\\
+\mathrm{hit\_rate@}k &= \mathbf{1}\big[\text{top-}k\text{ 안에 적중}\big]\\
+\mathrm{RR} &= \frac{1}{\text{첫 적중 순위}}, \qquad \mathrm{MRR} = \mathrm{mean}(\mathrm{RR})
 \end{aligned}
 $$
 
@@ -187,7 +189,7 @@ $$
 
 실행은 `quick`(현재 인덱스 1회 평가)과 `matrix`(격리 코퍼스 × 전략/랭커/토큰 조합)로 나뉩니다. 결과를 비교할 때는 데이터셋·인덱스·설정 지문이 같을 때만 델타를 보여주고, 다르면 비교 불가로 표시합니다. 실행 단계·소요 시간·토큰·실패 원인은 모두 기록되며, 실패는 workflow budget / provider failure / node error로 구분합니다.
 
-### 실제 개발 순서 (기록 기반)
+### 개발 순서 정리 (기록 기반)
 
 ```pipeline-map
 ```

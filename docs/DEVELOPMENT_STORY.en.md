@@ -169,6 +169,8 @@ During development I verified answers with `gpt-5.6-terra` and used Ollama local
 
 Responses use strict JSON-schema decoding, with at most one repair attempt after a validation failure. When a call is projected to exceed budget it is refused before being sent. Local Ollama sets `num_ctx` explicitly so evidence cannot be silently truncated, and local engines are enabled only in DEV.
 
+Answers carry one of two labels: `SUPPORTED` or `NOT_IN_DOCS`. `SUPPORTED` means the cited evidence passed verification — not just that the model claimed support — and the schema itself rejects a supported answer without citations. When citations the model asked for are filtered by validation, the whole report degrades to absence (`support_downgraded`) instead of shipping a partially cited answer. An absence verdict (`NOT_IN_DOCS`) is a different result from an operational failure (provider, node or budget).
+
 ### 1-6. Evaluation and run records
 
 To avoid judging retrieval by feel, I built a golden dataset and an evaluation framework. A gold span is pinned to the source location (`doc_id + sha256 + start/end`), and span coverage of at least 0.5 counts as a hit.
@@ -189,7 +191,7 @@ Coverage is 0 when the document or source digest differs; each metric is compute
 
 Runs are split into `quick` (one evaluation against the current index) and `matrix` (isolated corpora × strategy/ranker/token combinations). Comparisons show metric deltas only when dataset, index and configuration fingerprints match; otherwise they are marked not comparable. Stage, elapsed time, tokens and failure cause are all recorded, and failures are typed as workflow budget / provider failure / node error.
 
-### Actual development order (from records)
+### Build order recap (from records)
 
 ```pipeline-map
 ```
