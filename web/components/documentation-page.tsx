@@ -8,6 +8,7 @@ import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } fr
 import { ProductBrand } from "@/components/product-brand";
 import { QuickStartOutline, QuickStartPanels, QuickStartProvider } from "@/components/quickstart-guide";
 import { RrfMerger } from "@/components/rrf-merger";
+import { TableNormalize } from "@/components/table-normalize";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { TutorialImage } from "@/components/tutorial-image";
 import { TutorialMarkdown } from "@/components/tutorial-markdown";
@@ -33,7 +34,7 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
   const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
-    const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary } as const)[block.language];
+    const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "table-normalize-demo": TableNormalize } as const)[block.language];
     return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} />;
   } });
   const tutorial = render(source);

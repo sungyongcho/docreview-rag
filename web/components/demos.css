@@ -47,6 +47,13 @@
 .docs-demo-slider small { color: var(--muted); font-size: 10.5px; }
 .docs-demo-slider input[type="range"] { width: 100%; accent-color: var(--accent); }
 
+.docs-demo-table { border-collapse: collapse; font-size: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.docs-demo-table td { padding: 5px 12px; border: 1px solid var(--border); }
+.docs-demo-table .demo-hl { background: color-mix(in srgb, var(--accent) 10%, transparent); font-weight: 600; }
+.docs-demo-md { margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 11.5px; line-height: 1.7; overflow-x: auto; }
+.docs-demo-caption { margin: 10px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+
 @media (max-width: 700px) {
   .docs-demo-grid { grid-template-columns: 1fr; }
+  .docs-demo-tabs { flex-wrap: wrap; }
 }

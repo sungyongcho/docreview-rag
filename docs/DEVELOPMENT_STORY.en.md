@@ -64,14 +64,7 @@ HTML blocks
 
 **Table normalization** is its own pipeline. `rowspan/colspan` are expanded into a dense grid, empty rows and columns are dropped, unit columns (`$`, `%`, `₩`) are folded toward their values, headers are inferred from shape, and the result is serialized to Markdown. When no header can be found the table keeps an empty header — a data row is never promoted into one.
 
-```text
-HTML table                         dense grid                unit fold        markdown
-┌──────────┬──────┐              2024   2023   $      2024     2023        | 2024 | 2023 |
-│ Revenue  │ 2024 │    expand    Revenue 1,234 1,111  → Revenue $1,234  $1,111  → | $1,234 | $1,111 |
-│          │ 2023 │    ───▶      Cost    987   900         Cost   $987   $900     ...
-├──────┬───┴──────┤              1,234  1,111 ...
-│ $    │  1,234   │
-└──────┴──────────┘
+```table-normalize-demo
 ```
 
 Negative values like `(1,234)` are preserved as written: a citation must match the filing the reader sees, and normalizing here is irreversible. Original cell spans and ownership are also kept in a separate structure so later splits can trace which source cell a value came from.
