@@ -180,16 +180,21 @@ API는 `deploy/gcp/operator_tunnel.sh`로만 닿으며, 이 스크립트는 loop
 
 ### 실행 순서 {#production-order}
 
-1. `.env`에 `DEPLOY_GCP_PROJECT`(선택으로 `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`,
-   `DEPLOY_MACHINE_TYPE`)를 채우고 `deploy/gcp/backend.env.example`을
-   `deploy/gcp/backend.env`(gitignore 대상)로 복사합니다. `deploy/gcp/deploy_env_config.sh`가
-   두 파일을 읽어 마스킹된 요약을 출력합니다.
-2. `deploy/gcp/create_vm.sh`가 `pd-standard` 30 GB 부트 디스크, 임시 외부 IP, `tcp:8000`에
-   대한 Cloudflare 전용 방화벽 규칙을 갖춘 e2-medium VM(공유 vCPU 2개, RAM 4 GB)을
-   만듭니다. 첫 부팅 때 `deploy/gcp/startup.sh`가 Docker와 2 GB 스왑 파일을 설치합니다.
-3. 준비된 코퍼스를 VM의 `/var/lib/docreview/corpus`에 복사한 뒤
-   `deploy/gcp/deploy_backend.sh`를 실행합니다. `docker-compose.deploy.yml`,
-   `deploy/Caddyfile`, `backend.env`(`/opt/docreview/.env`로)를 복사하고 스택을 띄웁니다.
+1. `.env`에 배포 값을 채웁니다. `DEPLOY_GCP_PROJECT`는 필수이고 first-install에는
+   `DEPLOY_POSTGRES_PASSWORD`와 `DEPLOY_ARTIFACT_DIR`이 필요합니다. 선택으로
+   `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`, `DEPLOY_AR_REPO`,
+   `DOCREVIEW_IMAGE`를 둘 수 있습니다. 모든 값이 이 파일 하나에 있고
+   `deploy/gcp/deploy_env_config.sh`가 마스킹된 요약을 출력합니다.
+2. `deploy/gcp/deploy_all.sh all`이 단계를 순서대로 실행합니다. `setup`이 필요한
+   API와 Artifact Registry 리포지토리, 배포 서비스 계정을 만들고, `vm`이
+   `pd-standard` 30 GB 부트 디스크, 임시 외부 IP, 방화벽 규칙(`tcp:8000`은
+   Cloudflare 전용, `tcp:22`는 IAP 전용)을 갖춘 e2-medium VM(공유 vCPU 2개,
+   RAM 4 GB)을 만듭니다. 첫 부팅 때 `deploy/gcp/startup.sh`가 Docker와
+   2 GB 스왑 파일을 설치합니다. SSH는 IAP TCP 전달만 허용합니다.
+3. `image` 단계가 `docker/Dockerfile`을 빌드해 `DOCREVIEW_IMAGE`로 푸시하고,
+   `backend` 단계(`deploy/gcp/deploy_backend.sh`)가 `docker-compose.deploy.yml`,
+   `deploy/Caddyfile`, 생성된 VM 환경(`/opt/docreview/.env`)을 복사하고 검증된
+   아티팩트 번들(코퍼스·데이터베이스·평가 기록)을 복원한 뒤 스택을 띄웁니다.
 4. `deploy/gcp/print_origin.sh`가 `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000`과
    `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`을 출력합니다.
 5. 그 줄들을 gomoku 저장소의 `.env`에 붙여 넣고 그쪽 `03_deploy_cloudflare.sh`를

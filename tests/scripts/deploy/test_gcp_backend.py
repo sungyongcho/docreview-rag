@@ -115,16 +115,19 @@ def command_log(path):
 
 @pytest.fixture
 def launcher(tmp_path, bundle):
-    """Prepare custom dotenv paths and a gcloud fake without cloud access."""
+    """Prepare a dotenv fixture and a gcloud fake without cloud access."""
     checkout = tmp_path / "checkout with spaces"
     scripts = checkout / "deploy/gcp"
     scripts.mkdir(parents=True)
     for name in ("deploy_backend.sh", "deploy_env_config.sh", "verify_artifacts.py"):
         shutil.copy2(ROOT / "deploy/gcp" / name, scripts / name)
     dotenv = checkout / ".env"
-    dotenv.write_text("DEPLOY_GCP_PROJECT=fixture-project\nOPENAI_API_KEY_PROD=fixture-key\n")
-    backend = tmp_path / "custom production.env"
-    backend.write_text("DOCREVIEW_IMAGE=fixture/image:tag\nPOSTGRES_PASSWORD=fixture-password\n")
+    dotenv.write_text(
+        "DEPLOY_GCP_PROJECT=fixture-project\n"
+        "OPENAI_API_KEY_PROD=fixture-key\n"
+        "DOCREVIEW_IMAGE=fixture/image:tag\n"
+        "DEPLOY_POSTGRES_PASSWORD=fixture-password\n"
+    )
     tools = tmp_path / "tools"
     tools.mkdir()
     executable(
@@ -142,7 +145,6 @@ def launcher(tmp_path, bundle):
         "PATH": str(tools) + os.pathsep + os.environ["PATH"],
         "COMMAND_LOG": str(log),
         "DOTENV_PATH": str(dotenv),
-        "BACKEND_ENV_PATH": str(backend),
         "DEPLOY_ARTIFACT_DIR": str(bundle),
         "DEPLOY_VM_NAME": "fixture-vm",
         "DEPLOY_GCP_ZONE": "us-central1-a",
@@ -150,8 +152,8 @@ def launcher(tmp_path, bundle):
     return scripts / "deploy_backend.sh", env, log
 
 
-def test_custom_backend_env_uses_the_remote_install_filename(launcher):
-    """Custom input is exported with the inherited key to the exact remote filename."""
+def test_dotenv_values_use_the_remote_install_filename(launcher):
+    """Dotenv input is exported with the inherited key to the exact remote filename."""
     script, env, log = launcher
     result = subprocess.run(["bash", str(script), "first-install"], env=env, capture_output=True)
     assert result.returncode == 0, result.stderr
@@ -161,13 +163,30 @@ def test_custom_backend_env_uses_the_remote_install_filename(launcher):
     content = env_copy.read_text()
     assert "OPENAI_API_KEY_PROD=fixture-key\n" in content
     assert "POSTGRES_PASSWORD=fixture-password\n" in content
+    assert "DOCREVIEW_IMAGE=fixture/image:tag\n" in content
     assert env_copy.stat().st_mode & 0o777 == 0o600
-    assert "custom production.env" not in str(commands)
     assert "database.private.dump" not in str(commands)
     copies = [cmd for cmd in commands if cmd[:2] == ["compute", "scp"]]
+    assert all("--tunnel-through-iap" in cmd for cmd in copies)
     assert sum(any("database.public.dump" in arg for arg in cmd) for cmd in copies) == 1
     assert sum(any("eval_runs/" in arg for arg in cmd) for cmd in copies) == 4
     assert "'first-install'" in commands[-1][-1]
+
+
+def test_first_install_requires_a_deploy_password(launcher):
+    """A missing DEPLOY_POSTGRES_PASSWORD fails before any cloud command."""
+    script, env, log = launcher
+    env = {k: v for k, v in env.items() if k not in ("POSTGRES_PASSWORD", "DEPLOY_POSTGRES_PASSWORD")}
+    dotenv = Path(env["DOTENV_PATH"])
+    dotenv.write_text(
+        "DEPLOY_GCP_PROJECT=fixture-project\n"
+        "OPENAI_API_KEY_PROD=fixture-key\n"
+        "DOCREVIEW_IMAGE=fixture/image:tag\n"
+    )
+    result = subprocess.run(["bash", str(script), "first-install"], env=env, capture_output=True)
+    assert result.returncode != 0
+    assert "DEPLOY_POSTGRES_PASSWORD" in result.stderr.decode()
+    assert command_log(log) == []
 
 
 def test_launcher_update_never_transfers_artifacts_or_credentials(launcher):

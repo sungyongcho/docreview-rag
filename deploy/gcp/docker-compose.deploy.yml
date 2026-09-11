@@ -1,6 +1,6 @@
 # Production compose for the single e2-medium VM (4 GB RAM + 2 GB swap).
 # deploy_backend.sh copies this file to /opt/docreview/docker-compose.yml and
-# deploy/gcp/backend.env to /opt/docreview/.env.
+# writes the generated VM env (from the repo .env) to /opt/docreview/.env.
 services:
   db:
     image: pgvector/pgvector:pg16

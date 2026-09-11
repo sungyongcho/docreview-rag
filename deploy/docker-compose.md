@@ -217,17 +217,17 @@ docker compose --project-directory . -f docker/docker-compose.yml down -v
 - corpus, eval artifact, PostgreSQL, Caddy state를 `/var/lib/docreview`에 보존
 - app container는 capability 제거와 `no-new-privileges` 적용
 
-설정 예시는 `deploy/gcp/backend.env.example`에 있습니다. 실제 VM 생성과 배포는
-비용과 외부 상태를 변경하므로 스크립트를 검토한 후 별도로 실행합니다.
+설정 예시는 `.env.example`의 배포 섹션에 있습니다(모든 값은 `.env` 하나에).
+실제 VM 생성과 배포는 비용과 외부 상태를 변경하므로 스크립트를 검토한 후
+별도로 실행합니다.
 
 ```bash
-GCP_PROJECT_ID=<project-id> deploy/gcp/create_vm.sh
-GCP_PROJECT_ID=<project-id> deploy/gcp/deploy_backend.sh
+deploy/gcp/deploy_all.sh all   # setup → vm → image → backend → origin
 ```
 
-실관리 접속:
+프로덕션 실관리 접속은 비활성화되어 있습니다(`deploy/gcp/operator_tunnel.sh`는
+항상 종료). 관리 작업은 로컬 DEV 환경에서 실행합니다:
 
 ```bash
-GCP_PROJECT_ID=<project-id> deploy/gcp/operator_tunnel.sh
 scripts/stack/operator_web.sh
 ```

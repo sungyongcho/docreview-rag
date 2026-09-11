@@ -189,17 +189,23 @@ reachable port. The operator API is reachable only through
 
 ### Order of operations {#production-order}
 
-1. Fill `.env` with `DEPLOY_GCP_PROJECT` (and optionally `DEPLOY_GCP_ZONE`,
-   `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`) and copy `deploy/gcp/backend.env.example`
-   to `deploy/gcp/backend.env` (gitignored). `deploy/gcp/deploy_env_config.sh` loads
-   both and prints a masked summary.
-2. `deploy/gcp/create_vm.sh` creates the e2-medium VM (2 shared vCPU, 4 GB RAM) with a
-   `pd-standard` 30 GB boot disk, an ephemeral external IP, and the Cloudflare-only firewall
-   rule for `tcp:8000`.
-   `deploy/gcp/startup.sh` installs Docker and a 2 GB swap file on first boot.
-3. Copy the prepared corpus into `/var/lib/docreview/corpus` on the VM, then run
-   `deploy/gcp/deploy_backend.sh`. It copies `docker-compose.deploy.yml`,
-   `deploy/Caddyfile` and `backend.env` (as `/opt/docreview/.env`) and starts the stack.
+1. Fill `.env` with the deployment values: `DEPLOY_GCP_PROJECT` (required),
+   `DEPLOY_POSTGRES_PASSWORD` and `DEPLOY_ARTIFACT_DIR` (first-install), and
+   optionally `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`,
+   `DEPLOY_AR_REPO`, `DOCREVIEW_IMAGE`. Every value lives in this one file;
+   `deploy/gcp/deploy_env_config.sh` loads it and prints a masked summary.
+2. `deploy/gcp/deploy_all.sh all` runs the stages in order. `setup` enables the
+   required APIs and creates the Artifact Registry repository and the deployment
+   service account; `vm` creates the e2-medium VM (2 shared vCPU, 4 GB RAM) with a
+   `pd-standard` 30 GB boot disk, an ephemeral external IP, and the firewall rules
+   (Cloudflare-only `tcp:8000`, IAP-only `tcp:22`). `deploy/gcp/startup.sh`
+   installs Docker and a 2 GB swap file on first boot. SSH is allowed through
+   IAP TCP forwarding only.
+3. The `image` stage builds `docker/Dockerfile` and pushes `DOCREVIEW_IMAGE`;
+   the `backend` stage (`deploy/gcp/deploy_backend.sh`) copies
+   `docker-compose.deploy.yml`, `deploy/Caddyfile` and the generated VM env
+   (as `/opt/docreview/.env`), restores the validated artifact bundle (corpus,
+   database, evaluation records) and starts the stack.
 4. `deploy/gcp/print_origin.sh` prints `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000` and
    `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`.
 5. Paste those lines into the gomoku repo's `.env` and run its

@@ -862,10 +862,18 @@ Firebase용 Next 정적 파일 생성과 배포:
 FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh
 ```
 
-GCP VM 준비·배포 스크립트(`.env`의 `DEPLOY_GCP_PROJECT`와 `deploy/gcp/backend.env`를 읽음):
+GCP 원샷 배포(모든 값은 `.env`에서 읽음; `deploy/gcp/backend.env`는 없음):
 
 ```bash
-deploy/gcp/create_vm.sh
+deploy/gcp/deploy_all.sh all   # setup → vm → image → backend → origin
+```
+
+개별 단계 스크립트:
+
+```bash
+deploy/gcp/setup.sh          # 필요한 API·Artifact Registry·배포 서비스 계정
+deploy/gcp/create_vm.sh      # VM + 방화벽(SSH는 IAP 전용)
+deploy/gcp/build_image.sh    # 애플리케이션 이미지 빌드·푸시
 deploy/gcp/deploy_backend.sh
 deploy/gcp/print_origin.sh   # Worker 변수 → gomoku 저장소 .env
 ```

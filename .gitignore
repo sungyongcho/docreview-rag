@@ -91,8 +91,10 @@ data/golden/*.json
 !data/golden/sec_ko_v2_astra.json
 !data/golden/sec_mixed_v2_astra.json
 
-# Production VM env copied by deploy/gcp/deploy_backend.sh; keep only the example.
+# Retired deploy env path kept ignored so an existing secrets file is never committed.
 deploy/gcp/backend.env
+# User-specific Firebase site selection; keep only the example.
+deploy/firebase/.firebaserc
 
 # Persistent public OpenAI allowance; private runtime state, never source data.
 /data/runtime/public-ai-limits.sqlite3*

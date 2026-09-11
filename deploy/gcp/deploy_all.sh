@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # One-shot GCP deployment for the single e2-medium origin VM.
 #
-#   deploy_all.sh vm        Create or verify the VM (default)
+#   deploy_all.sh setup     Enable APIs, Artifact Registry repo and service account
+#   deploy_all.sh vm        Create or verify the VM and firewall rules
+#   deploy_all.sh image     Build and push the application image (docker buildx)
 #   deploy_all.sh backend   Run the backend installer on the VM
 #   deploy_all.sh origin    Print the Cloudflare/Firebase handoff values
-#   deploy_all.sh all       vm -> backend -> origin
+#   deploy_all.sh all       setup -> vm -> image -> backend -> origin
 #
 # Options: --mode first-install|update|rollback (backend), --yes, --verbose
-# Configuration comes from the repo .env and deploy/gcp/backend.env via deploy_env_config.sh.
+# Configuration comes from the repo .env via deploy_env_config.sh; see .env.example.
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,12 +19,12 @@ export REPO_ROOT
 source "${SCRIPT_DIR}/lib/ui.sh"
 
 usage() {
-  sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 stage="${1:-vm}"
 case "${stage}" in
-  vm|backend|origin|all) ;;
+  setup|vm|image|backend|origin|all) ;;
   --help|-h|help) usage; exit 0 ;;
   *) ui_fail "Unknown stage: ${stage}"; usage; exit 2 ;;
 esac
@@ -50,86 +52,107 @@ export DEPLOY_SUMMARY=0
 source "${SCRIPT_DIR}/deploy_env_config.sh"
 
 preflight() {
-  command -v gcloud >/dev/null 2>&1 || { ui_fail "gcloud CLI가 필요합니다."; exit 1; }
+  command -v gcloud >/dev/null 2>&1 || { ui_fail "gcloud CLI is required."; exit 1; }
   local account
   account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -n 1)"
   if [ -z "${account}" ]; then
-    ui_fail "활성 gcloud 계정이 없습니다. 먼저 실행: gcloud auth login <account>"
+    ui_fail "No active gcloud account. Run first: gcloud auth login <account>"
     exit 1
   fi
   ui_ok "gcloud account: ${account}"
   if ! gcloud projects describe "${PROJECT_ID}" >/dev/null 2>&1; then
-    ui_fail "GCP 프로젝트에 접근할 수 없습니다: ${PROJECT_ID}"
+    ui_fail "Cannot access GCP project: ${PROJECT_ID}"
     exit 1
   fi
   ui_ok "project: ${PROJECT_ID}"
   local enabled
   enabled="$(gcloud services list --enabled --project "${PROJECT_ID}" --format='value(config.name)' 2>/dev/null || true)"
-  for api in compute.googleapis.com artifactregistry.googleapis.com; do
-    if printf '%s\n' "${enabled}" | grep -qx "${api}"; then ui_ok "API enabled: ${api}"; else ui_warn "API disabled: ${api}"; fi
+  for api in compute.googleapis.com artifactregistry.googleapis.com iap.googleapis.com; do
+    if printf '%s\n' "${enabled}" | grep -qx "${api}"; then ui_ok "API enabled: ${api}"; else ui_warn "API disabled: ${api} — the setup stage enables it"; fi
   done
-  if [ ! -f "${BACKEND_ENV_PATH}" ]; then
-    ui_warn "backend.env 없음: ${BACKEND_ENV_PATH} (backend 단계 전에 deploy/gcp/backend.env.example 을 복사해 채우세요)"
-  fi
 }
 
 require_vm() {
   if ! gcloud compute instances describe "${VM_NAME}" --project "${PROJECT_ID}" --zone "${ZONE}" >/dev/null 2>&1; then
-    ui_fail "VM이 없습니다: ${VM_NAME} (${ZONE}) — 먼저 'deploy_all.sh vm' 실행"
+    ui_fail "VM not found: ${VM_NAME} (${ZONE}) — run 'deploy_all.sh vm' first"
     exit 1
   fi
   ui_ok "VM: ${VM_NAME} (${ZONE})"
 }
 
 wait_for_ssh() {
-  ui_log "SSH 준비 대기 중… (첫 부팅에서 Docker 설치가 끝나야 다음 단계가 가능합니다)"
+  ui_log "Waiting for SSH… (first boot must finish installing Docker before the next stage)"
   local attempt
   for attempt in $(seq 1 30); do
-    if gcloud compute ssh "${VM_NAME}" --project "${PROJECT_ID}" --zone "${ZONE}" --command true >/dev/null 2>&1; then
+    if gcloud compute ssh "${VM_NAME}" --project "${PROJECT_ID}" --zone "${ZONE}" \
+      --tunnel-through-iap --command true >/dev/null 2>&1; then
       ui_ok "SSH ready (${attempt}/30)"
       return 0
     fi
     sleep 10
   done
-  ui_fail "SSH 연결 대기 시간 초과 — GCP 콘솔의 직렬 콘솔 로그와 방화벽 SSH 규칙을 확인하세요."
+  ui_fail "Timed out waiting for SSH — check the enabled IAP API, the docreview-ssh-iap firewall rule and the VM serial console log."
   return 1
 }
 
+stage_setup() {
+  ui_step 1 5 "GCP project setup (APIs · Artifact Registry · service account)"
+  ui_row "Registry" "${ARTIFACT_REGISTRY}"
+  ui_row "Service account" "${SA_EMAIL}"
+  ui_confirm "Proceed with project setup?" || { ui_warn "Cancelled."; exit 1; }
+  ui_run "Project setup" bash "${SCRIPT_DIR}/setup.sh" || exit 1
+}
+
 stage_vm() {
-  ui_step 1 3 "e2-medium 원본 VM 준비"
+  ui_step 2 5 "Prepare the e2-medium origin VM"
   ui_row "Machine" "${MACHINE_TYPE} · 4 GB RAM + 2 GB swap"
   ui_row "Disk" "${BOOT_DISK_SIZE} pd-standard · ${ZONE}"
-  ui_confirm "VM ${VM_NAME} 생성/확인을 진행할까요?" || { ui_warn "취소했습니다."; exit 1; }
+  ui_confirm "Create or verify VM ${VM_NAME}?" || { ui_warn "Cancelled."; exit 1; }
   ui_run "Ensure VM ${VM_NAME}" bash "${SCRIPT_DIR}/create_vm.sh" || exit 1
   wait_for_ssh
 }
 
+stage_image() {
+  ui_step 3 5 "Build and push the application image"
+  command -v docker >/dev/null 2>&1 || { ui_fail "docker CLI is required."; exit 1; }
+  ui_row "Image" "${DOCREVIEW_IMAGE}"
+  ui_confirm "Build the image and push it to Artifact Registry?" || { ui_warn "Cancelled."; exit 1; }
+  ui_run "Push ${DOCREVIEW_IMAGE}" bash "${SCRIPT_DIR}/build_image.sh" || exit 1
+}
+
 stage_backend() {
   require_vm
-  [ -f "${BACKEND_ENV_PATH}" ] || { ui_fail "backend.env가 필요합니다: ${BACKEND_ENV_PATH}"; exit 1; }
+  if [ "${mode}" != rollback ] && [ -z "${DOCREVIEW_IMAGE}" ]; then
+    ui_fail "DOCREVIEW_IMAGE is empty — set it in .env or use the Artifact Registry default."
+    exit 1
+  fi
   if [ "${mode}" = "first-install" ]; then
+    if [ -z "${POSTGRES_PASSWORD}" ]; then
+      ui_fail "DEPLOY_POSTGRES_PASSWORD is required — set it in .env (see .env.example)."
+      exit 1
+    fi
     local artifact_dir="${DEPLOY_ARTIFACT_DIR:-${HOME}/.local/share/docreview/prod-artifacts/20260909-portfolio18}"
     if [ ! -d "${artifact_dir}" ]; then
-      ui_fail "배포 아티팩트 디렉터리가 없습니다: ${artifact_dir}"
+      ui_fail "Deployment artifact directory not found: ${artifact_dir}"
       exit 1
     fi
     ui_ok "artifacts: ${artifact_dir}"
   fi
-  ui_step 2 3 "Backend ${mode}"
-  ui_confirm "VM에서 backend ${mode} 배포를 실행할까요?" || { ui_warn "취소했습니다."; exit 1; }
+  ui_step 4 5 "Backend ${mode}"
+  ui_confirm "Run the backend ${mode} deployment on the VM?" || { ui_warn "Cancelled."; exit 1; }
   ui_run "Backend ${mode}" bash "${SCRIPT_DIR}/deploy_backend.sh" "${mode}" || exit 1
 }
 
 stage_origin() {
   require_vm
-  ui_step 3 3 "Cloudflare / Firebase handoff"
+  ui_step 5 5 "Cloudflare / Firebase handoff"
   local output
-  output="$(bash "${SCRIPT_DIR}/print_origin.sh")" || { ui_fail "print_origin.sh 실패 (Firebase site 설정을 확인하세요)"; exit 1; }
+  output="$(bash "${SCRIPT_DIR}/print_origin.sh")" || { ui_fail "print_origin.sh failed (check FIREBASE_SITE or deploy/firebase/.firebaserc)"; exit 1; }
   while IFS= read -r line; do
     ui_row "${line%%=*}" "${line#*=}"
   done <<< "${output}"
-  ui_dim "위 값을 ~/Documents/gomoku/.env 에 추가하고 그쪽 03_deploy_cloudflare.sh 를 실행하세요."
-  ui_dim "정적 사이트는 scripts/deploy/firebase.sh 로 빌드·배포합니다."
+  ui_dim "Add these values to ~/Documents/gomoku/.env and run its 03_deploy_cloudflare.sh."
+  ui_dim "Build and deploy the static site with scripts/deploy/firebase.sh."
 }
 
 ui_banner
@@ -138,17 +161,20 @@ ui_row "Stage" "${stage}"
 ui_row "Project" "${PROJECT_ID}"
 ui_row "Region" "${REGION} (${ZONE})"
 ui_row "VM" "${VM_NAME} (${MACHINE_TYPE})"
+ui_row "Registry" "${AR_REPO} → ${ARTIFACT_REGISTRY}"
 ui_row "Origin port" "${ORIGIN_PORT} (tag ${NETWORK_TAG})"
-ui_row "Backend env" "${BACKEND_ENV_PATH}"
+ui_row "Image" "${DOCREVIEW_IMAGE}"
 ui_rule
 
 case "${stage}" in
+  setup) preflight; stage_setup ;;
   vm) preflight; stage_vm ;;
+  image) preflight; stage_image ;;
   backend) preflight; stage_backend ;;
   origin) preflight; stage_origin ;;
-  all) preflight; stage_vm; stage_backend; stage_origin ;;
+  all) preflight; stage_setup; stage_vm; stage_image; stage_backend; stage_origin ;;
 esac
 
 printf '\n'
-ui_ok "완료: ${stage}"
-ui_dim "다음: VM만 확인했다면 deploy_all.sh backend, 그다음 origin · all"
+ui_ok "Done: ${stage}"
+ui_dim "Next stages: setup → vm → image → backend → origin (or all)"
