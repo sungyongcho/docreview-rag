@@ -1,16 +1,16 @@
 "use client";
 
-import { preferredLocale, savedLocale, useI18n, type Locale } from "@/lib/i18n";
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Activity, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
-import type { TutorialHeading, TutorialDocument } from "@/lib/tutorial-markdown.mjs";
-import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
-import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
 import { CreatorSignature } from "@/components/creator-signature";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { HoverBubble } from "@/components/hover-bubble";
+import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
+import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
+import { preferredLocale, savedLocale, useI18n, type Locale } from "@/lib/i18n";
+import type { TutorialDocument, TutorialHeading } from "@/lib/tutorial-markdown.mjs";
+import { Activity, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const DOCUMENT_ICONS: Record<string, LucideIcon> = { Activity, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal };
 
@@ -97,7 +97,7 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
     </nav>
     <nav className="docs-menu-sections" aria-label={copy.chooseDocument}>
       {documentationGroups(documents).map((group) => <section className="docs-nav-group" key={group.id} aria-labelledby={`docs-group-${group.id}`}>
-        <h2 id={`docs-group-${group.id}`}>{group.title}{group.developmentOnly && <> <DevelopmentBadge locale={locale} compact tooltip={false} text={document.id === "quickstart-dev" ? "DEV MODE" : undefined} /></>}</h2>
+        <h2 id={`docs-group-${group.id}`}>{group.title}{group.developmentOnly && <> <DevelopmentBadge locale={locale} compact tooltip={false} /></>}</h2>
         {group.documents.map((document) => <DocumentationMenuLink key={document.id} document={document} current={current} locale={locale} />)}
       </section>)}
     </nav>
