@@ -127,7 +127,9 @@ image user and deployment Compose remain unchanged; this is a local bind-mount s
 
 The host's `data/` directory must permit that group to write. For direct Compose on a host whose
 primary group is not 1000, set `HOST_GID` to `id -g`. Earlier container-owned files keep their existing
-permissions: the reset preview prints the exact elevated repair for blocked source paths. If an old
+permissions.
+
+The reset preview prints the exact elevated repair for blocked source paths. If an old
 `data/local-settings` or `data/eval_runs` path also needs host access, ask its owner to apply the same
 scoped ACL repair to that directory. No ownership/ACL change is automatic. After updating this local
 Compose policy, recreate the app with `rag-dev up -d`; an existing container does not acquire a new

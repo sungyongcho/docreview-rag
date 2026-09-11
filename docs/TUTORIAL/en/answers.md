@@ -70,7 +70,9 @@ Expand **Retrieved evidence candidates** to see one collapsed card per candidate
 section: `Item 7 - (Management's Discussion and Analysis)` for EDGAR filings, the division name such as
 `II. 사업의 내용` for DART filings, and the bare citation label when no title is known. The header also
 carries the document id, a table badge and the character span; open a card to read the excerpt and its
-full citation. Five cards show per page. The sticky toolbar always shows the visible range, the pinned and
+full citation.
+
+Five cards show per page. The sticky toolbar always shows the visible range, the pinned and
 excluded counts, **Expand all** / **Collapse all** and, beyond one page, arrow buttons with **Previous page** / **Next page** labels and a `1/3` page position.
 Pinned cards start open; every other card starts closed. Pin/Exclude sit in each header, so they work on
 collapsed cards and across pages. Candidate count and citation count measure different things.
@@ -132,7 +134,9 @@ underlines its title. Waiting and unreached stages are inert. Failed, cancelled,
 completed and currently running stages remain selectable. Enter or Space toggles a focused stage.
 
 Stage details display source badges, company/year chips, measured timings with units and model-call
-tables instead of inline JSON. Company names come from the existing live or published document
+tables instead of inline JSON.
+
+Company names come from the existing live or published document
 catalog when the scope panel is first opened; recorded codes and run scope remain unchanged.
 Unknown or ambiguous names keep the original code. A lookup failure is stated beside the panel.
 **None** means a recorded empty collection; a dash or the consolidated unrecorded-label line means

@@ -38,7 +38,9 @@ Open **Explore evaluation settings** in the same side drawer layout as DEV. Data
 | Advanced evaluation options → Run mode | Start with **Quick · current index**. It measures the current prepared index. |
 
 4. Choose **Queue evaluation** once. Query embedding and configured search components may incur provider costs.
-5. Watch the run. The setup closes and a queued job appears in Evaluation runs; select its row to inspect request settings and actual progress. A successful run exposes Result details, recorded configuration, metrics, and case ranks; no result means no measured scores yet. Selecting an evaluation opens its focused details, and while the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
+5. Watch the run. The setup closes and a queued job appears in Evaluation runs; select its row to inspect request settings and actual progress.
+
+A successful run exposes Result details, recorded configuration, metrics, and case ranks; no result means no measured scores yet. Selecting an evaluation opens its focused details, and while the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
 6. Read the outcome against its source evidence. The selected run succeeded, the result ID and dataset are correct, and you inspected at least one hit/miss. Do not treat a successful job from another suite as the result of this setup.
 7. If sources are unavailable or the corpus is not ready, read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
 

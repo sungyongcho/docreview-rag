@@ -60,6 +60,19 @@ URL은 화면·탭·선택한 준비 단계나 평가 결과·로컬 대화를 �
 ### SCREENSHOT NEEDED
 <!-- feature=manual-navigation-and-task-return; mode=prod; locale=ko; theme=light; state=return-from-document-to-retained-conversation; expected-evidence=header-history-and-restored-draft -->
 
+## 용어 빠른 참고 {#terms}
+
+| 용어 | 한 줄 의미 | 자세한 설명 |
+|---|---|---|
+| 청크 | 원문에서 인용할 수 있게 나눈 구간 | [파싱과 청크](indexing.md#step-5) |
+| 임베딩 | 의미 검색에 쓰는 청크의 벡터 | [임베딩 준비](indexing.md#step-6) |
+| BM25 | 키워드 검색의 어휘 점수 방식 | [BM25 준비](indexing.md#step-7) |
+| 하이브리드 · RRF | 벡터와 키워드 검색의 순위 융합 | [검색 설정](settings.md#presets) |
+| 골든셋 · suite | 정답 근거가 지정된 평가 데이터셋 | [평가 데이터셋](evaluation.md#suites) |
+| 스냅샷 | 평가 시점 인덱스의 변경되지 않는 기록 | [스냅샷](snapshots.md) |
+| `NOT_IN_DOCS` | 근거 부족으로 답하지 않은 정상 판정 | [답변 결과](answers.md) |
+| 실행 한도 | 질문 하나의 반복·토큰·시간 상한 | [한도 읽기](runtime.md#limits) |
+
 ## 브라우저 저장소 {#browser-storage}
 
 PROD의 대화·기본값·필터·프리셋·언어/테마·도움말 설정은 이 브라우저와 origin에 저장되며 동기화되지 않습니다. 사이트 데이터를 지우기 전에 **설정 → 데이터와 도움말 → 브라우저 저장소**에서 백업을 내보내세요. [저장소 안내](settings.md#browser-storage)는 저장 항목·가져오기·삭제 범위를 설명합니다. DEV는 자체 저장 동작을 유지합니다.

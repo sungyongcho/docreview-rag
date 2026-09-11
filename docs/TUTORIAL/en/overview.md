@@ -60,6 +60,19 @@ The URL identifies the workspace, tab, selected preparation stage or evaluation 
 ### SCREENSHOT NEEDED
 <!-- feature=manual-navigation-and-task-return; mode=prod; locale=en; theme=light; state=return-from-document-to-retained-conversation; expected-evidence=header-history-and-restored-draft -->
 
+## Terms at a glance {#terms}
+
+| Term | One-line meaning | Details |
+|---|---|---|
+| Chunk | A source span that can be cited | [Parse and chunk](indexing.md#step-5) |
+| Embedding | A chunk vector used for semantic search | [Prepare embeddings](indexing.md#step-6) |
+| BM25 | The lexical scoring method for keyword search | [Prepare BM25](indexing.md#step-7) |
+| Hybrid · RRF | Rank fusion across vector and keyword paths | [Retrieval settings](settings.md#presets) |
+| Golden set · suite | An evaluation dataset with designated ground truth | [Evaluation suites](evaluation.md#suites) |
+| Snapshot | An immutable record of the index at evaluation time | [Snapshots](snapshots.md) |
+| `NOT_IN_DOCS` | A deliberate non-answer when evidence is insufficient | [Answer outcomes](answers.md) |
+| Run limits | Per-question ceilings on iterations, tokens and time | [Reading limits](runtime.md#limits) |
+
 ## Browser storage {#browser-storage}
 
 PROD stores conversations, defaults, filters, presets, language/theme, and Help preferences in this browser and origin. They are not synchronized. Before clearing site data, open **Settings → Data & help → Browser storage** and export a backup. The [storage guide](settings.md#browser-storage) explains the inventory, import, and clearing scopes. DEV retains its own storage behavior.
