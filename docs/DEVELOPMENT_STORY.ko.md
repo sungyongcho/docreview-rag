@@ -20,10 +20,12 @@ RAG를 개념으로만 알던 상태에서, 공시처럼 근거 검증이 중요
 
 ### 직접 따라 만들며 개념 확인
 
-완성본(`new`)과 학습용(`zero`) 브랜치를 분리해 코드를 직접 따라 치며 재구성하는 것으로 시작했습니다. 파싱·표·청킹·DB 적재에서 임베딩·벡터/키워드 검색으로 넘어가며 ORM, 임베딩 범위, BM25/IDF 같은 개념을 질문으로 확인했고, 검색 평가 이후에는 다시 조립하며 검토·수정·테스트하는 흐름으로 이어갔습니다.
+완성본(`new`)과 학습용(`zero`) 브랜치를 나눠, 완성본을 옆에 두고 빈 브랜치에서 코드를 한 줄씩 직접 따라 치며 재구성하는 방식으로 시작했습니다. 파싱·표·청킹·DB 적재에서 임베딩·벡터/키워드 검색으로 넘어가며 ORM, 임베딩 범위, BM25/IDF 같은 개념을 질문으로 확인했고, 검색 평가 이후에는 다시 조립하며 검토·수정·테스트하는 흐름으로 이어갔습니다.
 
-- 아카이브 provenance: `101bae7d37a7f2002a533b15a08ca9bbbcda25bd`(표 파서), `df094df2a57601d1eec5dc4a8c507c98c84ea63f`(M2.3–2.4)
-- 현재 이력: `2b47b71`(파싱→청킹), `7532b72`(BM25·로컬 모델), `dd4cc60`(평가 프레임워크)
+이 초기 학습 이력(`new`/`zero`/`assemble` 브랜치, 2026-06~09)은 현재 git 이력에는 남아 있지 않고 `v1` 브랜치의 `archive/provenance/history.jsonl`에만 보존돼 있습니다. 그래서 아카이브에서 가져온 부분과 현재 이력의 이정표를 따로 표기합니다.
+
+- `v1` 아카이브에서 가져온 부분: 표 파서(`101bae7`), M2.3–2.4(`df094df`)
+- 현재 `main`의 이정표: `2b47b71`(파싱→청킹), `7532b72`(BM25·로컬 모델), `dd4cc60`(평가 프레임워크)
 
 ### 1-1. 파싱 — API 수집과 HTML 파싱
 
@@ -132,28 +134,33 @@ chunks       [ chunk1 ][  chunk2  ][ chunk3 ][  chunk4  ]
 
 **BM25**는 언어별 통계 테이블(`chunk_terms`, `chunk_lengths`, `lexeme_stats`, `bm25_corpus_stats`)을 두고 SQL로 계산합니다.
 
-```text
-idf_lucene     = ln(1 + (N - df + 0.5) / (df + 0.5))
-length_norm    = 1 - b + b * dl / avgdl
-saturation     = tf * (k1 + 1) / (tf + k1 * length_norm)
-score          = Σ idf * saturation          (k1=1.2, b=0.75)
-```
+$$
+\begin{aligned}
+\mathrm{idf}_{\mathrm{lucene}} &= \ln\!\left(1 + \frac{N - df + 0.5}{df + 0.5}\right)\\
+\mathrm{length\_norm} &= 1 - b + b \cdot \frac{dl}{\overline{dl}}\\
+\mathrm{saturation} &= \frac{tf \cdot (k_1 + 1)}{tf + k_1 \cdot \mathrm{length\_norm}}\\
+\mathrm{score} &= \sum_{t} \mathrm{idf}_t \cdot \mathrm{saturation}_t \qquad (k_1 = 1.2,\; b = 0.75)
+\end{aligned}
+$$
 
 ```bm25-demo
 ```
 
-가장 인상적이었던 부분은 **IDF에 로그를 취해 희귀 단어를 가중하고, tf 포화로 반복 등장의 한계 효용을 제한하는 구조**였습니다. 공시 원문은 "회사"·"재무" 같은 단어가 거의 모든 문서에 나오기 때문에, 단순 등장 횟수로는 질문과 무관한 문서가 앞설 수 있습니다. df가 커질수록 idf가 로그로 0에 수렴해 이런 흔한 단어의 기여가 사라지고, 반대로 발행사 고유명사나 "부채전환" 같은 드문 용어가 점수를 끌어올립니다. tf 포화는 반대편의 악용을 막습니다 — 같은 단어가 열 번 나와도 천장(k1+1)에서 멈추므로, 키워드를 반복한 긴 문서보다 질문의 단어를 골고루 맞춘 문서가 이깁니다. 그래서 점수가 "자주 나옴"이 아니라 "이 질문을 얼마나 특이하게 커버하냐"를 재게 되고, df·tf·길이 각 항이 결과에 어떻게 기여했는지 분해할 수 있어 랭커 비교에 필요한 해석 가능성도 확보됐습니다. 위의 미니 실험에서 k1을 올리면 포화 천장이 올라가고, df가 큰 단어가 idf 곡선 아래로 밀려나는 걸 직접 확인할 수 있습니다. 같은 값을 로버트슨 IDF로도 계산할 수 있게 했고, 통계가 오래되면 검색이 조용히 틀리는 대신 실패하게 만들었습니다(청크 변경 시 통계 무효화 트리거 + 재빌드 안내).
+가장 인상적이었던 건 수식의 모양이었습니다. **IDF에 로그를 씌우면 흔한 단어의 기여가 사라지고, tf 포화는 반복 등장의 이득에 천장을 둡니다.** 공시에는 "회사"·"재무"처럼 거의 모든 문서에 나오는 단어가 많은데, 로그 덕분에 이런 단어는 점수에서 빠지고 발행사 이름이나 "부채전환" 같은 드문 용어가 순위를 결정합니다. 반대로 한 단어를 열 번 반복한 문서는 천장 때문에 계속 이득을 보지 못하므로, 질문의 단어를 골고루 맞춘 문서가 이깁니다. 점수가 "자주 나옴"이 아니라 "질문을 얼마나 특이하게 커버했나"를 재는 셈입니다 — 위 미니 실험에서 k1·b를 움직이면 직접 확인할 수 있습니다. 같은 값을 로버트슨 IDF로도 계산하게 했고, 통계가 오래되면 검색이 조용히 틀리는 대신 실패하도록 만들었습니다(청크 변경 시 통계 무효화 + 재빌드 안내).
 
 **하이브리드 결합**은 RRF(rank-only)입니다. 점수를 직접 더하지 않고 순위만 합산합니다.
 
 ```text
 vector lane : A(1)  B(2)  C(3)
 lexical lane: B(1)  D(2)  A(3)
-
-RRF score(A) = 1/(60+1) + 1/(60+3)
-RRF score(B) = 1/(60+2) + 1/(60+1)
-...                    (k=60, 리스트별 첫 등장만 계산)
 ```
+
+$$
+\mathrm{RRF}(d) = \sum_{\ell}\, \frac{1}{k + \mathrm{rank}_{\ell}(d)}, \qquad
+\mathrm{A} = \tfrac{1}{60+1} + \tfrac{1}{60+3}, \qquad \mathrm{B} = \tfrac{1}{60+2} + \tfrac{1}{60+1}
+$$
+
+k=60이며, 각 리스트에서 처음 등장한 순위만 합산합니다.
 
 ```text
 질문 ─┬─▶ 벡터 검색 (pgvector 코사인, exact scan) ─┐
@@ -161,7 +168,7 @@ RRF score(B) = 1/(60+2) + 1/(60+1)
       └─▶ 어휘 검색 (ts_rank_cd / BM25 / bigram)   ─┘        ms-marco-MiniLM-L-6-v2
 ```
 
-후보군은 `candidate_k = max(20, 4k)`가 기본이고, 정확도 프리셋에서만 cross-encoder 리랭커를 붙입니다. ANN 인덱스는 측정 근거가 생기기 전까지 두지 않았습니다(정확 스캔이 재현성에 유리).
+후보군은 $\mathrm{candidate\_k} = \max(20,\, 4k)$가 기본이고, 정확도 프리셋에서만 cross-encoder 리랭커를 붙입니다. ANN 인덱스는 측정 근거가 생기기 전까지 두지 않았습니다(정확 스캔이 재현성에 유리).
 
 > **왜 RRF인가**: 벡터 점수와 어휘 점수는 스케일이 달라 직접 더하면 한쪽이 다른 쪽을 압도합니다. 순위만 쓰면 랭커를 추가해도 안정적이고, 대신 점수 크기 정보는 버립니다.
 
@@ -175,12 +182,16 @@ RRF score(B) = 1/(60+2) + 1/(60+1)
 
 검색 품질을 감으로 판단하지 않기 위해 골든 데이터셋과 평가 프레임워크를 만들었습니다. 정답 span을 원문 위치(`doc_id + sha256 + start/end`)로 고정하고, span 커버리지 0.5 이상을 적중으로 봅니다.
 
-```text
-span_coverage = 겹친 길이 / 정답 span 길이        (문서·원문 digest가 다르면 0)
-recall@k      = 적중한 정답 span 수 / 전체 정답 span 수   (문항별 → 매크로 평균)
-hit_rate@k    = top-k에 적중이 하나라도 있으면 1          (문항별 → 매크로 평균)
-RR            = 1 / 첫 적중 순위, MRR = 매크로 평균
-```
+$$
+\begin{aligned}
+\mathrm{span\_coverage} &= \frac{|\mathrm{overlap}|}{|\mathrm{gold\ span}|}\\
+\mathrm{recall@}k &= \frac{\text{hit gold spans}}{\text{gold spans}}\\
+\mathrm{hit\_rate@}k &= \mathbf{1}\big[\text{top-}k\text{ contains a hit}\big]\\
+\mathrm{RR} &= \frac{1}{\text{first hit rank}}, \qquad \mathrm{MRR} = \mathrm{mean}(\mathrm{RR})
+\end{aligned}
+$$
+
+문서·원문 digest가 다르면 coverage는 0이고, 세 지표 모두 문항별로 계산한 뒤 매크로 평균합니다.
 
 실행은 `quick`(현재 인덱스 1회 평가)과 `matrix`(격리 코퍼스 × 전략/랭커/토큰 조합)로 나뉩니다. 결과를 비교할 때는 데이터셋·인덱스·설정 지문이 같을 때만 델타를 보여주고, 다르면 비교 불가로 표시합니다. 실행 단계·소요 시간·토큰·실패 원인은 모두 기록되며, 실패는 workflow budget / provider failure / node error로 구분합니다.
 

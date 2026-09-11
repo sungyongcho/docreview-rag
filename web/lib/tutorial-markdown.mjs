@@ -1,6 +1,8 @@
 import { createElement } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { DOCUMENTATION_REGISTRY, documentationDocuments, documentationLink } from "./documentation-registry.mjs";
 export { DOCUMENTS } from "./documentation-registry.mjs";
 
@@ -8,7 +10,7 @@ function nodeText(node) {
   return node.value ?? (node.children ?? []).map(nodeText).join("");
 }
 
-export function renderTutorial(source, { locale = "ko", renderCode, renderDevelopmentNotice, renderImage, assetVersion, registry = DOCUMENTATION_REGISTRY } = {}) {
+export function renderTutorial(source, { locale = "ko", renderCode, renderDevelopmentNotice, renderImage, assetVersion, math = false, registry = DOCUMENTATION_REGISTRY } = {}) {
   const steps = documentationDocuments(registry)
     .filter((document) => document.locale === locale)
     .flatMap((document) => document.steps.map((step) => ({ ...step, source: document.source })))
@@ -101,7 +103,8 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
   }
   const content = Markdown({
     skipHtml: true,
-    remarkPlugins: [remarkGfm, prepare],
+    remarkPlugins: [remarkGfm, ...(math ? [remarkMath] : []), prepare],
+    rehypePlugins: math ? [rehypeKatex] : [],
     components: {
       a: ({ children, href }) => {
         const external = /^https?:\/\//i.test(href ?? "");
@@ -114,7 +117,7 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
         : node.properties["data-development-only"] === "true"
           ? (renderDevelopmentNotice?.(children) ?? createElement("aside", { className: "docs-development-notice" }, createElement("strong", null, locale === "ko" ? "개발 모드 전용" : "DEV only"), children))
           : createElement("blockquote", null, children),
-      ...(renderCode ? { pre: ({ children }) => renderCode(codes[Number(children.props["data-code-index"])]) } : {}),
+      ...(renderCode ? { pre: ({ children }) => children?.props?.["data-code-index"] === undefined ? createElement("pre", null, children) : renderCode(codes[Number(children.props["data-code-index"])]) } : {}),
       ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((depth) => [`h${depth}`, ({ children, id, node }) => node?.properties?.["data-screenshot-needed"] === "true" ? null : createElement(`h${depth}`, { id }, createElement("a", { href: `#${encodeURIComponent(id)}`, className: "docs-heading-link" }, children, createElement("span", { "aria-hidden": true, className: "docs-heading-hash" }, " #")))])),
       table: ({ children }) => createElement("div", { className: "markdown-table-wrap", tabIndex: 0, role: "region", "aria-label": locale === "ko" ? "가로로 스크롤할 수 있는 표" : "Scrollable table" }, createElement("table", null, children)),
       img: ({ src, alt, title, node }) => renderImage

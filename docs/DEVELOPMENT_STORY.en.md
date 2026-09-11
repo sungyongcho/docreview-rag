@@ -22,10 +22,12 @@ After studying in parallel (LangChain basics, then a RAG course, parts of KodeKl
 
 ### Learning by rebuilding
 
-I started by splitting the finished version (`new`) and a learning version (`zero`), and rebuilt the code by typing it out. Moving from parsing, tables, chunking and DB loading into embeddings and vector/keyword search, I verified concepts through questions — ORM usage, how far embeddings must be understood, BM25 and IDF. After retrieval evaluation came reassembling, reviewing, fixing and testing.
+I split the code into a finished branch (`new`) and an empty learning branch (`zero`), then rebuilt it line by line by hand. Moving from parsing, tables, chunking and DB loading into embeddings and vector/keyword search, I verified concepts through questions — ORM usage, how far embeddings must be understood, BM25 and IDF. After retrieval evaluation came reassembling, reviewing, fixing and testing.
 
-- Archive provenance: `101bae7d37a7f2002a533b15a08ca9bbbcda25bd` (table parser), `df094df2a57601d1eec5dc4a8c507c98c84ea63f` (M2.3–2.4)
-- Current history: `2b47b71` (parsing → chunking), `7532b72` (BM25 and local models), `dd4cc60` (evaluation framework)
+That early learning history (the `new`/`zero`/`assemble` branches, 2026-06 ~ 09) is no longer reachable in the current git history — it survives only in the `v1` archive branch under `archive/provenance/history.jsonl`. The bullets below record what was carried over and the current milestones.
+
+- Carried over from the `v1` archive: the table parser (`101bae7`), M2.3–2.4 (`df094df`)
+- Milestones on `main`: `2b47b71` (parsing → chunking), `7532b72` (BM25 and local models), `dd4cc60` (evaluation framework)
 
 ### 1-1. Parsing — API acquisition and HTML parsing
 
@@ -134,28 +136,33 @@ Keyword search catches proper nouns, numbers and phrases that vector search can 
 
 **BM25** is computed in SQL over per-language statistics tables (`chunk_terms`, `chunk_lengths`, `lexeme_stats`, `bm25_corpus_stats`).
 
-```text
-idf_lucene     = ln(1 + (N - df + 0.5) / (df + 0.5))
-length_norm    = 1 - b + b * dl / avgdl
-saturation     = tf * (k1 + 1) / (tf + k1 * length_norm)
-score          = Σ idf * saturation          (k1=1.2, b=0.75)
-```
+$$
+\begin{aligned}
+\mathrm{idf}_{\mathrm{lucene}} &= \ln\!\left(1 + \frac{N - df + 0.5}{df + 0.5}\right)\\
+\mathrm{length\_norm} &= 1 - b + b \cdot \frac{dl}{\overline{dl}}\\
+\mathrm{saturation} &= \frac{tf \cdot (k_1 + 1)}{tf + k_1 \cdot \mathrm{length\_norm}}\\
+\mathrm{score} &= \sum_{t} \mathrm{idf}_t \cdot \mathrm{saturation}_t \qquad (k_1 = 1.2,\; b = 0.75)
+\end{aligned}
+$$
 
 ```bm25-demo
 ```
 
-The most memorable part was the shape of the formula: **a logarithm on IDF weights rare terms, and tf saturation limits the marginal value of repetition**. Filings share vocabulary like "company" and "financial" across almost every document, so raw term counts alone would let unrelated documents outrank relevant ones. As df grows, idf decays logarithmically toward zero and those common terms stop contributing, while rare terms like an issuer name or "convertible debt" carry the score. Saturation blocks the opposite abuse: a term repeated ten times still stops at the k1+1 ceiling, so a document covering several query terms beats a long document repeating one. The score ends up measuring how specifically a document covers the question rather than how often words appear — and since each factor (df, tf, length) can be decomposed, the formula stays interpretable enough to compare rankers. In the mini-lab above, raising k1 lifts the saturation ceiling and high-df terms sink to the bottom of the IDF curve. The same scoring can run with Robertson IDF as an alternative, and when statistics go stale the search fails instead of silently ranking wrongly (a chunk-change trigger invalidates the stats and requires a rebuild).
+The most memorable part was the shape of the formula. **Logging IDF makes common terms drop out of the score, and tf saturation puts a ceiling on the benefit of repeating a word.** Filings are full of words like "company" and "financial" that appear in almost every document — the logarithm lets them quietly drop out, while a rare issuer name or a term like "convertible debt" decides the ranking. A document repeating one keyword ten times stops gaining at the ceiling, so a document covering several query terms wins instead. The score ends up measuring how specifically a document covers the question, not how often words appear — the mini-lab above shows this directly. The same scoring also runs with Robertson IDF, and stale statistics make the search fail loudly instead of ranking wrongly in silence (a chunk-change trigger invalidates the stats and calls for a rebuild).
 
 **Hybrid fusion** is rank-only RRF. Scores are never added directly; only ranks are summed.
 
 ```text
 vector lane : A(1)  B(2)  C(3)
 lexical lane: B(1)  D(2)  A(3)
-
-RRF score(A) = 1/(60+1) + 1/(60+3)
-RRF score(B) = 1/(60+2) + 1/(60+1)
-...                    (k=60, first occurrence per list only)
 ```
+
+$$
+\mathrm{RRF}(d) = \sum_{\ell}\, \frac{1}{k + \mathrm{rank}_{\ell}(d)}, \qquad
+\mathrm{A} = \tfrac{1}{60+1} + \tfrac{1}{60+3}, \qquad \mathrm{B} = \tfrac{1}{60+2} + \tfrac{1}{60+1}
+$$
+
+With k=60, only the first occurrence rank in each list counts.
 
 ```text
 question ─┬─▶ vector search (pgvector cosine, exact scan) ─┐
@@ -163,7 +170,7 @@ question ─┬─▶ vector search (pgvector cosine, exact scan) ─┐
           └─▶ lexical search (ts_rank_cd / BM25 / bigram) ─┘        ms-marco-MiniLM-L-6-v2
 ```
 
-The candidate pool defaults to `candidate_k = max(20, 4k)`, and the cross-encoder runs only for the Accuracy preset. No ANN index exists until measurements justify it; the exact scan favors reproducibility.
+The candidate pool defaults to $\mathrm{candidate\_k} = \max(20,\, 4k)$, and the cross-encoder runs only for the Accuracy preset. No ANN index exists until measurements justify it; the exact scan favors reproducibility.
 
 > **Why RRF**: vector and lexical scores live on different scales, and adding them lets one lane dominate. Rank-only fusion stays stable as lanes are added, at the cost of discarding score magnitude.
 
@@ -177,12 +184,16 @@ Responses use strict JSON-schema decoding, with at most one repair attempt after
 
 To avoid judging retrieval by feel, I built a golden dataset and an evaluation framework. A gold span is pinned to the source location (`doc_id + sha256 + start/end`), and span coverage of at least 0.5 counts as a hit.
 
-```text
-span_coverage = overlapped length / gold span length   (0 if doc or source digest differs)
-recall@k      = matched gold spans / gold spans        (per case → macro mean)
-hit_rate@k    = 1 if any hit is in top-k               (per case → macro mean)
-RR            = 1 / first relevant rank, MRR = macro mean
-```
+$$
+\begin{aligned}
+\mathrm{span\_coverage} &= \frac{|\mathrm{overlap}|}{|\mathrm{gold\ span}|}\\
+\mathrm{recall@}k &= \frac{\text{hit gold spans}}{\text{gold spans}}\\
+\mathrm{hit\_rate@}k &= \mathbf{1}\big[\text{top-}k\text{ contains a hit}\big]\\
+\mathrm{RR} &= \frac{1}{\text{first hit rank}}, \qquad \mathrm{MRR} = \mathrm{mean}(\mathrm{RR})
+\end{aligned}
+$$
+
+Coverage is 0 when the document or source digest differs; each metric is computed per question, then macro-averaged.
 
 Runs are split into `quick` (one evaluation against the current index) and `matrix` (isolated corpora × strategy/ranker/token combinations). Comparisons show metric deltas only when dataset, index and configuration fingerprints match; otherwise they are marked not comparable. Stage, elapsed time, tokens and failure cause are all recorded, and failures are typed as workflow budget / provider failure / node error.
 

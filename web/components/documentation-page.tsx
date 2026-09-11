@@ -17,6 +17,7 @@ import Link from "next/link";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { bundledLanguages, codeToHtml } from "shiki";
+import "katex/dist/katex.min.css";
 import "./documentation.css";
 
 export async function DocumentationPage({ documentId, locale = "ko" }: { documentId: string; locale?: "ko" | "en" }) {
@@ -25,10 +26,10 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const story = documentId === "development";
   const document = story ? developmentStoryDocument(locale) : documentationDocument(documentId, locale)!;
   const source = readFileSync(resolve(process.cwd(), "../docs/TUTORIAL", document.file), "utf8");
-  const parsed = renderTutorial(source, { locale });
+  const parsed = renderTutorial(source, { locale, math: story });
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
-  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => block.language === "bm25-demo" ? <Bm25Explorer locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
+  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => block.language === "bm25-demo" ? <Bm25Explorer locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
   const tutorial = render(source);
   const sections = document.id === "quickstart-dev" ? splitQuickStart(source) : null;
   const body = sections ? <><TutorialMarkdown content={render(sections.common).content} /><QuickStartPanels locale={locale} cli={<TutorialMarkdown content={render(sections.cli).content} />} web={<TutorialMarkdown content={render(sections.web).content} />} /><TutorialMarkdown content={render(sections.after).content} /></> : <TutorialMarkdown content={tutorial.content} />;
