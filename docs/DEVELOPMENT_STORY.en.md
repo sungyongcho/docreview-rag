@@ -24,10 +24,7 @@ After studying in parallel (LangChain basics, then a RAG course, parts of KodeKl
 
 I split the code into a finished branch (`new`) and an empty learning branch (`zero`), then rebuilt it line by line by hand. Moving from parsing, tables, chunking and DB loading into embeddings and vector/keyword search, I verified concepts through questions — ORM usage, how far embeddings must be understood, BM25 and IDF. After retrieval evaluation came reassembling, reviewing, fixing and testing.
 
-That early learning history (the `new`/`zero`/`assemble` branches, 2026-06 ~ 09) is no longer reachable in the current git history — it survives only in the `v1` archive branch under `archive/provenance/history.jsonl`. The bullets below record what was carried over and the current milestones.
-
-- Carried over from the `v1` archive: the table parser (`101bae7`), M2.3–2.4 (`df094df`)
-- Milestones on `main`: `2b47b71` (parsing → chunking), `7532b72` (BM25 and local models), `dd4cc60` (evaluation framework)
+That early learning history (the `new`/`zero`/`assemble` branches, 2026-06 ~ 09) is no longer reachable in the current git history — it survives in the `v1` archive branch under `archive/provenance/history.jsonl`, where the carried-over parts can be traced.
 
 ### 1-1. Parsing — API acquisition and HTML parsing
 
