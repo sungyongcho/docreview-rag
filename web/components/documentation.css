@@ -222,3 +222,10 @@
 .quickstart-guide [hidden] {
   display: none;
 }
+.tutorial-body .katex-display {
+  margin: 12px 0;
+}
+
+.tutorial-body .katex {
+  font-size: 1.06em;
+}
