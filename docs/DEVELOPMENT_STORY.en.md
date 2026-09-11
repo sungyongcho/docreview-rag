@@ -141,6 +141,9 @@ saturation     = tf * (k1 + 1) / (tf + k1 * length_norm)
 score          = Σ idf * saturation          (k1=1.2, b=0.75)
 ```
 
+```bm25-demo
+```
+
 The most memorable part was the shape of the formula: **a logarithm on IDF weights rare terms, and tf saturation limits the marginal value of repetition**. The same scoring can run with Robertson IDF as an alternative, and when statistics go stale the search fails instead of silently ranking wrongly (a chunk-change trigger invalidates the stats and requires a rebuild).
 
 **Hybrid fusion** is rank-only RRF. Scores are never added directly; only ranks are summed.

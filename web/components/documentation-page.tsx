@@ -1,4 +1,5 @@
 import { tutorialError, tutorialRevision } from "@/.tutorial/revision";
+import { Bm25Explorer } from "@/components/bm25-explorer";
 import { CodeBlock } from "@/components/code-block";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
@@ -27,7 +28,7 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const parsed = renderTutorial(source, { locale });
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
-  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
+  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => block.language === "bm25-demo" ? <Bm25Explorer locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
   const tutorial = render(source);
   const sections = document.id === "quickstart-dev" ? splitQuickStart(source) : null;
   const body = sections ? <><TutorialMarkdown content={render(sections.common).content} /><QuickStartPanels locale={locale} cli={<TutorialMarkdown content={render(sections.cli).content} />} web={<TutorialMarkdown content={render(sections.web).content} />} /><TutorialMarkdown content={render(sections.after).content} /></> : <TutorialMarkdown content={tutorial.content} />;
