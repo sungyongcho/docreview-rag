@@ -18,6 +18,8 @@
 
 RAG를 개념으로만 알던 상태에서, 공시처럼 근거 검증이 중요한 문서에 직접 적용해 보는 것이 목표였습니다. 답변 자체보다 "이 문장이 어느 원문에서 왔는가"가 중요한 도메인이라 검색·인용·평가를 끝까지 다뤄볼 수 있었습니다. 시장이 요구하는 LLM/RAG/에이전트 경험을 직접 증명할 공개 프로젝트가 필요했던 시점이기도 했습니다.
 
+강의도 병행해 들었습니다(LangChain 기초 → RAG 강의, KodeKloud·freeCodeCamp 일부, BM25 영상). 강의를 따라 친 코드는 `lecture-tuto`, `lecture2-tuto` 브랜치에 남겼는데, 그때 적은 메모 — "따라 친 코드가 아직 내 코드 같지 않다" — 가 학습 방식을 바꾼 계기였습니다.
+
 ### 직접 따라 만들며 개념 확인
 
 완성본(`new`)과 학습용(`zero`) 브랜치를 나눠, 완성본을 옆에 두고 빈 브랜치에서 코드를 한 줄씩 직접 따라 치며 재구성하는 방식으로 시작했습니다. 파싱·표·청킹·DB 적재에서 임베딩·벡터/키워드 검색으로 넘어가며 ORM, 임베딩 범위, BM25/IDF 같은 개념을 질문으로 확인했고, 검색 평가 이후에는 다시 조립하며 검토·수정·테스트하는 흐름으로 이어갔습니다.
@@ -134,12 +136,7 @@ $$
 
 가장 인상적이었던 건 수식의 모양이었습니다. **IDF에 로그를 씌우면 흔한 단어의 기여가 사라지고, tf 포화는 반복 등장의 이득에 천장을 둡니다.** 공시에는 "회사"·"재무"처럼 거의 모든 문서에 나오는 단어가 많은데, 로그 덕분에 이런 단어는 점수에서 빠지고 발행사 이름이나 "부채전환" 같은 드문 용어가 순위를 결정합니다. 반대로 한 단어를 열 번 반복한 문서는 천장 때문에 계속 이득을 보지 못하므로, 질문의 단어를 골고루 맞춘 문서가 이깁니다. 점수가 "자주 나옴"이 아니라 "질문을 얼마나 특이하게 커버했나"를 재는 셈입니다 — 위 미니 실험에서 k1·b를 움직이면 직접 확인할 수 있습니다. 같은 값을 로버트슨 IDF로도 계산하게 했고, 통계가 오래되면 검색이 조용히 틀리는 대신 실패하도록 만들었습니다(청크 변경 시 통계 무효화 + 재빌드 안내).
 
-**하이브리드 결합**은 RRF(rank-only)입니다. 점수를 직접 더하지 않고 순위만 합산합니다.
-
-```text
-vector lane : A(1)  B(2)  C(3)
-lexical lane: B(1)  D(2)  A(3)
-```
+**하이브리드 결합**은 RRF(rank-only)입니다. 점수를 직접 더하지 않고 순위만 합산합니다. 아래 미니 실험의 두 레인(벡터·어휘)에서 A와 B의 기여를 계산하면 다음과 같습니다.
 
 $$
 \mathrm{RRF}(d) = \sum_{\ell}\, \frac{1}{k + \mathrm{rank}_{\ell}(d)}, \qquad
@@ -269,9 +266,9 @@ $$
 
 ## References
 
-- [입문자를 위한 LangChain 기초](https://www.inflearn.com/course/입문자를위한-랭체인-기초)
-- [Retrieval Augmented Generation (RAG)](https://www.coursera.org/learn/retrieval-augmented-generation-rag)
-- [KodeKloud RAG Crash Course](https://www.youtube.com/watch?v=swvzKSOEluc)
-- [freeCodeCamp: Learn RAG From Scratch](https://www.youtube.com/watch?v=sVcwVQRHIc8)
+- [입문자를 위한 LangChain 기초](https://www.inflearn.com/course/입문자를위한-랭체인-기초) — 완강
+- [Retrieval Augmented Generation (RAG)](https://www.coursera.org/learn/retrieval-augmented-generation-rag) — 일부 모듈 수강
+- [KodeKloud RAG Crash Course](https://www.youtube.com/watch?v=swvzKSOEluc) — 코드베이스 구조 검토
+- [freeCodeCamp: Learn RAG From Scratch](https://www.youtube.com/watch?v=sVcwVQRHIc8) — 앞부분 30분 시청
 - [BM25 학습 영상](https://www.youtube.com/watch?v=ziiF1eFM3_4)
-- [Gomoku의 Minimax·AlphaZero 문서](https://sungyongcho.com/gomoku/docs)
+- [Gomoku의 Minimax·AlphaZero 문서](https://sungyongcho.com/gomoku/docs) — 개발 기록 구조 참고

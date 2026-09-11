@@ -136,12 +136,7 @@ $$
 
 The most memorable part was the shape of the formula. **Logging IDF makes common terms drop out of the score, and tf saturation puts a ceiling on the benefit of repeating a word.** Filings are full of words like "company" and "financial" that appear in almost every document — the logarithm lets them quietly drop out, while a rare issuer name or a term like "convertible debt" decides the ranking. A document repeating one keyword ten times stops gaining at the ceiling, so a document covering several query terms wins instead. The score ends up measuring how specifically a document covers the question, not how often words appear — the mini-lab above shows this directly. The same scoring also runs with Robertson IDF, and stale statistics make the search fail loudly instead of ranking wrongly in silence (a chunk-change trigger invalidates the stats and calls for a rebuild).
 
-**Hybrid fusion** is rank-only RRF. Scores are never added directly; only ranks are summed.
-
-```text
-vector lane : A(1)  B(2)  C(3)
-lexical lane: B(1)  D(2)  A(3)
-```
+**Hybrid fusion** is rank-only RRF. Scores are never added directly; only ranks are summed. Computing A and B from the two lanes in the mini-lab below:
 
 $$
 \mathrm{RRF}(d) = \sum_{\ell}\, \frac{1}{k + \mathrm{rank}_{\ell}(d)}, \qquad
