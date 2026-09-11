@@ -191,7 +191,8 @@ Runs are split into `quick` (one evaluation against the current index) and `matr
 
 ### Actual development order (from records)
 
-1. Parsing M1 (10-K Items, tables) → 2. table normalization → 3. chunking → 4. DB loading → 5. embeddings → 6. RRF and retrieval service → 7. BM25 and local models → 8. evaluation framework and goldens → 9. DART parser and Korean tables → 10. Korean lexical, KR goldens, 2×2 parity → 11. API boundary, CLI, compose → 12. UI (Build/Measure/System) and Help → 13. local engines (Ollama).
+```pipeline-map
+```
 
 The items most easily missed are table normalization, the DART/Korean arm, the evaluation framework and cross-language parity, run tracing with failure typing, and answer-engine routing.
 

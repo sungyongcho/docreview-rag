@@ -189,7 +189,8 @@ $$
 
 ### 실제 개발 순서 (기록 기반)
 
-1. 파싱 M1(10-K Item, 표) → 2. 표 정규화 → 3. 청킹 → 4. DB 적재 → 5. 임베딩 → 6. RRF·retrieval service → 7. BM25·로컬 모델 → 8. 평가 프레임워크·golden → 9. DART 파서·한국어 표 → 10. 한국어 lexical·KR golden·2×2 parity → 11. API 경계·CLI/compose → 12. UI(Build·Measure·System)·Help → 13. 로컬 엔진(Ollama).
+```pipeline-map
+```
 
 빠뜨리기 쉬운 항목은 표 정규화, DART·한국어 arm, 평가 프레임워크와 언어 간 parity, 실행 추적과 실패 분류, 답변 엔진 라우팅입니다.
 

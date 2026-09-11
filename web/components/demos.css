@@ -382,3 +382,62 @@
     flex-wrap: wrap;
   }
 }
+
+.docs-pipeline {
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.docs-pipeline-phase {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.docs-pipeline-name {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding-top: 5px;
+}
+
+.docs-pipeline-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.docs-pipeline-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 11px;
+}
+
+.docs-pipeline-steps code {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+}
