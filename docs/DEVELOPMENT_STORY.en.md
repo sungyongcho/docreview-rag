@@ -223,15 +223,7 @@ Waiting, cost and dissatisfaction were real. To reduce them I built and am impro
 
 This project is also an **experiment in improving the development process itself** — deciding what unit of work to split and what evidence to leave behind, rather than only using tools.
 
-## 3. Reading evaluation results (concept)
-
-1. **Retrieval metrics and answer quality are different things.** recall@k, hit rate and MRR measure whether evidence was found, not whether the answer is true.
-2. **`SUPPORTED` is not a correctness guarantee.** It signals that evidence must be checked against the cited source.
-3. **`NOT_IN_DOCS` and operational failure differ.** The first is insufficient evidence; the second is an execution problem such as a provider failure, node error or budget overrun.
-4. **Separate budget, provider and node errors.** The right response depends on which resource blocked the run.
-5. **Compare only under equal conditions.** Different datasets, indexes or settings make score differences noise.
-
-## 4. Deployment and wrap-up
+## 3. Deployment and wrap-up
 
 ### Deployment environment (confirmed specification, estimated cost)
 
