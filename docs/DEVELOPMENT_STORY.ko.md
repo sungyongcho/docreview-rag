@@ -105,6 +105,9 @@ chunks       [ chunk1 ][  chunk2  ][ chunk3 ][  chunk4  ]
 
 > **왜 overlap이 없는가**: 인용 정확도가 최우선이었습니다. 겹치는 조각은 같은 문장을 두 번 인용할 수 있고, 원문 span 추적을 흐립니다. 대신 문맥은 컨텍스트 헤더로 보완합니다.
 
+```chunk-demo
+```
+
 ### 1-3. 임베딩 — 벡터화와 차원
 
 임베딩은 문장을 벡터로 바꿔 의미 기반 검색을 가능하게 합니다. OpenAI `text-embedding-3-large`를 **384차원으로 절단**해 사용하고(Matryoshka 표현), DB 스키마도 384차원을 `Literal[384]` 계약으로 고정했습니다. provider·모델·차원·tokenizer 조합이 벡터 identity로 저장돼, 벡터 공간이 바뀌면 조용히 섞이지 않고 재임베딩 대상이 됩니다.
@@ -162,6 +165,9 @@ $$
 
 k=60이며, 각 리스트에서 처음 등장한 순위만 합산합니다.
 
+```rrf-demo
+```
+
 ```text
 질문 ─┬─▶ 벡터 검색 (pgvector 코사인, exact scan) ─┐
       │                                             ├─▶ RRF ─▶ (선택) cross-encoder ─▶ top-k
@@ -192,6 +198,9 @@ $$
 $$
 
 문서·원문 digest가 다르면 coverage는 0이고, 세 지표 모두 문항별로 계산한 뒤 매크로 평균합니다.
+
+```eval-demo
+```
 
 실행은 `quick`(현재 인덱스 1회 평가)과 `matrix`(격리 코퍼스 × 전략/랭커/토큰 조합)로 나뉩니다. 결과를 비교할 때는 데이터셋·인덱스·설정 지문이 같을 때만 델타를 보여주고, 다르면 비교 불가로 표시합니다. 실행 단계·소요 시간·토큰·실패 원인은 모두 기록되며, 실패는 workflow budget / provider failure / node error로 구분합니다.
 

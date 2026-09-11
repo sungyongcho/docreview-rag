@@ -107,6 +107,9 @@ Tables are packed by row first; if one row is too large, by cell; if a cell stil
 
 > **Why no overlap**: citation accuracy came first. Overlapping pieces can cite the same sentence twice and blur span tracking. Context is instead restored with the header line built into each indexed chunk.
 
+```chunk-demo
+```
+
 ### 1-3. Embeddings — vectorization and dimensions
 
 Embeddings turn text into vectors so retrieval can work on meaning. OpenAI `text-embedding-3-large` is used at **384 dimensions** (Matryoshka truncation), and the database schema pins 384 as a `Literal[384]` contract. The provider/model/dimension/tokenizer combination is stored as the vector identity, so a changed vector space never mixes silently — it becomes a re-embedding target.
@@ -164,6 +167,9 @@ $$
 
 With k=60, only the first occurrence rank in each list counts.
 
+```rrf-demo
+```
+
 ```text
 question ─┬─▶ vector search (pgvector cosine, exact scan) ─┐
           │                                                ├─▶ RRF ─▶ (optional) cross-encoder ─▶ top-k
@@ -194,6 +200,9 @@ $$
 $$
 
 Coverage is 0 when the document or source digest differs; each metric is computed per question, then macro-averaged.
+
+```eval-demo
+```
 
 Runs are split into `quick` (one evaluation against the current index) and `matrix` (isolated corpora × strategy/ranker/token combinations). Comparisons show metric deltas only when dataset, index and configuration fingerprints match; otherwise they are marked not comparable. Stage, elapsed time, tokens and failure cause are all recorded, and failures are typed as workflow budget / provider failure / node error.
 
