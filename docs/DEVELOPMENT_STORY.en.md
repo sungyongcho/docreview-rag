@@ -29,7 +29,7 @@ I started by splitting the finished version (`new`) and a learning version (`zer
 
 ### 1-1. Parsing — API acquisition and HTML parsing
 
-I deliberately implemented the SEC EDGAR and DART parsing stage myself. I had never received either document format directly, so I needed to understand their components — and that work made the next stage's boundary question (what should count as one chunk) visible on its own.
+I deliberately implemented the SEC EDGAR and DART parsing stage myself. I had never read either document format directly, so I needed to understand their components — and that work made the next stage's boundary question (what should count as one chunk) visible on its own.
 
 ```text
 SEC/DART API ──download──▶ manifest          (source artifacts identified by SHA-256)
