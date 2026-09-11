@@ -12,10 +12,10 @@ it.each(["ko", "en"] as const)("renders the development outline with honest lang
   const { container } = render(await DocumentationPage({ documentId: "development", locale }));
   const status = screen.getByRole("complementary", { name: locale === "ko" ? "개발 기록 상태" : "Development log status" });
   expect(status).toHaveTextContent(locale === "ko" ? "초안 · 개요" : "Draft / Outline");
-  if (locale === "en") expect(status).toHaveTextContent("The article below is the Korean source; an English translation is not available yet.");
+  if (locale === "en") expect(status).toHaveTextContent("A working draft the author is still revising");
   const article = screen.getByRole("article");
-  expect(article.parentElement).toHaveAttribute("lang", "ko");
-  expect(within(article).getByRole("heading", { level: 1 })).toHaveTextContent("개발 기록 초안");
+  expect(article.parentElement).toHaveAttribute("lang", locale);
+  expect(within(article).getByRole("heading", { level: 1 })).toHaveTextContent(locale === "ko" ? "개발 기록" : "Development Log");
   const references = article.querySelectorAll('a[href^="https://"]');
   expect(references.length).toBeGreaterThan(0);
   for (const link of references) {

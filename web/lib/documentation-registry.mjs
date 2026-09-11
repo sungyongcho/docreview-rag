@@ -2,12 +2,14 @@ import registry from "./documentation-registry.json" with { type: "json" };
 
 export const DOCUMENTATION_REGISTRY = registry;
 export const DOCUMENTATION_BASE = "/docreview-rag-agent";
-export const DEVELOPMENT_STORY_SOURCE = "../DEVELOPMENT_STORY_OUTLINE.md";
+/** Per-locale sources for the author-written development log. */
+export const DEVELOPMENT_STORY_SOURCES = { ko: "../DEVELOPMENT_STORY.ko.md", en: "../DEVELOPMENT_STORY.en.md" };
 
-/** Expose the Korean draft separately from the bilingual user-guide inventory. */
+/** Expose the author-written development log separately from the bilingual user-guide inventory. */
 export function developmentStoryDocument(locale = "ko") {
   const title = locale === "ko" ? "개발 기록" : "Development log";
-  return { id: "development", slug: "development", group: "development", groupTitle: title, order: 0, source: DEVELOPMENT_STORY_SOURCE, file: DEVELOPMENT_STORY_SOURCE, locale, title, label: title, summary: locale === "ko" ? "한국어 개발 기록 초안" : "Development outline · Korean source", href: `${DOCUMENTATION_BASE}/docs/${locale}/development/`, related: ["overview", "architecture"], steps: [] };
+  const file = DEVELOPMENT_STORY_SOURCES[locale];
+  return { id: "development", slug: "development", group: "development", groupTitle: title, order: 0, source: file, file, locale, title, label: title, summary: locale === "ko" ? "RAG 파이프라인 구현과 AI 협업 개발 기록" : "Field notes from building a citation-grounded RAG workflow", href: `${DOCUMENTATION_BASE}/docs/${locale}/development/`, related: ["overview", "architecture"], steps: [] };
 }
 
 /** Keep manually entered fragments usable even when their percent escaping is incomplete. */

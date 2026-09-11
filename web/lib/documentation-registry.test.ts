@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderTutorial } from "./tutorial-markdown.mjs";
 import { describe, expect, it } from "vitest";
-import { DEVELOPMENT_STORY_SOURCE, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
+import { DEVELOPMENT_STORY_SOURCES, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
 
 describe("documentation registry", () => {
   it("provides seventeen paired documents and twelve unique tutorial steps", () => {
@@ -51,8 +51,8 @@ describe("documentation registry", () => {
   });
 
   it("keeps the Korean development draft separate and preserves its route during language changes", () => {
-    expect(developmentStoryDocument("ko")).toMatchObject({ title: "개발 기록", file: DEVELOPMENT_STORY_SOURCE });
-    expect(developmentStoryDocument("en")).toMatchObject({ title: "Development log", file: DEVELOPMENT_STORY_SOURCE });
+    expect(developmentStoryDocument("ko")).toMatchObject({ title: "개발 기록", file: DEVELOPMENT_STORY_SOURCES.ko });
+    expect(developmentStoryDocument("en")).toMatchObject({ title: "Development log", file: DEVELOPMENT_STORY_SOURCES.en });
     expect(DOCUMENTS).toHaveLength(34);
     expect(localizedDocumentationRoute("/docreview-rag-agent/docs/ko/development/", "en", "#References")).toBe("/docreview-rag-agent/docs/en/development/#References");
     expect(localizedDocumentationRoute("/docs/en/development/", "ko", "#시작과-학습")).toBe(`/docs/ko/development/#${encodeURIComponent("시작과-학습")}`);

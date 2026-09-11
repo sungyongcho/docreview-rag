@@ -53,14 +53,14 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
         <p className="docs-kicker">{document.groupTitle}</p>
         {story ? <aside className="docs-mode-guide" aria-label={locale === "ko" ? "개발 기록 상태" : "Development log status"}>
           <span className="docs-mode-shared">{locale === "ko" ? "초안 · 개요" : "Draft / Outline"}</span>
-          <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "This draft is available in the public demo and DEV. The article below is the Korean source; an English translation is not available yet."}</p>
+          <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "A working draft the author is still revising, readable in the public demo and DEV."}</p>
         </aside> : <aside className="docs-mode-guide" aria-label={locale === "ko" ? "이 안내의 사용 범위" : "Guide availability"}>
           {document.developmentOnly ? <DevelopmentBadge locale={locale} tooltip={false} /> : <span className="docs-mode-shared">{locale === "ko" ? "공통 안내" : "Shared guide"}</span>}
           <p>{document.developmentOnly
             ? (locale === "ko" ? "이 문서의 실습은 로컬 DEV 환경에서 실행합니다. 문서 전체는 공개 데모와 DEV 어디서든 읽을 수 있습니다." : "Run the exercises in this guide in a local DEV environment. The complete guide remains readable in both the public demo and DEV.")
             : (locale === "ko" ? "공개 데모와 DEV에서 함께 사용하는 안내입니다. 본문에서 스패너가 붙은 작업만 개발 모드 전용이며, 모든 문서는 두 환경에서 읽을 수 있습니다." : "This guide covers both the public demo and DEV. Only actions marked with a wrench require development mode; every document remains readable in both environments.")}</p>
         </aside>}
-        <div lang={story ? "ko" : locale}>{body}</div>
+        <div lang={locale}>{body}</div>
         <section className="docs-related" aria-labelledby="docs-related-title"><h2 id="docs-related-title">{locale === "ko" ? "관련 문서" : "Related documents"}</h2><ul>{related.map((item) => <li key={item.id}><Link href={item.href.replace(DOCUMENTATION_BASE, "")}>{item.title}</Link></li>)}</ul></section>
         <nav className="docs-pagination" aria-label={locale === "ko" ? "이전·다음 문서" : "Previous and next documents"}>
           {previous && <Link className="docs-next docs-previous" rel="prev" href={previous.href.replace(DOCUMENTATION_BASE, "")}><ArrowLeft size={18} /><span><small>{locale === "ko" ? "이전 문서" : "Previous document"}</small>{previous.title}</span></Link>}
