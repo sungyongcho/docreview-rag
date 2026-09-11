@@ -39,7 +39,7 @@ describe("documentation navigation", () => {
     const links = container.querySelector('[aria-labelledby="docs-group-start"]')!.querySelectorAll("a");
     expect(Array.from(links, (link) => link.getAttribute("href")?.replace(/\/$/, ""))).toEqual([`/docs/${locale}/environment`, `/docs/${locale}/quickstart`, `/docs/${locale}/quickstart-dev`]);
     expect(Array.from(links, (link) => Boolean(link.querySelector(".development-badge")))).toEqual([false, false, true]);
-    expect(links[2]).toHaveTextContent("Quick Start for");
+    expect(links[2]).toHaveTextContent("Quick Start for DEV MODE");
   });
 
   it.each(["qs-setup", "qs-web-4"])("redirects an old Quick Start bookmark %s without changing its checkpoint", (anchor) => {

@@ -41,7 +41,7 @@ function DocumentationMenuLink({ document, current, locale }: { document: Tutori
   const { t } = useI18n();
   const Icon = DOCUMENT_ICONS[document.icon ?? ""] ?? BookOpen;
   const showBadge = document.developmentOnly && !/DEV/i.test(document.title);
-  const label = <>{document.title}{showBadge && <> <DevelopmentBadge locale={locale} compact tooltip={false} /></>}</>;
+  const label = <>{document.title}{showBadge && <> <DevelopmentBadge locale={locale} compact tooltip={false} text={document.id === "quickstart-dev" ? "DEV MODE" : undefined} /></>}</>;
   return <HoverBubble bubble={<div className="docs-menu-bubble-body">
     <span className="docs-menu-bubble-group">{document.groupTitle}</span>
     <strong>{label}</strong>
@@ -97,7 +97,7 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
     </nav>
     <nav className="docs-menu-sections" aria-label={copy.chooseDocument}>
       {documentationGroups(documents).map((group) => <section className="docs-nav-group" key={group.id} aria-labelledby={`docs-group-${group.id}`}>
-        <h2 id={`docs-group-${group.id}`}>{group.title}{group.developmentOnly && <> <DevelopmentBadge locale={locale} compact tooltip={false} /></>}</h2>
+        <h2 id={`docs-group-${group.id}`}>{group.title}{group.developmentOnly && <> <DevelopmentBadge locale={locale} compact tooltip={false} text={document.id === "quickstart-dev" ? "DEV MODE" : undefined} /></>}</h2>
         {group.documents.map((document) => <DocumentationMenuLink key={document.id} document={document} current={current} locale={locale} />)}
       </section>)}
     </nav>
