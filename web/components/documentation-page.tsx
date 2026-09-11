@@ -1,21 +1,21 @@
-import { ProductBrand } from "@/components/product-brand";
-import { DevelopmentBadge } from "@/components/development-badge";
-import { LanguageSwitch } from "@/lib/i18n";
-import { ThemeSwitch } from "@/components/theme-switch";
-import { codeToHtml, bundledLanguages } from "shiki";
+import { tutorialError, tutorialRevision } from "@/.tutorial/revision";
 import { CodeBlock } from "@/components/code-block";
-import { splitQuickStart } from "@/lib/quickstart-markdown.mjs";
-import { QuickStartProvider, QuickStartPanels, QuickStartOutline } from "@/components/quickstart-guide";
-import { TutorialMarkdown } from "@/components/tutorial-markdown";
+import { DevelopmentBadge } from "@/components/development-badge";
+import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
+import { ProductBrand } from "@/components/product-brand";
+import { QuickStartOutline, QuickStartPanels, QuickStartProvider } from "@/components/quickstart-guide";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { TutorialImage } from "@/components/tutorial-image";
+import { TutorialMarkdown } from "@/components/tutorial-markdown";
+import { DOCUMENTATION_BASE, developmentStoryDocument, documentationDocument } from "@/lib/documentation-registry.mjs";
+import { LanguageSwitch } from "@/lib/i18n";
+import { splitQuickStart } from "@/lib/quickstart-markdown.mjs";
+import { DOCUMENTS, renderTutorial } from "@/lib/tutorial-markdown.mjs";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
-import { DOCUMENTS, renderTutorial } from "@/lib/tutorial-markdown.mjs";
-import { DOCUMENTATION_BASE, developmentStoryDocument, documentationDocument } from "@/lib/documentation-registry.mjs";
-import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
-import { tutorialRevision, tutorialError } from "@/.tutorial/revision";
+import { bundledLanguages, codeToHtml } from "shiki";
 import "./documentation.css";
 
 export async function DocumentationPage({ documentId, locale = "ko" }: { documentId: string; locale?: "ko" | "en" }) {
@@ -41,16 +41,15 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
     <a className="docs-skip" href="#docs-content">{locale === "ko" ? "본문으로 바로가기" : "Skip to content"}</a>
     <header className="docs-header">
       <div className="docs-header-inner">
-      <Link className="docs-brand" href={`/docs/${locale}/`}><ProductBrand /></Link>
-      <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><LanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
-      <Link className="docs-back" href="/" aria-label={locale === "ko" ? "서비스로 돌아가기" : "Return to service"}><ArrowLeft size={15} /><span className="docs-back-long">{locale === "ko" ? "서비스로 돌아가기" : "Return to service"}</span><span className="docs-back-short">{locale === "ko" ? "서비스" : "Service"}</span></Link>
+        <Link className="docs-brand" href={`/docs/${locale}/`}><ProductBrand /></Link>
+        <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><LanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
+        <Link className="docs-back" href="/" aria-label={locale === "ko" ? "서비스로 돌아가기" : "Return to service"}><ArrowLeft size={15} /><span className="docs-back-long">{locale === "ko" ? "서비스로 돌아가기" : "Return to service"}</span><span className="docs-back-short">{locale === "ko" ? "서비스" : "Service"}</span></Link>
       </div>
     </header>
     <div className="docs-layout">
       <aside className="docs-sidebar"><DocumentationMenu current={document.id} documents={documents} locale={locale} /></aside>
       <main id="docs-content" className="docs-content" tabIndex={-1}>
-        <nav className="docs-breadcrumb" aria-label={locale === "ko" ? "현재 위치" : "Breadcrumb"}><Link href={`/docs/${locale}/`}>{locale === "ko" ? "사용 가이드" : "User guide"}</Link><span aria-hidden="true">/</span><span>{document.label}</span></nav>
-        <p className="docs-kicker">{document.groupTitle}</p>
+        <nav className="docs-breadcrumb" aria-label={locale === "ko" ? "현재 위치" : "Breadcrumb"}>{story || document.groupTitle === document.label ? <span>{document.label}</span> : <><Link href={`/docs/${locale}/`}>{document.groupTitle}</Link><span aria-hidden="true">/</span><span>{document.label}</span></>}</nav>
         {story ? <aside className="docs-mode-guide" aria-label={locale === "ko" ? "개발 기록 상태" : "Development log status"}>
           <span className="docs-mode-shared">{locale === "ko" ? "초안 · 개요" : "Draft / Outline"}</span>
           <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "A working draft the author is still revising, readable in the public demo and DEV."}</p>
