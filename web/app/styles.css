@@ -3149,6 +3149,16 @@ textarea[aria-invalid="true"] {
   font-weight: 600;
 }
 
+.docs-outline a.docs-outline-sub {
+  padding-left: 26px;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+}
+
+.docs-outline a.docs-outline-sub[aria-current="location"] {
+  color: var(--text);
+}
+
 .docs-next {
   display: flex;
   justify-content: space-between;

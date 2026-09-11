@@ -68,7 +68,7 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
           for (let suffix = 2; used.has(id); suffix += 1) id = `${base}-${suffix}`;
           used.add(id);
           node.data = { ...node.data, hProperties: { id } };
-          headings.push({ id, text, depth: node.depth });
+          headings.push({ id, text, depth: node.depth, hidden: text === "SCREENSHOT NEEDED" });
           if (text === "SCREENSHOT NEEDED") node.data = { ...node.data, hProperties: { ...node.data.hProperties, "data-screenshot-needed": "true" } };
         }
         if (node.type === "code") {

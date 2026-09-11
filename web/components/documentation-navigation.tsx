@@ -106,7 +106,7 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
 }
 
 export function DocumentationOutline({ headings, locale }: { headings: TutorialHeading[]; locale: Locale }) {
-  const sections = headings.filter((heading) => heading.depth === 2);
+  const sections = headings.filter((heading) => !heading.hidden && (heading.depth === 2 || heading.depth === 3));
   const [active, setActive] = useState("");
   useEffect(() => {
     function update() {
@@ -133,7 +133,7 @@ export function DocumentationOutline({ headings, locale }: { headings: TutorialH
   return <div className="docs-outline">
     <p className="docs-outline-title">{locale === "ko" ? "이 페이지에서" : "On this page"}</p>
     <nav aria-label={locale === "ko" ? "목차" : "Table of contents"}><ol>{sections.map((section) => <li key={section.id}>
-      <a href={`#${section.id}`} aria-current={active === section.id ? "location" : undefined}>{section.text}</a>
+      <a href={`#${section.id}`} className={section.depth === 3 ? "docs-outline-sub" : undefined} aria-current={active === section.id ? "location" : undefined}>{section.text}</a>
     </li>)}</ol></nav>
   </div>;
 }

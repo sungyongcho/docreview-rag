@@ -4,6 +4,9 @@ DocReview prepares SEC and DART filings through one source-preserving pipeline. 
 
 The [Quick Start for DEV MODE](quickstart-dev.md) prepares its first two reports; [retrieval testing](retrieval.md) checks the evidence before the [first answer](answers.md). The sections below describe the structures those steps rely on.
 
+```arch-flow
+```
+
 ## Common corpus contract {#contracts}
 
 `schemas/manifest.schema.json` is generated from the Python `Manifest` contract. A corpus has four separate collections:

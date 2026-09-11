@@ -1,6 +1,6 @@
+import { DOCUMENTS } from "@/lib/documentation-registry.mjs";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DOCUMENTS } from "@/lib/documentation-registry.mjs";
 import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline, DocumentationRedirect } from "./documentation-navigation";
 
 const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -55,12 +55,21 @@ describe("documentation navigation", () => {
     expect(screen.getByRole("navigation", { name: "문서 선택" }).querySelectorAll("a")).toHaveLength(16);
   });
 
-  it("lists only second-level sections without a disclosure toggle", () => {
-    const { container } = render(<DocumentationOutline locale="en" headings={[{ id: "title", text: "Title", depth: 1 }, { id: "step-5", text: "Parse", depth: 2 }, { id: "detail", text: "Detail", depth: 3 }]} />);
+  it("lists second- and third-level sections while skipping hidden markers", () => {
+    const { container } = render(<DocumentationOutline locale="en" headings={[
+      { id: "title", text: "Title", depth: 1 },
+      { id: "step-5", text: "Parse", depth: 2 },
+      { id: "detail", text: "Detail", depth: 3 },
+      { id: "todo", text: "SCREENSHOT NEEDED", depth: 3, hidden: true },
+      { id: "deep", text: "Too deep", depth: 4 },
+    ]} />);
     expect(container.querySelector("details")).toBeNull();
     expect(container.querySelector(".docs-outline-title")).toHaveTextContent("On this page");
-    expect(screen.getAllByRole("link")).toHaveLength(1);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Parse" })).toHaveAttribute("href", "#step-5");
+    expect(screen.getByRole("link", { name: "Detail" })).toHaveClass("docs-outline-sub");
+    expect(screen.queryByRole("link", { name: "SCREENSHOT NEEDED" })).toBeNull();
   });
 
   it("redirects an old localized walkthrough anchor to its new section", () => {
