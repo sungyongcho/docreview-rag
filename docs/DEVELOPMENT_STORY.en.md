@@ -83,14 +83,7 @@ Chunking decides what counts as a searchable unit. Two rules governed it: never 
 | overlap | none | span alignment and no duplicated citations |
 | context header | citation + title + heading | remains meaningful when retrieved alone |
 
-```text
-source HTML ──────────────────────────────────────────────▶ (character offsets)
-block spans  [ heading ][   paragraph   ][   table        ]
-chunks       [ chunk1 ][  chunk2  ][ chunk3 ][  chunk4  ]
-              └ tables fall back row → cell → sentence,
-                repeating headers/captions in every fragment
-
-no overlap: left.end ≤ right.start (an exception is fragments sharing one table span)
+```chunk-map
 ```
 
 Tables are packed by row first; if one row is too large, by cell; if a cell still does not fit, by sentence. Headers and unit captions are repeated in every fragment so values never lose context. A unit caption (`(unit: million KRW)`) is carried to the next table only, and dropped when it would leak elsewhere. Once an embedding provider is selected, the token budget is recomputed with that model's actual tokenizer and input limit.

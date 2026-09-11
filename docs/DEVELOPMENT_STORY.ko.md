@@ -81,14 +81,7 @@ HTML blocks
 | overlap | 없음 | 원문 span 정렬·중복 인용 방지 |
 | context header | citation + 제목 + 헤딩 | 떨어져 검색돼도 문맥 유지 |
 
-```text
-source HTML ──────────────────────────────────────────────▶ (문자 오프셋)
-block spans  [ heading ][   paragraph   ][   table        ]
-chunks       [ chunk1 ][  chunk2  ][ chunk3 ][  chunk4  ]
-              └ 필요하면 표는 row → cell → sentence 순으로 내려가며
-                헤더/캡션을 모든 조각에 반복
-
-겹침 없음: left.end ≤ right.start (같은 원문 span을 공유하는 표 조각만 예외)
+```chunk-map
 ```
 
 표는 우선 행 단위로 묶고, 한 행이 너무 크면 셀 단위로, 그것도 안 되면 문장 단위로 내려갑니다. 어느 단계에서도 헤더와 단위 캡션을 반복해 붙이므로 값이 문맥을 잃지 않습니다. 단위 캡션(`(단위: 백만원)`)은 다음 표에만 유효하게 전달하고, 다른 표로 새면 버립니다. 임베딩 provider가 정해지면 그 모델의 실제 tokenizer와 입력 한도로 예산을 다시 계산합니다.

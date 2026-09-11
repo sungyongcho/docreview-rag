@@ -1,10 +1,11 @@
 import { tutorialError, tutorialRevision } from "@/.tutorial/revision";
 import { Bm25Explorer } from "@/components/bm25-explorer";
 import { ChunkBoundary } from "@/components/chunk-boundary";
+import { ChunkMap } from "@/components/chunk-map";
 import { CodeBlock } from "@/components/code-block";
 import { DevelopmentBadge } from "@/components/development-badge";
-import { EvalMeter } from "@/components/eval-meter";
 import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
+import { EvalMeter } from "@/components/eval-meter";
 import { ProductBrand } from "@/components/product-brand";
 import { QuickStartOutline, QuickStartPanels, QuickStartProvider } from "@/components/quickstart-guide";
 import { RrfMerger } from "@/components/rrf-merger";
@@ -16,12 +17,12 @@ import { DOCUMENTATION_BASE, developmentStoryDocument, documentationDocument } f
 import { LanguageSwitch } from "@/lib/i18n";
 import { splitQuickStart } from "@/lib/quickstart-markdown.mjs";
 import { DOCUMENTS, renderTutorial } from "@/lib/tutorial-markdown.mjs";
+import "katex/dist/katex.min.css";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { bundledLanguages, codeToHtml } from "shiki";
-import "katex/dist/katex.min.css";
 import "./documentation.css";
 
 export async function DocumentationPage({ documentId, locale = "ko" }: { documentId: string; locale?: "ko" | "en" }) {
@@ -33,10 +34,12 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const parsed = renderTutorial(source, { locale, math: story });
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
-  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
-    const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "table-normalize-demo": TableNormalize } as const)[block.language];
-    return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} />;
-  } });
+  const render = (markdown: string) => renderTutorial(markdown, {
+    locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
+      const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "chunk-map": ChunkMap, "table-normalize-demo": TableNormalize } as const)[block.language];
+      return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} />;
+    }
+  });
   const tutorial = render(source);
   const sections = document.id === "quickstart-dev" ? splitQuickStart(source) : null;
   const body = sections ? <><TutorialMarkdown content={render(sections.common).content} /><QuickStartPanels locale={locale} cli={<TutorialMarkdown content={render(sections.cli).content} />} web={<TutorialMarkdown content={render(sections.web).content} />} /><TutorialMarkdown content={render(sections.after).content} /></> : <TutorialMarkdown content={tutorial.content} />;
