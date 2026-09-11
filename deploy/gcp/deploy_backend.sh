@@ -11,6 +11,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/deploy_env_config.sh"
 
+note() { if declare -F ui_log >/dev/null 2>&1; then ui_log "$*"; else printf '[%s] %s\n' "$(date +'%F %T')" "$*"; fi; }
+ok() { if declare -F ui_ok >/dev/null 2>&1; then ui_ok "$*"; else printf '  ✓ %s\n' "$*"; fi; }
+
 [[ "${mode}" != rollback ]] || DOCREVIEW_IMAGE=""
 [[ "${mode}" == rollback ]] || : "${DOCREVIEW_IMAGE:?DOCREVIEW_IMAGE is required in backend.env}"
 if [[ ! "${DOCREVIEW_IMAGE}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$ && "${mode}" != rollback ]]; then
@@ -27,6 +30,7 @@ if [[ "${mode}" == first-install ]]; then
 fi
 
 # Keep credentials and selected artifacts inside one private, unique staging directory.
+note "Staging ${mode} on ${VM_NAME}"
 remote_stage="$(gcloud compute ssh "${VM_NAME}" --project "${PROJECT_ID}" --zone "${ZONE}" \
   --command 'umask 077; mktemp -d /tmp/docreview-deploy.XXXXXXXX')"
 [[ "${remote_stage}" =~ ^/tmp/docreview-deploy\.[a-zA-Z0-9]+$ ]] \
@@ -68,3 +72,4 @@ fi
 
 gcloud compute ssh "${VM_NAME}" --project "${PROJECT_ID}" --zone "${ZONE}" \
   --command "sudo bash '${remote_stage}/apply_backend.sh' '${mode}' '${remote_stage}' '${DOCREVIEW_IMAGE}'"
+ok "Backend ${mode} finished on ${VM_NAME}"

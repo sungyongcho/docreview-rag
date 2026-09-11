@@ -13,6 +13,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 export SCRIPT_DIR REPO_ROOT
 
+if [ -f "${SCRIPT_DIR}/lib/ui.sh" ]; then
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/lib/ui.sh"
+fi
+if ! declare -F ui_heading >/dev/null 2>&1; then
+  ui_heading() { printf '%s\n' "$*"; }
+  ui_row() { printf '  %-24s  %s\n' "$1" "$2"; }
+  ui_dim() { printf '%s\n' "$*"; }
+  ui_log() { printf '[%s] %s\n' "$(date +'%F %T')" "$*"; }
+  ui_rule() { printf '%s\n' "------------------------------------------------------------"; }
+fi
+
 DOTENV_PATH="${DOTENV_PATH:-${REPO_ROOT}/.env}"
 if [[ ! -f "${DOTENV_PATH}" ]]; then
   echo "env file not found. Set DOTENV_PATH or create ${REPO_ROOT}/.env" >&2
@@ -57,12 +69,15 @@ _mask_len() {
   fi
 }
 
-echo "Loaded Configuration:"
-echo "  Project: ${PROJECT_ID}"
-echo "  Region: ${REGION} (${ZONE})"
-echo "  VM: ${VM_NAME} (${MACHINE_TYPE}, ${BOOT_DISK_SIZE} pd-standard, ephemeral IP)"
-echo "  Origin port: ${ORIGIN_PORT} (tag ${NETWORK_TAG}, Cloudflare IPv4 only)"
-echo "  Image: ${DOCREVIEW_IMAGE:-unset}"
-echo "  Backend env: ${BACKEND_ENV_PATH} ($([[ -f "${BACKEND_ENV_PATH}" ]] && echo present || echo missing))"
-echo "  Secrets: postgres_password=$(_mask_len "${POSTGRES_PASSWORD}"), openai_api_key_prod=$(_mask_len "${OPENAI_API_KEY_PROD}")"
-echo "-------------------------------------"
+if [ "${DEPLOY_SUMMARY:-1}" = "1" ]; then
+  ui_heading "Deployment configuration"
+  ui_row "Project" "${PROJECT_ID}"
+  ui_row "Region" "${REGION} (${ZONE})"
+  ui_row "VM" "${VM_NAME} (${MACHINE_TYPE})"
+  ui_row "Disk" "${BOOT_DISK_SIZE} pd-standard · ephemeral IP"
+  ui_row "Origin port" "${ORIGIN_PORT} (tag ${NETWORK_TAG}, Cloudflare IPv4 only)"
+  ui_row "Image" "${DOCREVIEW_IMAGE:-unset}"
+  ui_row "Backend env" "${BACKEND_ENV_PATH} ($([[ -f "${BACKEND_ENV_PATH}" ]] && echo present || echo missing))"
+  ui_row "Secrets" "postgres_password=$(_mask_len "${POSTGRES_PASSWORD}"), openai_api_key_prod=$(_mask_len "${OPENAI_API_KEY_PROD}")"
+  ui_rule
+fi

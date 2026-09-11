@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/deploy_env_config.sh"
 
-log() { echo "[$(date +'%F %T')] $*"; }
+log() { if declare -F ui_log >/dev/null 2>&1; then ui_log "$*"; else echo "[$(date +'%F %T')] $*"; fi; }
 
 # ----- VM: e2-medium, pd-standard 30 GB, ephemeral external IP (no --address) -----
 if gcloud compute instances describe "${VM_NAME}" \
