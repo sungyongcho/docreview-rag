@@ -158,10 +158,10 @@ for deliberate mode changes, and [Settings](settings.md) for saved connection se
 Do not use a destructive reset to make a readiness indicator turn green. Refresh reads
 state; it does not repair, ingest, index, or call an answer model.
 
-## Production deployment (near-zero cost) {#production-deployment}
+## Production deployment {#production-deployment}
 
 Everything above runs on your machine. The public site is a separate, deliberately
-small target: one Always Free VM behind a Cloudflare Worker, and a static export on
+small target: one e2-medium VM behind a Cloudflare Worker, and a static export on
 Firebase Hosting. The scripts live in `deploy/gcp/` and `scripts/deploy/`; none of them
 runs as part of the tutorial.
 
@@ -172,7 +172,7 @@ visitor ──HTTPS──> sungyongcho.com/docreview-rag-agent/*
    /docreview-rag-agent/*        /docreview-rag-agent/api/*
             │                              │  plain HTTP
             ▼                              ▼
-   Firebase Hosting             GCP e2-micro (us-central1-a, ephemeral IP)
+   Firebase Hosting             GCP e2-medium (us-central1-a, ephemeral IP)
    static Next export           firewall: tcp:8000 from Cloudflare IPv4 only
                                   Caddy :80 → host 8000
                                     allow-list + X-DocReview-Public: true
@@ -193,8 +193,9 @@ reachable port. The operator API is reachable only through
    `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`) and copy `deploy/gcp/backend.env.example`
    to `deploy/gcp/backend.env` (gitignored). `deploy/gcp/deploy_env_config.sh` loads
    both and prints a masked summary.
-2. `deploy/gcp/create_vm.sh` creates the e2-micro VM with a `pd-standard` 30 GB boot
-   disk, an ephemeral external IP, and the Cloudflare-only firewall rule for `tcp:8000`.
+2. `deploy/gcp/create_vm.sh` creates the e2-medium VM (2 shared vCPU, 4 GB RAM) with a
+   `pd-standard` 30 GB boot disk, an ephemeral external IP, and the Cloudflare-only firewall
+   rule for `tcp:8000`.
    `deploy/gcp/startup.sh` installs Docker and a 2 GB swap file on first boot.
 3. Copy the prepared corpus into `/var/lib/docreview/corpus` on the VM, then run
    `deploy/gcp/deploy_backend.sh`. It copies `docker-compose.deploy.yml`,
@@ -214,13 +215,13 @@ steps 4 and 5 afterwards. A reserved static IP avoids that at roughly $3/month.
 
 | Component | Detail | Cost |
 |---|---|---|
-| GCP e2-micro | Always Free in `us-central1`, `us-east1`, `us-west1`: 1 shared vCPU, 1 GB RAM, 30 GB `pd-standard`, 1 GB/month North America egress | $0 |
+| GCP e2-medium | On-demand in `us-central1`: 2 shared vCPU, 4 GB RAM, about $0.034/hour (about $25/month when always on), plus about $1/month for the 30 GB `pd-standard` disk | ≈ $26 |
 | External IP | Ephemeral; a reserved static IP would be about $3/month | $0 |
 | Firebase Hosting | Free tier (static export) | $0 |
 | Cloudflare Worker | Free tier, shared with the gomoku Worker | $0 |
-| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`1.00` in the compose file) | ≤ $1/day |
+| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`0.10` in the compose file) | ≤ $0.10/day |
 
 Trade-offs: visitors in Europe see roughly 100 ms of added latency because the VM sits
 in North America. The database (about 430 MB today) fits the 30 GB disk with room for
-Postgres, Docker images and swap. With 1 GB of RAM, Postgres runs with
-`shared_buffers=128MB` and `work_mem=4MB`; the 2 GB swap file absorbs the occasional spike.
+Postgres, Docker images and swap. With 4 GB of RAM, Postgres runs with
+`shared_buffers=256MB` and `work_mem=4MB`; the 2 GB swap file absorbs the occasional spike.

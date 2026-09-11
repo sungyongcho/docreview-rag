@@ -852,7 +852,7 @@ sungyongcho.com/docreview-rag-agent/*
         ▼
 Cloudflare Worker (TLS ends here)
         ├─ static UI ──> Firebase Hosting
-        └─ /api/* ──plain HTTP──> GCP e2-micro (Always Free, ephemeral IP)
+        └─ /api/* ──plain HTTP──> GCP e2-medium (ephemeral IP)
                                   └─ Caddy :8000 (Cloudflare IPs only) → FastAPI → PostgreSQL
 ```
 
