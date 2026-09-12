@@ -97,7 +97,7 @@ Helper를 등록하지 않았다면 `uv run python -m scripts.schema <action>`�
 rag-alias --check-updates
 rag-alias update
 # 체크아웃이 이동했다면 새 디렉터리 또는 정식 helper 파일 경로를 지정합니다.
-rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+rag-alias update /new/path/to/docreview-rag/rag-alias.sh
 ```
 
 현재 불러온 경로·설치된 SHA-256과 체크아웃 파일의 경로·hash를 함께 표시합니다. 조회는
@@ -181,7 +181,7 @@ rag-dev up --build -d
 rag-dev ps
 ```
 
-웹 주소는 두 모드 모두 [로컬 DocReview](http://localhost:8000/docreview-rag-agent/)입니다.
+웹 주소는 두 모드 모두 [로컬 DocReview](http://localhost:8000/docreview-rag/)입니다.
 포트를 바꾸려면 `.env`의 `APP_PORT`를 사용하고 `up -d`로 반영합니다.
 
 | 변경 | 반영 방법 |

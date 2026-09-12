@@ -16,8 +16,7 @@ The terminal panel is compact and collapsible. It opens for a prerequisite block
 
 Every pipeline stage can be inspected: Filings, Parse & chunk, Embeddings, BM25, Ask, Answer model, and Evaluate. The diagnosis distinguishes ready to run, already complete, blocked, running/queued, and unknown/checking. Missing sources lead to Filings; missing chunks lead to Parse & chunk; missing indexes or answer configuration lead to their own stage. An unknown response is not success. **Go to prerequisite step** opens the relevant step without starting it; use that step’s compact terminal panel and recheck when needed.
 
-### SCREENSHOT NEEDED
-<!-- feature=schema-and-terminal-handoff-recheck; mode=dev; locale=en; theme=light; state=blocked-and-resolved-prerequisite-states; expected-evidence=diagnosis-copyable-command-check-updated-status-control-and-recorded-result -->
+![Schema-drift diagnosis with terminal handoff: needs attention, copyable check/recover commands, and re-check guidance](../assets/schema-handoff.en.png)
 
 > [!DEV]
 > Ingestion, embedding backfill, and BM25 rebuilds run in DEV mode only. Reading an existing readiness indicator does not perform those operations.
@@ -90,9 +89,7 @@ remain available independently of the default draft.
 
 The primary action records one immutable manifest/selection reference for exactly the selected downloaded documents. Jobs and retries retain that reference even if you later change the draft. Missing files or unrequested company/year pairs are never silently dropped. **Advanced** retains existing manifest rows and per-selection **Ingest** controls; use it for a separately named selection rather than the default flow.
 
-### SCREENSHOT NEEDED
-<!-- feature=parse-chunk-compact-selection-summary; mode=dev; locale=en; theme=light; state=multi-company-selection-with-missing-sources-and-running-job; expected-evidence=header-totals-change-selection-primary-count-badge-missing-source-explanation-shared-progress-cancel-and-collapsed-advanced -->
-
+![The pipeline view with the BM25 stage running, its live progress bar and the multi-company filing selection summary.](../assets/parse-chunk-compact-selection-summary.en.png)
 ## Job progress and evaluation queue {#job-progress}
 
 The step card and running badge show reported overall job progress. The execution panel shows the
@@ -107,9 +104,7 @@ message. Submitting the same active evaluation shows an existing-queue notice an
 Database, schema, write-access and missing-index blockers remain visible next to the disabled action.
 A missing BM25 index requires step 4; queueing an evaluation never computes it automatically.
 
-### SCREENSHOT NEEDED
-<!-- feature=bm25-and-evaluation-progress; mode=dev; locale=en; theme=light; state=explicit-bm25-recompute-and-evaluation-waiting-states; expected-evidence=compute-recompute-actions-overall-and-current-stage-progress-indeterminate-schema-stage-and-evaluation-waiting-notices -->
-
+![The Job Center while a BM25 lexical-index rebuild runs, with the running entry and bounded history.](../assets/bm25-and-evaluation-progress.en.png)
 ## Answer model (Build step 6)
 
 Build shows separate **OpenAI** and **Local** rows. Green means ready to answer, amber means configured with a limitation (missing key, unloaded model, slow CPU below 15 tok/s, or a server problem), and grey means not configured. The step is complete when at least one visible engine is green; both lights also appear on the flow map. Each row names its current model; OpenAI shows the key slot and Local shows the server protocol, reported CPU/GPU placement and last measured generation speed. Missing placement or timing is labelled unknown/unmeasured. CPU measurements expire after 15 minutes and are shown only while the measured model is loaded.

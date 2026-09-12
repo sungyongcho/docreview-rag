@@ -10,9 +10,7 @@ A `query_scope_unavailable` failure before the path decision belongs to **0. Pat
 
 Inspect the named file and run `rag-schema check` / `rag-corpus status`. Correct that input, then submit the question again; an unsuccessful lazy load is not cached and an API restart is unnecessary. Acquisition publishes manifests atomically, so readers see a complete committed file. **Run details → Trace** retains the original sanitized exception text. Production shows only the localized headline and a generic retry hint.
 
-### SCREENSHOT NEEDED
-<!-- feature=manifest-failure-diagnosis; mode=dev; locale=en; theme=light; state=query_scope_unavailable-failure-card; expected-evidence=cause-relative-path-one-action-and-trace-exception -->
-
+![A failed quick-evaluation job showing its GoldenDataError manifest diagnosis card with timestamps and the error classification.](../assets/manifest-failure-diagnosis.en.png)
 ## The page, API, or database is unavailable {#connection}
 
 > [!DEV]
@@ -92,9 +90,7 @@ Open **Manage history** in Jobs. **Sync history** reads the server again; it doe
 
 **Delete job history** permanently removes both visible and archived terminal job records only. Review the displayed count and type `DELETE JOB HISTORY`. The server must first create a private backup of the complete records; a backup failure leaves the records intact. Download the backup through **Download job history backup** after success. If the eligible count changed, sync and review again. Restoring an archive does not reimport a deleted backup, and no action automatically reruns a job.
 
-### SCREENSHOT NEEDED
-<!-- feature=job-history-and-reset-dialogs; mode=dev; locale=en; theme=light; state=history-controls-and-blocked-reset-eligibility; expected-evidence=archived-and-active-counts-confirmation-backup-link-and-blocked-diagnosis -->
-
+![The manage-history dialog with archive, restore and permanent-delete controls over job history.](../assets/job-history-and-reset-dialogs.en.png)
 ## Runtime reset: inspect eligibility before deletion {#reset}
 
 > [!DEV]
@@ -158,5 +154,4 @@ Connection delay appears in a compact in-flow status row with **Retry connection
 
 Repeated identical keyed events keep one notice without restarting its timer. Hover, keyboard focus and explicit expansion pause dismissal until all reading interactions end. Close a notice with its dismiss button; persistent warnings remain until dismissed or resolved. Backend retries and job delivery rules are unchanged.
 
-### SCREENSHOT NEEDED
-<!-- feature=connection-status-and-notification-rail; mode=both; locale=en; theme=light; state=unconfirmed-build-readiness-with-multiple-notices; expected-evidence=neutral-readiness-status-row-and-reserved-notification-rail -->
+![The top-right notification rail showing a connection notice while a PROD conversation stays usable.](../assets/connection-status-and-notification-rail.en.png)

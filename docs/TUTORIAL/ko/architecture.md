@@ -4,9 +4,6 @@ DocReview는 SEC와 DART 공시를 원문을 보존하는 하나의 처리 경�
 
 [Quick Start for DEV MODE](quickstart-dev.md)에서 첫 보고서 두 개를 준비하고, [검색 테스트](retrieval.md)로 근거를 확인한 뒤 [첫 답변](answers.md)으로 이어갑니다. 아래에서는 이 단계들이 기대는 구조를 설명합니다.
 
-```arch-flow
-```
-
 ## 공통 코퍼스 계약 {#contracts}
 
 `schemas/manifest.schema.json`은 Python `Manifest` 계약에서 생성합니다. 코퍼스에는 다음 정보가 구분되어 있습니다.

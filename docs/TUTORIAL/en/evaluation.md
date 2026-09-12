@@ -38,15 +38,11 @@ Open **Explore evaluation settings** in the same side drawer layout as DEV. Data
 | Advanced evaluation options → Run mode | Start with **Quick · current index**. It measures the current prepared index. |
 
 4. Choose **Queue evaluation** once. Query embedding and configured search components may incur provider costs.
-5. Watch the run. The setup closes and a queued job appears in Evaluation runs; select its row to inspect request settings and actual progress.
-
-A successful run exposes Result details, recorded configuration, metrics, and case ranks; no result means no measured scores yet. Selecting an evaluation opens its focused details, and while the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
+5. Watch the run. The setup closes and a queued job appears in Evaluation runs; select its row to inspect request settings and actual progress. A successful run exposes Result details, recorded configuration, metrics, and case ranks; no result means no measured scores yet. Selecting an evaluation opens its focused details, and while the list is intentionally hidden, this is a detail view, not an empty-history state. Return to the runs list to inspect other jobs.
 6. Read the outcome against its source evidence. The selected run succeeded, the result ID and dataset are correct, and you inspected at least one hit/miss. Do not treat a successful job from another suite as the result of this setup.
 7. If sources are unavailable or the corpus is not ready, read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
 
-### SCREENSHOT NEEDED
-<!-- feature=focused-evaluation-detail; mode=dev; locale=en; theme=light; state=selected-evaluation-with-result-details-and-return-to-list; expected-evidence=result-details-recorded-configuration-metrics-case-ranks-and-back-to-list-without-empty-history-message -->
-
+![A completed evaluation result opened to its metrics, recorded settings and per-question outcomes.](../assets/focused-evaluation-detail.en.png)
 Continue to [12. Compare results and save a snapshot](snapshots.md#step-12).
 
 ## Golden-set identity and readiness
@@ -73,7 +69,7 @@ Suite IDs are stable dataset identifiers. The `_v2_astra` suffix does not rename
 | `sec-ko_v2_astra` | Korean | English SEC filings |
 | `sec-mixed_v2_astra` | Mixed English/Korean | English SEC filings |
 
-The three additional SEC suites each contain 20 curated questions. Check the displayed curation and approval status; an automatically curated dataset is not evidence of human approval. When comparing question languages, inspect company, fiscal-year, and scope clues as well as the source spans. Shared evidence alone does not make two questions equivalent.
+The three additional SEC suites each contain 12 curated questions. Check the displayed curation and approval status; an automatically curated dataset is not evidence of human approval. When comparing question languages, inspect company, fiscal-year, and scope clues as well as the source spans. Shared evidence alone does not make two questions equivalent.
 
 The same suite catalog is used by Golden, new evaluation setup, and the New evaluation defaults controls. Saved defaults choose the starting suite for later work; they do not change existing results.
 
@@ -93,9 +89,7 @@ Start with the question and choose whether original documents can answer it. Evi
 
 Bundled filenames display a gray, noninteractive lock: create a draft to edit. New evaluation parameters are grouped into candidates/fusion, BM25, and reranking/language. Small information icons explain their purpose on hover or keyboard focus.
 
-### SCREENSHOT NEEDED
-<!-- feature=golden-question-editor; mode=dev; locale=en; theme=light; state=wide-editor-with-answerability-unselected-fixed-save-bar-and-chunk-picker; expected-evidence=wide-and-narrow-viewports-draft-editability-and-source-chunk-selection -->
-
+![The golden question detail showing the question text, answerability controls, reference answer and expected source chunk.](../assets/golden-question-editor.en.png)
 ## Modes, results, and interpretation {#metrics}
 
 Quick uses the current index. **Matrix · isolated corpus** tests configured chunk targets and retrieval combinations in an isolated corpus; it can involve substantially more preparation and work. Inspect its scope and provider costs before using it as a comparison experiment.
@@ -133,9 +127,7 @@ Internal result IDs remain in URLs and recorded configuration, not primary label
 another result still follows its exact ID. A question table only shows scores matching the
 selected dataset's recorded content hash.
 
-### SCREENSHOT NEEDED
-<!-- feature=dataset-filtered-history-and-comparison; mode=dev; locale=en; theme=light; state=file-filtered-run-history-and-two-matching-results-selected; expected-evidence=filenames-settings-execution-times-and-matching-content-hash-comparison -->
-
+![The run list filtered to one dataset with two results selected for comparison.](../assets/dataset-filtered-history-and-comparison.en.png)
 In **New evaluation**, use **Save as evaluation defaults** to remember only the selected dataset and run mode. **Reset evaluation defaults** resets future defaults without changing this form. Neither action starts a job or changes chat presets.
 
 Answerability determines the internal verdict: evidence-backed questions use `SUPPORTED`; absent-evidence questions use `NOT_IN_DOCS` with no source spans. Incomplete authoring data stays saveable, but strict validation is required for preparation, job registration, and execution.

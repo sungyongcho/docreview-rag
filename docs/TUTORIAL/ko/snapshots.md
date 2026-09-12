@@ -39,9 +39,7 @@
 
 이어서 [보존하며 종료하고 다시 시작하기](runtime.md#resume)를 보거나, [답변](answers.md)으로 돌아가 다음 요청 전 적용된 스냅샷을 확인합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=comparison-workspace-and-snapshot-save; mode=dev; locale=ko; theme=light; state=compare-results-with-selected-pair-and-snapshot-save-notice; expected-evidence=comparability-status-metric-table-and-saved-snapshot-notice -->
-
+![같은 DART 한국어 데이터셋에서 ts_rank_cd 기준과 BM25 후보를 비교해 지표 차이와 문항별 변화가 표시된 화면.](../assets/comparison-workspace-and-snapshot-save.ko.png)
 ## 지표 차이보다 실험 조건부터 읽기 {#comparison}
 
 결과 비교에는 같은 데이터셋의 서로 다른 결과가 필요합니다. 스냅샷 비교에서는 데이터셋이나 정답 식별자가 다른 경우에도 제한된 비교의 이유를 안내합니다. **직접 비교 가능 / 제한적인 비교** 상태와 경고가 지표 표 앞에 표시됩니다.
@@ -85,5 +83,4 @@
 
 스냅샷 관리도 평가 실행 목록과 같은 데이터셋 파일명을 사용합니다. 파일 필터와 파일명·스냅샷 이름 검색, 생성 시각·파일명·이름 정렬을 제공합니다. 기준 평가 보기는 숫자 대신 문구로 표시하며 정확한 원본 결과에 연결됩니다. 내부 ID는 펼친 상세 정보에서 확인할 수 있습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=snapshot-management-list; mode=dev; locale=ko; theme=light; state=snapshot-list-with-comparison-selection-and-expanded-configuration; expected-evidence=label-dataset-settings-result-link-and-use-for-review -->
+![저장된 스냅샷 항목이 보이는 스냅샷 관리 목록 화면.](../assets/snapshot-management-list.ko.png)

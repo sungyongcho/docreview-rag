@@ -15,8 +15,8 @@ Bash 또는 Zsh, uv, Docker Engine·Compose 2.24.4+를 준비하세요.
 웹의 Node/npm은 컨테이너에서 실행되므로 이 경로에서는 호스트에 별도로 설치하지 않습니다.
 
 ```bash
-git clone https://github.com/sungyongcho/docreview-rag-agent.git
-cd docreview-rag-agent
+git clone https://github.com/sungyongcho/docreview-rag.git
+cd docreview-rag
 source ./rag-alias.sh
 rag-help
 rag-start-quick
@@ -45,7 +45,7 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 빈 DB에만 스키마를 생성하고 기존 정상 DB는 보존합니다. 스키마가 맞지 않으면 자동 초기화하지
 않고 원인을 안내합니다. 설정·도구 누락을 해결한 뒤 같은 명령을 재실행하세요.
 설치 문제를 고치려고 `rag-reset`를 실행하지 마세요.
-표시된 주소(기본 `http://localhost:8000/docreview-rag-agent/`)를 엽니다.
+표시된 주소(기본 `http://localhost:8000/docreview-rag/`)를 엽니다.
 
 설정 명령은 사전 요구사항 → 로컬 설정 → 프로젝트 서비스 상태·시작 → 스키마 준비 → DEV 서버 준비 확인의 다섯 단계를 표시합니다. `db`, `app`, `web` 각각의 중지·시작 중·비정상·실행 상태를 구분합니다. 헬스 체크가 없는 컨테이너가 실행 중이라는 사실만으로 서버 준비 완료를 선언하지 않습니다. 이미 정상 실행 중인 서비스도 Compose가 개발 설정을 적용하기 전에 표시합니다.
 
@@ -79,9 +79,7 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 | 코퍼스 | 빈 상태·일부 준비 상태를 포함해 실제 수치가 수집되었는지. | 모든 벡터가 의도한 모델로 만들어졌는지. |
 | 모델 가용성 | 선택한 엔진이 사용 가능하거나 빠진 조건이 설명되는지. | 모델 요청의 성공이나 답변 근거의 충분함. |
 
-### SCREENSHOT NEEDED
-<!-- feature=runtime-readiness-status; mode=dev; locale=ko; theme=light; state=checked-runtime-readiness-with-api-database-schema-and-mode-facts; expected-evidence=system-status-heading-connection-warning-refresh-control-and-fact-rows -->
-
+![준비 상태·런타임 모드·데이터베이스 연결·BM25 준비와 코퍼스 총량을 보여주는 시스템 화면.](../assets/runtime-readiness-status.ko.png)
 데이터 준비 화면을 열고 아래 개발용 준비 안내로 이어갑니다.
 
 ## 데이터 준비 화면을 열고 이어가기 {#open-build}
@@ -120,9 +118,7 @@ uv run python -m scripts.schema prepare
 
 호스트의 `data/` 디렉터리는 해당 그룹의 쓰기를 허용해야 합니다. 기본 그룹이 1000이 아닌
 호스트에서 Compose를 직접 실행한다면 `HOST_GID`를 `id -g` 값으로 지정하세요. 예전에
-컨테이너가 만든 파일의 기존 권한은 자동 변경되지 않습니다.
-
-초기화 미리보기는 차단된 원문
+컨테이너가 만든 파일의 기존 권한은 자동 변경되지 않습니다. 초기화 미리보기는 차단된 원문
 경로에 필요한 관리자 권한 복구 명령을 출력합니다. 오래된 `data/local-settings` 또는
 `data/eval_runs`에도 호스트 접근이 필요하면 소유자가 같은 범위 제한 ACL 복구를 해당
 디렉터리에 적용해야 합니다. 소유권·ACL은 자동 변경하지 않습니다. 이 로컬 Compose 정책을
@@ -131,7 +127,7 @@ uv run python -m scripts.schema prepare
 
 오류의 **이 부분을 살펴보세요**로 관련 파이프라인 단계에 이동합니다. DB·스키마 문제는 설치 안내로 연결합니다. 도착한 단계에서 현재 진단과 터미널 안내를 확인하며, 다른 오류 영역에는 원인과 이동 링크만 간단히 표시합니다.
 
-스키마가 호환되지 않으면 `.venv/bin/python -m scripts.schema check`로 진단하세요. Quickstart는 외부 `DATABASE_URL`이 아니라 로컬 `DB_PORT`를 사용합니다. 안전한 대상 선택 복구는 [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25)에서 다룹니다. 이 중단을 해결하려고 데이터베이스를 초기화하지 마세요.
+스키마가 호환되지 않으면 `.venv/bin/python -m scripts.schema check`로 진단하세요. Quickstart는 외부 `DATABASE_URL`이 아니라 로컬 `DB_PORT`를 사용합니다. 안전한 대상 선택 복구는 [#25](https://github.com/sungyongcho/docreview-rag/issues/25)에서 다룹니다. 이 중단을 해결하려고 데이터베이스를 초기화하지 마세요.
 
 ## 실행 환경과 준비 작업 구분하기 {#environment-boundaries}
 
@@ -141,7 +137,7 @@ Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도
 실행 중인 작업을 중단할 수 있으므로 재시도 여부를 결정하기 전에 작업 기록을
 확인하세요. 작업·실행 상태는 [실행 상태](runtime.md)에서 설명합니다.
 
-이번 릴리스는 DEV와 PROD를 각각의 실행 모드로 지원합니다. DEV 안의 **배포 화면 미리보기**는 [후속 이슈 #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211)로 미루며 이번 릴리스에서는 제공하지 않습니다.
+이번 릴리스는 DEV와 PROD를 각각의 실행 모드로 지원합니다. DEV 안의 **배포 화면 미리보기**는 [후속 이슈 #211](https://github.com/sungyongcho/docreview-rag/issues/211)로 미루며 이번 릴리스에서는 제공하지 않습니다.
 
 `rag-prod`는 공개 권한을 적용하는 독립된 로컬 PROD 모드를 시작합니다. 사이트를 외부에
 게시하는 명령은 아닙니다. 개발 환경에서 로컬 모델 연결이 정상이어도 공개
@@ -159,10 +155,10 @@ Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도
 실행되는 것은 없습니다.
 
 ```text
-visitor ──HTTPS──> sungyongcho.com/docreview-rag-agent/*
+visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
                           │  Cloudflare Worker (gomoku repo)
             ┌─────────────┴──────────────┐
-   /docreview-rag-agent/*        /docreview-rag-agent/api/*
+   /docreview-rag/*        /docreview-rag/api/*
             │                              │  plain HTTP
             ▼                              ▼
    Firebase Hosting             GCP e2-medium (us-central1-a, ephemeral IP)
@@ -200,8 +196,8 @@ API는 `deploy/gcp/operator_tunnel.sh`로만 닿으며, 이 스크립트는 loop
 4. `deploy/gcp/print_origin.sh`가 `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000`과
    `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`을 출력합니다.
 5. 그 줄들을 gomoku 저장소의 `.env`에 붙여 넣고 그쪽 `03_deploy_cloudflare.sh`를
-   실행합니다. Worker가 `/docreview-rag-agent/api/*`는 VM으로, 나머지
-   `/docreview-rag-agent/*`는 Firebase Hosting으로 보냅니다.
+   실행합니다. Worker가 `/docreview-rag/api/*`는 VM으로, 나머지
+   `/docreview-rag/*`는 Firebase Hosting으로 보냅니다.
 6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh`가
    `NEXT_PUBLIC_ADMIN_MODE`를 비운 채 공개 번들을 빌드하고 배포합니다.
 

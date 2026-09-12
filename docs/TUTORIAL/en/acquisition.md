@@ -25,9 +25,7 @@ Step 1 manages downloads and current originals. Step 2 starts from the fully dow
 originals in that selection. Missing, changed or deleted intended sources remain explicit blockers;
 parsing never silently drops them. Use **Change selection in Filings** to revise the scope.
 
-### SCREENSHOT NEEDED
-<!-- feature=company-year-inventory-selector; mode=dev; locale=en; theme=light; state=selected-company-year-pairs-with-staged-missing-originals; expected-evidence=company-search-basket-selected-year-chips-to-be-added-list-and-sync-selection -->
-
+![The filings stage company basket with per-year chips for SK hynix, Samsung Electronics, AMD and NVIDIA.](../assets/company-year-inventory-selector.en.png)
 > [!DEV]
 > Downloading filings requires DEV. The public company/year grid selects the question scope; it cannot start server preparation work.
 
@@ -104,9 +102,7 @@ service restart require a new preview. Deletion jobs do not offer blind retry. D
 must be downloaded again before a new parse. Database documents, chunks, embeddings, snapshots
 and past job inputs remain available; this action does not cascade into derived data.
 
-### SCREENSHOT NEEDED
-<!-- feature=source-deletion; mode=dev; locale=en; theme=light; state=exact-target-preview-and-queued-result; expected-evidence=preview-targets-relative-paths-preserved-inputs-and-confirm-deletion-control -->
-
+![The delete-originals dialog listing the exact filing targets with filing IDs and document IDs before confirmation.](../assets/source-deletion.en.png)
 The selected-step heading shows a compact status icon and label. Use the adjacent refresh icon to check status; success changes the icon without adding a text row. Hover over the status for details. The separate system-connection control reports infrastructure health, not job execution. Required recovery commands remain available.
 
 The current stage distinguishes company-directory download, filing lookup, and original-report download. SEC lookup reports each ticker and requested fiscal years; original downloads identify the company and fiscal year in the current-item row. The DART company directory is shared across all companies and has no individual fiscal year.

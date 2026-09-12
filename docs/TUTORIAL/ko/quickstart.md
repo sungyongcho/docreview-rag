@@ -28,9 +28,7 @@ What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the
 
 `NOT_IN_DOCS`는 사용 가능한 근거가 요청한 답변을 뒷받침하지 못했다는 뜻입니다. 실행 실패는 다른 결과이므로 공시 내용에 대한 결론으로 해석하지 말고 오류 이유를 읽으세요. [답변](answers.md#inspection)에서 확인 조작을, [검색](retrieval.md#step-8)에서 근거 경로를 설명합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=public-answer-with-citation; mode=prod; locale=ko; theme=light; state=supported-answer-with-retrieved-evidence; expected-evidence=citation-and-source-identity-panel -->
-
+![AMD 7nm TSMC 공급 리스크 질문에 대한 공개 답변이 확인된 인용 1개와 6단계 실행 요약과 함께 완료된 화면.](../assets/public-answer-with-citation.ko.png)
 ## 4. 원문 문서 살펴보기 {#qs-app-4}
 
 **데이터 준비 → 문서**에서 회사나 문서 식별자를 검색하고 행을 선택하세요. 공시 식별 정보·회계연도·제공되는 원문 링크·청크 미리보기를 읽습니다. 예상한 공시가 필터에 가려졌다면 **필터 초기화**를 사용하세요.

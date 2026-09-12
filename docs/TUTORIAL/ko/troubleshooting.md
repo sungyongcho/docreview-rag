@@ -10,9 +10,7 @@
 
 표시된 파일을 확인하고 `rag-schema check` / `rag-corpus status`로 점검하세요. 입력을 고친 뒤 질문을 다시 제출하면 됩니다. 실패한 지연 로드는 캐시되지 않으므로 API를 재시작할 필요가 없습니다. 수집은 manifest를 원자적으로 게시하므로 독자는 완전히 기록된 파일을 읽습니다. **실행 상세 → 트레이스**에는 민감 정보를 제거한 원래 예외 문구가 남습니다. PROD에서는 현지화된 제목과 일반적인 재시도 안내만 표시합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=manifest-failure-diagnosis; mode=dev; locale=ko; theme=light; state=query_scope_unavailable-failure-card; expected-evidence=cause-relative-path-one-action-and-trace-exception -->
-
+![GoldenDataError 매니페스트 진단 카드와 시간·오류 분류가 표시된 실패한 빠른 평가 작업 화면.](../assets/manifest-failure-diagnosis.ko.png)
 ## 페이지·API·DB에 연결되지 않을 때 {#connection}
 
 > [!DEV]
@@ -92,9 +90,7 @@ DB를 변경하기 전에 중단됩니다. 기존 DB를 보존하고 이 체크�
 
 **작업 기록 삭제**는 표시 중이거나 보관된 종료 작업의 기록만 영구 삭제합니다. 표시된 개수를 확인하고 `DELETE JOB HISTORY`를 입력합니다. 서버는 먼저 전체 기록의 비공개 백업을 만들어야 하며, 백업에 실패하면 기록을 그대로 유지합니다. 성공 후 **작업 기록 백업 다운로드**로 백업을 받을 수 있습니다. 대상 개수가 달라지면 동기화한 뒤 다시 확인하세요. 보관 복원은 삭제한 백업을 다시 가져오지 않으며 어떤 동작도 작업을 자동으로 재실행하지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=job-history-and-reset-dialogs; mode=dev; locale=ko; theme=light; state=history-controls-and-blocked-reset-eligibility; expected-evidence=archived-and-active-counts-confirmation-backup-link-and-blocked-diagnosis -->
-
+![작업 이력의 동기화·보관·복원·영구 삭제를 제어하는 기록 관리 대화 상자.](../assets/job-history-and-reset-dialogs.ko.png)
 ## 전체 초기화: 삭제 전에 사용 가능 여부 확인 {#reset}
 
 > [!DEV]
@@ -132,5 +128,4 @@ API 연결 확인은 상태이며 별도의 환경이 아닙니다. 서버에서
 
 같은 내용의 반복 알림은 하나만 유지하며 타이머를 재시작하지 않습니다. 마우스를 올리거나 키보드 초점을 두거나 메시지를 펼친 동안에는 자동 닫기를 멈춥니다. 닫기 버튼으로 제거할 수 있고 지속 경고는 해결되거나 직접 닫을 때까지 유지됩니다. 백엔드 재시도·작업 전달 규칙은 바뀌지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=connection-status-and-notification-rail; mode=both; locale=ko; theme=light; state=unconfirmed-build-readiness-with-multiple-notices; expected-evidence=neutral-readiness-status-row-and-reserved-notification-rail -->
+![PROD 대화가 유지되는 동안 오른쪽 위 알림 레일에 연결 상태 안내가 표시된 화면.](../assets/connection-status-and-notification-rail.ko.png)

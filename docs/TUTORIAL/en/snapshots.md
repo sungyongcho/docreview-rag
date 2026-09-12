@@ -39,9 +39,7 @@ The saved identity should match the intended result and the snapshot should appe
 
 Continue with [stop and continue later](runtime.md#resume), or return to [Answers](answers.md) and inspect the applied snapshot before another request.
 
-### SCREENSHOT NEEDED
-<!-- feature=comparison-workspace-and-snapshot-save; mode=dev; locale=en; theme=light; state=compare-results-with-selected-pair-and-snapshot-save-notice; expected-evidence=comparability-status-metric-table-and-saved-snapshot-notice -->
-
+![A baseline ts_rank_cd result compared against a BM25 candidate on the same DART Korean dataset, with metric deltas and per-case changes.](../assets/comparison-workspace-and-snapshot-save.en.png)
 ## Read conditions before metric differences {#comparison}
 
 Result comparison requires different results from the same dataset. Snapshot comparison can also explain limited comparisons across different datasets or golden identities. Its **Directly comparable / Limited comparison** status and warning appear before the metric table.
@@ -85,5 +83,4 @@ A result has at most one snapshot. Its result page shows **View saved snapshot**
 
 Snapshot management uses the same dataset filenames as evaluation history. Filter by file, search snapshot names or filenames, and sort by creation time, filename, or snapshot name. The source-evaluation link opens the exact recorded result without exposing its numeric ID as the link label. Internal identifiers remain available in the expanded snapshot details.
 
-### SCREENSHOT NEEDED
-<!-- feature=snapshot-management-list; mode=dev; locale=en; theme=light; state=snapshot-list-with-comparison-selection-and-expanded-configuration; expected-evidence=label-dataset-settings-result-link-and-use-for-review -->
+![The snapshot management list with a saved snapshot entry.](../assets/snapshot-management-list.en.png)

@@ -33,9 +33,7 @@ If a typed company is not in the selected corpus, or an old selection becomes in
 
 Evaluation can also be started directly after index preparation; it does not depend on generating an answer. Continue with [11. Evaluate retrieval](evaluation.md#step-11).
 
-### SCREENSHOT NEEDED
-<!-- feature=settings-and-preview-drawer; mode=both; locale=en; theme=light; state=conversation-open-with-basic-advanced-and-preview-views; expected-evidence=preserved-values-filter-chips-and-integrated-navigation -->
-
+![The settings-and-preview drawer open on a conversation with Basic, Advanced and Preview tabs.](../assets/settings-and-preview-drawer.en.png)
 ## Presets and effective values {#presets}
 
 > [!DEV]
@@ -52,9 +50,7 @@ The following values come from the current preset definitions. All three built-i
 | Accuracy | 50 | BM25 | Cross encoder | Off |
 | Custom | Your saved values | Your saved values | Your saved values | Your saved values |
 
-Balanced provides the default starting point. Korean enables language-aware retrieval without forcing the corpus scope to DART. Accuracy reranks a larger pool.
-
-In DEV, **Manage presets…** opens **Measure → Retrieval presets**. Expand a built-in row and choose **Copy and edit**, or save the current search settings. In DEV, named presets are stored as JSON files in `data/presets/` and appear in the composer selector; PROD management stores them in the browser. Saving or editing a preset does not change existing conversations; selecting it copies only retrieval values. Custom remains the label for unsaved values. Advanced search settings remain editable in the conversation drawer. Opening the **?** help describes the selected definition beside the control without running a review, and effective differences can also be compared in **Settings and preview → Preview**.
+Balanced provides the default starting point. Korean enables language-aware retrieval without forcing the corpus scope to DART. Accuracy reranks a larger pool. In DEV, **Manage presets…** opens **Measure → Retrieval presets**. Expand a built-in row and choose **Copy and edit**, or save the current search settings. In DEV, named presets are stored as JSON files in `data/presets/` and appear in the composer selector; PROD management stores them in the browser. Saving or editing a preset does not change existing conversations; selecting it copies only retrieval values. Custom remains the label for unsaved values. Advanced search settings remain editable in the conversation drawer. Opening the **?** help describes the selected definition beside the control without running a review, and effective differences can also be compared in **Settings and preview → Preview**.
 
 `k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
 
@@ -96,9 +92,7 @@ Each OpenAI call is also capped by the server. In `.env`, `DOCREVIEW_OPENAI_MAX_
 
 In DEV the editor saves lower working values on the server in `data/local-settings/openai-limits.json`; **Restore ceiling** deletes that file. The web cannot raise a cap above the ceiling: change the `.env` keys and restart with `rag-dev down` / `rag-dev up`. Public PROD always uses the ceiling and never reads the file.
 
-### SCREENSHOT NEEDED
-<!-- feature=openai-per-call-caps-editor; mode=dev; locale=en; theme=light; state=run-limits-with-ceiling-facts-and-bounded-inputs; expected-evidence=three-editable-caps-bounded-by-ceiling-and-env-guidance -->
-
+![The Run limits settings category with bounded inputs for iterations, tokens, wall-clock time and evidence size.](../assets/openai-per-call-caps-editor.en.png)
 ## Defaults and permissions {#defaults}
 
 > [!DEV]
@@ -143,9 +137,7 @@ Valid old records migrate once in PROD. Unreadable or future records are retaine
 
 The first PROD visit displays **⚠️ Settings and conversations are saved only in this browser**. **Got it** remembers dismissal. The ⚠️ button in **Data & help → Browser storage** reopens it; **Learn more** opens this section. DEV keeps its existing storage behavior.
 
-### SCREENSHOT NEEDED
-<!-- feature=prod-browser-storage-and-backup; mode=prod; locale=en; theme=light; state=data-and-help-storage-with-per-key-usage-and-export-import; expected-evidence=storage-notice-per-key-usage-and-export-import-confirmation -->
-
+![The PROD data-and-help settings with estimated browser storage, per-key usage and export/import buttons.](../assets/prod-browser-storage-and-backup.en.png)
 ### Retrieval preset files and JSON editing
 
 Open **Measure → Retrieval presets**. DEV uses `data/presets/<id>.json`, next to other runtime data and included in the existing Compose data mount. The three shipped files (`balanced`, `korean`, `accuracy`) are the canonical source for both server and web; copy them to edit. Custom preset files are ignored by Git. A visible selector shares a lightweight version refresh every three seconds; the server scans metadata, debounces changes and rereads only changed files. A corrupt file appears with its filename and error while valid presets remain usable. Fix the file to restore it without restarting.

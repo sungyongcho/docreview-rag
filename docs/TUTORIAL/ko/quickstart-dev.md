@@ -138,9 +138,7 @@ DART는 먼저 기업 고유번호 목록을 내려받습니다. 이 API는 응�
 
 데이터·검색 인덱스 준비가 완료됐습니다. 모델 설정을 확인했지만 답변 호출·답변 품질은 아직 검증하지 않은 상태입니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=web-readiness-before-first-question; mode=dev; locale=ko; theme=light; state=both-filings-have-chunks-complete-embeddings-and-bm25-ready; expected-evidence=system-status-and-documents-readiness-without-an-answer-call -->
-
+![첫 질문 전 준비 단계가 완료된 DEV 모드 데이터 준비 파이프라인 화면.](../assets/web-readiness-before-first-question.ko.png)
 <!-- quickstart-end -->
 
 ## 다음 튜토리얼로 {#qs-next}

@@ -29,9 +29,7 @@ OpenAI query embeddings can incur cost even when corpus embeddings are ready. **
 separate answer operation with provider usage and a recorded run. Do not invoke it just to inspect
 retrieval. Preview retrieval does not persist an evaluation result or alter a conversation profile.
 
-### SCREENSHOT NEEDED
-<!-- feature=search-trial-input-and-ranked-results; mode=both; locale=en; theme=light; state=executed-nvidia-fy2024-query-with-hybrid-bm25-and-k5; expected-evidence=input-row-component-ranks-document-ids-excerpts-source-provenance-and-final-ranks -->
-
+![A search trial in the playground with a typed query and the ranked result list below it.](../assets/search-trial-input-and-ranked-results.en.png)
 Example: `NVIDIA fiscal 2024 revenue` returns five NVIDIA FY2024 passages in the prepared corpus. Each result retains its source offsets and SHA-256. This is retrieval only; no answer is generated.
 
 ## Read the ranking information {#rankings}

@@ -34,7 +34,7 @@ After [loading the project commands](cli.md#register-commands-and-open-help), st
 rag-dev up --build -d
 ```
 
-Open [DocReview RAG](http://localhost:8000/docreview-rag-agent/). If `APP_PORT` differs, adjust the URL.
+Open [DocReview RAG](http://localhost:8000/docreview-rag/). If `APP_PORT` differs, adjust the URL.
 You do not need a separate port 3000 page. Reuse services that are already running.
 
 **On screen:** confirm DEV mode, then open System → System status. Check API, DB, schema, and OpenAI

@@ -33,9 +33,7 @@
 
 검색 평가는 인덱스 준비 직후에도 시작할 수 있으며 답변 생성이 선행 조건은 아닙니다. [11. 검색 평가하기](evaluation.md#step-11)로 이어갑니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=settings-and-preview-drawer; mode=both; locale=ko; theme=light; state=conversation-open-with-basic-advanced-and-preview-views; expected-evidence=preserved-values-filter-chips-and-integrated-navigation -->
-
+![기본·고급·미리보기 탭이 있는 설정 및 미리보기 서랍이 대화 위에 열린 화면.](../assets/settings-and-preview-drawer.ko.png)
 ## 프리셋의 실제 설정값 {#presets}
 
 > [!DEV]
@@ -52,9 +50,7 @@
 | 정확도 우선 | 50 | BM25 | Cross encoder | 꺼짐 |
 | 사용자 설정 | 저장된 값 | 저장된 값 | 저장된 값 | 저장된 값 |
 
-균형은 기본 검색값이며, 한국어는 공시 범위를 DART로 강제하지 않고 언어별 검색 경로를 적용합니다. 정확도 우선은 더 넓은 후보를 재정렬합니다.
-
-DEV에서 **프리셋 관리…**를 선택하면 **품질 검증 → 검색 프리셋**으로 이동합니다. 기본 제공 행을 펼쳐 **복사하여 편집**하거나 현재 검색 설정을 저장하세요. DEV에서 이름을 붙인 프리셋은 `data/presets/`의 JSON 파일로 저장되고 입력창의 선택 목록에 나타납니다. PROD의 프리셋 관리는 브라우저에 저장합니다. 저장·편집만으로 기존 대화가 바뀌지 않으며, 대화에서 선택할 때 검색값만 복사됩니다. 저장한 프리셋과 일치하지 않는 값은 사용자 설정으로 표시됩니다. 대화의 고급 보기에서도 검색값을 직접 조정할 수 있습니다. **?** 도움말을 열면 선택한 정의를 조작 옆에서 설명하며 검토를 실행하지 않습니다. 프리셋별 적용값은 **설정 및 미리보기 → 미리보기**에서도 비교할 수 있습니다.
+균형은 기본 검색값이며, 한국어는 공시 범위를 DART로 강제하지 않고 언어별 검색 경로를 적용합니다. 정확도 우선은 더 넓은 후보를 재정렬합니다. DEV에서 **프리셋 관리…**를 선택하면 **품질 검증 → 검색 프리셋**으로 이동합니다. 기본 제공 행을 펼쳐 **복사하여 편집**하거나 현재 검색 설정을 저장하세요. DEV에서 이름을 붙인 프리셋은 `data/presets/`의 JSON 파일로 저장되고 입력창의 선택 목록에 나타납니다. PROD의 프리셋 관리는 브라우저에 저장합니다. 저장·편집만으로 기존 대화가 바뀌지 않으며, 대화에서 선택할 때 검색값만 복사됩니다. 저장한 프리셋과 일치하지 않는 값은 사용자 설정으로 표시됩니다. 대화의 고급 보기에서도 검색값을 직접 조정할 수 있습니다. **?** 도움말을 열면 선택한 정의를 조작 옆에서 설명하며 검토를 실행하지 않습니다. 프리셋별 적용값은 **설정 및 미리보기 → 미리보기**에서도 비교할 수 있습니다.
 
 `k`는 반환할 결과 수이고 `candidate_k`는 최종 선택 전에 다룰 후보 수입니다. RRF는 검색 경로별 순위를 합치며 BM25 매개변수는 키워드 점수에 영향을 줍니다. 재정렬은 공시 원문을 바꾸지 않고 결과 순서를 조정합니다. [검색 결과 살펴보기](retrieval.md)에서 실제 변화를 확인한 뒤 품질 개선 여부를 판단하세요.
 
@@ -96,9 +92,7 @@ OpenAI 호출 한 번에는 서버 캡도 적용됩니다. `.env`의 `DOCREVIEW_
 
 DEV에서는 이 편집기가 더 낮은 작업값을 서버의 `data/local-settings/openai-limits.json`에 저장하고, **상한으로 복원**은 그 파일을 삭제합니다. 웹에서는 상한을 넘길 수 없습니다. 상한을 올리려면 `.env`의 키를 수정하고 `rag-dev down` / `rag-dev up`으로 재시작하세요. 공개 PROD는 항상 상한을 사용하며 파일을 읽지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=openai-per-call-caps-editor; mode=dev; locale=ko; theme=light; state=run-limits-with-ceiling-facts-and-bounded-inputs; expected-evidence=three-editable-caps-bounded-by-ceiling-and-env-guidance -->
-
+![반복·토큰·실행 시간·근거 크기 입력이 상한과 함께 표시된 실행 한도 설정 화면.](../assets/openai-per-call-caps-editor.ko.png)
 ## 기본값과 권한 {#defaults}
 
 > [!DEV]
@@ -143,9 +137,7 @@ DEV에서는 이 편집기가 더 낮은 작업값을 서버의 `data/local-sett
 
 PROD 첫 방문에 **⚠️ 설정과 대화는 이 브라우저에만 저장됩니다** 안내가 표시됩니다. **확인**은 닫은 상태를 기억하고, **데이터와 도움말 → 브라우저 저장소**의 ⚠️ 버튼은 안내를 다시 엽니다. **자세히**는 이 절로 이동합니다. DEV는 기존 저장 동작을 유지합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=prod-browser-storage-and-backup; mode=prod; locale=ko; theme=light; state=data-and-help-storage-with-per-key-usage-and-export-import; expected-evidence=storage-notice-per-key-usage-and-export-import-confirmation -->
-
+![추정 브라우저 저장 용량·항목별 용량·보내기/가져오기 버튼이 있는 PROD 데이터 설정 화면.](../assets/prod-browser-storage-and-backup.ko.png)
 ### 검색 프리셋 파일과 JSON 편집
 
 **품질 검증 → 검색 프리셋**을 여세요. DEV에서는 기존 런타임 데이터와 Compose 데이터 마운트를 사용하는 `data/presets/<id>.json`에 저장합니다. 기본 파일 세 개(`balanced`, `korean`, `accuracy`)를 서버와 웹이 함께 사용하며 수정하려면 복사해야 합니다. 사용자 프리셋 파일은 Git에서 제외됩니다. 화면에 표시된 선택기는 3초마다 가벼운 버전 확인을 공유하고, 서버는 메타데이터 변경이 안정된 뒤 바뀐 파일만 다시 읽습니다. 손상된 파일은 파일명과 오류를 표시하며 다른 프리셋은 계속 사용할 수 있습니다. 파일을 고치면 재시작 없이 반영됩니다.

@@ -31,9 +31,7 @@ The pending assistant message appears directly below your question. Its **Execut
 
 If no evidence meets the relevance threshold, **Verify answer and citations** is marked **Skipped: relevance threshold not met** in a warning tone. A skipped step is different from a failed or cancelled request's unperformed step; the result-preparation stage can still complete. Older records without the reason do not invent a skipped state.
 
-### SCREENSHOT NEEDED
-<!-- feature=live-execution-summary-and-skipped-verification; mode=both; locale=en; theme=light; state=pending-answer-message-with-live-stages-and-completed-threshold-failure; expected-evidence=question-pending-stages-stop-request-visible-composer-and-skipped-verification-in-warning-tone -->
-
+![A completed run whose answer·citation check stage was skipped because the relevance threshold was not met, shown in warning tone on the stage strip.](../assets/live-execution-summary-and-skipped-verification.en.png)
 ## Choose an answer engine {#engines}
 
 The controls follow **corpus scope → answer engine/local model → retrieval preset → Review settings →
@@ -70,18 +68,14 @@ Expand **Retrieved evidence candidates** to see one collapsed card per candidate
 section: `Item 7 - (Management's Discussion and Analysis)` for EDGAR filings, the division name such as
 `II. 사업의 내용` for DART filings, and the bare citation label when no title is known. The header also
 carries the document id, a table badge and the character span; open a card to read the excerpt and its
-full citation.
-
-Five cards show per page. The sticky toolbar always shows the visible range, the pinned and
+full citation. Five cards show per page. The sticky toolbar always shows the visible range, the pinned and
 excluded counts, **Expand all** / **Collapse all** and, beyond one page, arrow buttons with **Previous page** / **Next page** labels and a `1/3` page position.
 Pinned cards start open; every other card starts closed. Pin/Exclude sit in each header, so they work on
 collapsed cards and across pages. Candidate count and citation count measure different things.
 Pin/Exclude choices apply only when you [review again with selected evidence](settings.md#step-10); they
 do not rewrite the current answer.
 
-### SCREENSHOT NEEDED
-<!-- feature=collapsed-titled-paginated-evidence-candidates; mode=both; locale=en; theme=light; state=expanded-retrieved-evidence-candidates-with-section-titled-cards; expected-evidence=collapsed-cards-section-titles-sticky-toolbar-pinned-excluded-counts-expand-collapse-and-pager -->
-
+![The expanded related-evidence section listing section-titled evidence cards with pin/exclude controls and pagination.](../assets/collapsed-titled-paginated-evidence-candidates.en.png)
 Click the corpus status line (**Corpus total · N filings**) to inspect preparation and **Back** to return to the retained
 draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated
 calls, uncollected fields, and legacy records.
@@ -134,9 +128,7 @@ underlines its title. Waiting and unreached stages are inert. Failed, cancelled,
 completed and currently running stages remain selectable. Enter or Space toggles a focused stage.
 
 Stage details display source badges, company/year chips, measured timings with units and model-call
-tables instead of inline JSON.
-
-Company names come from the existing live or published document
+tables instead of inline JSON. Company names come from the existing live or published document
 catalog when the scope panel is first opened; recorded codes and run scope remain unchanged.
 Unknown or ambiguous names keep the original code. A lookup failure is stated beside the panel.
 **None** means a recorded empty collection; a dash or the consolidated unrecorded-label line means
@@ -159,9 +151,7 @@ Help and run details share the right side and never open together. OpenAI calls 
 request/token facts without an empty server-timing disclosure. Ollama timings and placement
 appear only when recorded.
 
-### SCREENSHOT NEEDED
-<!-- feature=selected-stage-details-and-run-details; mode=both; locale=en; theme=light; state=selected-execution-stage-with-grouped-timing-passes-and-open-run-details; expected-evidence=stage-strip-company-and-fy-chips-timings-with-units-model-table-candidate-pagination-and-performance-tab -->
-
+![The Run details panel open beside a conversation, showing the Performance tab with stage timings and status.](../assets/selected-stage-details-and-run-details.en.png)
 For manifest metadata failures, the strip marks the actual failing stage: stage 0 before a path decision, stage 1 during subsequent scope resolution. DEV provides the cause, file and one recovery action; see [manifest diagnosis](troubleshooting.md#manifest-scope). The original technical detail stays in **Run details → Trace**.
 
 A review that finishes or fails while you are on another workspace produces a bell notification linked to its conversation. Opening it marks it read and returns to the original conversation. The existing execution summary remains the place to inspect the failure or result; opening the center does not repeat the request. See the [notification center](runtime.md#notification-center).

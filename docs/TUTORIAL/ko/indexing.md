@@ -16,8 +16,7 @@ PROD는 선택한 게시 문서의 실제 청크·임베딩 수치를 보여줍�
 
 원문 수집·파싱과 청크 생성·임베딩·BM25·질문·답변 모델·평가의 모든 단계를 점검할 수 있습니다. 진단은 실행 준비됨·이미 완료·차단·실행/대기 중·미확인/확인 중을 구분합니다. 원문 부족은 원문 수집, 청크 부족은 파싱과 청크 생성, 인덱스나 답변 설정 부족은 해당 단계로 연결합니다. 미확인 응답은 성공이 아닙니다. **선행 단계 살펴보기**은 작업을 실행하지 않고 해당 단계를 열며, 필요한 터미널 안내와 재확인은 그 단계에서 진행합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=schema-and-terminal-handoff-recheck; mode=dev; locale=ko; theme=light; state=blocked-and-resolved-prerequisite-states; expected-evidence=diagnosis-copyable-command-check-updated-status-control-and-recorded-result -->
+![스키마 불일치 진단과 터미널 핸드오프: 확인 필요 상태, 복사 가능한 점검·복구 명령, 재확인 안내](../assets/schema-handoff.ko.png)
 
 > [!DEV]
 > DB 적재·누락 임베딩 생성·BM25 재계산은 개발 모드 전용입니다. 기존 준비 상태를 읽어도 이 작업들이 실행되지는 않습니다.
@@ -91,9 +90,7 @@ BM25 재계산은 답변 모델이나 OpenAI를 호출하지 않습니다. 하�
 
 작업은 정확한 원문 집합의 manifest/selection 참조를 기록하므로 초안을 바꾼 뒤에도 Jobs 기록과 재시도는 원래 범위를 유지합니다. 누락된 원문을 조용히 제외하지 않습니다. **고급**에는 기존 manifest 행별 적재와 선택 제어가 남으며, 별도로 이름 붙인 선택을 위한 경로입니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=parse-chunk-compact-selection-summary; mode=dev; locale=ko; theme=light; state=multi-company-selection-with-missing-sources-and-running-job; expected-evidence=header-totals-change-selection-primary-count-badge-missing-source-explanation-shared-progress-cancel-and-collapsed-advanced -->
-
+![BM25 단계가 진행 중인 파이프라인 화면에 진행률 막대와 회사별 공시 선택 요약이 표시된 상태.](../assets/parse-chunk-compact-selection-summary.ko.png)
 ## 작업 진행률과 평가 대기열 {#job-progress}
 
 전체 진행률은 단계별 완료 비중이며 남은 시간의 추정치가 아닙니다.
@@ -108,9 +105,7 @@ BM25 재계산은 답변 모델이나 OpenAI를 호출하지 않습니다. 하�
 중복 안내와 **작업 열기** 버튼이 나타납니다. DB·스키마·쓰기 권한·인덱스 결손은 비활성 버튼
 옆에 사유로 표시됩니다. BM25가 없으면 4단계를 실행해야 하며 평가 등록이 자동으로 계산하지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=bm25-and-evaluation-progress; mode=dev; locale=ko; theme=light; state=explicit-bm25-recompute-and-evaluation-waiting-states; expected-evidence=compute-recompute-actions-overall-and-current-stage-progress-indeterminate-schema-stage-and-evaluation-waiting-notices -->
-
+![BM25 어휘 색인 재구축이 진행 중인 작업 센터에 실행 중 항목과 이력이 표시된 화면.](../assets/bm25-and-evaluation-progress.ko.png)
 ## 답변 모델 (Build 6단계)
 
 Build는 **OpenAI**와 **로컬**을 별도 행으로 표시합니다. 초록색은 답변 준비, 주황색은 설정됐지만 제한이 있는 상태(API 키 없음, 모델 미적재, 15 tok/s 미만의 느린 CPU, 서버 문제), 회색은 미설정을 뜻합니다. 표시된 엔진 중 하나라도 초록색이면 단계는 완료이며, 흐름도에서도 두 상태등을 확인할 수 있습니다. 각 행은 현재 모델을 표시합니다. OpenAI는 키 슬롯, 로컬은 서버 프로토콜·보고된 CPU/GPU 배치·마지막 생성 속도 측정값을 표시합니다. 배치나 측정값이 없으면 정보 없음으로 안내합니다. CPU 측정값은 측정한 모델이 적재된 동안만 표시하며 15분 후 만료됩니다.

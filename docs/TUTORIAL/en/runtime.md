@@ -20,9 +20,7 @@ Failed and interrupted jobs offer **Retry as new job** when the server supports 
 
 Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text. Selecting a historical job shows its actual target, progress and result; it is not work started for the guide.
 
-### SCREENSHOT NEEDED
-<!-- feature=jobs-status-and-retry; mode=both; locale=en; theme=light; state=jobs-list-with-selected-historical-and-running-work; expected-evidence=status-icons-progress-recorded-result-and-retry-action -->
-
+![The Job Center listing a completed BM25 rebuild with its request options, progress and timings.](../assets/jobs-status-and-retry.en.png)
 ## Execution summary and real timing {#timings}
 
 Open a completed or failed answer's **Execution summary** for the stages actually reached. Auto scope preserves the user's Auto choice while separately showing the registry, companies, years, and reason reported by the server. Before routing resolves, the interface waits; it does not infer a confirmed decision from the question in the browser.
@@ -40,9 +38,7 @@ Open **Run details → Performance** beside the answer. **Execution performance*
 
 The accessible table supplies exact values beside the visual bars. Original node IDs, model names, and logs stay intact even when the surrounding labels are translated. A saved run records its original ID, iteration and provider-request counts, token counts and elapsed time. CPU/GPU placement remains uncollected unless supported by actual evidence; a long duration alone does not establish a hardware bottleneck. A failed request can collect only browser request time, with routing, stage timings and model calls left explicitly uncollected. Older saved runs can lack telemetry without being corrupt.
 
-### SCREENSHOT NEEDED
-<!-- feature=execution-performance-and-run-trace; mode=both; locale=en; theme=light; state=saved-run-with-stage-timings-and-recorded-identity; expected-evidence=performance-bars-accessible-exact-values-and-uncollected-fields -->
-
+![The run trace of an evaluation with measured stage durations and request totals.](../assets/execution-performance-and-run-trace.en.png)
 ## Run limits versus provider limits {#limits}
 
 > [!DEV]
@@ -102,7 +98,7 @@ Reuse services that are already running. Refresh System, inspect Documents and J
 
 Saved conversations and their profiles remain in that browser. In-page workspace navigation preserves open editors, selections, and scroll; an unfinished question draft is not a promise of persistence across a page reload or browser-data deletion. Ordinary shutdown does not require [runtime reset](troubleshooting.md#reset). **Data & help** separates browser conversations and preference resets from server documents and job history; no cleanup or reset action is required for an ordinary shutdown.
 
-The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211) and is not available in this release. See [environment boundaries](environment.md#environment-boundaries).
+The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag/issues/211) and is not available in this release. See [environment boundaries](environment.md#environment-boundaries).
 
 ## Recorded provider usage
 
@@ -120,11 +116,8 @@ Open the bell in the top bar, next to the language and theme controls. Its badge
 
 Select an entry to mark it read and open its related job, evaluation result, conversation, settings category or System status. An entry without a destination only changes its read state. Escape closes the panel and returns focus to the bell; arrow keys move between entries. Long messages expand without discarding text. Error pictograms and accents identify failures; when the API supplies a cause, file and fix action, expand **Technical details** to inspect them. Server-originated messages remain exactly as received.
 
-Transient toasts float at the top right under the top bar, fade in and out, and never push the page down; at most three show at once and a hovered or focused toast pauses its timer.
-
-A queued or running job updates its entry silently, so the top-bar status pill and the Job Center carry live progress and only a finished, failed or cancelled job raises a toast. A job's progress updates one entry, while distinct successful actions keep their own records. Identical repeated errors share a count. Existing decision dialogs and visible result cards remain authoritative; their matching banner is suppressed, and the center closes when a modal opens. Desktop job notifications remain optional under **System → Operations**, mirroring the same job entry. Clicking an alert navigates only: it does not retry, reset or start another model request.
+Transient toasts float at the top right under the top bar, fade in and out, and never push the page down; at most three show at once and a hovered or focused toast pauses its timer. A queued or running job updates its entry silently, so the top-bar status pill and the Job Center carry live progress and only a finished, failed or cancelled job raises a toast. A job's progress updates one entry, while distinct successful actions keep their own records. Identical repeated errors share a count. Existing decision dialogs and visible result cards remain authoritative; their matching banner is suppressed, and the center closes when a modal opens. Desktop job notifications remain optional under **System → Operations**, mirroring the same job entry. Clicking an alert navigates only: it does not retry, reset or start another model request.
 
 The center also records actual connection transitions, local-model changes and slow-CPU measurements, preset content changes, comparison outcomes and available reset/fresh-start receipts. A preset poll with unchanged contents or an intermediate adapter-loading state does not create an alert. A fresh-start receipt describes recorded cleanup, not proof that every restarted service is ready; inspect System status before continuing.
 
-### SCREENSHOT NEEDED
-<!-- feature=notification-center; mode=both; locale=en; theme=light; state=panel-open-with-unread-toast-and-expanded-technical-details; expected-evidence=in-progress-new-and-past-sections-and-result-target -->
+![The notification center open with unread counts and the All/Jobs/Errors tabs.](../assets/notification-center.en.png)

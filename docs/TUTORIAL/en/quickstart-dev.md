@@ -138,9 +138,7 @@ Open **System status** and **Build → Documents**. Verify both reports have chu
 
 Data and index preparation are complete. Model configuration is present, but an answer call and answer quality have not been tested.
 
-### SCREENSHOT NEEDED
-<!-- feature=web-readiness-before-first-question; mode=dev; locale=en; theme=light; state=both-filings-have-chunks-complete-embeddings-and-bm25-ready; expected-evidence=system-status-and-documents-readiness-without-an-answer-call -->
-
+![The Build pipeline in DEV mode with completed preparation stages before the first question.](../assets/web-readiness-before-first-question.en.png)
 <!-- quickstart-end -->
 
 ## Ready for the next tutorial {#qs-next}

@@ -29,9 +29,7 @@ What drove NVIDIA data center revenue growth in fiscal 2024?
 **답변 미리보기**는 모델 사용량과 실행 기록을 남기는 별도 답변 동작입니다. 검색 결과를 보기 위해
 누를 필요는 없습니다. 검색 미리보기는 평가 결과를 저장하거나 대화의 검색 설정을 바꾸지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=search-trial-input-and-ranked-results; mode=both; locale=ko; theme=light; state=executed-nvidia-fy2024-query-with-hybrid-bm25-and-k5; expected-evidence=input-row-component-ranks-document-ids-excerpts-source-provenance-and-final-ranks -->
-
+![검색 연습장에 질의를 입력하고 순위가 매겨진 결과 목록이 표시된 화면.](../assets/search-trial-input-and-ranked-results.ko.png)
 예시: `NVIDIA fiscal 2024 revenue`를 검색하면 준비된 코퍼스에서 NVIDIA FY2024 근거 다섯 개를 확인할 수 있습니다. 결과에는 원문 오프셋과 SHA-256이 유지됩니다. 검색만 실행하며 답변을 생성하지 않습니다.
 
 ## 순위 정보 읽기 {#rankings}

@@ -31,9 +31,7 @@ What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the
 
 관련성 기준을 충족한 근거가 없으면 **답변·인용 검증** 단계는 경고색과 **기준 미달로 건너뜀**으로 표시됩니다. 의도적으로 건너뛴 단계는 실패·취소로 실행하지 못한 단계와 구분하며, 결과 준비 단계는 완료될 수 있습니다. 과거 기록에 이유가 없으면 건너뜀 상태를 추측하지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=live-execution-summary-and-skipped-verification; mode=both; locale=ko; theme=light; state=pending-answer-message-with-live-stages-and-completed-threshold-failure; expected-evidence=question-pending-stages-stop-request-visible-composer-and-skipped-verification-in-warning-tone -->
-
+![관련 기준 미달로 답변·인용 검증 단계가 경고 색상으로 건너뛰어진 완료 실행 화면.](../assets/live-execution-summary-and-skipped-verification.ko.png)
 ## 답변 엔진 선택 {#engines}
 
 제어 순서는 **문서 범위 → 답변 엔진·로컬 모델 → 검색 프리셋 → 대화 설정 → 요청 보기**입니다.
@@ -67,17 +65,13 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 **검색한 근거 후보**를 펼치면 후보마다 접힌 카드 하나가 공시 항목 제목과 함께 나타납니다. EDGAR 공시는
 `Item 7 - (Management's Discussion and Analysis)`, DART 공시는 `II. 사업의 내용`처럼 부문 이름, 제목을 알 수
 없는 경우에는 인용 라벨만 표시합니다. 헤더에는 문서 식별자·표 배지·문자 범위가 함께 있고, 카드를 열면
-구절과 전체 인용을 읽을 수 있습니다.
-
-한 페이지에 5개씩 표시하며, 고정된 툴바에 표시 범위, 고정·제외
+구절과 전체 인용을 읽을 수 있습니다. 한 페이지에 5개씩 표시하며, 고정된 툴바에 표시 범위, 고정·제외
 개수, **모두 펼치기** / **모두 접기**, 두 페이지 이상이면 **이전 페이지** / **다음 페이지** 접근성 라벨의 화살표와 `1/3` 형태의 위치가 보입니다.
 고정한 카드는 펼친 상태로, 나머지는 접힌 상태로 시작합니다. 고정·제외 버튼은 각 헤더에 있어 접힌
 카드에서도, 페이지를 넘겨도 동작합니다. 후보 수와 인용 수는 서로 다른 수치입니다. 고정·제외는
 [선택한 근거로 다시 검토](settings.md#step-10)할 때 적용하며 현재 답변을 다시 쓰지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=collapsed-titled-paginated-evidence-candidates; mode=both; locale=ko; theme=light; state=expanded-retrieved-evidence-candidates-with-section-titled-cards; expected-evidence=collapsed-cards-section-titles-sticky-toolbar-pinned-excluded-counts-expand-collapse-and-pager -->
-
+![항목별 제목이 붙은 근거 카드와 고정·제외·페이지 넘김이 있는 확장된 관련 근거 영역.](../assets/collapsed-titled-paginated-evidence-candidates.ko.png)
 코퍼스 상태 문구(**전체 코퍼스 · 공시 N건**)를 눌러 준비 화면에 이동하고 **이전**으로 초안·설정·메시지·스크롤을
 보존한 대화로 복귀합니다. [실행 성능 안내](runtime.md)는 실측 막대·반복 호출·미수집 값·이전 기록을 설명합니다.
 
@@ -128,9 +122,7 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 실행 중인 단계는 선택할 수 있고, 초점이 있는 단계는 Enter 또는 Space로 열고 닫습니다.
 
 단계 상세는 JSON 대신 출처 배지·회사/연도 칩·단위가 붙은 측정 시간·모델 호출 표로
-표시합니다.
-
-회사 이름은 범위 패널을 처음 열 때 기존 문서 목록의 개발/공개 카탈로그에서
+표시합니다. 회사 이름은 범위 패널을 처음 열 때 기존 문서 목록의 개발/공개 카탈로그에서
 가져오며, 실행에 기록된 코드와 범위는 바꾸지 않습니다. 이름이 없거나 모호하면 원래 코드만
 표시하고 조회 실패는 패널 옆에 알립니다. **없음**은 기록된 빈 목록이며, 대시나 미기록 안내는
 값이 기록되지 않았다는 뜻입니다. 패널 자체의 스크롤 없이 메시지 안에서 내용만큼 늘어납니다.
@@ -151,9 +143,7 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 동시에 열리지 않습니다. OpenAI는 요청 시간·토큰 등 실제 제공한 값만 보여 주고 빈 서버
 시간 펼침을 만들지 않습니다. Ollama 시간과 CPU/GPU 배치도 기록된 경우에만 표시됩니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=selected-stage-details-and-run-details; mode=both; locale=ko; theme=light; state=selected-execution-stage-with-grouped-timing-passes-and-open-run-details; expected-evidence=stage-strip-company-and-fy-chips-timings-with-units-model-table-candidate-pagination-and-performance-tab -->
-
+![대화 옆에 열린 실행 상세 패널의 성능 탭에 단계별 소요 시간과 상태가 표시된 화면.](../assets/selected-stage-details-and-run-details.ko.png)
 Manifest 범위 정보 오류는 실제 실패한 단계에 표시됩니다. 경로 결정 전에는 0단계, 결정 뒤 범위 해석 중에는 1단계입니다. DEV에서는 원인·파일·복구 동작 하나를 제공합니다. [Manifest 진단](troubleshooting.md#manifest-scope)을 참고하세요. 원래 기술 상세는 **실행 상세 → 트레이스**에 남습니다.
 
 다른 작업 화면을 보는 동안 답변이 완료되거나 실패하면 원래 대화로 연결되는 종 알림이 생깁니다. 누르면 읽음으로 표시하고 해당 대화로 돌아갑니다. 결과와 실패의 자세한 근거는 기존 실행 요약에서 확인하며 알림 센터를 열어도 요청을 다시 실행하지 않습니다. [알림 센터](runtime.md#notification-center)를 참고하세요.

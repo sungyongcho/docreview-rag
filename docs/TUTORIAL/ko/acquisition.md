@@ -24,9 +24,7 @@ PROD에서는 동일한 회사·연도 그리드로 다음 질문의 근거 범�
 목록에서 시작합니다. 누락·변경·삭제된 선택은 명시적인 차단 사유로 남으며 파싱 대상에서
 조용히 빠지지 않습니다. **원문 단계에서 선택 변경**으로 범위를 다시 정하세요.
 
-### SCREENSHOT NEEDED
-<!-- feature=company-year-inventory-selector; mode=dev; locale=ko; theme=light; state=selected-company-year-pairs-with-staged-missing-originals; expected-evidence=company-search-basket-selected-year-chips-to-be-added-list-and-sync-selection -->
-
+![SK하이닉스·삼성전자·AMD·NVIDIA의 연도별 칩이 있는 공시 단계 회사 바스켓 화면.](../assets/company-year-inventory-selector.ko.png)
 > [!DEV]
 > 원문 다운로드는 DEV 모드에서 실행합니다. 공개 회사·연도 그리드는 질문 범위를 선택하며 서버 준비 작업을 시작하지 않습니다.
 
@@ -101,9 +99,7 @@ SEC와 DART는 공통 `manifest.json`을 사용합니다. 선택한 출처·기�
 새 파싱에 쓰려면 삭제한 원문을 다시 다운로드해야 합니다. DB 문서·청크·임베딩·스냅샷과
 과거 작업 입력은 보존되며 파생 데이터까지 연쇄 삭제하지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=source-deletion; mode=dev; locale=ko; theme=light; state=exact-target-preview-and-queued-result; expected-evidence=preview-targets-relative-paths-preserved-inputs-and-confirm-deletion-control -->
-
+![확인 전 정확한 공시 대상과 공시·문서 ID를 나열하는 원문 삭제 대화 상자.](../assets/source-deletion.ko.png)
 선택한 단계 제목 옆에 상태 아이콘과 짧은 상태를 표시합니다. 옆의 새로고침 아이콘으로 상태를 확인하며 성공하면 추가 문구 없이 아이콘으로 알립니다. 상태에 마우스를 올리면 상세 설명을 볼 수 있습니다. 별도의 시스템 연결 표시는 작업 실행 상태가 아닌 실행 환경의 연결 상태를 나타냅니다. 필요한 복구 명령은 그대로 제공합니다.
 
 현재 단계는 기업 코드 목록 다운로드, 공시 조회, 원문 다운로드를 구분합니다. SEC 조회는 ticker와 요청 회계연도 및 완료 회사 수를 갱신하며, 원문 다운로드는 현재 항목에 회사와 회계연도를 표시합니다. DART 기업 코드 목록은 전체 기업 공통 자료로 개별 회계연도가 없습니다.

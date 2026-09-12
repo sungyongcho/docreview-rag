@@ -41,7 +41,7 @@ The installer adds one source line to `.bashrc` or `${ZDOTDIR:-$HOME}/.zshrc`, p
 
 ```bash
 # Replace this placeholder with your checkout's actual absolute path.
-source /absolute/path/to/docreview-rag-agent/rag-alias.sh >/dev/null
+source /absolute/path/to/docreview-rag/rag-alias.sh >/dev/null
 ```
 
 Registered `rag-*` commands target the checkout that registered them, even from another directory.
@@ -97,7 +97,7 @@ preview and command help before confirming deletion.
 rag-alias --check-updates
 rag-alias update
 # If the checkout moved, give its new directory or canonical helper file explicitly:
-rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+rag-alias update /new/path/to/docreview-rag/rag-alias.sh
 ```
 
 The comparison reports the loaded path and installed SHA-256 alongside the checkout path and hash.
@@ -173,7 +173,7 @@ rag-dev up --build -d
 rag-dev ps
 ```
 
-Both modes use [the local service](http://localhost:8000/docreview-rag-agent/). Set APP_PORT in `.env`
+Both modes use [the local service](http://localhost:8000/docreview-rag/). Set APP_PORT in `.env`
 and apply it with `up -d` if needed.
 
 | Change | Apply with |

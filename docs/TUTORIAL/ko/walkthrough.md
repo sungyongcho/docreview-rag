@@ -32,7 +32,7 @@ schema 준비만 터미널에서 진행하고, 문서 수집과 DB 적재는 다
 rag-dev up --build -d
 ```
 
-[DocReview RAG 열기](http://localhost:8000/docreview-rag-agent/)로 접속합니다.
+[DocReview RAG 열기](http://localhost:8000/docreview-rag/)로 접속합니다.
 `APP_PORT`를 바꿨다면 주소의 8000도 바꿉니다. 별도 3000번 화면을 선택할 필요는 없습니다.
 이미 열어 두었다면 다시 시작하지 않습니다.
 

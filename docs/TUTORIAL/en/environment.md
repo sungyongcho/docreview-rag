@@ -15,8 +15,8 @@ Use Bash or Zsh with uv and Docker Engine / Compose 2.24.4+. Node and npm run in
 web container; this path does not require their installation on the host.
 
 ```bash
-git clone https://github.com/sungyongcho/docreview-rag-agent.git
-cd docreview-rag-agent
+git clone https://github.com/sungyongcho/docreview-rag.git
+cd docreview-rag
 source ./rag-alias.sh
 rag-help
 rag-start-quick
@@ -45,7 +45,7 @@ generating embeddings incurs OpenAI usage. The first-run command does neither.
 The command creates a schema only in an empty database, preserves a compatible
 existing database, and reports schema drift without resetting it. Fix missing tools
 or configuration and rerun the same command; do not use `rag-reset` to repair
-installation. Open the printed URL, normally `http://localhost:8000/docreview-rag-agent/`.
+installation. Open the printed URL, normally `http://localhost:8000/docreview-rag/`.
 
 The setup command reports five stages: prerequisites, local configuration, project
 service state/startup, schema preparation, and DEV server readiness. It identifies
@@ -83,9 +83,7 @@ Open sidebar **System → System status**; the page heading is **Runtime readine
 | Corpus | Counts and readiness are collected, including honest empty or partial states. | That all displayed vectors were produced by the intended model. |
 | Model availability | The selected engine is available, or its missing prerequisite is explained. | That a model request has succeeded or that an answer will be supported. |
 
-### SCREENSHOT NEEDED
-<!-- feature=runtime-readiness-status; mode=dev; locale=en; theme=light; state=checked-runtime-readiness-with-api-database-schema-and-mode-facts; expected-evidence=system-status-heading-connection-warning-refresh-control-and-fact-rows -->
-
+![The System view reporting ready status, runtime mode, connected database, BM25 readiness and corpus totals.](../assets/runtime-readiness-status.en.png)
 Open Build and continue with the developer preparation guide below.
 
 ## Open Build and continue {#open-build}
@@ -127,9 +125,7 @@ image user and deployment Compose remain unchanged; this is a local bind-mount s
 
 The host's `data/` directory must permit that group to write. For direct Compose on a host whose
 primary group is not 1000, set `HOST_GID` to `id -g`. Earlier container-owned files keep their existing
-permissions.
-
-The reset preview prints the exact elevated repair for blocked source paths. If an old
+permissions: the reset preview prints the exact elevated repair for blocked source paths. If an old
 `data/local-settings` or `data/eval_runs` path also needs host access, ask its owner to apply the same
 scoped ACL repair to that directory. No ownership/ACL change is automatic. After updating this local
 Compose policy, recreate the app with `rag-dev up -d`; an existing container does not acquire a new
@@ -139,7 +135,7 @@ An error links to the relevant pipeline step through **Inspect this step**, or t
 
 For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart ignores an external `DATABASE_URL` and uses the local `DB_PORT`. Safe target-selection
-recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).
+recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag/issues/25).
 Do not reset your database to resolve this setup stop.
 
 ## Keep the environment and work separate {#environment-boundaries}
@@ -150,7 +146,7 @@ The development stack supports source reload and live documentation updates. API
 restarts can interrupt queued work; check Jobs before deciding that an interrupted
 operation needs a retry. [Runtime](runtime.md) explains job and execution states.
 
-This release supports DEV and PROD as separate runtime modes. The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211) and is not available in this release.
+This release supports DEV and PROD as separate runtime modes. The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag/issues/211) and is not available in this release.
 
 `rag-prod` starts standalone local PROD mode with public permissions; it does not publish
 the site. A working local-model connection in development does not make Local LLM
@@ -168,10 +164,10 @@ Firebase Hosting. The scripts live in `deploy/gcp/` and `scripts/deploy/`; none 
 runs as part of the tutorial.
 
 ```text
-visitor ──HTTPS──> sungyongcho.com/docreview-rag-agent/*
+visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
                           │  Cloudflare Worker (gomoku repo)
             ┌─────────────┴──────────────┐
-   /docreview-rag-agent/*        /docreview-rag-agent/api/*
+   /docreview-rag/*        /docreview-rag/api/*
             │                              │  plain HTTP
             ▼                              ▼
    Firebase Hosting             GCP e2-medium (us-central1-a, ephemeral IP)
@@ -211,8 +207,8 @@ reachable port. The operator API is reachable only through
 4. `deploy/gcp/print_origin.sh` prints `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000` and
    `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`.
 5. Paste those lines into the gomoku repo's `.env` and run its
-   `03_deploy_cloudflare.sh`; the Worker routes `/docreview-rag-agent/api/*` to the
-   VM and everything else under `/docreview-rag-agent/*` to Firebase Hosting.
+   `03_deploy_cloudflare.sh`; the Worker routes `/docreview-rag/api/*` to the
+   VM and everything else under `/docreview-rag/*` to Firebase Hosting.
 6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds the public
    bundle with `NEXT_PUBLIC_ADMIN_MODE` unset and deploys it.
 

@@ -38,15 +38,11 @@ PROD에서도 평가 흐름의 배치를 유지합니다. 게시된 데이터셋
 | 고급 평가 옵션 → 실행 모드 | 처음에는 **빠른 평가 · 현재 인덱스**로 준비된 인덱스를 평가합니다. |
 
 4. **평가 실행**을 한 번 누릅니다. 질문 임베딩과 구성된 검색 과정에서 제공자 비용이 발생할 수 있습니다.
-5. 실행을 지켜봅니다. 설정 창이 닫히고 평가 목록에 대기 작업이 추가되며, 행을 선택하면 제출 설정과 실제 진행 상황을 확인할 수 있습니다.
-
-성공한 평가에는 결과 상세·기록된 설정·지표·문항별 순위가 표시되고, 결과가 없으면 아직 측정된 점수가 없는 상태입니다. 평가를 선택하면 해당 평가의 상세에 집중해 표시하며, 목록을 잠시 숨긴 상세 화면을 작업 이력이 비었다는 상태로 표시하지 않습니다. 다른 작업은 평가 목록으로 돌아가 확인합니다.
+5. 실행을 지켜봅니다. 설정 창이 닫히고 평가 목록에 대기 작업이 추가되며, 행을 선택하면 제출 설정과 실제 진행 상황을 확인할 수 있습니다. 성공한 평가에는 결과 상세·기록된 설정·지표·문항별 순위가 표시되고, 결과가 없으면 아직 측정된 점수가 없는 상태입니다. 평가를 선택하면 해당 평가의 상세에 집중해 표시하며, 목록을 잠시 숨긴 상세 화면을 작업 이력이 비었다는 상태로 표시하지 않습니다. 다른 작업은 평가 목록으로 돌아가 확인합니다.
 6. 결과를 원문 근거와 대조합니다. 선택한 작업이 성공했고 결과 ID와 데이터셋이 맞으며, 적어도 한 문항의 hit/miss를 원문 근거와 대조했습니다. 다른 suite의 성공 작업을 방금 설정한 평가의 결과로 해석하지 않습니다.
 7. 원문을 사용할 수 없거나 문서가 준비되지 않았다는 안내가 표시되면 그 원문 오류를 읽고 [문서](documents.md)와 [인덱싱](indexing.md)을 확인합니다. 실패·중단 작업은 [평가 복구](troubleshooting.md#evaluation)를 확인한 뒤 다시 실행합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=focused-evaluation-detail; mode=dev; locale=ko; theme=light; state=selected-evaluation-with-result-details-and-return-to-list; expected-evidence=result-details-recorded-configuration-metrics-case-ranks-and-back-to-list-without-empty-history-message -->
-
+![완료된 평가 결과의 지표·기록된 설정·문항별 결과가 열린 화면.](../assets/focused-evaluation-detail.ko.png)
 [12. 결과 비교와 스냅샷 저장](snapshots.md#step-12)으로 이어갑니다.
 
 ## 골든셋 식별자와 실행 준비
@@ -73,7 +69,7 @@ Suite ID는 고정된 데이터셋 식별자입니다. `_v2_astra` 접미사는 
 | `sec-ko_v2_astra` | 한국어 | 영어 SEC 공시 |
 | `sec-mixed_v2_astra` | 한영 혼합 | 영어 SEC 공시 |
 
-추가된 SEC suite 세 개는 각각 20문항입니다. 화면의 큐레이션·승인 상태를 확인하세요. 자동으로 구성된 데이터셋은 사람이 승인했다는 근거가 아닙니다. 질문 언어를 비교할 때는 원문 범위뿐 아니라 회사·회계연도·질문 범위 단서까지 살펴봅니다. 같은 근거를 공유한다고 질문 조건까지 같아지는 것은 아닙니다.
+추가된 SEC suite 세 개는 각각 12문항입니다. 화면의 큐레이션·승인 상태를 확인하세요. 자동으로 구성된 데이터셋은 사람이 승인했다는 근거가 아닙니다. 질문 언어를 비교할 때는 원문 범위뿐 아니라 회사·회계연도·질문 범위 단서까지 살펴봅니다. 같은 근거를 공유한다고 질문 조건까지 같아지는 것은 아닙니다.
 
 평가 데이터셋 화면·새 평가·평가 기본 설정은 같은 suite 목록을 사용합니다. 저장한 기본값은 이후 작업의 시작값을 고르며 기존 결과는 바꾸지 않습니다.
 
@@ -93,9 +89,7 @@ Suite ID는 고정된 데이터셋 식별자입니다. `_v2_astra` 접미사는 
 
 기본 제공 파일명에는 클릭되지 않는 회색 자물쇠가 표시됩니다. 편집하려면 초안을 만드세요. 평가 파라미터는 후보·순위 통합, BM25, 리랭킹·언어로 묶이며 작은 정보 아이콘에 마우스를 올리거나 키보드로 초점을 맞추면 설명을 볼 수 있습니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=golden-question-editor; mode=dev; locale=ko; theme=light; state=wide-editor-with-answerability-unselected-fixed-save-bar-and-chunk-picker; expected-evidence=wide-and-narrow-viewports-draft-editability-and-source-chunk-selection -->
-
+![질문 본문·답변 가능 여부·참고 답변·기대 원문 청크가 보이는 골든 문항 상세 화면.](../assets/golden-question-editor.ko.png)
 ## 실행 모드와 지표 해석 {#metrics}
 
 빠른 평가는 현재 인덱스를 사용합니다. **조합별 평가 · 격리된 문서**는 격리된 문서에서 청크 목표 크기와 검색 조합을 평가하므로 준비 작업과 실행량이 크게 늘어날 수 있습니다. 비교 실험으로 사용하기 전에 범위와 제공자 비용을 확인하세요.
@@ -132,9 +126,7 @@ Suite ID는 고정된 데이터셋 식별자입니다. `_v2_astra` 접미사는 
 내부 결과 ID는 URL과 기록된 설정에만 유지합니다. 문항별 점수도 선택한 파일의 내용
 해시와 일치하는 결과에 한해서 표시합니다.
 
-### SCREENSHOT NEEDED
-<!-- feature=dataset-filtered-history-and-comparison; mode=dev; locale=ko; theme=light; state=file-filtered-run-history-and-two-matching-results-selected; expected-evidence=filenames-settings-execution-times-and-matching-content-hash-comparison -->
-
+![하나의 데이터셋으로 필터링한 실행 목록에서 비교할 두 결과를 선택한 화면.](../assets/dataset-filtered-history-and-comparison.ko.png)
 **새 평가**의 **다음 평가 기본값으로 저장**은 선택한 데이터셋과 평가 방식만 기억합니다. **평가 기본값 초기화**도 현재 입력을 바꾸지 않고 다음 평가의 기본값만 초기화합니다. 두 버튼은 작업 실행이나 대화 검색 설정 변경을 하지 않습니다.
 
 답변 가능 여부가 내부 판정을 결정합니다. 근거가 있으면 `SUPPORTED`, 근거가 없으면 `NOT_IN_DOCS`이며 원문 범위는 비웁니다. 미완성 입력도 저장할 수 있지만 준비 검사·작업 등록·실제 실행에는 엄격한 검증이 적용됩니다.
