@@ -15,7 +15,7 @@
     "check:api": "openapi-typescript ../schemas/api.openapi.json -o lib/api-generated.ts --check && openapi-typescript ../schemas/operator.openapi.json -o lib/operator-api-generated.ts --check"
   },
   "dependencies": {
-    "katex": "^0.16.11",
+    "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
     "next": "^16.0.0",
     "react": "^19.0.0",
