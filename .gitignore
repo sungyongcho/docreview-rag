@@ -28,6 +28,8 @@ web/next-env.d.ts
 web/out/
 web/*.tsbuildinfo
 deploy/firebase/public/
+deploy/firebase/.firebaserc
+deploy/firebase/.firebase/
 *.egg-info/
 
 # Editor and operating-system files
