@@ -1,138 +1,69 @@
 # DocReview RAG guide
 
-To try the running app quickly, open [Quick Start](quickstart.md). If you cloned the repository and are setting up locally from zero, start with [Environment setup](environment.md#qs-setup).
+DocReview connects SEC and DART filings to answers you can verify against the original text. You can follow a claim back to its citation, inspect the retrieval that supplied the evidence, and compare recorded retrieval evaluations. The manual follows those tasks across the app; Help explains an individual control while you are using it.
 
-All manual pages are available in both DEV and production; the DEV badge only marks where an operation can be executed.
-
-DocReview RAG v2 helps you read SEC and DART filings through retrieved evidence,
-source citations, and measurable retrieval evaluations. Begin with a small question
-and one identifiable filing. A finished answer is useful only when its cited source
-supports what it says.
-
-These guides follow the actual interface. They separate source acquisition, parsing,
-index preparation, retrieval, answering, and evaluation so that you can reuse work
-already completed in the same environment.
+To try the running service, begin with [Quick Start](quickstart.md). To run a fresh clone, begin with [Environment setup](environment.md#qs-setup). All 17 guides are readable in DEV and PROD; a DEV badge identifies an operation that requires a development environment.
 
 ## Where to start {#start}
 
-| What you have | Where to begin | What to reuse |
+| Your starting point | Follow this path | Result |
 |---|---|---|
-| An existing local corpus | Inspect [Documents](documents.md#step-2); use [Quick Start — DEV ONLY](quickstart-dev.md) for missing preparation. | Downloaded originals, parsed chunks, compatible embeddings, and a ready BM25 index. |
-| A fresh clone or empty local database | Complete [Environment setup](environment.md#qs-setup), then [Quick Start — DEV ONLY](quickstart-dev.md). | Existing source files when their identity and manifest scope match. |
-| Access to a running public instance | Follow [Quick Start](quickstart.md) to ask a question, inspect evidence, and browse published documents and [snapshots](snapshots.md). | Only the publicly available corpus; administrator preparation actions require a development environment. |
+| A running public instance | [Quick Start](quickstart.md) → [Answers](answers.md) → [Documents](documents.md) and [Snapshots](snapshots.md) | Read a supported answer, verify its sources, and inspect published results. |
+| A fresh clone or empty local database | [Environment setup](environment.md#qs-setup) → [Quick Start for DEV MODE](quickstart-dev.md) | Start DEV and prepare two example filings for retrieval. |
+| An existing local corpus | [Documents](documents.md#step-2) → the missing [preparation step](quickstart-dev.md) | Reuse downloaded sources, chunks, compatible embeddings, and BM25. |
 
-Do not infer an empty database from a filtered list with no matches, or from a public
-catalog with no published documents. [Document visibility](documents.md#visibility)
-explains these different states. Unknown readiness is not confirmed readiness.
+The public portfolio covers NVIDIA and AMD FY2019–FY2024 and Samsung Electronics and SK hynix FY2022–FY2024: 18 filings. A new DEV installation does not inherit those prepared database rows or downloaded sources. Its default filing selection describes intended work; it does not prove that work has run.
 
-CLI and Web operations share results only when they use the same database, source
-directory, and effective configuration. Inspect the completed result before starting
-another download, ingest, index build, or model call. A CLI operation can be absent
-from Jobs because it did not use the Web queue.
+An empty filtered list and an empty public catalog are also different from an empty database. Check the current filters and [document visibility](documents.md#visibility) before deciding what is missing.
 
-### SCREENSHOT NEEDED
-<!-- Feature: guide entry routing and portfolio navigation; locale=en; light mode; Overview shows the two reader paths and navigation begins Overview, Environment setup, Quick Start, Quick Start — DEV ONLY, with the wrench only on the last entry. Preserve existing assets. -->
+CLI and Web share results when they use the same database, source directory, and effective configuration. The corpus helper submits the same jobs as Build; direct tools that bypass the queue may have no Jobs entry. Inspect what is already complete before repeating a download, ingestion, index build, or paid model call.
 
 ## Twelve-step learning path {#learning-path}
 
-This is the full local learning path. Its step numbers stay in procedure order even though the navigation groups usage before preparation. Begin with [Part 1: Setup](environment.md#qs-setup); for Part 2, use the [DEV preparation guide](quickstart-dev.md) and the usage pages. On later visits, skip completed work.
+Use this sequence for the full local exercise. The navigation groups usage before preparation, while the numbered steps keep their procedure order. Begin with [Part 1: Setup](environment.md#qs-setup); continue through [DEV preparation](quickstart-dev.md), then search, answers, settings, and evaluation. Skip work already complete in this environment.
 
 <!-- tutorial-steps -->
 
-Embeddings and BM25 are parallel preparation paths. The numbered sequence makes them
-easy to inspect separately; BM25 does not require an answer first. Retrieval evaluation
-requires a suitable search index and evaluation dataset, **not a generated answer**.
-You can go from prepared retrieval directly to step 11.
+Parsing creates the chunks used by two independent indexes: semantic embeddings and lexical BM25. Hybrid retrieval needs both; vector retrieval needs compatible embeddings, and lexical retrieval needs BM25. Evaluation additionally needs a dataset with expected evidence. You can evaluate retrieval before generating an answer.
 
 ## Find the right workspace {#workspaces}
 
-> [!DEV]
-> Corpus preparation, dataset editing, live evaluations, and local-model configuration require DEV. Public document reading and published-snapshot browsing remain available.
-
-| Workspace | Use it for |
+| Workspace | Task and result |
 |---|---|
-| Conversation | Questions, answer-engine selection, request inspection, citations, and execution history. |
-| Build → Pipeline | Preparation dependencies and the selected stage's inputs and action. Selecting a node does not execute it. |
-| Build → Documents | Source identity, search filters, chunks, stored embedding identities, and related work. |
-| Build → Jobs | Queued work, progress, results, errors, and supported follow-up actions. |
-| Measure | Search trials, evaluation datasets, evaluation runs, and snapshot comparisons. |
-| System → System status | API availability, DB/schema, corpus readiness, and model availability as separate facts. |
+| Conversation | Ask a scoped question, follow the run, and verify claims through citations and retrieved candidates. |
+| Build → Pipeline | Inspect preparation dependencies, then run the missing stage in DEV. Selecting a node only opens that stage. |
+| Build → Documents | Find a filing, inspect its identity and chunks, and check stored embedding coverage. |
+| Build → Jobs | Follow queued work through progress, completion, a recorded error, or an explicit retry. |
+| Measure | Try retrieval and run evaluations in DEV; inspect published snapshots and comparisons in PROD. |
+| System → System status | Separate API, database, schema, corpus, and model availability before diagnosing a blocked task. |
 
-When you open Build from a conversation's corpus status line, use **Back**
-to return to your question and retained state. See [Settings](settings.md) for request
-controls and [Runtime](runtime.md) for interpreting measured execution.
-
-<!-- capture:02-pipeline -->
-
-![Pipeline combines the dependency graph with the selected step.](../assets/02-pipeline.en.jpg)
-
-*Pipeline combines the dependency graph with the selected step. Embeddings and BM25 are parallel preparation paths; evaluation needs an index and dataset, not a generated answer.*
+Corpus preparation, dataset editing, live evaluation, and local-model setup require DEV. Public visitors can read eligible documents and published snapshots and use the configured OpenAI answer service within its allowance. [Settings](settings.md) explains request choices; [Runtime](runtime.md) explains what the execution records establish.
 
 ## Use Help and the documentation {#help}
 
-**Help** has a home view and a topic detail view. Home starts with **Recommended** topics for visible controls. Four group filters—**Questions and evidence**, **Prepare documents**, **Search and evaluate**, and **Settings and diagnosis**—filter topic rows in place. Subgroup headings organize those rows; click a topic once to open its detail.
+1. Open **Help** when you need the meaning of a visible control. Recommended topics reflect the current screen; search accepts Korean and English and can cover the current screen or all sections.
+2. Open a topic to read its summary and **What to do** steps. **Go to this control** focuses the control or takes you to its screen. This navigation does not execute its action.
+3. Choose **Read the full guide** when you need the complete task, its prerequisites, or the meaning of its result. **Back** in Help restores the previous search, filter, and scroll position.
 
-<!-- capture:21-context-help -->
+The documentation menu preserves the 17-guide reading path. Previous/next links continue that path, and changing language keeps the same document. Code cards copy the original command, and wide tables scroll horizontally. Source text, questions, answers, model names, and logs retain their original language.
 
-![Help opens directly to recommended controls and four inline task filters.](../assets/21-context-help.en.jpg)
-
-*Help opens directly to recommended controls and four inline task filters. Topic rows are reachable from this home screen without intermediate category pages or floating number badges.*
-
-Each detail begins with a short summary and three **What to do** steps. Expand **Reference** for the full explanation, or use **Read the full guide** to open the related document in a new tab. **Back** returns directly to home and restores its search, group, scope, and scroll position. Selecting a topic outlines its control when visible; the home view does not place numbered markers across the app.
-
-<!-- capture:26-help-topic -->
-
-![A topic opens in one click with a short meaning, three steps, an explicit control link, and optional reference material.](../assets/26-help-topic.en.jpg)
-
-*A topic opens in one click with a short meaning, three steps, an explicit control link, and optional reference material. Back returns directly to the preserved Help home; only the selected visible control is highlighted.*
-
-**Search help** accepts Korean or English regardless of the displayed language. **Current screen / All sections** changes the search scope; title matches rank above body matches. Search runs locally without a model call. **Go to this control** focuses the visible control, while an offscreen topic offers navigation to its owning screen or editor section. Opening help or following that navigation does not execute the described operation or change its settings. Close an active dialog before using Help.
-
-The documentation menu groups the guides; previous and next links follow the learning
-path. The language switch keeps the current document. Code-card copy buttons copy
-the original code, and wide tables can scroll horizontally. Existing source text,
-questions, answers, model names, and raw logs keep their original language.
-
-<!-- capture:29-documentation-menu -->
-
-![The documentation menu uses one registry for 15 focused guides, grouped navigation and distinct semantic icons.](../assets/29-documentation-menu.en.jpg)
-
-*The documentation menu uses one registry for 15 focused guides, grouped navigation and distinct semantic icons. The Ollama guide provides separate macOS/Linux setup and read-only connection diagnostics.*
-
-For a failure, begin with [Troubleshooting](troubleshooting.md): identify the symptom,
-read the recorded evidence, apply the relevant remedy, and verify the result. For
-implementation context, use [Architecture](architecture.md). Detailed commands and
-their environment belong in the [CLI reference](cli.md).
-
-Continue with [Quick Start](quickstart.md) to try the app, or [Environment setup](environment.md#qs-setup) to run a fresh clone.
+For a failure, use [Troubleshooting](troubleshooting.md) to connect the recorded symptom to a specific check. For implementation context, read [Architecture](architecture.md). Use the [CLI reference](cli.md) when a task requires a terminal.
 
 ### Back, forward and shared locations
 
-The header places **Back** and **Forward** around the current workspace, tab and conversation
-title. Both arrows remain visible and are disabled at the ends of the recorded history.
-Click the title to open **Navigation history**, then choose an earlier or later entry.
-Arrow keys, Home/End and Enter operate the list; Escape or an outside click closes it.
-On narrow screens the list opens as a bottom sheet.
+Use the header's **Back** and **Forward** arrows to return between the conversation and an inspection screen. Click the current location to choose an entry in **Navigation history**; arrow keys, Home/End, Enter, and Escape operate the list. On a narrow screen it opens as a bottom sheet.
 
-App arrows and browser back/forward use the same history. A new navigation after going back
-clears forward entries. Returning restores the retained controls, conversation draft, focus
-and scroll; unsaved evaluation questions still require confirmation before leaving.
+App navigation and browser history share the same sequence. Returning restores retained controls, conversation drafts, focus, and scroll. A new navigation after going back replaces the forward path; leaving unsaved evaluation questions still requires confirmation.
 
-The URL records the view, tab, selected Build stage or evaluation result, and local conversation
-ID. Reloading restores that location. A conversation ID absent from this browser falls back
-to its most recent saved conversation. Message text and drafts are never placed in the URL.
-Locale/theme parameters, the application base path and tutorial links remain intact.
+The URL identifies the workspace, tab, selected preparation stage or evaluation result, and local conversation. Reload restores that location. A conversation missing from this browser falls back to its most recent saved conversation. Message text and drafts are never included in the URL.
 
-### SCREENSHOT NEEDED
-
-<!-- Feature: bidirectional header navigation and history list; locale=en; light mode; show Back/current location/Forward with the current list entry marked, including narrow-screen sheet. Preserve existing assets. -->
-
+![Returning from a guide page restores the prior conversation and its recorded answer in PROD mode.](../assets/manual-navigation-and-task-return.en.png)
 ## Browser storage {#browser-storage}
 
-PROD keeps conversations, defaults, filters, presets, language/theme and help preferences in this browser and origin only. They are not synced and may disappear when site data or a private session is cleared. Use **Settings → Data & help → Browser storage** to inspect usage and export/import a backup before clearing. The first-visit ⚠️ notice links to the [complete inventory, recovery and clearing guide](settings.md#browser-storage). DEV keeps its existing storage behavior.
+PROD stores conversations, defaults, filters, presets, language/theme, and Help preferences in this browser and origin. They are not synchronized. Before clearing site data, open **Settings → Data & help → Browser storage** and export a backup. The [storage guide](settings.md#browser-storage) explains the inventory, import, and clearing scopes. DEV retains its own storage behavior.
 
 ## Public OpenAI allowance
 
-Limits & availability shows a conservative shared reservation allowance, not an invoice balance. Answer calls and query embeddings reserve capacity immediately before the OpenAI client call; SDK automatic retries are disabled so retries cannot escape the guard. Keyword-only retrieval and saved-result reads do not consume this allowance. IP windows recover after 60 seconds and 24 hours; the shared budget resets at UTC midnight.
+The public policy allows 2 requests per minute and 5 per rolling 24 hours per IP, with a shared $0.10 allowance per UTC day and a $0.005 ceiling per model call. The configured text model is `gpt-5.6-luna`; semantic search uses `text-embedding-3-large` at 384 dimensions. **Limits & availability** reports the server's current availability, not an account invoice or a promised number of answers.
 
-The ledger is `data/runtime/public-ai-limits.sqlite3`, persisted by the runtime volume. It survives application restarts and is atomic across processes on the same host and volume. It is not a multi-host distributed limiter. Preserve this volume across deployment; losing it loses reservation history. The first installation starts a new ledger and does not reconstruct earlier in-memory usage. The public dashboard displays actual server state only. Published price policy remains server-owned; the dashboard does not fetch account billing credentials or display dollars.
+Answer calls and query embeddings reserve allowance immediately before the OpenAI call. Keyword-only retrieval and saved-result reads do not use it. IP windows expire with time; the shared day resets at UTC midnight. The reservation ledger at `data/runtime/public-ai-limits.sqlite3` survives application restarts on the same persistent volume. It coordinates processes on one host, not multiple independent hosts. [Environment setup](environment.md#production-deployment) describes that deployment boundary.

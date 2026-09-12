@@ -130,7 +130,7 @@ def test_corpus_submits_the_web_job_contract(tmp_path, monkeypatch):
     assert commands.corpus(args, tmp_path) == 0
     assert calls == [
         (
-            "http://127.0.0.1:8000/docreview-rag-agent/api/admin",
+            "http://127.0.0.1:8000/docreview-rag/api/admin",
             "/corpus/jobs/",
             {"kind": "acquire_dart", "identifiers": ["005930"], "years": [2024]},
         )

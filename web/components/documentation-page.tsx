@@ -1,22 +1,29 @@
-import { ProductBrand } from "@/components/product-brand";
-import { CreatorSignature } from "@/components/creator-signature";
-import { DevelopmentBadge } from "@/components/development-badge";
-import { LanguageSwitch } from "@/lib/i18n";
-import { ThemeSwitch } from "@/components/theme-switch";
-import { codeToHtml, bundledLanguages } from "shiki";
+import { tutorialError, tutorialRevision } from "@/.tutorial/revision";
+import { Bm25Explorer } from "@/components/bm25-explorer";
+import { ChunkBoundary } from "@/components/chunk-boundary";
+import { ChunkMap } from "@/components/chunk-map";
 import { CodeBlock } from "@/components/code-block";
-import { splitQuickStart } from "@/lib/quickstart-markdown.mjs";
-import { QuickStartProvider, QuickStartPanels, QuickStartOutline } from "@/components/quickstart-guide";
-import { TutorialMarkdown } from "@/components/tutorial-markdown";
+import { DevelopmentBadge } from "@/components/development-badge";
+import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
+import { EvalMeter } from "@/components/eval-meter";
+import { PipelineMap } from "@/components/pipeline-map";
+import { ProductBrand } from "@/components/product-brand";
+import { QuickStartOutline, QuickStartPanels, QuickStartProvider } from "@/components/quickstart-guide";
+import { RrfMerger } from "@/components/rrf-merger";
+import { TableNormalize } from "@/components/table-normalize";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { TutorialImage } from "@/components/tutorial-image";
+import { TutorialMarkdown } from "@/components/tutorial-markdown";
+import { DOCUMENTATION_BASE, developmentStoryDocument, documentationDocument } from "@/lib/documentation-registry.mjs";
+import { LanguageSwitch } from "@/lib/i18n";
+import { splitQuickStart } from "@/lib/quickstart-markdown.mjs";
+import { DOCUMENTS, renderTutorial } from "@/lib/tutorial-markdown.mjs";
+import "katex/dist/katex.min.css";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
-import { DOCUMENTS, renderTutorial } from "@/lib/tutorial-markdown.mjs";
-import { DOCUMENTATION_BASE, developmentStoryDocument, documentationDocument } from "@/lib/documentation-registry.mjs";
-import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
-import { tutorialRevision, tutorialError } from "@/.tutorial/revision";
+import { bundledLanguages, codeToHtml } from "shiki";
 import "./documentation.css";
 
 export async function DocumentationPage({ documentId, locale = "ko" }: { documentId: string; locale?: "ko" | "en" }) {
@@ -25,10 +32,15 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const story = documentId === "development";
   const document = story ? developmentStoryDocument(locale) : documentationDocument(documentId, locale)!;
   const source = readFileSync(resolve(process.cwd(), "../docs/TUTORIAL", document.file), "utf8");
-  const parsed = renderTutorial(source, { locale });
+  const parsed = renderTutorial(source, { locale, math: story });
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
-  const render = (markdown: string) => renderTutorial(markdown, { locale, assetVersion: tutorialRevision, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} /><div>{content}</div></aside>, renderCode: (block) => <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} /> });
+  const render = (markdown: string) => renderTutorial(markdown, {
+    locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
+      const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "chunk-map": ChunkMap, "table-normalize-demo": TableNormalize, "pipeline-map": PipelineMap } as const)[block.language];
+      return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} />;
+    }
+  });
   const tutorial = render(source);
   const sections = document.id === "quickstart-dev" ? splitQuickStart(source) : null;
   const body = sections ? <><TutorialMarkdown content={render(sections.common).content} /><QuickStartPanels locale={locale} cli={<TutorialMarkdown content={render(sections.cli).content} />} web={<TutorialMarkdown content={render(sections.web).content} />} /><TutorialMarkdown content={render(sections.after).content} /></> : <TutorialMarkdown content={tutorial.content} />;
@@ -42,26 +54,25 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
     <a className="docs-skip" href="#docs-content">{locale === "ko" ? "본문으로 바로가기" : "Skip to content"}</a>
     <header className="docs-header">
       <div className="docs-header-inner">
-      <Link className="docs-brand" href="/"><ProductBrand /></Link>
-      <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><LanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
-      <Link className="docs-back" href="/" aria-label={locale === "ko" ? "서비스로 돌아가기" : "Return to service"}><ArrowLeft size={15} /><span className="docs-back-long">{locale === "ko" ? "서비스로 돌아가기" : "Return to service"}</span><span className="docs-back-short">{locale === "ko" ? "서비스" : "Service"}</span></Link>
+        <Link className="docs-brand" href={`/docs/${locale}/`}><ProductBrand /></Link>
+        <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><LanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
+        <Link className="docs-back" href="/" aria-label={locale === "ko" ? "서비스로 돌아가기" : "Return to service"}><ArrowLeft size={15} /><span className="docs-back-long">{locale === "ko" ? "서비스로 돌아가기" : "Return to service"}</span><span className="docs-back-short">{locale === "ko" ? "서비스" : "Service"}</span></Link>
       </div>
     </header>
     <div className="docs-layout">
       <aside className="docs-sidebar"><DocumentationMenu current={document.id} documents={documents} locale={locale} /></aside>
       <main id="docs-content" className="docs-content" tabIndex={-1}>
-        <nav className="docs-breadcrumb" aria-label={locale === "ko" ? "현재 위치" : "Breadcrumb"}><Link href={`/docs/${locale}/`}>{locale === "ko" ? "사용 가이드" : "User guide"}</Link><span aria-hidden="true">/</span><span>{document.label}</span></nav>
-        <p className="docs-kicker">{document.groupTitle}</p>
+        <nav className="docs-breadcrumb" aria-label={locale === "ko" ? "현재 위치" : "Breadcrumb"}>{story || document.groupTitle === document.label ? <span>{document.label}</span> : <><Link href={`/docs/${locale}/`}>{document.groupTitle}</Link><span aria-hidden="true">/</span><span>{document.label}</span></>}</nav>
         {story ? <aside className="docs-mode-guide" aria-label={locale === "ko" ? "개발 기록 상태" : "Development log status"}>
           <span className="docs-mode-shared">{locale === "ko" ? "초안 · 개요" : "Draft / Outline"}</span>
-          <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "This draft is available in the public demo and DEV. The article below is the Korean source; an English translation is not available yet."}</p>
+          <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "A working draft the author is still revising, readable in the public demo and DEV."}</p>
         </aside> : <aside className="docs-mode-guide" aria-label={locale === "ko" ? "이 안내의 사용 범위" : "Guide availability"}>
-          {document.developmentOnly ? <DevelopmentBadge locale={locale} /> : <span className="docs-mode-shared">{locale === "ko" ? "공통 안내" : "Shared guide"}</span>}
+          {document.developmentOnly ? <DevelopmentBadge locale={locale} tooltip={false} /> : <span className="docs-mode-shared">{locale === "ko" ? "공통 안내" : "Shared guide"}</span>}
           <p>{document.developmentOnly
             ? (locale === "ko" ? "이 문서의 실습은 로컬 DEV 환경에서 실행합니다. 문서 전체는 공개 데모와 DEV 어디서든 읽을 수 있습니다." : "Run the exercises in this guide in a local DEV environment. The complete guide remains readable in both the public demo and DEV.")
             : (locale === "ko" ? "공개 데모와 DEV에서 함께 사용하는 안내입니다. 본문에서 스패너가 붙은 작업만 개발 모드 전용이며, 모든 문서는 두 환경에서 읽을 수 있습니다." : "This guide covers both the public demo and DEV. Only actions marked with a wrench require development mode; every document remains readable in both environments.")}</p>
         </aside>}
-        <div lang={story ? "ko" : locale}>{body}</div>
+        <div lang={locale}>{body}</div>
         <section className="docs-related" aria-labelledby="docs-related-title"><h2 id="docs-related-title">{locale === "ko" ? "관련 문서" : "Related documents"}</h2><ul>{related.map((item) => <li key={item.id}><Link href={item.href.replace(DOCUMENTATION_BASE, "")}>{item.title}</Link></li>)}</ul></section>
         <nav className="docs-pagination" aria-label={locale === "ko" ? "이전·다음 문서" : "Previous and next documents"}>
           {previous && <Link className="docs-next docs-previous" rel="prev" href={previous.href.replace(DOCUMENTATION_BASE, "")}><ArrowLeft size={18} /><span><small>{locale === "ko" ? "이전 문서" : "Previous document"}</small>{previous.title}</span></Link>}
@@ -70,7 +81,6 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
       </main>
       <aside className="docs-toc">{sections ? <QuickStartOutline headings={tutorial.headings} locale={locale} /> : <DocumentationOutline headings={tutorial.headings} locale={locale} />}</aside>
     </div>
-    <footer className="docs-footer"><div className="docs-footer-inner"><span>{locale === "ko" ? "DocReview RAG · 원문 근거와 함께 읽는 공시" : "DocReview RAG · Filings with verifiable evidence"}</span><CreatorSignature variant="footer" /></div></footer>
   </div>;
   return sections ? <QuickStartProvider>{page}</QuickStartProvider> : page;
 }

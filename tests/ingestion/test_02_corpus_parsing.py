@@ -103,7 +103,7 @@ def test_nvda_fy2024_headings_match_style_and_item_syntax(
     blocks_by_doc: dict[str, tuple],
 ) -> None:
     """Keep exactly 23 styled Item headings in NVDA-FY2024."""
-    _soup, blocks, _raw = blocks_by_doc["NVDA-FY2024"]
+    _soup, blocks, _raw = blocks_by_doc["sec-0001045810-24-000029"]
     rules = [{"font_weight": 700, "font_size": 10.0, "in_table": False}]
     hits = [
         text
@@ -121,7 +121,7 @@ def test_nvda_fy2024_headings_match_style_and_item_syntax(
 
 def test_corpus_cover_and_toc_are_dropped_before_item1(parsed: dict) -> None:
     """Keep cover and TOC material out of the first NVDA-FY2024 section."""
-    first = parsed["NVDA-FY2024"].sections[0]
+    first = parsed["sec-0001045810-24-000029"].sections[0]
     body = " ".join(block.text for block in first.blocks[:3])
 
     assert first.item == "1"
@@ -139,13 +139,17 @@ def test_nvda_fy2024_section_statuses_match_golden(
     parsed: dict,
 ) -> None:
     """Preserve every expected non-parsed section status in NVDA-FY2024."""
-    section = next(section for section in parsed["NVDA-FY2024"].sections if section.item == item)
+    section = next(
+        section for section in parsed["sec-0001045810-24-000029"].sections if section.item == item
+    )
     assert section.status == expected
 
 
 def test_nvda_fy2024_item15_contains_the_financial_statement_body(parsed: dict) -> None:
     """Require Item 15 to contain the body and tables omitted from referenced Item 8."""
-    section = next(section for section in parsed["NVDA-FY2024"].sections if section.item == "15")
+    section = next(
+        section for section in parsed["sec-0001045810-24-000029"].sections if section.item == "15"
+    )
 
     assert sum(len(block.text) for block in section.blocks) > NVDA_FY2024_ITEM15_MIN_CHARS
     assert sum(block.kind == "table" for block in section.blocks) > 30
@@ -212,7 +216,7 @@ def test_missing_items_are_only_optional_items(
 @pytest.mark.parametrize("doc", sorted(N_ITEMS))
 def test_new_items_do_not_appear_before_their_effective_year(doc: str, parsed: dict) -> None:
     """Reject Items parsed in filing years before the SEC introduced them."""
-    year = int(doc.split("FY")[1])
+    year = parsed[doc].source.document.fiscal_year
     items = {section.item for section in parsed[doc].sections if section.item}
 
     if year <= 2022:
@@ -272,8 +276,8 @@ def test_nvda_fy2024_heading_offsets_match_the_source(
     parsed: dict,
 ) -> None:
     """Prove selected Item heading elements against exact source positions."""
-    raw = parsed["NVDA-FY2024"].source.read()
-    by_item = {section.item: section for section in parsed["NVDA-FY2024"].sections}
+    raw = parsed["sec-0001045810-24-000029"].source.read()
+    by_item = {section.item: section for section in parsed["sec-0001045810-24-000029"].sections}
 
     for item, (expected_offset, expected_text) in NVDA_FY2024_OFFSETS.items():
         assert by_item[item].source_pos == expected_offset

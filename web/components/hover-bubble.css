@@ -6,6 +6,7 @@
 .hover-bubble[data-placement="above"]::after { bottom: -6px; }
 .hover-bubble[data-placement="below"]::after { top: -6px; transform: rotate(225deg); }
 .hover-bubble strong { font-size: 13px; }
+.hover-bubble p { margin: 0; }
 .hover-bubble em { font-style: normal; color: var(--muted); }
 .hover-bubble span { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .hover-bubble { animation: none; } }

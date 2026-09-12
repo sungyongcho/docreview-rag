@@ -81,7 +81,7 @@ it("watches documents registered while the same development process is running",
 it("refreshes the development outline and recovers after an incomplete save", async () => {
   const { root, revisionFile } = await fixture();
   const original = await readFile(revisionFile, "utf8");
-  const storyFile = join(root, "../DEVELOPMENT_STORY_OUTLINE.md");
+  const storyFile = join(root, "../DEVELOPMENT_STORY.ko.md");
   const source = await readFile(storyFile, "utf8");
   await writeFile(storyFile + ".saving", source + "\n\nDraft edit.");
   await rename(storyFile + ".saving", storyFile);

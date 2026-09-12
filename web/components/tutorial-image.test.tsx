@@ -2,7 +2,7 @@ import { cleanup, createEvent, fireEvent, render, screen, within } from "@testin
 import { afterEach, expect, it, vi } from "vitest";
 import { TutorialImage } from "./tutorial-image";
 
-const source = { src: "/docreview-rag-agent/tutorial-assets/example.jpg?v=recorded", alt: "Recorded run", caption: "An existing saved run; no request was executed for this image.", locale: "en" as const };
+const source = { src: "/docreview-rag/tutorial-assets/example.jpg?v=recorded", alt: "Recorded run", caption: "An existing saved run; no request was executed for this image.", locale: "en" as const };
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it("opens the original screenshot with its bottom caption and closes only on the backdrop", () => {
@@ -86,8 +86,8 @@ it("preserves modified-click access and closes a viewer when its revision change
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.click(trigger);
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-  rerender(<TutorialImage {...source} src="/docreview-rag-agent/tutorial-assets/example.jpg?v=replaced" />);
+  rerender(<TutorialImage {...source} src="/docreview-rag/tutorial-assets/example.jpg?v=replaced" />);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(trigger).toHaveAttribute("href", "/docreview-rag-agent/tutorial-assets/example.jpg?v=replaced");
+  expect(trigger).toHaveAttribute("href", "/docreview-rag/tutorial-assets/example.jpg?v=replaced");
   expect(document.body.style.overflow).toBe("");
 });

@@ -85,7 +85,7 @@ function Harness(props: HarnessProps) {
 describe("Build workspace", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
@@ -110,7 +110,7 @@ describe("Build workspace", () => {
 
   it("shows active progress on the pipeline and opens the Job Center from it", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
@@ -156,7 +156,7 @@ describe("Build workspace", () => {
   it.each([true, false])("filters and preserves document detail across tabs (operator=%s)", async (live) => {
     const prefix = live ? "/admin" : "/public";
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
@@ -213,7 +213,7 @@ describe("Build workspace", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "NVDA" } });
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Group documents" }), { target: { value: "issuer" } });
-    await waitFor(() => expect(fetchMock.mock.calls.some(([value]) => String(value).includes("issuer=NVDA"))).toBe(true));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([value]) => String(value).replace(/\/?(\?|$)/, "$1").includes("issuer=NVDA"))).toBe(true));
     expect(await screen.findByText("Company · NVDA")).toBeInTheDocument();
     const list = screen.getByRole("table", { name: "Document inventory" }).parentElement!;
     list.scrollTop = 120;
@@ -232,12 +232,12 @@ describe("Build workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to documents" }));
     expect(list.scrollTop).toBe(120);
     expect(screen.getByRole("row", { name: /NVDA-FY2024/ })).toHaveAttribute("aria-selected", "true");
-    if (!live) expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+    if (!live) expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
   });
 
   it("orders build steps from the administrator snapshot", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
@@ -284,11 +284,11 @@ describe("Build workspace", () => {
     fireEvent.click(ingestButtons[0]);
 
     await waitFor(() => {
-      const queued = fetchMock.mock.calls.filter(([value, init]) => String(value).endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST");
+      const queued = fetchMock.mock.calls.filter(([value, init]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST");
       expect(queued).toHaveLength(1);
     });
     const bodies = fetchMock.mock.calls
-      .filter(([value, init]) => String(value).endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST")
+      .filter(([value, init]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus/jobs") && (init as RequestInit | undefined)?.method === "POST")
       .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>);
     expect(bodies).toEqual([
       { kind: "ingest_selected", identifiers: ["AMD", "NVDA"], years: [2023, 2024], document_ids: ["AMD-FY2023", "AMD-FY2024", "NVDA-FY2023", "NVDA-FY2024"] },
@@ -297,7 +297,7 @@ describe("Build workspace", () => {
 
   it("never calls the administrator API in the public build", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       const payload: unknown = url.endsWith("/snapshots") ? { snapshots: [] } : url.endsWith("/public/documents/facets") ? EMPTY_DOCUMENT_FACETS_FIXTURE : url.includes("/public/documents?") ? { documents: [], total: 0, next_cursor: null } : {};
@@ -308,7 +308,7 @@ describe("Build workspace", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
     expect(screen.queryByText("Portfolio fixture")).not.toBeInTheDocument();
     expect(await screen.findByText("No portfolio filings have been published yet.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
@@ -317,9 +317,9 @@ describe("Build workspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([value]) => String(value).includes("/public/documents?"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([value]) => String(value).replace(/\/?(\?|$)/, "$1").includes("/public/documents?"))).toBe(true);
     expect(screen.queryByText("NVDA-FY2024")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
 
     expect(screen.queryByRole("button", { name: "Jobs" })).not.toBeInTheDocument();
   });
@@ -365,7 +365,7 @@ describe("Build workspace", () => {
 
   it("queues a quick evaluation with a non-empty chunk target list", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       let payload: unknown = {};
@@ -395,7 +395,7 @@ describe("Build workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
 
     await waitFor(() => {
-      const posted = fetchMock.mock.calls.find(([value, init]) => String(value).endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST");
+      const posted = fetchMock.mock.calls.find(([value, init]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST");
       expect(posted).toBeDefined();
       const body = JSON.parse(String((posted?.[1] as RequestInit).body)) as Record<string, unknown>;
       expect(body.mode).toBe("quick");
@@ -410,7 +410,7 @@ describe("preparation refresh after corpus jobs", () => {
   afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals(); });
   it.each(["succeeded", "failed", "cancelled", "interrupted"] as const)("refreshes once for %s and ignores repeated polls", async (status: OperatorJobStatus) => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS });
@@ -421,23 +421,23 @@ describe("preparation refresh after corpus jobs", () => {
     const job: OperatorJob = { job_id: "corpus-terminal", domain: "corpus", kind: "ingest_manifest", request: {}, status: "running", stage: "parse", current: 0, total: 1, detail_current: null, detail_total: null, message: "Parsing", error_code: null, result_refs: {}, queue_position: null, can_cancel: true, can_retry: false, created_at: "2026-01-01", started_at: "2026-01-01", finished_at: null, updated_at: "2026-01-01" };
     const board = (row: OperatorJob) => ({ jobs: [row], active_count: row.status === "running" ? 1 : 0, queued_count: 0 });
     const { rerender } = render(<Harness live jobBoard={board(job)} />);
-    const corpusCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/corpus")).length;
+    const corpusCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus")).length;
     await waitFor(() => expect(corpusCalls()).toBe(1));
     const terminal = { ...job, status };
     rerender(<Harness live jobBoard={board(terminal)} />);
     await waitFor(() => expect(corpusCalls()).toBe(2));
     rerender(<Harness live jobBoard={board({ ...terminal })} />);
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/evaluations/runs")).length).toBeGreaterThan(0));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs")).length).toBeGreaterThan(0));
     expect(corpusCalls()).toBe(2);
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/documents/facets"))).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/documents/facets"))).toHaveLength(2);
   });
 
   it("does not expose local manifest and evaluation selections in parsing", async () => {
     const manifest = CANNED_CORPUS.manifests[0];
     const selection = manifest.selections[0];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
-      if (String(input).endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, writable: true }, manifests: [{ ...manifest, selections: [selection, { ...selection, selection_id: "overlap" }] }] });
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/documents/facets")) return jsonResponse(EMPTY_DOCUMENT_FACETS_FIXTURE);
       return jsonResponse([]);
     }));
     render(<Harness live />);
@@ -454,7 +454,7 @@ describe("preparation refresh after corpus jobs", () => {
 it("queues exactly the selected company years after changing matrix cells", async () => {
   const onRefreshJobs = vi.fn();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") return jsonResponse({ job_id: "acquisition", status: "queued" });
@@ -475,7 +475,7 @@ it("queues exactly the selected company years after changing matrix cells", asyn
   fireEvent.mouseUp(download);
   fireEvent.click(download);
   await waitFor(() => expect(onRefreshJobs).toHaveBeenCalledTimes(1));
-  const submitted = fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/corpus/jobs") && init?.method === "POST");
+  const submitted = fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus/jobs") && init?.method === "POST");
   expect(submitted).toHaveLength(1);
   expect(JSON.parse(String(submitted[0][1]?.body))).toEqual({ kind: "acquire_edgar", identifiers: ["NVDA"], years: [2024] });
   cleanup(); vi.unstubAllGlobals();
@@ -484,7 +484,7 @@ it("queues exactly the selected company years after changing matrix cells", asyn
 
 it("keeps source acquisition available during schema drift and exposes terminal recovery", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, acquisition_draft: SAMPLE_DRAFT, sources: [], status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "drifted", schema_message: "Missing source columns", writable: true }, documents: [], manifests: CANNED_CORPUS.manifests.map((manifest) => ({ ...manifest, sources_present: 0 })) });
@@ -505,7 +505,7 @@ it("keeps source acquisition available during schema drift and exposes terminal 
 it.each([false, true])("queues mixed companies by source and reports partial submission (failure=%s)", async (failDart) => {
   const submitted: Record<string, unknown>[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
@@ -539,7 +539,7 @@ it("initializes empty, accepts a server sample, and reconciles disk changes with
   let sources: typeof sourceRows = [];
   let preset: typeof SAMPLE_DRAFT = { identifiers: [], years: [], pairs: [], revision: "empty-v1" };
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...CANNED_CORPUS.status, database_connected: true, schema_status: "compatible", writable: true }, sources, acquisition_draft: preset });
@@ -575,7 +575,7 @@ describe("quick evaluation feedback", () => {
   /** Serve current corpus facts and persist the request returned by the queue endpoint. */
   function stubQueue(corpus: Partial<Readiness["corpus"]> = {}, duplicate = false) {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: { ...READY_RUNTIME.corpus, ...corpus }, sources: [] });
@@ -628,7 +628,7 @@ describe("quick evaluation feedback", () => {
     await openEvaluation();
     fireEvent.click(screen.getByRole("button", { name: "Run quick evaluation" }));
     await waitFor(() => expect(screen.getAllByText("The same evaluation is already queued.").length).toBeGreaterThan(0));
-    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/evaluations/runs") && init?.method === "POST")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") && init?.method === "POST")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Open Jobs" }).length).toBeGreaterThan(0);
   });
 
@@ -653,7 +653,7 @@ describe("quick evaluation feedback", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Evaluate" }));
     await waitFor(() => expect(screen.getAllByText(reason).length).toBeGreaterThan(0));
     expect(screen.getByRole("button", { name: "Run quick evaluation" })).toBeDisabled();
-    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/evaluations/runs") && init?.method === "POST")).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") && init?.method === "POST")).toHaveLength(0);
   });
 });
 
@@ -664,7 +664,7 @@ describe("refresh hygiene", () => {
 
   function stubAdmin(override: (url: string) => Response | undefined) {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       const custom = override(url);
@@ -684,7 +684,7 @@ describe("refresh hygiene", () => {
     const fetchMock = stubAdmin((url) => url.endsWith("/admin/corpus") ? failure("database_unavailable", "Database is busy") : undefined);
     render(<NotificationProvider><Harness live /></NotificationProvider>);
     await screen.findByText("Corpus status could not be refreshed: Database is busy");
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/admin/snapshots"))).toBe(true));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots"))).toBe(true));
     expect(screen.getByText("Corpus status could not be refreshed: Database is busy").closest(".notification-stack")).toHaveAttribute("data-placement", "overlay");
   });
 
@@ -707,7 +707,7 @@ describe("refresh hygiene", () => {
     const fetchMock = stubAdmin(() => undefined);
     const board = (rows: OperatorJob[]) => ({ jobs: rows, active_count: rows.filter((row) => row.status === "running").length, queued_count: 0 });
     const { rerender } = render(<Harness live jobBoard={board([corpusJob])} />);
-    const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/evaluations/runs")).length;
+    const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs")).length;
     await waitFor(() => expect(runsCalls()).toBeGreaterThan(0));
     await act(async () => undefined);
     const before = runsCalls();
@@ -725,7 +725,7 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
   const sources = ["NVDA", "AMD"].flatMap((issuer) => [2023, 2024].map((year) => ({ manifest: "manifest.json", document_id: `${issuer}-${year}`, registry: "sec", issuer, name: issuer, fiscal_year: year, ready: true, on_disk: !(issuer === "NVDA" && year === 2024) })));
   const submitted: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") { const body = JSON.parse(String(init.body)); submitted.push(body); if (failIndex && body.kind === "ingest_selected" && body.identifiers[0] === "NVDA") return new Response(JSON.stringify({ error: { code: "unavailable", message: "Indexing unavailable" } }), { status: 503 }); return jsonResponse({ job_id: String(submitted.length), status: "queued" }); }
@@ -760,7 +760,7 @@ it.each([false, true])("queues exact sparse pairs and reports partial indexing s
 describe("connection readiness presentation", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
       if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
       if (url.endsWith("/admin/corpus")) return jsonResponse({
@@ -824,7 +824,7 @@ it("queues a staged recoverable source and enables parsing after the verified re
   const submitted: { kind: string; identifiers: string[]; years: number[] }[] = [];
   let recovered = false;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/jobs") && init?.method === "POST") {
@@ -867,7 +867,7 @@ it("queues a staged recoverable source and enables parsing after the verified re
 function stubSourceLifecycle(sources: Array<Record<string, unknown>>, submitted: Array<Record<string, unknown>>, previews: Array<Record<string, unknown>>) {
   const pairs = [{ registry: "sec", issuer: "NVDA", year: 2024 }, { registry: "dart", issuer: "005930", year: 2023 }];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/corpus/sources/deletion-preview")) {
@@ -948,7 +948,7 @@ it("separates deselection and cancellation from confirmed deletion without prema
   expect(previews).toEqual([{ document_ids: sources.map((source) => source.document_id) }, { document_ids: sources.map((source) => source.document_id) }]);
   expect(submitted).toEqual([{ kind: "delete_sources", identifiers: [], years: [], deletion_token: "exact-source-token", confirm_delete: true }]);
   expect(refresh).toHaveBeenCalledOnce();
-  expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/corpus"))).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/corpus"))).toHaveLength(1);
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
   expect(screen.getByRole("button", { name: "NVDA FY2024 · On disk" })).toHaveAttribute("aria-pressed", "true");
 });
@@ -968,7 +968,7 @@ it.each(["queued", "running"] as const)("locks deletion while a corpus job is %s
 it("opens the golden-set manager from pipeline evaluation setup", async () => {
   const onNavigate = vi.fn();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/admin/evaluations/suites")) return jsonResponse(CANNED_SUITES);
     if (url.endsWith("/admin/evaluations/preparation")) return jsonResponse({ suite_id: "sec-en", kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] });
     if (url.endsWith("/admin/corpus")) return jsonResponse({ mode: "live", ...CANNED_CORPUS, status: READY_RUNTIME.corpus });

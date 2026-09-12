@@ -41,7 +41,7 @@ def test_markdown_renderer_is_derived_from_the_registry():
 
 def test_readme_command_table_matches_the_executable_registry():
     """Fail when documented buttons drift from the host command registry."""
-    readme = Path("README.md").read_text(encoding="utf-8")
+    readme = Path("docs/README_archive.md").read_text(encoding="utf-8")
     documented = (
         readme.split("<!-- operator-commands:start -->", 1)[1]
         .split(

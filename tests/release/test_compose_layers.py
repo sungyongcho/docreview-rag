@@ -127,7 +127,7 @@ def test_development_mounts_source_and_keeps_browser_dependencies_separate() -> 
         "DOCREVIEW_API_UPSTREAM",
         "DOCREVIEW_LOCAL_HOST",
     }
-    assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
+    assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag/api"
     assert web["environment"]["DOCREVIEW_API_UPSTREAM"] == "http://app:8000"
     assert not dev["services"]["app"].get("ports")
     assert web["ports"][0]["published"] == "8000"
@@ -170,7 +170,7 @@ def test_mode_and_frontend_routing_ignore_stale_shell_flags(name, mode, admin, w
     assert app["environment"]["MODE"] == mode
     assert app["environment"]["DOCREVIEW_ADMIN_MODE"] == admin
     assert web["environment"]["NEXT_PUBLIC_ADMIN_MODE"] == web_admin
-    assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
+    assert web["environment"]["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag/api"
     assert web["ports"][0]["published"] == "19000"
     assert not app.get("ports")
 

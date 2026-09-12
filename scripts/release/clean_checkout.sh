@@ -59,7 +59,7 @@ printf 'Clean archive: Next tests, typecheck, and static build\n'
     npm ci
     npm test
     npm run typecheck
-    NEXT_PUBLIC_API_BASE_URL=/docreview-rag-agent/api \
+    NEXT_PUBLIC_API_BASE_URL=/docreview-rag/api \
         NEXT_PUBLIC_ADMIN_MODE=canned npm run build
 )
 

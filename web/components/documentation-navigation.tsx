@@ -1,26 +1,63 @@
 "use client";
 
-import { preferredLocale, savedLocale, type Locale } from "@/lib/i18n";
-import { useEffect, useRef, useState } from "react";
+import { CreatorSignature } from "@/components/creator-signature";
+import { DevelopmentBadge } from "@/components/development-badge";
+import { HoverBubble } from "@/components/hover-bubble";
+import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
+import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
+import { preferredLocale, savedLocale, useI18n, type Locale } from "@/lib/i18n";
+import type { TutorialDocument, TutorialHeading } from "@/lib/tutorial-markdown.mjs";
+import { Activity, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity, ArrowUpRight, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
-import type { TutorialHeading, TutorialDocument } from "@/lib/tutorial-markdown.mjs";
-import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
-import { DevelopmentBadge } from "@/components/development-badge";
+import { useEffect, useState } from "react";
 
 const DOCUMENT_ICONS: Record<string, LucideIcon> = { Activity, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal };
 
-function useResponsiveDisclosure(query: string) {
-  const ref = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    function update() { if (ref.current) ref.current.open = media.matches; }
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, [query]);
-  return ref;
+const MENU_COPY = {
+  ko: { heading: "가이드와 개발 기록", userGuide: "사용 가이드", developmentLog: "개발 기록", chooseDocument: "문서 선택" },
+  en: { heading: "Guides & development", userGuide: "User guide", developmentLog: "Development log", chooseDocument: "Choose a document" },
+} as const;
+
+interface DocumentationGroup {
+  id: string;
+  title: string;
+  developmentOnly: boolean;
+  documents: TutorialDocument[];
+}
+
+/** Group the localized inventory once so the menu never rescans it per row. */
+function documentationGroups(documents: TutorialDocument[]): DocumentationGroup[] {
+  return [...new Set(documents.map((document) => document.group))].map((id) => ({
+    id,
+    title: documents.find((document) => document.group === id)!.groupTitle,
+    developmentOnly: documents.filter((document) => document.group === id).every((document) => document.developmentOnly),
+    documents: documents.filter((document) => document.group === id && document.id !== "overview"),
+  }));
+}
+
+/** One document row with its icon, localized title, DEV badge and hover summary. */
+function DocumentationMenuLink({ document, current, locale }: { document: TutorialDocument; current: string; locale: Locale }) {
+  const { t } = useI18n();
+  const Icon = DOCUMENT_ICONS[document.icon ?? ""] ?? BookOpen;
+  const showBadge = document.developmentOnly && !/DEV/i.test(document.title);
+  const label = <>{document.title}{showBadge && <> <DevelopmentBadge locale={locale} compact tooltip={false} text={document.id === "quickstart-dev" ? "DEV MODE" : undefined} /></>}</>;
+  return <HoverBubble bubble={<div className="docs-menu-bubble-body">
+    <span className="docs-menu-bubble-group">{document.groupTitle}</span>
+    <strong>{label}</strong>
+    <p>{document.summary}</p>
+    {document.developmentOnly && <p className="docs-menu-bubble-dev">{t(DEV_ONLY_NOTE)}</p>}
+  </div>} label={document.summary} width={236} className="docs-menu-bubble">
+    <Link href={document.href.replace(DOCUMENTATION_BASE, "")} aria-current={current === document.id ? "page" : undefined}>
+      <Icon size={16} aria-hidden="true" />
+      <span>{label}</span>
+    </Link>
+  </HoverBubble>;
+}
+
+/** The user guide and development log entries above the grouped inventory. */
+function DocumentationCollectionLink({ href, icon: Icon, label, current }: { href: string; icon: LucideIcon; label: string; current: boolean }) {
+  return <Link href={href} aria-current={current ? "page" : undefined}><Icon size={16} aria-hidden="true" /><span>{label}</span></Link>;
 }
 
 /** Legacy links resolve after hydration because the saved preference is browser-owned. */
@@ -51,32 +88,24 @@ export function DocumentationLegacyAnchor({ locale }: { locale: Locale }) {
 }
 
 export function DocumentationMenu({ current, documents, locale }: { current: string; documents: TutorialDocument[]; locale: Locale }) {
-  const disclosure = useResponsiveDisclosure("(min-width: 701px)");
-  const groups = [...new Set(documents.map((document) => document.group))];
-  return <details ref={disclosure} className="docs-menu" open>
-    <summary>{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</summary>
-    <nav className="docs-nav-group" aria-label={locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}>
-      <Link href={`/docs/${locale}/`} aria-current={current === "overview" ? "page" : undefined}><BookOpen size={16} aria-hidden="true" /><span>{locale === "ko" ? "사용 가이드" : "User guide"}</span></Link>
-      <Link href={`/docs/${locale}/development/`} aria-current={current === "development" ? "page" : undefined}><Terminal size={16} aria-hidden="true" /><span>{locale === "ko" ? "개발 기록" : "Development log"}</span></Link>
+  const copy = MENU_COPY[locale];
+  return <div className="docs-menu">
+    <p className="docs-menu-title">{copy.heading}</p>
+    <nav className="docs-nav-group" aria-label={copy.heading}>
+      <DocumentationCollectionLink href={`/docs/${locale}/`} icon={BookOpen} label={copy.userGuide} current={current === "overview"} />
+      <DocumentationCollectionLink href={`/docs/${locale}/development/`} icon={Terminal} label={copy.developmentLog} current={current === "development"} />
     </nav>
-    <nav aria-label={locale === "ko" ? "문서 선택" : "Choose a document"}>
-      {groups.map((group) => <section className="docs-nav-group" key={group} aria-labelledby={`docs-group-${group}`}>
-        <h2 id={`docs-group-${group}`}>{documents.find((document) => document.group === group)!.groupTitle}</h2>
-        {documents.filter((document) => document.group === group).map((document) => {
-          const Icon = DOCUMENT_ICONS[document.icon ?? ""] ?? BookOpen;
-          return <Link key={document.id} href={document.href.replace(DOCUMENTATION_BASE, "")} aria-current={current === document.id ? "page" : undefined}>
-          <Icon size={16} aria-hidden="true" />
-          <span>{document.title}{document.developmentOnly && <> <DevelopmentBadge locale={locale} compact /></>}{current === document.id && <small>{document.summary}</small>}</span>
-        </Link>; })}
+    <nav className="docs-menu-sections" aria-label={copy.chooseDocument}>
+      {documentationGroups(documents).map((group) => <section className="docs-nav-group" key={group.id} aria-labelledby={`docs-group-${group.id}`}>
+        <h2 id={`docs-group-${group.id}`}>{group.title}{group.developmentOnly && <> <DevelopmentBadge locale={locale} compact tooltip={false} /></>}</h2>
+        {group.documents.map((document) => <DocumentationMenuLink key={document.id} document={document} current={current} locale={locale} />)}
       </section>)}
     </nav>
-    <p className="docs-menu-note">{locale === "ko" ? "같은 환경, 같은 데이터. 작업 결과를 화면에서 이어서 확인하세요." : "One environment, shared data. Follow your results from commands to the dashboard."}</p>
-    <Link className="docs-service-link" href="/">DocReview RAG <ArrowUpRight size={14} /></Link>
-  </details>;
+    <div className="docs-menu-creator"><CreatorSignature variant="footer" /></div>
+  </div>;
 }
 
 export function DocumentationOutline({ headings, locale }: { headings: TutorialHeading[]; locale: Locale }) {
-  const disclosure = useResponsiveDisclosure("(min-width: 1151px)");
   const sections = headings.filter((heading) => heading.depth === 2);
   const [active, setActive] = useState("");
   useEffect(() => {
@@ -101,10 +130,10 @@ export function DocumentationOutline({ headings, locale }: { headings: TutorialH
       window.removeEventListener("resize", onScroll);
     };
   }, [headings]);
-  return <details ref={disclosure} className="docs-outline" open>
-    <summary>{locale === "ko" ? "이 페이지에서" : "On this page"}</summary>
+  return <div className="docs-outline">
+    <p className="docs-outline-title">{locale === "ko" ? "이 페이지에서" : "On this page"}</p>
     <nav aria-label={locale === "ko" ? "목차" : "Table of contents"}><ol>{sections.map((section) => <li key={section.id}>
       <a href={`#${section.id}`} aria-current={active === section.id ? "location" : undefined}>{section.text}</a>
     </li>)}</ol></nav>
-  </details>;
+  </div>;
 }

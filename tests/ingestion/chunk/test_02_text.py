@@ -93,9 +93,12 @@ def test_xref_context_resets_to_the_current_source_group(C):
 
 def test_intel_non_gaap_range_does_not_inherit_a_sibling_title(chunks_by_doc):
     """Keep Intel's non-GAAP range free of a sibling range title."""
+    intel = chunks_by_doc.get("sec-0000050863-24-000010")
+    if intel is None:
+        pytest.skip("Intel filings are not present in the corpus")
     chunks = [
         chunk
-        for chunk in chunks_by_doc["INTC-FY2023"]
+        for chunk in intel
         if chunk.item == "7" and "Non-GAAP Financial Measures" in chunk.context_header
     ]
 

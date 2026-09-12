@@ -1,5 +1,5 @@
 /** Copy shared by every control that a public surface cannot operate. */
-export const SOURCE_REPOSITORY_URL = "https://github.com/sungyongcho/docreview-rag-agent";
+export const SOURCE_REPOSITORY_URL = "https://github.com/sungyongcho/docreview-rag";
 export const SOURCE_REPOSITORY_LABEL = SOURCE_REPOSITORY_URL.replace(/^https?:\/\//, "");
 
 /** The one lock sentence; the server returns the same text for a refused public request. */

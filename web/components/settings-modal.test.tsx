@@ -82,9 +82,9 @@ it("links to both guides in the same tab without changing the current conversati
   expect(screen.getByRole("link", { name: "User guide" })).not.toBeVisible();
   fireEvent.click(screen.getByText("Guides & development", { exact: true }));
   const link = screen.getByRole("link", { name: "User guide" });
-  expect(link).toHaveAttribute("href", "/docreview-rag-agent/docs/en/");
+  expect(link).toHaveAttribute("href", "/docreview-rag/docs/en/");
   expect(link).not.toHaveAttribute("target");
-  expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/development/");
+  expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag/docs/en/development/");
   fireEvent.click(screen.getByRole("button", { name: "About" }));
   expect(screen.getByRole("link", { name: "Development log" })).not.toBeVisible();
   fireEvent.click(screen.getByText("Guides & development", { exact: true }));
@@ -140,6 +140,6 @@ it.each([["dev", true, true], ["dev", false, false], ["prod", true, false]] as c
   fireEvent.click(saveCaps);
   expect(onChange).not.toHaveBeenCalled();
   expect(fetchMock).toHaveBeenCalledOnce();
-  expect(fetchMock).toHaveBeenCalledWith("/docreview-rag-agent/api/limits", expect.objectContaining({ headers: { "content-type": "application/json" } }));
+  expect(fetchMock).toHaveBeenCalledWith("/docreview-rag/api/limits/", expect.objectContaining({ headers: { "content-type": "application/json" } }));
   expect(fetchMock.mock.calls[0][1].method ?? "GET").toBe("GET");
 });

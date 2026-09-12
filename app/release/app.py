@@ -40,7 +40,7 @@ from app.settings_sources import Environment
 ProviderFactory = Callable[..., LLMProvider]
 ReadinessProbe = Callable[[], Awaitable[dict[str, Any]]]
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parents[2] / "web" / "out"
-PUBLIC_BASE_PATH = "/docreview-rag-agent"
+PUBLIC_BASE_PATH = "/docreview-rag"
 
 
 async def _local_engine_readiness(

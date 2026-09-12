@@ -15,8 +15,8 @@ Use Bash or Zsh with uv and Docker Engine / Compose 2.24.4+. Node and npm run in
 web container; this path does not require their installation on the host.
 
 ```bash
-git clone https://github.com/sungyongcho/docreview-rag-agent.git
-cd docreview-rag-agent
+git clone https://github.com/sungyongcho/docreview-rag.git
+cd docreview-rag
 source ./rag-alias.sh
 rag-help
 rag-start-quick
@@ -25,7 +25,7 @@ rag-start-quick
 Source is the one-command install and activation path. Choose Y to save startup registration and restart the login shell; its banner reminds you to type rag-help. N loads only this session. Re-sourcing reports [already installed] or [update required] by comparing the version and registered definitions.
 
 The Helper is included in the clone. `rag-alias update` refreshes it when the checkout changes. Use `source` for shell registration.
-See [helper installation and updates](cli.md) for moved paths and the optional default-No login-shell offer after executed installation.
+See [helper installation and updates](cli.md#register-commands-and-open-help) for moved paths and the optional default-No login-shell offer after executed installation.
 The first run creates `.env` only if absent. Edit it locally and rerun `rag-start-quick`:
 
 ```dotenv
@@ -45,7 +45,7 @@ generating embeddings incurs OpenAI usage. The first-run command does neither.
 The command creates a schema only in an empty database, preserves a compatible
 existing database, and reports schema drift without resetting it. Fix missing tools
 or configuration and rerun the same command; do not use `rag-reset` to repair
-installation. Open the printed URL, normally `http://localhost:8000/docreview-rag-agent/`.
+installation. Open the printed URL, normally `http://localhost:8000/docreview-rag/`.
 
 The setup command reports five stages: prerequisites, local configuration, project
 service state/startup, schema preparation, and DEV server readiness. It identifies
@@ -60,30 +60,19 @@ at the same step. `[q]` cancels. The parent shell is unchanged; use the printed 
 for future invocations. For startup/readiness failures, existing read-only diagnostics run and
 the command offers one confirmed, volume-preserving down/build/start recovery.
 
-### SCREENSHOT NEEDED
-<!-- Feature: guided Quick Start configuration repair; locale=en; TTY color/bold or NO_COLOR plain text; show a redacted shell-versus-file embedding conflict and successful resume without reinstalling dependencies. Preserve existing assets. -->
-
 ## 1. Open and verify the environment {#step-1}
 
-**Goal:** establish that the current environment is ready for document inspection and
-the preparation operations you intend to use.
+> [!GOAL]
+> Establish that the current environment is ready for document inspection and the preparation operations you intend to use.
+>
+> **Prerequisites** [Part 1: Setup](#qs-setup) or a running service with a compatible database · **Done** the API responds, the DB is connected, and the schema is usable.
 
-**Prerequisites:** complete the setup above, or reuse a running service with a compatible
-database. No document acquisition, embedding, or answer request is needed for this check.
+Open sidebar **System → System status**; the page heading is **Runtime readiness**. Read the mode indicator and use the development environment for the preparation tutorial, because public mode can expose fewer controls with different permissions. This is a read-only check that makes no document acquisition, embedding, or answer request, so no question or company selection is required; confirm that the service address is the intended environment, because a different API/database address can refer to different data even when the interface looks familiar. Corpus counts are shown on both builds; only whether the corpus is writable is withheld.
 
-**Screen path:** sidebar **System → System status**. The page heading is **Runtime readiness**.
-Read the mode indicator; use the development environment for the preparation tutorial.
-Public mode can expose fewer controls because it has different permissions. Corpus counts are shown on both builds; only whether the corpus is writable is withheld.
-
-**Inputs and meaning:** this is a read-only check; no question or company selection is
-required. Confirm that the service address is the intended environment. A different
-API/database address can refer to different data even when the interface looks familiar.
-
-**Primary action:** click **Refresh** once and wait for **Checking…** to finish.
-
-**What visibly changes:** the status facts refresh. Read the API condition shown in the
-System navigation or connection warning, then inspect the Database and Schema facts.
-Corpus counts and model policy describe separate aspects of the same environment.
+1. Select **Refresh** once and wait for **Checking…** to finish. The status facts refresh, and the API condition appears in the System navigation or connection warning.
+2. Inspect the Database and Schema facts. Corpus counts and model policy describe separate aspects of the same environment.
+3. Confirm completion: the API responds, the DB is connected, and the schema is usable. You now know whether this environment allows document preparation; an empty corpus does not invalidate those checks, and identifying existing data is the next step. Unknown fields remain unresolved and should not be counted as passed.
+4. If the page opens but API checks fail, inspect `rag-dev ps` and `rag-dev logs --tail=80 app`, follow [Troubleshooting](troubleshooting.md) for the recorded symptom, apply the relevant fix, and repeat Refresh. For a fresh DB, use the linked schema setup; a schema-drift error is not a reason to delete an existing DB.
 
 | Fact | What to verify | What it does not prove |
 |---|---|---|
@@ -94,38 +83,14 @@ Corpus counts and model policy describe separate aspects of the same environment
 | Corpus | Counts and readiness are collected, including honest empty or partial states. | That all displayed vectors were produced by the intended model. |
 | Model availability | The selected engine is available, or its missing prerequisite is explained. | That a model request has succeeded or that an answer will be supported. |
 
-<!-- capture:01-system-status -->
-
-![System status separates actual API/database/schema health, corpus readiness and model availability.](../assets/01-system-status.en.jpg)
-
-*System status separates actual API/database/schema health, corpus readiness and model availability. This development corpus contains 30 filings; no preparation was rerun.*
-
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=system-status-dev-badges; locale=en; theme=light; capture=system-status-tab-showing-dev-badges-on-local-model-policy-and-local-runtime-panels; issue=79; preserve-existing-assets=true -->
-
-**Screenshot pending for the DEV badges on the Local model policy and Local runtime panels. Existing screenshots remain unchanged.**
-
-**Completion criteria:** the API responds, the DB is connected, and the schema is usable.
-You know whether this environment allows document preparation. An empty corpus does not
-invalidate those checks; identifying existing data is the next step. Unknown fields
-remain unresolved and should not be counted as passed.
-
-**Common failure and recovery:** if the page opens but API checks fail, inspect
-`rag-dev ps` and `rag-dev logs --tail=80 app`. Follow [Troubleshooting](troubleshooting.md)
-for the recorded symptom, apply the relevant fix, and repeat Refresh. For a fresh DB,
-use the linked schema setup. A schema-drift error is not a reason to delete an existing DB.
-
-**Next:** open Build and continue with the developer preparation guide below.
+![The System view reporting ready status, runtime mode, connected database, BM25 readiness and corpus totals.](../assets/runtime-readiness-status.en.png)
+Open Build and continue with the developer preparation guide below.
 
 ## Open Build and continue {#open-build}
 
 Open the printed application URL and select **Build → Pipeline**. Confirm that you can inspect the preparation graph and the selected step. Opening Build does not download a filing or run a model.
 
-**Service ready is not data ready.** Continue with [Quick Start — DEV ONLY](quickstart-dev.md#qs-web-1): choose CLI or Web to verify the environment, acquire the two example reports, parse and chunk them, prepare embeddings and BM25, and check readiness before asking. Reuse completed work. The existing [twelve-step learning path](overview.md#learning-path) then covers questions, settings, and evaluation.
-
-### SCREENSHOT NEEDED
-<!-- Feature: fresh-clone environment setup handoff; locale=en; light mode; show successful redacted service readiness and Build → Pipeline open before acquiring sources, with separate API/database/schema facts and the DEV Quick Start continuation. Preserve existing assets. -->
+**Service ready is not data ready.** Continue with [Quick Start for DEV MODE](quickstart-dev.md#qs-web-1): choose CLI or Web to verify the environment, acquire the two example reports, parse and chunk them, prepare embeddings and BM25, and check readiness before asking. Reuse completed work. The existing [twelve-step learning path](overview.md#learning-path) then covers questions, settings, and evaluation.
 
 ## Recover a blocked preparation step {#schema-recovery}
 
@@ -168,16 +133,9 @@ primary group or command merely from a source reload. See [reset recovery](cli.m
 
 An error links to the relevant pipeline step through **Inspect this step**, or to setup guidance for a database/schema blocker. Follow that destination for the current diagnosis and terminal instructions; other error panels keep only the cause and navigation link.
 
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=schema-and-terminal-handoff-recheck; locale=en; theme=light; capture=blocked-and-resolved-states; issue=17; preserve-existing-assets=true -->
-
-**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
-
-
 For incompatible schemas, run `.venv/bin/python -m scripts.schema check`;
 Quickstart ignores an external `DATABASE_URL` and uses the local `DB_PORT`. Safe target-selection
-recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag-agent/issues/25).
+recovery is tracked in [#25](https://github.com/sungyongcho/docreview-rag/issues/25).
 Do not reset your database to resolve this setup stop.
 
 ## Keep the environment and work separate {#environment-boundaries}
@@ -188,7 +146,7 @@ The development stack supports source reload and live documentation updates. API
 restarts can interrupt queued work; check Jobs before deciding that an interrupted
 operation needs a retry. [Runtime](runtime.md) explains job and execution states.
 
-This release supports DEV and PROD as separate runtime modes. The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211) and is not available in this release.
+This release supports DEV and PROD as separate runtime modes. The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag/issues/211) and is not available in this release.
 
 `rag-prod` starts standalone local PROD mode with public permissions; it does not publish
 the site. A working local-model connection in development does not make Local LLM
@@ -198,21 +156,21 @@ for deliberate mode changes, and [Settings](settings.md) for saved connection se
 Do not use a destructive reset to make a readiness indicator turn green. Refresh reads
 state; it does not repair, ingest, index, or call an answer model.
 
-## Production deployment (near-zero cost) {#production-deployment}
+## Production deployment {#production-deployment}
 
 Everything above runs on your machine. The public site is a separate, deliberately
-small target: one Always Free VM behind a Cloudflare Worker, and a static export on
+small target: one e2-medium VM behind a Cloudflare Worker, and a static export on
 Firebase Hosting. The scripts live in `deploy/gcp/` and `scripts/deploy/`; none of them
 runs as part of the tutorial.
 
 ```text
-visitor ──HTTPS──> sungyongcho.com/docreview-rag-agent/*
+visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
                           │  Cloudflare Worker (gomoku repo)
             ┌─────────────┴──────────────┐
-   /docreview-rag-agent/*        /docreview-rag-agent/api/*
+   /docreview-rag/*        /docreview-rag/api/*
             │                              │  plain HTTP
             ▼                              ▼
-   Firebase Hosting             GCP e2-micro (us-central1-a, ephemeral IP)
+   Firebase Hosting             GCP e2-medium (us-central1-a, ephemeral IP)
    static Next export           firewall: tcp:8000 from Cloudflare IPv4 only
                                   Caddy :80 → host 8000
                                     allow-list + X-DocReview-Public: true
@@ -229,21 +187,28 @@ reachable port. The operator API is reachable only through
 
 ### Order of operations {#production-order}
 
-1. Fill `.env` with `DEPLOY_GCP_PROJECT` (and optionally `DEPLOY_GCP_ZONE`,
-   `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`) and copy `deploy/gcp/backend.env.example`
-   to `deploy/gcp/backend.env` (gitignored). `deploy/gcp/deploy_env_config.sh` loads
-   both and prints a masked summary.
-2. `deploy/gcp/create_vm.sh` creates the e2-micro VM with a `pd-standard` 30 GB boot
-   disk, an ephemeral external IP, and the Cloudflare-only firewall rule for `tcp:8000`.
-   `deploy/gcp/startup.sh` installs Docker and a 2 GB swap file on first boot.
-3. Copy the prepared corpus into `/var/lib/docreview/corpus` on the VM, then run
-   `deploy/gcp/deploy_backend.sh`. It copies `docker-compose.deploy.yml`,
-   `deploy/Caddyfile` and `backend.env` (as `/opt/docreview/.env`) and starts the stack.
+1. Fill `.env` with the deployment values: `DEPLOY_GCP_PROJECT` (required),
+   `DEPLOY_POSTGRES_PASSWORD` and `DEPLOY_ARTIFACT_DIR` (first-install), and
+   optionally `DEPLOY_GCP_ZONE`, `DEPLOY_VM_NAME`, `DEPLOY_MACHINE_TYPE`,
+   `DEPLOY_AR_REPO`, `DOCREVIEW_IMAGE`. Every value lives in this one file;
+   `deploy/gcp/deploy_env_config.sh` loads it and prints a masked summary.
+2. `deploy/gcp/deploy_all.sh all` runs the stages in order. `setup` enables the
+   required APIs and creates the Artifact Registry repository and the deployment
+   service account; `vm` creates the e2-medium VM (2 shared vCPU, 4 GB RAM) with a
+   `pd-standard` 30 GB boot disk, an ephemeral external IP, and the firewall rules
+   (Cloudflare-only `tcp:8000`, IAP-only `tcp:22`). `deploy/gcp/startup.sh`
+   installs Docker and a 2 GB swap file on first boot. SSH is allowed through
+   IAP TCP forwarding only.
+3. The `image` stage builds `docker/Dockerfile` and pushes `DOCREVIEW_IMAGE`;
+   the `backend` stage (`deploy/gcp/deploy_backend.sh`) copies
+   `docker-compose.deploy.yml`, `deploy/Caddyfile` and the generated VM env
+   (as `/opt/docreview/.env`), restores the validated artifact bundle (corpus,
+   database, evaluation records) and starts the stack.
 4. `deploy/gcp/print_origin.sh` prints `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000` and
    `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`.
 5. Paste those lines into the gomoku repo's `.env` and run its
-   `03_deploy_cloudflare.sh`; the Worker routes `/docreview-rag-agent/api/*` to the
-   VM and everything else under `/docreview-rag-agent/*` to Firebase Hosting.
+   `03_deploy_cloudflare.sh`; the Worker routes `/docreview-rag/api/*` to the
+   VM and everything else under `/docreview-rag/*` to Firebase Hosting.
 6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds the public
    bundle with `NEXT_PUBLIC_ADMIN_MODE` unset and deploys it.
 
@@ -254,13 +219,13 @@ steps 4 and 5 afterwards. A reserved static IP avoids that at roughly $3/month.
 
 | Component | Detail | Cost |
 |---|---|---|
-| GCP e2-micro | Always Free in `us-central1`, `us-east1`, `us-west1`: 1 shared vCPU, 1 GB RAM, 30 GB `pd-standard`, 1 GB/month North America egress | $0 |
+| GCP e2-medium | On-demand in `us-central1`: 2 shared vCPU, 4 GB RAM, about $0.034/hour (about $25/month when always on), plus about $1/month for the 30 GB `pd-standard` disk | ≈ $26 |
 | External IP | Ephemeral; a reserved static IP would be about $3/month | $0 |
 | Firebase Hosting | Free tier (static export) | $0 |
 | Cloudflare Worker | Free tier, shared with the gomoku Worker | $0 |
-| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`1.00` in the compose file) | ≤ $1/day |
+| OpenAI | Capped per UTC day by `DOCREVIEW_PUBLIC_DAILY_COST_USD` (`0.10` in the compose file) | ≤ $0.10/day |
 
 Trade-offs: visitors in Europe see roughly 100 ms of added latency because the VM sits
 in North America. The database (about 430 MB today) fits the 30 GB disk with room for
-Postgres, Docker images and swap. With 1 GB of RAM, Postgres runs with
-`shared_buffers=128MB` and `work_mem=4MB`; the 2 GB swap file absorbs the occasional spike.
+Postgres, Docker images and swap. With 4 GB of RAM, Postgres runs with
+`shared_buffers=256MB` and `work_mem=4MB`; the 2 GB swap file absorbs the occasional spike.

@@ -1,33 +1,23 @@
 # Ask a question and verify its citations
 
-## Shared published evidence scope
+Conversation is where you ask a scoped question about prepared filings, follow the run as it happens, and verify each claim against its cited passage. An answer joins source selection, retrieval, evidence review, and model execution; the result can be a supported answer, insufficient evidence (`NOT_IN_DOCS`), or an operational failure. Read those outcomes separately instead of treating every completed request as a successful answer.
 
-Build selection, conversation settings, next-request preview and Search trial share the effective published document scope. A sparse selection such as NVDA FY2023 and AMD FY2024 never adds NVDA FY2024 or AMD FY2023. Answers and citations use actual retrieval within the existing public request limits. Returning to an old answer retains its recorded scope.
-
-
-An answer joins source selection, retrieval, evidence review, and model execution. The result can be a
-supported answer, insufficient evidence (`NOT_IN_DOCS`), or an operational failure. Read those outcomes
-separately instead of treating every completed request as a successful answer.
+Build selection, conversation settings, next-request preview, and Search trial share the effective published document scope. A sparse selection such as NVDA FY2023 and AMD FY2024 never adds NVDA FY2024 or AMD FY2023. Answers and citations use actual retrieval within the existing public request limits, and returning to an old answer retains its recorded scope.
 
 ## 9. Select an engine and ask the first question {#step-9}
 
-- **Goal:** obtain an answer whose claims can be checked against the intended filing.
-- **Prerequisites:** relevant evidence found in [step 8](retrieval.md#step-8), an available answer engine,
-  and valid scoped filters. Hybrid requires completed embeddings (Build step 3) and BM25 (Build step 4);
-  vector requires completed embeddings, and lexical requires BM25. Pending embeddings block hybrid/vector
-  sending; missing BM25 blocks hybrid/lexical sending. The composer names the required step. While its
-  preparation job is queued or running, Ask shows waiting and sending stays disabled. Reuse an existing result when you only need to learn the inspection controls.
-- **Screen:** New review → controls above the question → Inspect request.
-- **Inputs:** choose SEC scope, an available [engine](#engines), Balanced preset, and NVIDIA/FY2024 filters
-  when those values are present in the catalog. Inspect the next request before sending.
-- **Primary action:** **Send question**, using the example below.
-- **Visible result:** actual execution phases arrive from the server, followed by an answer and evidence
-  or an explicit failure. With Auto scope, server-confirmed routing appears only when supplied.
-- **Completion:** the selected document/year is correct, the cited passages support the claims, and no
-  operational failure is reported. `SUPPORTED` is a prompt to inspect evidence, not a substitute for it.
-- **Recovery:** distinguish `NOT_IN_DOCS` from a provider failure, node error, or run limit. Open **Run details → Trace**
-  and use [runtime diagnosis](runtime.md) and [troubleshooting](troubleshooting.md).
-- **Next:** [adjust settings and evidence choices](settings.md#step-10).
+> [!GOAL]
+> Send one scoped question and verify the answer against the cited filing text.
+>
+> **Prerequisites** relevant evidence and an available answer engine from step 8 · **Done** a supported answer or an explicitly diagnosed failure
+
+1. Confirm readiness: [step 8](retrieval.md#step-8) found relevant evidence, an available answer engine, and valid scoped filters. Hybrid requires completed embeddings (Build step 3) and BM25 (Build step 4); vector requires completed embeddings, and lexical requires BM25. Pending embeddings block hybrid/vector sending, and missing BM25 blocks hybrid/lexical sending; the composer names the required step. While its preparation job is queued or running, Ask shows waiting and sending stays disabled. Reuse an existing result when you only need to learn the inspection controls.
+2. In **New review**, choose the SEC scope, an available [engine](#engines), the Balanced preset, and NVIDIA/FY2024 filters when those values are present in the catalog.
+3. Inspect the next request, then select **Send question** once, using the example below.
+4. Follow the actual execution phases as the server sends them; the run ends with an answer and evidence or an explicit failure. With Auto scope, server-confirmed routing appears only when supplied.
+5. Verify the result: the selected document and year are correct, the cited passages support the claims, and no operational failure is reported. `SUPPORTED` is a prompt to inspect evidence, not a substitute for it.
+6. If the run does not support an answer, distinguish `NOT_IN_DOCS` from a provider failure, node error, or run limit. Open **Run details → Trace** and use [runtime diagnosis](runtime.md) and [troubleshooting](troubleshooting.md).
+7. Continue with [settings and evidence choices](settings.md#step-10).
 
 ```text
 What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the filing.
@@ -39,19 +29,9 @@ remaining. Returning to an earlier phase can make later phases wait again.
 
 The pending assistant message appears directly below your question. Its **Execution summary** shows the live stages, counts, elapsed time and **Stop request** action in that same message. Completion replaces the pending content with the answer or failure while retaining the summary; there is no separate progress card above the composer.
 
-If no evidence meets the relevance threshold, **Verify answer and citations** is marked **Skipped: threshold not met** in a warning tone. A skipped step is different from a failed or cancelled request's unperformed step; the result-preparation stage can still complete. Older records without the reason do not invent a skipped state.
+If no evidence meets the relevance threshold, **Verify answer and citations** is marked **Skipped: relevance threshold not met** in a warning tone. A skipped step is different from a failed or cancelled request's unperformed step; the result-preparation stage can still complete. Older records without the reason do not invent a skipped state.
 
-### SCREENSHOT NEEDED
-<!-- Feature: live execution summary inside the pending assistant message and NOT_IN_DOCS skipped verification; locale=en; light mode; show the question, pending stages, Stop request and visible composer, plus completed threshold failure. Preserve existing assets. -->
-
-The screenshot below predates this progress placement and is not evidence of the updated behavior.
-
-<!-- capture:15-cited-answer -->
-
-![An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown.](../assets/15-cited-answer.en.jpg)
-
-*An existing saved NVIDIA FY2024 answer and its retrieved source evidence are shown. It was not rerun for this guide; candidate count and the single actual citation are distinct, and old evidence selections may be read-only.*
-
+![A completed run whose answer·citation check stage was skipped because the relevance threshold was not met, shown in warning tone on the stage strip.](../assets/live-execution-summary-and-skipped-verification.en.png)
 ## Choose an answer engine {#engines}
 
 The controls follow **corpus scope → answer engine/local model → retrieval preset → Review settings →
@@ -95,12 +75,7 @@ collapsed cards and across pages. Candidate count and citation count measure dif
 Pin/Exclude choices apply only when you [review again with selected evidence](settings.md#step-10); they
 do not rewrite the current answer.
 
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=collapsed-titled-paginated-evidence-candidates; locale=en; theme=light; capture=collapsed-cards-with-section-titles-toolbar-and-pager; issue=67; preserve-existing-assets=true -->
-
-**Screenshot pending for the collapsed, section-titled candidate cards with the toolbar and pager. Existing screenshots remain unchanged.**
-
+![The expanded related-evidence section listing section-titled evidence cards with pin/exclude controls and pagination.](../assets/collapsed-titled-paginated-evidence-candidates.en.png)
 Click the corpus status line (**Corpus total · N filings**) to inspect preparation and **Back** to return to the retained
 draft, profile, messages, and scroll. [Execution performance](runtime.md) explains measured bars, repeated
 calls, uncollected fields, and legacy records.
@@ -142,9 +117,6 @@ Conversation replies show **No retrieval** and skipped retrieval/selection/verif
 steps. Model-step totals use recorded model calls, including classification and chat,
 while candidates and relevant evidence remain zero.
 
-### SCREENSHOT NEEDED
-<!-- Feature: path decision; state: completed context-aware review, chat-only reply, and scope conflict with Auto action; locale: en; evidence: first step, selected/resolved scope, routing queries, skipped phases and actual model calls in light mode. -->
-
 ### Explore a stage or open run details
 
 The execution summary stays with its answer. Select a recorded stage, including **Path decision**,
@@ -172,30 +144,17 @@ even with every stage closed. Opening details from a selected stage opens **Perf
 highlights its recorded nodes without hiding the other stages or passes.
 
 Use **Run details** for the right-side **Performance**, **Server settings** and **Trace** tabs.
-The `Q. <question>` heading and short message ID identify the selected answer. Reopening an
+The `Q.` heading with the selected question and the short message ID identify the answer. Reopening an
 answer restores its last tab. The edge control collapses or expands the panel; Escape, the
 close button, or clicking the conversation/composer closes it without discarding the draft.
 Help and run details share the right side and never open together. OpenAI calls show available
 request/token facts without an empty server-timing disclosure. Ollama timings and placement
 appear only when recorded.
 
-### SCREENSHOT NEEDED
-
-<!-- Feature: issues 140/141/157/158 selected execution strip, grouped ordered timing passes, heading actions, highlighted inspector stage, and five-row candidate/evidence pagination; show SEC/DART company names and FY chips, empty versus unrecorded values, timings with units and model table, collapsed ranked candidates and arrow pagers, and raw run-details access; locale=en; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
-
-### SCREENSHOT NEEDED
-<!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=en; light mode; preserve existing assets. -->
-
-
+![The Run details panel open beside a conversation, showing the Performance tab with stage timings and status.](../assets/selected-stage-details-and-run-details.en.png)
 For manifest metadata failures, the strip marks the actual failing stage: stage 0 before a path decision, stage 1 during subsequent scope resolution. DEV provides the cause, file and one recovery action; see [manifest diagnosis](troubleshooting.md#manifest-scope). The original technical detail stays in **Run details → Trace**.
 
-### SCREENSHOT NEEDED
-<!-- Feature: failed-answer manifest diagnosis and stage-zero attribution; locale=en; light mode; show localized headline, diagnosis and stages 1-5 not run. -->
-
 A review that finishes or fails while you are on another workspace produces a bell notification linked to its conversation. Opening it marks it read and returns to the original conversation. The existing execution summary remains the place to inspect the failure or result; opening the center does not repeat the request. See the [notification center](runtime.md#notification-center).
-
-### SCREENSHOT NEEDED
-<!-- Feature: background review completion/failure notification returning to its original conversation; locale=en; light mode; show the same persisted message and no repeated request. -->
 
 ### Inspecting an execution
 

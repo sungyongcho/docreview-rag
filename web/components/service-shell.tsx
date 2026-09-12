@@ -220,7 +220,7 @@ function ServiceSession() {
       if (applyFreshStartReset(event.newValue)) {
         initialized.current = false;
         reviewAbort.current?.abort();
-        window.location.replace("/docreview-rag-agent/");
+        window.location.replace("/docreview-rag/");
       }
     }
     window.addEventListener("storage", freshStart);
@@ -235,7 +235,7 @@ function ServiceSession() {
       if (value.environment === "dev" && applyFreshStartReset(value.browser_reset_id)) {
         initialized.current = false;
         reviewAbort.current?.abort();
-        window.location.replace("/docreview-rag-agent/");
+        window.location.replace("/docreview-rag/");
         return;
       }
       if (!initialized.current) {
@@ -1076,7 +1076,7 @@ function ServiceSession() {
                   <h1>{t("Review filings with verifiable evidence.")}</h1>
                   <p>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.")}</p>
                   <ol className="first-review-path"><li><strong>01</strong><span>{t("Ask about a filing")}</span></li><li><strong>02</strong><span>{t("Open its original evidence")}</span></li><li><strong>03</strong><span>{t("Inspect execution and compare retrieval")}</span></li></ol>
-                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag-agent/docs/${locale}/`}>{t("Read the walkthrough")}</a></div>
+                  <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag/docs/${locale}/`}>{t("Read the guide")}</a></div>
                   {readiness?.mode === "canned" && <p className="notice">{t("Demonstration data — no live provider calls.")}</p>}
                   {adminLive && readiness?.corpus?.documents === 0 ? (
                     <div className="next-step" data-tour="evidence-fallback">

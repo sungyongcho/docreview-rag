@@ -19,7 +19,7 @@ it("preserves notice dismissal and shows the settings reminder in an anchored bu
   const view = render(<><BrowserStorageSupport enabled /><BrowserStorageSettings /></>);
   expect(screen.getByRole("status", { name: "Browser storage" })).toHaveTextContent("Settings and conversations are saved only in this browser");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Learn more" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/settings/#browser-storage");
+  expect(screen.getByRole("link", { name: "Learn more" })).toHaveAttribute("href", "/docreview-rag/docs/en/settings/#browser-storage");
   fireEvent.click(screen.getByRole("button", { name: "Got it" }));
   expect(browserStorage().getItem(STORAGE_NOTICE_KEY)).toBe("done");
   expect(screen.queryByRole("status", { name: "Browser storage" })).not.toBeInTheDocument();
@@ -48,7 +48,7 @@ it("provides Korean notice copy and the matching localized tutorial link", () =>
   const notice = screen.getByRole("status");
   expect(notice).not.toHaveTextContent("Settings and conversations are saved only in this browser");
   expect(notice.textContent).toMatch(/[가-힣]/);
-  expect(screen.getByRole("link")).toHaveAttribute("href", "/docreview-rag-agent/docs/ko/settings/#browser-storage");
+  expect(screen.getByRole("link")).toHaveAttribute("href", "/docreview-rag/docs/ko/settings/#browser-storage");
 });
 
 /** File.text is unavailable in some jsdom versions; supply the real browser's file contract. */

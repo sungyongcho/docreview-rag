@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { DEVELOPMENT_STORY_SOURCE, documentationDocuments } from "../lib/documentation-registry.mjs";
+import { DEVELOPMENT_STORY_SOURCES, documentationDocuments } from "../lib/documentation-registry.mjs";
 import { DOCUMENTATION_REGISTRY_FILE, prepareTutorial, readDocumentationRegistry, writeTutorialRevision } from "./prepare-tutorial.mjs";
 
 /** Content polling catches editor replacement saves and mounted image changes. */
@@ -28,7 +28,7 @@ async function fingerprint(root, registryFile) {
     }
   }
   for (const document of documentationDocuments(registry)) await add(document.file);
-  await add(DEVELOPMENT_STORY_SOURCE);
+  for (const storyFile of Object.values(DEVELOPMENT_STORY_SOURCES)) await add(storyFile);
   await assets("assets");
   return digest.digest("hex");
 }

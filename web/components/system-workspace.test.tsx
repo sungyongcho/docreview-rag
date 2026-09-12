@@ -39,7 +39,7 @@ describe("System workspace", () => {
     cleanup();
 
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       let payload: unknown = {};
       if (url.endsWith("/admin/usage")) payload = {
         runs: 2, requests: 3, input_tokens: 100, cached_input_tokens: 20,
@@ -59,7 +59,7 @@ describe("System workspace", () => {
     expect(screen.getByRole("button", { name: "System status" }).querySelector(".development-badge")).toBeNull();
     await waitFor(() => expect(screen.getByText("gpt-5.6-terra")).toBeInTheDocument());
     expect(screen.getAllByText("$0.01")).toHaveLength(3);
-    expect(fetchMock.mock.calls.every(([value]) => String(value).endsWith("/admin/usage"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/usage"))).toBe(true);
   });
 
   it("hides the Operations tab without a local operator and falls back to status", () => {

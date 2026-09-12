@@ -42,7 +42,7 @@ it("uses the DEV file API and sends the cached version for cheap refreshes", asy
   expect(readPresetCatalog().presets).toEqual([preset]);
   expect(readPresetCatalog().fileErrors[0].file).toBe("broken.json");
   await refreshFilePresets();
-  expect(fetch.mock.calls.at(-1)?.[0]).toContain("/admin/presets?version=v1");
+  expect(fetch.mock.calls.at(-1)?.[0]).toContain("/admin/presets/?version=v1");
   expect(localStorage.length).toBe(0);
 });
 

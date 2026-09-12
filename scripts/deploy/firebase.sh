@@ -3,6 +3,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -f "${repo_root}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${repo_root}/.env"
+  set +a
+fi
 : "${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}"
 
 cd "${repo_root}/web"
@@ -10,12 +16,12 @@ npm ci
 # Pin the public build even when the calling shell contains DEV settings.
 env -u NEXT_PUBLIC_OPERATOR_BASE_URL -u NEXT_PUBLIC_OPERATOR_TOKEN -u NEXT_PUBLIC_DB_ENDPOINT \
   NEXT_PUBLIC_ADMIN_MODE=canned \
-  NEXT_PUBLIC_API_BASE_URL="https://sungyongcho.com/docreview-rag-agent/api" \
+  NEXT_PUBLIC_API_BASE_URL="https://sungyongcho.com/docreview-rag/api" \
   npm run build
 
 source_dir="${repo_root}/web/out"
 public_root="${repo_root}/deploy/firebase/public"
-target_dir="${public_root}/docreview-rag-agent"
+target_dir="${public_root}/docreview-rag"
 
 if [[ ! -f "${source_dir}/index.html" ]]; then
   echo "web/out is missing; run npm run build in web/ first" >&2

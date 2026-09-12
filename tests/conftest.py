@@ -1,10 +1,20 @@
 """Repository-wide pytest command-line options."""
 
 import os
+from pathlib import Path
 
 import pytest
 
 from tests.live_postgres import EXPECT_LIVE_POSTGRES_ENV
+
+
+@pytest.fixture(autouse=True)
+def _isolated_public_allowance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the shared public allowance ledger inside each test's temporary directory."""
+    monkeypatch.setenv(
+        "DOCREVIEW_PUBLIC_ALLOWANCE_PATH",
+        str(tmp_path / "public-ai-limits.sqlite3"),
+    )
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

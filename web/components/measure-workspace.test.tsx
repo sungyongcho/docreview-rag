@@ -12,8 +12,8 @@ type StubHandler = (url: string, init?: RequestInit) => unknown;
 
 function stubFetch(handler: StubHandler) {
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const custom = handler(String(input), init);
-    const payload = String(input).endsWith("/admin/evaluations/preparation") ? (custom && typeof custom === "object" && "state" in custom ? custom : { suite_id: JSON.parse(String(init?.body)).suite_id, kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] }) : custom ?? {};
+    const custom = handler(String(input).replace(/\/?(\?|$)/, "$1"), init);
+    const payload = String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation") ? (custom && typeof custom === "object" && "state" in custom ? custom : { suite_id: JSON.parse(String(init?.body)).suite_id, kind: "builtin", verification_status: "pending_review", state: "ready", source_checks: [], blockers: [] }) : custom ?? {};
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -112,10 +112,10 @@ describe("Measure workspace", () => {
     fireEvent.click(queue);
 
     await waitFor(() => {
-      const posts = fetchMock.mock.calls.filter(([value, init]) => String(value).endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST");
+      const posts = fetchMock.mock.calls.filter(([value, init]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST");
       expect(posts).toHaveLength(1);
     });
-    const [, init] = fetchMock.mock.calls.find(([value, init]) => String(value).endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST")!;
+    const [, init] = fetchMock.mock.calls.find(([value, init]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") && (init as RequestInit | undefined)?.method === "POST")!;
     const body = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
     expect(body.mode).toBe("quick");
     expect(body.suite_id).toBe("sec-en");
@@ -170,7 +170,7 @@ describe("Measure workspace", () => {
   it("shows list loading and failure without claiming no evaluations exist", async () => {
     let rejectJobs!: (reason: Error) => void;
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      if (String(input).endsWith("/admin/evaluations/runs")) return new Promise((_resolve, reject) => { rejectJobs = reject; });
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs")) return new Promise((_resolve, reject) => { rejectJobs = reject; });
       return Promise.resolve(new Response("[]", { status: 200 }));
     }));
     render(<Host live initialTab="runs" />);
@@ -185,8 +185,8 @@ describe("Measure workspace", () => {
   it("keeps the requested result identity visible when detail loading fails", async () => {
     let rejectResult!: (reason: Error) => void;
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      if (String(input).endsWith("/admin/evaluations/results/113")) return new Promise((_resolve, reject) => { rejectResult = reject; });
-      return Promise.resolve(new Response(String(input).endsWith("/admin/evaluations/runs") ? '{"jobs":[]}' : "[]", { status: 200 }));
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/results/113")) return new Promise((_resolve, reject) => { rejectResult = reject; });
+      return Promise.resolve(new Response(String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs") ? '{"jobs":[]}' : "[]", { status: 200 }));
     }));
     render(<Host live initialTab="runs" initialResultId={113} />);
     expect(screen.getByText("Loading evaluation result…")).toBeVisible();
@@ -221,7 +221,7 @@ describe("Measure workspace", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
   });
 });
 
@@ -296,7 +296,7 @@ describe("evaluation preparation boundaries", () => {
     expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Single-case JSON"), { target: { value: JSON.stringify({ ...question, question: "Recovered question" }) } });
     expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Recovered question");
-    expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).endsWith("/admin/evaluations/preparation"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation"))).toBe(true);
   });
 
   it("saves an incomplete question before restoring the list", async () => {
@@ -338,7 +338,7 @@ describe("evaluation preparation boundaries", () => {
     expect(screen.getByRole("dialog", { name: "New evaluation" })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).endsWith("/admin/evaluations/preparation"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation"))).toBe(true);
   });
 
   it.each([false, true])("opens snapshot cards and preserves comparison behavior (live=%s)", async (live) => {
@@ -389,7 +389,7 @@ it("opens diagnosis from an unready evaluation without submitting work", async (
   const buttons = await screen.findAllByRole("button", { name: /Open preparation step|준비 단계 열기/ });
   fireEvent.click(buttons[0]);
   expect(onOpenPreparation).toHaveBeenCalledWith("setup");
-  expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).endsWith("/admin/evaluations/preparation"))).toBe(true);
+  expect(fetchMock.mock.calls.every(([url, init]) => !init?.method || init.method === "GET" || String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation"))).toBe(true);
   cleanup();
 });
 
@@ -408,7 +408,7 @@ describe("evaluation run refetch keyed on evaluation jobs", () => {
       <MeasureWorkspace live ready onOpenPreparation={vi.fn()} profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onApplyProfile={vi.fn()} onApplySnapshot={vi.fn()} jobBoard={board(rows)} onRefreshJobs={vi.fn()} tab="runs" onTabChange={vi.fn()} />
     );
     const { rerender } = render(view([corpusJob]));
-    const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/admin/evaluations/runs")).length;
+    const runsCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/runs")).length;
     await waitFor(() => expect(runsCalls()).toBeGreaterThan(0));
     await act(async () => undefined);
     const before = runsCalls();
@@ -466,7 +466,7 @@ it("creates a named empty JSON dataset beside the selector without a publication
   fireEvent.click(screen.getByRole("button", { name: "Create file" }));
   await screen.findByRole("option", { name: "my-eval.json" });
   expect(screen.getByLabelText("Golden suite")).toHaveValue("file:77");
-  const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/drafts"));
+  const request = fetchMock.mock.calls.find(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/drafts"));
   expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ filename: "my-eval.json", empty: true, parent_id: null });
   expect(screen.queryByRole("button", { name: "Publish JSON" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Add question" }));
@@ -478,7 +478,7 @@ it.each([true, false])("shows snapshot progress and a truthful terminal button s
   let finish!: (response: Response) => void;
   const fetchMock = stubFetch(url => url.endsWith("/admin/evaluations/results/113") ? { result_id: 113, suite: "sec-en", config: {}, metrics: {}, cases: [], created_at: "2026-09-08T00:00:00Z" } : []);
   const ordinary = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith("/admin/snapshots") && init?.method === "POST" ? new Promise<Response>(resolve => { finish = resolve; }) : ordinary(input, init));
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots") && init?.method === "POST" ? new Promise<Response>(resolve => { finish = resolve; }) : ordinary(input, init));
   render(<Host live initialTab="runs" initialResultId={113} />);
   const input = await screen.findByLabelText("Snapshot label");
   fireEvent.change(input, { target: { value: "testing" } });
@@ -488,7 +488,7 @@ it.each([true, false])("shows snapshot progress and a truthful terminal button s
   expect(pending).toBeDisabled();
   expect(pending).toHaveAttribute("aria-busy", "true");
   fireEvent.click(pending);
-  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/snapshots") && init?.method === "POST")).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots") && init?.method === "POST")).toHaveLength(1);
   await act(async () => finish(new Response(JSON.stringify(success ? { snapshot_id: 1, label: "testing", status: "ready", public: false, document_count: 7, profile: {}, eval_result: { result_id: 113, suite: "sec-en", config: {}, metrics: {} } } : { error: { code: "snapshot_failed", message: "Snapshot failed." } }), { status: success ? 200 : 500, headers: { "content-type": "application/json" } })));
   if (success) {
     expect(screen.getByRole("button", { name: "Snapshot saved" })).toHaveClass("saved");
@@ -519,7 +519,7 @@ it("opens the existing snapshot from an evaluated result without another save re
   fireEvent.keyDown(screen.getByRole("dialog", { name: "Snapshot details" }), { key: "Escape" });
   expect(within(row).getByText(/k 7/)).toBeVisible();
   expect(screen.getByText("Stored in this database. Execution data reset deletes these snapshots.")).toBeVisible();
-  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/admin/snapshots") && init?.method === "POST")).toHaveLength(0);
+  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/snapshots") && init?.method === "POST")).toHaveLength(0);
 });
 
 it("filters comparisons by dataset and clears both selections when the file changes", async () => {

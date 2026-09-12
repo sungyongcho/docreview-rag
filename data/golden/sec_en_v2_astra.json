@@ -12,7 +12,7 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2020",
+        "doc_id": "sec-0001628280-21-001185",
         "source_sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
         "start_char": 251043,
         "end_char": 251333
@@ -38,7 +38,7 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2021",
+        "doc_id": "sec-0000002488-22-000016",
         "source_sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
         "start_char": 358705,
         "end_char": 358908
@@ -64,13 +64,13 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 1521761,
         "end_char": 1522518
       },
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 1522875,
         "end_char": 1524006
@@ -96,7 +96,7 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2023",
+        "doc_id": "sec-0000002488-24-000012",
         "source_sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
         "start_char": 756006,
         "end_char": 756419
@@ -122,13 +122,13 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 659886,
         "end_char": 660328
       },
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 661285,
         "end_char": 661525
@@ -137,116 +137,6 @@
     "expected_label": "SUPPORTED",
     "reference_answer": "Data Center revenue was $6.043 billion and Client revenue was $6.201 billion, so Client was $158 million higher.",
     "note": "V2 Astra evidence-aligned en variant of m3c-05; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-06-en-v2-astra",
-    "question": "How much cash did Intel return through dividends and share repurchases in 2019, and what future repurchase did it announce?",
-    "category": "simple_lookup",
-    "facet": "policy",
-    "tags": [
-      "v2-astra",
-      "pair-06",
-      "issuer-intc",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2019",
-        "source_sha256": "9a7c79b6f02ac47f313dcf23020ae16d8fe7d82f8feeb0c51fc63e1d31f48474",
-        "start_char": 680567,
-        "end_char": 680782
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "Intel paid $5.6 billion in dividends, repurchased $13.6 billion in shares, and announced an expected $20.0 billion repurchase over 15 to 18 months.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-08; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-07-en-v2-astra",
-    "question": "In Intel's FY2023 filing, which named side-channel vulnerability variants did Intel cite, and why did it describe the risk as ongoing?",
-    "category": "simple_lookup",
-    "facet": "risk",
-    "tags": [
-      "v2-astra",
-      "pair-07",
-      "issuer-intc",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2023",
-        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
-        "start_char": 1136671,
-        "end_char": 1136951
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "Intel cited Spectre and Meltdown and said that additional categories and variants had been and were expected to keep being identified.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-13; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-08-en-v2-astra",
-    "question": "What was Intel's research and development expense in fiscal 2023, and what percentage of net revenue did it represent?",
-    "category": "exact_number",
-    "facet": "numeric",
-    "tags": [
-      "v2-astra",
-      "pair-08",
-      "issuer-intc",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2023",
-        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
-        "start_char": 779047,
-        "end_char": 779979
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "$16.046 billion, representing 29.6% of net revenue.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-14; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-09-en-v2-astra",
-    "question": "How much did Intel's IOTG and Mobileye revenues increase in fiscal 2021 versus 2020, and what drove Mobileye's increase?",
-    "category": "multi_hop",
-    "facet": "comparison",
-    "tags": [
-      "v2-astra",
-      "pair-09",
-      "issuer-intc",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2021",
-        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
-        "start_char": 841700,
-        "end_char": 841926
-      },
-      {
-        "doc_id": "INTC-FY2021",
-        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
-        "start_char": 842076,
-        "end_char": 842266
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "IOTG increased $991 million and Mobileye increased $419 million; Mobileye's increase reflected improved vehicle production, COVID-19 recovery, and greater ADAS adoption.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-11; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
     "curation_status": "agent-curated",
     "approval_status": "pending-author-approval",
     "human_verified": false
@@ -266,128 +156,6 @@
     "expected_label": "NOT_IN_DOCS",
     "reference_answer": "NOT_IN_DOCS",
     "note": "V2 Astra evidence-aligned en variant of m3c-10; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-11-en-v2-astra",
-    "question": "What inventory valuation and cost-flow policy did Micron use in fiscal 2020?",
-    "category": "simple_lookup",
-    "facet": "policy",
-    "tags": [
-      "v2-astra",
-      "pair-11",
-      "issuer-mu",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2020",
-        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
-        "start_char": 1667389,
-        "end_char": 1667465
-      },
-      {
-        "doc_id": "MU-FY2020",
-        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
-        "start_char": 1668198,
-        "end_char": 1668302
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "Inventories were carried at the lower of average cost or net realizable value, and amounts were removed on an average-cost basis.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-15; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-12-en-v2-astra",
-    "question": "In Micron's FY2021 filing, where were Micron's GDDR6 and GDDR6X products used, and what did Micron say distinguished GDDR6X?",
-    "category": "simple_lookup",
-    "facet": "factual",
-    "tags": [
-      "v2-astra",
-      "pair-12",
-      "issuer-mu",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2021",
-        "source_sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
-        "start_char": 430572,
-        "end_char": 431033
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "They were used in game consoles, PC graphics cards, and GPU-based data-center solutions; GDDR6X used innovative signal-transmission technology for very high speed and bandwidth.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-16; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-13-en-v2-astra",
-    "question": "What were Micron's fiscal 2022 DRAM and NAND revenues?",
-    "category": "exact_number",
-    "facet": "numeric",
-    "tags": [
-      "v2-astra",
-      "pair-13",
-      "issuer-mu",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2022",
-        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
-        "start_char": 2174465,
-        "end_char": 2175478
-      },
-      {
-        "doc_id": "MU-FY2022",
-        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
-        "start_char": 2178112,
-        "end_char": 2178920
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "DRAM revenue was $22.386 billion and NAND revenue was $7.811 billion.",
-    "note": "V2 Astra evidence-aligned en variant of m3c-17; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-14-en-v2-astra",
-    "question": "How did Micron's revenue and gross margin change from fiscal 2022 to fiscal 2023?",
-    "category": "multi_hop",
-    "facet": "comparison",
-    "tags": [
-      "v2-astra",
-      "pair-14",
-      "issuer-mu",
-      "question-en"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2023",
-        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
-        "start_char": 641759,
-        "end_char": 643237
-      },
-      {
-        "doc_id": "MU-FY2023",
-        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
-        "start_char": 647826,
-        "end_char": 649590
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "Revenue fell from $30.758 billion to $15.540 billion, while gross margin moved from $13.898 billion (45%) to a $1.416 billion loss (-9%).",
-    "note": "V2 Astra evidence-aligned en variant of m3c-19; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
     "curation_status": "agent-curated",
     "approval_status": "pending-author-approval",
     "human_verified": false
@@ -424,7 +192,7 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2021",
+        "doc_id": "sec-0001045810-21-000010",
         "source_sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
         "start_char": 261163,
         "end_char": 261677
@@ -450,7 +218,7 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2023",
+        "doc_id": "sec-0001045810-23-000017",
         "source_sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
         "start_char": 446717,
         "end_char": 447097
@@ -476,7 +244,7 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2022",
+        "doc_id": "sec-0001045810-22-000036",
         "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
         "start_char": 581971,
         "end_char": 583747
@@ -502,13 +270,13 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2024",
+        "doc_id": "sec-0001045810-24-000029",
         "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
         "start_char": 745773,
         "end_char": 746412
       },
       {
-        "doc_id": "NVDA-FY2024",
+        "doc_id": "sec-0001045810-24-000029",
         "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
         "start_char": 775222,
         "end_char": 775871
@@ -534,13 +302,13 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2020",
+        "doc_id": "sec-0001045810-20-000010",
         "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
         "start_char": 558289,
         "end_char": 560408
       },
       {
-        "doc_id": "NVDA-FY2020",
+        "doc_id": "sec-0001045810-20-000010",
         "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
         "start_char": 560663,
         "end_char": 562314

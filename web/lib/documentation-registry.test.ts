@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderTutorial } from "./tutorial-markdown.mjs";
 import { describe, expect, it } from "vitest";
-import { DEVELOPMENT_STORY_SOURCE, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
+import { DEVELOPMENT_STORY_SOURCES, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
 
 describe("documentation registry", () => {
   it("provides seventeen paired documents and twelve unique tutorial steps", () => {
@@ -32,7 +32,7 @@ describe("documentation registry", () => {
   });
 
   it("preserves focused document identity and stable anchors across locales", () => {
-    expect(localizedDocumentationRoute("/docreview-rag-agent/docs/en/indexing/", "ko", "#step-7")).toBe("/docreview-rag-agent/docs/ko/indexing/#step-7");
+    expect(localizedDocumentationRoute("/docreview-rag/docs/en/indexing/", "ko", "#step-7")).toBe("/docreview-rag/docs/ko/indexing/#step-7");
     expect(localizedDocumentationRoute("/docs/en/", "ko", "#1-open-the-development-environment")).toBe("/docs/ko/environment/#step-1");
     expect(localizedDocumentationRoute("/docs/ko/cli/", "en", "#초기-schema-준비")).toBe("/docs/en/cli/#initial-schema-setup");
     expect(localizedDocumentationRoute("/docs/cli/", "en", "#초기-schema-준비")).toBe("/docs/en/cli/#initial-schema-setup");
@@ -44,17 +44,17 @@ describe("documentation registry", () => {
     for (const anchor of ["qs-setup", "qs-cli", "qs-web", "qs-next", ...Array.from({ length: 7 }, (_, index) => `qs-cli-${index + 1}`), ...Array.from({ length: 7 }, (_, index) => `qs-web-${index + 1}`)]) {
       const id = anchor === "qs-setup" ? "environment" : "quickstart-dev";
       expect(documentationLink("quickstart.md", anchor, locale)).toMatchObject({ document: { id, locale }, hash: anchor });
-      expect(localizedDocumentationRoute("/docreview-rag-agent/docs/en/quickstart/", locale, `#${anchor}`)).toBe(`/docreview-rag-agent/docs/${locale}/${id}/#${anchor}`);
+      expect(localizedDocumentationRoute("/docreview-rag/docs/en/quickstart/", locale, `#${anchor}`)).toBe(`/docreview-rag/docs/${locale}/${id}/#${anchor}`);
     }
     expect(documentationLink("quickstart.md", "qs-app-1", locale)).toMatchObject({ document: { id: "quickstart" }, hash: "qs-app-1" });
     expect(localizedDocumentationRoute("/docs/en/quickstart-dev/", locale, "#qs-web-4")).toBe(`/docs/${locale}/quickstart-dev/#qs-web-4`);
   });
 
   it("keeps the Korean development draft separate and preserves its route during language changes", () => {
-    expect(developmentStoryDocument("ko")).toMatchObject({ title: "개발 기록", file: DEVELOPMENT_STORY_SOURCE });
-    expect(developmentStoryDocument("en")).toMatchObject({ title: "Development log", file: DEVELOPMENT_STORY_SOURCE });
+    expect(developmentStoryDocument("ko")).toMatchObject({ title: "개발 기록", file: DEVELOPMENT_STORY_SOURCES.ko });
+    expect(developmentStoryDocument("en")).toMatchObject({ title: "Development log", file: DEVELOPMENT_STORY_SOURCES.en });
     expect(DOCUMENTS).toHaveLength(34);
-    expect(localizedDocumentationRoute("/docreview-rag-agent/docs/ko/development/", "en", "#References")).toBe("/docreview-rag-agent/docs/en/development/#References");
+    expect(localizedDocumentationRoute("/docreview-rag/docs/ko/development/", "en", "#References")).toBe("/docreview-rag/docs/en/development/#References");
     expect(localizedDocumentationRoute("/docs/en/development/", "ko", "#시작과-학습")).toBe(`/docs/ko/development/#${encodeURIComponent("시작과-학습")}`);
   });
 });
@@ -63,7 +63,7 @@ it.each(["en", "ko"] as const)("preserves the progress/queue section when changi
   const other = locale === "en" ? "ko" : "en";
   const headings = renderTutorial(readFileSync(`../docs/TUTORIAL/${locale}/indexing.md`, "utf8"), { locale }).headings;
   expect(headings.some((heading) => heading.id === "job-progress")).toBe(true);
-  const destination = localizedDocumentationRoute(`/docreview-rag-agent/docs/${locale}/indexing/`, other, "#job-progress")!;
+  const destination = localizedDocumentationRoute(`/docreview-rag/docs/${locale}/indexing/`, other, "#job-progress")!;
   const target = renderTutorial(readFileSync(`../docs/TUTORIAL/${other}/indexing.md`, "utf8"), { locale: other }).headings;
   const fragment = decodeURIComponent(destination.split("#")[1]);
   expect(target.some((heading) => heading.id === fragment)).toBe(true);

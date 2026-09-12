@@ -18,7 +18,7 @@ export interface DocumentationRegistry {
 }
 export const DOCUMENTATION_REGISTRY: DocumentationRegistry;
 export const DOCUMENTATION_BASE: string;
-export const DEVELOPMENT_STORY_SOURCE: string;
+export const DEVELOPMENT_STORY_SOURCES: Record<DocumentationLocale, string>;
 export function developmentStoryDocument(locale?: DocumentationLocale): TutorialDocument;
 export const DOCUMENTS: TutorialDocument[];
 export function validateDocumentationRegistry(value?: DocumentationRegistry): DocumentationRegistry;

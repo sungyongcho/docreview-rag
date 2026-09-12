@@ -1,12 +1,25 @@
 from collections import Counter
+from pathlib import Path
 import re
 from types import ModuleType
 
 import pytest
 
+from app.ingestion.manifest import Manifest
 from tests.ingestion.golden import XREF_ITEM_SHAPE, XREF_TABLES
 
 INTC_DOCS = sorted(XREF_TABLES)
+
+_MANIFEST = Path(__file__).resolve().parents[2] / "data/corpus/manifest.json"
+_CORPUS_IDS = (
+    {document.document_id for document in Manifest.read(_MANIFEST).documents}
+    if _MANIFEST.exists()
+    else set()
+)
+pytestmark = pytest.mark.skipif(
+    not set(INTC_DOCS) & _CORPUS_IDS,
+    reason="xref-segmented Intel filings are not acquired in the corpus",
+)
 
 
 # xref table structure

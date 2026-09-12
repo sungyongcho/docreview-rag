@@ -41,7 +41,7 @@ The installer adds one source line to `.bashrc` or `${ZDOTDIR:-$HOME}/.zshrc`, p
 
 ```bash
 # Replace this placeholder with your checkout's actual absolute path.
-source /absolute/path/to/docreview-rag-agent/rag-alias.sh >/dev/null
+source /absolute/path/to/docreview-rag/rag-alias.sh >/dev/null
 ```
 
 Registered `rag-*` commands target the checkout that registered them, even from another directory.
@@ -97,7 +97,7 @@ preview and command help before confirming deletion.
 rag-alias --check-updates
 rag-alias update
 # If the checkout moved, give its new directory or canonical helper file explicitly:
-rag-alias update /new/path/to/docreview-rag-agent/rag-alias.sh
+rag-alias update /new/path/to/docreview-rag/rag-alias.sh
 ```
 
 The comparison reports the loaded path and installed SHA-256 alongside the checkout path and hash.
@@ -107,9 +107,6 @@ startup line in place. A moved/renamed registration or duplicate owned lines bec
 line; unrelated lines and their order remain. An unchanged valid line is not rewritten. If there
 is no owned startup entry, update only refreshes this shell and reports that registration is absent.
 Use the sourced installation path to persist it. No compatibility file is created.
-
-### SCREENSHOT NEEDED
-<!-- Feature: sourced helper installation, loaded/check-out hash update and default-No login offer; locale=en; plain terminal; show isolated startup registration and unchanged/moved update, without credentials. Preserve historical installer assets. -->
 
 ## Installation and configuration
 
@@ -176,7 +173,7 @@ rag-dev up --build -d
 rag-dev ps
 ```
 
-Both modes use [the local service](http://localhost:8000/docreview-rag-agent/). Set APP_PORT in `.env`
+Both modes use [the local service](http://localhost:8000/docreview-rag/). Set APP_PORT in `.env`
 and apply it with `up -d` if needed.
 
 | Change | Apply with |
@@ -201,16 +198,11 @@ rag-dev up -d
 ```
 
 **Live tutorial editing:** save Markdown under `docs/TUTORIAL/ko/` or `en/` in VS Code to update
-an open development Documentation page automatically. Store shared images in `docs/TUTORIAL/assets/`
-and reference them as below; VS Code Markdown preview and the website use the same original.
-
-```markdown
-![Alternative text describing what to inspect](../assets/02-pipeline.en.jpg)
-```
-
-New referenced images and replacements at the same filename update automatically. Click a screenshot
-on the website to open the original. Invalid links or missing sources show an error and recover after
-a valid save. Live updates apply to development; the static prod preview needs a rebuilt bundle.
+an open development Documentation page automatically. New visual evidence starts as a
+`SCREENSHOT NEEDED` heading with a short feature/state/locale comment; an approved capture later replaces
+that markup with an image under `docs/TUTORIAL/assets/`. Invalid links or missing sources show an error
+and recover after a valid save. Live updates apply to development; the static prod preview needs a
+rebuilt bundle.
 
 Prod blocks Local LLM and development write operations. If an existing dev conversation is incompatible,
 start a new one. A visible web page does not prove that a keyless API is healthy. Normal shutdown uses `down`.
@@ -290,9 +282,6 @@ permits recomputation while ready.
 The direct runtime seed API retains its combined ingest-and-BM25 behavior for existing
 API clients; isolated evaluation corpus arms likewise prepare their own statistics.
 These are separate from the Build/CLI ingestion job.
-
-### SCREENSHOT NEEDED
-<!-- Feature: explicit BM25 stage; state: ingest succeeded, BM25 action needed; locale: en; evidence: CLI ingest history ends at cleanup, followed by explicit rebuild_bm25 success. -->
 
 ## Python CLI reference
 
@@ -415,7 +404,7 @@ Verify that only the file disappeared; manifests, golden/profile sources, and DB
 validation or re-ingestion may fail until you re-download with the one-filing example. There is no individual
 DB-document deletion button/API in this walkthrough.
 
-## Reset local connection settings
+### Reset local connection settings
 
 In Settings → Local LLM, **Disconnect** persists an explicit off state and prevents default reconnection.
 **Use Default** checks the startup endpoint selected by process environment → `.env` → defaults
@@ -477,12 +466,6 @@ Queued/running jobs are active; succeeded/failed/cancelled jobs are finished. In
 restarted mid-work. Failed and interrupted jobs offer Retry; cancelled jobs do not. Inspect completed work
 and remaining scope before retrying paid embedding.
 
-<!-- capture:16-run-trace -->
-
-![The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed.](../assets/16-run-trace.en.jpg)
-
-*The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed. These are historical recorded values, not a new measurement.*
-
 ## Remove command registration
 
 ```bash
@@ -496,7 +479,6 @@ projects, code, and DB data are preserved. The sourced command can also remove u
 the current shell. A separately executed script cannot modify its parent shell, so follow its instructions.
 Keep the backup path and verify a new terminal does not auto-load the registration. To restore it, follow
 [registration instructions](#register-commands-and-open-help).
-
 
 ## Quick Start and data reset
 
@@ -592,9 +574,6 @@ shell exports for this invocation, `[e]` to write the two public embedding setti
 `[r]` to recheck a local edit, or `[q]` to cancel. Parent-shell exports are unchanged.
 Startup failures offer diagnosed, confirmed recovery while preserving volumes.
 
-### SCREENSHOT NEEDED
-<!-- Feature: styled rag-help and three separate start/reset paths; locale=en; light mode; actual terminal preview counts, uppercase Y gates, quiet completed build/readiness, verbose failure tail, and preserved environment; disposable checkout only. Existing screenshot assets are preserved. -->
-
 ## Recover an incompatible local schema
 
 A restart or schema check does not repair drift. Preserve the original database and
@@ -638,11 +617,6 @@ to embedding preparation, and a missing lexical index to BM25. Schema/unknown fa
 and invalid source contracts lead to setup diagnosis. Opening navigation never starts
 a job; refresh at the destination reads current state.
 
-### SCREENSHOT NEEDED
-<!-- Feature: schema recovery and evaluation preparation navigation. Capture light-mode en/ko evaluation error links, setup recovery command, and verified empty recovery destination; no credentials. -->
-New screenshot evidence is pending; existing images are unchanged.
-
-
 ## Explicit local database recreation
 
 `rag-up` is a shortcut for `rag-dev up --build -d`; it uses the Python environment
@@ -671,10 +645,6 @@ Embedding work may cost money and is never started by recreation.
 The DB warning modal keeps raw errors in a closed terminal-style box under
 **Please review the error**. Expand it to inspect the original message; existing
 status/navigation/dismiss buttons retain their behavior.
-
-
-### SCREENSHOT NEEDED
-<!-- Feature: DB warning terminal disclosure and explicit recreation handoff; locale=en; light mode; show closed/open error box and danger warning with no credentials. Preserve existing assets. -->
 
 ## Clean start scopes
 

@@ -10,9 +10,6 @@
 
 공개 문서 목록이 비어 있으면 필터를 지우고 표시된 상태 안내를 확인하세요. 공개 목록이 비어 있다는 이유만으로 서비스의 비공개 데이터까지 없다고 판단하지 않습니다. 질문을 전송하지 않고 기존 결과를 살펴볼 수도 있습니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: visitor Quick Start orientation; locale=ko; light mode; running public instance with conversation, Build → Documents and Measure navigation visible. Show actual available or empty data without operator actions. Preserve existing assets. -->
-
 ## 2. 첫 질문 보내기 {#qs-app-2}
 
 **새 대화**을 열고 공개 목록에 있는 회사와 회계연도를 선택하세요. 서비스에 설정된 답변 정책을 사용합니다. **요청 보기**은 다음 질문에 적용할 범위와 필터를 보여 주며, 열기만 해서는 전송하지 않습니다.
@@ -25,32 +22,21 @@ What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the
 
 없다면 목록에 있는 공시에 대해 비슷하게 범위를 좁혀 질문하세요. **질문 전송**을 한 번 선택합니다. 실행 중에는 질문 아래 실행 요약을 읽고, **요청 중단**로 실행 중인 요청을 중단할 수 있습니다. 요청이 불가능하거나 한도에 걸렸다면 표시된 이유를 확인하고 기존 결과를 살펴보세요.
 
-### SCREENSHOT NEEDED
-<!-- Feature: visitor first question; locale=ko; light mode; running public instance with a catalog-supported question and its actual execution summary or stated request limitation. Keep credentials hidden; do not manufacture an answer. Preserve existing assets. -->
-
 ## 3. 답변과 근거 읽기 {#qs-app-3}
 
 `SUPPORTED` 답변도 원문 확인이 필요합니다. 인용과 **검색한 근거 후보**를 열고 회사·회계연도·공시 절·인용 구절이 각 주장을 뒷받침하는지 확인하세요. 검색 후보가 모두 답변에 사용된 인용은 아닙니다.
 
 `NOT_IN_DOCS`는 사용 가능한 근거가 요청한 답변을 뒷받침하지 못했다는 뜻입니다. 실행 실패는 다른 결과이므로 공시 내용에 대한 결론으로 해석하지 말고 오류 이유를 읽으세요. [답변](answers.md#inspection)에서 확인 조작을, [검색](retrieval.md#step-8)에서 근거 경로를 설명합니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: visitor answer verification; locale=ko; light mode; a real saved or completed answer with an expanded citation and evidence candidate showing source company, fiscal year and passage. Preserve existing assets. -->
-
+![AMD 7nm TSMC 공급 리스크 질문에 대한 공개 답변이 확인된 인용 1개와 6단계 실행 요약과 함께 완료된 화면.](../assets/public-answer-with-citation.ko.png)
 ## 4. 원문 문서 살펴보기 {#qs-app-4}
 
 **데이터 준비 → 문서**에서 회사나 문서 식별자를 검색하고 행을 선택하세요. 공시 식별 정보·회계연도·제공되는 원문 링크·청크 미리보기를 읽습니다. 예상한 공시가 필터에 가려졌다면 **필터 초기화**를 사용하세요.
 
 공개 목록에는 공개 스냅샷을 통해 표시할 수 있는 문서만 포함됩니다. 문서를 읽어도 데이터는 바뀌지 않습니다. [문서](documents.md#visibility)에서 공개 범위와 필터를 설명합니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: visitor source document inspection; locale=ko; light mode; public document list and selected filing details with company, FY, original source and chunk evidence. Preserve existing assets. -->
-
 ## 5. 공개 스냅샷 확인하기 {#qs-app-5}
 
 **품질 검증**에서 공개된 저장 스냅샷을 열고 문서 수·데이터셋·설정·측정 지표를 확인하세요. 두 스냅샷을 비교할 수 있다면 호환성 경고와 공통 문항을 먼저 읽고 점수 차이를 해석합니다. 스냅샷이 하나이거나 없으면 비교할 수 없는 상태로 구분합니다.
 
 저장된 스냅샷을 읽고 비교하는 동작은 새 평가를 실행하지 않습니다. [스냅샷](snapshots.md#comparison)에서 비교 가능한 조건을 설명합니다. 전체 사용법은 [답변](answers.md)으로 이어가고, 다른 경로는 [개요](overview.md#start)에서 선택하세요.
-
-### SCREENSHOT NEEDED
-<!-- Feature: visitor published snapshot inspection; locale=ko; light mode; actual published snapshot details and an available or explicitly unavailable comparison with compatibility facts. Preserve existing assets. -->

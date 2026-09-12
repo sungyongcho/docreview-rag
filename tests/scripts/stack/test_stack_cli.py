@@ -21,7 +21,7 @@ def test_selected_mode_overrides_stale_flags_and_keeps_other_environment(monkeyp
     assert environment["MODE"] == "prod"
     assert environment["DOCREVIEW_ADMIN_MODE"] == "readonly"
     assert environment["NEXT_PUBLIC_ADMIN_MODE"] == "canned"
-    assert environment["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag-agent/api"
+    assert environment["NEXT_PUBLIC_API_BASE_URL"] == "/docreview-rag/api"
     assert environment["OPENAI_API_KEY_LOCAL"] == "test-existing-dev-key"
     assert "COMPOSE_FILE" not in environment
     assert environment["NEXT_PUBLIC_OPERATOR_TOKEN"] == ""

@@ -17,7 +17,7 @@ describe("Tutorial Markdown", () => {
     }
     for (const name of ["Same page", "Overview"]) expect(screen.getByRole("link", { name })).not.toHaveAttribute("target");
     expect(screen.getByRole("link", { name: "Same page" })).toHaveAttribute("href", "#section");
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", `/docreview-rag-agent/docs/${locale}/`);
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", `/docreview-rag/docs/${locale}/`);
   });
   it("passes authored image captions and locale to the shared viewer without consuming nearby prose", () => {
     const received: Array<{ src: string; alt: string; caption: string; locale: string }> = [];
@@ -28,7 +28,7 @@ describe("Tutorial Markdown", () => {
     });
     render(<TutorialMarkdown content={parsed.content} />);
     expect(received).toEqual([
-      expect.objectContaining({ src: "/docreview-rag-agent/tutorial-assets/shared.jpg?v=verified", alt: "First", caption: "Actual saved result; no new model call.", locale: "en" }),
+      expect.objectContaining({ src: "/docreview-rag/tutorial-assets/shared.jpg?v=verified", alt: "First", caption: "Actual saved result; no new model call.", locale: "en" }),
       expect.objectContaining({ alt: "Second", caption: "Second", locale: "en" }),
     ]);
     expect(screen.getByText("Actual saved result; no new model call.")).toBeInTheDocument();
@@ -44,6 +44,19 @@ describe("Tutorial Markdown", () => {
     expect(container.querySelector("blockquote")).toHaveTextContent("An ordinary quotation.");
     expect(parsed.codes[0].code).toBe("> [!DEV]");
     expect(container.querySelector("aside")).not.toHaveTextContent("[!DEV]");
+  });
+  it.each([["en", "Goal"], ["ko", "목표"]] as const)("groups the section goal and its preparation meta into one callout in %s", (locale, label) => {
+    const source = "> [!GOAL]\n> Prepare two example filings for retrieval.\n>\n> **Prerequisites** [Environment setup](environment.md#step-1) · **Done** chunks and BM25 exist\n\n> An ordinary quotation.";
+    const parsed = renderTutorial(source, { locale });
+    const { container } = render(<TutorialMarkdown content={parsed.content} />);
+    const goal = container.querySelector(".docs-goal")!;
+    expect(goal.querySelector(".docs-goal-label")).toHaveTextContent(label);
+    expect(goal.querySelectorAll("p")).toHaveLength(2);
+    expect(goal).toHaveTextContent("Prepare two example filings for retrieval.");
+    expect(goal).toHaveTextContent("chunks and BM25 exist");
+    expect(goal).not.toHaveTextContent("[!GOAL]");
+    expect(goal.querySelector("a")).toHaveAttribute("href", `/docreview-rag/docs/${locale}/environment/#step-1`);
+    expect(container.querySelector("blockquote")).toHaveTextContent("An ordinary quotation.");
   });
   it("expands the beginner path from the registry at the authored marker", () => {
     const parsed = renderTutorial("# Overview\n\n## Learning path {#learning-path}\n\n<!-- tutorial-steps -->", { locale: "en" });
@@ -61,7 +74,7 @@ describe("Tutorial Markdown", () => {
     const parsed = renderTutorial("# Guide\n\n## 5. Parse {#step-5}\n\n[Legacy](walkthrough.md#4-ingest-the-source-into-documents-and-chunks)", { locale: "en" });
     expect(parsed.headings[1]).toEqual({ id: "step-5", text: "5. Parse", depth: 2 });
     render(<TutorialMarkdown content={parsed.content} />);
-    expect(screen.getByRole("link", { name: "Legacy" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/indexing/#step-5");
+    expect(screen.getByRole("link", { name: "Legacy" })).toHaveAttribute("href", "/docreview-rag/docs/en/indexing/#step-5");
     expect(() => renderTutorial("# Guide\n\n## One {#same}\n\n## Two {#same}")).toThrow("Duplicate explicit tutorial heading");
   });
   it("creates unique Korean heading links without treating fenced code as a heading", () => {
@@ -77,8 +90,8 @@ describe("Tutorial Markdown", () => {
   it("renders tables and images, maps document links, and omits raw HTML", () => {
     const { container } = render(<TutorialMarkdown content={renderTutorial("# 안내\n\n| 키 | 값 |\n| --- | --- |\n| a | b |\n\n[명령](cli.md#설치)\n\n![상태](assets/status.png)\n\n<script>alert(1)</script>").content} />);
     expect(screen.getByRole("table").parentElement).toHaveClass("markdown-table-wrap");
-    expect(screen.getByRole("link", { name: "명령" })).toHaveAttribute("href", "/docreview-rag-agent/docs/ko/cli/#%EC%84%A4%EC%B9%98");
-    expect(screen.getByAltText("상태")).toHaveAttribute("src", "/docreview-rag-agent/tutorial-assets/status.png");
+    expect(screen.getByRole("link", { name: "명령" })).toHaveAttribute("href", "/docreview-rag/docs/ko/cli/#%EC%84%A4%EC%B9%98");
+    expect(screen.getByAltText("상태")).toHaveAttribute("src", "/docreview-rag/tutorial-assets/status.png");
     expect(container.querySelector("script")).toBeNull();
   });
 
@@ -97,8 +110,8 @@ describe("Tutorial Markdown", () => {
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(link.getAttribute("href")).toBe(image.getAttribute("src"));
-    expect(image).toHaveAttribute("src", "/docreview-rag-agent/tutorial-assets/status.png?v=first");
+    expect(image).toHaveAttribute("src", "/docreview-rag/tutorial-assets/status.png?v=first");
     rerender(<TutorialMarkdown content={renderTutorial("![Screenshot](assets/status.png)", { locale, assetVersion: "second" }).content} />);
-    expect(container.querySelector("img")).toHaveAttribute("src", "/docreview-rag-agent/tutorial-assets/status.png?v=second");
+    expect(container.querySelector("img")).toHaveAttribute("src", "/docreview-rag/tutorial-assets/status.png?v=second");
   });
 });

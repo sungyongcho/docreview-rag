@@ -6,8 +6,6 @@ On PROD, this same company/year grid selects the next question's evidence scope.
 
 Selection is stored per conversation and passed as exact `doc_ids`. Select all remains bounded to this portfolio; Clear selection disables questions and search until a filing is selected. SEC/DART tabs temporarily intersect the selection, and Auto restores it. Unavailable saved documents are reported without widening the selection. No download, parsing, embedding or evaluation runs when toggling a year.
 
-
-
 The company picker also lets visitors add the four portfolio companies to inspect their target years before publication. Unpublished years are labeled and open DEV preparation help; they never enter searchable document filters or prepared counts.
 
 ## Reference acquisition scope
@@ -27,13 +25,7 @@ Step 1 manages downloads and current originals. Step 2 starts from the fully dow
 originals in that selection. Missing, changed or deleted intended sources remain explicit blockers;
 parsing never silently drops them. Use **Change selection in Filings** to revise the scope.
 
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=company-year-inventory-selector; locale=en; theme=light; capture=32-document-compact-grid-search-year-checkboxes-staged-pairs-and-sync; issue=131; preserve-existing-assets=true -->
-
-**Screenshot pending for the updated controls and resulting state. Existing screenshots are unchanged.**
-
-
+![The filings stage company basket with per-year chips for SK hynix, Samsung Electronics, AMD and NVIDIA.](../assets/company-year-inventory-selector.en.png)
 > [!DEV]
 > Downloading filings requires DEV. The public company/year grid selects the question scope; it cannot start server preparation work.
 
@@ -43,42 +35,31 @@ environment does not need another download.
 
 ## 3. Choose companies and years {#step-3}
 
-- **Goal:** define the source reports you intend to prepare.
-- **Prerequisites:** [environment checks](environment.md#step-1) complete; know which reports are missing.
-- **Screen:** Build → Pipeline → Filings → company/year matrix.
-- **Inputs:** choose `NVDA` and `2024`, or `005930` and `2024` for a Korean report. Both sources can be selected together.
-  The year is the report's fiscal year, not necessarily its publication year.
-- **Primary action:** toggle year chips or company checkboxes; search a company and check years for absent pairs.
-- **Visible result:** selected chips are highlighted, and **To be added** lists selected missing years and staged pairs.
-- **Completion:** companies and years describe the intended source, with no invalid draft left.
-- **Recovery:** correct invalid search text, press Enter, then **Sync selection**. For source
-  credentials or unavailable reports, see [acquisition failures](troubleshooting.md).
-- **Next:** [download missing sources](#step-4), or [parse existing sources](indexing.md#step-5).
+> [!GOAL]
+> Define the source reports you intend to prepare.
+>
+> **Prerequisites** [Environment checks](environment.md#step-1) complete and missing reports identified · **Done** the selected companies and years describe the intended source, with no invalid draft left.
 
-The stable company code and filing identity remain visible. Parsing receives exact selected
-document IDs, grouped by the selected company/year scope.
+Open **Build → Pipeline → Filings → company/year matrix**. Choose `NVDA` and `2024`, or `005930` and `2024` for a Korean report; both sources can be selected together. The year is the report's fiscal year, not necessarily its publication year.
 
-<!-- capture:04-sec-inputs -->
-
-![Valid SEC company and fiscal-year chips with the Download missing filings action.](../assets/04-sec-inputs.en.jpg)
-
-*Historical screenshot of the previous separate company/year inputs. The new matrix still needs a verified capture; this image is not evidence of its layout.*
+1. Toggle year chips or company checkboxes, and search a company to check years for absent pairs. Selected chips are highlighted, and **To be added** lists the selected missing years and staged pairs.
+2. Confirm that the companies and years describe the intended source and that no invalid draft remains. The stable company code and filing identity remain visible, and parsing receives the exact selected document IDs grouped by the selected company/year scope.
+3. If the search text is invalid, correct it and press Enter, then select **Sync selection**. For source credentials or unavailable reports, see [acquisition failures](troubleshooting.md).
+4. Continue to [download missing sources](#step-4), or go to [parse existing sources](indexing.md#step-5).
 
 ## 4. Download only missing filings {#step-4}
 
-- **Goal:** make the required original files available for parsing.
-- **Prerequisites:** valid selections from step 3 and the [source credentials](#sources).
-- **Screen:** Build → Pipeline → Filings, selected-stage execution panel.
-- **Inputs:** recheck **To be added**, grouped by SEC/DART. Missing or invalid selected originals are submitted.
-  Credential notes appear only for registries with missing selections; the button is disabled when every selected original is valid.
-- **Primary action:** **Sync selection**.
-- **Visible result:** a queued or running job appears. Open Build → Jobs to read progress and the actual result.
-  Preparation status updates automatically when the job finishes; no manual refresh is needed.
-- **Completion:** the job succeeds and the sources in the returned processing selection are present.
-  A global stage can remain incomplete because other manifest entries still lack sources.
-- **Recovery:** inspect the job error and source identity before retrying. A cancelled job differs from a
-  failed job or one interrupted by a restart; only supported states offer Retry. See [job diagnosis](troubleshooting.md).
-- **Next:** [parse and create chunks](indexing.md#step-5).
+> [!GOAL]
+> Make the required original files available for parsing.
+>
+> **Prerequisites** valid selections from [step 3](#step-3) and the [source credentials](#sources) · **Done** the job succeeds and the sources in the returned processing selection are present.
+
+Open **Build → Pipeline → Filings** and inspect the selected-stage execution panel. Recheck **To be added**, grouped by SEC/DART: missing or invalid selected originals are submitted, while credential notes appear only for registries with missing selections and the button is disabled when every selected original is valid.
+
+1. Select **Sync selection**. A queued or running job appears; open **Build → Jobs** to read progress and the actual result. Preparation status updates automatically when the job finishes, so no manual refresh is needed.
+2. Confirm that the job succeeded and that the sources in the returned processing selection are present. A global stage can remain incomplete because other manifest entries still lack sources.
+3. If the job fails, inspect the job error and source identity before retrying. A cancelled job differs from a failed job or one interrupted by a restart; only supported states offer Retry. See [job diagnosis](troubleshooting.md).
+4. Continue to [parse and create chunks](indexing.md#step-5).
 
 SEC and DART share `manifest.json`. The selected source, companies, and fiscal years define the
 acquisition scope. The job result supplies a `selection_id` naming the exact acquired sources; use it
@@ -121,10 +102,7 @@ service restart require a new preview. Deletion jobs do not offer blind retry. D
 must be downloaded again before a new parse. Database documents, chunks, embeddings, snapshots
 and past job inputs remain available; this action does not cascade into derived data.
 
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=source-deletion; state=exact-target-preview-and-queued-result; locale=en; theme=light; issue=200; preserve-existing-assets=true -->
-
+![The delete-originals dialog listing the exact filing targets with filing IDs and document IDs before confirmation.](../assets/source-deletion.en.png)
 The selected-step heading shows a compact status icon and label. Use the adjacent refresh icon to check status; success changes the icon without adding a text row. Hover over the status for details. The separate system-connection control reports infrastructure health, not job execution. Required recovery commands remain available.
 
 The current stage distinguishes company-directory download, filing lookup, and original-report download. SEC lookup reports each ticker and requested fiscal years; original downloads identify the company and fiscal year in the current-item row. The DART company directory is shared across all companies and has no individual fiscal year.

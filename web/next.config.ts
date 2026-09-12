@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 
-const basePath = "/docreview-rag-agent";
+const basePath = "/docreview-rag";
 const localHost = process.env.DOCREVIEW_LOCAL_HOST ?? "127.0.0.1";
 
 export default function nextConfig(phase: string): NextConfig {

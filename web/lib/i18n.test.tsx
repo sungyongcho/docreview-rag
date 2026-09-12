@@ -134,8 +134,8 @@ describe("Korean and English UI", () => {
   });
 
   it.each([
-    ["/docreview-rag-agent/docs/", "overview", "/docs/en/"],
-    ["/docreview-rag-agent/docs/cli/", "cli", "/docs/en/cli/"],
+    ["/docreview-rag/docs/", "overview", "/docs/en/"],
+    ["/docreview-rag/docs/cli/", "cli", "/docs/en/cli/"],
   ] as const)("resolves saved English for legacy route %s", (path, documentId, destination) => {
     window.history.replaceState({}, "", path);
     localStorage.setItem(LOCALE_KEY, "en");
@@ -144,7 +144,7 @@ describe("Korean and English UI", () => {
   });
 
   it("keeps explicit document language consistent when another tab changes its preference", () => {
-    window.history.replaceState({}, "", "/docreview-rag-agent/docs/en/cli/");
+    window.history.replaceState({}, "", "/docreview-rag/docs/en/cli/");
     localStorage.setItem(LOCALE_KEY, "ko");
     render(<I18nProvider><TestScreen /></I18nProvider>);
     expect(screen.getByRole("heading")).toHaveTextContent("Build");
@@ -155,7 +155,7 @@ describe("Korean and English UI", () => {
   });
 
   it("keeps document identity and deployment prefix during language changes", () => {
-    expect(localizedDocumentationPath("/docreview-rag-agent/docs/en/cli/", "ko")).toBe("/docreview-rag-agent/docs/ko/cli/");
+    expect(localizedDocumentationPath("/docreview-rag/docs/en/cli/", "ko")).toBe("/docreview-rag/docs/ko/cli/");
     expect(localizedDocumentationPath("/docs", "en")).toBe("/docs/en/");
     expect(localizedDocumentationPath("/docs/en/settings/", "ko", "#step-10")).toBe("/docs/ko/settings/#step-10");
     expect(preferredLocale("/docs/en/settings/", "ko")).toBe("en");

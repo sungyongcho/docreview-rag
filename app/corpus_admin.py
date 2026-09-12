@@ -46,7 +46,7 @@ from app.ingestion.source_selection import (
 )
 from app.observability.persistence import redact_sensitive_text
 from app.observability.usage import LEDGER_KIND, USAGE_KEY, UsageSink, merge_usage
-from app.operator.corpus_access import CorpusAccess
+from app.operator.corpus_access import CorpusAccess, JobCancelledError
 from app.operator.jobs import (
     JobExecutionCoordinator,
     JobStore,
@@ -352,10 +352,6 @@ class JobBoard:
     active: AdminJob | None
     queued: tuple[AdminJob, ...]
     history: tuple[AdminJob, ...]
-
-
-class JobCancelledError(RuntimeError):
-    """Signal cooperative cancellation at one safe progress boundary."""
 
 
 def _command_payload(command: AdminCommand) -> dict[str, object]:
@@ -1581,7 +1577,11 @@ class RuntimeCorpusAdminService:
                                     "rebuild_bm25",
                                 }
                                 async with (
-                                    self.corpus_access.update() if changes_search else nullcontext()
+                                    self.corpus_access.update(
+                                        cancelled=self._cancel_events.get(queued.job_id)
+                                    )
+                                    if changes_search
+                                    else nullcontext()
                                 ):
                                     await self._execute_job(queued)
                             except Exception as error:  # noqa: BLE001 - the worker outlives one job

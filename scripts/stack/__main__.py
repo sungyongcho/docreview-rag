@@ -33,7 +33,7 @@ def compose_environment(mode: str, bindings: dict[str, str]) -> dict[str, str]:
             "MODE": mode,
             "DOCREVIEW_ADMIN_MODE": "live" if mode == "dev" else "readonly",
             "NEXT_PUBLIC_ADMIN_MODE": "live" if mode == "dev" else "canned",
-            "NEXT_PUBLIC_API_BASE_URL": "/docreview-rag-agent/api",
+            "NEXT_PUBLIC_API_BASE_URL": "/docreview-rag/api",
             "NEXT_PUBLIC_OPERATOR_TOKEN": "",
             "NEXT_PUBLIC_OPERATOR_BASE_URL": "",
             "HOST_GID": environment.get("HOST_GID", str(os.getgid())),
@@ -110,7 +110,7 @@ def run(mode: str, arguments: list[str], *, root: Path = ROOT, quiet: bool = Fal
         operator.stop()
     if result.returncode == 0 and action == "up":
         print(
-            f"{mode.upper()} · http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}/docreview-rag-agent/"
+            f"{mode.upper()} · http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}/docreview-rag/"
         )
     return result.returncode
 

@@ -1,33 +1,23 @@
 # 질문하고 인용 근거 확인하기
 
-## 공유 게시 근거 범위
+대화는 준비된 공시를 범위로 질문하고 실행 과정을 지켜보며 각 주장을 인용 구절로 검증하는 화면입니다. 답변은 출처 결정·검색·근거 검토·모델 실행을 연결한 결과이며, 근거가 있는 답변, 근거 부족(`NOT_IN_DOCS`), 실행 오류 중 하나로 끝납니다. 요청이 끝났다는 이유만으로 답변이 성공했다고 판단하지 말고 각 상태를 구분해 읽으세요.
 
-데이터 준비의 선택, 대화 설정, 다음 요청 미리보기, 검색 테스트는 동일한 게시 문서 적용 범위를 사용합니다. NVDA FY2023과 AMD FY2024를 선택해도 NVDA FY2024나 AMD FY2023은 추가되지 않습니다. 답변과 인용은 기존 공개 요청 한도 안에서 실제 검색을 사용합니다. 과거 답변을 다시 열면 당시 기록된 범위를 유지합니다.
-
-
-답변은 출처 결정·검색·근거 검토·모델 실행을 연결한 결과입니다. 근거가 있는 답변, 근거 부족
-(`NOT_IN_DOCS`), 실행 오류는 서로 다른 결과입니다. 요청이 끝났다는 이유만으로 답변이 성공했다고
-판단하지 말고 각 상태를 구분해 읽으세요.
+데이터 준비의 선택, 대화 설정, 다음 요청 미리보기, 검색 테스트는 동일한 게시 문서 적용 범위를 사용합니다. NVDA FY2023과 AMD FY2024를 선택해도 NVDA FY2024나 AMD FY2023은 추가되지 않습니다. 답변과 인용은 기존 공개 요청 한도 안에서 실제 검색을 사용하며, 과거 답변을 다시 열면 당시 기록된 범위를 유지합니다.
 
 ## 9. 답변 엔진을 선택하고 첫 질문 보내기 {#step-9}
 
-- **목표:** 의도한 보고서에서 주장과 인용을 확인할 수 있는 답변을 얻습니다.
-- **선행 조건:** [8단계](retrieval.md#step-8)에서 관련 근거를 찾았고 답변 엔진과 범위 필터가 유효합니다.
-  하이브리드는 임베딩(Build 3단계)과 BM25(Build 4단계)가 모두 필요합니다. 벡터 검색은 임베딩,
-  키워드 검색은 BM25가 필요합니다. 필요한 인덱스가 미완료면 질문 전송이 차단되고 입력창에서
-  준비할 단계를 안내합니다. 해당 작업이 대기·실행 중이면 질문 단계도 대기하며 전송은 비활성화됩니다.
-  결과를 읽는 방법만 익히려면 기존 답변을 재사용할 수 있습니다.
-- **화면 경로:** 새 대화 → 질문 위의 제어 영역 → 요청 보기.
-- **입력:** SEC 범위, 사용 가능한 [답변 엔진](#engines), 균형 프리셋을 선택합니다. 코퍼스에 있으면
-  NVIDIA·FY2024 필터를 고르고 전송할 요청을 확인합니다.
-- **주 동작:** 아래 예제의 **질문 전송**.
-- **화면 변화:** 서버가 보낸 실제 실행 단계가 표시되고 답변·근거 또는 명시적인 오류가 나타납니다.
-  자동 범위의 확정 결과는 서버가 전달한 뒤에만 표시됩니다.
-- **완료 기준:** 문서·연도가 맞고 인용 구절이 주장을 뒷받침하며 실행 오류가 없습니다.
-  근거 확인 표시는 원문 검토를 대신하지 않습니다.
-- **실패와 복구:** `NOT_IN_DOCS`와 모델 호출 실패·노드 오류·실행 한도 초과를 구분하세요.
-  **실행 상세 → 트레이스**를 열고 [실행 진단](runtime.md)과 [문제 해결](troubleshooting.md)을 확인합니다.
-- **다음:** [설정과 근거 선택 조정](settings.md#step-10).
+> [!GOAL]
+> 범위를 정한 질문 하나를 보내고 인용된 공시 원문으로 답변을 검증합니다.
+>
+> **준비** 8단계의 관련 근거와 사용 가능한 답변 엔진 · **완료** 근거가 뒷받침하는 답변 또는 원인이 진단된 실패
+
+1. [8단계](retrieval.md#step-8)에서 관련 근거를 찾았고 답변 엔진과 범위 필터가 유효한지 확인합니다. 하이브리드는 임베딩(Build 3단계)과 BM25(Build 4단계)가 모두 필요합니다. 벡터 검색은 임베딩, 키워드 검색은 BM25가 필요합니다. 필요한 인덱스가 미완료면 질문 전송이 차단되고 입력창에서 준비할 단계를 안내합니다. 해당 작업이 대기·실행 중이면 질문 단계도 대기하며 전송은 비활성화됩니다. 결과를 읽는 방법만 익히려면 기존 답변을 재사용할 수 있습니다.
+2. **새 대화**에서 SEC 범위, 사용 가능한 [답변 엔진](#engines), 균형 프리셋을 선택하고 코퍼스에 있으면 NVIDIA·FY2024 필터를 고릅니다.
+3. 전송할 요청을 확인한 뒤 아래 예제로 **질문 전송**을 한 번 누릅니다.
+4. 서버가 보낸 실제 실행 단계를 지켜봅니다. 실행은 답변·근거 또는 명시적인 오류로 끝나며, 자동 범위의 확정 결과는 서버가 전달한 뒤에만 표시됩니다.
+5. 결과를 검증합니다. 문서·연도가 맞고 인용 구절이 주장을 뒷받침하며 실행 오류가 없어야 합니다. `SUPPORTED`는 근거 확인을 대신하지 않습니다.
+6. 답변을 뒷받침하지 못한 실행이라면 `NOT_IN_DOCS`와 모델 호출 실패·노드 오류·실행 한도 초과를 구분합니다. **실행 상세 → 트레이스**를 열고 [실행 진단](runtime.md)과 [문제 해결](troubleshooting.md)을 확인하세요.
+7. [설정과 근거 선택 조정](settings.md#step-10)으로 이어갑니다.
 
 ```text
 What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the filing.
@@ -41,17 +31,7 @@ What drove NVIDIA's data center revenue growth in FY2024? Cite evidence from the
 
 관련성 기준을 충족한 근거가 없으면 **답변·인용 검증** 단계는 경고색과 **기준 미달로 건너뜀**으로 표시됩니다. 의도적으로 건너뛴 단계는 실패·취소로 실행하지 못한 단계와 구분하며, 결과 준비 단계는 완료될 수 있습니다. 과거 기록에 이유가 없으면 건너뜀 상태를 추측하지 않습니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: live execution summary inside the pending assistant message and NOT_IN_DOCS skipped verification; locale=ko; light mode; show the question, pending stages, Stop request and visible composer, plus completed threshold failure. Preserve existing assets. -->
-
-아래 스크린샷은 진행 표시 위치가 바뀌기 전의 기록이며 새 동작의 검증 근거가 아닙니다.
-
-<!-- capture:15-cited-answer -->
-
-![기존에 저장된 NVIDIA FY2024 답변과 검색 근거입니다.](../assets/15-cited-answer.ko.jpg)
-
-*기존에 저장된 NVIDIA FY2024 답변과 검색 근거입니다. 촬영을 위해 재실행하지 않았습니다. 검색 후보 수와 실제 인용 1건은 다르며 이전 근거 선택은 읽기 전용일 수 있습니다.*
-
+![관련 기준 미달로 답변·인용 검증 단계가 경고 색상으로 건너뛰어진 완료 실행 화면.](../assets/live-execution-summary-and-skipped-verification.ko.png)
 ## 답변 엔진 선택 {#engines}
 
 제어 순서는 **문서 범위 → 답변 엔진·로컬 모델 → 검색 프리셋 → 대화 설정 → 요청 보기**입니다.
@@ -91,24 +71,19 @@ Ollama를 사용하려면 **설정 → 로컬 LLM**을 엽니다. 동작 중인 
 카드에서도, 페이지를 넘겨도 동작합니다. 후보 수와 인용 수는 서로 다른 수치입니다. 고정·제외는
 [선택한 근거로 다시 검토](settings.md#step-10)할 때 적용하며 현재 답변을 다시 쓰지 않습니다.
 
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=collapsed-titled-paginated-evidence-candidates; locale=ko; theme=light; capture=collapsed-cards-with-section-titles-toolbar-and-pager; issue=67; preserve-existing-assets=true -->
-
-**접힌 항목 제목 카드와 툴바·페이지 이동이 보이는 근거 후보 목록 스크린샷이 필요합니다. 기존 스크린샷은 유지합니다.**
-
-코퍼스 상태 문구(**전체 코퍼스 · 공시 N건**)를 눌러 준비 화면에 이동하고 **뒤로**로 초안·설정·메시지·스크롤을
+![항목별 제목이 붙은 근거 카드와 고정·제외·페이지 넘김이 있는 확장된 관련 근거 영역.](../assets/collapsed-titled-paginated-evidence-candidates.ko.png)
+코퍼스 상태 문구(**전체 코퍼스 · 공시 N건**)를 눌러 준비 화면에 이동하고 **이전**으로 초안·설정·메시지·스크롤을
 보존한 대화로 복귀합니다. [실행 성능 안내](runtime.md)는 실측 막대·반복 호출·미수집 값·이전 기록을 설명합니다.
 
-### 실제 모델 호출 한도 읽기
-
 CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨어 안내](ollama.md#cpu-starting-preset)를 참고하세요. 기존 기본값은 유지되며, 프리셋을 직접 적용한 뒤 다음 실행의 시간 기록을 확인합니다.
+
+### 실제 모델 호출 한도 읽기
 
 실행에는 대화의 실행 한도와 서버의 공급자 한도가 함께 적용되며, 토큰 한도는 둘 중 작은 값이 호출에 적용됩니다. 공급자 예산으로 중단되면 입력 토큰·출력 토큰·예상 비용 중 실제 항목과 사용량/한도를 표시합니다. 공급자 예산 오류를 입력 토큰 오류로 추측하지 않습니다. 대화 설정이 더 작은 한도였다면 실행 한도를, 서버 공급자 설정이 원인이었다면 시스템 상태를 엽니다. 출처가 없는 과거 기록에서는 설정 위치를 추측하지 않습니다.
 
 예를 들어 출력 `600 / 600` 다음에 JSON 검증 오류가 있으면 남은 공급자 한도로 출력을 수정할 수 없었다는 뜻입니다. 대화의 입력 예산을 늘려도 이 출력 한도는 바뀌지 않습니다. 다시 실행하기 전에 적용된 공급자 한도와 원래 검증 오류를 확인하세요.
 
-`budget`에 `projected_input_tokens`가 있는 `provider_failure`는 호출 전에 거절된 것입니다. 프롬프트를 남은 입력 허용량과 비교해 추정했고 아무것도 전송·과금하지 않았습니다. 실행 기록에는 추정치만 남고 전송한 요청 수와 사용량은 0입니다. 첫 응답 뒤의 복구 프롬프트가 거절된 경우에는 그 1건만 요청으로 남습니다.
+`provider_failure`의 `budget`에 `projected_input_tokens`가 있으면 호출 전에 거절된 것입니다. 프롬프트를 남은 입력 허용량과 비교해 추정했고 아무것도 전송·과금하지 않았습니다. 실행 기록에는 추정치만 남고 전송한 요청 수와 사용량은 0입니다. 첫 응답 뒤의 복구 프롬프트가 거절된 경우에는 그 1건만 요청으로 남습니다.
 
 실행 기록에는 실제 한도와 출처, 번역 질의, 후보 순위, 단계 결과, 공급자 정보와 수집된 시간이 보존됩니다. 일반 대화는 검색 설정이 적용되지 않았음을 명시합니다. 수집하지 않은 과거 값은 없다는 상태를 유지하며 이후 실행으로 복원하지 않습니다.
 
@@ -136,9 +111,6 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 모델 단계 수는 분류와 대화 응답을 포함한 실제 기록된 모델 호출 수를 사용하며,
 후보와 관련 근거는 0으로 표시됩니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: path decision; state: completed context-aware review, chat-only reply, and scope conflict with Auto action; locale: ko; evidence: first step, selected/resolved scope, routing queries, skipped phases and actual model calls in light mode. -->
-
 ### 단계 펼침과 실행 상세
 
 실행 요약은 답변 안에 유지됩니다. **경로 결정**을 포함한 기록된 단계를 누르면 기록된 범위,
@@ -165,29 +137,16 @@ CPU 전용 로컬 모델은 선택 사항인 [CPU 시작 프리셋과 하드웨�
 다른 단계와 회차도 그대로 남습니다.
 
 **실행 상세**는 오른쪽 패널의 **성능**, **서버 설정**, **트레이스** 탭을 엽니다.
-`Q. <질문>` 제목과 짧은 메시지 ID로 어느 답변의 기록인지 확인합니다. 같은 답변을 다시
+`Q.` 제목 뒤에 선택한 질문이 이어지고, 짧은 메시지 ID로 어느 답변의 기록인지 확인합니다. 같은 답변을 다시
 열면 마지막 탭을 복원합니다. 가장자리 버튼은 패널을 접거나 펼치며, Escape·닫기 버튼·
 대화 또는 입력창 클릭으로 닫아도 작성 중인 질문은 유지됩니다. 도움말과 실행 상세는
 동시에 열리지 않습니다. OpenAI는 요청 시간·토큰 등 실제 제공한 값만 보여 주고 빈 서버
 시간 펼침을 만들지 않습니다. Ollama 시간과 CPU/GPU 배치도 기록된 경우에만 표시됩니다.
 
-### SCREENSHOT NEEDED
-
-<!-- Feature: issues 140/141/157/158 selected execution strip, grouped ordered timing passes, heading actions, highlighted inspector stage, and five-row candidate/evidence pagination; show SEC/DART company names and FY chips, empty versus unrecorded values, timings with units and model table, collapsed ranked candidates and arrow pagers, and raw run-details access; locale=ko; light mode; show expanded evidence stage beside the Q. heading and Performance tab, with composer visible. Preserve existing assets. -->
-
-### SCREENSHOT NEEDED
-<!-- Feature: Ask blocked on step 3 with pending embeddings, waiting during backfill, blocked on step 4 without BM25, and lexical-only Ask ready with BM25 despite pending embeddings; locale=ko; light mode; preserve existing assets. -->
-
-
+![대화 옆에 열린 실행 상세 패널의 성능 탭에 단계별 소요 시간과 상태가 표시된 화면.](../assets/selected-stage-details-and-run-details.ko.png)
 Manifest 범위 정보 오류는 실제 실패한 단계에 표시됩니다. 경로 결정 전에는 0단계, 결정 뒤 범위 해석 중에는 1단계입니다. DEV에서는 원인·파일·복구 동작 하나를 제공합니다. [Manifest 진단](troubleshooting.md#manifest-scope)을 참고하세요. 원래 기술 상세는 **실행 상세 → 트레이스**에 남습니다.
 
-### SCREENSHOT NEEDED
-<!-- Feature: failed-answer manifest diagnosis and stage-zero attribution; locale=ko; light mode; show localized headline, diagnosis and stages 1-5 not run. -->
-
 다른 작업 화면을 보는 동안 답변이 완료되거나 실패하면 원래 대화로 연결되는 종 알림이 생깁니다. 누르면 읽음으로 표시하고 해당 대화로 돌아갑니다. 결과와 실패의 자세한 근거는 기존 실행 요약에서 확인하며 알림 센터를 열어도 요청을 다시 실행하지 않습니다. [알림 센터](runtime.md#notification-center)를 참고하세요.
-
-### SCREENSHOT NEEDED
-<!-- Feature: background review completion/failure notification returning to its original conversation; locale=ko; light mode; show the same persisted message and no repeated request. -->
 
 ### 실행 상세 확인
 

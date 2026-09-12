@@ -12,10 +12,10 @@ it.each(["ko", "en"] as const)("renders the development outline with honest lang
   const { container } = render(await DocumentationPage({ documentId: "development", locale }));
   const status = screen.getByRole("complementary", { name: locale === "ko" ? "개발 기록 상태" : "Development log status" });
   expect(status).toHaveTextContent(locale === "ko" ? "초안 · 개요" : "Draft / Outline");
-  if (locale === "en") expect(status).toHaveTextContent("The article below is the Korean source; an English translation is not available yet.");
+  if (locale === "en") expect(status).toHaveTextContent("A working draft the author is still revising");
   const article = screen.getByRole("article");
-  expect(article.parentElement).toHaveAttribute("lang", "ko");
-  expect(within(article).getByRole("heading", { level: 1 })).toHaveTextContent("개발 기록 초안");
+  expect(article.parentElement).toHaveAttribute("lang", locale);
+  expect(within(article).getByRole("heading", { level: 1 })).toHaveTextContent(locale === "ko" ? "개발 기록" : "Development Log");
   const references = article.querySelectorAll('a[href^="https://"]');
   expect(references.length).toBeGreaterThan(0);
   for (const link of references) {
@@ -37,7 +37,7 @@ it.each(["en", "ko"] as const)("renders separate visitor and DEV quick starts wi
   expect(visitor.container.querySelector('a[rel="next"]')).toHaveAttribute("href", expect.stringMatching(new RegExp(`^/docs/${locale}/answers/?$`)));
   cleanup();
   const developer = render(await DocumentationPage({ documentId: "quickstart-dev", locale }));
-  expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toHaveTextContent("Quick Start — DEV ONLY");
+  expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toHaveTextContent("Quick Start for DEV MODE");
   expect(screen.getByRole("complementary", { name: availability }).querySelector(".development-badge")).not.toBeNull();
   expect(screen.getByRole("tab", { name: "Web" })).toHaveAttribute("aria-selected", "true");
   expect(developer.container.querySelectorAll('[id^="qs-web-"]')).toHaveLength(7);

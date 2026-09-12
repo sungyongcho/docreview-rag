@@ -107,7 +107,7 @@ def _add_ingest_parser(subparsers: Subparsers) -> None:
     parser.add_argument("--expected-documents", type=int, default=None)
     parser.add_argument(
         "--api-url",
-        default="http://127.0.0.1:8000/docreview-rag-agent/api/admin",
+        default="http://127.0.0.1:8000/docreview-rag/api/admin",
         help="Development administrator API base URL.",
     )
 

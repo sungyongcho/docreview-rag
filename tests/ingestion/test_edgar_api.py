@@ -87,7 +87,7 @@ def test_missing_user_agent_is_rejected(declared):
 def test_user_agent_without_a_contact_address_is_rejected():
     """SEC requires a reachable operator, so a bare name is not a declaration."""
     with pytest.raises(ValueError, match="contact address"):
-        require_user_agent("docreview-rag-agent")
+        require_user_agent("docreview-rag")
 
 
 def test_user_agent_is_returned_stripped():

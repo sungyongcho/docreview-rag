@@ -1,6 +1,6 @@
 # Production compose for the single e2-medium VM (4 GB RAM + 2 GB swap).
 # deploy_backend.sh copies this file to /opt/docreview/docker-compose.yml and
-# deploy/gcp/backend.env to /opt/docreview/.env.
+# writes the generated VM env (from the repo .env) to /opt/docreview/.env.
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -34,10 +34,10 @@ services:
       DOCREVIEW_ADMIN_MODE: "off"
       DOCREVIEW_HOST: 127.0.0.1
       DOCREVIEW_TRUST_PROXY_HEADERS: "true"
-      DOCREVIEW_RATE_LIMIT_PER_MINUTE: "2"
-      DOCREVIEW_RATE_LIMIT_PER_DAY: "5"
+      DOCREVIEW_RATE_LIMIT_PER_MINUTE: "10"
+      DOCREVIEW_RATE_LIMIT_PER_DAY: "50"
       OPENAI_API_KEY_PROD: ${OPENAI_API_KEY_PROD:?Set OPENAI_API_KEY_PROD}
-      DOCREVIEW_PUBLIC_DAILY_COST_USD: "0.10"
+      DOCREVIEW_PUBLIC_DAILY_COST_USD: "0.30"
       DOCREVIEW_OPENAI_MAX_COST_USD: "0.005"
       REVIEW_MAX_COST_USD: "0.005"
       DOCREVIEW_OPENAI_MODEL: gpt-5.6-luna

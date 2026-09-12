@@ -40,10 +40,10 @@ def app_client(
             "local": local,
         }
     responses = {
-        "/docreview-rag-agent/api/release/": {"environment": mode},
-        "/docreview-rag-agent/api/health/": {"status": "ok"},
-        "/docreview-rag-agent/api/admin/local-llm/connection/": config,
-        "/docreview-rag-agent/api/ready/": {"review_engines": {"local": local}},
+        "/docreview-rag/api/release/": {"environment": mode},
+        "/docreview-rag/api/health/": {"status": "ok"},
+        "/docreview-rag/api/admin/local-llm/connection/": config,
+        "/docreview-rag/api/ready/": {"review_engines": {"local": local}},
     }
 
     def respond(request):
@@ -51,7 +51,7 @@ def app_client(
         if paths is not None:
             paths.append(request.url.path)
         assert request.url.host == "localhost"
-        if request.url.path == "/docreview-rag-agent/api/admin/local-llm/diagnostics/":
+        if request.url.path == "/docreview-rag/api/admin/local-llm/diagnostics/":
             assert request.method == "POST"
             assert json.loads(request.content) == {}
             return httpx.Response(404 if diagnostics is None else 200, json=diagnostics)
@@ -68,7 +68,7 @@ def test_healthy_unloaded_answer_model_is_available_without_a_load(
     probe = Mock(side_effect=AssertionError("existing app metadata is sufficient"))
     monkeypatch.setattr("scripts.diagnostics.ollama.container_probe", probe)
     with app_client() as client:
-        assert diagnose(tmp_path, "http://localhost:8000/docreview-rag-agent/", client=client) == 0
+        assert diagnose(tmp_path, "http://localhost:8000/docreview-rag/", client=client) == 0
     output = capsys.readouterr().out
     assert "normal standby" in output
     assert "Connection source: saved" in output
@@ -104,7 +104,7 @@ def test_prod_uses_actual_api_mode_and_sends_no_model_or_admin_requests(
     paths = []
     with app_client(mode="prod", paths=paths) as client:
         assert diagnose(tmp_path, "http://localhost:8000", client=client) == 0
-    assert paths == ["/docreview-rag-agent/api/release/", "/docreview-rag-agent/api/health/"]
+    assert paths == ["/docreview-rag/api/release/", "/docreview-rag/api/health/"]
     assert "intentionally disabled in prod" in capsys.readouterr().out
     forbidden.assert_not_called()
 
@@ -323,9 +323,9 @@ def test_shared_diagnostics_avoids_duplicate_probes_and_reports_actual_models(
     with app_client(diagnostics=diagnostic_report(), paths=paths) as client:
         assert diagnose(tmp_path, "http://localhost:8000", client=client) == 0
     assert paths == [
-        "/docreview-rag-agent/api/release/",
-        "/docreview-rag-agent/api/health/",
-        "/docreview-rag-agent/api/admin/local-llm/diagnostics/",
+        "/docreview-rag/api/release/",
+        "/docreview-rag/api/health/",
+        "/docreview-rag/api/admin/local-llm/diagnostics/",
     ]
     output = capsys.readouterr().out
     assert 'Server: "Default server"' in output

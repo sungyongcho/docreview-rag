@@ -16,7 +16,7 @@ button, a, summary, input, select, textarea { touch-action: manipulation; }
 button, a, summary { transition: background-color .15s, border-color .15s, color .15s; }
 :is(button, a, summary, input, select, textarea):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 button:disabled { cursor: not-allowed; }
-:is(.button, .chip, .segmented button, .lab-tabs button, .language-switch button) { min-height: 40px; font-size: 12px; line-height: 1.4; }
+:is(.button, .chip, .lab-tabs button, .language-switch button) { min-height: 40px; font-size: 12px; line-height: 1.4; }
 :is(input:not([type=checkbox]):not([type=radio]), select) { min-height: 40px; }
 .button { padding: 9px 14px; border-radius: 8px; font-weight: 550; text-decoration: none; }
 .button:not(:disabled):hover { background: color-mix(in srgb, var(--text) 8%, var(--surface)); border-color: var(--muted); }
@@ -144,8 +144,6 @@ table td { line-height: 1.55; }
 .composer-wrap { padding: 14px max(24px, calc((100% - 900px) / 2)) 20px; }
 .composer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .composer-toolbar .chip-group { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.composer-toolbar .segmented { min-height: 40px; }
-.composer-toolbar .segmented button { padding: 7px 10px; }
 .composer-toolbar .chip { min-height: 40px; padding: 8px 10px; font-size: 12px; }
 .composer-toolbar .chip-group > label { display: block; font-size: 0; margin: 0; }
 .composer-toolbar .chip-group > label select { font-size: 12px; padding: 8px 10px; min-height: 40px; max-width: 245px; }
@@ -185,7 +183,7 @@ table td { line-height: 1.55; }
   .sidebar { padding-inline: 10px; }
 }
 @media (max-width: 560px) {
-  :is(.button, .chip, .segmented button, .lab-tabs button, .language-switch button, input:not([type=checkbox]):not([type=radio]), select) { min-height: 44px; }
+  :is(.button, .chip, .lab-tabs button, .language-switch button, input:not([type=checkbox]):not([type=radio]), select) { min-height: 44px; }
   .icon-button, .delete-review { width: 44px; height: 44px; }
   .service-shell { grid-template-columns: 0 minmax(0,1fr); }
   .sidebar { width: 278px; }
@@ -204,7 +202,6 @@ table td { line-height: 1.55; }
   .composer-wrap { padding: 10px 14px 14px; }
   .composer-toolbar .chip-group { gap: 6px; }
   .composer-toolbar .chip-group > label select { max-width: 190px; min-height: 44px; }
-  .composer-toolbar .segmented button { min-height: 44px; padding-inline: 9px; }
   .review-progress-steps strong { font-size: 0; }
   .review-progress-steps li.current strong { font-size: 10px; }
   .review-progress-steps li.current { flex: 3; }
@@ -262,19 +259,12 @@ table td { line-height: 1.55; }
 .docs-site .docs-back { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; background: var(--surface-2); text-decoration: none; font-size: 12px; white-space: nowrap; }
 .docs-back:hover { border-color: var(--muted); }
 .docs-back-short { display: none; }
-.docs-site .docs-footer { padding: 0; }
-.docs-footer-inner { width: min(1380px, 100%); padding: 26px 32px; margin-inline: auto; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.docs-author { display: grid; gap: 5px; text-decoration: none; color: var(--muted); }
-.docs-author strong { color: var(--text); font-weight: 600; }
-.docs-author small { display: flex; align-items: center; gap: 4px; font: 10px/1.5 ui-monospace, monospace; }
-.docs-author:hover strong, .docs-author:focus-visible strong { text-decoration: underline; text-underline-offset: 4px; }
 @media (max-width:700px) {
   .docs-header-inner { min-height: 70px; gap: 10px; padding: 10px 14px; }
   .docs-site .docs-brand { width: clamp(116px, 37vw, 190px); }
   .docs-header-inner .docs-header-label { display: none; }
   .docs-site .docs-back { display: inline-flex; min-height: 44px; padding: 8px; font-size: 11px; gap: 5px; }
   .docs-back-long { display: none; }.docs-back-short { display: inline; }
-  .docs-footer-inner { align-items: flex-start; flex-direction: column; padding: 24px 18px; gap: 18px; }
 }
 .creator-signature { font-size: 11px; color: var(--muted); }
 .creator-signature a { display: inline-grid; gap: 4px; min-height: 40px; align-content: center; color: inherit; text-decoration: none; }

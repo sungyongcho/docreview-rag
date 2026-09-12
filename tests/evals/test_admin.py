@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import hashlib
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -14,7 +15,7 @@ from app.config import Settings
 from app.corpus_admin import AdminCommand, CorpusStatus, OperationOutcome, RuntimeCorpusAdminService
 import app.evals.admin as admin_module
 from app.evals.admin import EvaluationAdminService, EvaluationAlreadyQueuedError
-from app.operator.jobs import JobExecutionCoordinator
+from app.operator.jobs import JobExecutionCoordinator, JobStore
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
@@ -549,11 +550,12 @@ def test_failed_durable_enqueue_does_not_leave_a_duplicate_reservation(tmp_path)
             create=AsyncMock(side_effect=[RuntimeError("offline"), None]),
             put=AsyncMock(),
             cancel=AsyncMock(),
+            list=AsyncMock(return_value=()),
         )
         service = EvaluationAdminService(
             settings=Settings(corpus_dir=tmp_path),
             provider=DeterministicEmbeddingProvider(),
-            job_store=store,
+            job_store=cast(JobStore, store),
             execution_coordinator=coordinator,
         )
         request = EvaluationRunRequest(suite_id="sec-en")
@@ -592,13 +594,18 @@ def test_cancel_waits_for_queued_progress_before_persisting_terminal_state(tmp_p
                 await release.wait()
             written.append(fields["status"])
 
-        store = SimpleNamespace(interrupt_incomplete=AsyncMock(), create=AsyncMock(), put=put)
+        store = SimpleNamespace(
+            interrupt_incomplete=AsyncMock(),
+            create=AsyncMock(),
+            put=put,
+            list=AsyncMock(return_value=()),
+        )
         coordinator = JobExecutionCoordinator()
         await coordinator.register("blocker", datetime.now(UTC), kind="backfill_embeddings")
         service = EvaluationAdminService(
             settings=Settings(corpus_dir=tmp_path),
             provider=DeterministicEmbeddingProvider(),
-            job_store=store,
+            job_store=cast(JobStore, store),
             execution_coordinator=coordinator,
         )
         job = await service.enqueue(EvaluationRunRequest(suite_id="sec-en"))
@@ -611,5 +618,90 @@ def test_cancel_waits_for_queued_progress_before_persisting_terminal_state(tmp_p
         await service._queue.join()
         assert written == ["queued", "cancelled"]
         await coordinator.cancel("blocker")
+
+    asyncio.run(scenario())
+
+
+def test_restart_restores_persisted_evaluation_history(tmp_path):
+    """A rebuilt service lists stored succeeded and interrupted jobs with result references."""
+
+    async def scenario():
+        """Hydrate two persisted rows into the in-memory job board on first access."""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from app.operator.jobs import StoredJob
+
+        request = EvaluationRunRequest(suite_id="sec-en")
+        earlier = datetime(2026, 1, 1, tzinfo=UTC)
+        later = datetime(2026, 1, 2, tzinfo=UTC)
+        rows = (
+            StoredJob(
+                job_id="eval-old",
+                domain="evaluation",
+                kind="quick",
+                request_json=request.model_dump(mode="json"),
+                status="succeeded",
+                stage="complete",
+                current=20,
+                total=20,
+                detail_current=None,
+                detail_total=None,
+                message="Evaluation completed",
+                error_code=None,
+                result_refs={
+                    "result_id": 7,
+                    "result_ids": [7],
+                    "baseline_id": 3,
+                    "artifact_paths": ["sec-en.json"],
+                },
+                created_at=earlier,
+                started_at=earlier,
+                finished_at=earlier,
+                updated_at=earlier,
+            ),
+            StoredJob(
+                job_id="eval-new",
+                domain="evaluation",
+                kind="matrix",
+                request_json=request.model_dump(mode="json"),
+                status="interrupted",
+                stage="interrupted",
+                current=4,
+                total=20,
+                detail_current=None,
+                detail_total=None,
+                message="Interrupted by application restart; retry explicitly.",
+                error_code="process_restarted",
+                result_refs={},
+                created_at=later,
+                started_at=later,
+                finished_at=later,
+                updated_at=later,
+            ),
+        )
+        store = SimpleNamespace(
+            interrupt_incomplete=AsyncMock(return_value=("eval-new",)),
+            list=AsyncMock(return_value=rows),
+        )
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path),
+            provider=DeterministicEmbeddingProvider(),
+            job_store=cast(JobStore, store),
+        )
+
+        board = await service.jobs()
+
+        assert [job.job_id for job in board.jobs] == ["eval-new", "eval-old"]
+        restored = board.jobs[1]
+        assert restored.status == "succeeded"
+        assert restored.request.suite_id == "sec-en"
+        assert restored.result_id == 7
+        assert restored.result_ids == (7,)
+        assert restored.baseline_id == 3
+        assert restored.artifact_paths == ("sec-en.json",)
+        assert board.jobs[0].status == "interrupted"
+        # A restart keeps interrupted jobs retryable without another store lookup.
+        assert service._jobs["eval-new"].status == "interrupted"
 
     asyncio.run(scenario())

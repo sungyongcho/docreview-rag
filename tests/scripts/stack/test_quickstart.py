@@ -440,7 +440,7 @@ def test_handoff_links_to_developer_quick_start(capsys):
     output = capsys.readouterr().out
     for locale in ("en", "ko"):
         assert (
-            f"http://127.0.0.1:38010/docreview-rag-agent/docs/{locale}/quickstart-dev/#qs-web-1"
+            f"http://127.0.0.1:38010/docreview-rag/docs/{locale}/quickstart-dev/#qs-web-1"
             in output
         )
     assert "Quick Start - DEV ONLY" in output

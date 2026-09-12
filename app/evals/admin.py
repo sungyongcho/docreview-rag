@@ -9,9 +9,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import hashlib
+import logging
 from pathlib import Path
 import tempfile
-from typing import Any, Final, Literal, Protocol
+from typing import Any, Final, Literal, Protocol, cast
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -663,7 +664,43 @@ class EvaluationAdminService:
             return
         if self._job_store is not None:
             await self._job_store.interrupt_incomplete("evaluation")
+            await self._hydrate_jobs()
         self._recovered_jobs = True
+
+    async def _hydrate_jobs(self) -> None:
+        """Restore persisted evaluation history so a restart keeps prior jobs visible."""
+        assert self._job_store is not None
+        stored = await self._job_store.list(domain="evaluation", limit=MAX_EVALUATION_JOBS)
+        for row in stored:
+            if row.job_id in self._jobs:
+                continue
+            try:
+                request = EvaluationRunRequest.model_validate(row.request_json)
+            except TypeError, ValueError:
+                logging.getLogger(__name__).warning(
+                    "Skipping persisted evaluation with an unreadable request: %s",
+                    row.job_id,
+                )
+                continue
+            refs = row.result_refs
+            self._jobs[row.job_id] = EvaluationJobResource(
+                job_id=row.job_id,
+                request=request,
+                status=row.status,
+                stage=row.stage,
+                message=row.message,
+                current=row.current,
+                total=row.total,
+                result_id=cast("int | None", refs.get("result_id")),
+                result_ids=tuple(cast("list[int]", refs.get("result_ids") or [])),
+                baseline_id=cast("int | None", refs.get("baseline_id")),
+                artifact_paths=tuple(cast("list[str]", refs.get("artifact_paths") or [])),
+                created_at=row.created_at,
+                started_at=row.started_at,
+                finished_at=row.finished_at,
+            )
+            if row.job_id not in self._history:
+                self._history.append(row.job_id)
 
     async def _persist_job(
         self,

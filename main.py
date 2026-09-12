@@ -3,7 +3,7 @@
 
 def main() -> None:
     """Print the project greeting."""
-    print("Hello from docreview-rag-agent!")
+    print("Hello from docreview-rag!")
 
 
 if __name__ == "__main__":

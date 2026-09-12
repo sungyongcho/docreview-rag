@@ -13,6 +13,7 @@ from tests.evals.golden import (
     CASE_ID_PATTERN,
     CATEGORY_COUNTS,
     DEMO_HERO_COUNT,
+    DOCUMENT_ISSUERS,
     FACET_COUNTS,
     MAX_ANSWER_SPAN_CHARS,
     POSITIVE_CASE_COUNT,
@@ -47,7 +48,7 @@ def test_positive_cases_cover_every_filing_and_are_issuer_balanced(cases):
     """Cover every corpus filing and keep questions evenly spread across issuers."""
     positive = [case for case in cases if case.answers]
     doc_ids = {answer.doc_id for case in positive for answer in case.answers}
-    issuers = Counter(next(iter(case.answers)).doc_id.split("-", 1)[0] for case in positive)
+    issuers = Counter(DOCUMENT_ISSUERS[next(iter(case.answers)).doc_id] for case in positive)
 
     assert len(doc_ids) == POSITIVE_DOCUMENT_COUNT
     assert issuers == POSITIVE_ISSUER_COUNTS

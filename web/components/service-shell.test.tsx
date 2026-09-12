@@ -73,7 +73,7 @@ it.each([
   fireEvent.change(input, { target: { value: "What drove revenue?" } });
   expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url)))).toBe(false);
+  expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url).replace(/\/?(\?|$)/, "$1")))).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Open Build" }));
   await screen.findByRole("heading", { name: step === 3 ? "1-3. Embeddings" : "1-4. Lexical index (BM25)" });
 });
@@ -83,7 +83,7 @@ function stubLiveApi(corpus: Readiness["corpus"], ready: () => Promise<Readiness
   configureBrowserStorage("dev");
   vi.stubEnv("NEXT_PUBLIC_ADMIN_MODE", "live");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/lifecycle/receipts")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
     if (url.endsWith("/admin/evaluations/suites")) return new Response(JSON.stringify(CANNED_SUITES), { status: 200, headers: { "content-type": "application/json" } });
     if (url.includes("/admin/golden/") && url.endsWith("/revisions")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
@@ -138,7 +138,7 @@ function stubPublicApi(firstVisit = false) {
   if (!firstVisit && !loadConversations().length) saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
   configureBrowserStorage("prod");
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-    const url = String(input);
+    const url = String(input).replace(/\/?(\?|$)/, "$1");
     if (url.endsWith("/lifecycle/receipts")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
     if (url.endsWith("/admin/evaluations/suites")) return new Response(JSON.stringify(CANNED_SUITES), { status: 200, headers: { "content-type": "application/json" } });
     if (url.includes("/admin/golden/") && url.endsWith("/revisions")) return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
@@ -182,8 +182,8 @@ it("applies server policy to restored DEV conversations without rewriting saved 
   await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
   expect(screen.queryByText(/Its saved settings have not been changed/)).toBeNull();
   fireEvent.keyDown(input, { key: "Enter" });
-  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/review/stream"))).toBe(true));
-  const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/review/stream"))!;
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"))).toBe(true));
+  const call = fetchMock.mock.calls.find(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"))!;
   const sent = JSON.parse(String((call[1] as RequestInit).body)).session_profile;
   expect(sent.engine).toBe("openai"); expect(sent.local_model).toBeNull();
   expect(sent.prompt_policy).toEqual(DEFAULT_SESSION_PROFILE.prompt_policy);
@@ -197,7 +197,7 @@ it("makes no administrator or local connection calls before capabilities are kno
   cleanup(); window.localStorage.clear(); window.localStorage.setItem(ONBOARDING_KEY, "done");
   const fetchMock = stubLiveApi(READY_RUNTIME.corpus);
   const ordinaryFetch = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith("/capabilities") ? new Promise<Response>(() => undefined) : ordinaryFetch(input, init));
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/capabilities") ? new Promise<Response>(() => undefined) : ordinaryFetch(input, init));
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");
   try {
@@ -207,7 +207,7 @@ it("makes no administrator or local connection calls before capabilities are kno
     expect(screen.getByRole("button", { name: "Prompt" }).querySelector(".development-badge")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Local LLM" }).querySelector(".development-badge")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Send question" })).toBeDisabled();
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/admin/") && !String(url).startsWith(OPERATOR_URL))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).replace(/\/?(\?|$)/, "$1").includes("/admin/") && !String(url).replace(/\/?(\?|$)/, "$1").startsWith(OPERATOR_URL))).toBe(true);
   } finally { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); }
 });
 
@@ -218,7 +218,7 @@ it("keeps the sidebar mode unknown until the server reports development", async 
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
   fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).endsWith("/capabilities") || String(input).endsWith("/ready")) await pending;
+    if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/capabilities") || String(input).replace(/\/?(\?|$)/, "$1").endsWith("/ready")) await pending;
     return ordinaryFetch(input, init);
   });
   vi.resetModules();
@@ -298,7 +298,7 @@ describe("service shell", () => {
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toBeInTheDocument();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
   });
 
   it("returns from corpus readiness with the original conversation, draft, profile, and scroll", async () => {
@@ -313,7 +313,7 @@ describe("service shell", () => {
     const original = loadConversations();
     const messages = document.querySelector<HTMLElement>(".messages")!;
     messages.scrollTop = 280;
-    expect(fetchMock.mock.calls.some(([url]) => /\/admin\/(corpus|evaluations\/runs)$/.test(String(url)))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => /\/admin\/(corpus|evaluations\/runs)$/.test(String(url).replace(/\/?(\?|$)/, "$1")))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
     readiness.focus();
     fireEvent.click(readiness);
@@ -371,7 +371,7 @@ describe("service shell", () => {
     const ordinaryFetch = fetchMock.getMockImplementation()!;
     const filing = { doc_id: "NVDA-2025", registry: "sec", language: "en", issuer: "NVDA", issuer_id: "NVDA", fiscal_year: 2025, form: "10-K", filing_date: "2026-01-01", report_period: "2025-12-31", filing_id: "NVDA-2025", source_url: "https://example.com/filing", parse_status: "parsed", source_length: 1000, source_sha256: "abc", chunk_count: 4, embedded_chunks: 4, text_chunks: 3, table_chunks: 1, embedding_status: "complete", snapshot_count: 0 };
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       const payload = url.includes("/documents?") ? { documents: [filing], total: 1, next_cursor: null }
         : url.endsWith("/documents/NVDA-2025") ? { document: filing, chunks: [], text_chunks: 3, table_chunks: 1, embedded_chunks: 4, item_counts: [], embedding_identities: [], snapshot_memberships: [] } : null;
       return payload ? new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } }) : ordinaryFetch(input, init);
@@ -407,7 +407,7 @@ describe("service shell", () => {
     const question = { id: "draft-01", question: "Original question", category: "simple_lookup", facet: "factual", answers: [], reference_answer: "Original answer" };
     const revision = { filename: "custom.json", revision_id: 7, suite_id: "sec-en", version: 1, status: "draft", payload: [question], sha256: "b".repeat(64), parent_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       const payload = url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES : url.endsWith("/canonical") ? { suite_id: "sec-en", filename: "retrieval.json", sha256: "a".repeat(64), payload: [question] } : url.endsWith("/sec-en/revisions") ? [revision] : null;
       return payload ? new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } }) : ordinaryFetch(input, init);
     });
@@ -443,7 +443,7 @@ describe("service shell", () => {
       render(<ServiceShell />);
       await waitFor(() => expect(document.getElementById("stage-7")).toBeInTheDocument());
       expect(await screen.findByRole("button", { name: "Build, needs attention" })).toHaveAttribute("aria-pressed", "true");
-      expect(requests.mock.calls.some(([url, init]) => init?.method === "POST" && !String(url).endsWith("/admin/evaluations/preparation"))).toBe(false);
+      expect(requests.mock.calls.some(([url, init]) => init?.method === "POST" && !String(url).replace(/\/?(\?|$)/, "$1").endsWith("/admin/evaluations/preparation"))).toBe(false);
     } finally { window.history.replaceState({}, "", originalUrl); }
   });
 
@@ -451,7 +451,7 @@ describe("service shell", () => {
     const fetchMock = stubLiveApi({ ...READY_RUNTIME.corpus, writable: true });
     const ordinaryFetch = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       const payload = url.endsWith("/admin/evaluations/suites") ? CANNED_SUITES
         : url.endsWith("/admin/evaluations/runs") ? { jobs: [CANNED_JOB] }
         : url.endsWith("/admin/evaluations/results/16") ? { result_id: 16, suite: "sec-ko", config: {}, metrics: { mrr: 0.8 }, cases: [], raw_artifact_path: "stored.json", created_at: CANNED_JOB.created_at } : null;
@@ -497,15 +497,15 @@ describe("service shell", () => {
 
     expect(screen.getByText("Review filings with verifiable evidence.")).toBeInTheDocument();
     expect(documentation).not.toHaveAttribute("target");
-    expect(documentation).toHaveAttribute("href", "/docreview-rag-agent/docs/en/");
+    expect(documentation).toHaveAttribute("href", "/docreview-rag/docs/en/");
     expect(screen.getByRole("navigation", { name: "Guides & development" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/development/");
+    expect(screen.getByRole("link", { name: "Development log" })).toHaveAttribute("href", "/docreview-rag/docs/en/development/");
   });
 
   it("shows the evidence-only banner and fallback when the answer model is off", async () => {
     saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
       if (url.endsWith("/review/stream")) {
         return new Response(
@@ -543,8 +543,8 @@ describe("service shell", () => {
     expect(screen.getByText("Answer not generated")).toBeInTheDocument();
     expect(screen.getByText("Retrieved candidates — answer not generated · 2")).toBeInTheDocument();
     expect(screen.getByText("table")).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([value]) => String(value).endsWith("/retrieve"))).toBe(true);
-    expect(fetchMock.mock.calls.every(([value]) => !String(value).includes("/admin/"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([value]) => String(value).replace(/\/?(\?|$)/, "$1").endsWith("/retrieve"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([value]) => !String(value).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(true);
   });
 
   it("changes the corpus scope from the composer toolbar", async () => {
@@ -848,7 +848,7 @@ describe("service shell", () => {
       code: "budget_exceeded", resource: "wall_clock_s", limit: 120, observed: 138.6, blocked_node: "check",
     };
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
       if (url.endsWith("/review/stream")) {
         const frames = [
@@ -892,7 +892,7 @@ describe("service shell", () => {
   it("renders a conversation reply without a verdict pill", async () => {
     saveConversations([newConversation(DEFAULT_SESSION_PROFILE)]);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       if (url.includes("/public/documents?")) return new Response(JSON.stringify({ documents: [{ doc_id: "NVDA-FY2024", issuer: "NVDA", fiscal_year: 2024, registry: "sec", language: "en", chunk_count: 2, embedded_chunks: 2, filing_id: "test-filing", form: "10-K", parse_status: "parsed", embedding_status: "complete", text_chunks: 2, table_chunks: 0, snapshot_count: 1, filing_date: "2025-01-01", report_period: "2024-12-31", issuer_id: "NVDA", source_length: 1000, source_sha256: "abc", source_url: "https://example.invalid/filing" }], total: 1, next_cursor: null }), { status: 200, headers: { "content-type": "application/json" } });
       if (url.endsWith("/review/stream")) {
         const frames = [
@@ -958,7 +958,7 @@ it("preserves streamed messages and the submitted settings while background disc
   const pending = new Promise<Response>((resolve) => { finish = resolve; });
   let submitted: { session_profile: typeof DEFAULT_SESSION_PROFILE } | undefined;
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).endsWith("/review/stream")) {
+    if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) {
       submitted = JSON.parse(String(init?.body));
       return pending;
     }
@@ -1021,7 +1021,7 @@ it("opens the unified public filter editor from an offscreen Help destination", 
   expect(within(dialog).getByRole("button", { name: "Basic" })).toHaveAttribute("aria-pressed", "true");
   expect(within(dialog).queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
   expect(within(dialog).queryByRole("button", { name: "Run limits" })).not.toBeInTheDocument();
-  expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/admin/"))).toBe(false);
+  expect(fetchMock.mock.calls.some(([url]) => String(url).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(false);
 });
 
 it("preserves the question and blocks Send until an invalid drawer draft is discarded", async () => {
@@ -1059,7 +1059,7 @@ it("keeps confirmed routing with its submitted profile while next-request contro
   const encoder = new TextEncoder();
   const scope = { source: "alias", filters: { registries: ["dart"], issuers: ["005930"], fiscal_years: [2024] } };
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).endsWith("/review/stream")) {
+    if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) {
       submitted = JSON.parse(String(init?.body));
       return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }), { headers: { "content-type": "text/event-stream" } }));
     }
@@ -1144,7 +1144,7 @@ describe("in-message review lifecycle", () => {
     const ordinaryFetch = fetchMock.getMockImplementation()!;
     let stream!: ReadableStreamDefaultController<Uint8Array>;
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/review/stream")) {
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) {
         return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; init?.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")), { once: true }); } }), { headers: { "content-type": "text/event-stream" } }));
       }
       return ordinaryFetch(input, init);
@@ -1257,7 +1257,7 @@ describe("in-message review lifecycle", () => {
     const ordinaryFetch = fetchMock.getMockImplementation()!;
     let submitted: { conversation_history: Array<{ role: string; text: string }> } | undefined;
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/review/stream")) {
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) {
         submitted = JSON.parse(String(init?.body));
         return Promise.resolve(new Response('event: report\ndata: {"run":{"status":"ok","report":{"label":"SUPPORTED","answer":"Re-reviewed contextual answer.","citations":[]}}}\n\nevent: done\ndata: {}\n\n', { headers: { "content-type": "text/event-stream" } }));
       }
@@ -1302,7 +1302,7 @@ describe("in-message review lifecycle", () => {
     render(<ServiceShell />);
     await screen.findByText("The request was interrupted. Send the question again.");
     expect(loadConversations()[0].messages[1]).toMatchObject({ id: "pending", pending: false, execution: { outcome: "failed" } });
-    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/review/stream"))).toBe(false);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"))).toBe(false);
     expect(screen.queryByRole("button", { name: "Stop request" })).toBeNull();
   });
 });
@@ -1404,11 +1404,11 @@ describe("browser navigation history", () => {
   });
 
   it("restores a reloaded URL while preserving unrelated parameters and base path", async () => {
-    window.history.replaceState(null, "", "/docreview-rag-agent/?view=measure&tab=snapshots&locale=ko#saved");
+    window.history.replaceState(null, "", "/docreview-rag/?view=measure&tab=snapshots&locale=ko#saved");
     render(<ServiceShell />);
     await screen.findByRole("button", { name: "System · healthy" });
     await waitFor(() => expect(within(screen.getByRole("group", { name: "Evaluation workflow" })).getByRole("button", { name: "Compare & snapshots" })).toHaveAttribute("aria-pressed", "true"));
-    expect(window.location.pathname).toBe("/docreview-rag-agent/");
+    expect(window.location.pathname).toBe("/docreview-rag/");
     expect(new URLSearchParams(window.location.search).get("locale")).toBe("ko");
     expect(window.location.hash).toBe("#saved");
     cleanup(); render(<ServiceShell />);
@@ -1449,7 +1449,7 @@ it.each(["en", "ko"] as const)("shows the measured CPU warning before sending an
     expect(await screen.findByLabelText(t("Maximum wall clock seconds"))).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: t("Close conversation settings") }));
     expect(loadConversations()[0].profile).toEqual(original);
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/review/stream"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).replace(/\/?(\?|$)/, "$1").includes("/review/stream"))).toBe(true);
     fireEvent.change(screen.getByLabelText(t("Answer engine")), { target: { value: "openai" } });
     expect(screen.queryByText(/10 tok\/s/)).toBeNull();
     fireEvent.change(screen.getByLabelText(t("Answer engine")), { target: { value: "local" } });
@@ -1466,7 +1466,7 @@ it("opens model selection from Build without submitting or changing the engine",
   const local = { enabled: true, protocol: "ollama", models: [model] };
   const fetchMock = stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { openai: { enabled: true }, local } }));
   const originalFetch = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation(async (input) => String(input).endsWith("/admin/local-llm/connection")
+  fetchMock.mockImplementation(async (input) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/local-llm/connection")
     ? new Response(JSON.stringify({ base_url: "http://ollama:11434", initial_base_url: "http://ollama:11434", protocol: "auto", source: "environment", local }), { headers: { "content-type": "application/json" } })
     : originalFetch(input));
   vi.resetModules();
@@ -1483,7 +1483,7 @@ it("opens model selection from Build without submitting or changing the engine",
     expect(screen.queryByRole("dialog", { name: "Local LLM" })).not.toBeInTheDocument();
     expect(engine).toHaveValue("openai");
     expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toHaveValue("Keep my draft");
-    expect(fetchMock.mock.calls.every(([url]) => !String(url).includes("/review/stream"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).replace(/\/?(\?|$)/, "$1").includes("/review/stream"))).toBe(true);
     fireEvent.change(engine, { target: { value: "local" } });
     expect(screen.getByLabelText("Local model")).toHaveValue("answer");
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
@@ -1514,7 +1514,7 @@ it("restores a notification job destination on fresh load", async () => {
   const fetchMock = stubLiveApi(READY_RUNTIME.corpus);
   const ordinaryFetch = fetchMock.getMockImplementation()!;
   const wanted: OperatorJob = { job_id: "wanted-job", domain: "corpus", kind: "ingest_manifest", request: {}, status: "succeeded", stage: "done", current: 1, total: 1, detail_current: null, detail_total: null, message: "Requested job result", error_code: null, result_refs: {}, queue_position: null, can_cancel: false, can_retry: false, created_at: "2026-09-08T00:00:00Z", started_at: "2026-09-08T00:00:01Z", finished_at: "2026-09-08T00:00:02Z", updated_at: "2026-09-08T00:00:02Z" };
-  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith("/admin/jobs") ? Promise.resolve(new Response(JSON.stringify({ jobs: [{ ...wanted, job_id: "other-job", message: "Other job result" }, wanted], active_count: 0, queued_count: 0 }), { status: 200, headers: { "content-type": "application/json" } })) : ordinaryFetch(input, init));
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/jobs") ? Promise.resolve(new Response(JSON.stringify({ jobs: [{ ...wanted, job_id: "other-job", message: "Other job result" }, wanted], active_count: 0, queued_count: 0 }), { status: 200, headers: { "content-type": "application/json" } })) : ordinaryFetch(input, init));
   window.history.replaceState(null, "", "/?view=build&tab=jobs&job=wanted-job");
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");
@@ -1536,7 +1536,7 @@ it("keeps the draft visible and blocks submission during corpus updates without 
   const fetchMock = stubLiveApi(corpus, async () => ({ ...liveReadiness(corpus), status: "degraded" }));
   const originalFetch = fetchMock.getMockImplementation()!;
   const embeddingJob = { job_id: "embedding-active", domain: "corpus", kind: "backfill_embeddings", status: "running", stage: "embeddings", request: {}, result_refs: {}, current: 43, total: 100, overall_current: 43, overall_total: 100, message: "Embedding chunks", created_at: "2026-09-09T00:00:00Z", started_at: "2026-09-09T00:00:00Z", updated_at: "2026-09-09T00:00:00Z", finished_at: null, can_retry: false, can_cancel: true, error_code: null, queue_position: null };
-  fetchMock.mockImplementation(input => String(input).endsWith("/admin/jobs") ? Promise.resolve(new Response(JSON.stringify({ jobs: [embeddingJob], active_count: 1, queued_count: 0 }), { headers: { "content-type": "application/json" } })) : originalFetch(input));
+  fetchMock.mockImplementation(input => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/jobs") ? Promise.resolve(new Response(JSON.stringify({ jobs: [embeddingJob], active_count: 1, queued_count: 0 }), { headers: { "content-type": "application/json" } })) : originalFetch(input));
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");
   render(<LiveShell />);
@@ -1550,7 +1550,7 @@ it("keeps the draft visible and blocks submission during corpus updates without 
   expect(document.querySelectorAll(".job-health")).toHaveLength(1);
   expect(document.querySelector(".search-update-status")).toBeNull();
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url)))).toBe(false);
+  expect(fetchMock.mock.calls.some(([url]) => /\/review(?:\/stream)?$/.test(String(url).replace(/\/?(\?|$)/, "$1")))).toBe(false);
 });
 
 it("keeps the related-evidence qualification once without a duplicate notice box", async () => {
@@ -1602,7 +1602,7 @@ it("keeps exact Build scope in the request and persists an empty selection", asy
   const ordinary = fetchMock.getMockImplementation()!;
   const documents = [2023, 2024].flatMap((year) => ["NVDA", "AMD"].map((issuer) => ({ doc_id: `${issuer}-${year}`, issuer, fiscal_year: year, registry: "sec", language: "en", chunk_count: 10, embedded_chunks: 10, filing_id: `${issuer}-${year}`, form: "10-K" })));
   fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).includes("/public/documents?")) return new Response(JSON.stringify({ documents, total: 4, next_cursor: null }), { headers: { "content-type": "application/json" } });
+    if (String(input).replace(/\/?(\?|$)/, "$1").includes("/public/documents?")) return new Response(JSON.stringify({ documents, total: 4, next_cursor: null }), { headers: { "content-type": "application/json" } });
     return ordinary(input, init);
   });
   const view = render(<ServiceShell />);
@@ -1629,8 +1629,8 @@ it("keeps exact Build scope in the request and persists an empty selection", asy
   const query = screen.getByPlaceholderText("Ask a question about the filing corpus");
   fireEvent.change(query, { target: { value: "Compare the selected filings" } });
   fireEvent.keyDown(query, { key: "Enter" });
-  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/review/stream"))).toBe(true));
-  const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/review/stream"))!;
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"))).toBe(true));
+  const request = fetchMock.mock.calls.find(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"))!;
   expect(JSON.parse(String((request[1] as RequestInit).body)).session_profile.doc_ids.sort()).toEqual(["AMD-2024", "NVDA-2023"]);
   fireEvent.click(screen.getByRole("button", { name: "Build" }));
   fireEvent.click(screen.getByRole("button", { name: "Select Filings" }));
@@ -1647,7 +1647,7 @@ it("keeps exact Build scope in the request and persists an empty selection", asy
 it("restores unpublished target selection after reload without starting server preparation", async () => {
   cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
   const fetchMock = stubPublicApi(); const ordinary = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/public/documents?")
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").includes("/public/documents?")
     ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
   let view = render(<ServiceShell />);
   await screen.findByText("No portfolio filings have been published yet.");
@@ -1669,7 +1669,7 @@ it("defaults a first public visit to AMD and NVDA and allows navigation before p
   cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
   window.history.replaceState(null, "", "/");
   const fetchMock = stubPublicApi(true); const ordinary = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/public/documents?")
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").includes("/public/documents?")
     ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
   const view = render(<ServiceShell />);
   await screen.findByText("No portfolio filings have been published yet.");
@@ -1740,7 +1740,7 @@ it("persists confirmed scope and completed preparation steps across reload", asy
 it("preserves edited first-visit scope across Filings, chunks and reload including empty selection", async () => {
   cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
   const fetchMock = stubPublicApi(true); const ordinary = fetchMock.getMockImplementation()!;
-  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).includes("/public/documents?") ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => String(input).replace(/\/?(\?|$)/, "$1").includes("/public/documents?") ? new Response(JSON.stringify({ documents: [], total: 0, next_cursor: null }), { headers: { "content-type": "application/json" } }) : ordinary(input, init));
   let view = render(<ServiceShell />);
   await screen.findByText("No portfolio filings have been published yet.");
   fireEvent.click(screen.getByRole("button", { name: "Build" }));

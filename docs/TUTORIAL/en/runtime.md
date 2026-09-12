@@ -18,43 +18,27 @@ Three different views answer different questions: **System → System status** c
 
 Failed and interrupted jobs offer **Retry as new job** when the server supports it. Retry creates new work; it does not prove that earlier partial work will be skipped. Review the scope, especially before embedding costs. CLI work performed directly against the same database appears in corpus state but need not have a web job record.
 
-Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text.
+Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text. Selecting a historical job shows its actual target, progress and result; it is not work started for the guide.
 
-<!-- capture:08-jobs -->
-
-![An existing successful SEC manifest ingestion job is selected.](../assets/08-jobs.en.jpg)
-
-*An existing successful SEC manifest ingestion job is selected. Its actual target, progress and result are shown; this is historical work, not a job started for the guide.*
-
+![The Job Center listing a completed BM25 rebuild with its request options, progress and timings.](../assets/jobs-status-and-retry.en.png)
 ## Execution summary and real timing {#timings}
 
 Open a completed or failed answer's **Execution summary** for the stages actually reached. Auto scope preserves the user's Auto choice while separately showing the registry, companies, years, and reason reported by the server. Before routing resolves, the interface waits; it does not infer a confirmed decision from the question in the browser.
-
-<!-- capture:16-run-trace -->
-
-![The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed.](../assets/16-run-trace.en.jpg)
-
-*The saved successful run records its original ID, four iterations, two provider requests, token counts and about 119.6 seconds elapsed. These are historical recorded values, not a new measurement.*
 
 Open **Run details → Performance** beside the answer. **Execution performance** separates request time measured by the browser from server execution time. Its ASCII bars scale to the longest measured stage in that result. They are elapsed-duration comparisons, not progress percentages or estimated completion times. Stage and model-call rows remain in recorded order, including repeated stages and retries.
 
 | Measurement | Interpretation |
 |---|---|
-| `Not collected` | No usable measurement was recorded. It is not zero and not one attempt. |
+| Not collected | No usable measurement was recorded. It is not zero and not one attempt. |
 | `0ms` | A measured zero duration. |
 | `<1ms` | A positive duration below one millisecond. |
 | Calls / attempts | Calls and provider attempts when collected; retries may make them different, and a call refused before it started counts zero attempts. |
 | Loading / input processing / generation | Separate local-provider timings when that provider returned them. |
 | Tokens per second | Calculated only when generated-token count and generation duration exist. |
 
-The accessible table supplies exact values beside the visual bars. Original node IDs, model names, and logs stay intact even when the surrounding labels are translated. CPU/GPU placement remains uncollected unless supported by actual evidence; a long duration alone does not establish a hardware bottleneck. Older saved runs can lack telemetry without being corrupt.
+The accessible table supplies exact values beside the visual bars. Original node IDs, model names, and logs stay intact even when the surrounding labels are translated. A saved run records its original ID, iteration and provider-request counts, token counts and elapsed time. CPU/GPU placement remains uncollected unless supported by actual evidence; a long duration alone does not establish a hardware bottleneck. A failed request can collect only browser request time, with routing, stage timings and model calls left explicitly uncollected. Older saved runs can lack telemetry without being corrupt.
 
-<!-- capture:20-routing-performance -->
-
-![This existing failed request collected 31ms of browser request time but no server routing, stage timings, model calls or CPU/GPU placement.](../assets/20-routing-performance.en.jpg)
-
-*This existing failed request collected 31ms of browser request time but no server routing, stage timings, model calls or CPU/GPU placement. The interface explicitly shows uncollected data instead of inventing measurements.*
-
+![The run trace of an evaluation with measured stage durations and request totals.](../assets/execution-performance-and-run-trace.en.png)
 ## Run limits versus provider limits {#limits}
 
 > [!DEV]
@@ -92,16 +76,10 @@ Installed, loaded, and answer-capable are separate facts. An installed model can
 
 The **Command target** filter narrows each category to **Python**, **Web**, **Database** or **App**; **All targets** restores every target. It combines with the category filter and is remembered independently in this browser. App includes checkout and app-service operations; PostgreSQL checks and schema operations target Database. Target badges come from the operator registry, not from command-name guesses. An older running operator without this field is marked **Target not reported**. Selecting filters does not execute commands.
 
-### SCREENSHOT NEEDED
-
-<!-- SCREENSHOT NEEDED: feature=operations-category-and-target-filters; locale=en; theme=light; capture=operations-tab-with-category-and-target-filters-target-badges-and-confirmation-required-badge; issue=106; preserve-existing-assets=true -->
-
-**Screenshot pending for the grouped Operations cards with the category filter and the confirmation badge. Existing screenshots remain unchanged.**
-
 ## Stop and continue later {#resume}
 
 > [!DEV]
-> The commands below stop and start the operator’s local stack. Visitors should simply use the deployed application rather than manage its services.
+> The commands below stop and start the operator's local stack. Visitors should simply use the deployed application rather than manage its services.
 
 Normal shutdown preserves the database volume and files:
 
@@ -118,15 +96,9 @@ rag-dev up -d
 
 Reuse services that are already running. Refresh System, inspect Documents and Jobs, then return to the saved conversation. Do not repeat download, ingestion, embedding, or evaluation when the required result is already present. Inspect interrupted jobs explicitly before retrying; they are not resumed automatically.
 
-Saved conversations and their profiles remain in that browser. In-page workspace navigation preserves open editors, selections, and scroll; an unfinished question draft is not a promise of persistence across a page reload or browser-data deletion. Ordinary shutdown does not require [runtime reset](troubleshooting.md#reset).
+Saved conversations and their profiles remain in that browser. In-page workspace navigation preserves open editors, selections, and scroll; an unfinished question draft is not a promise of persistence across a page reload or browser-data deletion. Ordinary shutdown does not require [runtime reset](troubleshooting.md#reset). **Data & help** separates browser conversations and preference resets from server documents and job history; no cleanup or reset action is required for an ordinary shutdown.
 
-<!-- capture:14-browser-data -->
-
-![Data & help separates browser conversations and preference resets from server documents and job history.](../assets/14-browser-data.en.jpg)
-
-*Data & help separates browser conversations and preference resets from server documents and job history. No cleanup or reset action was executed.*
-
-**Production preview** does not switch the running backend to production or submit a review. Its header identifies the DEV backend and read-only scope. Use **Exit preview** to resume your retained DEV workspace. A preview of the interface does not create execution timings or prove the production image’s permissions; inspect real run records and the final image separately. See [environment boundaries](environment.md#environment-boundaries).
+The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag/issues/211) and is not available in this release. See [environment boundaries](environment.md#environment-boundaries).
 
 ## Recorded provider usage
 
@@ -138,13 +110,9 @@ Local embedding token counts are tokenizer estimates, shown separately from prov
 
 After an explicitly requested backfill, revisit Usage and find its embedding model, provider/slot and role. If persistence fails after a provider response, the job fails instead of silently claiming complete accounting; inspect that error before retrying because a repeated call may cost money. Usage metadata lives in the existing Run request-context and OperatorJob result JSONB fields, so this feature requires no schema reset or new ORM columns.
 
-### SCREENSHOT NEEDED
-<!-- Feature: provider and credential usage groups with review/embedding roles, reported versus estimated inputs, local zero cost and incomplete external estimates; locale=en; theme=light; preserve all existing screenshot assets. -->
-
-
 ## Notification center {#notification-center}
 
-Open the bell in the top bar, next to the production-preview and language controls. Its badge counts unread entries. The panel groups entries into **In progress** (live corpus jobs), **New notifications** (unread) and a collapsed **Past notifications · N** section; marking an entry read moves it into the past section instead of dimming it in place. The newest 100 entries remain in this browser: closing the panel or letting a toast expire does not delete them. Dismissing a toast marks that entry read. **Mark all read** keeps the history; **Delete** and **Clear all notifications** remove notification records only, not conversations, source files or job results.
+Open the bell in the top bar, next to the language and theme controls. Its badge counts unread entries. The panel groups entries into **In progress** (live corpus jobs), **New notifications** (unread) and a collapsed **Past notifications · N** section; marking an entry read moves it into the past section instead of dimming it in place. The newest 100 entries remain in this browser: closing the panel or letting a toast expire does not delete them. Dismissing a toast marks that entry read. **Mark all read** keeps the history; **Delete** and **Clear all notifications** remove notification records only, not conversations, source files or job results.
 
 Select an entry to mark it read and open its related job, evaluation result, conversation, settings category or System status. An entry without a destination only changes its read state. Escape closes the panel and returns focus to the bell; arrow keys move between entries. Long messages expand without discarding text. Error pictograms and accents identify failures; when the API supplies a cause, file and fix action, expand **Technical details** to inspect them. Server-originated messages remain exactly as received.
 
@@ -152,5 +120,4 @@ Transient toasts float at the top right under the top bar, fade in and out, and 
 
 The center also records actual connection transitions, local-model changes and slow-CPU measurements, preset content changes, comparison outcomes and available reset/fresh-start receipts. A preset poll with unchanged contents or an intermediate adapter-loading state does not create an alert. A fresh-start receipt describes recorded cleanup, not proof that every restarted service is ready; inspect System status before continuing.
 
-### SCREENSHOT NEEDED
-<!-- Feature: top-bar notification bell and persistent panel; locale=en; light mode; 1440px and 720px; show unread badge, the In progress / New notifications / Past notifications sections, an overlay toast at the top right, error kind icon, expanded original API detail, hover-revealed open/read/delete actions and a job/result target. Use an actual app state, not a component fixture. -->
+![The notification center open with unread counts and the All/Jobs/Errors tabs.](../assets/notification-center.en.png)

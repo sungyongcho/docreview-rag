@@ -203,7 +203,7 @@ def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
 
     if os.geteuid() == 0:
         pytest.skip("Root bypasses the Unix mode-denial fixture.")
-    source = tmp_path / "data/corpus/source owner's report.html"
+    source = tmp_path / "data/corpus/sec/owner/source owner's report.html"
     source.parent.mkdir(parents=True)
     source.write_text("preserve these real bytes")
     source.chmod(0)
@@ -225,7 +225,7 @@ def test_real_unreadable_source_offers_quoted_owner_paths_and_one_retry(
             source.read_bytes()
         if owner_repairs:
             result = command.preview_sources(tmp_path)
-            assert set(result["files"]) == {source.name}
+            assert set(result["files"]) == {str(source.relative_to(tmp_path / "data/corpus"))}
             assert source.read_text() == "preserve these real bytes"
         else:
             with pytest.raises(ValueError, match="no deletion was submitted"):
@@ -281,7 +281,7 @@ def test_declined_permission_repair_precedes_docker_and_deletion_confirmation(
     """An unreadable real source blocks all Docker, database and typed-deletion activity."""
     if os.geteuid() == 0:
         pytest.skip("Root bypasses the Unix mode-denial fixture.")
-    source = tmp_path / "data/corpus/private.html"
+    source = tmp_path / "data/corpus/sec/private/private.html"
     source.parent.mkdir(parents=True)
     source.write_text("keep")
     source.chmod(0)

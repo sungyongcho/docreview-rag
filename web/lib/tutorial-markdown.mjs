@@ -1,6 +1,8 @@
 import { createElement } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { DOCUMENTATION_REGISTRY, documentationDocuments, documentationLink } from "./documentation-registry.mjs";
 export { DOCUMENTS } from "./documentation-registry.mjs";
 
@@ -8,7 +10,7 @@ function nodeText(node) {
   return node.value ?? (node.children ?? []).map(nodeText).join("");
 }
 
-export function renderTutorial(source, { locale = "ko", renderCode, renderDevelopmentNotice, renderImage, assetVersion, registry = DOCUMENTATION_REGISTRY } = {}) {
+export function renderTutorial(source, { locale = "ko", renderCode, renderDevelopmentNotice, renderImage, assetVersion, math = false, registry = DOCUMENTATION_REGISTRY } = {}) {
   const steps = documentationDocuments(registry)
     .filter((document) => document.locale === locale)
     .flatMap((document) => document.steps.map((step) => ({ ...step, source: document.source })))
@@ -45,6 +47,11 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
             if (!nodeText(node.children[0]).trim()) node.children.shift();
             node.data = { ...node.data, hProperties: { "data-development-only": "true" } };
           }
+          if (first?.type === "text" && /^\[!GOAL\](?:\n|$)/.test(first.value)) {
+            first.value = first.value.replace(/^\[!GOAL\]\n?/, "");
+            if (!nodeText(node.children[0]).trim()) node.children.shift();
+            node.data = { ...node.data, hProperties: { "data-goal": "true" } };
+          }
         }
         if (node.type === "heading") {
           const explicit = nodeText(node).match(/\s+\{#([a-z][a-z0-9-]*)\}\s*$/);
@@ -61,6 +68,7 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
           used.add(id);
           node.data = { ...node.data, hProperties: { id } };
           headings.push({ id, text, depth: node.depth });
+          if (text === "SCREENSHOT NEEDED") node.data = { ...node.data, hProperties: { ...node.data.hProperties, "data-screenshot-needed": "true" } };
         }
         if (node.type === "code") {
           node.data = { ...node.data, hProperties: { "data-code-index": codes.length } };
@@ -73,7 +81,7 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
           }
           if (!node.alt?.trim()) throw new Error(`Tutorial image requires alt text: ${path}`);
           images.push(path);
-          node.url = `/docreview-rag-agent/tutorial-assets/${path.slice(7).split("/").map(encodeURIComponent).join("/")}`;
+          node.url = `/docreview-rag/tutorial-assets/${path.slice(7).split("/").map(encodeURIComponent).join("/")}`;
           if (assetVersion) node.url += `?v=${encodeURIComponent(assetVersion)}`;
         }
         if (node.type === "link") {
@@ -95,18 +103,22 @@ export function renderTutorial(source, { locale = "ko", renderCode, renderDevelo
   }
   const content = Markdown({
     skipHtml: true,
-    remarkPlugins: [remarkGfm, prepare],
+    remarkPlugins: [remarkGfm, ...(math ? [remarkMath] : []), prepare],
+    rehypePlugins: math ? [rehypeKatex] : [],
     components: {
       a: ({ children, href }) => {
         const external = /^https?:\/\//i.test(href ?? "");
         return createElement("a", { href, ...(external ? { target: "_blank", rel: "noopener noreferrer" } : {}) }, children,
           external ? createElement("span", { className: "visually-hidden" }, locale === "ko" ? " · 새 탭에서 열림" : " · Opens in a new tab") : null);
       },
-      blockquote: ({ children, node }) => node.properties["data-development-only"] === "true"
-        ? (renderDevelopmentNotice?.(children) ?? createElement("aside", { className: "docs-development-notice" }, createElement("strong", null, locale === "ko" ? "개발 모드 전용" : "DEV only"), children))
-        : createElement("blockquote", null, children),
-      ...(renderCode ? { pre: ({ children }) => renderCode(codes[Number(children.props["data-code-index"])]) } : {}),
-      ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((depth) => [`h${depth}`, ({ children, id }) => createElement(`h${depth}`, { id }, createElement("a", { href: `#${encodeURIComponent(id)}`, className: "docs-heading-link" }, children, createElement("span", { "aria-hidden": true, className: "docs-heading-hash" }, " #")))])),
+      blockquote: ({ children, node }) => node.properties["data-goal"] === "true"
+        ? createElement("aside", { className: "docs-goal" },
+            createElement("span", { className: "docs-goal-label" }, locale === "ko" ? "목표" : "Goal"), children)
+        : node.properties["data-development-only"] === "true"
+          ? (renderDevelopmentNotice?.(children) ?? createElement("aside", { className: "docs-development-notice" }, createElement("strong", null, locale === "ko" ? "개발 모드 전용" : "DEV only"), children))
+          : createElement("blockquote", null, children),
+      ...(renderCode ? { pre: ({ children }) => children?.props?.["data-code-index"] === undefined ? createElement("pre", null, children) : renderCode(codes[Number(children.props["data-code-index"])]) } : {}),
+      ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((depth) => [`h${depth}`, ({ children, id, node }) => node?.properties?.["data-screenshot-needed"] === "true" ? null : createElement(`h${depth}`, { id }, createElement("a", { href: `#${encodeURIComponent(id)}`, className: "docs-heading-link" }, children, createElement("span", { "aria-hidden": true, className: "docs-heading-hash" }, " #")))])),
       table: ({ children }) => createElement("div", { className: "markdown-table-wrap", tabIndex: 0, role: "region", "aria-label": locale === "ko" ? "가로로 스크롤할 수 있는 표" : "Scrollable table" }, createElement("table", null, children)),
       img: ({ src, alt, title, node }) => renderImage
         ? renderImage({ src, alt, title, caption: node.properties["data-tutorial-caption"] || alt, locale })
