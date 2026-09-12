@@ -5,612 +5,61 @@
   },
   "documents": [
     {
-      "document_id": "NVDA-FY2024",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "NVDA",
-      "issuer_id": "0001045810",
-      "aliases": [
-        "NVDA",
-        "NVIDIA",
-        "NVIDIA Corporation"
-      ],
-      "filing_id": "0001045810-24-000029",
-      "fiscal_year": 2024,
-      "form": "10-K",
-      "filing_date": "2024-02-21",
-      "report_period": "2024-01-28",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm",
-      "sec": {
-        "cik": "0001045810",
-        "accession": "0001045810-24-000029",
-        "primary_document": "nvda-20240128.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "NVDA-FY2023",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "NVDA",
-      "issuer_id": "0001045810",
-      "aliases": [
-        "NVDA",
-        "NVIDIA",
-        "NVIDIA Corporation"
-      ],
-      "filing_id": "0001045810-23-000017",
-      "fiscal_year": 2023,
-      "form": "10-K",
-      "filing_date": "2023-02-24",
-      "report_period": "2023-01-29",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000017/nvda-20230129.htm",
-      "sec": {
-        "cik": "0001045810",
-        "accession": "0001045810-23-000017",
-        "primary_document": "nvda-20230129.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "NVDA-FY2022",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "NVDA",
-      "issuer_id": "0001045810",
-      "aliases": [
-        "NVDA",
-        "NVIDIA",
-        "NVIDIA Corporation"
-      ],
-      "filing_id": "0001045810-22-000036",
-      "fiscal_year": 2022,
-      "form": "10-K",
-      "filing_date": "2022-03-18",
-      "report_period": "2022-01-30",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581022000036/nvda-20220130.htm",
-      "sec": {
-        "cik": "0001045810",
-        "accession": "0001045810-22-000036",
-        "primary_document": "nvda-20220130.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "NVDA-FY2021",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "NVDA",
-      "issuer_id": "0001045810",
-      "aliases": [
-        "NVDA",
-        "NVIDIA",
-        "NVIDIA Corporation"
-      ],
-      "filing_id": "0001045810-21-000010",
-      "fiscal_year": 2021,
-      "form": "10-K",
-      "filing_date": "2021-02-26",
-      "report_period": "2021-01-31",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000010/nvda-20210131.htm",
-      "sec": {
-        "cik": "0001045810",
-        "accession": "0001045810-21-000010",
-        "primary_document": "nvda-20210131.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "NVDA-FY2020",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "NVDA",
-      "issuer_id": "0001045810",
-      "aliases": [
-        "NVDA",
-        "NVIDIA",
-        "NVIDIA Corporation"
-      ],
-      "filing_id": "0001045810-20-000010",
-      "fiscal_year": 2020,
-      "form": "10-K",
-      "filing_date": "2020-02-20",
-      "report_period": "2020-01-26",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000010/nvda-2020x10k.htm",
-      "sec": {
-        "cik": "0001045810",
-        "accession": "0001045810-20-000010",
-        "primary_document": "nvda-2020x10k.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "AMD-FY2023",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "AMD",
-      "issuer_id": "0000002488",
-      "aliases": [
-        "AMD",
-        "Advanced Micro Devices"
-      ],
-      "filing_id": "0000002488-24-000012",
-      "fiscal_year": 2023,
-      "form": "10-K",
-      "filing_date": "2024-01-31",
-      "report_period": "2023-12-30",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm",
-      "sec": {
-        "cik": "0000002488",
-        "accession": "0000002488-24-000012",
-        "primary_document": "amd-20231230.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "AMD-FY2022",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "AMD",
-      "issuer_id": "0000002488",
-      "aliases": [
-        "AMD",
-        "Advanced Micro Devices"
-      ],
-      "filing_id": "0000002488-23-000047",
-      "fiscal_year": 2022,
-      "form": "10-K",
-      "filing_date": "2023-02-27",
-      "report_period": "2022-12-31",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248823000047/amd-20221231.htm",
-      "sec": {
-        "cik": "0000002488",
-        "accession": "0000002488-23-000047",
-        "primary_document": "amd-20221231.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "AMD-FY2021",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "AMD",
-      "issuer_id": "0000002488",
-      "aliases": [
-        "AMD",
-        "Advanced Micro Devices"
-      ],
-      "filing_id": "0000002488-22-000016",
-      "fiscal_year": 2021,
-      "form": "10-K",
-      "filing_date": "2022-02-03",
-      "report_period": "2021-12-25",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248822000016/amd-20211225.htm",
-      "sec": {
-        "cik": "0000002488",
-        "accession": "0000002488-22-000016",
-        "primary_document": "amd-20211225.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "AMD-FY2020",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "AMD",
-      "issuer_id": "0000002488",
-      "aliases": [
-        "AMD",
-        "Advanced Micro Devices"
-      ],
-      "filing_id": "0001628280-21-001185",
-      "fiscal_year": 2020,
-      "form": "10-K",
-      "filing_date": "2021-01-29",
-      "report_period": "2020-12-26",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000162828021001185/amd-20201226.htm",
-      "sec": {
-        "cik": "0000002488",
-        "accession": "0001628280-21-001185",
-        "primary_document": "amd-20201226.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "AMD-FY2019",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "AMD",
-      "issuer_id": "0000002488",
-      "aliases": [
-        "AMD",
-        "Advanced Micro Devices"
-      ],
-      "filing_id": "0000002488-20-000008",
-      "fiscal_year": 2019,
-      "form": "10-K",
-      "filing_date": "2020-02-04",
-      "report_period": "2019-12-28",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000008/amdform10-kfy2019.htm",
-      "sec": {
-        "cik": "0000002488",
-        "accession": "0000002488-20-000008",
-        "primary_document": "amdform10-kfy2019.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "INTC-FY2023",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "INTC",
-      "issuer_id": "0000050863",
-      "aliases": [
-        "INTC",
-        "Intel",
-        "Intel Corporation"
-      ],
-      "filing_id": "0000050863-24-000010",
-      "fiscal_year": 2023,
-      "form": "10-K",
-      "filing_date": "2024-01-26",
-      "report_period": "2023-12-30",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086324000010/intc-20231230.htm",
-      "sec": {
-        "cik": "0000050863",
-        "accession": "0000050863-24-000010",
-        "primary_document": "intc-20231230.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "INTC-FY2022",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "INTC",
-      "issuer_id": "0000050863",
-      "aliases": [
-        "INTC",
-        "Intel",
-        "Intel Corporation"
-      ],
-      "filing_id": "0000050863-23-000006",
-      "fiscal_year": 2022,
-      "form": "10-K",
-      "filing_date": "2023-01-27",
-      "report_period": "2022-12-31",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086323000006/intc-20221231.htm",
-      "sec": {
-        "cik": "0000050863",
-        "accession": "0000050863-23-000006",
-        "primary_document": "intc-20221231.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "INTC-FY2021",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "INTC",
-      "issuer_id": "0000050863",
-      "aliases": [
-        "INTC",
-        "Intel",
-        "Intel Corporation"
-      ],
-      "filing_id": "0000050863-22-000007",
-      "fiscal_year": 2021,
-      "form": "10-K",
-      "filing_date": "2022-01-27",
-      "report_period": "2021-12-25",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086322000007/intc-20211225.htm",
-      "sec": {
-        "cik": "0000050863",
-        "accession": "0000050863-22-000007",
-        "primary_document": "intc-20211225.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "INTC-FY2020",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "INTC",
-      "issuer_id": "0000050863",
-      "aliases": [
-        "INTC",
-        "Intel",
-        "Intel Corporation"
-      ],
-      "filing_id": "0000050863-21-000010",
-      "fiscal_year": 2020,
-      "form": "10-K",
-      "filing_date": "2021-01-22",
-      "report_period": "2020-12-26",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086321000010/intc-20201226.htm",
-      "sec": {
-        "cik": "0000050863",
-        "accession": "0000050863-21-000010",
-        "primary_document": "intc-20201226.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "INTC-FY2019",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "INTC",
-      "issuer_id": "0000050863",
-      "aliases": [
-        "INTC",
-        "Intel",
-        "Intel Corporation"
-      ],
-      "filing_id": "0000050863-20-000011",
-      "fiscal_year": 2019,
-      "form": "10-K",
-      "filing_date": "2020-01-24",
-      "report_period": "2019-12-28",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086320000011/a12282019q4-10kdocument.htm",
-      "sec": {
-        "cik": "0000050863",
-        "accession": "0000050863-20-000011",
-        "primary_document": "a12282019q4-10kdocument.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "MU-FY2024",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "MU",
-      "issuer_id": "0000723125",
-      "aliases": [
-        "MU",
-        "Micron",
-        "Micron Technology"
-      ],
-      "filing_id": "0000723125-24-000027",
-      "fiscal_year": 2024,
-      "form": "10-K",
-      "filing_date": "2024-10-04",
-      "report_period": "2024-08-29",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312524000027/mu-20240829.htm",
-      "sec": {
-        "cik": "0000723125",
-        "accession": "0000723125-24-000027",
-        "primary_document": "mu-20240829.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "MU-FY2023",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "MU",
-      "issuer_id": "0000723125",
-      "aliases": [
-        "MU",
-        "Micron",
-        "Micron Technology"
-      ],
-      "filing_id": "0000723125-23-000054",
-      "fiscal_year": 2023,
-      "form": "10-K",
-      "filing_date": "2023-10-06",
-      "report_period": "2023-08-31",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312523000054/mu-20230831.htm",
-      "sec": {
-        "cik": "0000723125",
-        "accession": "0000723125-23-000054",
-        "primary_document": "mu-20230831.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "MU-FY2022",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "MU",
-      "issuer_id": "0000723125",
-      "aliases": [
-        "MU",
-        "Micron",
-        "Micron Technology"
-      ],
-      "filing_id": "0000723125-22-000048",
-      "fiscal_year": 2022,
-      "form": "10-K",
-      "filing_date": "2022-10-07",
-      "report_period": "2022-09-01",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312522000048/mu-20220901.htm",
-      "sec": {
-        "cik": "0000723125",
-        "accession": "0000723125-22-000048",
-        "primary_document": "mu-20220901.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "MU-FY2021",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "MU",
-      "issuer_id": "0000723125",
-      "aliases": [
-        "MU",
-        "Micron",
-        "Micron Technology"
-      ],
-      "filing_id": "0000723125-21-000065",
-      "fiscal_year": 2021,
-      "form": "10-K",
-      "filing_date": "2021-10-08",
-      "report_period": "2021-09-02",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000065/mu-20210902.htm",
-      "sec": {
-        "cik": "0000723125",
-        "accession": "0000723125-21-000065",
-        "primary_document": "mu-20210902.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "MU-FY2020",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "MU",
-      "issuer_id": "0000723125",
-      "aliases": [
-        "MU",
-        "Micron",
-        "Micron Technology"
-      ],
-      "filing_id": "0000723125-20-000082",
-      "fiscal_year": 2020,
-      "form": "10-K",
-      "filing_date": "2020-10-19",
-      "report_period": "2020-09-03",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000082/mu-20200903.htm",
-      "sec": {
-        "cik": "0000723125",
-        "accession": "0000723125-20-000082",
-        "primary_document": "mu-20200903.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "AMD-FY2024",
-      "registry": "sec",
-      "language": "en",
-      "issuer": "AMD",
-      "issuer_id": "0000002488",
-      "aliases": [
-        "AMD",
-        "Advanced Micro Devices"
-      ],
-      "filing_id": "0000002488-25-000012",
-      "fiscal_year": 2024,
-      "form": "10-K",
-      "filing_date": "2025-02-05",
-      "report_period": "2024-12-28",
-      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm",
-      "sec": {
-        "cik": "0000002488",
-        "accession": "0000002488-25-000012",
-        "primary_document": "amd-20241228.htm"
-      },
-      "dart": null
-    },
-    {
-      "document_id": "005930-FY2024",
-      "registry": "dart",
-      "language": "ko",
-      "issuer": "005930",
-      "issuer_id": "00126380",
-      "aliases": [
-        "삼성전자",
-        "Samsung Electronics",
-        "005930"
-      ],
-      "filing_id": "20250311001085",
-      "fiscal_year": 2024,
-      "form": "사업보고서",
-      "filing_date": "2025-03-11",
-      "report_period": "2024-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250311001085",
-      "sec": null,
-      "dart": {
-        "corp_code": "00126380",
-        "receipt_number": "20250311001085",
-        "report_code": "11011",
-        "report_name": "사업보고서 (2024.12)"
-      }
-    },
-    {
-      "document_id": "000660-FY2024",
+      "document_id": "dart-20210330000776",
       "registry": "dart",
       "language": "ko",
       "issuer": "000660",
       "issuer_id": "00164779",
       "aliases": [
         "SK하이닉스",
-        "SK hynix",
         "000660"
       ],
-      "filing_id": "20250319000665",
-      "fiscal_year": 2024,
+      "filing_id": "20210330000776",
+      "fiscal_year": 2020,
       "form": "사업보고서",
-      "filing_date": "2025-03-19",
-      "report_period": "2024-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250319000665",
+      "filing_date": "2021-03-30",
+      "report_period": "2020-12-31",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20210330000776",
       "sec": null,
       "dart": {
         "corp_code": "00164779",
-        "receipt_number": "20250319000665",
+        "receipt_number": "20210330000776",
         "report_code": "11011",
-        "report_name": "사업보고서 (2024.12)"
+        "report_name": "[기재정정]사업보고서 (2020.12)"
       }
     },
     {
-      "document_id": "005930-FY2022",
-      "registry": "dart",
-      "language": "ko",
-      "issuer": "005930",
-      "issuer_id": "00126380",
-      "aliases": [
-        "삼성전자",
-        "Samsung Electronics",
-        "005930"
-      ],
-      "filing_id": "20230307000542",
-      "fiscal_year": 2022,
-      "form": "사업보고서",
-      "filing_date": "2023-03-07",
-      "report_period": "2022-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20230307000542",
-      "sec": null,
-      "dart": {
-        "corp_code": "00126380",
-        "receipt_number": "20230307000542",
-        "report_code": "11011",
-        "report_name": "사업보고서 (2022.12)"
-      }
-    },
-    {
-      "document_id": "005930-FY2023",
-      "registry": "dart",
-      "language": "ko",
-      "issuer": "005930",
-      "issuer_id": "00126380",
-      "aliases": [
-        "삼성전자",
-        "Samsung Electronics",
-        "005930"
-      ],
-      "filing_id": "20240312000736",
-      "fiscal_year": 2023,
-      "form": "사업보고서",
-      "filing_date": "2024-03-12",
-      "report_period": "2023-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20240312000736",
-      "sec": null,
-      "dart": {
-        "corp_code": "00126380",
-        "receipt_number": "20240312000736",
-        "report_code": "11011",
-        "report_name": "사업보고서 (2023.12)"
-      }
-    },
-    {
-      "document_id": "000660-FY2022",
+      "document_id": "dart-20220322000590",
       "registry": "dart",
       "language": "ko",
       "issuer": "000660",
       "issuer_id": "00164779",
       "aliases": [
         "SK하이닉스",
-        "SK hynix",
+        "000660"
+      ],
+      "filing_id": "20220322000590",
+      "fiscal_year": 2021,
+      "form": "사업보고서",
+      "filing_date": "2022-03-22",
+      "report_period": "2021-12-31",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20220322000590",
+      "sec": null,
+      "dart": {
+        "corp_code": "00164779",
+        "receipt_number": "20220322000590",
+        "report_code": "11011",
+        "report_name": "사업보고서 (2021.12)"
+      }
+    },
+    {
+      "document_id": "dart-20230321001209",
+      "registry": "dart",
+      "language": "ko",
+      "issuer": "000660",
+      "issuer_id": "00164779",
+      "aliases": [
+        "SK하이닉스",
         "000660"
       ],
       "filing_id": "20230321001209",
@@ -628,14 +77,37 @@
       }
     },
     {
-      "document_id": "000660-FY2023",
+      "document_id": "dart-20260317000635",
       "registry": "dart",
       "language": "ko",
       "issuer": "000660",
       "issuer_id": "00164779",
       "aliases": [
         "SK하이닉스",
-        "SK hynix",
+        "000660"
+      ],
+      "filing_id": "20260317000635",
+      "fiscal_year": 2025,
+      "form": "사업보고서",
+      "filing_date": "2026-03-17",
+      "report_period": "2025-12-31",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260317000635",
+      "sec": null,
+      "dart": {
+        "corp_code": "00164779",
+        "receipt_number": "20260317000635",
+        "report_code": "11011",
+        "report_name": "사업보고서 (2025.12)"
+      }
+    },
+    {
+      "document_id": "dart-20240319000684",
+      "registry": "dart",
+      "language": "ko",
+      "issuer": "000660",
+      "issuer_id": "00164779",
+      "aliases": [
+        "SK하이닉스",
         "000660"
       ],
       "filing_id": "20240319000684",
@@ -653,94 +125,391 @@
       }
     },
     {
-      "document_id": "035420-FY2022",
+      "document_id": "dart-20250319000665",
       "registry": "dart",
       "language": "ko",
-      "issuer": "035420",
-      "issuer_id": "00266961",
+      "issuer": "000660",
+      "issuer_id": "00164779",
       "aliases": [
-        "NAVER",
-        "네이버",
-        "035420"
+        "SK하이닉스",
+        "000660"
       ],
-      "filing_id": "20230314001049",
-      "fiscal_year": 2022,
+      "filing_id": "20250319000665",
+      "fiscal_year": 2024,
       "form": "사업보고서",
-      "filing_date": "2023-03-14",
-      "report_period": "2022-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20230314001049",
+      "filing_date": "2025-03-19",
+      "report_period": "2024-12-31",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250319000665",
       "sec": null,
       "dart": {
-        "corp_code": "00266961",
-        "receipt_number": "20230314001049",
+        "corp_code": "00164779",
+        "receipt_number": "20250319000665",
+        "report_code": "11011",
+        "report_name": "사업보고서 (2024.12)"
+      }
+    },
+    {
+      "document_id": "dart-20250311001085",
+      "registry": "dart",
+      "language": "ko",
+      "issuer": "005930",
+      "issuer_id": "00126380",
+      "aliases": [
+        "삼성전자",
+        "005930"
+      ],
+      "filing_id": "20250311001085",
+      "fiscal_year": 2024,
+      "form": "사업보고서",
+      "filing_date": "2025-03-11",
+      "report_period": "2024-12-31",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250311001085",
+      "sec": null,
+      "dart": {
+        "corp_code": "00126380",
+        "receipt_number": "20250311001085",
+        "report_code": "11011",
+        "report_name": "사업보고서 (2024.12)"
+      }
+    },
+    {
+      "document_id": "sec-0001045810-19-000023",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "NVDA",
+      "issuer_id": "0001045810",
+      "aliases": [
+        "NVDA",
+        "NVIDIA CORP"
+      ],
+      "filing_id": "0001045810-19-000023",
+      "fiscal_year": 2019,
+      "form": "10-K",
+      "filing_date": "2019-02-21",
+      "report_period": "2019-01-27",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581019000023/nvda-2019x10k.htm",
+      "sec": {
+        "cik": "0001045810",
+        "accession": "0001045810-19-000023",
+        "primary_document": "nvda-2019x10k.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0001045810-20-000010",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "NVDA",
+      "issuer_id": "0001045810",
+      "aliases": [
+        "NVDA",
+        "NVIDIA CORP"
+      ],
+      "filing_id": "0001045810-20-000010",
+      "fiscal_year": 2020,
+      "form": "10-K",
+      "filing_date": "2020-02-20",
+      "report_period": "2020-01-26",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000010/nvda-2020x10k.htm",
+      "sec": {
+        "cik": "0001045810",
+        "accession": "0001045810-20-000010",
+        "primary_document": "nvda-2020x10k.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0001045810-21-000010",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "NVDA",
+      "issuer_id": "0001045810",
+      "aliases": [
+        "NVDA",
+        "NVIDIA CORP"
+      ],
+      "filing_id": "0001045810-21-000010",
+      "fiscal_year": 2021,
+      "form": "10-K",
+      "filing_date": "2021-02-26",
+      "report_period": "2021-01-31",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000010/nvda-20210131.htm",
+      "sec": {
+        "cik": "0001045810",
+        "accession": "0001045810-21-000010",
+        "primary_document": "nvda-20210131.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0001045810-22-000036",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "NVDA",
+      "issuer_id": "0001045810",
+      "aliases": [
+        "NVDA",
+        "NVIDIA CORP"
+      ],
+      "filing_id": "0001045810-22-000036",
+      "fiscal_year": 2022,
+      "form": "10-K",
+      "filing_date": "2022-03-18",
+      "report_period": "2022-01-30",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581022000036/nvda-20220130.htm",
+      "sec": {
+        "cik": "0001045810",
+        "accession": "0001045810-22-000036",
+        "primary_document": "nvda-20220130.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "dart-20230307000542",
+      "registry": "dart",
+      "language": "ko",
+      "issuer": "005930",
+      "issuer_id": "00126380",
+      "aliases": [
+        "삼성전자",
+        "005930"
+      ],
+      "filing_id": "20230307000542",
+      "fiscal_year": 2022,
+      "form": "사업보고서",
+      "filing_date": "2023-03-07",
+      "report_period": "2022-12-31",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20230307000542",
+      "sec": null,
+      "dart": {
+        "corp_code": "00126380",
+        "receipt_number": "20230307000542",
         "report_code": "11011",
         "report_name": "사업보고서 (2022.12)"
       }
     },
     {
-      "document_id": "035420-FY2023",
+      "document_id": "dart-20240312000736",
       "registry": "dart",
       "language": "ko",
-      "issuer": "035420",
-      "issuer_id": "00266961",
+      "issuer": "005930",
+      "issuer_id": "00126380",
       "aliases": [
-        "NAVER",
-        "네이버",
-        "035420"
+        "삼성전자",
+        "005930"
       ],
-      "filing_id": "20240318000844",
+      "filing_id": "20240312000736",
       "fiscal_year": 2023,
       "form": "사업보고서",
-      "filing_date": "2024-03-18",
+      "filing_date": "2024-03-12",
       "report_period": "2023-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20240318000844",
+      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20240312000736",
       "sec": null,
       "dart": {
-        "corp_code": "00266961",
-        "receipt_number": "20240318000844",
+        "corp_code": "00126380",
+        "receipt_number": "20240312000736",
         "report_code": "11011",
         "report_name": "사업보고서 (2023.12)"
       }
     },
     {
-      "document_id": "035420-FY2024",
-      "registry": "dart",
-      "language": "ko",
-      "issuer": "035420",
-      "issuer_id": "00266961",
+      "document_id": "sec-0000002488-20-000008",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
       "aliases": [
-        "NAVER",
-        "네이버",
-        "035420"
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
       ],
-      "filing_id": "20250318000645",
+      "filing_id": "0000002488-20-000008",
+      "fiscal_year": 2019,
+      "form": "10-K",
+      "filing_date": "2020-02-04",
+      "report_period": "2019-12-28",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000008/amdform10-kfy2019.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-20-000008",
+        "primary_document": "amdform10-kfy2019.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0000002488-22-000016",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0000002488-22-000016",
+      "fiscal_year": 2021,
+      "form": "10-K",
+      "filing_date": "2022-02-03",
+      "report_period": "2021-12-25",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248822000016/amd-20211225.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-22-000016",
+        "primary_document": "amd-20211225.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0000002488-23-000047",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0000002488-23-000047",
+      "fiscal_year": 2022,
+      "form": "10-K",
+      "filing_date": "2023-02-27",
+      "report_period": "2022-12-31",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248823000047/amd-20221231.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-23-000047",
+        "primary_document": "amd-20221231.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0000002488-24-000012",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0000002488-24-000012",
+      "fiscal_year": 2023,
+      "form": "10-K",
+      "filing_date": "2024-01-31",
+      "report_period": "2023-12-30",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-24-000012",
+        "primary_document": "amd-20231230.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0000002488-25-000012",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0000002488-25-000012",
       "fiscal_year": 2024,
-      "form": "사업보고서",
-      "filing_date": "2025-03-18",
-      "report_period": "2024-12-31",
-      "source_url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250318000645",
-      "sec": null,
-      "dart": {
-        "corp_code": "00266961",
-        "receipt_number": "20250318000645",
-        "report_code": "11011",
-        "report_name": "사업보고서 (2024.12)"
-      }
+      "form": "10-K",
+      "filing_date": "2025-02-05",
+      "report_period": "2024-12-28",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0000002488-25-000012",
+        "primary_document": "amd-20241228.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0001045810-23-000017",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "NVDA",
+      "issuer_id": "0001045810",
+      "aliases": [
+        "NVDA",
+        "NVIDIA CORP"
+      ],
+      "filing_id": "0001045810-23-000017",
+      "fiscal_year": 2023,
+      "form": "10-K",
+      "filing_date": "2023-02-24",
+      "report_period": "2023-01-29",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000017/nvda-20230129.htm",
+      "sec": {
+        "cik": "0001045810",
+        "accession": "0001045810-23-000017",
+        "primary_document": "nvda-20230129.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0001045810-24-000029",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "NVDA",
+      "issuer_id": "0001045810",
+      "aliases": [
+        "NVDA",
+        "NVIDIA CORP"
+      ],
+      "filing_id": "0001045810-24-000029",
+      "fiscal_year": 2024,
+      "form": "10-K",
+      "filing_date": "2024-02-21",
+      "report_period": "2024-01-28",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm",
+      "sec": {
+        "cik": "0001045810",
+        "accession": "0001045810-24-000029",
+        "primary_document": "nvda-20240128.htm"
+      },
+      "dart": null
+    },
+    {
+      "document_id": "sec-0001628280-21-001185",
+      "registry": "sec",
+      "language": "en",
+      "issuer": "AMD",
+      "issuer_id": "0000002488",
+      "aliases": [
+        "AMD",
+        "ADVANCED MICRO DEVICES INC"
+      ],
+      "filing_id": "0001628280-21-001185",
+      "fiscal_year": 2020,
+      "form": "10-K",
+      "filing_date": "2021-01-29",
+      "report_period": "2020-12-26",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000162828021001185/amd-20201226.htm",
+      "sec": {
+        "cik": "0000002488",
+        "accession": "0001628280-21-001185",
+        "primary_document": "amd-20201226.htm"
+      },
+      "dart": null
     }
   ],
   "artifacts": [
     {
-      "artifact_id": "NVDA-FY2024-source",
-      "document_id": "NVDA-FY2024",
-      "role": "primary",
-      "path": "NVDA/2024-02-21_0001045810-24-000029.html",
-      "sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
-      "byte_length": 2085566,
-      "encoding": "utf-8",
+      "artifact_id": "dart-20210330000776:archive:266551a410ea57538b996e061c28b05f2b79dcee4d7ef785bba121143fd57e92",
+      "document_id": "dart-20210330000776",
+      "role": "archive",
+      "path": "dart/000660/20210330000776/original.zip",
+      "sha256": "266551a410ea57538b996e061c28b05f2b79dcee4d7ef785bba121143fd57e92",
+      "byte_length": 306881,
+      "encoding": null,
       "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm",
-        "media_type": "text/html",
+        "acquired_at": "2026-09-08T15:51:02.163723Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20210330000776",
+        "media_type": "application/zip",
         "archive_sha256": null,
         "archive_member": null,
         "original_encoding": null,
@@ -748,448 +517,88 @@
       }
     },
     {
-      "artifact_id": "NVDA-FY2023-source",
-      "document_id": "NVDA-FY2023",
+      "artifact_id": "dart-20210330000776:primary:590e44a93f5585a5d5df778d4e803fbae633aa961085a4011c0ac28aa60f2106",
+      "document_id": "dart-20210330000776",
       "role": "primary",
-      "path": "NVDA/2023-02-24_0001045810-23-000017.html",
-      "sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
-      "byte_length": 2669239,
+      "path": "dart/000660/20210330000776/primary.xml",
+      "sha256": "590e44a93f5585a5d5df778d4e803fbae633aa961085a4011c0ac28aa60f2106",
+      "byte_length": 3035261,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000017/nvda-20230129.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "NVDA-FY2022-source",
-      "document_id": "NVDA-FY2022",
-      "role": "primary",
-      "path": "NVDA/2022-03-18_0001045810-22-000036.html",
-      "sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
-      "byte_length": 2548428,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581022000036/nvda-20220130.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "NVDA-FY2021-source",
-      "document_id": "NVDA-FY2021",
-      "role": "primary",
-      "path": "NVDA/2021-02-26_0001045810-21-000010.html",
-      "sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
-      "byte_length": 2511662,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000010/nvda-20210131.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "NVDA-FY2020-source",
-      "document_id": "NVDA-FY2020",
-      "role": "primary",
-      "path": "NVDA/2020-02-20_0001045810-20-000010.html",
-      "sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
-      "byte_length": 2655153,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000010/nvda-2020x10k.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "AMD-FY2023-source",
-      "document_id": "AMD-FY2023",
-      "role": "primary",
-      "path": "AMD/2024-01-31_0000002488-24-000012.html",
-      "sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
-      "byte_length": 2130305,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "AMD-FY2022-source",
-      "document_id": "AMD-FY2022",
-      "role": "primary",
-      "path": "AMD/2023-02-27_0000002488-23-000047.html",
-      "sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
-      "byte_length": 2648242,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248823000047/amd-20221231.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "AMD-FY2021-source",
-      "document_id": "AMD-FY2021",
-      "role": "primary",
-      "path": "AMD/2022-02-03_0000002488-22-000016.html",
-      "sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
-      "byte_length": 2224329,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248822000016/amd-20211225.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "AMD-FY2020-source",
-      "document_id": "AMD-FY2020",
-      "role": "primary",
-      "path": "AMD/2021-01-29_0001628280-21-001185.html",
-      "sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
-      "byte_length": 2403831,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/2488/000162828021001185/amd-20201226.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "AMD-FY2019-source",
-      "document_id": "AMD-FY2019",
-      "role": "primary",
-      "path": "AMD/2020-02-04_0000002488-20-000008.html",
-      "sha256": "45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
-      "byte_length": 2771929,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000008/amdform10-kfy2019.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "INTC-FY2023-source",
-      "document_id": "INTC-FY2023",
-      "role": "primary",
-      "path": "INTC/2024-01-26_0000050863-24-000010.html",
-      "sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
-      "byte_length": 3276073,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086324000010/intc-20231230.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "INTC-FY2022-source",
-      "document_id": "INTC-FY2022",
-      "role": "primary",
-      "path": "INTC/2023-01-27_0000050863-23-000006.html",
-      "sha256": "997ea49fc960f6763f4b530793f32f2bb5f2aff8f2a5d82af1f002a4adf58b4b",
-      "byte_length": 4026555,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086323000006/intc-20221231.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "INTC-FY2021-source",
-      "document_id": "INTC-FY2021",
-      "role": "primary",
-      "path": "INTC/2022-01-27_0000050863-22-000007.html",
-      "sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
-      "byte_length": 3934000,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086322000007/intc-20211225.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "INTC-FY2020-source",
-      "document_id": "INTC-FY2020",
-      "role": "primary",
-      "path": "INTC/2021-01-22_0000050863-21-000010.html",
-      "sha256": "455d47c6c6fbf103cadef13a2959d795b4149ab297a451df95bbe6f393a08123",
-      "byte_length": 4090677,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086321000010/intc-20201226.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "INTC-FY2019-source",
-      "document_id": "INTC-FY2019",
-      "role": "primary",
-      "path": "INTC/2020-01-24_0000050863-20-000011.html",
-      "sha256": "9a7c79b6f02ac47f313dcf23020ae16d8fe7d82f8feeb0c51fc63e1d31f48474",
-      "byte_length": 4925903,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086320000011/a12282019q4-10kdocument.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "MU-FY2024-source",
-      "document_id": "MU-FY2024",
-      "role": "primary",
-      "path": "MU/2024-10-04_0000723125-24-000027.html",
-      "sha256": "1d3523d9d69f031f8b83008b18f47a9210a001d488112d348b50ce4e3a129ba7",
-      "byte_length": 2202347,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312524000027/mu-20240829.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "MU-FY2023-source",
-      "document_id": "MU-FY2023",
-      "role": "primary",
-      "path": "MU/2023-10-06_0000723125-23-000054.html",
-      "sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
-      "byte_length": 2227693,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312523000054/mu-20230831.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "MU-FY2022-source",
-      "document_id": "MU-FY2022",
-      "role": "primary",
-      "path": "MU/2022-10-07_0000723125-22-000048.html",
-      "sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
-      "byte_length": 2851205,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312522000048/mu-20220901.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "MU-FY2021-source",
-      "document_id": "MU-FY2021",
-      "role": "primary",
-      "path": "MU/2021-10-08_0000723125-21-000065.html",
-      "sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
-      "byte_length": 2829215,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000065/mu-20210902.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "MU-FY2020-source",
-      "document_id": "MU-FY2020",
-      "role": "primary",
-      "path": "MU/2020-10-19_0000723125-20-000082.html",
-      "sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
-      "byte_length": 3505180,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000082/mu-20200903.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "AMD-FY2024-source",
-      "document_id": "AMD-FY2024",
-      "role": "primary",
-      "path": "AMD/2025-02-05_0000002488-25-000012.html",
-      "sha256": "a56e68cfe5f9cbb84451c9bb7ffe95e287c84ea616570e392f052474e0400664",
-      "byte_length": 2091174,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": null,
-        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm",
-        "media_type": "text/html",
-        "archive_sha256": null,
-        "archive_member": null,
-        "original_encoding": null,
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "005930-FY2024-source",
-      "document_id": "005930-FY2024",
-      "role": "primary",
-      "path": "dart/005930/20250311001085.xml",
-      "sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
-      "byte_length": 6298678,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": "2026-09-01T05:14:18.836830Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250311001085",
+        "acquired_at": "2026-09-08T15:51:02.163723Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20210330000776",
         "media_type": "application/xml",
-        "archive_sha256": "606ffc728a5a275fcfc27d798560f3fd73e9880641399389d72b35fdc1fbb2d6",
-        "archive_member": "20250311001085.xml",
-        "original_encoding": "utf-8",
+        "archive_sha256": "266551a410ea57538b996e061c28b05f2b79dcee4d7ef785bba121143fd57e92",
+        "archive_member": "20210330000776.xml",
+        "original_encoding": "cp949",
         "normalized_separator_count": 0
       }
     },
     {
-      "artifact_id": "000660-FY2024-source",
-      "document_id": "000660-FY2024",
+      "artifact_id": "dart-20220322000590:archive:c6eb4c8aa9f4c6253649e9b3ecbbbf7a8cbdb0a370a3d8496584d54341820bf5",
+      "document_id": "dart-20220322000590",
+      "role": "archive",
+      "path": "dart/000660/20220322000590/original.zip",
+      "sha256": "c6eb4c8aa9f4c6253649e9b3ecbbbf7a8cbdb0a370a3d8496584d54341820bf5",
+      "byte_length": 494338,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-08T15:51:50.225527Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20220322000590",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20220322000590:primary:e83e9ad106f9a8401026a41491d47877c9620c184b30f7298e5479d8badd955d",
+      "document_id": "dart-20220322000590",
       "role": "primary",
-      "path": "dart/000660/20250319000665.xml",
-      "sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
-      "byte_length": 6100211,
+      "path": "dart/000660/20220322000590/primary.xml",
+      "sha256": "e83e9ad106f9a8401026a41491d47877c9620c184b30f7298e5479d8badd955d",
+      "byte_length": 3389431,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": "2026-09-01T05:15:16.633672Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250319000665",
+        "acquired_at": "2026-09-08T15:51:50.225527Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20220322000590",
         "media_type": "application/xml",
-        "archive_sha256": "aeceed9e9190e8736749130e618f58a2df1b8edf290f4d1706b07bd341c0cb41",
-        "archive_member": "20250319000665.xml",
-        "original_encoding": "utf-8",
+        "archive_sha256": "c6eb4c8aa9f4c6253649e9b3ecbbbf7a8cbdb0a370a3d8496584d54341820bf5",
+        "archive_member": "20220322000590.xml",
+        "original_encoding": "cp949",
         "normalized_separator_count": 0
       }
     },
     {
-      "artifact_id": "005930-FY2022-source",
-      "document_id": "005930-FY2022",
-      "role": "primary",
-      "path": "dart/005930/20230307000542.xml",
-      "sha256": "43a2171e21aca96fc3c53032f4c8e1ed4612267c48595cfec8d9769253c192a3",
-      "byte_length": 4373429,
-      "encoding": "utf-8",
+      "artifact_id": "dart-20230321001209:archive:1d903d03dc6dca9891c2aca08a8e6a0e88ad70dbcf4961e91be6041fca31ce14",
+      "document_id": "dart-20230321001209",
+      "role": "archive",
+      "path": "dart/000660/20230321001209/original.zip",
+      "sha256": "1d903d03dc6dca9891c2aca08a8e6a0e88ad70dbcf4961e91be6041fca31ce14",
+      "byte_length": 518757,
+      "encoding": null,
       "acquisition": {
-        "acquired_at": "2026-09-01T02:19:18.207687Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20230307000542",
-        "media_type": "application/xml",
-        "archive_sha256": "9a291e32be64ab28b6187e6daf49ac144eeb0bf89166a8be8c07c08a2807451d",
-        "archive_member": "20230307000542.xml",
-        "original_encoding": "utf-8",
+        "acquired_at": "2026-09-08T15:52:40.504746Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20230321001209",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
         "normalized_separator_count": 0
       }
     },
     {
-      "artifact_id": "005930-FY2023-source",
-      "document_id": "005930-FY2023",
+      "artifact_id": "dart-20230321001209:primary:9fd78994e54e910cce9cc0da117500198af81b9aa4b55c0365cd59ef56da83b3",
+      "document_id": "dart-20230321001209",
       "role": "primary",
-      "path": "dart/005930/20240312000736.xml",
-      "sha256": "5e4af2148e9b23ff48d5e199ad2e3cd8d43de1cd15c402df59d939f21f078a3b",
-      "byte_length": 6150870,
-      "encoding": "utf-8",
-      "acquisition": {
-        "acquired_at": "2026-09-01T02:20:15.416569Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20240312000736",
-        "media_type": "application/xml",
-        "archive_sha256": "3e452c1a4b1abf58c7f5df3b4dc458184e182ff0e7026b83a200b5e39353cd22",
-        "archive_member": "20240312000736.xml",
-        "original_encoding": "utf-8",
-        "normalized_separator_count": 0
-      }
-    },
-    {
-      "artifact_id": "000660-FY2022-source",
-      "document_id": "000660-FY2022",
-      "role": "primary",
-      "path": "dart/000660/20230321001209.xml",
+      "path": "dart/000660/20230321001209/primary.xml",
       "sha256": "9fd78994e54e910cce9cc0da117500198af81b9aa4b55c0365cd59ef56da83b3",
       "byte_length": 3633412,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": "2026-09-01T02:22:12.324685Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20230321001209",
+        "acquired_at": "2026-09-08T15:52:40.504746Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20230321001209",
         "media_type": "application/xml",
         "archive_sha256": "1d903d03dc6dca9891c2aca08a8e6a0e88ad70dbcf4961e91be6041fca31ce14",
         "archive_member": "20230321001209.xml",
@@ -1198,16 +607,70 @@
       }
     },
     {
-      "artifact_id": "000660-FY2023-source",
-      "document_id": "000660-FY2023",
+      "artifact_id": "dart-20260317000635:archive:a35107e6d41e630edd035da243af5b876c2838533808ed2e0a21ff2b24c9c4f5",
+      "document_id": "dart-20260317000635",
+      "role": "archive",
+      "path": "dart/000660/20260317000635/original.zip",
+      "sha256": "a35107e6d41e630edd035da243af5b876c2838533808ed2e0a21ff2b24c9c4f5",
+      "byte_length": 685293,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-08T16:25:36.233080Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260317000635",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20260317000635:primary:8b6cd8db0151d3f47804f5107755544121f2823f1b1370c13f484b22db62691f",
+      "document_id": "dart-20260317000635",
       "role": "primary",
-      "path": "dart/000660/20240319000684.xml",
+      "path": "dart/000660/20260317000635/primary.xml",
+      "sha256": "8b6cd8db0151d3f47804f5107755544121f2823f1b1370c13f484b22db62691f",
+      "byte_length": 8463124,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-08T16:25:36.233080Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260317000635",
+        "media_type": "application/xml",
+        "archive_sha256": "a35107e6d41e630edd035da243af5b876c2838533808ed2e0a21ff2b24c9c4f5",
+        "archive_member": "20260317000635.xml",
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20240319000684:archive:687d557df59d4270a566e0c826cb82e68663d65b9ca4010d7091e73fe2c2a331",
+      "document_id": "dart-20240319000684",
+      "role": "archive",
+      "path": "dart/000660/20240319000684/original.zip",
+      "sha256": "687d557df59d4270a566e0c826cb82e68663d65b9ca4010d7091e73fe2c2a331",
+      "byte_length": 535781,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-08T16:29:57.807915Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20240319000684",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20240319000684:primary:37d8057f4b0e0fb2a333256d257cd7dd579c571c43cb400d5756cb3732b8d887",
+      "document_id": "dart-20240319000684",
+      "role": "primary",
+      "path": "dart/000660/20240319000684/primary.xml",
       "sha256": "37d8057f4b0e0fb2a333256d257cd7dd579c571c43cb400d5756cb3732b8d887",
       "byte_length": 5936667,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": "2026-09-01T02:23:04.068295Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20240319000684",
+        "acquired_at": "2026-09-08T16:29:57.807915Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20240319000684",
         "media_type": "application/xml",
         "archive_sha256": "687d557df59d4270a566e0c826cb82e68663d65b9ca4010d7091e73fe2c2a331",
         "archive_member": "20240319000684.xml",
@@ -1216,55 +679,361 @@
       }
     },
     {
-      "artifact_id": "035420-FY2022-source",
-      "document_id": "035420-FY2022",
+      "artifact_id": "dart-20250319000665:archive:aeceed9e9190e8736749130e618f58a2df1b8edf290f4d1706b07bd341c0cb41",
+      "document_id": "dart-20250319000665",
+      "role": "archive",
+      "path": "dart/000660/20250319000665/original.zip",
+      "sha256": "aeceed9e9190e8736749130e618f58a2df1b8edf290f4d1706b07bd341c0cb41",
+      "byte_length": 593574,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-08T16:30:54.501396Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20250319000665",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20250319000665:primary:bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+      "document_id": "dart-20250319000665",
       "role": "primary",
-      "path": "dart/035420/20230314001049.xml",
-      "sha256": "16578d2e9949bc9dd07db1b052bfe6ec637e05dbd88857d9e7c9abaed3bf7f26",
-      "byte_length": 4596017,
+      "path": "dart/000660/20250319000665/primary.xml",
+      "sha256": "bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20",
+      "byte_length": 6100211,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": "2026-09-01T02:25:03.186947Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20230314001049",
+        "acquired_at": "2026-09-08T16:30:54.501396Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20250319000665",
         "media_type": "application/xml",
-        "archive_sha256": "fc1ed41d4fc38278f26529d9a3d8cba8cd6ea9d8f903f6e93c018269280cc70f",
-        "archive_member": "20230314001049.xml",
+        "archive_sha256": "aeceed9e9190e8736749130e618f58a2df1b8edf290f4d1706b07bd341c0cb41",
+        "archive_member": "20250319000665.xml",
         "original_encoding": "utf-8",
         "normalized_separator_count": 0
       }
     },
     {
-      "artifact_id": "035420-FY2023-source",
-      "document_id": "035420-FY2023",
+      "artifact_id": "dart-20250311001085:archive:606ffc728a5a275fcfc27d798560f3fd73e9880641399389d72b35fdc1fbb2d6",
+      "document_id": "dart-20250311001085",
+      "role": "archive",
+      "path": "dart/005930/20250311001085/original.zip",
+      "sha256": "606ffc728a5a275fcfc27d798560f3fd73e9880641399389d72b35fdc1fbb2d6",
+      "byte_length": 676026,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-08T17:46:53.321738Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20250311001085",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20250311001085:primary:3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+      "document_id": "dart-20250311001085",
       "role": "primary",
-      "path": "dart/035420/20240318000844.xml",
-      "sha256": "e71606427e30424078a65bdbf6f4ed01a7190071eff41c6b2fa3150b865d9e51",
-      "byte_length": 8432556,
+      "path": "dart/005930/20250311001085/primary.xml",
+      "sha256": "3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+      "byte_length": 6298678,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": "2026-09-01T02:26:12.133223Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20240318000844",
+        "acquired_at": "2026-09-08T17:46:53.321738Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20250311001085",
         "media_type": "application/xml",
-        "archive_sha256": "54a4f93f439c775756a90e1084778b46efe9cf0b2eb153fd52376c1005518a32",
-        "archive_member": "20240318000844.xml",
+        "archive_sha256": "606ffc728a5a275fcfc27d798560f3fd73e9880641399389d72b35fdc1fbb2d6",
+        "archive_member": "20250311001085.xml",
         "original_encoding": "utf-8",
         "normalized_separator_count": 0
       }
     },
     {
-      "artifact_id": "035420-FY2024-source",
-      "document_id": "035420-FY2024",
+      "artifact_id": "sec-0001045810-19-000023:primary:ae8b0a5ce06b0603c2debf57b51efb6a3036b698c4c529a4b5d7ea1103e00067",
+      "document_id": "sec-0001045810-19-000023",
       "role": "primary",
-      "path": "dart/035420/20250318000645.xml",
-      "sha256": "61fdf7c3c5f57abaa86f5c0636f21da3d182cb1231d9403c65f9f6b1d0bdda32",
-      "byte_length": 7235880,
+      "path": "sec/NVDA/0001045810-19-000023/primary.html",
+      "sha256": "ae8b0a5ce06b0603c2debf57b51efb6a3036b698c4c529a4b5d7ea1103e00067",
+      "byte_length": 2307790,
       "encoding": "utf-8",
       "acquisition": {
-        "acquired_at": "2026-09-01T02:27:28.007500Z",
-        "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20250318000645",
+        "acquired_at": "2026-09-09T01:30:39.723215Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581019000023/nvda-2019x10k.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0001045810-20-000010:primary:1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+      "document_id": "sec-0001045810-20-000010",
+      "role": "primary",
+      "path": "sec/NVDA/0001045810-20-000010/primary.html",
+      "sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+      "byte_length": 2655153,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:30:40.282203Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000010/nvda-2020x10k.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0001045810-21-000010:primary:5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+      "document_id": "sec-0001045810-21-000010",
+      "role": "primary",
+      "path": "sec/NVDA/0001045810-21-000010/primary.html",
+      "sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+      "byte_length": 2511662,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:30:40.839108Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581021000010/nvda-20210131.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0001045810-22-000036:primary:f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+      "document_id": "sec-0001045810-22-000036",
+      "role": "primary",
+      "path": "sec/NVDA/0001045810-22-000036/primary.html",
+      "sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+      "byte_length": 2548428,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:30:41.408390Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581022000036/nvda-20220130.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20230307000542:archive:9a291e32be64ab28b6187e6daf49ac144eeb0bf89166a8be8c07c08a2807451d",
+      "document_id": "dart-20230307000542",
+      "role": "archive",
+      "path": "dart/005930/20230307000542/original.zip",
+      "sha256": "9a291e32be64ab28b6187e6daf49ac144eeb0bf89166a8be8c07c08a2807451d",
+      "byte_length": 585676,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:31:37.358552Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20230307000542",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20230307000542:primary:43a2171e21aca96fc3c53032f4c8e1ed4612267c48595cfec8d9769253c192a3",
+      "document_id": "dart-20230307000542",
+      "role": "primary",
+      "path": "dart/005930/20230307000542/primary.xml",
+      "sha256": "43a2171e21aca96fc3c53032f4c8e1ed4612267c48595cfec8d9769253c192a3",
+      "byte_length": 4373429,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:31:37.358552Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20230307000542",
         "media_type": "application/xml",
-        "archive_sha256": "a85826144ceacd19a02ef384c763d0459caf9668afced616a750f5ac3d18cb8c",
-        "archive_member": "20250318000645.xml",
+        "archive_sha256": "9a291e32be64ab28b6187e6daf49ac144eeb0bf89166a8be8c07c08a2807451d",
+        "archive_member": "20230307000542.xml",
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20240312000736:archive:3e452c1a4b1abf58c7f5df3b4dc458184e182ff0e7026b83a200b5e39353cd22",
+      "document_id": "dart-20240312000736",
+      "role": "archive",
+      "path": "dart/005930/20240312000736/original.zip",
+      "sha256": "3e452c1a4b1abf58c7f5df3b4dc458184e182ff0e7026b83a200b5e39353cd22",
+      "byte_length": 596351,
+      "encoding": null,
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:32:33.486326Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20240312000736",
+        "media_type": "application/zip",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": null,
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "dart-20240312000736:primary:5e4af2148e9b23ff48d5e199ad2e3cd8d43de1cd15c402df59d939f21f078a3b",
+      "document_id": "dart-20240312000736",
+      "role": "primary",
+      "path": "dart/005930/20240312000736/primary.xml",
+      "sha256": "5e4af2148e9b23ff48d5e199ad2e3cd8d43de1cd15c402df59d939f21f078a3b",
+      "byte_length": 6150870,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T01:32:33.486326Z",
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20240312000736",
+        "media_type": "application/xml",
+        "archive_sha256": "3e452c1a4b1abf58c7f5df3b4dc458184e182ff0e7026b83a200b5e39353cd22",
+        "archive_member": "20240312000736.xml",
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0000002488-20-000008:primary:45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+      "document_id": "sec-0000002488-20-000008",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-20-000008/primary.html",
+      "sha256": "45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+      "byte_length": 2771929,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:24.487064Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000008/amdform10-kfy2019.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0000002488-22-000016:primary:5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+      "document_id": "sec-0000002488-22-000016",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-22-000016/primary.html",
+      "sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+      "byte_length": 2224329,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:25.035403Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248822000016/amd-20211225.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0000002488-23-000047:primary:df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+      "document_id": "sec-0000002488-23-000047",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-23-000047/primary.html",
+      "sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+      "byte_length": 2648242,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:25.599117Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248823000047/amd-20221231.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0000002488-24-000012:primary:0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+      "document_id": "sec-0000002488-24-000012",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-24-000012/primary.html",
+      "sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+      "byte_length": 2130305,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:26.156336Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0000002488-25-000012:primary:a56e68cfe5f9cbb84451c9bb7ffe95e287c84ea616570e392f052474e0400664",
+      "document_id": "sec-0000002488-25-000012",
+      "role": "primary",
+      "path": "sec/AMD/0000002488-25-000012/primary.html",
+      "sha256": "a56e68cfe5f9cbb84451c9bb7ffe95e287c84ea616570e392f052474e0400664",
+      "byte_length": 2091174,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:26.715364Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0001045810-23-000017:primary:a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+      "document_id": "sec-0001045810-23-000017",
+      "role": "primary",
+      "path": "sec/NVDA/0001045810-23-000017/primary.html",
+      "sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+      "byte_length": 2669239,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:27.282094Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581023000017/nvda-20230129.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0001045810-24-000029:primary:3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+      "document_id": "sec-0001045810-24-000029",
+      "role": "primary",
+      "path": "sec/NVDA/0001045810-24-000029/primary.html",
+      "sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+      "byte_length": 2085566,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:27.833942Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
+        "original_encoding": "utf-8",
+        "normalized_separator_count": 0
+      }
+    },
+    {
+      "artifact_id": "sec-0001628280-21-001185:primary:0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
+      "document_id": "sec-0001628280-21-001185",
+      "role": "primary",
+      "path": "sec/AMD/0001628280-21-001185/primary.html",
+      "sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
+      "byte_length": 2403831,
+      "encoding": "utf-8",
+      "acquisition": {
+        "acquired_at": "2026-09-09T17:06:28.402254Z",
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000162828021001185/amd-20201226.htm",
+        "media_type": "text/html",
+        "archive_sha256": null,
+        "archive_member": null,
         "original_encoding": "utf-8",
         "normalized_separator_count": 0
       }
@@ -1274,66 +1043,112 @@
     {
       "selection_id": "sec-regression",
       "artifact_ids": [
-        "NVDA-FY2024-source",
-        "NVDA-FY2023-source",
-        "NVDA-FY2022-source",
-        "NVDA-FY2021-source",
-        "NVDA-FY2020-source",
-        "AMD-FY2023-source",
-        "AMD-FY2022-source",
-        "AMD-FY2021-source",
-        "AMD-FY2020-source",
-        "AMD-FY2019-source",
-        "INTC-FY2023-source",
-        "INTC-FY2022-source",
-        "INTC-FY2021-source",
-        "INTC-FY2020-source",
-        "INTC-FY2019-source",
-        "MU-FY2024-source",
-        "MU-FY2023-source",
-        "MU-FY2022-source",
-        "MU-FY2021-source",
-        "MU-FY2020-source",
-        "AMD-FY2024-source"
+        "sec-0000002488-20-000008:primary:45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+        "sec-0000002488-22-000016:primary:5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "sec-0000002488-23-000047:primary:df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "sec-0000002488-24-000012:primary:0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+        "sec-0000002488-25-000012:primary:a56e68cfe5f9cbb84451c9bb7ffe95e287c84ea616570e392f052474e0400664",
+        "sec-0001045810-20-000010:primary:1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "sec-0001045810-21-000010:primary:5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "sec-0001045810-22-000036:primary:f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "sec-0001045810-23-000017:primary:a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+        "sec-0001045810-24-000029:primary:3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "sec-0001628280-21-001185:primary:0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96"
       ]
     },
     {
       "selection_id": "sec-evaluation",
       "artifact_ids": [
-        "NVDA-FY2024-source",
-        "NVDA-FY2023-source",
-        "NVDA-FY2022-source",
-        "NVDA-FY2021-source",
-        "NVDA-FY2020-source",
-        "AMD-FY2023-source",
-        "AMD-FY2022-source",
-        "AMD-FY2021-source",
-        "AMD-FY2020-source",
-        "AMD-FY2019-source",
-        "INTC-FY2023-source",
-        "INTC-FY2022-source",
-        "INTC-FY2021-source",
-        "INTC-FY2020-source",
-        "INTC-FY2019-source",
-        "MU-FY2024-source",
-        "MU-FY2023-source",
-        "MU-FY2022-source",
-        "MU-FY2021-source",
-        "MU-FY2020-source"
+        "sec-0000002488-20-000008:primary:45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+        "sec-0000002488-22-000016:primary:5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "sec-0000002488-23-000047:primary:df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "sec-0000002488-24-000012:primary:0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+        "sec-0001045810-20-000010:primary:1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "sec-0001045810-21-000010:primary:5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "sec-0001045810-22-000036:primary:f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "sec-0001045810-23-000017:primary:a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+        "sec-0001045810-24-000029:primary:3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "sec-0001628280-21-001185:primary:0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96"
       ]
     },
     {
       "selection_id": "dart-evaluation",
       "artifact_ids": [
-        "005930-FY2024-source",
-        "000660-FY2024-source"
+        "dart-20250311001085:primary:3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed",
+        "dart-20250319000665:primary:bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20"
       ]
     },
     {
       "selection_id": "tutorial",
       "artifact_ids": [
-        "NVDA-FY2024-source",
-        "005930-FY2024-source"
+        "sec-0001045810-24-000029:primary:3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "dart-20250311001085:primary:3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed"
+      ]
+    },
+    {
+      "selection_id": "dart-d3c43aecde6b6d22",
+      "artifact_ids": [
+        "dart-20210330000776:primary:590e44a93f5585a5d5df778d4e803fbae633aa961085a4011c0ac28aa60f2106",
+        "dart-20220322000590:primary:e83e9ad106f9a8401026a41491d47877c9620c184b30f7298e5479d8badd955d",
+        "dart-20230321001209:primary:9fd78994e54e910cce9cc0da117500198af81b9aa4b55c0365cd59ef56da83b3"
+      ]
+    },
+    {
+      "selection_id": "dart-25854fa76d6e2a05",
+      "artifact_ids": [
+        "dart-20260317000635:primary:8b6cd8db0151d3f47804f5107755544121f2823f1b1370c13f484b22db62691f"
+      ]
+    },
+    {
+      "selection_id": "dart-d192985576153f50",
+      "artifact_ids": [
+        "dart-20240319000684:primary:37d8057f4b0e0fb2a333256d257cd7dd579c571c43cb400d5756cb3732b8d887",
+        "dart-20250319000665:primary:bfd3322e362217cddde1020608b6ee3d65cb33b58be2dd8957e788da63ab0a20"
+      ]
+    },
+    {
+      "selection_id": "dart-1a4f24de25a92617",
+      "artifact_ids": [
+        "dart-20250311001085:primary:3d5fa7a10b7ad19907d3d5da6df1e52929366bf387daf89950e8d11b73442bed"
+      ]
+    },
+    {
+      "selection_id": "sec-79f5b84fcb5a29ab",
+      "artifact_ids": [
+        "sec-0001045810-19-000023:primary:ae8b0a5ce06b0603c2debf57b51efb6a3036b698c4c529a4b5d7ea1103e00067",
+        "sec-0001045810-20-000010:primary:1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "sec-0001045810-21-000010:primary:5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "sec-0001045810-22-000036:primary:f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d"
+      ]
+    },
+    {
+      "selection_id": "dart-cfb126d39ae7750e",
+      "artifact_ids": [
+        "dart-20230307000542:primary:43a2171e21aca96fc3c53032f4c8e1ed4612267c48595cfec8d9769253c192a3",
+        "dart-20240312000736:primary:5e4af2148e9b23ff48d5e199ad2e3cd8d43de1cd15c402df59d939f21f078a3b"
+      ]
+    },
+    {
+      "selection_id": "sec-10196d19094d588e",
+      "artifact_ids": [
+        "sec-0000002488-20-000008:primary:45e9c96250b900ff5d329b1e76515e4ac1d93ceb5a1c28dccb7fe8a1a0b5be14",
+        "sec-0000002488-22-000016:primary:5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
+        "sec-0000002488-23-000047:primary:df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
+        "sec-0000002488-24-000012:primary:0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
+        "sec-0000002488-25-000012:primary:a56e68cfe5f9cbb84451c9bb7ffe95e287c84ea616570e392f052474e0400664",
+        "sec-0001045810-19-000023:primary:ae8b0a5ce06b0603c2debf57b51efb6a3036b698c4c529a4b5d7ea1103e00067",
+        "sec-0001045810-20-000010:primary:1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
+        "sec-0001045810-21-000010:primary:5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
+        "sec-0001045810-22-000036:primary:f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
+        "sec-0001045810-23-000017:primary:a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
+        "sec-0001045810-24-000029:primary:3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
+        "sec-0001628280-21-001185:primary:0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96"
+      ]
+    },
+    {
+      "selection_id": "sec-d42cc77695aede34",
+      "artifact_ids": [
+        "sec-0001045810-19-000023:primary:ae8b0a5ce06b0603c2debf57b51efb6a3036b698c4c529a4b5d7ea1103e00067"
       ]
     }
   ]

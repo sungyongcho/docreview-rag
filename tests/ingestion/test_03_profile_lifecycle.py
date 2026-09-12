@@ -27,7 +27,10 @@ def test_bootstrapped_corpus_profile_shape(
 
 def test_xref_profile_has_no_expected_item_count(parsed: dict, profiles_dir: Path) -> None:
     """Omit expected_items for xref because each filing index supplies its own Items."""
-    data = json.loads((profiles_dir / "INTC.json").read_text())
+    profile_path = profiles_dir / "INTC.json"
+    if not profile_path.exists():
+        pytest.skip("Intel filings are not present in the corpus")
+    data = json.loads(profile_path.read_text())
     profile = data["profiles"]["2019"]
 
     assert profile["segmentation"] == {"type": "xref"}

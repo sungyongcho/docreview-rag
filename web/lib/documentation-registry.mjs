@@ -1,7 +1,7 @@
 import registry from "./documentation-registry.json" with { type: "json" };
 
 export const DOCUMENTATION_REGISTRY = registry;
-export const DOCUMENTATION_BASE = "/docreview-rag-agent";
+export const DOCUMENTATION_BASE = "/docreview-rag";
 /** Per-locale sources for the author-written development log. */
 export const DEVELOPMENT_STORY_SOURCES = { ko: "../DEVELOPMENT_STORY.ko.md", en: "../DEVELOPMENT_STORY.en.md" };
 

@@ -38,7 +38,7 @@ describe("useRuntimeHealth", () => {
 
   it("starts paused without reads and ignores refresh and browser events until resumed", async () => {
     vi.useFakeTimers();
-    const fetch = vi.fn(async (input: RequestInfo | URL) => response(String(input).endsWith("/health") ? { status: "ok" } : READY));
+    const fetch = vi.fn(async (input: RequestInfo | URL) => response(String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health") ? { status: "ok" } : READY));
     vi.stubGlobal("fetch", fetch);
     const { result, rerender } = renderHook(({ active }) => useRuntimeHealth({ active }), { initialProps: { active: false } });
     await act(async () => {
@@ -65,7 +65,7 @@ describe("useRuntimeHealth", () => {
     let readinessRequests = 0;
     const pending = new Promise<Response>((resolve) => { release = resolve; });
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/health")) return response({ status: "ok" });
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health")) return response({ status: "ok" });
       readinessRequests += 1;
       if (readinessRequests === 2) { pendingSignal = init?.signal; return pending; }
       return response({ ...READY, corpus: { ...READY.corpus, documents: readinessRequests } });
@@ -110,7 +110,7 @@ describe("useRuntimeHealth", () => {
   it("separates healthy, DB-degraded, and dismissed warning state", async () => {
     let degraded = false;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith("/health")) return response({ status: "ok", mode: "runtime" });
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health")) return response({ status: "ok", mode: "runtime" });
       const payload = degraded
         ? { ...READY, status: "degraded", corpus: { ...READY.corpus, availability: "degraded", schema_status: "drifted" } }
         : READY;
@@ -134,7 +134,7 @@ describe("useRuntimeHealth", () => {
     let failing = false;
     vi.stubGlobal("fetch", vi.fn(async input => {
       if (failing) throw new TypeError("temporary network failure");
-      return response(String(input).endsWith("/health") ? { status: "ok" } : READY);
+      return response(String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health") ? { status: "ok" } : READY);
     }));
     const { result } = renderHook(() => useRuntimeHealth());
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -153,7 +153,7 @@ describe("useRuntimeHealth", () => {
     vi.useFakeTimers();
     let readyCalls = 0;
     vi.stubGlobal("fetch", vi.fn(async input => {
-      if (String(input).endsWith("/health")) return response({ status: "ok" });
+      if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health")) return response({ status: "ok" });
       readyCalls++;
       throw new Error("readiness delayed");
     }));
@@ -185,7 +185,7 @@ describe("useRuntimeHealth", () => {
 
   it("rechecks when the browser returns online", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => (
-      String(input).endsWith("/health")
+      String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health")
         ? response({ status: "ok", mode: "runtime" })
         : response(READY)
     ));
@@ -206,7 +206,7 @@ it("refreshes a changed connection immediately and ignores an older in-flight re
   let readyRequests = 0;
   const fresh: ReviewEngineState = { enabled: true, model: "new-model", protocol: "ollama", models: [] };
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/health")) return response({ status: "ok" });
+    if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health")) return response({ status: "ok" });
     readyRequests += 1;
     if (readyRequests === 2) return delayed;
     return response({ ...READY, review_engines: { local: readyRequests === 1 ? { enabled: false } : fresh } });
@@ -230,7 +230,7 @@ it("polls visible tabs every 30 seconds, pauses while hidden, and resumes on foc
   vi.useFakeTimers();
   let visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility as DocumentVisibilityState);
-  const fetch = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/health") ? response({ status: "ok" }) : response(READY));
+  const fetch = vi.fn(async (input: RequestInfo | URL) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health") ? response({ status: "ok" }) : response(READY));
   vi.stubGlobal("fetch", fetch);
   try {
     const { unmount } = renderHook(() => useRuntimeHealth());
@@ -258,7 +258,7 @@ it("polls visible tabs every 30 seconds, pauses while hidden, and resumes on foc
 
 it("classifies an empty compatible corpus as preparation needed and preserves real DB failures", async () => {
   let databaseConnected = true;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => response(String(input).endsWith("/health") ? { status: "ok" } : { ...READY, status: "degraded", corpus: { ...READY.corpus, availability: "degraded", database_connected: databaseConnected, documents: 0, chunks: 0, embedded_chunks: 0, bm25_ready: false } }, String(input).endsWith("/health") ? 200 : 503)));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => response(String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health") ? { status: "ok" } : { ...READY, status: "degraded", corpus: { ...READY.corpus, availability: "degraded", database_connected: databaseConnected, documents: 0, chunks: 0, embedded_chunks: 0, bm25_ready: false } }, String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health") ? 200 : 503)));
   const { result, unmount } = renderHook(() => useRuntimeHealth());
   await waitFor(() => expect(result.current.kind).toBe("preparation_needed"));
   expect(result.current.modalVisible).toBe(true);
@@ -281,7 +281,7 @@ it("refreshes measured model use while an older unloaded-model poll is pending",
   const observed = { ...model, loaded: true, placement: "cpu", cpu_performance: { tokens_per_second: 18, measured_at: new Date().toISOString() } };
   const snapshot = (value: typeof model | typeof observed) => ({ ...READY, review_engines: { local: { enabled: true, protocol: "ollama", models: [value] } } });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/health")) return response({ status: "ok" });
+    if (String(input).replace(/\/?(\?|$)/, "$1").endsWith("/health")) return response({ status: "ok" });
     reads += 1;
     if (reads === 2) return new Promise<Response>((resolve) => { resolveOld = resolve; });
     return response(snapshot(reads === 1 ? model : observed));

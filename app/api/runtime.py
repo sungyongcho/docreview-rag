@@ -335,6 +335,7 @@ class RuntimeApiServices(ApiServices):
         self._bm25_idf: BM25Idf = bm25_idf
         self._corpus_root = corpus_root
         self._scope_index = scope_index
+        self._scope_signature: tuple[int, int] | None = None
         self._snapshot_codec = snapshot_codec or CandidateSnapshotCodec(secrets.token_bytes(32))
         self._intent_classifier_enabled = intent_classifier_enabled
         self._query_routing_enabled = query_routing_enabled
@@ -458,12 +459,20 @@ class RuntimeApiServices(ApiServices):
         )
 
     def _manifest_scope_index(self) -> ManifestScopeIndex:
-        """Return the injected or lazily loaded committed manifest scope index."""
-        if self._scope_index is None:
-            root = (self._corpus_root or get_settings().corpus_dir).resolve()
-            paths = (root / "manifest.json",)
+        """Return the injected or lazily loaded manifest scope index, reloading on change."""
+        root = (self._corpus_root or get_settings().corpus_dir).resolve()
+        path = root / "manifest.json"
+        try:
+            stat = path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            signature = None
+        if self._scope_index is not None and (signature is None or self._scope_signature is None):
+            return self._scope_index
+        if self._scope_index is None or signature != self._scope_signature:
             try:
-                self._scope_index = ManifestScopeIndex.from_paths(paths)
+                self._scope_index = ManifestScopeIndex.from_paths((path,))
+                self._scope_signature = signature
             except (OSError, ValueError, TypeError) as error:
                 logging.getLogger(__name__).error(
                     "Manifest scope index could not be loaded", exc_info=True

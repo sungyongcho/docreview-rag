@@ -19,7 +19,7 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
     shutil.copy2(ROOT / "scripts/deploy/firebase.sh", script)
     (checkout / "web").mkdir()
     public = checkout / "deploy/firebase/public"
-    staged = public / "docreview-rag-agent"
+    staged = public / "docreview-rag"
     staged.mkdir(parents=True)
     (staged / "old.html").write_text("old application")
     sentinel = public / "unrelated.txt"
@@ -36,7 +36,7 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
         '  [ -z "${NEXT_PUBLIC_OPERATOR_BASE_URL-}${NEXT_PUBLIC_OPERATOR_TOKEN-}'
         '${NEXT_PUBLIC_DB_ENDPOINT-}" ] || exit 24\n'
         '  [ "$NEXT_PUBLIC_API_BASE_URL" = '
-        "https://sungyongcho.com/docreview-rag-agent/api ] || exit 21\n"
+        "https://sungyongcho.com/docreview-rag/api ] || exit 21\n"
         "  mkdir -p out; printf new-application > out/index.html\n"
         "fi\n"
     )
@@ -45,8 +45,8 @@ def test_firebase_build_stage_deploy_order_from_another_directory(tmp_path, buil
     npx.write_text(
         "#!/bin/sh\n"
         'printf "npx:%s:%s\\n" "$*" "$PWD" >> "$COMMAND_LOG"\n'
-        '[ "$(cat public/docreview-rag-agent/index.html)" = new-application ] || exit 22\n'
-        "[ ! -e public/docreview-rag-agent/old.html ] || exit 23\n"
+        '[ "$(cat public/docreview-rag/index.html)" = new-application ] || exit 22\n'
+        "[ ! -e public/docreview-rag/old.html ] || exit 23\n"
     )
     npx.chmod(0o755)
     log = tmp_path / "commands.log"

@@ -89,7 +89,7 @@ export function LocalConnectionSettings({ readiness, localModel, selectedEngine,
   const draftValid = !!name.trim() && name.trim().length <= 80 && name.trim().toLowerCase() !== "default"
     && !servers.some((server) => server.name.toLowerCase() === name.trim().toLowerCase()) && validServerUrl(url);
   const targetValid = !!connection && (!adding || draftValid);
-  const guideHref = `/docreview-rag-agent/docs/${locale}/ollama/`;
+  const guideHref = `/docreview-rag/docs/${locale}/ollama/`;
 
   function accept(value: LocalLLMConnection) {
     setModelPreparation({ loading: false, error: "" });

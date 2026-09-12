@@ -5,21 +5,21 @@ import "./demos.css";
 
 /** Illustrative structure-aware chunking for the development log — budget slider packs blocks at boundaries. */
 
-interface Block { type: "h" | "p" | "table"; label: string; tok: number; rows?: { label: string; tok: number }[]; headerTok?: number }
+interface Block { type: "h" | "p" | "table"; text: string; tok: number; rows?: { text: string; tok: number }[]; headerTok?: number }
 const BLOCKS: Block[] = [
-  { type: "h", label: "8. Risk Factors", tok: 40 },
-  { type: "p", label: "p", tok: 520 },
-  { type: "p", label: "p", tok: 480 },
-  { type: "table", label: "table", tok: 0, headerTok: 60, rows: [
-    { label: "row 1", tok: 180 }, { label: "row 2", tok: 170 }, { label: "row 3", tok: 190 }, { label: "row 4", tok: 160 },
+  { type: "h", text: "8. Risk Factors", tok: 40 },
+  { type: "p", text: "p", tok: 520 },
+  { type: "p", text: "p", tok: 480 },
+  { type: "table", text: "table", tok: 0, headerTok: 60, rows: [
+    { text: "row 1", tok: 180 }, { text: "row 2", tok: 170 }, { text: "row 3", tok: 190 }, { text: "row 4", tok: 160 },
   ] },
-  { type: "p", label: "p", tok: 640 },
-  { type: "p", label: "p", tok: 300 },
-  { type: "h", label: "9. Legal Proceedings", tok: 36 },
-  { type: "p", label: "p", tok: 560 },
+  { type: "p", text: "p", tok: 640 },
+  { type: "p", text: "p", tok: 300 },
+  { type: "h", text: "9. Legal Proceedings", tok: 36 },
+  { type: "p", text: "p", tok: 560 },
 ];
 
-interface Unit { block: number; label: string; tok: number; header: boolean; chunk: number }
+interface Unit { block: number; text: string; tok: number; header: boolean; chunk: number }
 
 export function ChunkBoundary({ locale }: { locale: "ko" | "en" }) {
   const ko = locale === "ko";
@@ -31,13 +31,13 @@ export function ChunkBoundary({ locale }: { locale: "ko" | "en" }) {
     let tok = 0, chunk = 0;
     for (const [i, block] of BLOCKS.entries()) {
       const parts = block.type === "table" && block.rows
-        ? block.rows.map((row) => ({ label: `${block.label} ${row.label}`, tok: row.tok + (block.headerTok ?? 0), header: true }))
-        : [{ label: block.label, tok: block.tok, header: false }];
+        ? block.rows.map((row) => ({ text: `${block.text} ${row.text}`, tok: row.tok + (block.headerTok ?? 0), header: true }))
+        : [{ text: block.text, tok: block.tok, header: false }];
       for (const part of parts) {
         if (tok + part.tok > budget && units.length) { tok = 0; chunk += 1; }
-        units.push({ block: i, label: part.label, tok: part.tok, header: part.header, chunk });
+        units.push({ block: i, text: part.text, tok: part.tok, header: part.header, chunk });
         chunks[chunk] = chunks[chunk] ?? { tok: 0, labels: [] };
-        chunks[chunk].labels.push(part.label);
+        chunks[chunk].labels.push(part.text);
         tok += part.tok;
         chunks[chunk].tok = tok;
       }
@@ -53,7 +53,7 @@ export function ChunkBoundary({ locale }: { locale: "ko" | "en" }) {
     <div className="docs-demo-grid">
       <ol className="docs-demo-blocks">
         {units.map((unit, i) => <li key={i} data-chunk={unit.chunk}>
-          <code>c{unit.chunk + 1}</code> {unit.label} <small>{unit.tok}tok</small>
+          <code>c{unit.chunk + 1}</code> {unit.text} <small>{unit.tok}tok</small>
           {unit.header ? <span className="docs-demo-gold">{ko ? " +헤더" : " +hdr"}</span> : null}
         </li>)}
       </ol>

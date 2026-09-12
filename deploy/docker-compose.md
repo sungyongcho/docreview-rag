@@ -50,7 +50,7 @@ docker compose --project-directory . -f docker/docker-compose.yml ps
 서비스 URL:
 
 ```text
-http://127.0.0.1:8000/docreview-rag-agent/
+http://127.0.0.1:8000/docreview-rag/
 ```
 
 API와 container 상태:
@@ -85,7 +85,7 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
 Next 개발 URL:
 
 ```text
-http://127.0.0.1:3000/docreview-rag-agent/
+http://127.0.0.1:3000/docreview-rag/
 ```
 
 로컬 Compose는 root `.env`의 `OPENAI_API_KEY_LOCAL`,

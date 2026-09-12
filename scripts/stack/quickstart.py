@@ -161,7 +161,7 @@ def wait_ready(origin: str, *, timeout: float = 180) -> None:
     while time.monotonic() < deadline:
         try:
             with opener.open(
-                origin + "/docreview-rag-agent/api/admin/corpus/", timeout=5
+                origin + "/docreview-rag/api/admin/corpus/", timeout=5
             ) as response:
                 snapshot = json.load(response)
             state = snapshot["status"]
@@ -262,11 +262,11 @@ def start_ready(root: Path, bindings: dict[str, str], *, timeout: float = 180) -
 def handoff(bindings: dict[str, str]) -> None:
     """Print the verified application and exact bilingual tutorial continuation."""
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
-    print(f"Service ready: {origin}/docreview-rag-agent/")
-    print(f"Quick Start - DEV ONLY: {origin}/docreview-rag-agent/docs/en/quickstart-dev/#qs-web-1")
+    print(f"Service ready: {origin}/docreview-rag/")
+    print(f"Quick Start - DEV ONLY: {origin}/docreview-rag/docs/en/quickstart-dev/#qs-web-1")
     print(
         "Korean Quick Start - DEV ONLY: "
-        f"{origin}/docreview-rag-agent/docs/ko/quickstart-dev/#qs-web-1"
+        f"{origin}/docreview-rag/docs/ko/quickstart-dev/#qs-web-1"
     )
     print(
         "Continue in the web: Quick Start - DEV ONLY, Web path, step 1: verify the environment; "

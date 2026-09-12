@@ -5,11 +5,11 @@
     "trailingSlash": true,
     "headers": [
       {
-        "source": "/docreview-rag-agent/_next/static/**",
+        "source": "/docreview-rag/_next/static/**",
         "headers": [{ "key": "Cache-Control", "value": "public,max-age=31536000,immutable" }]
       },
       {
-        "source": "/docreview-rag-agent/**",
+        "source": "/docreview-rag/**",
         "headers": [{ "key": "X-Content-Type-Options", "value": "nosniff" }]
       }
     ]

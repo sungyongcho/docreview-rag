@@ -1,5 +1,4 @@
 import { tutorialError, tutorialRevision } from "@/.tutorial/revision";
-import { ArchitectureFlow } from "@/components/architecture-flow";
 import { Bm25Explorer } from "@/components/bm25-explorer";
 import { ChunkBoundary } from "@/components/chunk-boundary";
 import { ChunkMap } from "@/components/chunk-map";
@@ -38,7 +37,7 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
   const render = (markdown: string) => renderTutorial(markdown, {
     locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
-      const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "chunk-map": ChunkMap, "table-normalize-demo": TableNormalize, "pipeline-map": PipelineMap, "arch-flow": ArchitectureFlow } as const)[block.language];
+      const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "chunk-map": ChunkMap, "table-normalize-demo": TableNormalize, "pipeline-map": PipelineMap } as const)[block.language];
       return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} />;
     }
   });

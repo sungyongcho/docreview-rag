@@ -59,7 +59,7 @@ function jsonResponse(payload: unknown) {
 }
 
 function stubFetch(handler: (url: string, init?: RequestInit) => unknown) {
-  const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => jsonResponse(handler(String(input), init) ?? {}));
+  const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => jsonResponse(handler(String(input).replace(/\/?(\?|$)/, "$1"), init) ?? {}));
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }

@@ -30,7 +30,7 @@ def dart_corpus() -> dict[str, tuple[ParsedFiling, str]]:
 
 def test_both_issuers_parse_into_the_twelve_registry_divisions(dart_corpus) -> None:
     """Each filing yields the full DART table of contents, in filing order."""
-    assert set(dart_corpus) >= {"005930-FY2024", "000660-FY2024"}
+    assert set(dart_corpus) >= {"dart-20250311001085", "dart-20250319000665"}
     for filing, _ in dart_corpus.values():
         assert [section.part for section in filing.sections] == list(DART_PARTS)
         assert [section.canonical_title for section in filing.sections] == list(DART_PARTS.values())

@@ -373,9 +373,9 @@ def diagnose(
 ) -> int:
     """Read effective app state first so stale dotenv values cannot select the wrong server."""
     base = valid_url(web_url)
-    if base.endswith("/docreview-rag-agent"):
-        base = base[: -len("/docreview-rag-agent")]
-    api = f"{base}/docreview-rag-agent/api"
+    if base.endswith("/docreview-rag"):
+        base = base[: -len("/docreview-rag")]
+    api = f"{base}/docreview-rag/api"
     owned_client = client is None
     active = client or httpx.Client(timeout=6, follow_redirects=False)
     try:

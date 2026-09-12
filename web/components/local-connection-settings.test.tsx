@@ -32,7 +32,7 @@ it("selects Default without requiring an address and links to the localized setu
   expect(screen.getByLabelText("Model server")).toHaveValue("default");
   expect(screen.queryByLabelText("Server URL")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Connect" })).toBeEnabled();
-  expect(screen.getByRole("link", { name: /Set up Ollama/ })).toHaveAttribute("href", "/docreview-rag-agent/docs/en/ollama/");
+  expect(screen.getByRole("link", { name: /Set up Ollama/ })).toHaveAttribute("href", "/docreview-rag/docs/en/ollama/");
   expect(screen.getByRole("link", { name: /Set up Ollama/ })).toHaveAttribute("target", "_blank");
   fireEvent.change(screen.getByLabelText("Model server"), { target: { value: "studio" } });
   expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -48,7 +48,7 @@ it("connects Default by identity rather than exposing or resubmitting its addres
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   expect(fetchMock.mock.calls[1][1]?.body).toBe('{"server_id":"default"}');
-  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/select$/);
+  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/select\/?$/);
 });
 
 it("adds a named server only through Add a server and preserves invalid drafts", async () => {
@@ -65,7 +65,7 @@ it("adds a named server only through Add a server and preserves invalid drafts",
   fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "ollama" } });
   fireEvent.click(screen.getByRole("button", { name: "Add & connect" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/servers$/);
+  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/servers\/?$/);
   expect(fetchMock.mock.calls[1][1]?.body).toBe(JSON.stringify({ name: "Office", base_url: "http://office:11434", protocol: "ollama" }));
 });
 
@@ -82,7 +82,7 @@ it("keeps the working server and failed draft visible across a language change",
   fireEvent.click(screen.getByRole("button", { name: "한국어" }));
   expect(screen.getByLabelText("서버 주소")).toHaveValue("http://office:11434");
   expect(screen.getByRole("alert")).toHaveTextContent("기존 연결 설정을 유지했습니다.");
-  expect(screen.getByRole("link", { name: /macOS·Linux에서 Ollama/ })).toHaveAttribute("href", "/docreview-rag-agent/docs/ko/ollama/");
+  expect(screen.getByRole("link", { name: /macOS·Linux에서 Ollama/ })).toHaveAttribute("href", "/docreview-rag/docs/ko/ollama/");
 });
 
 it("runs selected-server diagnostics without saving or replacing the active connection", async () => {
@@ -98,7 +98,7 @@ it("runs selected-server diagnostics without saving or replacing the active conn
   expect(panel).toHaveTextContent("Run rag-ollama-check");
   expect(changed).not.toHaveBeenCalled();
   expect(fetchMock.mock.calls[1][1]?.body).toBe('{"server_id":"studio"}');
-  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/diagnostics$/);
+  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/diagnostics\/?$/);
   expect(within(screen.getByRole("region", { name: "Connection status" })).getByText("Default")).toBeInTheDocument();
 });
 
@@ -131,7 +131,7 @@ it("localizes diagnostic status values and uses neutral details wording in Korea
 });
 
 it("disconnects and restores Default without dropping registered choices", async () => {
-  const fetchMock = vi.fn(async (input, init) => response(String(input).endsWith("/disconnect")
+  const fetchMock = vi.fn(async (input, init) => response(String(input).replace(/\/?(\?|$)/, "$1").endsWith("/disconnect")
     ? { ...INITIAL, base_url: null, source: "disabled", local: { enabled: false, reason: "disconnected" } } : INITIAL));
   vi.stubGlobal("fetch", fetchMock); render(<LocalConnectionSettings />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Disconnect" })).toBeEnabled());
@@ -140,7 +140,7 @@ it("disconnects and restores Default without dropping registered choices", async
   expect(screen.getByRole("option", { name: "Studio" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Use Default" }));
   expect(await screen.findByText("Default server restored. Your added servers are kept.")).toBeInTheDocument();
-  expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(/\/select$/);
+  expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(/\/select\/?$/);
   expect(fetchMock.mock.calls.at(-1)?.[1]?.body).toBe('{"server_id":"default"}');
 });
 
@@ -163,7 +163,7 @@ it("keeps a working custom connection when the Default replacement check fails",
   expect(screen.getByLabelText("Model server")).toHaveValue("studio");
   expect(within(screen.getByRole("region", { name: "Connection status" })).getByText("Studio")).toBeInTheDocument();
   expect(changed).not.toHaveBeenCalled();
-  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/select$/);
+  expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/select\/?$/);
 });
 
 it("offers a load retry and copies the safe CLI diagnostic commands exactly", async () => {

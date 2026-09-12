@@ -15,8 +15,8 @@ import { useEffect, useState } from "react";
 const DOCUMENT_ICONS: Record<string, LucideIcon> = { Activity, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal };
 
 const MENU_COPY = {
-  ko: { title: "가이드와 개발 기록", userGuide: "사용 가이드", developmentLog: "개발 기록", chooseDocument: "문서 선택" },
-  en: { title: "Guides & development", userGuide: "User guide", developmentLog: "Development log", chooseDocument: "Choose a document" },
+  ko: { heading: "가이드와 개발 기록", userGuide: "사용 가이드", developmentLog: "개발 기록", chooseDocument: "문서 선택" },
+  en: { heading: "Guides & development", userGuide: "User guide", developmentLog: "Development log", chooseDocument: "Choose a document" },
 } as const;
 
 interface DocumentationGroup {
@@ -90,8 +90,8 @@ export function DocumentationLegacyAnchor({ locale }: { locale: Locale }) {
 export function DocumentationMenu({ current, documents, locale }: { current: string; documents: TutorialDocument[]; locale: Locale }) {
   const copy = MENU_COPY[locale];
   return <div className="docs-menu">
-    <p className="docs-menu-title">{copy.title}</p>
-    <nav className="docs-nav-group" aria-label={copy.title}>
+    <p className="docs-menu-title">{copy.heading}</p>
+    <nav className="docs-nav-group" aria-label={copy.heading}>
       <DocumentationCollectionLink href={`/docs/${locale}/`} icon={BookOpen} label={copy.userGuide} current={current === "overview"} />
       <DocumentationCollectionLink href={`/docs/${locale}/development/`} icon={Terminal} label={copy.developmentLog} current={current === "development"} />
     </nav>
@@ -106,7 +106,7 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
 }
 
 export function DocumentationOutline({ headings, locale }: { headings: TutorialHeading[]; locale: Locale }) {
-  const sections = headings.filter((heading) => !heading.hidden && (heading.depth === 2 || heading.depth === 3));
+  const sections = headings.filter((heading) => heading.depth === 2);
   const [active, setActive] = useState("");
   useEffect(() => {
     function update() {
@@ -133,7 +133,7 @@ export function DocumentationOutline({ headings, locale }: { headings: TutorialH
   return <div className="docs-outline">
     <p className="docs-outline-title">{locale === "ko" ? "이 페이지에서" : "On this page"}</p>
     <nav aria-label={locale === "ko" ? "목차" : "Table of contents"}><ol>{sections.map((section) => <li key={section.id}>
-      <a href={`#${section.id}`} className={section.depth === 3 ? "docs-outline-sub" : undefined} aria-current={active === section.id ? "location" : undefined}>{section.text}</a>
+      <a href={`#${section.id}`} aria-current={active === section.id ? "location" : undefined}>{section.text}</a>
     </li>)}</ol></nav>
   </div>;
 }

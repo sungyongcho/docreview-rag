@@ -92,14 +92,21 @@ def test_setup_provisions_registry_and_service_account(launcher):
     roles = {cmd[cmd.index("--role") + 1] for cmd in bindings}
     assert "roles/artifactregistry.reader" in roles
     assert "roles/iam.serviceAccountUser" in roles
-    member = next(cmd[cmd.index("--member") + 1] for cmd in bindings if cmd[cmd.index("--member") + 1].startswith("user:"))
+    member = next(
+        cmd[cmd.index("--member") + 1]
+        for cmd in bindings
+        if cmd[cmd.index("--member") + 1].startswith("user:")
+    )
     assert member == "user:fixture@example.com"
 
 
 def test_setup_is_idempotent_for_existing_resources(launcher):
     """Existing repositories and accounts are described, not recreated."""
     scripts, env, log = launcher
-    env = {**env, "GCLOUD_EXISTING": "docreview,docreview-deploy@fixture-project.iam.gserviceaccount.com"}
+    env = {
+        **env,
+        "GCLOUD_EXISTING": "docreview,docreview-deploy@fixture-project.iam.gserviceaccount.com",
+    }
     result = subprocess.run(["bash", str(scripts / "setup.sh")], env=env, capture_output=True)
     assert result.returncode == 0, result.stderr
     commands = command_log(log)
@@ -110,11 +117,18 @@ def test_setup_is_idempotent_for_existing_resources(launcher):
 def test_build_image_pushes_the_configured_reference(launcher):
     """Docker auth and the buildx push target the configured Artifact Registry image."""
     scripts, env, log = launcher
-    env = {**env, "DOCREVIEW_IMAGE": "us-central1-docker.pkg.dev/fixture-project/docreview/docreview:v1"}
+    env = {
+        **env,
+        "DOCREVIEW_IMAGE": "us-central1-docker.pkg.dev/fixture-project/docreview/docreview:v1",
+    }
     result = subprocess.run(["bash", str(scripts / "build_image.sh")], env=env, capture_output=True)
     assert result.returncode == 0, result.stderr
     commands = command_log(log)
-    auth = next(cmd for cmd in commands if cmd[:3] == ["auth", "configure-docker", "us-central1-docker.pkg.dev"])
+    auth = next(
+        cmd
+        for cmd in commands
+        if cmd[:3] == ["auth", "configure-docker", "us-central1-docker.pkg.dev"]
+    )
     assert auth
     build = next(cmd for cmd in commands if cmd[:2] == ["buildx", "build"])
     assert "us-central1-docker.pkg.dev/fixture-project/docreview/docreview:v1" in build
@@ -125,8 +139,9 @@ def test_build_image_pushes_the_configured_reference(launcher):
 def test_env_config_defaults_the_registry_image(launcher):
     """An unset DOCREVIEW_IMAGE resolves to the repository's docreview:latest."""
     scripts, env, log = launcher
+    probe = f'source "{scripts}/deploy_env_config.sh" >/dev/null && printf %s "$DOCREVIEW_IMAGE"'
     result = subprocess.run(
-        ["bash", "-c", f'source "{scripts}/deploy_env_config.sh" >/dev/null && printf %s "$DOCREVIEW_IMAGE"'],
+        ["bash", "-c", probe],
         env=env,
         capture_output=True,
         text=True,

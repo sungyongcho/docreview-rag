@@ -49,7 +49,6 @@
 .composer-toolbar-aligned .composer-toolbar-primary .composer-engine-label { display: flex; align-items: center; height: 20px; line-height: 20px; margin: 0; color: var(--text); font-size: 11px; font-weight: 600; }
 .composer-toolbar-aligned .composer-toolbar-primary select { height: 40px; min-height: 40px; padding: 7px 10px; font-size: 12px; }
 .composer-toolbar.composer-toolbar-aligned .composer-toolbar-primary select { width: 100%; max-width: 100%; min-width: 0; }
-.composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 40px; min-height: 40px; max-width: 100%; }
 .composer-toolbar-aligned .composer-toolbar-primary .composer-scope-tabs { display: flex; flex-wrap: nowrap; gap: 2px; height: 40px; min-width: max-content; margin: 0; overflow: visible; border-bottom: 1px solid var(--border); }
 .composer-toolbar-aligned .composer-toolbar-primary .composer-scope-tabs button { padding: 8px 12px; font-size: 13px; }
 .composer-toolbar-aligned .composer-toolbar-primary .composer-control-description { font-size: 10px; line-height: 16px; overflow-wrap: anywhere; }
@@ -92,9 +91,7 @@
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-scope-control,
   .composer-toolbar-aligned .composer-toolbar-primary > .composer-preset-control,
   .composer-toolbar-aligned .composer-toolbar-primary > label.composer-engine-field { grid-template-rows: 20px 44px auto; width: 100%; }
-  .composer-toolbar-aligned .composer-toolbar-primary select,
-  .composer-toolbar-aligned .composer-toolbar-primary .segmented { height: 44px; min-height: 44px; width: 100%; }
-  .composer-toolbar-aligned .composer-toolbar-primary .segmented button { padding-inline: 6px; min-width: 0; }
+  .composer-toolbar-aligned .composer-toolbar-primary select { height: 44px; min-height: 44px; width: 100%; }
   .composer-toolbar-aligned .composer-toolbar-actions > .chip { height: 44px; min-height: 44px; }
   .composer-toolbar-aligned .request-inspector-trigger { min-height: 44px; }
 }

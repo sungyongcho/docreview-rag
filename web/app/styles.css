@@ -3067,64 +3067,6 @@ textarea[aria-invalid="true"] {
   border-top: 1px solid var(--border);
 }
 
-.tutorial-body .docs-steps {
-  counter-reset: docs-step;
-  list-style: none;
-  padding: 0;
-  margin: 18px 0 24px;
-  display: grid;
-  gap: 8px;
-}
-
-.tutorial-body .docs-steps li {
-  margin: 0;
-}
-
-.tutorial-body .docs-steps li::marker {
-  content: none;
-}
-
-.tutorial-body .docs-steps a {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 9px 13px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface);
-  color: inherit;
-  text-decoration: none;
-  font-size: 14.5px;
-  line-height: 1.5;
-}
-
-.tutorial-body .docs-steps a::before {
-  counter-increment: docs-step;
-  content: counter(docs-step);
-  flex: none;
-  min-width: 22px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.tutorial-body .docs-steps a:is(:hover, :focus-visible) {
-  border-color: var(--text);
-}
-
-.tutorial-body .docs-steps a:is(:hover, :focus-visible)::before {
-  color: var(--text);
-}
-
-@media (min-width: 720px) {
-  .tutorial-body .docs-steps {
-    grid-template-columns: 1fr 1fr;
-    column-gap: 12px;
-  }
-}
-
 .docs-outline ol {
   list-style: none;
   padding: 0;
@@ -3147,16 +3089,6 @@ textarea[aria-invalid="true"] {
   border-color: var(--text);
   color: var(--text);
   font-weight: 600;
-}
-
-.docs-outline a.docs-outline-sub {
-  padding-left: 26px;
-  font-size: 11.5px;
-  color: color-mix(in srgb, var(--muted) 82%, transparent);
-}
-
-.docs-outline a.docs-outline-sub[aria-current="location"] {
-  color: var(--text);
 }
 
 .docs-next {
@@ -3845,36 +3777,6 @@ textarea[aria-invalid="true"] {
   font-size: 13px;
 }
 
-.segmented {
-  width: fit-content;
-  display: inline-flex;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-}
-
-.segmented button {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 7px 11px;
-  cursor: pointer;
-}
-
-.segmented button+button {
-  border-left: 1px solid var(--border);
-}
-
-.segmented button[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-text);
-}
-
-.segmented button:disabled {
-  opacity: .4;
-  cursor: default;
-}
-
 @media (max-width: 640px) {
   .stage-card {
     grid-template-columns: 1fr;
@@ -4074,15 +3976,6 @@ textarea[aria-invalid="true"] {
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.chip-group .segmented {
-  border-radius: 999px;
-}
-
-.chip-group .segmented button {
-  padding: 4px 9px;
-  font-size: 11px;
 }
 
 .chip {
@@ -4366,7 +4259,6 @@ select.chip {
   background: color-mix(in srgb, var(--bad) 12%, transparent);
 }
 
-.segmented button:focus-visible,
 .chip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

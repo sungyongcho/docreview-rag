@@ -176,7 +176,9 @@ def test_dotenv_values_use_the_remote_install_filename(launcher):
 def test_first_install_requires_a_deploy_password(launcher):
     """A missing DEPLOY_POSTGRES_PASSWORD fails before any cloud command."""
     script, env, log = launcher
-    env = {k: v for k, v in env.items() if k not in ("POSTGRES_PASSWORD", "DEPLOY_POSTGRES_PASSWORD")}
+    env = {
+        k: v for k, v in env.items() if k not in ("POSTGRES_PASSWORD", "DEPLOY_POSTGRES_PASSWORD")
+    }
     dotenv = Path(env["DOTENV_PATH"])
     dotenv.write_text(
         "DEPLOY_GCP_PROJECT=fixture-project\n"

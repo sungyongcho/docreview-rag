@@ -22,6 +22,6 @@ The earlier isolated source checkout is a comparison checkpoint, not a second UI
 location. Do not manually copy edited frontend files there. Backend packaging and rebuilds
 remain separate, especially when the running DEV container has locally installed extras.
 
-DEV's embedded PROD preview is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag-agent/issues/211).
+DEV's embedded PROD preview is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag/issues/211).
 The release includes DEV and PROD only. Browser export/import changes remain outside this work.
 No production deployment, publication, or integration is performed by this helper.

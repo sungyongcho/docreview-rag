@@ -84,7 +84,7 @@ services:
       - web_next:/web/.next
     environment:
       NEXT_PUBLIC_ADMIN_MODE: live
-      NEXT_PUBLIC_API_BASE_URL: /docreview-rag-agent/api
+      NEXT_PUBLIC_API_BASE_URL: /docreview-rag/api
       DOCREVIEW_API_UPSTREAM: http://app:8000
       DOCREVIEW_LOCAL_HOST: ${DOCREVIEW_LOCAL_HOST:-127.0.0.1}
       NEXT_PUBLIC_DB_ENDPOINT: ${DOCREVIEW_LOCAL_HOST:-127.0.0.1}:${DB_PORT:-5432}

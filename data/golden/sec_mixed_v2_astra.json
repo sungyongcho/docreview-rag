@@ -12,7 +12,7 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2020",
+        "doc_id": "sec-0001628280-21-001185",
         "source_sha256": "0701e9d39b48a773884521b74118a1540a4eda2241e27290035cafd82d6b4c96",
         "start_char": 251043,
         "end_char": 251333
@@ -38,7 +38,7 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2021",
+        "doc_id": "sec-0000002488-22-000016",
         "source_sha256": "5ab3b2564e1b5f18a1fc6b8b60a307abc3be32ee902a59955b3038c504dbfd36",
         "start_char": 358705,
         "end_char": 358908
@@ -64,13 +64,13 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 1521761,
         "end_char": 1522518
       },
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 1522875,
         "end_char": 1524006
@@ -96,7 +96,7 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2023",
+        "doc_id": "sec-0000002488-24-000012",
         "source_sha256": "0e9d83bd98b81b70050a88635171e721488f783eada9686fe21d6919ee1b668e",
         "start_char": 756006,
         "end_char": 756419
@@ -122,13 +122,13 @@
     ],
     "answers": [
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 659886,
         "end_char": 660328
       },
       {
-        "doc_id": "AMD-FY2022",
+        "doc_id": "sec-0000002488-23-000047",
         "source_sha256": "df0ad96c282b7eab4c3387bc2ef772350004e37be21805622ab8503b5db02acd",
         "start_char": 661285,
         "end_char": 661525
@@ -137,116 +137,6 @@
     "expected_label": "SUPPORTED",
     "reference_answer": "Data Center는 60억 4,300만 달러, Client는 62억 100만 달러로 Client가 1억 5,800만 달러 더 컸습니다.",
     "note": "V2 Astra evidence-aligned mixed variant of m3c-05; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-06-mixed-v2-astra",
-    "question": "Intel FY2019의 dividends와 share repurchases 규모, 추가 repurchase 계획을 설명해주세요.",
-    "category": "simple_lookup",
-    "facet": "policy",
-    "tags": [
-      "v2-astra",
-      "pair-06",
-      "issuer-intc",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2019",
-        "source_sha256": "9a7c79b6f02ac47f313dcf23020ae16d8fe7d82f8feeb0c51fc63e1d31f48474",
-        "start_char": 680567,
-        "end_char": 680782
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "배당 56억 달러와 자사주 매입 136억 달러를 집행했고, 향후 15~18개월에 200억 달러의 추가 매입을 예상한다고 밝혔습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-08; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-07-mixed-v2-astra",
-    "question": "Intel FY2023은 어떤 side-channel vulnerability를 명시했고 risk가 계속된다고 본 이유는 무엇인가요?",
-    "category": "simple_lookup",
-    "facet": "risk",
-    "tags": [
-      "v2-astra",
-      "pair-07",
-      "issuer-intc",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2023",
-        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
-        "start_char": 1136671,
-        "end_char": 1136951
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "Spectre와 Meltdown을 언급했으며, 추가 유형과 변종이 발견돼 왔고 앞으로도 계속 발견될 것으로 예상했습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-13; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-08-mixed-v2-astra",
-    "question": "Intel FY2023 R&D expense와 net revenue 대비 비중을 알려주세요.",
-    "category": "exact_number",
-    "facet": "numeric",
-    "tags": [
-      "v2-astra",
-      "pair-08",
-      "issuer-intc",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2023",
-        "source_sha256": "3cbfebb819e981fdfaf9f4988a342aa048c924edb5c8cec2738b4883e534ee4e",
-        "start_char": 779047,
-        "end_char": 779979
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "160억 4,600만 달러이며 순매출의 29.6%였습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-14; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "intc-09-mixed-v2-astra",
-    "question": "Intel FY2021 IOTG와 Mobileye revenue의 FY2020 대비 증가액 및 Mobileye growth drivers를 설명해주세요.",
-    "category": "multi_hop",
-    "facet": "comparison",
-    "tags": [
-      "v2-astra",
-      "pair-09",
-      "issuer-intc",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "INTC-FY2021",
-        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
-        "start_char": 841700,
-        "end_char": 841926
-      },
-      {
-        "doc_id": "INTC-FY2021",
-        "source_sha256": "57e5533ca477d3796dae0fb6090fb7b7e992caa2a84cb5bf44f33aa5e75c9451",
-        "start_char": 842076,
-        "end_char": 842266
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "IOTG는 9억 9,100만 달러, Mobileye는 4억 1,900만 달러 증가했습니다. Mobileye 증가는 차량 생산 개선, 코로나19 회복, ADAS 채택 증가에 기인했습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-11; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
     "curation_status": "agent-curated",
     "approval_status": "pending-author-approval",
     "human_verified": false
@@ -266,128 +156,6 @@
     "expected_label": "NOT_IN_DOCS",
     "reference_answer": "NOT_IN_DOCS",
     "note": "V2 Astra evidence-aligned mixed variant of m3c-10; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-11-mixed-v2-astra",
-    "question": "Micron FY2020의 inventory valuation과 cost-flow policy는 무엇인가요?",
-    "category": "simple_lookup",
-    "facet": "policy",
-    "tags": [
-      "v2-astra",
-      "pair-11",
-      "issuer-mu",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2020",
-        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
-        "start_char": 1667389,
-        "end_char": 1667465
-      },
-      {
-        "doc_id": "MU-FY2020",
-        "source_sha256": "a5f702d596436e391b1dda42db4a0906ad4a958798d657a81242b3acb00ef555",
-        "start_char": 1668198,
-        "end_char": 1668302
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "평균원가와 순실현가능가치 중 낮은 금액으로 평가하고 평균원가법으로 재고를 차감했습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-15; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-12-mixed-v2-astra",
-    "question": "Micron FY2021 GDDR6와 GDDR6X의 use cases, GDDR6X의 차별점을 알려주세요.",
-    "category": "simple_lookup",
-    "facet": "factual",
-    "tags": [
-      "v2-astra",
-      "pair-12",
-      "issuer-mu",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2021",
-        "source_sha256": "f11f776395eb190170a3bf119659b57698af160e1ddaa7e720bb7969a0894878",
-        "start_char": 430572,
-        "end_char": 431033
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "게임 콘솔·PC 그래픽카드·GPU 기반 데이터센터 솔루션에 사용됐습니다. GDDR6X는 높은 속도와 대역폭을 위한 새로운 신호 전송 기술을 사용했습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-16; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-13-mixed-v2-astra",
-    "question": "Micron FY2022 DRAM revenue와 NAND revenue를 각각 알려주세요.",
-    "category": "exact_number",
-    "facet": "numeric",
-    "tags": [
-      "v2-astra",
-      "pair-13",
-      "issuer-mu",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2022",
-        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
-        "start_char": 2174465,
-        "end_char": 2175478
-      },
-      {
-        "doc_id": "MU-FY2022",
-        "source_sha256": "505ad891414a9ff60e9317a8b1a1820781208f48994d24353f38e41dcb1d5936",
-        "start_char": 2178112,
-        "end_char": 2178920
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "DRAM은 223억 8,600만 달러, NAND는 78억 1,100만 달러였습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-17; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
-    "curation_status": "agent-curated",
-    "approval_status": "pending-author-approval",
-    "human_verified": false
-  },
-  {
-    "id": "mu-14-mixed-v2-astra",
-    "question": "Micron의 FY2022에서 FY2023으로 revenue와 gross margin이 어떻게 바뀌었나요?",
-    "category": "multi_hop",
-    "facet": "comparison",
-    "tags": [
-      "v2-astra",
-      "pair-14",
-      "issuer-mu",
-      "question-mixed"
-    ],
-    "answers": [
-      {
-        "doc_id": "MU-FY2023",
-        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
-        "start_char": 641759,
-        "end_char": 643237
-      },
-      {
-        "doc_id": "MU-FY2023",
-        "source_sha256": "224d728b9d6cc480d5b20a27c611074c4532a4cdd5b6f623b8828545f9733ab0",
-        "start_char": 647826,
-        "end_char": 649590
-      }
-    ],
-    "expected_label": "SUPPORTED",
-    "reference_answer": "매출은 307억 5,800만 달러에서 155억 4,000만 달러로 감소했습니다. 매출총이익은 138억 9,800만 달러(45%)에서 14억 1,600만 달러 손실(-9%)로 바뀌었습니다.",
-    "note": "V2 Astra evidence-aligned mixed variant of m3c-19; paired across EN, KO, and mixed questions. Source-grounded curation; awaiting human review.",
     "curation_status": "agent-curated",
     "approval_status": "pending-author-approval",
     "human_verified": false
@@ -424,7 +192,7 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2021",
+        "doc_id": "sec-0001045810-21-000010",
         "source_sha256": "5c76d41beb044bed6ae5286dff49f22349b65907e61da0dbbe513381a2d31213",
         "start_char": 261163,
         "end_char": 261677
@@ -450,7 +218,7 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2023",
+        "doc_id": "sec-0001045810-23-000017",
         "source_sha256": "a4c77324eba4a3d88d46428ee097531930b75e46e983816352c76eff927621b7",
         "start_char": 446717,
         "end_char": 447097
@@ -476,7 +244,7 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2022",
+        "doc_id": "sec-0001045810-22-000036",
         "source_sha256": "f6f5263c402599b2eb0de04ddfb0e4e6bcd9cab08f3c2a1792d6df108daa559d",
         "start_char": 581971,
         "end_char": 583747
@@ -502,13 +270,13 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2024",
+        "doc_id": "sec-0001045810-24-000029",
         "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
         "start_char": 745773,
         "end_char": 746412
       },
       {
-        "doc_id": "NVDA-FY2024",
+        "doc_id": "sec-0001045810-24-000029",
         "source_sha256": "3ee6c75beb947d9e815464e5c0b6392db4f8ca20aa2f99666bc17c92b82d7759",
         "start_char": 775222,
         "end_char": 775871
@@ -534,13 +302,13 @@
     ],
     "answers": [
       {
-        "doc_id": "NVDA-FY2020",
+        "doc_id": "sec-0001045810-20-000010",
         "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
         "start_char": 558289,
         "end_char": 560408
       },
       {
-        "doc_id": "NVDA-FY2020",
+        "doc_id": "sec-0001045810-20-000010",
         "source_sha256": "1f4c257e5e3b63cc3c8e0017572fe47cfe15daed2867255221f5dd5576b07c4d",
         "start_char": 560663,
         "end_char": 562314

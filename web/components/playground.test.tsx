@@ -19,7 +19,7 @@ describe("Playground", () => {
 
   it("renders the score stage, component rankings, and fused evidence from a retrieval preview", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       let payload: unknown = {};
       if (url.endsWith("/admin/retrieval/preview")) payload = {
         query: JSON.parse(String(init?.body)).query,
@@ -56,7 +56,7 @@ describe("Playground", () => {
 
   it("renders the report label, answer, and citations from a review preview", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = String(input).replace(/\/?(\?|$)/, "$1");
       let payload: unknown = {};
       if (url.endsWith("/admin/review/preview")) payload = {
         profile: DEFAULT_PROFILE,

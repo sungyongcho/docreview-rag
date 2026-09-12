@@ -1,39 +1,40 @@
 import type { components } from "./api-generated";
-import { DEFAULT_SESSION_PROFILE } from "./types";
 import { requestFetch, type TimedRequestInit } from "./http-request";
 import type {
-  EvaluationComparison,
-  CorpusSnapshot,
+  AdminDocumentPage,
+  Capabilities,
   CorpusOperationRequest,
+  CorpusSnapshot,
+  DocumentDetail,
+  DocumentFacets,
+  EvaluationComparison,
   EvaluationJob,
   EvaluationRequest,
   EvaluationResultDetail,
   EvidenceHit,
-  GoldenSuite,
   GoldenCanonical,
-  ProviderUsage,
-  PublishedSnapshot,
   GoldenRevision,
-  SnapshotComparison,
-  DocumentDetail,
-  DocumentFacets,
-  AdminDocumentPage,
-  OperatorJob,
-  OperatorJobBoard,
-  Readiness,
-  Capabilities,
-  LocalLLMConnection, OpenAILimits,
+  GoldenSuite,
+  LocalLLMConnection,
   LocalLLMDiagnostics,
   LocalLLMDiagnosticTarget,
+  OpenAILimits,
+  OperatorJob,
+  OperatorJobBoard,
+  ProviderUsage,
+  PublishedSnapshot,
+  Readiness,
   ReleaseLimits,
   RetrievalProfile,
-  ReviewSessionProfile,
-  SuiteId,
   ReviewPathDecision,
+  ReviewSessionProfile,
+  SnapshotComparison,
+  SuiteId,
 } from "./types";
+import { DEFAULT_SESSION_PROFILE } from "./types";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/docreview-rag-agent/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/docreview-rag/api";
 
 export class ApiError extends Error {
   constructor(
@@ -50,12 +51,21 @@ export class ApiError extends Error {
 /** Deadline for read requests; writes and streams keep none because they may legitimately wait on a busy worker. */
 export const REQUEST_TIMEOUT_MS = 15_000;
 
+/** The API serves every route at the slash form; calling it directly avoids a 308 hop. */
+export function apiUrl(path: string): string {
+  const queryIndex = path.indexOf("?");
+  const pathname = queryIndex === -1 ? path : path.slice(0, queryIndex);
+  const query = queryIndex === -1 ? "" : path.slice(queryIndex);
+  const normalized = pathname.endsWith("/") ? pathname : `${pathname}/`;
+  return `${API_BASE}${normalized}${query}`;
+}
+
 async function request<T>(path: string, init?: TimedRequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const read = method === "GET" || method === "HEAD";
   let response: Response;
   try {
-    response = await requestFetch(`${API_BASE}${path}`, {
+    response = await requestFetch(apiUrl(path), {
       timeoutMs: read ? REQUEST_TIMEOUT_MS : undefined,
       ...init,
       headers: { "content-type": "application/json", ...init?.headers },
@@ -141,7 +151,7 @@ export async function streamReview(
   onCandidates?: (payload: RetrievePayload) => void,
 ): Promise<Record<string, unknown>> {
   const historyTurns = sessionProfile.prompt_policy?.history_turns ?? DEFAULT_SESSION_PROFILE.prompt_policy.history_turns;
-  const response = await requestFetch(`${API_BASE}/review/stream`, {
+  const response = await requestFetch(apiUrl("/review/stream"), {
     method: "POST",
     headers: { "content-type": "application/json", "X-DocReview-Telemetry": "stages" },
     body: JSON.stringify({
@@ -163,10 +173,10 @@ export async function streamReview(
     if (Number.isFinite(retryAfter) && retryAfter > 0) error.retry_after_seconds = retryAfter;
     const details = Array.isArray(error.details)
       ? error.details.map((item) => {
-          const detail = item as Record<string, unknown>;
-          const location = Array.isArray(detail.location) ? detail.location.join(".") : "request";
-          return `${location}: ${String(detail.message ?? "invalid value")}`;
-        })
+        const detail = item as Record<string, unknown>;
+        const location = Array.isArray(detail.location) ? detail.location.join(".") : "request";
+        return `${location}: ${String(detail.message ?? "invalid value")}`;
+      })
       : [];
     const message = String(error.message ?? "Review stream failed.");
     throw new ApiError(
@@ -248,7 +258,7 @@ export interface HealthResponse {
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  const response = await requestFetch(`${API_BASE}/health`, { signal });
+  const response = await requestFetch(apiUrl("/health"), { signal });
   if (!response.ok) {
     throw new ApiError(response.status, "health_failed", "DocReview API health check failed.");
   }
@@ -256,7 +266,7 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
 }
 
 export async function getReadiness(signal?: AbortSignal): Promise<Readiness> {
-  const response = await requestFetch(`${API_BASE}/ready`, { signal });
+  const response = await requestFetch(apiUrl("/ready"), { signal });
   const payload = await response.json() as Readiness;
   if (response.status !== 200 && response.status !== 503) {
     throw new ApiError(response.status, "readiness_failed", "Runtime readiness could not be loaded.");
@@ -290,12 +300,6 @@ export function getLocalLLMConnection(signal?: AbortSignal): Promise<LocalLLMCon
   return request<LocalLLMConnection>("/admin/local-llm/connection", { signal });
 }
 
-export function saveLocalLLMConnection(base_url: string, protocol: LocalLLMConnection["protocol"]): Promise<LocalLLMConnection> {
-  return request<LocalLLMConnection>("/admin/local-llm/connection", {
-    method: "POST", body: JSON.stringify({ base_url, protocol }),
-  });
-}
-
 export function addLocalLLMServer(name: string, base_url: string, protocol: LocalLLMConnection["protocol"]): Promise<LocalLLMConnection> {
   return request<LocalLLMConnection>("/admin/local-llm/servers", {
     method: "POST", body: JSON.stringify({ name, base_url, protocol }),
@@ -322,10 +326,6 @@ export function prepareLocalLLM(model: string): Promise<LocalLLMConnection> {
 
 export function disconnectLocalLLM(): Promise<LocalLLMConnection> {
   return request<LocalLLMConnection>("/admin/local-llm/disconnect", { method: "POST" });
-}
-
-export function resetLocalLLMConnection(): Promise<LocalLLMConnection> {
-  return request<LocalLLMConnection>("/admin/local-llm/reset", { method: "POST" });
 }
 
 export function getReleaseLimits(): Promise<ReleaseLimits> {
@@ -387,10 +387,6 @@ export function queueCorpusOperation(body: CorpusOperationRequest): Promise<Reco
     method: "POST",
     body: JSON.stringify(body),
   });
-}
-
-export function getCorpusJobs(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/admin/corpus/jobs");
 }
 
 export function getProviderUsage(): Promise<ProviderUsage> {

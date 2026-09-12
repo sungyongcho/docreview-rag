@@ -38,7 +38,7 @@ def test_representative_income_statement_matches_golden(
     blocks_by_doc: BlocksByDoc,
 ) -> None:
     """Match the NVDA consolidated income statement markdown exactly."""
-    _soup, blocks, _raw = blocks_by_doc["NVDA-FY2024"]
+    _soup, blocks, _raw = blocks_by_doc["sec-0001045810-24-000029"]
     matched = [
         table
         for table in _tables(blocks)

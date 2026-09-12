@@ -8,23 +8,23 @@ from app.evals.loader import load_golden_cases
 
 
 def test_v2_suites_share_verified_evidence_and_preserve_unapproved_status():
-    """Validate all 60 source-bound cases and the requested category/issuer distribution."""
+    """Validate all 36 source-bound cases and the requested category/issuer distribution."""
     groups = [
         load_golden_cases(Path("data/golden") / f"sec_{language}_v2_astra.json")
         for language in ("en", "ko", "mixed")
     ]
     for cases in groups:
-        assert len(cases) == 20
+        assert len(cases) == 12
         assert Counter(case.category for case in cases) == {
-            "simple_lookup": 8,
-            "exact_number": 6,
-            "multi_hop": 4,
+            "simple_lookup": 4,
+            "exact_number": 4,
+            "multi_hop": 2,
             "absent": 2,
         }
         assert Counter(case.id.split("-")[0] for case in cases) == {
             "amd": 5,
-            "intc": 5,
-            "mu": 5,
+            "intc": 1,
+            "mu": 1,
             "nvda": 5,
         }
         assert all(

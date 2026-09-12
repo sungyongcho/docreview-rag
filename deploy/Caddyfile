@@ -3,15 +3,30 @@
 :80 {
 	encode zstd gzip
 
-	@blocked path /admin* /ingest
-	respond @blocked 404
+	# handle blocks are mutually exclusive and evaluated in written order; the
+	# catch-all 404 must not precede the reverse_proxy (Caddyfile directive order
+	# would otherwise rank `respond` above `reverse_proxy` and 404 everything).
+	# The web bundle normalizes every API path to a trailing slash (apiUrl in
+	# web/lib/api.ts). Strip it here instead of letting the upstream 307 to a
+	# Location on the internal origin host, which the public client cannot reach.
+	@trailing_slash path_regexp trailing_slash ^(/.+)/$
+	rewrite @trailing_slash {re.trailing_slash.1}
 
-	@public path /health /ready /release /limits /capabilities /openapi.json /docs /retrieve /review /review/stream /documents /runs/* /eval /snapshots /snapshots/* /public/documents /public/documents/* /public/portfolio/preparation /public/portfolio/preparation/ /public/snapshots/*
-	reverse_proxy @public app:8000 {
-		# The app treats requests carrying this header as public; it is what hides
-		# DEV controls; the production app also blocks administrator APIs itself.
-		header_up X-DocReview-Public true
+	@blocked path /admin* /ingest*
+	handle @blocked {
+		respond 404
 	}
 
-	respond 404
+	@public path /health /ready /release /limits /capabilities /openapi.json /docs /docs/* /retrieve /review /review/stream /documents /eval /runs /runs/* /snapshots /snapshots/* /public/documents /public/documents/* /public/portfolio/preparation /public/portfolio/preparation/* /public/snapshots /public/snapshots/*
+	handle @public {
+		reverse_proxy app:8000 {
+			# The app treats requests carrying this header as public; it is what hides
+			# DEV controls; the production app also blocks administrator APIs itself.
+			header_up X-DocReview-Public true
+		}
+	}
+
+	handle {
+		respond 404
+	}
 }

@@ -211,8 +211,8 @@ $$
 
 - **질문·평가셋 준비**: 영문·한국어 질문을 데이터셋 성격에 맞게 생성하고, 파싱한 문서를 읽으며 어떤 질문이 적합한지 대화로 정리해 테스트셋을 준비했습니다.
 - **테스트 코드**: 구현과 함께 테스트를 생성·수정하고, 모듈 미러 구조(`app/X/y.py` → `tests/X/test_y.py`)로 유지했습니다. 인제스천·검색·워크플로·평가·API 계약 테스트를 나눴고, 실제 DB가 필요한 스키마 검증은 `live_postgres` 마커로 분리해 격리된 PostgreSQL에서만 실행했습니다.
-- **공개 API 한계 설계**: IP당 2회/분·5회/24시간, 호출당 $0.005, UTC 일일 $0.10 예약 상한. 임베딩·답변 호출 모두 실제 호출 직전에 상한을 예약하고, 영속 SQLite 원장으로 원자 처리합니다(단일 호스트 범위). SDK 자동 재시도는 비활성화해 상한을 우회하지 못하게 했습니다.
-- **클라우드 비용 계산**: e2-medium 온디맨드 약 $0.034/h(월 약 $25) + 30GB 디스크 약 $1 → 월 약 $26. 임시 IP 무료(고정 예약 시 +$3), Firebase·Cloudflare 무료 등급, OpenAI는 일일 $0.10 상한. 약정(CUD)·spot으로 절감 가능.
+- **공개 API 한계 설계**: IP당 2회/분·5회/24시간, 호출당 \$0.005, UTC 일일 \$0.10 예약 상한. 임베딩·답변 호출 모두 실제 호출 직전에 상한을 예약하고, 영속 SQLite 원장으로 원자 처리합니다(단일 호스트 범위). SDK 자동 재시도는 비활성화해 상한을 우회하지 못하게 했습니다.
+- **클라우드 비용 계산**: e2-medium 온디맨드 약 \$0.034/h(월 약 \$25) + 30GB 디스크 약 \$1 → 월 약 \$26. 임시 IP 무료(고정 예약 시 +\$3), Firebase·Cloudflare 무료 등급, OpenAI는 일일 \$0.10 상한. 약정(CUD)·spot으로 절감 가능.
 - **실패 진단 설계**: workflow budget / provider failure / node error를 구분하는 오류 체계를 함께 설계했습니다. 어떤 자원이 왜 막혔는지 재현 가능하게 남기는 것이 기능 추가만큼 중요했습니다.
 
 ### 고도화와 개선
@@ -233,16 +233,16 @@ $$
 
 | 항목 | 내용 | 비용 |
 |---|---|---|
-| GCP e2-medium | 2 shared vCPU, 4GB RAM + 2GB swap, 30GB pd-standard | 월 약 $25 |
-| 부트 디스크 | 30GB `pd-standard` | 월 약 $1 |
-| 외부 IP | 임시(고정 예약 시 +$3) | $0 |
-| 정적 사이트 | Firebase Hosting(정적 export) | $0 |
-| 라우팅 | Cloudflare Worker(gomoku Worker와 공유) | $0 |
-| OpenAI | 일일 $0.10 상한 | ≤ $0.10/day |
+| GCP e2-medium | 2 shared vCPU, 4GB RAM + 2GB swap, 30GB pd-standard | 월 약 \$25 |
+| 부트 디스크 | 30GB `pd-standard` | 월 약 \$1 |
+| 외부 IP | 임시(고정 예약 시 +\$3) | \$0 |
+| 정적 사이트 | Firebase Hosting(정적 export) | \$0 |
+| 라우팅 | Cloudflare Worker(gomoku Worker와 공유) | \$0 |
+| OpenAI | 일일 \$0.10 상한 | ≤ \$0.10/day |
 
 | 임베딩 모델 | 입력 | 출력 |
 |---|---|---|
-| `text-embedding-3-large` | $0.13 / 1M tokens | $0 |
+| `text-embedding-3-large` | \$0.13 / 1M tokens | \$0 |
 
 > 참고: 정적 사이트를 Firebase로 분리할지, e2-medium 한 대에서 Caddy로 함께 서빙할지는 아직 확정 전입니다. 비용 차이는 없고, 확정 후 이 표를 갱신합니다.
 

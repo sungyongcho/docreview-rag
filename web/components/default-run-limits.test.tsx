@@ -47,7 +47,7 @@ describe("DefaultRunLimits OpenAI per-call caps", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save per-call caps" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Per-call caps saved on the server."));
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
-    expect(String(post[0])).toMatch(/\/admin\/openai\/limits$/);
+    expect(String(post[0])).toMatch(/\/admin\/openai\/limits\/?$/);
     expect(JSON.parse(String(post[1]?.body))).toEqual({ max_input_tokens: 12000, max_output_tokens: 300, max_cost_usd: "0.04" });
     expect(screen.getByText("Saved working value")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "OpenAI per-call caps" }).parentElement).toHaveTextContent("cannot exceed the ceiling");

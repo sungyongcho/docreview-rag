@@ -192,7 +192,7 @@ export function WipeRuntime({ enabled }: { enabled: boolean }) {
     if (result?.status !== "succeeded") return;
     try {
       clearDocReviewBrowserData(browserResetStores()[0]);
-      window.location.assign("/docreview-rag-agent/");
+      window.location.assign("/docreview-rag/");
     } catch (reason) { setError(String(reason)); }
   }
   if (!enabled) return null;

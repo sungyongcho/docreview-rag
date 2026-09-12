@@ -17,7 +17,7 @@ Shell remains only for dependency bootstrap, the SSH web environment, release or
 Firebase deployment. The shell helper invokes Python modules directly. Tests follow these groups
 under `tests/scripts/`; helper registration tests remain in `tests/scripts/test_rag_alias.py`.
 
-The readiness measurement logic and G10 deferral from [PR #101](https://github.com/sungyongcho/docreview-rag-agent/pull/101)
+The readiness measurement logic and G10 deferral from [PR #101](https://github.com/sungyongcho/docreview-rag/pull/101)
 are unchanged. Its two-filing, 1,548-chunk run measured BM25-stage readiness p95/max at 4.3 ms after
 the G9 fix. This is evidence for that workload, not a larger-corpus performance claim. Measure a
 specific larger workload before changing the transactional BM25 rebuild.

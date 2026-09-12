@@ -30,7 +30,7 @@ let failure = false;
 beforeEach(() => {
   localStorage.clear(); requests = []; failure = false;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input), "http://localhost");
+    const url = new URL(String(input).replace(/\/?(\?|$)/, "$1"), "http://localhost");
     requests.push({ url, method: init?.method ?? "GET" });
     if (failure) return new Response(JSON.stringify({ error: { message: "Unavailable" } }), { status: 409 });
     const body = url.pathname.endsWith("/dataset") ? dataset : url.pathname.endsWith("/evaluation") ? evaluation : comparison;
@@ -120,7 +120,7 @@ it("reads the registered measured pair without executing evaluations", async () 
   expect(requests).toHaveLength(2);
   expect(requests.every(row => row.method === "GET" && !row.url.pathname.includes("/admin/"))).toBe(true);
   expect(requests[0].method).toBe("GET");
-  expect(requests[0].url.pathname).toMatch(/snapshots\/compare$/);
+  expect(requests[0].url.pathname).toMatch(/snapshots\/compare\/?$/);
 });
 
 it("does not replace failed published evidence with an illustrative example", async () => {

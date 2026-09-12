@@ -42,7 +42,7 @@ export OPENAI_API_KEY_PROD="${OPENAI_API_KEY_PROD:?OPENAI_API_KEY_PROD is requir
 # ===== Single production origin: e2-medium, 4 GB RAM =====
 export ZONE="${DEPLOY_GCP_ZONE:-us-central1-a}"
 export REGION="${ZONE%-*}"
-export VM_NAME="${DEPLOY_VM_NAME:-docreview-rag-agent}"
+export VM_NAME="${DEPLOY_VM_NAME:-docreview-rag}"
 export MACHINE_TYPE="${DEPLOY_MACHINE_TYPE:-e2-medium}"
 export BOOT_DISK_SIZE="${DEPLOY_BOOT_DISK_SIZE:-30GB}"
 export NETWORK_TAG="docreview-origin"

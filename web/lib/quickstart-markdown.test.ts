@@ -22,14 +22,15 @@ describe("split quick start guides", () => {
     expect(Array.from(en.matchAll(/\{#([a-z][a-z0-9-]*)\}/g), (match) => match[1])).toEqual(Array.from(ko.matchAll(/\{#([a-z][a-z0-9-]*)\}/g), (match) => match[1]));
     expect(english.codes).toEqual(korean.codes);
     expect(inlineCodes(en)).toEqual(inlineCodes(ko));
-    expect(en).toContain("### SCREENSHOT NEEDED"); expect(ko).toContain("### SCREENSHOT NEEDED");
+    const images = (text: string) => Array.from(text.matchAll(/!\[[^\]]*\]\(\.\.\/assets\/([a-z0-9.-]+)\)/g), (m) => m[1]);
+    expect(images(en).map((name) => name.replace(/\.en\.png$/, ""))).toEqual(images(ko).map((name) => name.replace(/\.ko\.png$/, "")));
   });
 
   it.each(["en", "ko"] as const)("separates setup, the seven preparation steps, and visitor actions (%s)", (locale) => {
     const environment = source(locale, "environment"); const developer = source(locale, "quickstart-dev"); const visitor = source(locale, "quickstart");
     const sections = splitQuickStart(developer);
     expect(environment.indexOf("{#qs-setup}")).toBeLessThan(environment.indexOf("{#schema-recovery}"));
-    expect(environment).toContain("git clone https://github.com/sungyongcho/docreview-rag-agent.git");
+    expect(environment).toContain("git clone https://github.com/sungyongcho/docreview-rag.git");
     expect(environment).toContain("source ./rag-alias.sh\nrag-help\nrag-start-quick");
     expect(environment).toContain("OPENAI_API_KEY_LOCAL=<your-own-openai-development-key>");
     expect(environment).toContain("{#open-build}");

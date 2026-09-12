@@ -177,7 +177,15 @@ def test_historical_source_bound_artifact_requires_exact_original_and_frozen_sou
     evidence.result.suite = "sec-en"
     golden_dir = evidence.path.parent / "golden"
     golden_dir.mkdir()
+    manifest_docs = {
+        document["document_id"]: document
+        for document in json.loads(Path("data/corpus/manifest.json").read_text())["documents"]
+    }
     original = evidence.revision.payload
+    for case in original:
+        for answer in case["answers"]:
+            document = manifest_docs[answer["doc_id"]]
+            answer["doc_id"] = f"{document['issuer']}-FY{int(document['fiscal_year'])}"
     raw = (json.dumps(original, ensure_ascii=False, indent=2) + "\n").encode()
     source_file = golden_dir / "retrieval.json"
     source_file.write_bytes(raw)
@@ -189,11 +197,13 @@ def test_historical_source_bound_artifact_requires_exact_original_and_frozen_sou
     sources = []
     for row in artifact["cases"]:
         for answer in row["golden"]["answers"]:
-            alias = answer["doc_id"]
-            issuer, year = alias.split("-FY")
-            filing_id = f"sec-filings-{year}"
+            document = manifest_docs[answer["doc_id"]]
+            issuer, year = document["issuer"], int(document["fiscal_year"])
+            filing_id = f"sec-filings-{issuer}-{year}"
             answer["doc_id"] = filing_id
-            sources.append((filing_id, issuer, int(year), answer["source_sha256"]))
+            source = (filing_id, issuer, year, answer["source_sha256"])
+            if source not in sources:
+                sources.append(source)
     if tamper == "source":
         sources[0] = (*sources[0][:3], "0" * 64)
     if tamper == "question":
@@ -213,7 +223,7 @@ def test_historical_source_bound_artifact_requires_exact_original_and_frozen_sou
         assert caught.value.status_code == 409
     else:
         page = asyncio.run(evidence.service.dataset(1))
-        assert page.cases[0].answers[0].doc_id == "sec-filings-2019"
+        assert page.cases[0].answers[0].doc_id == "sec-filings-AMD-2019"
         assert page.golden_sha256 == digest
         assert page.cases[0].question == original[0]["question"]
 

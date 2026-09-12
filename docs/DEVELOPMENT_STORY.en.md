@@ -211,8 +211,8 @@ Handing everything to AI is still risky. There is waiting time and cost, and res
 
 - **Questions and evaluation sets**: generating English and Korean questions that fit the dataset, discussing which questions suit the parsed documents, and preparing test sets from those discussions.
 - **Test code**: generating and updating tests with the implementation, keeping the module-mirror layout (`app/X/y.py` → `tests/X/test_y.py`). Ingestion, retrieval, workflow, evaluation and API-contract tests are separated, and schema checks that need a real database stay behind the `live_postgres` marker running against an isolated PostgreSQL.
-- **Public API limit design**: 2 requests/minute and 5 per 24 hours per IP, $0.005 per call, $0.10 daily UTC reservation cap. Both embedding and answer calls reserve against the cap immediately before the real call, coordinated atomically through a persistent SQLite ledger (single host). SDK automatic retries are disabled so the cap cannot be bypassed.
-- **Cloud cost estimates**: e2-medium on demand about $0.034/h (≈ $25/month) plus about $1 for the 30 GB disk ≈ $26/month. Ephemeral IP free (+$3 if reserved), Firebase and Cloudflare free tiers, and a $0.10 daily OpenAI cap. Committed use or spot pricing can lower this.
+- **Public API limit design**: 2 requests/minute and 5 per 24 hours per IP, \$0.005 per call, \$0.10 daily UTC reservation cap. Both embedding and answer calls reserve against the cap immediately before the real call, coordinated atomically through a persistent SQLite ledger (single host). SDK automatic retries are disabled so the cap cannot be bypassed.
+- **Cloud cost estimates**: e2-medium on demand about \$0.034/h (≈ \$25/month) plus about \$1 for the 30 GB disk ≈ \$26/month. Ephemeral IP free (+\$3 if reserved), Firebase and Cloudflare free tiers, and a \$0.10 daily OpenAI cap. Committed use or spot pricing can lower this.
 - **Failure diagnosis design**: a taxonomy that separates workflow budget, provider failure and node error. Making "which resource blocked this" reproducible mattered as much as adding features.
 
 ### Improvements
@@ -233,16 +233,16 @@ This project is also an **experiment in improving the development process itself
 
 | Item | Detail | Cost |
 |---|---|---|
-| GCP e2-medium | 2 shared vCPU, 4 GB RAM + 2 GB swap, 30 GB pd-standard | ≈ $25/month |
-| Boot disk | 30 GB `pd-standard` | ≈ $1/month |
-| External IP | Ephemeral (+$3 if reserved) | $0 |
-| Static site | Firebase Hosting (static export) | $0 |
-| Routing | Cloudflare Worker (shared with the gomoku Worker) | $0 |
-| OpenAI | $0.10 daily cap | ≤ $0.10/day |
+| GCP e2-medium | 2 shared vCPU, 4 GB RAM + 2 GB swap, 30 GB pd-standard | ≈ \$25/month |
+| Boot disk | 30 GB `pd-standard` | ≈ \$1/month |
+| External IP | Ephemeral (+\$3 if reserved) | \$0 |
+| Static site | Firebase Hosting (static export) | \$0 |
+| Routing | Cloudflare Worker (shared with the gomoku Worker) | \$0 |
+| OpenAI | \$0.10 daily cap | ≤ \$0.10/day |
 
 | Embedding model | Input | Output |
 |---|---|---|
-| `text-embedding-3-large` | $0.13 / 1M tokens | $0 |
+| `text-embedding-3-large` | \$0.13 / 1M tokens | \$0 |
 
 > Note: whether the static site stays on Firebase or is served from the same e2-medium through Caddy is not decided yet. There is no cost difference; this table will be updated once decided.
 

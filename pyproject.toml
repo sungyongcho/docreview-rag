@@ -1,5 +1,5 @@
 [project]
-name = "docreview-rag-agent"
+name = "docreview-rag"
 version = "0.1.0"
 description = "Source-grounded SEC and DART filing retrieval and review"
 readme = "README.md"

@@ -96,7 +96,7 @@ def wait_recovery(origin: str, *, timeout: float = 180) -> None:
     while time.monotonic() < deadline:
         try:
             with opener.open(
-                origin + "/docreview-rag-agent/api/admin/corpus/", timeout=5
+                origin + "/docreview-rag/api/admin/corpus/", timeout=5
             ) as response:
                 status = json.load(response)["status"]
             if (
@@ -146,7 +146,7 @@ def start_recovery(target: Path, *, return_stage: str = "index") -> None:
     subprocess.run(
         [python, "-m", "scripts.schema", "check"], cwd=target, env=environment, check=True
     )
-    print(f"Recovery ready: {origin}/docreview-rag-agent/?recovery_stage={return_stage}")
+    print(f"Recovery ready: {origin}/docreview-rag/?recovery_stage={return_stage}")
     print(
         f"Next: cd {target}\nThen source ./rag-alias.sh to use this recovery checkout's commands."
     )

@@ -12,17 +12,17 @@ describe("workspace navigation URLs", () => {
     ...["playground", "golden", "runs", "compare", "snapshots", "presets"].map((tab) => ({ view: "measure" as const, tab: tab as "runs", resultId: 42 })),
     ...["status", "operations", "api", "usage"].map((tab) => ({ view: "system" as const, tab: tab as "status" })),
   ])("round-trips the complete destination %j", (target) => {
-    const url = navigationUrl(target, "/docreview-rag-agent/?locale=ko&theme=light&help=review.scope#inspection");
-    expect(url).toContain("/docreview-rag-agent/");
+    const url = navigationUrl(target, "/docreview-rag/?locale=ko&theme=light&help=review.scope#inspection");
+    expect(url).toContain("/docreview-rag/");
     expect(url).toContain("locale=ko"); expect(url).toContain("theme=light"); expect(url).toContain("help=review.scope"); expect(url).toContain("#inspection");
     expect(parseNavigationUrl(url, ["saved / conversation"], "fallback")).toEqual(target);
   });
   it("leaves legacy deep links to their existing route handler", () => {
-    expect(parseNavigationUrl("/docreview-rag-agent/?help=review.scope", [], "fallback")).toBeNull();
+    expect(parseNavigationUrl("/docreview-rag/?help=review.scope", [], "fallback")).toBeNull();
   });
   it("replaces stale navigation parameters without dropping unrelated parameters", () => {
-    const url = navigationUrl({ view: "review", conversationId: "next" }, "/docreview-rag-agent/?view=build&tab=pipeline&stage=2&result=7&conversation=old&locale=en#keep");
-    expect(url).toBe("/docreview-rag-agent/?locale=en&view=review&conversation=next#keep");
+    const url = navigationUrl({ view: "review", conversationId: "next" }, "/docreview-rag/?view=build&tab=pipeline&stage=2&result=7&conversation=old&locale=en#keep");
+    expect(url).toBe("/docreview-rag/?locale=en&view=review&conversation=next#keep");
   });
   it("falls back for unknown local conversations and invalid views", () => {
     expect(parseNavigationUrl("?view=review&conversation=missing", ["last"], "last")).toEqual({ view: "review", conversationId: "last" });

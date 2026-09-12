@@ -179,11 +179,11 @@ def corpus(args: argparse.Namespace, root: Path) -> int:
     """Submit the same corpus jobs used by Build and leave their progress in the shared Jobs UI."""
     bindings = load_local_environment(root / ".env", mode="dev")
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
-    client = LocalClient(origin + "/docreview-rag-agent/api/admin", origin)
+    client = LocalClient(origin + "/docreview-rag/api/admin", origin)
     if args.kind == "readiness":
         print(
             json.dumps(
-                LocalClient(origin + "/docreview-rag-agent/api", origin).request("/ready/"),
+                LocalClient(origin + "/docreview-rag/api", origin).request("/ready/"),
                 indent=2,
             )
         )
