@@ -83,6 +83,11 @@ Inspect the requested scope, preserve foreign changes and verify affected behavi
 Record work in this project's GitHub issues/PRs, not a central project-data collection.
 Use the installed commit-it skill for portable Git procedures. OPS provides execution
 tools and these managed rules; it does not own product skill installation settings.
+Consult the project's DECISIONS.md ledger at session start or intake and on any
+requirement change; treat active entries as standing decisions. When new
+instructions conflict with an active entry, surface the conflict for the user's
+decision before proceeding. Record outcomes by appending entries; mark superseded
+entries rather than deleting them.
 
 For INTERACTIVE sessions, use the latest explicit user requirements and the declared
 session delivery grant; consult INTERACTIVE.md before creating/revising the session PR.
