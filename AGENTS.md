@@ -76,9 +76,10 @@ For `gpt-6-astra` and `fable-5.1`: use this contract, not model-specific rituals
 
 Keep project-specific rules in this file; they take precedence over these defaults.
 Use WORKER.md for assigned implementation/review, INTERACTIVE.md for explicitly
-user-directed live iteration and delivery, and MODERATOR.md for assigned intake.
-INTERACTIVE is a peer role to WORKER and MAINTAINER; its scoped standing delivery
-authority does not extend to ordinary workers.
+user-directed live iteration and delivery, MODERATOR.md for assigned intake and
+AUTO.md when the user explicitly hands a running session to unsupervised
+continuation. INTERACTIVE is a peer role to WORKER and MAINTAINER; its scoped
+standing delivery authority does not extend to ordinary workers.
 Inspect the requested scope, preserve foreign changes and verify affected behavior.
 Record work in this project's GitHub issues/PRs, not a central project-data collection.
 Use the installed commit-it skill for portable Git procedures. OPS provides execution
