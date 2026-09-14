@@ -61,7 +61,7 @@ describe("diagnosePreparation", () => {
     expect(diagnosePreparation("filings", pipeline, runtime).state).toBe("ready");
     expect(diagnosePreparation("filings", pipeline, { ...runtime, writable: false }).state).toBe("blocked");
     expect(diagnosePreparation("filings", pipeline, { ...runtime, writable: null }).state).toBe("checking");
-    expect(diagnosePreparation("filings", pipeline, { ...runtime, databaseConnected: false }).terminalSteps[0].command).toBe("rag-dev up --build -d");
+    expect(diagnosePreparation("filings", pipeline, { ...runtime, databaseConnected: false }).terminalSteps[0].command).toBe("rag-dev start");
   });
 
   it("prepares an empty schema without claiming that it was prepared", () => {

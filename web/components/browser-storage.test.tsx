@@ -51,6 +51,19 @@ it("provides Korean notice copy and the matching localized tutorial link", () =>
   expect(screen.getByRole("link")).toHaveAttribute("href", "/docreview-rag/docs/ko/settings/#browser-storage");
 });
 
+it("switches the entire storage notice from Korean to English", () => {
+  configureBrowserStorage("prod"); browserStorage().setItem("docreview.locale", "ko");
+  render(<I18nProvider><BrowserStorageSupport enabled /></I18nProvider>);
+  expect(screen.getByRole("status").textContent).toMatch(/[가-힣]/);
+  fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: "en" }));
+  const notice = screen.getByRole("status", { name: "Browser storage" });
+  expect(notice).toHaveTextContent("Settings and conversations are saved only in this browser");
+  expect(notice).toHaveTextContent("They are not synced and can be removed when you clear browser data.");
+  expect(notice.textContent).not.toMatch(/[가-힣]/);
+  expect(screen.getByRole("link", { name: "Learn more" })).toHaveAttribute("href", "/docreview-rag/docs/en/settings/#browser-storage");
+  expect(screen.getByRole("button", { name: "Got it" })).toBeVisible();
+});
+
 /** File.text is unavailable in some jsdom versions; supply the real browser's file contract. */
 function upload(text: string) {
   const file = new File([text], "settings.json", { type: "application/json" });

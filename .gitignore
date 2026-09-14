@@ -97,3 +97,6 @@ deploy/firebase/.firebaserc
 
 # Persistent public OpenAI allowance; private runtime state, never source data.
 /data/runtime/public-ai-limits.sqlite3*
+
+# Local PROD restores are separate from DEV source data and never belong in Git.
+/data/local-prod/

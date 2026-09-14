@@ -15,7 +15,7 @@ import { localEngineStatus } from "@/lib/local-models";
 import "./local-connection-settings.css";
 
 const ADD_SERVER = "__add_server__";
-const DIAGNOSE_COMMAND = "source ./rag-alias.sh\nrag-ollama-check";
+const DIAGNOSE_COMMAND = "source ./rag-alias.sh\nrag-dev doctor";
 const CONNECTION_SOURCES: Record<LocalLLMConnection["source"], string> = {
   default: "Application defaults", environment: "Environment defaults", dotenv: ".env file",
   saved: "Saved connection", disabled: "Disconnected", invalid: "Invalid saved settings",
@@ -38,7 +38,7 @@ const RECOVERY: Record<string, string> = {
   review_protocol: "Check the protocol and the server's model API in connection details.",
   review_credentials: "Check this server's existing credentials locally; do not paste keys into a server address.",
   review_tls: "Use the correct HTTPS address and a trusted certificate; do not disable certificate checks.",
-  run_connection_diagnostics: "Run rag-ollama-check in the repository terminal for host and Docker checks.",
+  run_connection_diagnostics: "Run rag-dev doctor in the repository terminal for host and Docker checks.",
 };
 
 /** Preserve older connection responses while newer servers provide a named catalog. */

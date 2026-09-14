@@ -1,0 +1,81 @@
+{
+  "inventory": {
+    "ko": "NVIDIA FY2024 · Samsung FY2024",
+    "en": "NVIDIA FY2024 · Samsung FY2024"
+  },
+  "cases": [
+    {
+      "id": "known",
+      "title": { "ko": "제공 기업 질문", "en": "Known company" },
+      "brief": {
+        "ko": "기업과 질문 표현을 모두 규칙으로 확인할 수 있어 모델 분류를 건너뜁니다.",
+        "en": "Rules recognize both the company and the whole request, so model classification is unnecessary."
+      },
+      "query": "Nvidia revenue 2024",
+      "expected_intent": "document_review",
+      "expected_rule": "issuer_covered_finance",
+      "expected_scope": "available"
+    },
+    {
+      "id": "cat",
+      "title": { "ko": "역할극 요청", "en": "Role-play request" },
+      "brief": {
+        "ko": "역할극 요청은 서비스 범위 밖이라 규칙이 0단계에서 끝냅니다.",
+        "en": "A role-play request is outside the service — a rule ends it at stage 0."
+      },
+      "query": "고양이와 대화하기",
+      "expected_intent": "out_of_scope",
+      "expected_rule": "roleplay_request",
+      "expected_scope": "not_applicable"
+    },
+    {
+      "id": "followup",
+      "title": { "ko": "후속 질문", "en": "Follow-up" },
+      "brief": {
+        "ko": "규칙으로 확인한 이전 질문을 이어받습니다. 이전 대화를 끄면 무엇이 달라지는지 확인해 보세요.",
+        "en": "A follow-up reuses an earlier question that passes the rules. Turn off prior conversation to see the difference."
+      },
+      "query": "방금 이야기해준거 한글로 다시 설명해줄래",
+      "prior": "Nvidia revenue 2024",
+      "expected_intent": "document_review",
+      "expected_rule": "filing_followup",
+      "expected_scope": "available"
+    },
+    {
+      "id": "year",
+      "title": { "ko": "없는 연도", "en": "Unavailable year" },
+      "brief": {
+        "ko": "분석 경로는 맞지만 요청 연도의 제공 공시가 없어 1단계에서 끝납니다.",
+        "en": "The route is analysis, but no provided filing matches the year — stage 1 ends it."
+      },
+      "query": "Nvidia revenue 2099",
+      "expected_intent": "document_review",
+      "expected_rule": "issuer_covered_finance",
+      "expected_scope": "empty"
+    },
+    {
+      "id": "unknown",
+      "title": { "ko": "미확정 대상", "en": "Unresolved target" },
+      "brief": {
+        "ko": "규칙이 정하지 못하는 요청 — 한 차례 분류 판단을 기다립니다.",
+        "en": "No rule settles this request — it waits for one classifier decision."
+      },
+      "query": "SanDisk growth drivers",
+      "expected_intent": null,
+      "expected_rule": null,
+      "expected_scope": "pending"
+    },
+    {
+      "id": "mixed",
+      "title": { "ko": "섞인 대상", "en": "Mixed targets" },
+      "brief": {
+        "ko": "알려진 별칭과 모르는 대상이 섞이면 규칙만으로 경로를 정하지 않습니다.",
+        "en": "A known alias mixed with an unknown target is never force-routed by rules."
+      },
+      "query": "Nvidia and UnknownCorp revenue",
+      "expected_intent": null,
+      "expected_rule": null,
+      "expected_scope": "pending"
+    }
+  ]
+}

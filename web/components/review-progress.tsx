@@ -4,6 +4,7 @@ import { ArrowUpRight, Check, Circle, FileSearch, LoaderCircle, RotateCcw, Trian
 import { useEffect, useId, useState } from "react";
 import { useStageCompanyLabels, type CompanyCatalogMode } from "@/lib/use-stage-company-labels";
 import { useI18n } from "@/lib/i18n";
+import { isReviewLimitation, reviewLimitationMessage } from "@/lib/scope-failure";
 import type { ReviewProgress } from "@/lib/api";
 import type { CorpusScope, ReviewEventNode, ReviewExecution, ReviewResolvedScope, ReviewPathDecision } from "@/lib/types";
 
@@ -62,6 +63,7 @@ export function candidateProgress(previous: ReviewProgressState, evidence: numbe
 
 /** Only actual observed phases become complete; skipped phases stay explicit. */
 export function phaseStatus(state: ReviewProgressState, index: number): string {
+  if (state.outcome !== "cancelled" && isReviewLimitation(state.pathDecision)) return state.pathDecision?.stopping_stage === "gate" && index === 0 ? "limited" : "not-run";
   const current = currentStepIndex(state.node);
   if (state.pathStatus === "failed" || state.pathStatus === "cancelled") return "not-run";
   if (state.skippedNodes?.[REVIEW_STEPS[index]?.node]) return "skipped";
@@ -90,6 +92,11 @@ export function finishReviewProgress(state: ReviewProgressState, outcome: "compl
   const pathDecision = (data?.path_decision ?? metadata?.path_decision) as ReviewPathDecision | undefined;
   state = { ...state, pathDecision: pathDecision ?? state.pathDecision, steps: Array.isArray(data?.model_calls) ? data.model_calls.length : state.steps };
   state = { ...state, resolvedScope: resolvedScopeFromServer(state.pathDecision?.resolved_scope ?? effective?.resolved_scope ?? data?.resolved_scope) ?? state.resolvedScope, skippedNodes: undefined };
+  if (outcome !== "cancelled" && isReviewLimitation(state.pathDecision)) {
+    const count = state.pathDecision?.model_call_count;
+    const steps = !Array.isArray(data?.model_calls) && typeof count === "number" && Number.isInteger(count) && count >= 0 ? count : state.steps;
+    return { ...state, steps, pathStatus: "done", node: state.pathDecision?.stopping_stage === "gate" ? "route" : "gate", outcome: "limited", activeNode: null, elapsedMs };
+  }
   const stages = Array.isArray(data?.stages) ? data.stages.map(objectRecord).filter((value) => value && ["gate", "route", "retrieve", "chat", "grade", "check", "report"].includes(String(value.node)) && value.phase !== "start" && ["completed", "failed"].includes(String(value.status))) : [];
   if (stages.length) {
     let recorded: ReviewProgressState = { ...state, node: "waiting", observed: [], completedNodes: [], activeNode: null, retries: 0 };
@@ -129,13 +136,16 @@ export function resolvedScopeFromServer(value: unknown): ReviewResolvedScope | u
 export function PathDecisionBadge({ decision, catalogMode }: { decision: ReviewPathDecision; catalogMode?: CompanyCatalogMode }) {
   const { t } = useI18n();
   const scope = decision.resolved_scope;
-  const outcome = decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved";
+  const outcome = decision.scope_outcome === "unsupported" ? "Unsupported request" : decision.scope_outcome === "ambiguous" ? "Company clarification needed" : decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved";
   const registryKey = (scope?.filters.registries ?? []).join(",");
   const names = useStageCompanyLabels(Boolean(scope), catalogMode, registryKey);
   const issuers = scope?.filters.issuers.map(issuer => scope.filters.registries.map(registry => names.labels[`${registry}:${issuer.toUpperCase()}`]).find(Boolean) ?? issuer) ?? [];
   const years = [...new Set(scope?.filters.fiscal_years ?? [])].sort((a, b) => a - b);
   const yearLabel = years.length > 1 && years.every((year, index) => index === 0 || year === years[index - 1] + 1) ? `FY${years[0]}–${years[years.length - 1]}` : years.map(year => `FY${year}`).join(", ");
-  return <p className="review-scope-outcome review-scope-badge"><strong>{t(outcome)}</strong>{scope && <span>{[scope.filters.registries.join(" / ").toUpperCase(), issuers.join(" · ") || t("No company restriction"), yearLabel].filter(Boolean).join(" · ")}</span>}</p>;
+  // The answer verdict pill already carries "Unsupported request"; the badge then shows scope detail only.
+  const showOutcome = !(outcome === "Unsupported request" && isReviewLimitation(decision) && decision.stopping_reason === "unsupported_request");
+  if (!showOutcome && !scope) return null;
+  return <p className="review-scope-outcome review-scope-badge">{showOutcome && <strong className={decision.scope_outcome === "empty" ? "verdict empty-scope" : undefined}>{t(outcome)}</strong>}{scope && <span>{[scope.filters.registries.join(" / ").toUpperCase(), issuers.join(" · ") || t("No company restriction"), yearLabel].filter(Boolean).join(" · ")}</span>}</p>;
 }
 
 /** The requested mode and confirmed applied routing remain distinct throughout execution. */
@@ -148,20 +158,24 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
   const reason = resolved?.source === "explicit" ? "Explicit scope or filters" : resolved?.source === "alias" ? "Company alias matched in the question" : resolved?.source === "query_language" ? "Question language" : "Routing reason not collected";
   const waiting = state.outcome === "running" && state.selectedScope !== undefined;
   return <div className="review-routing">
-    {decision && <>
-      <p className="review-routing-meta"><span><strong>{t(decision.intent === "casual_chat" ? "Conversation reply" : "Document review")}</strong> · {t(decision.source === "classifier" ? "Classifier" : "Deterministic rule")}: <code>{decision.matched_rule}</code></span><span>{t("History turns considered")}: {decision.history_turns}</span></p>
-      <p className="review-routing-rationale">{t(decision.rationale)}</p>
-    </>}
-    {selected && <p className="review-routing-selected">{t("Selected corpus")}: <strong>{t(selected === "auto" ? "Auto" : selected.toUpperCase())}</strong></p>}
-    {decision && <p className="review-scope-outcome"><strong>{t("Scope outcome")}: {t(decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved")}</strong>{resolved && <> · {t(selected === "auto" ? "Auto" : "Pinned")} → {resolved.filters.registries.join(" / ").toUpperCase()} / {resolved.filters.issuers.join(", ") || t("No company restriction")}</>}</p>}
-    {decision?.stopping_reason && <p>{t("Stopping reason")}: {t(decision.stopping_reason)}</p>}
-    {decision?.intent === "document_review" && <p className="review-routing-query">{t("Retrieval query")}: {decision.retrieval_query}</p>}
-    {decision?.suggested_scope === "auto" && <><p>{t("Switch the document scope to Auto above the composer and send the question again.")}</p>{onSwitchScope && <button type="button" className="button ghost" onClick={onSwitchScope}>{t("Switch to Auto and restore question")}</button>}</>}
-    {decision?.intent === "document_review" && Object.entries(decision.routing_queries).length > 0 && <details><summary>{t("Routing queries")}</summary>{Object.entries(decision.routing_queries).map(([registry, query]) => <p key={registry}><strong>{registry.toUpperCase()}</strong>: {query}</p>)}</details>}
-    {resolved ? <>
-      <p className="review-routing-confirmed"><strong>{t("Server-confirmed scope")}</strong>: {t("Source")}: {resolved.filters.registries.length ? resolved.filters.registries.map((registry) => registry.toUpperCase()).join(", ") : t("No source restriction")} · {t("Company")}: {resolved.filters.issuers.join(", ") || t("No company restriction")} · {t("Fiscal year")}: {resolved.filters.fiscal_years.join(", ") || t("No year restriction")}</p>
-      <p className="review-routing-reason">{t("Routing reason")}: {t(reason)}</p>
-    </> : chat ? <p>{t("No retrieval")}</p> : <p>{t(waiting ? "Waiting for server-confirmed routing" : "Routing details not collected")}</p>}
+    {decision && <div className="review-routing-main">
+      <div><p className="review-routing-label">{t("Decision explanation")}</p><p className="review-routing-rationale">{t(decision.rationale)}</p></div>
+      {decision.stopping_reason && <div><p className="review-routing-label">{t("Stopping reason")}</p><p>{isReviewLimitation(decision) ? reviewLimitationMessage(decision, t) : t(decision.stopping_reason)}</p></div>}
+      {decision.intent === "document_review" && <div><p className="review-routing-label">{t("Retrieval query")}</p><p className="review-routing-query">{decision.retrieval_query}</p></div>}
+      {decision.suggested_scope === "auto" && <><p>{t("Switch the document scope to Auto above the composer and send the question again.")}</p>{onSwitchScope && <button type="button" className="button ghost" onClick={onSwitchScope}>{t("Switch to Auto and restore question")}</button>}</>}
+      {decision.intent === "document_review" && Object.entries(decision.routing_queries).length > 0 && <details><summary>{t("Routing queries")}</summary>{Object.entries(decision.routing_queries).map(([registry, query]) => <p key={registry}><strong>{registry.toUpperCase()}</strong>: {query}</p>)}</details>}
+    </div>}
+    <div className="review-routing-facts">
+      {decision && <div className="review-routing-meta"><strong>{t(decision.intent === "out_of_scope" ? "Unsupported request" : decision.intent === "service_help" ? "Service guidance" : decision.intent === "casual_chat" ? "Conversation reply" : "Document review")}</strong><span><span className="review-routing-label">{t(decision.source === "classifier" ? "Classifier" : "Deterministic rule")}</span> <code>{decision.matched_rule}</code></span></div>}
+      {(selected || decision) && <dl className="review-routing-fact-list">
+        {selected && <div className="review-routing-selected"><dt>{t("Selected corpus")}</dt><dd>{t(selected === "auto" ? "Auto" : selected.toUpperCase())}</dd></div>}
+        {decision && <div className="review-scope-outcome"><dt>{t("Scope outcome")}</dt><dd>{t(decision.scope_outcome === "unsupported" ? "Unsupported request" : decision.scope_outcome === "ambiguous" ? "Company clarification needed" : decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved")}</dd></div>}
+      </dl>}
+      {resolved ? <>
+        <div className="review-routing-confirmed"><p className="review-routing-label">{t("Server-confirmed scope")}</p><dl className="review-routing-scope-grid"><div><dt>{t("Source")}</dt><dd>{resolved.filters.registries.length ? resolved.filters.registries.map((registry) => registry.toUpperCase()).join(", ") : t("No source restriction")}</dd></div><div><dt>{t("Company")}</dt><dd>{resolved.filters.issuers.join(", ") || t("No company restriction")}</dd></div><div><dt>{t("Fiscal year")}</dt><dd>{resolved.filters.fiscal_years.join(", ") || t("No year restriction")}</dd></div></dl></div>
+        <div className="review-routing-reason"><p className="review-routing-label">{t("Routing reason")}</p><p>{t(reason)}</p></div>
+      </> : chat ? <p>{t("No retrieval")}</p> : <p>{t(waiting ? "Waiting for server-confirmed routing" : "Routing details not collected")}</p>}
+    </div>
   </div>;
 }
 
@@ -178,10 +192,11 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState<DisclosureStage | null>(null);
   const disclosureId = useId();
-  const pathPhase = state.pathStatus === "failed" || state.pathStatus === "cancelled" ? state.pathStatus : state.pathDecision ? "done" : state.pathStatus ?? ((state.outcome ?? "running") === "running" ? "waiting" : "not-run");
+  const limited = state.outcome !== "cancelled" && isReviewLimitation(state.pathDecision);
+  const pathPhase = limited && state.pathDecision?.stopping_stage === "path" ? "limited" : state.pathStatus === "failed" || state.pathStatus === "cancelled" ? state.pathStatus : state.pathDecision ? "done" : state.pathStatus ?? ((state.outcome ?? "running") === "running" ? "waiting" : "not-run");
   const phases = Object.fromEntries(REVIEW_STEPS.map((step, index) => [step.node, phaseStatus(state, index)]));
   /** Waiting and unobserved phases cannot expose a stage panel. */
-  const selectable = (phase: string) => ["done", "current", "failed", "cancelled", "skipped"].includes(phase);
+  const selectable = (phase: string) => ["done", "current", "failed", "cancelled", "skipped", "limited"].includes(phase);
   const openStage = expanded && selectable(expanded === "path" ? pathPhase : phases[expanded]) ? expanded : null;
   useEffect(() => { if (expanded && !openStage) setExpanded(null); }, [expanded, openStage]);
   const detailScope = resolvedScopeFromServer(objectRecord(performance?.path_decision)?.resolved_scope ?? performance?.resolved_scope) ?? state.pathDecision?.resolved_scope ?? state.resolvedScope;
@@ -200,14 +215,15 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
   const current = currentStepIndex(state.node);
   const chat = state.pathDecision?.intent === "casual_chat" || state.node === "chat" || ((state.observed ?? []).includes("chat") && !(state.observed ?? []).some((node) => node === "retrieve" || node === "candidates"));
   const status = state.outcome ?? "running";
-  const announcement = status === "completed" ? "Execution complete" : status === "failed" ? "Stopped after the last reported step" : status === "cancelled" ? "Request cancelled" : state.node === "waiting" ? "Waiting for the server" : chat ? "Replying…" : REVIEW_STEPS[current]?.label ?? "Waiting for the server";
+  const scopeStop = state.pathDecision?.stopping_reason === "ambiguous_issuer" ? "Stopped at stage 1: company clarification needed" : state.pathDecision?.scope_outcome === "conflict" ? "Stopped at stage 1: scope conflict" : "Stopped at stage 1: filing scope unavailable";
+  const announcement = limited ? state.pathDecision?.stopping_stage === "path" ? state.pathDecision.stopping_reason === "service_guidance" ? "Stopped at stage 0: service guidance" : "Stopped at stage 0: unsupported request" : scopeStop : status === "completed" ? "Execution complete" : status === "failed" ? "Stopped after the last reported step" : status === "cancelled" ? "Request cancelled" : state.node === "waiting" ? "Waiting for the server" : chat ? "Replying…" : REVIEW_STEPS[current]?.label ?? "Waiting for the server";
   return <div className={`review-progress ${status}`} role="status" aria-live="polite">
     <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}<div className="review-stage-actions">{onShowEvidence && <button className="button review-summary-action" type="button" onClick={onShowEvidence}><FileSearch size={14} aria-hidden="true" />{t("Show evidence")}</button>}{onOpenDetails && showDetailsAction && <button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails(openStage ?? undefined)}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button>}</div></div>
     <ol className="review-progress-steps" aria-label={t("Evidence review progress")}>
       <li className={stageClass("path", pathPhase)}>
         {toggle("path", "Path decision", pathPhase)}
         <span className="review-phase-icon" aria-hidden="true">{pathPhase === "done" ? <Check size={14} /> : pathPhase === "current" ? <LoaderCircle size={14} /> : pathPhase === "failed" || pathPhase === "cancelled" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
-        <span><strong>0. {t("Path decision")}</strong><small>{state.pathDecision ? t(state.pathDecision.intent === "casual_chat" ? "Conversation reply" : "Document review") : t("Intent and filing scope")}</small></span>
+        <span><strong>0. {t("Path decision")}</strong><small>{state.pathDecision ? t(state.pathDecision.intent === "out_of_scope" ? "Unsupported request" : state.pathDecision.intent === "service_help" ? "Service guidance" : state.pathDecision.intent === "casual_chat" ? "Conversation reply" : "Document review") : t("Intent and filing scope")}</small></span>
       </li>
       {REVIEW_STEPS.map((step, index) => {
         const phase = phaseStatus(state, index);
@@ -220,7 +236,14 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
     </ol>
     <section id={`${disclosureId}-panel`} hidden={!openStage} role="region" aria-labelledby={openStage ? `${disclosureId}-${openStage}` : undefined} className="review-stage-panel">{openStage && <ReviewStageDetails stage={openStage} companyLabels={names.labels} state={state} performance={performance} finalLabel={finalLabel} />}{needsCompanyNames && names.failed && <p className="review-unrecorded">{t("Company names are unavailable. Original company codes are shown.")}</p>}</section>
     <RoutingSummary state={state} onSwitchScope={onSwitchScope} />
-    <p className="review-progress-counts">{t("{p0} candidates · {p1} relevant · {p2} model steps", { p0: state.evidence, p1: state.relevant, p2: state.steps })}{chat && <span> · {t("No retrieval")}</span>}{state.elapsedMs !== undefined && <span> · {t("Request time")}: {(state.elapsedMs / 1000).toLocaleString(locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 })}s</span>}</p>
+    <dl className="review-run-stats">
+      {state.pathDecision && <div><dt>{t("History turns considered")}</dt><dd>{state.pathDecision.history_turns}</dd></div>}
+      <div><dt>{t("Candidates")}</dt><dd>{state.evidence}</dd></div>
+      <div><dt>{t("Relevant evidence")}</dt><dd>{state.relevant}</dd></div>
+      <div><dt>{t("Model steps")}</dt><dd>{state.steps}</dd></div>
+      {state.elapsedMs !== undefined && <div><dt>{t("Request time")}</dt><dd>{(state.elapsedMs / 1000).toLocaleString(locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 })}s</dd></div>}
+    </dl>
+    {chat && <p className="review-progress-counts">{t("No retrieval")}</p>}
     {status === "running" && state.startedAt && <p className="review-progress-counts" aria-live="off">{t("Elapsed")}: {Math.max(0, Math.floor((now - state.startedAt) / 1000))}s · {state.lastEventAt ? t("Last update: {seconds}s ago", { seconds: Math.max(0, Math.floor((now - state.lastEventAt) / 1000)) }) : t("Waiting for the first server event")}</p>}
   </div>;
 }

@@ -20,7 +20,7 @@ def configured(tmp_path, monkeypatch):
     ]:
         monkeypatch.delenv(key, raising=False)
     (tmp_path / ".env").write_text(
-        "SEC_USER_AGENT=Tester tester@company.test\nDART_API_KEY=test-dart\n"
+        "SEC_USER_AGENT=Tester tester@example.test\nDART_API_KEY=test-dart\n"
         "OPENAI_API_KEY_LOCAL=test-openai\nEMBEDDING_PROVIDER=openai\n"
         "EMBEDDING_MODEL=text-embedding-3-large\nAPP_PORT=38010\nDB_PORT=38432\n"
         "DOCREVIEW_OPERATOR_PORT=38011\n"
@@ -54,6 +54,55 @@ def test_valid_configuration_is_not_overwritten(configured):
     assert (configured / ".env").read_bytes() == original
 
 
+def test_prod_configuration_uses_prod_key_without_acquisition_credentials(tmp_path, monkeypatch):
+    """A local PROD start never requires DEV keys or SEC/DART download credentials."""
+    for key in (
+        "OPENAI_API_KEY_LOCAL",
+        "OPENAI_API_KEY_PROD",
+        "SEC_USER_AGENT",
+        "DART_API_KEY",
+        "EMBEDDING_PROVIDER",
+        "EMBEDDING_MODEL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    path = tmp_path / ".env"
+    path.write_text(
+        "OPENAI_API_KEY_PROD=test-prod-key\nEMBEDDING_PROVIDER=openai\n"
+        "EMBEDDING_MODEL=text-embedding-3-large\n"
+    )
+    before = path.read_bytes()
+    assert setup.validate_configuration(tmp_path, mode="prod")["MODE"] == "prod"
+    assert path.read_bytes() == before
+    path.write_text(
+        "OPENAI_API_KEY_LOCAL=test-dev-key\n"
+        + before.decode().replace("OPENAI_API_KEY_PROD=test-prod-key\n", "")
+    )
+    with pytest.raises(setup.ConfigurationError, match="OPENAI_API_KEY_PROD"):
+        setup.validate_configuration(tmp_path, mode="prod")
+
+
+def test_prod_server_readiness_accepts_empty_corpus_without_claiming_search(monkeypatch):
+    """An empty but compatible PROD DB is a valid server start, even with HTTP 503 readiness."""
+    import io
+    import json
+    from unittest.mock import Mock
+    from urllib.error import HTTPError
+
+    response = {
+        "environment": "prod",
+        "status": "degraded",
+        "corpus": {"database_connected": True, "schema_status": "compatible", "documents": 0},
+    }
+    error = HTTPError(
+        "http://local/ready", 503, "Not ready", {}, io.BytesIO(json.dumps(response).encode())
+    )
+    opener = Mock()
+    opener.open.side_effect = error
+    monkeypatch.setattr(setup, "build_opener", lambda *args: opener)
+    setup.wait_ready("http://127.0.0.1:8000", mode="prod", timeout=1)
+    assert opener.open.call_args.args[0].endswith("/api/ready/")
+
+
 def test_effective_override_cannot_silently_select_fake_embeddings(configured, monkeypatch):
     """Catch shell overrides that would invalidate the documented real-embedding path."""
     monkeypatch.setenv("EMBEDDING_PROVIDER", "deterministic")
@@ -75,9 +124,10 @@ def test_startup_prepares_only_project_database_before_app(configured, monkeypat
     monkeypatch.setattr(setup, "wait_ready", lambda origin, **kwargs: calls.append(origin))
     assert setup.quickstart(configured) == 0
     schema.assert_awaited_once_with("postgresql+asyncpg://filing:filing@127.0.0.1:38432/filing")
-    assert calls[0][-5:] == ["-d", "--wait", "--wait-timeout", "120", "db"]
-    assert calls[1] == ["up", "--build", "-d"]
-    assert calls[2] == "http://127.0.0.1:38010"
+    assert calls[0][-2:] == ["stop", "app"]
+    assert calls[1][-5:] == ["-d", "--wait", "--wait-timeout", "120", "db"]
+    assert calls[2] == ["up", "--build", "-d"]
+    assert calls[3] == "http://127.0.0.1:38010"
 
 
 @pytest.mark.parametrize("array", [True, False])
@@ -251,7 +301,7 @@ def test_host_clean_start_waits_for_verified_reset_before_starting(
     """Cancellation and partial reset stop before startup; success reaches the exact web step."""
     calls = []
     monkeypatch.setattr(setup.subprocess, "check_output", lambda *a, **k: "2.39.0")
-    monkeypatch.setattr(setup, "ensure_database", lambda *a: calls.append("db"))
+    monkeypatch.setattr(setup, "ensure_database", lambda *a, **k: calls.append("db"))
 
     def reset(root, **options):
         """Return the reset's explicit state after recording its caller intent."""
@@ -291,7 +341,7 @@ def test_startup_failure_diagnoses_and_restarts_once(configured, monkeypatch):
     monkeypatch.setattr(setup, "run", run)
     monkeypatch.setattr(setup, "diagnose", diagnosis)
     monkeypatch.setattr(setup, "confirm", lambda _: True)
-    monkeypatch.setattr(setup, "report_services", lambda *a: None)
+    monkeypatch.setattr(setup, "report_services", lambda *a, **k: None)
     ready = Mock()
     monkeypatch.setattr(setup, "wait_ready", ready)
     setup.start_ready(configured, setup.validate_configuration(configured))
@@ -440,8 +490,7 @@ def test_handoff_links_to_developer_quick_start(capsys):
     output = capsys.readouterr().out
     for locale in ("en", "ko"):
         assert (
-            f"http://127.0.0.1:38010/docreview-rag/docs/{locale}/quickstart-dev/#qs-web-1"
-            in output
+            f"http://127.0.0.1:38010/docreview-rag/docs/{locale}/quickstart-dev/#qs-web-1" in output
         )
     assert "Quick Start - DEV ONLY" in output
     assert output.isascii()

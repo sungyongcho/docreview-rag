@@ -2,12 +2,13 @@
 import { closeSidePanel } from "./side-panel-motion";
 import { NotificationOutlet, useNotificationSurface } from "./notifications";
 import { useI18n } from "@/lib/i18n";
+import { companyDisplayName } from "@/lib/company-labels";
 
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { RequestPreviewContent } from "./request-preview";
+import { RequestPreviewContent, RetrievalPresetComparison } from "./request-preview";
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { loadDefaultProfile, saveDefaultProfile } from "@/lib/storage";
 import { conversationSettingsError } from "@/lib/saved-presets";
@@ -22,7 +23,7 @@ import type { DocumentFacets, ReviewSessionDraft } from "@/lib/types";
 import { getDocumentFacets, getPublishedDocumentFacets } from "@/lib/api";
 import { TokenSelect } from "@/components/token-select";
 import { resolvedRetrievalProfile } from "@/lib/types";
-import { useRetainedPanelActive } from "@/components/retained-panel";
+import { RetainedPanel, useRetainedPanelActive } from "@/components/retained-panel";
 import { DevelopmentBadge } from "@/components/development-badge";
 import "./conversation-settings.css";
 
@@ -46,8 +47,6 @@ export function ConversationSettings(props: Props) {
   // The drawer shows the recommendation itself, so the pinned slow-CPU toast stays hidden while it is open.
   useNotificationSurface("slow-cpu-toast");
   const active = useRetainedPanelActive();
-  const [mode, setMode] = useState<"basic" | "advanced" | "preview">(props.tab === "preview" ? "preview" : props.editable && props.tab !== "filters" ? "advanced" : "basic");
-  useEffect(() => { setMode(props.tab === "preview" ? "preview" : props.editable && props.tab !== "filters" ? "advanced" : "basic"); }, [props.tab, props.editable]);
   const settingsError = conversationSettingsError(props.profile);
   const [savedDefaults, setSavedDefaults] = useState(DEFAULT_SESSION_PROFILE);
   useEffect(() => {
@@ -70,6 +69,20 @@ export function ConversationSettings(props: Props) {
   const changes = Object.entries(props.profile.prompt_policy).filter(([key, value]) => key !== "workflow_budget" && value !== baseline[key as keyof typeof baseline]).length + Object.entries(props.profile.prompt_policy.workflow_budget).filter(([key, value]) => value !== baseline.workflow_budget[key as keyof typeof baseline.workflow_budget]).length + Object.entries(resolvedRetrievalProfile(props.profile)).filter(([key, value]) => value !== resolvedRetrievalProfile(savedDefaults)[key as keyof ReturnType<typeof resolvedRetrievalProfile>]).length;
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const [filterInputsValid, setFilterInputsValid] = useState(true);
+  const reportFilterValidity = useCallback((valid: boolean) => {
+    setFilterInputsValid(valid);
+    props.onValidityChange?.(valid);
+  }, [props.onValidityChange]);
+  useLayoutEffect(() => {
+    if (body.current) { body.current.scrollTop = 0; body.current.scrollLeft = 0; }
+    // Preview links hide their own panel; return keyboard focus to the destination tab.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && body.current?.contains(focused) && focused.closest("[hidden]")) {
+      document.getElementById(`${titleId}-tab-${props.tab}`)?.focus({ preventScroll: true });
+    }
+  }, [props.tab]);
   const closeButton = useRef<HTMLButtonElement>(null);
   const close = useRef(props.onClose);
   close.current = () => closeSidePanel(panel.current, props.onClose);
@@ -115,41 +128,56 @@ export function ConversationSettings(props: Props) {
       if (!target?.closest("[hidden], [inert]")) target?.focus({ preventScroll: true });
     };
   }, [active]);
-  const tabs: Array<[ConversationSettingsTab,string]> = [["filters","Filters"], ...(props.editable ? [["retrieval","Search"], ["evidence","Evidence"], ["limits","Run limits"]] as Array<[ConversationSettingsTab,string]> : [])];
+  const tabs: Array<[ConversationSettingsTab, string]> = [["filters", "Filters"], ["retrieval", "Search"], ["evidence", "Evidence"], ["limits", "Run limits"], ["preview", "Preview"]];
   const tab = tabs.some(([id]) => id === props.tab) ? props.tab : "filters";
   const budget = props.profile.prompt_policy.workflow_budget;
   function patch(update: Partial<ReviewSessionDraft>) { props.onChange(update); }
   function patchPolicy(update: Partial<ReviewSessionDraft["prompt_policy"]>) { patch({ prompt_policy: { ...props.profile.prompt_policy, ...update } }); }
+  const panelHeading = (label: string, policy = false) => <div className="conversation-section-heading"><h3>{t(label)}</h3>{policy && (props.editable ? <DevelopmentBadge locale={locale} compact tooltip={false} /> : <span className="mode-badge">{t("Read-only")}</span>)}</div>;
   return createPortal(<div className="conversation-settings-overlay" hidden={!active} onMouseDown={(event) => { if (event.target === event.currentTarget) closeSidePanel(panel.current, props.onClose); }}>
     <div className="conversation-settings-dialog" role="dialog" aria-modal={active ? true : undefined} aria-labelledby={titleId} tabIndex={-1} ref={panel}>
-    <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={() => closeSidePanel(panel.current, props.onClose)}><X size={20} /></button></header><NotificationOutlet priority={50} active={active} />
-    <nav className="conversation-settings-sections settings-mode" aria-label={t("Settings view")}>{(["basic", ...(props.editable ? ["advanced"] : []), "preview"] as const).map(value => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { if (value === "advanced" && tab === "filters") props.onTabChange("retrieval"); setMode(value as typeof mode); }}>{t(value === "basic" ? "Basic" : value === "advanced" ? "Advanced" : "Preview")}</button>)}</nav>
-    {mode === "advanced" && <nav className="conversation-settings-sections" aria-label={t("Conversation settings sections")}>{tabs.map(([id,label]) => <button key={id} type="button" aria-pressed={tab === id} title={id !== "filters" ? locale === "ko" ? "개발 모드 전용" : "DEV only" : undefined} onClick={() => props.onTabChange(id)}>{t(label)}{id !== "filters" && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>)}</nav>}
-    <div className="conversation-settings-body">
-    {settingsError && <p className="notice error" role="alert">{t(settingsError)}</p>}
-    {mode === "preview" && <RequestPreviewContent profile={props.profile} query={props.query ?? ""} editable={props.editable} />}
-    {mode === "basic" && <section className="settings-basic"><h3>{t("Retrieval preset")}</h3><RetrievalPresetSelect profile={props.profile} editable={props.editable} onChange={props.onChange} onManage={props.onManagePresets} />{searchDefaultsControls}
-      <RetrievalPresetExplanation profile={props.profile} />
-      <p className="helper">{t("Advanced settings changed: {count}", { count: changes })}</p>
-      <h3>{t("Question execution limits")}</h3>
-      {!props.editable ? <PublicRunLimits /> : <dl className="request-facts"><div><dt>{t("Maximum evidence characters")}</dt><dd>{props.profile.prompt_policy.max_context_chars.toLocaleString(locale)}</dd></div><div><dt>{t("Maximum wall clock seconds")}</dt><dd>{budget.max_wall_clock_s} {t("seconds")}</dd></div><div><dt>{t("Maximum input tokens")}</dt><dd>{budget.max_input_tokens.toLocaleString(locale)}</dd></div><div><dt>{t("Maximum output tokens")}</dt><dd>{budget.max_output_tokens.toLocaleString(locale)}</dd></div></dl>}
-      <RunLimitGuidance editable={props.editable} /><h3>{t("Filters")}</h3>
-    </section>}
-    {(mode === "basic" || mode === "advanced" && tab === "filters") && <ConversationFilters profile={props.profile} editable={props.editable} onChange={props.onChange} onValidityChange={props.onValidityChange} />}
-    {mode === "advanced" && tab === "retrieval" && props.editable && <div data-help="review.retrieval">
-      {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}{searchDefaultsControls}
-    </div>}
-    {mode === "advanced" && tab === "evidence" && props.editable && <div className="profile-grid" data-help="review.evidence-policy">{props.speed && <div className="notice warning limit-recommendation"><h3>{t("Slow local model")}</h3><p>{t("CPU starting point: {characters} evidence characters. Less evidence can reduce answer coverage.", { characters: LOCAL_CPU_EVIDENCE_CHARS })}</p>{props.profile.prompt_policy.max_context_chars > LOCAL_CPU_EVIDENCE_CHARS ? <button className="button" type="button" onClick={() => patchPolicy({ max_context_chars: LOCAL_CPU_EVIDENCE_CHARS })}>{t("Reduce evidence: {before} → {after} characters", { before: props.profile.prompt_policy.max_context_chars, after: LOCAL_CPU_EVIDENCE_CHARS })}</button> : <p className="helper" role="status">{t("Your evidence limit is already at or below this starting point. No further reduction is suggested; you can still adjust it manually.")}</p>}</div>}<label>{t("Conversation history turns")}<input type="number" min={0} max={6} value={props.profile.prompt_policy.history_turns} onChange={(event) => patchPolicy({ history_turns: Number(event.target.value) })} /></label><label>{t("Maximum evidence characters")}<input type="number" min={1000} max={100000} value={props.profile.prompt_policy.max_context_chars} onChange={(event) => patchPolicy({ max_context_chars: Number(event.target.value) })} /></label><label>{t("Evidence overfetch")}<input type="number" min={1} max={10} value={props.profile.prompt_policy.evidence_overfetch} onChange={(event) => patchPolicy({ evidence_overfetch: Number(event.target.value) })} /></label><label>{t("Maximum hits per document")}<input type="number" min={1} max={100} value={props.profile.prompt_policy.max_hits_per_document} onChange={(event) => patchPolicy({ max_hits_per_document: Number(event.target.value) })} /></label></div>}
-    {mode === "advanced" && tab === "limits" && props.editable && <RunLimitFields evidenceChars={props.profile.prompt_policy.max_context_chars} onEvidenceChange={max_context_chars => patchPolicy({ max_context_chars })} onApplyCpuPreset={() => patchPolicy({ workflow_budget: { ...LOCAL_CPU_STARTING_BUDGET }, max_context_chars: LOCAL_CPU_EVIDENCE_CHARS })} budget={budget} speed={props.speed} onChange={workflow_budget => patchPolicy({ workflow_budget })} />}
-
-    {mode === "advanced" && props.editable && <section className="settings-policy-actions"><label>{t("Additional instructions")}<textarea maxLength={8000} value={props.profile.prompt_policy.additional_instructions} onChange={event => patchPolicy({ additional_instructions: event.target.value })} /></label><p className="helper">{t("Instructions, evidence policy and limits apply together to this conversation. Search presets only change retrieval.")}</p><button className="button" type="button" onClick={() => { const defaults = loadDefaultProfile(); patch({ retrieval_preset: defaults.retrieval_preset, custom_retrieval: structuredClone(defaults.custom_retrieval), prompt_policy: structuredClone(defaults.prompt_policy) }); }}>{t("Restore setting defaults")}</button><p className="helper">{t("Restores search, prompt, evidence and limits. Document filters stay unchanged.")}</p></section>}
+      <header className="conversation-settings-header"><div><h2 id={titleId}>{t("Conversation settings")}</h2><p className="helper">{t("Changes apply to this conversation. Running requests keep the settings they started with.")}</p></div><button ref={closeButton} className="icon-button" type="button" aria-label={t("Close conversation settings")} onClick={() => closeSidePanel(panel.current, props.onClose)}><X size={20} /></button></header>
+      <NotificationOutlet priority={50} active={active} />
+      <nav className="conversation-settings-sections conversation-settings-tabs" aria-label={t("Conversation settings sections")}>{tabs.map(([id, label]) => <button key={id} id={`${titleId}-tab-${id}`} type="button" aria-pressed={tab === id} aria-controls={`${titleId}-panel-${id}`} onClick={() => props.onTabChange(id)}>{t(label)}</button>)}</nav>
+      <div className="conversation-settings-body" ref={body}>
+        {settingsError && <p className="notice error" role="alert">{t(settingsError)}</p>}
+        {!filterInputsValid && tab !== "filters" && <div className="notice warning" role="status"><p>{t("There are unfinished filter entries. The preview shows only selected filters.")}</p><button className="inline-link" type="button" onClick={() => props.onTabChange("filters")}>{t("Edit filters")}</button></div>}
+        <RetainedPanel active={tab === "filters"}><section id={`${titleId}-panel-filters`} aria-labelledby={`${titleId}-tab-filters`}>
+          {panelHeading("Corpus scope")}
+          <ConversationFilters profile={props.profile} editable={props.editable} onChange={props.onChange} onValidityChange={reportFilterValidity} />
+        </section></RetainedPanel>
+        <RetainedPanel active={tab === "retrieval"}><section id={`${titleId}-panel-retrieval`} aria-labelledby={`${titleId}-tab-retrieval`} className="conversation-search-section">
+          {panelHeading("Search settings")}
+          <RetrievalPresetSelect profile={props.profile} editable={props.editable} onChange={props.onChange} onManage={props.onManagePresets} />
+          {props.editable ? <section className="conversation-custom-retrieval" data-help="review.retrieval">
+            {props.profile.retrieval_preset !== "custom" ? <button className="button" type="button" onClick={() => patch({ retrieval_preset: "custom", custom_retrieval: resolvedRetrievalProfile(props.profile) })}>{t("Customize retrieval")}</button> : <ProfileFields conversation profile={resolvedRetrievalProfile(props.profile)} onChange={(custom_retrieval) => patch({ retrieval_preset: "custom", custom_retrieval })} helpPrefix="review.retrieval" />}
+          </section> : <p className="helper">{t("Choose an available preset. Custom retrieval editing is available in DEV mode.")}</p>}
+          <RetrievalPresetExplanation profile={props.profile} />
+          <RetrievalPresetComparison profile={props.profile} editable={props.editable} />
+          {searchDefaultsControls}
+        </section></RetainedPanel>
+        <RetainedPanel active={tab === "evidence"}><section id={`${titleId}-panel-evidence`} aria-labelledby={`${titleId}-tab-evidence`}>
+          {panelHeading("Evidence and instructions", true)}
+          {props.editable ? <><div className="profile-grid" data-help="review.evidence-policy">{props.speed && <div className="notice warning limit-recommendation"><h3>{t("Slow local model")}</h3><p>{t("CPU starting point: {characters} evidence characters. Less evidence can reduce answer coverage.", { characters: LOCAL_CPU_EVIDENCE_CHARS })}</p>{props.profile.prompt_policy.max_context_chars > LOCAL_CPU_EVIDENCE_CHARS ? <button className="button" type="button" onClick={() => patchPolicy({ max_context_chars: LOCAL_CPU_EVIDENCE_CHARS })}>{t("Reduce evidence: {before} → {after} characters", { before: props.profile.prompt_policy.max_context_chars, after: LOCAL_CPU_EVIDENCE_CHARS })}</button> : <p className="helper" role="status">{t("Your evidence limit is already at or below this starting point. No further reduction is suggested; you can still adjust it manually.")}</p>}</div>}<label>{t("Conversation history turns")}<input type="number" min={0} max={6} value={props.profile.prompt_policy.history_turns} onChange={(event) => patchPolicy({ history_turns: Number(event.target.value) })} /></label><label>{t("Maximum evidence characters")}<input type="number" min={1000} max={100000} value={props.profile.prompt_policy.max_context_chars} onChange={(event) => patchPolicy({ max_context_chars: Number(event.target.value) })} /></label><label>{t("Evidence overfetch")}<input type="number" min={1} max={10} value={props.profile.prompt_policy.evidence_overfetch} onChange={(event) => patchPolicy({ evidence_overfetch: Number(event.target.value) })} /></label><label>{t("Maximum hits per document")}<input type="number" min={1} max={100} value={props.profile.prompt_policy.max_hits_per_document} onChange={(event) => patchPolicy({ max_hits_per_document: Number(event.target.value) })} /></label></div>
+            <div className="conversation-instructions"><label>{t("Additional instructions")}<textarea maxLength={8000} value={props.profile.prompt_policy.additional_instructions} onChange={event => patchPolicy({ additional_instructions: event.target.value })} /></label><p className="helper">{t("Instructions, evidence policy and limits apply together to this conversation. Search presets only change retrieval.")}</p></div>
+          </> : <PublicRunLimits view="evidence" />}
+        </section></RetainedPanel>
+        <RetainedPanel active={tab === "limits"}><section id={`${titleId}-panel-limits`} aria-labelledby={`${titleId}-tab-limits`}>
+          {panelHeading("Question execution limits", true)}
+          {props.editable ? <><RunLimitFields onApplyCpuPreset={() => patchPolicy({ workflow_budget: { ...LOCAL_CPU_STARTING_BUDGET }, max_context_chars: LOCAL_CPU_EVIDENCE_CHARS })} budget={budget} speed={props.speed} onChange={workflow_budget => patchPolicy({ workflow_budget })} /><p className="helper">{t("The CPU starting preset also updates the evidence character limit in Evidence.")}</p></> : <><PublicRunLimits /><RunLimitGuidance editable={false} /></>}
+        </section></RetainedPanel>
+        <RetainedPanel active={tab === "preview"}><section id={`${titleId}-panel-preview`} aria-labelledby={`${titleId}-tab-preview`}>
+          <RequestPreviewContent profile={props.profile} query={props.query ?? ""} editable={props.editable} onOpenSection={props.onTabChange} />
+        </section></RetainedPanel>
+      </div>
+      {props.editable && tab !== "preview" && <footer className="conversation-settings-footer"><div className="action-row"><span className="helper">{t("Search and policy changes from defaults: {count}", { count: changes })}</span><button className="button" type="button" onClick={() => { const defaults = loadDefaultProfile(); patch({ retrieval_preset: defaults.retrieval_preset, custom_retrieval: structuredClone(defaults.custom_retrieval), prompt_policy: structuredClone(defaults.prompt_policy) }); }}>{t("Restore setting defaults")}</button></div><p className="helper">{t("Restores search, prompt, evidence and limits. Document filters stay unchanged.")}</p></footer>}
     </div>
-  </div></div>, document.body);
+  </div>, document.body);
 }
 
 /** Load choices from the complete visible corpus whenever its registry or permissions change. */
 function ConversationFilters({ profile, editable, onChange, onValidityChange }: Pick<Props, "profile" | "editable" | "onChange" | "onValidityChange">) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [result, setResult] = useState<{ registry: string | undefined; editable: boolean; facets: DocumentFacets } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -161,7 +189,7 @@ function ConversationFilters({ profile, editable, onChange, onValidityChange }: 
     setValidity((previous) => previous[field] === valid ? previous : { ...previous, [field]: valid });
   }, []);
   useEffect(() => { onValidityChange?.(inputsValid); }, [inputsValid, onValidityChange]);
-  // Closing the panel or changing tabs explicitly discards local drafts, as the notice explains.
+  // Closing the drawer discards unfinished entries; retained sections preserve them across tabs.
   useEffect(() => () => { validityCallback.current?.(true); }, []);
   const registry = profile.corpus_scope === "auto" ? undefined : profile.corpus_scope;
   const facets = result && result.registry === registry && result.editable === editable ? result.facets : null;
@@ -180,7 +208,7 @@ function ConversationFilters({ profile, editable, onChange, onValidityChange }: 
     return () => { current = false; controller.abort(); };
   }, [registry, editable, refresh]);
 
-  const companyOptions = facets?.issuers.map((facet) => ({ value: facet.value, label: facet.label ?? facet.value })) ?? [];
+  const companyOptions = facets?.issuers.map((facet) => ({ value: facet.value, label: companyDisplayName(facet.label ?? facet.value, locale) })) ?? [];
   const languageOptions = facets?.languages.filter((facet) => facet.value === "en" || facet.value === "ko").map((facet) => ({ value: facet.value, label: facet.value === "en" ? t("English (en)") : t("Korean (ko)") })) ?? [];
   const yearOptions = facets?.years.map((facet) => ({ value: facet.value, label: facet.value })) ?? [];
   const formOptions = facets?.forms.map((facet) => ({ value: facet.value, label: facet.label ?? facet.value })) ?? [];
@@ -197,7 +225,7 @@ function ConversationFilters({ profile, editable, onChange, onValidityChange }: 
   const hasUnavailable = invalidCompanies.length + invalidLanguages.length + invalidYears.length + invalidForms.length > 0;
   return <div data-help="review.filters">
     <p className="conversation-filter-scope">{t("Choices from {scope}. Empty selections search all documents in this scope.", { scope: registry ? registry.toUpperCase() : t("SEC + DART") })}</p>
-    {!inputsValid && <p className="token-error" role="status">{t("Resolve the highlighted filters before sending. Switching tabs or closing this panel discards unfinished entries; selected filters stay unchanged.")}</p>}
+    {!inputsValid && <p className="token-error" role="status">{t("Resolve the highlighted filters before sending. Tabs keep unfinished entries; closing this panel discards them. Selected filters stay unchanged.")}</p>}
     {!facets && !error && <div className="conversation-facet-status" role="status"><p className="helper">{t("Loading available filters…")}</p></div>}
     {error && <div className="conversation-facet-status" role="alert"><div><p>{t("Could not load available filters.")}</p><p className="helper">{error}</p></div><button className="button" type="button" onClick={() => setRefresh((value) => value + 1)}>{t("Retry")}</button></div>}
     {hasUnavailable && <div className="conversation-facet-status"><p className="helper">{t("Selections outside this scope are kept until you remove them.")}</p><button className="button" type="button" onClick={() => onChange({

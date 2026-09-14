@@ -14,7 +14,7 @@ export function ScopeFailureSummary({ message, developer, onOpenFix }: { message
       {failure.path && <p>{t("Manifest file")}: <code>{failure.path}</code></p>}
       {failure.jobId && <p>{t("Recent corpus job")}: <code>{failure.jobId}</code></p>}
       {failure.jobRunning && <p>{t("A corpus acquisition job is queued or running. Wait for it to finish, then retry.")}</p>}
-      <p>{t("Terminal check")}: <code>rag-schema check</code> · <code>rag-corpus status</code></p>
+      <p>{t("Terminal check")}: <code>rag-dev schema check</code> · <code>rag-dev corpus status</code></p>
       {message.failureFix && onOpenFix && <button type="button" className="button" onClick={() => onOpenFix(message.failureFix!.category)}>{t(message.failureFix.label)}</button>}
     </>}
   </div>;

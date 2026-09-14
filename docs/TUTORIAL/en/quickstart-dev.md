@@ -1,25 +1,71 @@
-# Quick Start for DEV MODE
+# Quick Start for DEV MODE {#quick-start-for-dev-mode}
 
-Cloned the repository and unsure what to do? Run `source ./rag-alias.sh`, then
-`rag-start-quick`. Use `rag-start-fresh` only for a separately confirmed checkout cleanup;
-`rag-reset` resets ORM data/sources while preserving configuration and volumes.
-All commands accept `--verbose` (`-vv`); see [CLI setup/reset](cli.md).
+This guide prepares filings and search indexes in a running local DEV instance. First complete [Environment setup](environment.md#qs-setup). No downloaded filings, database rows, chunks or embeddings are assumed; a tracked manifest alone does not mean a source is on disk.
 
-This guide prepares filings and search indexes in a running local DEV instance. First complete [Environment setup](environment.md#qs-setup) and open Build. No downloaded filings, database rows, chunks, or embeddings are assumed; the tracked manifest alone does not mean a source is on disk.
+**If the service is not running yet**
+
+Run these commands from the cloned repository.
+
+```bash
+source ./rag-alias.sh
+rag-dev start
+```
 
 Choose CLI or Web for the same seven preparation steps. Switching tabs does not execute work. Service readiness and data readiness are separate; reuse anything already complete in the same environment.
+
+Add `--verbose` or `-vv` to any command for detailed output. See the [CLI guide](cli.md) for the complete command reference.
+
+<!-- details: local-prod-preview | Try prepared public data in PROD -->
+
+DEV intentionally has no `--ready`: this guide lets you perform each preparation step yourself. To explore prepared data directly, use the separate local PROD database. Replace `/path/to/public-bundle` below with the actual path to your saved public bundle.
+
+**Start PROD and prepare its data**
+
+```bash
+rag-prod start --local --ready --artifacts /path/to/public-bundle
+```
+
+**If PROD is already running**
+
+```bash
+rag-prod prepare --local --artifacts /path/to/public-bundle
+```
+
+[Local PROD preparation](cli.md#local-prod-data) reuses saved vectors without automatic downloads or paid embedding generation.
+
+<!-- /details -->
+
+<!-- details: startup-reset-reference | Reset command reference — not needed for ordinary startup -->
+
+Use these commands only when a reset is intended. Read the deletion scope and confirmation before proceeding.
+
+**Clean up a separately confirmed checkout's runtime environment**
+
+```bash
+rag-prod reset environment --local --all-modes
+```
+
+**Reset ORM data and sources while preserving configuration and volumes**
+
+```bash
+rag-dev reset data --local
+```
+
+See the [CLI reset guide](cli.md) for the exact scope and recovery conditions.
+
+<!-- /details -->
 
 <!-- quickstart-cli -->
 
 ## CLI {#qs-cli}
 
-Run the commands from the cloned repository, confirm prompted operations, and wait for each job before continuing. If a job fails, inspect the error in Jobs or `rag-corpus status`, correct credentials, missing sources, or provider configuration, then retry. See [troubleshooting](troubleshooting.md).
+Run the commands from the cloned repository, confirm prompted operations, and wait for each job before continuing. If a job fails, inspect the error in Jobs or `rag-dev corpus status`, correct credentials, missing sources, or provider configuration, then retry. See [troubleshooting](troubleshooting.md).
 
 ### 1. Verify the empty environment {#qs-cli-1}
 
 ```bash
-rag-corpus inspect
-rag-corpus readiness
+rag-dev corpus inspect
+rag-dev corpus readiness
 ```
 
 The API responds, the database is connected, the schema is compatible, and writable is true. A genuinely empty test database has zero documents and chunks.
@@ -27,8 +73,8 @@ The API responds, the database is connected, the schema is compatible, and writa
 ### 2. Download NVIDIA SEC FY2024 {#qs-cli-2}
 
 ```bash
-rag-corpus acquire_edgar --identifier NVDA --year 2024
-rag-corpus status
+rag-dev corpus acquire_edgar --identifier NVDA --year 2024
+rag-dev corpus status
 ```
 
 One NVIDIA FY2024 report is available. The job reports `manifest.json` and selection `sec-08b5f645cc174083`, which identifies exactly this report.
@@ -36,22 +82,26 @@ One NVIDIA FY2024 report is available. The job reports `manifest.json` and selec
 ### 3. Download Samsung DART FY2024 {#qs-cli-3}
 
 ```bash
-rag-corpus acquire_dart --identifier 005930 --year 2024
-rag-corpus status
+rag-dev corpus acquire_dart --identifier 005930 --year 2024
+rag-dev corpus status
 ```
 
 One Samsung FY2024 report is available. The job reports `manifest.json` and selection `dart-1a4f24de25a92617`. Fiscal year 2024 normally refers to an annual report filed in 2025.
 
+<!-- details: default-selection-scope | What an ordinary fresh start selects -->
+
 Ordinary fresh start selects NVIDIA and AMD FY2019–FY2024 plus Samsung Electronics and SK hynix FY2022–FY2024 (18 exact company/year pairs). Selection includes pending downloads and is independent of the source inventory. Explicit choices, including clearing the selection, survive reload until the next server reset. The company picker accepts only the tested catalog (NVDA, AMD, INTC, MU, 005930, 000660, 035420); the four default companies are not the entire supported catalog.
+
+<!-- /details -->
 
 ### 4. Parse, chunk, and store both reports {#qs-cli-4}
 
 ```bash
-rag-corpus inspect
-rag-corpus ingest_manifest --manifest manifest.json --selection sec-08b5f645cc174083 --expected-documents 1
-rag-corpus status
-rag-corpus ingest_manifest --manifest manifest.json --selection dart-1a4f24de25a92617 --expected-documents 1
-rag-corpus status
+rag-dev corpus inspect
+rag-dev corpus ingest_manifest --manifest manifest.json --selection sec-08b5f645cc174083 --expected-documents 1
+rag-dev corpus status
+rag-dev corpus ingest_manifest --manifest manifest.json --selection dart-1a4f24de25a92617 --expected-documents 1
+rag-dev corpus status
 ```
 
 Both selected sources ingest successfully. The database contains the two target reports with nonzero chunk counts. Inspect a chunk and its source identity rather than expecting a fixed chunk total.
@@ -59,9 +109,9 @@ Both selected sources ingest successfully. The database contains the two target 
 ### 5. Generate OpenAI embeddings {#qs-cli-5}
 
 ```bash
-rag-corpus inspect
-rag-corpus backfill_embeddings
-rag-corpus status
+rag-dev corpus inspect
+rag-dev corpus backfill_embeddings
+rag-dev corpus status
 ```
 
 Job succeeded; pending_embeddings is zero; both reports have embeddings produced by the configured OpenAI model. Matching dimensions alone do not prove matching model identity.
@@ -69,8 +119,8 @@ Job succeeded; pending_embeddings is zero; both reports have embeddings produced
 ### 6. Build the BM25 index {#qs-cli-6}
 
 ```bash
-rag-corpus rebuild_bm25
-rag-corpus status
+rag-dev corpus rebuild_bm25
+rag-dev corpus status
 ```
 
 Job succeeded, progress is complete, and bm25_ready is true. A successful download or embedding job alone does not establish BM25 readiness.
@@ -78,8 +128,8 @@ Job succeeded, progress is complete, and bm25_ready is true. A successful downlo
 ### 7. Confirm readiness before asking {#qs-cli-7}
 
 ```bash
-rag-corpus inspect
-rag-corpus readiness
+rag-dev corpus inspect
+rag-dev corpus readiness
 ```
 
 Data and index preparation are complete. Model configuration is present, but an answer call and answer quality have not been tested.
@@ -88,7 +138,7 @@ Data and index preparation are complete. Model configuration is present, but an 
 
 ## Web {#qs-web}
 
-Use the screens, confirm prompted operations, and wait for each job before continuing. If a job fails, inspect the error in Jobs or `rag-corpus status`, correct credentials, missing sources, or provider configuration, then retry. See [troubleshooting](troubleshooting.md).
+Use the screens, confirm prompted operations, and wait for each job before continuing. If a job fails, inspect the error in Jobs or `rag-dev corpus status`, correct credentials, missing sources, or provider configuration, then retry. See [troubleshooting](troubleshooting.md).
 
 ### 1. Verify the empty environment {#qs-web-1}
 
@@ -110,7 +160,11 @@ DART first downloads its issuer-code index. This endpoint can be slow: watch the
 
 One Samsung FY2024 report is available. The job reports `manifest.json` and selection `dart-1a4f24de25a92617`. Fiscal year 2024 normally refers to an annual report filed in 2025.
 
+<!-- details: default-selection-scope-web | What an ordinary fresh start selects -->
+
 Ordinary fresh start selects NVIDIA and AMD FY2019–FY2024 plus Samsung Electronics and SK hynix FY2022–FY2024 (18 exact company/year pairs). Selection includes pending downloads and is independent of the source inventory. Explicit choices, including clearing the selection, survive reload until the next server reset. The company picker accepts only the tested catalog (NVDA, AMD, INTC, MU, 005930, 000660, 035420); the four default companies are not the entire supported catalog.
+
+<!-- /details -->
 
 ### 4. Parse, chunk, and store both reports {#qs-web-4}
 
@@ -138,7 +192,12 @@ Open **System status** and **Build → Documents**. Verify both reports have chu
 
 Data and index preparation are complete. Model configuration is present, but an answer call and answer quality have not been tested.
 
-![The Build pipeline in DEV mode with completed preparation stages before the first question.](../assets/web-readiness-before-first-question.en.png)
+<!-- screenshot: web-readiness-before-first-question -->
+
+![The DEV Build document inventory listing both Quick Start filings at 100% embedded.](../assets/captures/web-readiness-before-first-question.en.png)
+
+*1. Prepared filings · 2. Embedding coverage · 3. Index readiness*
+
 <!-- quickstart-end -->
 
 ## Ready for the next tutorial {#qs-next}

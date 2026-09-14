@@ -20,8 +20,8 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert settings.openai_enabled is False
     assert settings.allow_ingest is False
     assert settings.admin_mode == "readonly"
-    assert settings.rate_limit_per_minute == 2
-    assert settings.rate_limit_per_day == 5
+    assert settings.rate_limit_per_minute == 10
+    assert settings.rate_limit_per_day == 50
     assert settings.public_daily_cost_usd == Decimal("0.10")
     assert settings.trust_proxy_headers is False
     budget = settings.provider_budget()
@@ -34,7 +34,7 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
 
 def test_operator_key_is_secret_and_only_enables_explicit_runtime(monkeypatch) -> None:
     """Enable the provider only in the runtime mode, keeping the key out of every rendering."""
-    secret = "sk-test-server-only"
+    secret = "sk-test-only"
     monkeypatch.setenv("OPENAI_API_KEY_LOCAL", secret)
 
     canned = ReleaseSettings(_env_file=None)

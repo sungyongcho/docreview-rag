@@ -57,7 +57,7 @@ def main() -> int:
         except ValueError, OSError, SQLAlchemyError, subprocess.CalledProcessError:
             print(
                 "Recreation could not be confirmed. The API may remain stopped. "
-                "Check DB access/dependencies and run rag-schema check before retrying. "
+                "Check DB access/dependencies and run rag-dev schema check before retrying. "
                 "Inspect any retained source journal before retrying. "
                 "DB changes are transactional, "
                 "but connection loss can leave the commit outcome unconfirmed. "
@@ -67,7 +67,7 @@ def main() -> int:
             return 1
         except EOFError, KeyboardInterrupt:
             print(
-                "Stopped. Run rag-schema check to inspect state; no automatic retry.",
+                "Stopped. Run rag-dev schema check to inspect state; no automatic retry.",
                 file=sys.stderr,
             )
             return 130
@@ -88,8 +88,8 @@ def main() -> int:
                 print(f"Inspect the retained recovery checkout: {target}", file=sys.stderr)
                 print(
                     "In that directory: uv sync --locked; source ./rag-alias.sh; "
-                    "rag-dev up -d --wait db; uv run python -m scripts.schema prepare; "
-                    "rag-dev up --build -d; uv run python -m scripts.schema check.",
+                    "rag-dev compose up -d --wait db; uv run python -m scripts.schema prepare; "
+                    "rag-dev compose up --build -d; uv run python -m scripts.schema check.",
                     file=sys.stderr,
                 )
             return 1

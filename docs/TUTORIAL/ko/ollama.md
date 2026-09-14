@@ -1,4 +1,5 @@
-# macOS와 Linux에서 Ollama 준비하기
+<!-- heading-alias: macos와-linux에서-ollama-준비하기 -->
+# macOS와 Linux에서 Ollama 준비하기 {#set-up-ollama-on-macos-and-linux}
 
 > [!DEV]
 > DocReview에서 로컬 답변 서버를 연결·설정하는 기능은 개발 모드 전용입니다. 설치·서비스 명령은 해당 컴퓨터의 관리자가 실행합니다.
@@ -7,7 +8,8 @@
 
 아래 명령은 필요한 작업을 확인한 뒤 직접 실행합니다. 안내를 열거나 읽는 동작만으로 소프트웨어 설치, 모델 다운로드, 서비스 변경, 모델 질문 전송이 실행되지는 않습니다.
 
-## 설치된 모델 준비
+<!-- heading-alias: 설치된-모델-준비 -->
+## 설치된 모델 준비 {#prepare-an-installed-model}
 
 파이프라인의 답변 모델 카드 또는 **설정 → 로컬 LLM**에서 **모델 준비**를 누릅니다. 선택한 설치 모델을 Ollama 메모리에 적재하며 모델 다운로드나 질문 전송은 하지 않습니다. 서버에서 실제 적재가 확인된 경우에만 완료로 표시합니다. RAM/VRAM을 사용하므로 메모리가 부족하면 실패할 수 있습니다. 요청은 5분간 적재 유지를 지정하며, 사용하지 않으면 이후 해제될 수 있습니다. 연결 진단은 계속 조회만 수행합니다. OpenAI 호환 서버에는 이 Ollama 전용 기능이 표시되지 않습니다.
 
@@ -164,7 +166,7 @@ DocReview는 모든 로컬 호출을 숨은 추론을 끈 채(`think: false`) �
 | CPU 전용(`size_vram` 0) | 캐시되지 않은 2.5k 토큰 grade 프롬프트 기준 80–95 tokens/s(약 30초); 반복되는 프롬프트 접두어는 캐시에서 처리 | 약 10 tokens/s(단독 측정 12–14) | 끝까지 36–103초: grade 19–68초, 검증 17–35초; 재시작 후 첫 호출은 모델 로드 10–20초 추가 | 측정한 예열 상태의 실행은 120초 안에 끝났으며, 300초는 콜드 로드의 여유를 늘리지만 완료를 보장하지 않음. `LOCAL_LLM_MAX_OUTPUT_TOKENS`는 600 유지(grade 150–300, 검증 140–160 필요). 측정한 사례에서 근거 8,000자는 같은 결과를 유지하며 입력 처리를 줄였음. k는 검증한 5 유지; 더 큰 후보 집합은 이 CPU에서 검증하지 않음. `LOCAL_LLM_TIMEOUT_S=300` 설정. |
 | GPU 또는 혼합 | 미측정 | 미측정 | 미측정 | CPU 설정에서 시작해 측정 후 경과 시간을 낮춤 |
 
-이 변경 전에는 같은 질문이 grade 단계에서 77–144초 뒤 `output_tokens: used=600 limit=600`과 잘못된 JSON 본문으로 실패했습니다. 600토큰은 숨은 추론이었습니다. [보관된 README](../README_archive.md)의 `ollama run MODEL ""` 사전 로드는 Ollama 기본 4,096토큰 창으로 모델을 올리므로 DocReview의 첫 호출이 설정된 창으로 다시 로드하는 것은 정상입니다. 남은 입력 허용량을 넘길 것으로 추정되는 프롬프트는 호출 전에 거절됩니다([실행 한도](runtime.md#limits) 참고).
+이 변경 전에는 같은 질문이 grade 단계에서 77–144초 뒤 `output_tokens: used=600 limit=600`과 잘못된 JSON 본문으로 실패했습니다. 600토큰은 숨은 추론이었습니다. [보관된 README](https://github.com/sungyongcho/docreview-rag/blob/main/docs/README_archive.md)의 `ollama run MODEL ""` 사전 로드는 Ollama 기본 4,096토큰 창으로 모델을 올리므로 DocReview의 첫 호출이 설정된 창으로 다시 로드하는 것은 정상입니다. 남은 입력 허용량을 넘길 것으로 추정되는 프롬프트는 호출 전에 거절됩니다([실행 한도](runtime.md#limits) 참고).
 
 ## DocReview에서 연결하기 {#connect}
 
@@ -185,10 +187,10 @@ DocReview는 모든 로컬 호출을 숨은 추론을 끈 채(`think: false`) �
 [프로젝트 명령 등록](cli.md#명령-등록과-도움말)을 마친 뒤 실행합니다.
 
 ```bash
-rag-ollama-check
-rag-ollama-check --web-url http://localhost:8000
-rag-ollama-check --details
-rag-ollama-check --setup
+rag-dev doctor
+rag-dev doctor --web-url http://localhost:8000
+rag-dev doctor --details
+rag-dev doctor --setup
 ```
 
 첫 명령은 설정된 웹 주소를 사용합니다. 다른 프런트엔드 주소를 쓰는 경우에만 `--web-url`을 지정하며 여기에 Ollama 주소를 넣지 않습니다. `--details`는 호스트·컨테이너·수신 주소의 추가 근거를 보여 줍니다. `--setup`은 수동 설치 안내만 출력합니다. 진단은 Ollama 설치, 설정 변경, 모델 다운로드·로드, 답변 생성을 실행하지 않습니다.
@@ -207,7 +209,7 @@ rag-ollama-check --setup
 
 로그와 실제 실행 측정은 [실행과 측정](runtime.md#local-models)에서 이어갑니다. 진단 명령의 상세 정의는 [CLI 안내](cli.md#로컬-모델-연결-진단)에 있습니다.
 
-`rag-ollama-check`와 달리 `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001`은 모델을 로드하고 실행합니다. `/retrieve`로 워크플로의 grade 프롬프트를 만들어 thinking 켬/끔과 출력 상한별로 구조화 출력 스키마와 함께 Ollama를 호출하고, 프롬프트 토큰·초당 토큰·숨은 추론 길이·JSON 유효성을 보고합니다. 격리된 스택에서만 실행하며 운영 모드에서는 거부합니다. [지원하는 로컬 구성](#configurations) 표는 이 스크립트로 얻었습니다.
+`rag-dev doctor`와 달리 `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001`은 모델을 로드하고 실행합니다. `/retrieve`로 워크플로의 grade 프롬프트를 만들어 thinking 켬/끔과 출력 상한별로 구조화 출력 스키마와 함께 Ollama를 호출하고, 프롬프트 토큰·초당 토큰·숨은 추론 길이·JSON 유효성을 보고합니다. 격리된 스택에서만 실행하며 운영 모드에서는 거부합니다. [지원하는 로컬 구성](#configurations) 표는 이 스크립트로 얻었습니다.
 
 ### 선택 사항인 CPU 시작 프리셋 {#cpu-starting-preset}
 

@@ -5,8 +5,7 @@ import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
 afterEach(cleanup);
 it("names the changed Korean preset parameters and shows their baseline", () => {
  render(<RetrievalPresetExplanation profile={{ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "korean" }} />);
- expect(screen.getByText("20 → 30")).toBeInTheDocument();
- expect(screen.getByText("ts_rank_cd → bm25")).toBeInTheDocument();
- expect(screen.getByText("Disabled → Enabled")).toBeInTheDocument();
- expect(screen.getByText("candidate_k")).toBeInTheDocument();
+ for (const [key, value] of [["candidate_k", "20 → 30"], ["lexical_ranker", "ts_rank_cd → bm25"], ["route_by_language", "Disabled → Enabled"]]) {
+   expect(screen.getByText(key).closest(".preset-parameter")?.querySelector(".preset-parameter-value")).toHaveTextContent(value);
+ }
 });

@@ -16,13 +16,13 @@ const facets: DocumentFacets = {
   sections: [], parse_statuses: [], embedding_statuses: [], snapshots: [],
 };
 beforeEach(() => { api.getDocumentFacets.mockResolvedValue(facets); api.getPublishedDocumentFacets.mockResolvedValue(facets); });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); localStorage.removeItem("docreview.locale"); vi.clearAllMocks(); });
 
 it("edits only the current conversation policy and reads the next conversation's values", () => {
   const onChange = vi.fn();
   const props = { editable: true, onChange, onTabChange: vi.fn(), onClose: vi.fn() };
   const { rerender } = render(<ConversationSettings {...props} tab="limits" profile={DEFAULT_SESSION_PROFILE} />);
-  expect(screen.getByRole("button", { name: "Run limits" })).toHaveAttribute("title", "DEV only");
+  expect(screen.getByRole("button", { name: "Run limits" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "Filters" }).querySelector(".development-badge")).toBeNull();
   fireEvent.change(screen.getByLabelText("Maximum wall clock seconds"), { target: { value: "240" } });
   expect(onChange).toHaveBeenCalledWith({ prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, workflow_budget: { ...DEFAULT_SESSION_PROFILE.prompt_policy.workflow_budget, max_wall_clock_s: 240 } } });
@@ -40,14 +40,16 @@ it("uses the API candidate and conversation fusion limits for custom retrieval",
 });
 
 it("translates every conversation settings tab in the Korean interface", () => {
+  localStorage.setItem("docreview.locale", "ko");
   render(<I18nProvider><ConversationSettings tab="limits" editable profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} /></I18nProvider>);
   for (const name of ["필터", "검색", "근거", "실행 한도"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
 });
 
 it("keeps allowed filters but hides developer controls in public mode", async () => {
-  render(<ConversationSettings tab="limits" editable={false} profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
+  render(<ConversationSettings tab="filters" editable={false} profile={DEFAULT_SESSION_PROFILE} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
   expect(screen.getByLabelText("Companies")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Run limits" })).not.toBeInTheDocument();
+  for (const name of ["Filters", "Search", "Evidence", "Run limits", "Preview"]) expect(screen.getByRole("button", { name })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Advanced" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Maximum wall clock seconds")).not.toBeInTheDocument();
   expect(document.querySelector(".conversation-settings-sections .development-badge")).toBeNull();
   await screen.findByRole("button", { name: "English (en)" });
@@ -103,7 +105,7 @@ it("ignores an older facet response and retains incompatible filters until expli
   expect(onChange).not.toHaveBeenCalled();
   expect(screen.getAllByText("Outside this scope")).toHaveLength(4);
   fireEvent.focus(screen.getByLabelText("Companies"));
-  expect(screen.getByRole("button", { name: "005930 · 삼성전자" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "005930 · Samsung Electronics" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "AAPL · Apple Inc." })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Remove unavailable selections" }));
   expect(onChange).toHaveBeenCalledWith({ issuers: [], languages: [], fiscal_years: [], forms: [] });
@@ -168,7 +170,7 @@ it("explains draft discard and releases the sending guard after the editor close
   await screen.findByRole("button", { name: "English (en)" });
   fireEvent.change(screen.getByLabelText("Companies"), { target: { value: "unknown" } });
   expect(onValidityChange).toHaveBeenLastCalledWith(false);
-  expect(screen.getByRole("status")).toHaveTextContent("Switching tabs or closing this panel discards unfinished entries; selected filters stay unchanged.");
+  expect(screen.getByRole("status")).toHaveTextContent("Tabs keep unfinished entries; closing this panel discards them. Selected filters stay unchanged.");
   unmount();
   expect(onValidityChange).toHaveBeenLastCalledWith(true);
   expect(onChange).not.toHaveBeenCalled();
@@ -241,6 +243,63 @@ it("offers one stable evidence reduction without repeatedly halving the applied 
   rerender(<ConversationSettings {...props} tab="evidence" profile={applied} />);
   expect(screen.queryByRole("button", { name: /Reduce evidence:/ })).toBeNull();
   expect(onChange).toHaveBeenCalledOnce();
+});
+
+it("keeps unfinished filters across section switches and scrolls each destination to its start", async () => {
+  const onValidityChange = vi.fn();
+  const props = { editable: true, profile: DEFAULT_SESSION_PROFILE, onChange: vi.fn(), onTabChange: vi.fn(), onClose: vi.fn(), onValidityChange };
+  const { rerender } = render(<ConversationSettings {...props} tab="filters" />);
+  await screen.findByRole("button", { name: "English (en)" });
+  const company = screen.getByLabelText("Companies");
+  fireEvent.change(company, { target: { value: "unfinished" } });
+  const body = document.querySelector(".conversation-settings-body")!;
+  body.scrollTop = 600;
+  rerender(<ConversationSettings {...props} tab="preview" />);
+  expect(body.scrollTop).toBe(0);
+  expect(company).not.toBeVisible();
+  expect(screen.getByRole("status")).toHaveTextContent("The preview shows only selected filters.");
+  expect(onValidityChange).toHaveBeenLastCalledWith(false);
+  within(document.querySelector('[id$="-panel-preview"]')! as HTMLElement).getByRole("button", { name: "Edit filters" }).focus();
+  rerender(<ConversationSettings {...props} tab="filters" />);
+  expect(screen.getByRole("button", { name: "Filters" })).toHaveFocus();
+  expect(screen.getByLabelText("Companies")).toBe(company);
+  expect(company).toHaveValue("unfinished");
+  expect(api.getDocumentFacets).toHaveBeenCalledTimes(1);
+  expect(props.onChange).not.toHaveBeenCalled();
+});
+
+it("shows server policy read-only in public evidence, limits and preview", async () => {
+  api.getReleaseLimits.mockResolvedValue({ prompt_policy: { ...DEFAULT_SESSION_PROFILE.prompt_policy, max_context_chars: 4321, additional_instructions: "Server instructions" }, per_call: { max_input_tokens: 1234, max_output_tokens: 432, max_cost_usd: "0.02" } });
+  const profile = structuredClone(DEFAULT_SESSION_PROFILE);
+  profile.prompt_policy.max_context_chars = 9999;
+  profile.prompt_policy.additional_instructions = "Browser override";
+  const props = { editable: false, profile, onChange: vi.fn(), onTabChange: vi.fn(), onClose: vi.fn() };
+  const { rerender } = render(<ConversationSettings {...props} tab="evidence" />);
+  for (const tab of ["evidence", "limits", "preview"] as const) {
+    rerender(<ConversationSettings {...props} tab={tab} />);
+    const current = document.querySelector(`[id$="-panel-${tab}"]`)! as HTMLElement;
+    expect(await within(current).findByText("4,321")).toBeVisible();
+    expect(within(current).queryByRole("spinbutton")).not.toBeInTheDocument();
+    expect(within(current).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(current).queryByText("9,999")).not.toBeInTheDocument();
+    if (tab !== "limits") {
+      fireEvent.click(within(current).getByText("Additional instructions"));
+      expect(within(current).getByText("Server instructions")).toBeVisible();
+      expect(within(current).queryByText("Browser override")).not.toBeInTheDocument();
+    }
+  }
+  expect(props.onChange).not.toHaveBeenCalled();
+});
+
+it("places evidence and instructions editors in one section rather than duplicating run-limit fields", () => {
+  const props = { editable: true, profile: DEFAULT_SESSION_PROFILE, onChange: vi.fn(), onTabChange: vi.fn(), onClose: vi.fn() };
+  const { rerender } = render(<ConversationSettings {...props} tab="limits" />);
+  expect(screen.queryByLabelText("Maximum evidence characters")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Additional instructions")).not.toBeInTheDocument();
+  rerender(<ConversationSettings {...props} tab="evidence" />);
+  expect(screen.getByLabelText("Maximum evidence characters")).toBeVisible();
+  expect(screen.getByLabelText("Additional instructions")).toBeVisible();
+  expect(screen.getAllByLabelText("Maximum evidence characters")).toHaveLength(1);
 });
 
 it("preserves a smaller evidence limit and leaves manual changes available", () => {

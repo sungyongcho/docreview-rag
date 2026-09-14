@@ -14,6 +14,7 @@ from app.llm.schemas import (
     RelevanceJudgment,
     SchemaRejected,
 )
+from app.retrieval.language import detect_query_language
 from app.retrieval.types import ChunkHit
 from app.workflow.prompts import evidence_budget_chars, evidence_chars
 from app.workflow.types import (
@@ -37,6 +38,11 @@ from app.workflow.types import (
 DOWNGRADE_REASON = (
     "The supported answer was downgraded because a cited chunk did not survive validation."
 )
+
+
+def _fixed_rationale(state: WorkflowState, english: str, korean: str) -> str:
+    """Localize a server-authored evidence notice from the original question, not the corpus."""
+    return korean if detect_query_language(state.original_query or state.query) == "ko" else english
 
 
 def _unique_hits(hits: Sequence[ChunkHit]) -> tuple[tuple[ChunkHit, ...], tuple[int, ...]]:
@@ -424,7 +430,11 @@ def check_node(
             label="NOT_IN_DOCS",
             answer="NOT_IN_DOCS",
             citation_chunk_ids=(),
-            reason=DOWNGRADE_REASON,
+            reason=_fixed_rationale(
+                state,
+                DOWNGRADE_REASON,
+                "인용한 청크가 검증을 통과하지 못해 답변을 근거 부족으로 처리했습니다.",
+            ),
         )
     else:
         guarded = decision
@@ -440,12 +450,28 @@ def check_node(
 def _absence_rationale(state: WorkflowState) -> str:
     """Explain which stage left the run without supported evidence."""
     if not state.retrieved_hits:
-        return "No evidence was retrieved for the query."
+        return _fixed_rationale(
+            state,
+            "No evidence was retrieved for the query.",
+            "질문에 대한 근거를 검색하지 못했습니다.",
+        )
     if not state.evidence:
-        return "Retrieved evidence could not fit within the context budget."
+        return _fixed_rationale(
+            state,
+            "Retrieved evidence could not fit within the context budget.",
+            "검색된 근거가 문맥 길이 한도에 들어가지 않아 답변에 사용할 수 없었습니다.",
+        )
     if not state.relevant_chunk_ids:
-        return "No supplied evidence met the relevance threshold."
-    return "The guarded decision did not establish supported evidence."
+        return _fixed_rationale(
+            state,
+            "No supplied evidence met the relevance threshold.",
+            "검색된 근거 중 질문과의 관련성 기준을 충족한 항목이 없습니다.",
+        )
+    return _fixed_rationale(
+        state,
+        "The guarded decision did not establish supported evidence.",
+        "검증 결과 답변을 뒷받침할 근거가 확인되지 않았습니다.",
+    )
 
 
 def report_node(state: WorkflowState) -> WorkflowState:

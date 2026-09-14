@@ -6,7 +6,7 @@ import "./bm25-explorer.css";
 /** Illustrative BM25 walkthrough for the development log — fixed example data, real formula. */
 
 const N = 1000;
-const THRESHOLD = 6;
+const MAX_K1 = 3;
 
 interface DemoTerm { term: { ko: string; en: string }; df: number; tf: number }
 const TERMS: DemoTerm[] = [
@@ -52,7 +52,9 @@ export function Bm25Explorer({ locale }: { locale: "ko" | "en" }) {
     return { ...item, idf: i, sat, score: i * sat };
   }), [k1, norm]);
   const total = rows.reduce((sum, row) => sum + row.score, 0);
-  const passed = total >= THRESHOLD;
+  // Fixed visual scales use the saturation ceiling, never an evidence cutoff.
+  const termScale = Math.max(...rows.map((row) => row.idf)) * (MAX_K1 + 1);
+  const totalScale = rows.reduce((sum, row) => sum + row.idf, 0) * (MAX_K1 + 1);
 
   const idfMax = Math.ceil(idf(0.5) * 10) / 10;
   const tfXMax = 15;
@@ -71,9 +73,7 @@ export function Bm25Explorer({ locale }: { locale: "ko" | "en" }) {
     queryLabel: ko ? "예시 질문" : "example question",
     docLabel: ko ? "예시 문서" : "example document",
     scoreLabel: ko ? "합계 점수" : "total score",
-    threshold: ko ? "근거 채택 임계값" : "evidence threshold",
-    verdictPass: ko ? "이 지점에서 질문하면 이 문서는 근거로 채택됩니다" : "Asked here, this document is selected as evidence",
-    verdictFail: ko ? "이 지점에서 질문하면 이 문서는 근거에서 빠집니다" : "Asked here, this document drops out of the evidence",
+    explanation: ko ? "이 점수는 어휘 검색 순위에 사용됩니다. 근거 채택 여부는 점수만으로 정하지 않고 이후 검증에서 확인합니다." : "This score informs lexical retrieval ranking. Evidence support is established by later checks, not by this score alone.",
     termCol: ko ? "단어" : "term",
   };
 
@@ -116,7 +116,7 @@ export function Bm25Explorer({ locale }: { locale: "ko" | "en" }) {
 
     <div className="bm25-demo-sliders">
       <label><span>{copy.k1Label} <code>{k1.toFixed(1)}</code></span>
-        <input type="range" min={0.2} max={3} step={0.1} value={k1} onChange={(e) => setK1(Number(e.target.value))} />
+        <input type="range" min={0.2} max={MAX_K1} step={0.1} value={k1} onChange={(e) => setK1(Number(e.target.value))} />
         <small>{ko ? "TF 포화 속도" : "TF saturation speed"}</small>
       </label>
       <label><span>{copy.bLabel} <code>{b.toFixed(2)}</code></span>
@@ -135,18 +135,17 @@ export function Bm25Explorer({ locale }: { locale: "ko" | "en" }) {
         {rows.map((row) => <li key={row.term.en}>
           <code>{row.term[locale]}</code>
           <span className="bm25-term-meta">df {row.df} · idf {row.idf.toFixed(2)} · tf {row.tf} → sat {row.sat.toFixed(2)}</span>
-          <span className="bm25-term-bar"><i style={{ width: `${Math.min(100, (row.score / THRESHOLD) * 100)}%` }} /><b>{row.score.toFixed(2)}</b></span>
+          <span className="bm25-term-bar"><i style={{ width: `${Math.min(100, (row.score / termScale) * 100)}%` }} /><b>{row.score.toFixed(2)}</b></span>
         </li>)}
       </ul>
       <div className="bm25-demo-score">
         <span>{copy.scoreLabel}</span>
         <span className="bm25-score-track">
-          <i style={{ width: `${Math.min(100, (total / (THRESHOLD * 1.6)) * 100)}%` }} />
-          <em className="bm25-score-mark" style={{ left: `${(THRESHOLD / (THRESHOLD * 1.6)) * 100}%` }} title={copy.threshold} />
+          <i style={{ width: `${Math.min(100, (total / totalScale) * 100)}%` }} />
         </span>
         <strong>{total.toFixed(2)}</strong>
       </div>
-      <p className={`bm25-demo-verdict ${passed ? "pass" : "fail"}`}>{passed ? copy.verdictPass : copy.verdictFail}</p>
+      <p className="bm25-demo-explanation">{copy.explanation}</p>
     </div>
   </figure>;
 }

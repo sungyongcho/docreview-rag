@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useI18n } from "./i18n";
+import { companyDisplayName } from "./company-labels";
 import { getDocumentFacets, getPublishedDocumentFacets } from "./api";
 import type { CompanyLabels } from "@/components/review-stage-value";
 
@@ -8,6 +10,7 @@ export type CompanyCatalogMode = "live" | "published";
 
 /** Load names only for an opened scope panel, preserving registry and public/live boundaries. */
 export function useStageCompanyLabels(active: boolean, mode: CompanyCatalogMode | undefined, registryKey: string) {
+  const { locale } = useI18n();
   const [result, setResult] = useState<{ key: string; labels: CompanyLabels; failed: boolean } | null>(null);
   const key = `${mode}:${registryKey}`;
   useEffect(() => {
@@ -24,5 +27,5 @@ export function useStageCompanyLabels(active: boolean, mode: CompanyCatalogMode 
       .catch(() => { if (current && !controller.signal.aborted) setResult({ key, labels: {}, failed: true }); });
     return () => { current = false; controller.abort(); };
   }, [active, mode, registryKey, key, result?.key]);
-  return result?.key === key ? { labels: result.labels, failed: result.failed } : { labels: {}, failed: false };
+  return result?.key === key ? { labels: Object.fromEntries(Object.entries(result.labels).map(([key, name]) => [key, companyDisplayName(name, locale)])), failed: result.failed } : { labels: {}, failed: false };
 }

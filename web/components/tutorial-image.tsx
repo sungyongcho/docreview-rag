@@ -1,13 +1,31 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ExternalLink, Maximize, Minus, Plus, X } from "lucide-react";
 import type { TutorialImageSource } from "@/lib/tutorial-markdown.mjs";
 import "./tutorial-image.css";
 
+const CALLOUT_GUTTER = 38;
+
+/** Numbered markers kept in the reserved gutter left of the image, with a short leader to each target's corner. */
+function TutorialImageCallouts({ callouts, width, height, mobile = false }: { callouts?: { number: number; bounds?: { x: number; y: number; w: number; h: number }; mobileBounds?: { x: number; y: number; w: number; h: number } }[]; width?: number; height?: number; mobile?: boolean }) {
+  const items = (callouts ?? []).map((callout) => ({ callout, box: mobile ? callout.mobileBounds : callout.bounds })).filter(({ box }) => box && width && height);
+  if (!items.length) return null;
+  return (
+    <span className={`tutorial-image-callouts${mobile ? " tutorial-image-callouts-mobile" : ""}`} aria-hidden="true">
+      {items.map(({ callout, box }) => (
+        <span key={callout.number} className="tutorial-image-marker">
+          <span className="tutorial-image-callout" style={{ top: `${Math.min(Math.max((box!.y / height!) * 100, 3), 97)}%` }}>{callout.number}</span>
+          <span className="tutorial-image-leader" style={{ top: `${(box!.y / height!) * 100}%`, width: `${(box!.x / width!) * 100}%`, maxWidth: 62 }} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Show the original screenshot with portfolio-style wheel zoom and its authored caption. */
-export function TutorialImage({ src, alt, title, caption, locale }: TutorialImageSource) {
+export function TutorialImage({ src, alt, title, caption, locale, width: sourceWidth, height: sourceHeight, originalSrc, captureId, callouts, mobileSrc, mobileWidth, mobileHeight, displayWidth }: TutorialImageSource) {
   const [open, setOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [naturalWidth, setNaturalWidth] = useState(0);
@@ -111,13 +129,22 @@ export function TutorialImage({ src, alt, title, caption, locale }: TutorialImag
     };
   }, [open]);
 
-  const fittedWidth = naturalWidth && availableWidth ? Math.min(naturalWidth, availableWidth) : availableWidth;
+  const gutter = callouts?.length ? CALLOUT_GUTTER : 0;
+  const fittedWidth = naturalWidth && availableWidth ? Math.min(naturalWidth, availableWidth - gutter) : availableWidth ? availableWidth - gutter : undefined;
   const width = fittedWidth ? fittedWidth * zoom : undefined;
   return <>
-    <a ref={trigger} className="tutorial-image-trigger" href={src} target="_blank" rel="noopener noreferrer" aria-label={`${alt} · ${labels.expand}`} aria-haspopup="dialog" aria-expanded={open}
+    <a ref={trigger} className="tutorial-image-trigger" data-capture-id={captureId} data-mobile={mobileSrc ? "" : undefined} href={src} target="_blank" rel="noopener noreferrer" aria-label={`${alt} · ${labels.expand}`} aria-haspopup="dialog" aria-expanded={open}
+      style={mobileSrc ? { maxWidth: `min(100%, var(--tutorial-frame-width, ${displayWidth ?? 720}px))`, "--tutorial-mobile-frame-width": `${(mobileWidth ?? 780) / 2 + gutter}px` } as CSSProperties : displayWidth ? { maxWidth: displayWidth } : undefined}
       onClick={(event) => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); expand(); }}
       onKeyDown={(event) => { if (event.key === " ") { event.preventDefault(); expand(); } }}>
-      <img src={src} alt={alt} title={title} loading="lazy" />
+      <span className={`tutorial-image-figure${callouts?.length ? " tutorial-image-figure-callouts" : ""}`} data-mobile={mobileSrc ? "" : undefined}>
+        <picture>
+          {mobileSrc ? <source media="(max-width: 900px)" srcSet={mobileSrc} width={mobileWidth} height={mobileHeight} /> : null}
+          <img src={src} alt={alt} title={title} width={sourceWidth} height={sourceHeight} loading="lazy" />
+        </picture>
+        <TutorialImageCallouts callouts={callouts} width={sourceWidth} height={sourceHeight} />
+        {mobileSrc ? <TutorialImageCallouts callouts={callouts} width={mobileWidth} height={mobileHeight} mobile /> : null}
+      </span>
     </a>
     {open && createPortal(<div className="tutorial-image-overlay" onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div ref={dialog} className="tutorial-image-dialog" role="dialog" aria-modal="true" aria-label={labels.viewer} aria-describedby={captionId} lang={locale}>
@@ -128,12 +155,19 @@ export function TutorialImage({ src, alt, title, caption, locale }: TutorialImag
             <button type="button" aria-label={labels.increase} title={labels.increase} disabled={zoom >= 4} onClick={() => changeZoom(zoom * 1.25)}><Plus size={18} aria-hidden="true" /></button>
             <button type="button" aria-label={labels.fit} title={labels.fit} disabled={zoom === 1} onClick={() => changeZoom(1)}><Maximize size={18} aria-hidden="true" /></button>
           </div>
-          <a href={src} target="_blank" rel="noopener noreferrer">{labels.original}<ExternalLink size={15} aria-hidden="true" /></a>
+          <a href={originalSrc ?? src} target="_blank" rel="noopener noreferrer">{labels.original}<ExternalLink size={15} aria-hidden="true" /></a>
           <button ref={closeButton} type="button" className="tutorial-image-close" aria-label={labels.close} title={labels.close} onClick={() => setOpen(false)}><X size={24} aria-hidden="true" /></button>
         </div>
         <div ref={stage} className="tutorial-image-stage" tabIndex={0} role="region" aria-label={labels.area}>
-          <div className="tutorial-image-canvas" style={{ width }} onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-            <img ref={picture} src={src} alt={alt} draggable={false} style={{ width, maxWidth: zoom === 1 ? "100%" : "none" }} onLoad={(event) => setNaturalWidth(event.currentTarget.naturalWidth)} />
+          <div className="tutorial-image-canvas" style={{ width: width ? width + gutter : undefined }} onClick={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+            <span className={`tutorial-image-figure${callouts?.length ? " tutorial-image-figure-callouts" : ""}`} style={{ width: width ? width + gutter : undefined }} data-mobile={mobileSrc ? "" : undefined}>
+              <picture>
+                {mobileSrc ? <source media="(max-width: 900px)" srcSet={mobileSrc} width={mobileWidth} height={mobileHeight} /> : null}
+                <img ref={picture} src={src} alt={alt} draggable={false} style={{ width, maxWidth: zoom === 1 ? "100%" : "none" }} onLoad={(event) => setNaturalWidth(event.currentTarget.naturalWidth)} />
+              </picture>
+              <TutorialImageCallouts callouts={callouts} width={sourceWidth} height={sourceHeight} />
+              {mobileSrc ? <TutorialImageCallouts callouts={callouts} width={mobileWidth} height={mobileHeight} mobile /> : null}
+            </span>
           </div>
         </div>
         <footer className="tutorial-image-footer"><p id={captionId}>{caption}</p><small className="tutorial-image-wheel-hint">{labels.hint}</small></footer>

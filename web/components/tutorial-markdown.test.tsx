@@ -3,10 +3,90 @@ import { afterEach, describe, expect, it } from "vitest";
 import { TutorialMarkdown } from "./tutorial-markdown";
 import { renderTutorial } from "@/lib/tutorial-markdown.mjs";
 import { DevelopmentBadge } from "./development-badge";
+import { readFileSync } from "node:fs";
 
 afterEach(cleanup);
 
 describe("Tutorial Markdown", () => {
+  it.each(["ko", "en"] as const)("identifies Back and Forward with the app arrow icons in %s", (locale) => {
+    const source = locale === "ko" ? "상단의 **이전**과 **앞으로**를 사용하세요." : "Use **Back** and **Forward** in the header.";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale, statusBadges: true }).content} />);
+    const controls = container.querySelectorAll(".docs-control-label");
+    expect(controls).toHaveLength(2);
+    expect(controls[0]).toHaveTextContent(locale === "ko" ? "이전" : "Back");
+    expect(controls[1]).toHaveTextContent(locale === "ko" ? "앞으로" : "Forward");
+    expect(controls[0].querySelector(".lucide-arrow-left")).toHaveAttribute("aria-hidden", "true");
+    expect(controls[1].querySelector(".lucide-arrow-right")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector("button, [tabindex], [role=button]")).toBeNull();
+  });
+
+  it("does not decorate navigation labels in headings, links, code, or the development story", () => {
+    const source = "# **Back**\n\n[**Forward**](#back)\n\n`Back`\n\n```text\n**Back**\n```";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { statusBadges: true }).content} />);
+    expect(container.querySelector(".docs-control-label")).toBeNull();
+    const story = render(<TutorialMarkdown content={renderTutorial("**Back** and **Forward**", { math: true }).content} />);
+    expect(story.container.querySelector(".docs-control-label")).toBeNull();
+  });
+
+  it.each(["ko", "en"] as const)("renders controls and multi-step navigation throughout %s guides", (locale) => {
+    const source = locale === "ko" ? "**새 대화** **설정 및 미리보기** **도움말** **질문 전송** **데이터 준비 → 파이프라인 → 문서** **초안 저장** **준비**" : "**New chat** **Settings and preview** **Help** **Send question** **Build → Pipeline → Documents** **Save draft** **Prerequisites**";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale, statusBadges: true }).content} />);
+    expect(container.querySelectorAll(".docs-control-label")).toHaveLength(8);
+    for (const icon of ["square-pen", "sliders-horizontal", "circle-help", "send", "hammer", "files"]) expect(container.querySelector(`.docs-control-label .lucide-${icon}`)).not.toBeNull();
+    expect(container.querySelectorAll(".docs-control-separator")).toHaveLength(2);
+    expect(container.querySelector("strong")).toHaveTextContent(locale === "ko" ? "준비" : "Prerequisites");
+    expect(container.querySelector("button, a, [tabindex], [role=button]")).toBeNull();
+  });
+
+  it("also identifies plain UI names in workspace tables without styling ordinary descriptions", () => {
+    const source = "| Workspace | Task |\n| --- | --- |\n| Build → Documents | Read a filing. |\n| Conversation | Ask a question. |";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale: "en", statusBadges: true }).content} />);
+    expect(container.querySelectorAll("td .docs-control-label")).toHaveLength(3);
+    expect(container.querySelector(".docs-control-label .lucide-message-square")).not.toBeNull();
+    expect(container.querySelectorAll("td")[1]).toHaveTextContent("Read a filing.");
+    expect(container.querySelectorAll("td")[1].querySelector(".docs-control-label")).toBeNull();
+  });
+  it.each(["ko", "en"] as const)("renders localized noninteractive status badges throughout %s prose", (locale) => {
+    const source = "SUPPORTED and `NOT_IN_DOCS`.\n\n**Unsupported request** / 빈 문서 범위\n\n| Status | Meaning |\n| --- | --- |\n| NOT_IN_DOCS | No evidence |";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale, statusBadges: true }).content} />);
+    const badges = container.querySelectorAll(".docs-status-badge");
+    expect(badges).toHaveLength(5);
+    expect(container.querySelector('[data-status="supported"]')).toHaveTextContent(locale === "ko" ? "근거 확인" : "Supported");
+    expect(container.querySelector('[data-status="not-in-docs"]')).toHaveTextContent(locale === "ko" ? "문서에서 근거를 찾지 못함" : "Not in documents");
+    expect(container.querySelector('[data-status="empty-scope"]')).toHaveTextContent(locale === "ko" ? "빈 문서 범위" : "Empty scope");
+    for (const badge of badges) {
+      expect(badge.tagName).toBe("SPAN");
+      expect(badge).not.toHaveAttribute("tabindex");
+      expect(badge).not.toHaveAttribute("role", "button");
+      expect(badge.closest("button, a")).toBeNull();
+    }
+  });
+
+  it("preserves code samples, links, headings and identifiers when badges are enabled", () => {
+    const source = '# NOT_IN_DOCS\n\n[NOT_IN_DOCS](#notindocs)\n\n`report.NOT_IN_DOCS` and UNSUPPORTED_FIELD\n\n```json\n{"label":"NOT_IN_DOCS"}\n```';
+    const parsed = renderTutorial(source, { locale: "en", statusBadges: true });
+    const { container } = render(<TutorialMarkdown content={parsed.content} />);
+    expect(container.querySelector(".docs-status-badge")).toBeNull();
+    expect(parsed.headings[0]).toMatchObject({ id: "notindocs", text: "NOT_IN_DOCS" });
+    expect(parsed.codes[0].code).toBe('{"label":"NOT_IN_DOCS"}');
+    expect(container.querySelector("pre")).toHaveTextContent('{"label":"NOT_IN_DOCS"}');
+    expect(container).toHaveTextContent("report.NOT_IN_DOCS and UNSUPPORTED_FIELD");
+  });
+
+  it("leaves development-story rendering unchanged when status badges are disabled", () => {
+    const source = "SUPPORTED and `NOT_IN_DOCS` with **Unsupported request**.";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale: "ko", math: true, statusBadges: false }).content} />);
+    expect(container.querySelector(".docs-status-badge")).toBeNull();
+    expect(container.querySelector("code")).toHaveTextContent("NOT_IN_DOCS");
+    expect(container).toHaveTextContent("SUPPORTED");
+  });
+
+  it("keeps Korean particles grammatical after localizing a status token", () => {
+    const source = "`NOT_IN_DOCS`는 안내입니다. SUPPORTED로 종료합니다. **빈 문서 범위**은 제한입니다.";
+    const { container } = render(<TutorialMarkdown content={renderTutorial(source, { locale: "ko", statusBadges: true }).content} />);
+    expect(container).toHaveTextContent("문서에서 근거를 찾지 못함은 안내입니다. 근거 확인으로 종료합니다. 빈 문서 범위는 제한입니다.");
+  });
+
   it.each([['en', 'Opens in a new tab'], ['ko', '새 탭에서 열림']] as const)("opens external study references in a new tab while preserving internal navigation in %s", (locale, label) => {
     const source = "# Guide\n\n## Section {#section}\n\n[Official docs](https://docs.ollama.com/linux)\n\n[Reference link][official]\n\n[Same page](#section)\n\n[Overview](overview.md)\n\n[official]: https://docs.ollama.com/faq";
     render(<TutorialMarkdown content={renderTutorial(source, { locale }).content} />);
@@ -70,9 +150,35 @@ describe("Tutorial Markdown", () => {
     expect(example.codes[0].code).toBe("<!-- tutorial-steps -->");
     expect(example.links).toEqual([]);
   });
+  it.each(["ko", "en"] as const)("offers task cards and preserves the twelve-step path in the %s overview", (locale) => {
+    const source = readFileSync(`../docs/TUTORIAL/${locale}/overview.md`, "utf8");
+    const plain = renderTutorial(source, { locale });
+    const parsed = renderTutorial(source, { locale, overviewLayout: true });
+    expect(parsed.links).toEqual(plain.links);
+    expect(parsed.headings).toEqual(plain.headings);
+    const { container } = render(<TutorialMarkdown content={parsed.content} />);
+    expect(container.querySelectorAll(".guide-feature-cards .guide-route-card")).toHaveLength(3);
+    expect(container.querySelectorAll(".guide-local-cards .guide-route-card")).toHaveLength(2);
+    expect(container.querySelectorAll(".guide-learning-group")).toHaveLength(3);
+    expect(container.querySelectorAll(".guide-learning-group > p.guide-phase-title")).toHaveLength(3);
+    const steps = [...container.querySelectorAll(".guide-step")];
+    expect(steps.map((step) => Number(step.getAttribute("value")))).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(steps.map((step) => step.querySelector("a")!.getAttribute("href")?.split("#")[1])).toEqual(Array.from({ length: 12 }, (_, i) => `step-${i + 1}`));
+    for (const href of ["/docreview-rag/?view=review", "/docreview-rag/?view=build&tab=documents", "/docreview-rag/?view=measure&tab=compare"]) {
+      expect([...container.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toContain(href);
+    }
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("does not turn a code example into overview cards or permit arbitrary app actions", () => {
+    const source = "```markdown\n<!-- guide-features -->\n- Example\n```";
+    const parsed = renderTutorial(source, { overviewLayout: true });
+    expect(parsed.codes[0].code).toBe("<!-- guide-features -->\n- Example");
+    expect(() => renderTutorial("[Unsupported](/docreview-rag/?action=delete)", { overviewLayout: true })).toThrow("Unknown tutorial link");
+  });
   it("uses explicit bilingual heading targets and maps legacy walkthrough links", () => {
     const parsed = renderTutorial("# Guide\n\n## 5. Parse {#step-5}\n\n[Legacy](walkthrough.md#4-ingest-the-source-into-documents-and-chunks)", { locale: "en" });
-    expect(parsed.headings[1]).toEqual({ id: "step-5", text: "5. Parse", depth: 2 });
+    expect(parsed.headings[1]).toEqual({ id: "step-5", text: "Parse", depth: 2 });
     render(<TutorialMarkdown content={parsed.content} />);
     expect(screen.getByRole("link", { name: "Legacy" })).toHaveAttribute("href", "/docreview-rag/docs/en/indexing/#step-5");
     expect(() => renderTutorial("# Guide\n\n## One {#same}\n\n## Two {#same}")).toThrow("Duplicate explicit tutorial heading");

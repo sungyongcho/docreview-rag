@@ -44,7 +44,7 @@ function renderCenter(jobs: OperatorJob[]) {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); localStorage.removeItem("docreview.locale"); });
 
 describe("recorded overall and stage progress", () => {
   it("shows separate overall, stage and reported item bars with both elapsed times", () => {
@@ -231,6 +231,7 @@ describe("download speed", () => {
   });
 
   it("shows issuer-index download speed in Korean", () => {
+    localStorage.setItem("docreview.locale", "ko");
     const initial = job({ kind: "acquire_dart", status: "running", stage: "issuer_index", total: null, detail_current: 1000, updated_at: "2026-09-02T10:00:01Z" });
     const { rerender } = render(<I18nProvider><JobProgress job={initial} /></I18nProvider>);
     rerender(<I18nProvider><JobProgress job={{ ...initial, detail_current: 201000, updated_at: "2026-09-02T10:00:03Z" }} /></I18nProvider>);

@@ -45,7 +45,7 @@ export function diagnosePreparation(stageId: StageId, pipeline: Pipeline, runtim
     if (runtime.databaseConnected === false) {
       return result("blocked", "Database is unreachable", "The app needs a reachable database, including storage for preparation jobs.", "setup", [{
         reason: "Start the local development stack and inspect its startup output.",
-        command: "rag-dev up --build -d",
+        command: "rag-dev start",
         expected: "The database and app should become reachable. Re-check to verify their actual state.",
       }]);
     }
@@ -55,7 +55,7 @@ export function diagnosePreparation(stageId: StageId, pipeline: Pipeline, runtim
     // Acquisition writes source files; schema compatibility gates indexing, not files.
     if (stageId !== "filings") {
       if (runtime.schemaStatus === "drifted") {
-        return result("blocked", "Database schema is incompatible", "A rebuild or restart cannot repair an incompatible database layout. Preserve the database and follow the setup recovery guide before indexing.", stage.blockedBy ?? "setup", [CHECK_SCHEMA, { reason: "Create a separate recovery checkout; preserve the original database and files.", command: "uv run python -m scripts.schema recover --return-stage " + stageId, expected: "Open the printed recovery URL and re-check this step. The original schema remains unchanged." }, { danger: true, reason: "For first-time setup or users who understand the consequences. This deletes ORM data and downloaded source files.", command: "uv run python -m scripts.schema recreate", expected: "Review table counts and source paths, then confirm the entire preview. Use --keep-sources for a DB-only reset, or --sample for the sample draft without downloading. Run rag-up and re-check afterward." }]);
+        return result("blocked", "Database schema is incompatible", "A rebuild or restart cannot repair an incompatible database layout. Preserve the database and follow the setup recovery guide before indexing.", stage.blockedBy ?? "setup", [CHECK_SCHEMA, { reason: "Create a separate recovery checkout; preserve the original database and files.", command: "uv run python -m scripts.schema recover --return-stage " + stageId, expected: "Open the printed recovery URL and re-check this step. The original schema remains unchanged." }, { danger: true, reason: "For first-time setup or users who understand the consequences. This deletes ORM data and downloaded source files.", command: "uv run python -m scripts.schema recreate", expected: "Review table counts and source paths, then confirm the entire preview. Use --keep-sources for a DB-only reset, or --sample for the sample draft without downloading. Run rag-dev start and re-check afterward." }]);
       }
       if (runtime.schemaStatus === "empty") {
         return result("blocked", "Database schema is empty", "Prepare the empty database schema, then re-check this step.", "setup", [{

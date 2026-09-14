@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 import time
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, build_opener
 
 from dotenv import dotenv_values, set_key
@@ -59,7 +59,7 @@ def configuration_value(key: str, value: str | None) -> str:
     return "<set; hidden>" if value else "<empty>"
 
 
-def validate_configuration(root: Path) -> dict[str, str]:
+def validate_configuration(root: Path, *, mode: str = "dev") -> dict[str, str]:
     """Validate effective configuration and identify both file and shell sources safely."""
     path = root / ".env"
     if not path.exists():
@@ -73,19 +73,20 @@ def validate_configuration(root: Path) -> dict[str, str]:
         print("Created private .env from the template; enter your own credentials locally.")
     file_values = {key: value for key, value in dotenv_values(path).items() if value is not None}
     configured = file_values | dict(os.environ)
+    key_slot = "OPENAI_API_KEY_LOCAL" if mode == "dev" else "OPENAI_API_KEY_PROD"
     requirements = {
         "SEC_USER_AGENT": "your real name and reachable email",
         "DART_API_KEY": "your DART key",
-        "OPENAI_API_KEY_LOCAL": "your development OpenAI key",
+        key_slot: f"your {mode} OpenAI key",
         "EMBEDDING_PROVIDER": "openai",
         "EMBEDDING_MODEL": "text-embedding-3-large",
     }
     missing = [
         key
-        for key in ("SEC_USER_AGENT", "DART_API_KEY", "OPENAI_API_KEY_LOCAL")
+        for key in (("SEC_USER_AGENT", "DART_API_KEY", key_slot) if mode == "dev" else (key_slot,))
         if placeholder(configured.get(key, ""))
     ]
-    if not re.search(r"\S+@\S+\.\S+", configured.get("SEC_USER_AGENT", "")):
+    if mode == "dev" and not re.search(r"\S+@\S+\.\S+", configured.get("SEC_USER_AGENT", "")):
         if "SEC_USER_AGENT" not in missing:
             missing.append("SEC_USER_AGENT")
     missing.extend(
@@ -112,14 +113,14 @@ def validate_configuration(root: Path) -> dict[str, str]:
                 details.append(f"    Shell fix: unset {key} (the export currently overrides .env).")
         details.append("No services were started by this configuration check.")
         raise ConfigurationError(tuple(missing), "\n".join(details))
-    return load_local_environment(path, mode="dev")
+    return load_local_environment(path, mode=mode)
 
 
-def configure(root: Path) -> dict[str, str]:
+def configure(root: Path, *, mode: str = "dev") -> dict[str, str]:
     """Let an interactive user repair configuration and resume at the same step."""
     while True:
         try:
-            return validate_configuration(root)
+            return validate_configuration(root, mode=mode)
         except ConfigurationError as error:
             print(str(error), flush=True)
             if not sys.stdin.isatty():
@@ -154,21 +155,35 @@ def configure(root: Path) -> dict[str, str]:
                 ) from None
 
 
-def wait_ready(origin: str, *, timeout: float = 180) -> None:
+def wait_ready(origin: str, *, timeout: float = 180, mode: str = "dev") -> None:
     """Require actual API, database, schema, and DEV permission evidence after startup."""
     opener = build_opener(ProxyHandler({}))
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             with opener.open(
-                origin + "/docreview-rag/api/admin/corpus/", timeout=5
+                origin
+                + (
+                    "/docreview-rag/api/admin/corpus/"
+                    if mode == "dev"
+                    else "/docreview-rag/api/ready/"
+                ),
+                timeout=5,
             ) as response:
                 snapshot = json.load(response)
-            state = snapshot["status"]
+            if mode == "prod":
+                corpus = snapshot.get("corpus", {})
+                if (
+                    snapshot.get("environment") == "prod"
+                    and corpus.get("database_connected")
+                    and corpus.get("schema_status") == "compatible"
+                ):
+                    return
+            state = snapshot["status"] if mode == "dev" else {}
             if (
-                state["database_connected"]
-                and state["schema_status"] == "compatible"
-                and state["writable"]
+                state.get("database_connected")
+                and state.get("schema_status") == "compatible"
+                and state.get("writable")
             ):
                 if state["provider"] != "openai":
                     raise ValueError(
@@ -176,19 +191,29 @@ def wait_ready(origin: str, *, timeout: float = 180) -> None:
                         "Check effective configuration."
                     )
                 return
+        except HTTPError as error:
+            if mode == "prod" and error.code == 503:
+                snapshot = json.load(error)
+                corpus = snapshot.get("corpus", {})
+                if (
+                    snapshot.get("environment") == "prod"
+                    and corpus.get("database_connected")
+                    and corpus.get("schema_status") == "compatible"
+                ):
+                    return
         except URLError, TimeoutError, ConnectionError:
             pass
         time.sleep(2)
     raise RuntimeError(
-        "DEV readiness was not confirmed. Use rag-dev logs -f app and rag-ollama-check; "
+        "DEV readiness was not confirmed. Use rag-dev logs -f app and rag-dev doctor; "
         "existing data was retained."
     )
 
 
-def report_services(root: Path, environment: dict[str, str]) -> None:
+def report_services(root: Path, environment: dict[str, str], *, mode: str = "dev") -> None:
     """Report only this project's service state, without exposing container configuration."""
     output = subprocess.check_output(
-        compose_command(root, "dev", ["ps", "--all", "--format", "json"]),
+        compose_command(root, mode, ["ps", "--all", "--format", "json"]),
         cwd=root,
         env=environment,
         text=True,
@@ -218,56 +243,73 @@ def report_services(root: Path, environment: dict[str, str]) -> None:
         print(f"  {name}: {status}", flush=True)
 
 
-def ensure_database(root: Path, bindings: dict[str, str]) -> None:
+def ensure_database(root: Path, bindings: dict[str, str], *, mode: str = "dev") -> None:
     """Start only the selected local database and wait for its declared health check."""
-    environment = compose_environment("dev", bindings)
-    report_services(root, environment)
+    environment = compose_environment(mode, bindings)
+    report_services(root, environment, mode=mode)
+    if mode == "prod":
+        from scripts.stack.prod import ensure_storage
+
+        ensure_storage(root)
+    run_step(
+        "Stop the API before selecting the mode's database volume",
+        compose_command(root, mode, ["stop", "app"]),
+        cwd=root,
+        env=environment,
+    )
     run_step(
         "Start database and wait for health",
-        compose_command(root, "dev", ["up", "-d", "--wait", "--wait-timeout", "120", "db"]),
+        compose_command(root, mode, ["up", "-d", "--wait", "--wait-timeout", "120", "db"]),
         cwd=root,
         env=environment,
     )
 
 
-def start_ready(root: Path, bindings: dict[str, str], *, timeout: float = 180) -> None:
+def start_ready(
+    root: Path, bindings: dict[str, str], *, timeout: float = 180, mode: str = "dev"
+) -> None:
     """Verify startup and offer one diagnosed, volume-preserving restart on failure."""
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
     for attempt in range(2):
         try:
-            result = run("dev", ["up", "--build", "-d"], root=root, quiet=True)
+            result = run(mode, ["up", "--build", "-d"], root=root, quiet=True)
             if result:
-                raise RuntimeError(f"DEV startup command exited with status {result}.")
-            report_services(root, compose_environment("dev", bindings))
+                raise RuntimeError(f"{mode.upper()} startup command exited with status {result}.")
+            report_services(root, compose_environment(mode, bindings), mode=mode)
             with activity("Verify server readiness"):
-                wait_ready(origin, timeout=timeout)
+                wait_ready(origin, timeout=timeout, mode=mode)
             return
         except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as error:
             print(f"Startup/readiness blocked: {error}", flush=True)
             print("Read-only diagnostics follow; no model will be loaded or invoked.")
             diagnose(root, origin, details=True)
-            print("Recovery in this checkout: rag-dev down && rag-dev up --build -d")
+            print(
+                "Recovery in this checkout: rag-dev compose down && rag-dev compose up --build -d"
+            )
             if attempt or not confirm(
                 "Restart this checkout (stop, preserve data volumes, then rebuild/start)?"
             ):
                 raise RuntimeError(
                     "Readiness is unconfirmed. Review the diagnosis and recovery commands above."
                 ) from None
-            if run("dev", ["down"], root=root):
+            if run(mode, ["down"], root=root):
                 raise RuntimeError(
                     "Stopping this checkout failed; no restart was submitted."
                 ) from None
 
 
-def handoff(bindings: dict[str, str]) -> None:
+def handoff(bindings: dict[str, str], *, mode: str = "dev") -> None:
     """Print the verified application and exact bilingual tutorial continuation."""
     origin = f"http://{bindings['DOCREVIEW_LOCAL_HOST']}:{bindings['APP_PORT']}"
-    print(f"Service ready: {origin}/docreview-rag/")
+    print(f"Server running ({mode.upper()}): {origin}/docreview-rag/")
+    if mode == "prod":
+        print("Server startup verified; corpus search readiness is reported separately by /ready.")
+        print(
+            "Saved data preparation: rag-prod prepare --local; no embedding generation is required."
+        )
+        return
     print(f"Quick Start - DEV ONLY: {origin}/docreview-rag/docs/en/quickstart-dev/#qs-web-1")
-    print(
-        "Korean Quick Start - DEV ONLY: "
-        f"{origin}/docreview-rag/docs/ko/quickstart-dev/#qs-web-1"
-    )
+    print(f"Korean Quick Start - DEV ONLY: {origin}/docreview-rag/docs/ko/quickstart-dev/#qs-web-1")
     print(
         "Continue in the web: Quick Start - DEV ONLY, Web path, step 1: verify the environment; "
         "then acquire sources, parse and chunk, prepare embeddings, and explicitly compute BM25."
@@ -278,6 +320,7 @@ def handoff(bindings: dict[str, str]) -> None:
 def _prepare(
     root: Path,
     *,
+    mode: str = "dev",
     reset: bool = False,
     keep_sources: bool = False,
     sample: bool = False,
@@ -299,22 +342,22 @@ def _prepare(
         "Configuration",
         "Read .env and shell overrides; offer explicit repairs before startup.",
     )
-    bindings = configure(root)
+    bindings = configure(root, mode=mode)
     step(3, 5, "Local database", "Show this checkout's services; start its DB and wait for health.")
     try:
-        ensure_database(root, bindings)
+        ensure_database(root, bindings, mode=mode)
     except subprocess.CalledProcessError:
-        print("Database startup failed. Inspect rag-dev ps -a and rag-dev logs --tail 50 db.")
-        print("Recovery: rag-dev down && rag-dev up --build -d")
+        print("Database startup failed. Inspect rag-dev status -a and rag-dev logs --tail 50 db.")
+        print("Recovery: rag-dev compose down && rag-dev compose up --build -d")
         if not confirm(
             "Stop this checkout without deleting volumes and retry database startup once?"
         ):
             raise RuntimeError(
                 "Database readiness remains blocked; no schema reset was submitted."
             ) from None
-        if run("dev", ["down"], root=root):
+        if run(mode, ["down"], root=root):
             raise RuntimeError("Stopping this checkout failed; no retry was submitted.") from None
-        ensure_database(root, bindings)
+        ensure_database(root, bindings, mode=mode)
     step(
         4,
         5,
@@ -340,8 +383,8 @@ def _prepare(
                 print(f"Schema preparation blocked: {error}. Existing data was preserved.")
                 print(
                     "Inspect: .venv/bin/python -m scripts.schema check\n"
-                    "Preserve this DB: rag-schema recover --return-stage index\n"
-                    "A separately confirmed destructive choice is rag-schema recreate."
+                    "Preserve this DB: rag-dev schema recover --return-stage index\n"
+                    "A separately confirmed destructive choice is rag-dev schema recreate."
                 )
                 if attempt or not confirm(
                     "After fixing DB_PORT or compatibility, retry this step?"
@@ -349,8 +392,8 @@ def _prepare(
                     raise RuntimeError(
                         "Schema is still blocked; no automatic reset was submitted."
                     ) from None
-                bindings = configure(root)
-                ensure_database(root, bindings)
+                bindings = configure(root, mode=mode)
+                ensure_database(root, bindings, mode=mode)
         print(
             "Empty database schema created." if created else "Existing schema and data preserved."
         )
@@ -360,8 +403,8 @@ def _prepare(
         "Start and verify",
         "Build/start DEV, verify readiness, then continue in the web tutorial.",
     )
-    start_ready(root, bindings, timeout=timeout)
-    handoff(bindings)
+    start_ready(root, bindings, timeout=timeout, mode=mode)
+    handoff(bindings, mode=mode)
     write_receipt(
         root,
         "reset" if reset else "start-quick",
@@ -374,6 +417,7 @@ def _prepare(
 def quickstart(
     root: Path,
     *,
+    mode: str = "dev",
     reset: bool = False,
     keep_sources: bool = False,
     sample: bool = False,
@@ -384,7 +428,7 @@ def quickstart(
     write_receipt(root, name, status="running", completed=[])
     try:
         return _prepare(
-            root, reset=reset, keep_sources=keep_sources, sample=sample, timeout=timeout
+            root, mode=mode, reset=reset, keep_sources=keep_sources, sample=sample, timeout=timeout
         )
     except (Exception, KeyboardInterrupt) as error:
         write_receipt(
@@ -419,7 +463,7 @@ def main() -> int:
         print(str(error), file=sys.stderr)
     except OSError, subprocess.CalledProcessError, SQLAlchemyError:
         print(
-            "A local setup command failed. Check Docker/database access and rerun rag-start-quick. "
+            "A local setup command failed. Check Docker/database access and rerun rag-dev start. "
             "No database was reset.",
             file=sys.stderr,
         )

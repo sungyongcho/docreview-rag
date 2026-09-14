@@ -309,12 +309,12 @@ it("shows supported companies and default fiscal years in the basket information
   expect(info).not.toHaveAttribute("title");
   fireEvent.mouseEnter(info.parentElement!);
   const hint = within(info.parentElement!).getByRole("tooltip");
-  expect(hint).toHaveTextContent("DocReview RAG v2.0");
+  expect(hint).toHaveTextContent("DocReview RAG");
   expect(hint).toHaveTextContent("NVDA (NVDA)");
   expect(hint).toHaveTextContent("000660 (000660)");
   expect(hint).toHaveTextContent(`Default: ${new Date().getFullYear() - 6}–${new Date().getFullYear() - 1}`);
   fireEvent.keyDown(info, { key: "Escape" });
-  expect(screen.queryByText("DocReview RAG v2.0")).toBeNull();
+  expect(screen.queryByText("DocReview RAG")).toBeNull();
 });
 
 

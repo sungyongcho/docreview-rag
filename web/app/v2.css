@@ -30,6 +30,9 @@ button:disabled { cursor: not-allowed; }
 .brand .sidebar-close { position: absolute; right: -6px; top: -10px; }
 .sidebar-nav button, .new-review, .conversation-row > button:first-child { min-height: 42px; border-radius: 8px; font-size: 13px; }
 .sidebar-nav button[aria-pressed=true] { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.sidebar > .sidebar-nav { margin-top: -4px; padding-top: 6px; gap: 2px; }
+.sidebar-nav > .guides-navigation { margin-block: 0; }
+.sidebar-nav > .guides-navigation nav { padding-bottom: 2px; }
 .runtime-mode-badge { justify-content: flex-start; background: transparent; border: 0; padding: 0 10px; }
 .runtime-mode-badge.dev { background: transparent; color: var(--muted); }
 .topbar { height: 64px; min-height: 64px; padding-inline: 20px; background: var(--surface); }
@@ -141,6 +144,16 @@ table td { line-height: 1.55; }
 .welcome .eyebrow { font-size: 11px; }
 .first-review-path { margin-top: 22px; }
 .suggestions button { background: var(--surface); font-size: 13px; min-height: 54px; }
+.welcome-description .welcome-verdict { display: inline-flex; vertical-align: baseline; margin: 0 3px; padding: 2px 8px; font-size: 11px; line-height: 1.4; white-space: nowrap; }
+.welcome-examples { margin-top: 18px; }
+.welcome-examples-hint { margin: 0 0 10px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.welcome-examples .suggestions { margin-top: 0; gap: 12px; }
+.welcome-examples .suggestions button { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 15px 16px; min-width: 0; }
+.suggestion-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 11px; }
+.suggestion-source { padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); font: 600 10px/1.4 ui-monospace, monospace; letter-spacing: .04em; }
+.welcome-examples strong { font-size: 13px; font-weight: 550; }
+.suggestion-question { color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.welcome-examples .suggestions button:hover { border-color: var(--muted); background: var(--surface-2); }
 .composer-wrap { padding: 14px max(24px, calc((100% - 900px) / 2)) 20px; }
 .composer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .composer-toolbar .chip-group { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -272,7 +285,7 @@ table td { line-height: 1.55; }
 .creator-signature strong { font-weight: 550; color: var(--text); }
 .creator-signature small { font: 10px/1.5 ui-monospace, monospace; }
 .creator-signature a:hover strong, .creator-signature a:focus-visible strong { text-decoration: underline; text-underline-offset: 4px; }
-.sidebar > .creator-signature { padding: 12px 8px 0; border-top: 1px solid var(--border); font-size: 10px; }
+.sidebar > .creator-signature { margin-top: -8px; padding: 8px 8px 0; border-top: 1px solid var(--border); font-size: 10px; }
 .creator-signature-about { padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); font-size: 14px; }
 .creator-signature-about small { font-size: 12px; }
 @media (max-width:820px) and (min-width:561px) { .sidebar > .creator-signature { padding-inline:0; text-align:center; }.sidebar > .creator-signature a > span { font-size:0; justify-content:center; }.sidebar > .creator-signature small { display:none; } }
@@ -306,6 +319,15 @@ table td { line-height: 1.55; }
 .review-progress-steps li.skipped { border-color: var(--phase-warning); color: var(--phase-warning); }
 .review-progress-steps li.skipped .review-phase-icon { color: var(--phase-warning); }
 .review-progress-steps small.review-phase-reason { display: block; color: var(--phase-warning); font-size: 11px; }
+
+/* Expected early stops retain readable stage names and explicit downstream status. */
+.review-progress.limited .review-progress-steps li.not-run small { display: block; font-size: 11px; color: var(--muted); }
+.review-progress.limited .review-progress-steps strong { font-size: 10px; overflow-wrap: anywhere; }
+.review-progress.limited .review-progress-steps li > span { min-width: 0; overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  .review-progress.limited .review-progress-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-progress.limited .review-progress-steps li { justify-content: flex-start; }
+}
 
 /* Infrastructure health stays secondary to the selected job's execution status. */
 .pipeline-toolbar .runtime-disclosure > summary { min-height: 32px; padding: 5px 9px; border-color: transparent; border-radius: 6px; font-size: 11px; gap: 6px; }

@@ -1,0 +1,2699 @@
+{
+  "version": 1,
+  "status": "awaiting-capture",
+  "localOnly": true,
+  "locales": [
+    "ko",
+    "en"
+  ],
+  "theme": "light",
+  "desktop": {
+    "width": 1440,
+    "height": 1000,
+    "deviceScaleFactor": 2
+  },
+  "mobile": {
+    "width": 390,
+    "height": 844,
+    "deviceScaleFactor": 2
+  },
+  "annotationPolicy": "Keep the original PNG unchanged. Capture a focused region directly from the real page. Record callout bounding boxes in capture pixels; the reviewer places numbered HTML/SVG overlays after acceptance. Do not generate, redraw, or alter UI text.",
+  "scenes": [
+    {
+      "id": "bm25-and-evaluation-progress",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=jobs",
+      "state": "Show a real active BM25 rebuild and its recorded progress in the Job Center, including an evaluation dependency/wait notice when present. If there is no active matching work, report blocked; do not launch jobs solely for a screenshot.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Active BM25 job and recorded progress",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Actual job state",
+          "label": {
+            "en": "Actual job state",
+            "ko": "실제 작업 상태"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Recorded progress",
+          "label": {
+            "en": "Recorded progress",
+            "ko": "기록된 진행 상황"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/bm25-and-evaluation-progress.ko.full.png",
+          "focused": "assets/captures/bm25-and-evaluation-progress.ko.png",
+          "alt": "BM25 어휘 색인 재구축이 진행 중인 작업 센터에 실행 중 항목과 이력이 표시된 화면.",
+          "caption": "1. 실제 작업 상태 · 2. 기록된 진행 상황"
+        },
+        "en": {
+          "original": "assets/captures/bm25-and-evaluation-progress.en.full.png",
+          "focused": "assets/captures/bm25-and-evaluation-progress.en.png",
+          "alt": "The Job Center while a BM25 lexical-index rebuild runs, with the running entry and bounded history.",
+          "caption": "1. Actual job state · 2. Recorded progress"
+        }
+      },
+      "references": [
+        {
+          "document": "indexing",
+          "file": "ko/indexing.md",
+          "heading": "## 작업 진행률과 평가 대기열 {#job-progress}",
+          "legacyAsset": "assets/bm25-and-evaluation-progress.ko.png",
+          "section": "job-progress"
+        },
+        {
+          "document": "indexing",
+          "file": "en/indexing.md",
+          "heading": "## Job progress and evaluation queue {#job-progress}",
+          "legacyAsset": "assets/bm25-and-evaluation-progress.en.png",
+          "section": "job-progress"
+        }
+      ]
+    },
+    {
+      "id": "collapsed-titled-paginated-evidence-candidates",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an existing review with retrieval candidates; show the collapsed titled candidate list and its page controls.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Evidence candidate list and pagination",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Evidence candidate list",
+          "label": {
+            "en": "Evidence candidate list",
+            "ko": "근거 후보 목록"
+          }
+        },
+        {
+          "number": 2,
+          "target": "pagination",
+          "label": {
+            "en": "pagination",
+            "ko": "페이지 이동"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/collapsed-titled-paginated-evidence-candidates.ko.full.png",
+          "focused": "assets/captures/collapsed-titled-paginated-evidence-candidates.ko.png",
+          "alt": "항목별 제목이 붙은 근거 카드와 고정·제외·페이지 넘김이 있는 확장된 관련 근거 영역.",
+          "caption": "1. 근거 후보 목록 · 2. 페이지 이동"
+        },
+        "en": {
+          "original": "assets/captures/collapsed-titled-paginated-evidence-candidates.en.full.png",
+          "focused": "assets/captures/collapsed-titled-paginated-evidence-candidates.en.png",
+          "alt": "The expanded related-evidence section listing section-titled evidence cards with pin/exclude controls and pagination.",
+          "caption": "1. Evidence candidate list · 2. pagination"
+        }
+      },
+      "references": [
+        {
+          "document": "answers",
+          "file": "ko/answers.md",
+          "heading": "## 범위·근거·요청 확인 {#inspection}",
+          "legacyAsset": "assets/collapsed-titled-paginated-evidence-candidates.ko.png",
+          "section": "inspection"
+        },
+        {
+          "document": "answers",
+          "file": "en/answers.md",
+          "heading": "## Inspect scope, evidence, and the request {#inspection}",
+          "legacyAsset": "assets/collapsed-titled-paginated-evidence-candidates.en.png",
+          "section": "inspection"
+        }
+      ]
+    },
+    {
+      "id": "company-year-inventory-selector",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=pipeline",
+      "state": "Open the Filings stage with the existing company/year basket and inventory status visible. Do not download or change the saved corpus.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Company/year selection and inventory state",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Company/year selection",
+          "label": {
+            "en": "Company/year selection",
+            "ko": "기업·연도 선택"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 47,
+                "y": 207,
+                "w": 1149,
+                "h": 804
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 47,
+                "y": 207,
+                "w": 1149,
+                "h": 804
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "inventory state",
+          "label": {
+            "en": "inventory state",
+            "ko": "자료 현황"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 47,
+                "y": 108,
+                "w": 1149,
+                "h": 31
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 47,
+                "y": 108,
+                "w": 1149,
+                "h": 31
+              }
+            }
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/company-year-inventory-selector.ko.full.png",
+          "focused": "assets/captures/company-year-inventory-selector.ko.png",
+          "alt": "SK하이닉스·삼성전자·AMD·NVIDIA의 연도별 칩이 있는 공시 단계 회사 바스켓 화면.",
+          "caption": "1. 기업·연도 선택 · 2. 자료 현황"
+        },
+        "en": {
+          "original": "assets/captures/company-year-inventory-selector.en.full.png",
+          "focused": "assets/captures/company-year-inventory-selector.en.png",
+          "alt": "The filings stage company basket with per-year chips for SK hynix, Samsung Electronics, AMD and NVIDIA.",
+          "caption": "1. Company/year selection · 2. inventory state"
+        }
+      },
+      "references": [
+        {
+          "document": "acquisition",
+          "file": "ko/acquisition.md",
+          "heading": "## 기본 수집 범위와 선택 항목 {#reference-acquisition-scope}",
+          "legacyAsset": "assets/company-year-inventory-selector.ko.png",
+          "section": "reference-acquisition-scope"
+        },
+        {
+          "document": "acquisition",
+          "file": "en/acquisition.md",
+          "heading": "## Reference acquisition scope {#reference-acquisition-scope}",
+          "legacyAsset": "assets/company-year-inventory-selector.en.png",
+          "section": "reference-acquisition-scope"
+        }
+      ]
+    },
+    {
+      "id": "comparison-workspace-and-snapshot-save",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=compare",
+      "state": "Choose existing baseline ts_rank_cd and candidate BM25 results from the same DART Korean dataset and compatible comparison context. Show the metric deltas and per-question changes, without saving/publishing a snapshot or running an evaluation.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Comparison selection and recorded metric deltas",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Baseline and candidate selection",
+          "label": {
+            "en": "Baseline and candidate selection",
+            "ko": "기준·후보 결과 선택"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Recorded metric deltas",
+          "label": {
+            "en": "Recorded metric deltas",
+            "ko": "기록된 지표 차이"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/comparison-workspace-and-snapshot-save.ko.full.png",
+          "focused": "assets/captures/comparison-workspace-and-snapshot-save.ko.png",
+          "alt": "같은 DART 한국어 데이터셋에서 ts_rank_cd 기준과 BM25 후보를 비교해 지표 차이와 문항별 변화가 표시된 화면.",
+          "caption": "1. 기준·후보 결과 선택 · 2. 기록된 지표 차이"
+        },
+        "en": {
+          "original": "assets/captures/comparison-workspace-and-snapshot-save.en.full.png",
+          "focused": "assets/captures/comparison-workspace-and-snapshot-save.en.png",
+          "alt": "A baseline ts_rank_cd result compared against a BM25 candidate on the same DART Korean dataset, with metric deltas and per-case changes.",
+          "caption": "1. Baseline and candidate selection · 2. Recorded metric deltas"
+        }
+      },
+      "references": [
+        {
+          "document": "snapshots",
+          "file": "ko/snapshots.md",
+          "heading": "## 결과를 비교하고 적합한 스냅샷 저장하기 {#step-12}",
+          "legacyAsset": "assets/comparison-workspace-and-snapshot-save.ko.png",
+          "section": "step-12"
+        },
+        {
+          "document": "snapshots",
+          "file": "en/snapshots.md",
+          "heading": "## Compare results and save a suitable snapshot {#step-12}",
+          "legacyAsset": "assets/comparison-workspace-and-snapshot-save.en.png",
+          "section": "step-12"
+        }
+      ]
+    },
+    {
+      "id": "connection-status-and-notification-rail",
+      "status": "accepted",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=system&tab=status",
+      "state": "Show the real healthy PROD System status screen: Refresh, overall readiness, PROD mode, database connected and compatible schema. This is a normal-state reference for connection troubleshooting, not a captured outage or delayed notification.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "System status heading, Refresh control and the four connection/readiness cards",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Refresh connection status",
+          "label": {
+            "en": "Refresh connection status",
+            "ko": "연결 상태 새로고침"
+          },
+          "bounds": {
+            "en": {
+              "focused": {
+                "x": 1800,
+                "y": 55,
+                "w": 280,
+                "h": 100
+              },
+              "mobile": {
+                "x": 28,
+                "y": 164,
+                "w": 200,
+                "h": 88
+              }
+            },
+            "ko": {
+              "focused": {
+                "x": 1800,
+                "y": 55,
+                "w": 280,
+                "h": 100
+              },
+              "mobile": {
+                "x": 28,
+                "y": 164,
+                "w": 200,
+                "h": 88
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "Readiness, mode and database connection",
+          "label": {
+            "en": "Readiness, mode and database connection",
+            "ko": "준비 상태·모드·DB 연결"
+          },
+          "bounds": {
+            "en": {
+              "focused": {
+                "x": 40,
+                "y": 358,
+                "w": 2198,
+                "h": 184
+              },
+              "mobile": {
+                "x": 28,
+                "y": 414,
+                "w": 724,
+                "h": 792
+              }
+            },
+            "ko": {
+              "focused": {
+                "x": 40,
+                "y": 358,
+                "w": 2198,
+                "h": 184
+              },
+              "mobile": {
+                "x": 28,
+                "y": 414,
+                "w": 724,
+                "h": 792
+              }
+            }
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/connection-status-and-notification-rail.ko.full.png",
+          "focused": "assets/captures/connection-status-and-notification-rail.ko.png",
+          "alt": "정상 PROD의 시스템 상태 화면에서 연결을 새로 확인하고 준비 상태·모드·데이터베이스 연결을 확인합니다.",
+          "caption": "정상 연결 상태의 예시 · 1. 연결 상태 새로고침 · 2. 준비 상태·모드·DB 연결",
+          "mobile": "assets/captures/connection-status-and-notification-rail.ko.mobile.png"
+        },
+        "en": {
+          "original": "assets/captures/connection-status-and-notification-rail.en.full.png",
+          "focused": "assets/captures/connection-status-and-notification-rail.en.png",
+          "alt": "The healthy PROD System status screen with Refresh, readiness, mode and database connection.",
+          "caption": "Healthy connection example · 1. Refresh connection status · 2. Readiness, mode and database connection",
+          "mobile": "assets/captures/connection-status-and-notification-rail.en.mobile.png"
+        }
+      },
+      "references": [
+        {
+          "document": "troubleshooting",
+          "file": "ko/troubleshooting.md",
+          "heading": "## 연결 상태와 알림 {#connection-feedback}",
+          "legacyAsset": "assets/connection-status-and-notification-rail.ko.png",
+          "section": "connection-feedback"
+        },
+        {
+          "document": "troubleshooting",
+          "file": "en/troubleshooting.md",
+          "heading": "## Connection state and notifications {#connection-feedback}",
+          "legacyAsset": "assets/connection-status-and-notification-rail.en.png",
+          "section": "connection-feedback"
+        }
+      ]
+    },
+    {
+      "id": "dataset-filtered-history-and-comparison",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=compare",
+      "state": "Filter existing evaluation history to a dataset, then show the corresponding comparison choices.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Dataset filter and comparable results",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Dataset filter",
+          "label": {
+            "en": "Dataset filter",
+            "ko": "평가셋 필터"
+          }
+        },
+        {
+          "number": 2,
+          "target": "comparable results",
+          "label": {
+            "en": "comparable results",
+            "ko": "비교 가능한 결과"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/dataset-filtered-history-and-comparison.ko.full.png",
+          "focused": "assets/captures/dataset-filtered-history-and-comparison.ko.png",
+          "alt": "하나의 데이터셋으로 필터링한 실행 목록에서 비교할 두 결과를 선택한 화면.",
+          "caption": "1. 평가셋 필터 · 2. 비교 가능한 결과"
+        },
+        "en": {
+          "original": "assets/captures/dataset-filtered-history-and-comparison.en.full.png",
+          "focused": "assets/captures/dataset-filtered-history-and-comparison.en.png",
+          "alt": "The run list filtered to one dataset with two results selected for comparison.",
+          "caption": "1. Dataset filter · 2. comparable results"
+        }
+      },
+      "references": [
+        {
+          "document": "evaluation",
+          "file": "ko/evaluation.md",
+          "heading": "## 데이터셋 파일로 실행 찾기 {#find-runs-by-dataset-file}",
+          "legacyAsset": "assets/dataset-filtered-history-and-comparison.ko.png",
+          "section": "find-runs-by-dataset-file"
+        },
+        {
+          "document": "evaluation",
+          "file": "en/evaluation.md",
+          "heading": "## Find runs by dataset file {#find-runs-by-dataset-file}",
+          "legacyAsset": "assets/dataset-filtered-history-and-comparison.en.png",
+          "section": "find-runs-by-dataset-file"
+        }
+      ]
+    },
+    {
+      "id": "document-detail",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=build&tab=documents",
+      "state": "Open a provided filing and show its source metadata and chunk detail.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Document metadata and source content",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Document metadata",
+          "label": {
+            "en": "Document metadata",
+            "ko": "문서 정보"
+          }
+        },
+        {
+          "number": 2,
+          "target": "source content",
+          "label": {
+            "en": "source content",
+            "ko": "원문 내용"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/document-detail.ko.full.png",
+          "focused": "assets/captures/document-detail.ko.png",
+          "alt": "삼성전자 FY2022 공시의 문서 식별 정보·회계연도·실제 인덱싱 상태.",
+          "caption": "1. 문서 정보 · 2. 원문 내용"
+        },
+        "en": {
+          "original": "assets/captures/document-detail.en.full.png",
+          "focused": "assets/captures/document-detail.en.png",
+          "alt": "An opened Samsung Electronics FY2022 filing showing its identity, fiscal year and actual indexing readiness.",
+          "caption": "1. Document metadata · 2. source content"
+        }
+      },
+      "references": [
+        {
+          "document": "documents",
+          "file": "ko/documents.md",
+          "heading": "## 기존 코퍼스 확인하기 {#step-2}",
+          "legacyAsset": "assets/document-detail.ko.png",
+          "section": "step-2"
+        },
+        {
+          "document": "documents",
+          "file": "en/documents.md",
+          "heading": "## Inspect the existing corpus {#step-2}",
+          "legacyAsset": "assets/document-detail.en.png",
+          "section": "step-2"
+        }
+      ]
+    },
+    {
+      "id": "execution-performance-and-run-trace",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=runs",
+      "state": "Open an existing completed evaluation result and its execution trace/performance detail. Show actual measured stage durations and provider request totals. Do not start an evaluation.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Recorded evaluation performance and trace",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Measured stage durations",
+          "label": {
+            "en": "Measured stage durations",
+            "ko": "측정된 단계별 시간"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Recorded request totals",
+          "label": {
+            "en": "Recorded request totals",
+            "ko": "기록된 요청 합계"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/execution-performance-and-run-trace.ko.full.png",
+          "focused": "assets/captures/execution-performance-and-run-trace.ko.png",
+          "alt": "측정된 단계별 소요 시간과 요청 총량이 있는 평가 실행 추적 화면.",
+          "caption": "1. 측정된 단계별 시간 · 2. 기록된 요청 합계"
+        },
+        "en": {
+          "original": "assets/captures/execution-performance-and-run-trace.en.full.png",
+          "focused": "assets/captures/execution-performance-and-run-trace.en.png",
+          "alt": "The run trace of an evaluation with measured stage durations and request totals.",
+          "caption": "1. Measured stage durations · 2. Recorded request totals"
+        }
+      },
+      "references": [
+        {
+          "document": "runtime",
+          "file": "ko/runtime.md",
+          "heading": "## 실행 요약과 실제 시간 {#timings}",
+          "legacyAsset": "assets/execution-performance-and-run-trace.ko.png",
+          "section": "timings"
+        },
+        {
+          "document": "runtime",
+          "file": "en/runtime.md",
+          "heading": "## Execution summary and real timing {#timings}",
+          "legacyAsset": "assets/execution-performance-and-run-trace.en.png",
+          "section": "timings"
+        }
+      ]
+    },
+    {
+      "id": "focused-evaluation-detail",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=runs",
+      "state": "Open an existing completed evaluation result and its question-level detail; do not run an evaluation.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Evaluation result and question-level detail",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Evaluation result",
+          "label": {
+            "en": "Evaluation result",
+            "ko": "평가 결과"
+          }
+        },
+        {
+          "number": 2,
+          "target": "question-level detail",
+          "label": {
+            "en": "question-level detail",
+            "ko": "문항별 상세"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/focused-evaluation-detail.ko.full.png",
+          "focused": "assets/captures/focused-evaluation-detail.ko.png",
+          "alt": "완료된 평가 결과의 지표·기록된 설정·문항별 결과가 열린 화면.",
+          "caption": "1. 평가 결과 · 2. 문항별 상세"
+        },
+        "en": {
+          "original": "assets/captures/focused-evaluation-detail.en.full.png",
+          "focused": "assets/captures/focused-evaluation-detail.en.png",
+          "alt": "A completed evaluation result opened to its metrics, recorded settings and per-question outcomes.",
+          "caption": "1. Evaluation result · 2. question-level detail"
+        }
+      },
+      "references": [
+        {
+          "document": "evaluation",
+          "file": "ko/evaluation.md",
+          "heading": "## 검색 평가 실행하기 {#step-11}",
+          "legacyAsset": "assets/focused-evaluation-detail.ko.png",
+          "section": "step-11"
+        },
+        {
+          "document": "evaluation",
+          "file": "en/evaluation.md",
+          "heading": "## Run a retrieval evaluation {#step-11}",
+          "legacyAsset": "assets/focused-evaluation-detail.en.png",
+          "section": "step-11"
+        }
+      ]
+    },
+    {
+      "id": "golden-question-editor",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=golden",
+      "state": "Open an existing golden question in the editor; show identity and expected evidence. Do not save changes.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Question fields and expected evidence",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Question fields",
+          "label": {
+            "en": "Question fields",
+            "ko": "질문 항목"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 86,
+                "y": 206,
+                "w": 1820,
+                "h": 758
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 86,
+                "y": 206,
+                "w": 1820,
+                "h": 758
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "expected evidence",
+          "label": {
+            "en": "expected evidence",
+            "ko": "정답 근거"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 86,
+                "y": 1004,
+                "w": 360,
+                "h": 210
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 86,
+                "y": 1074,
+                "w": 360,
+                "h": 144
+              }
+            }
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/golden-question-editor.ko.full.png",
+          "focused": "assets/captures/golden-question-editor.ko.png",
+          "alt": "질문 본문·답변 가능 여부·참고 답변·기대 원문 청크가 보이는 골든 문항 상세 화면.",
+          "caption": "1. 질문 항목 · 2. 정답 근거"
+        },
+        "en": {
+          "original": "assets/captures/golden-question-editor.en.full.png",
+          "focused": "assets/captures/golden-question-editor.en.png",
+          "alt": "The golden question detail showing the question text, answerability controls, reference answer and expected source chunk.",
+          "caption": "1. Question fields · 2. expected evidence"
+        }
+      },
+      "references": [
+        {
+          "document": "evaluation",
+          "file": "ko/evaluation.md",
+          "heading": "## 원본 JSON과 편집용 초안 {#golden}",
+          "legacyAsset": "assets/golden-question-editor.ko.png",
+          "section": "golden"
+        },
+        {
+          "document": "evaluation",
+          "file": "en/evaluation.md",
+          "heading": "## Source JSON and editable drafts {#golden}",
+          "legacyAsset": "assets/golden-question-editor.en.png",
+          "section": "golden"
+        }
+      ]
+    },
+    {
+      "id": "job-history-and-reset-dialogs",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=jobs",
+      "state": "Open Manage history in the Job Center and show eligible records together with archive, restore and permanent-delete controls. Do not execute any of those operations or confirm a destructive action.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Manage-history dialog and its scoped action controls",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Eligible history records",
+          "label": {
+            "en": "Eligible history records",
+            "ko": "대상 작업 기록"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Archive and restore controls",
+          "label": {
+            "en": "Archive and restore controls",
+            "ko": "보관·복원 조작"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/job-history-and-reset-dialogs.ko.full.png",
+          "focused": "assets/captures/job-history-and-reset-dialogs.ko.png",
+          "alt": "작업 이력의 동기화·보관·복원·영구 삭제를 제어하는 기록 관리 대화 상자.",
+          "caption": "1. 대상 작업 기록 · 2. 보관·복원 조작"
+        },
+        "en": {
+          "original": "assets/captures/job-history-and-reset-dialogs.en.full.png",
+          "focused": "assets/captures/job-history-and-reset-dialogs.en.png",
+          "alt": "The manage-history dialog with archive, restore and permanent-delete controls over job history.",
+          "caption": "1. Eligible history records · 2. Archive and restore controls"
+        }
+      },
+      "references": [
+        {
+          "document": "troubleshooting",
+          "file": "ko/troubleshooting.md",
+          "heading": "## 작업 기록 관리 {#job-history}",
+          "legacyAsset": "assets/job-history-and-reset-dialogs.ko.png",
+          "section": "job-history"
+        },
+        {
+          "document": "troubleshooting",
+          "file": "en/troubleshooting.md",
+          "heading": "## Manage job history {#job-history}",
+          "legacyAsset": "assets/job-history-and-reset-dialogs.en.png",
+          "section": "job-history"
+        }
+      ]
+    },
+    {
+      "id": "jobs-status-and-retry",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=jobs",
+      "state": "Show recorded job states and an actual retry control if a retryable job exists. Do not launch a retry.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Recorded job status and retry control",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Recorded job status",
+          "label": {
+            "en": "Recorded job status",
+            "ko": "기록된 작업 상태"
+          }
+        },
+        {
+          "number": 2,
+          "target": "retry control",
+          "label": {
+            "en": "retry control",
+            "ko": "재시도 조작"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/jobs-status-and-retry.ko.full.png",
+          "focused": "assets/captures/jobs-status-and-retry.ko.png",
+          "alt": "완료된 BM25 재구축 작업의 요청 옵션·진행률·소요 시간이 표시된 작업 센터 화면.",
+          "caption": "1. 기록된 작업 상태 · 2. 재시도 조작"
+        },
+        "en": {
+          "original": "assets/captures/jobs-status-and-retry.en.full.png",
+          "focused": "assets/captures/jobs-status-and-retry.en.png",
+          "alt": "The Job Center listing a completed BM25 rebuild with its request options, progress and timings.",
+          "caption": "1. Recorded job status · 2. retry control"
+        }
+      },
+      "references": [
+        {
+          "document": "runtime",
+          "file": "ko/runtime.md",
+          "heading": "## 상태와 작업의 흐름 {#states}",
+          "legacyAsset": "assets/jobs-status-and-retry.ko.png",
+          "section": "states"
+        },
+        {
+          "document": "runtime",
+          "file": "en/runtime.md",
+          "heading": "## Status and job lifecycle {#states}",
+          "legacyAsset": "assets/jobs-status-and-retry.en.png",
+          "section": "states"
+        }
+      ]
+    },
+    {
+      "id": "live-execution-summary-and-skipped-verification",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an actual completed document-review run where relevance was below threshold and the answer/citation check was intentionally skipped in warning tone, while result preparation completed. Do not substitute a stage-0 or stage-1 scope stop.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Stage strip with the recorded below-threshold check skip and completed result preparation",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Check skipped below threshold",
+          "label": {
+            "en": "Check skipped below threshold",
+            "ko": "기준 미달로 건너뛴 검증"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Completed result preparation",
+          "label": {
+            "en": "Completed result preparation",
+            "ko": "완료된 결과 준비"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/live-execution-summary-and-skipped-verification.ko.full.png",
+          "focused": "assets/captures/live-execution-summary-and-skipped-verification.ko.png",
+          "alt": "관련 기준 미달로 답변·인용 검증 단계가 경고 색상으로 건너뛰어진 완료 실행 화면.",
+          "caption": "1. 기준 미달로 건너뛴 검증 · 2. 완료된 결과 준비"
+        },
+        "en": {
+          "original": "assets/captures/live-execution-summary-and-skipped-verification.en.full.png",
+          "focused": "assets/captures/live-execution-summary-and-skipped-verification.en.png",
+          "alt": "A completed run whose answer·citation check stage was skipped because the relevance threshold was not met, shown in warning tone on the stage strip.",
+          "caption": "1. Check skipped below threshold · 2. Completed result preparation"
+        }
+      },
+      "references": [
+        {
+          "document": "answers",
+          "file": "ko/answers.md",
+          "heading": "## 답변 엔진을 선택하고 첫 질문 보내기 {#step-9}",
+          "legacyAsset": "assets/live-execution-summary-and-skipped-verification.ko.png",
+          "section": "step-9"
+        },
+        {
+          "document": "answers",
+          "file": "en/answers.md",
+          "heading": "## Select an engine and ask the first question {#step-9}",
+          "legacyAsset": "assets/live-execution-summary-and-skipped-verification.en.png",
+          "section": "step-9"
+        }
+      ]
+    },
+    {
+      "id": "manifest-failure-diagnosis",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an existing review stopped by a manifest/scope-metadata failure in DEV. Show the actual failing stage, sanitized cause, relevant file and recovery action. If unavailable, report blocked; do not damage a manifest or substitute an unrelated evaluation error.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Manifest diagnosis for the recorded review, including its recovery guidance",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Recorded failure cause",
+          "label": {
+            "en": "Recorded failure cause",
+            "ko": "기록된 실패 원인"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Recovery guidance",
+          "label": {
+            "en": "Recovery guidance",
+            "ko": "복구 안내"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/manifest-failure-diagnosis.ko.full.png",
+          "focused": "assets/captures/manifest-failure-diagnosis.ko.png",
+          "alt": "DEV 대화 실행의 manifest 메타데이터 오류에 표시된 중단 단계와 복구 안내.",
+          "caption": "1. 기록된 실패 원인 · 2. 복구 안내"
+        },
+        "en": {
+          "original": "assets/captures/manifest-failure-diagnosis.en.full.png",
+          "focused": "assets/captures/manifest-failure-diagnosis.en.png",
+          "alt": "A DEV review's manifest-metadata diagnosis showing its recorded failing stage and recovery guidance.",
+          "caption": "1. Recorded failure cause · 2. Recovery guidance"
+        }
+      },
+      "references": [
+        {
+          "document": "troubleshooting",
+          "file": "ko/troubleshooting.md",
+          "heading": "## 질문 범위 정보를 불러올 수 없음 {#manifest-scope}",
+          "legacyAsset": "assets/manifest-failure-diagnosis.ko.png",
+          "section": "manifest-scope"
+        },
+        {
+          "document": "troubleshooting",
+          "file": "en/troubleshooting.md",
+          "heading": "## Manifest scope metadata is unavailable {#manifest-scope}",
+          "legacyAsset": "assets/manifest-failure-diagnosis.en.png",
+          "section": "manifest-scope"
+        }
+      ]
+    },
+    {
+      "id": "manual-navigation-and-task-return",
+      "status": "accepted",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Start from a saved PROD conversation with a recorded answer, open a guide page, and return with Return to service. Capture the restored conversation and its recorded answer. Do not submit a new question.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Header navigation controls and restored answer, excluding the sidebar",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Restored question and answer",
+          "label": {
+            "en": "Restored question and answer",
+            "ko": "복원된 질문과 답변"
+          },
+          "bounds": {
+            "en": {
+              "focused": {
+                "x": 300,
+                "y": 250,
+                "w": 1950,
+                "h": 275
+              },
+              "mobile": {
+                "x": 28,
+                "y": 170,
+                "w": 700,
+                "h": 520
+              }
+            },
+            "ko": {
+              "focused": {
+                "x": 300,
+                "y": 248,
+                "w": 1950,
+                "h": 277
+              },
+              "mobile": {
+                "x": 28,
+                "y": 170,
+                "w": 700,
+                "h": 520
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "Preserved conversation context",
+          "label": {
+            "en": "Preserved conversation context",
+            "ko": "유지된 대화 문맥"
+          },
+          "bounds": {
+            "en": {
+              "focused": {
+                "x": 100,
+                "y": 20,
+                "w": 1350,
+                "h": 90
+              },
+              "mobile": {
+                "x": 30,
+                "y": 25,
+                "w": 380,
+                "h": 85
+              }
+            },
+            "ko": {
+              "focused": {
+                "x": 100,
+                "y": 20,
+                "w": 1350,
+                "h": 90
+              },
+              "mobile": {
+                "x": 30,
+                "y": 25,
+                "w": 380,
+                "h": 85
+              }
+            }
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/manual-navigation-and-task-return.ko.full.png",
+          "focused": "assets/captures/manual-navigation-and-task-return.ko.png",
+          "mobile": "assets/captures/manual-navigation-and-task-return.ko.mobile.png",
+          "alt": "가이드 페이지에서 돌아오면 PROD 모드에서 이전 대화와 기록된 답변이 복원된 화면.",
+          "caption": "1. 복원된 질문과 답변 · 2. 유지된 대화 문맥"
+        },
+        "en": {
+          "original": "assets/captures/manual-navigation-and-task-return.en.full.png",
+          "focused": "assets/captures/manual-navigation-and-task-return.en.png",
+          "mobile": "assets/captures/manual-navigation-and-task-return.en.mobile.png",
+          "alt": "Returning from a guide page restores the prior conversation and its recorded answer in PROD mode.",
+          "caption": "1. Restored question and answer · 2. Preserved conversation context"
+        }
+      },
+      "references": [
+        {
+          "document": "overview",
+          "file": "ko/overview.md",
+          "heading": "### 이전·앞으로와 위치 복원 {#navigation}",
+          "legacyAsset": "assets/manual-navigation-and-task-return.ko.png",
+          "section": "navigation"
+        },
+        {
+          "document": "overview",
+          "file": "en/overview.md",
+          "heading": "### Back, forward and shared locations {#navigation}",
+          "legacyAsset": "assets/manual-navigation-and-task-return.en.png",
+          "section": "navigation"
+        }
+      ]
+    },
+    {
+      "id": "notification-center",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open the notification center using existing notifications. Do not induce failures or dismiss the user's notifications.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Notification list and detail",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Notification list",
+          "label": {
+            "en": "Notification list",
+            "ko": "알림 목록"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 62,
+                "y": 304,
+                "w": 734,
+                "h": 606
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 62,
+                "y": 304,
+                "w": 734,
+                "h": 606
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "detail",
+          "label": {
+            "en": "detail",
+            "ko": "상세"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 88,
+                "y": 529,
+                "w": 686,
+                "h": 220
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 88,
+                "y": 529,
+                "w": 686,
+                "h": 220
+              }
+            }
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/notification-center.ko.full.png",
+          "focused": "assets/captures/notification-center.ko.png",
+          "alt": "읽지 않은 수와 전체·작업·오류 탭이 보이는 열린 알림 센터.",
+          "caption": "1. 알림 목록 · 2. 상세"
+        },
+        "en": {
+          "original": "assets/captures/notification-center.en.full.png",
+          "focused": "assets/captures/notification-center.en.png",
+          "alt": "The notification center open with unread counts and the All/Jobs/Errors tabs.",
+          "caption": "1. Notification list · 2. detail"
+        }
+      },
+      "references": [
+        {
+          "document": "runtime",
+          "file": "ko/runtime.md",
+          "heading": "## 알림 센터 {#notification-center}",
+          "legacyAsset": "assets/notification-center.ko.png",
+          "section": "notification-center"
+        },
+        {
+          "document": "runtime",
+          "file": "en/runtime.md",
+          "heading": "## Notification center {#notification-center}",
+          "legacyAsset": "assets/notification-center.en.png",
+          "section": "notification-center"
+        }
+      ]
+    },
+    {
+      "id": "openai-per-call-caps-editor",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open Settings > OpenAI > Per-call caps in DEV. Show actual input/output token and per-call cost settings, without saving or restoring any values. Do not capture Run limits instead.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "OpenAI per-call caps editor",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Per-call token limits",
+          "label": {
+            "en": "Per-call token limits",
+            "ko": "호출당 토큰 한도"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 36,
+                "y": 523,
+                "w": 1170,
+                "h": 173
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 36,
+                "y": 524,
+                "w": 1170,
+                "h": 171
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "Per-call cost ceiling",
+          "label": {
+            "en": "Per-call cost ceiling",
+            "ko": "호출당 비용 상한"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 36,
+                "y": 750,
+                "w": 560,
+                "h": 172
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 36,
+                "y": 750,
+                "w": 560,
+                "h": 172
+              }
+            }
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/openai-per-call-caps-editor.ko.full.png",
+          "focused": "assets/captures/openai-per-call-caps-editor.ko.png",
+          "alt": "DEV OpenAI 호출당 한도 편집기의 입력·출력 토큰 한도와 호출당 비용 상한.",
+          "caption": "1. 호출당 토큰 한도 · 2. 호출당 비용 상한"
+        },
+        "en": {
+          "original": "assets/captures/openai-per-call-caps-editor.en.full.png",
+          "focused": "assets/captures/openai-per-call-caps-editor.en.png",
+          "alt": "The DEV OpenAI per-call caps editor with input/output token limits and a per-call cost ceiling.",
+          "caption": "1. Per-call token limits · 2. Per-call cost ceiling"
+        }
+      },
+      "references": [
+        {
+          "document": "settings",
+          "file": "ko/settings.md",
+          "heading": "### OpenAI 호출당 캡 {#openai-call-caps}",
+          "legacyAsset": "assets/openai-per-call-caps-editor.ko.png",
+          "section": "openai-call-caps"
+        },
+        {
+          "document": "settings",
+          "file": "en/settings.md",
+          "heading": "### OpenAI per-call caps {#openai-call-caps}",
+          "legacyAsset": "assets/openai-per-call-caps-editor.en.png",
+          "section": "openai-call-caps"
+        }
+      ]
+    },
+    {
+      "id": "parse-chunk-compact-selection-summary",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=pipeline",
+      "state": "Open the Parse/chunk preparation stage and show the current compact selection summary for exactly the selected downloaded filings. Include the preparation action but do not run ingestion. Do not capture a running BM25 stage instead.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Parse/chunk selection summary and its action",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Exact filing selection",
+          "label": {
+            "en": "Exact filing selection",
+            "ko": "정확한 공시 선택"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 43,
+                "y": 44,
+                "w": 1209,
+                "h": 1071
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 43,
+                "y": 43,
+                "w": 1209,
+                "h": 1071
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "Parse/chunk action",
+          "label": {
+            "en": "Parse/chunk action",
+            "ko": "파싱·청킹 실행 조작"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 787,
+                "y": 1203,
+                "w": 465,
+                "h": 92
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 702,
+                "y": 1202,
+                "w": 550,
+                "h": 92
+              }
+            }
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/parse-chunk-compact-selection-summary.ko.full.png",
+          "focused": "assets/captures/parse-chunk-compact-selection-summary.ko.png",
+          "alt": "선택한 공시의 요약과 준비 조작이 표시된 파싱·청킹 단계.",
+          "caption": "1. 정확한 공시 선택 · 2. 파싱·청킹 실행 조작"
+        },
+        "en": {
+          "original": "assets/captures/parse-chunk-compact-selection-summary.en.full.png",
+          "focused": "assets/captures/parse-chunk-compact-selection-summary.en.png",
+          "alt": "The Parse/chunk stage with its compact selected-filings summary and preparation action.",
+          "caption": "1. Exact filing selection · 2. Parse/chunk action"
+        }
+      },
+      "references": [
+        {
+          "document": "indexing",
+          "file": "ko/indexing.md",
+          "heading": "## 원문 단계의 선택 이어가기 {#continuing-the-filings-selection}",
+          "legacyAsset": "assets/parse-chunk-compact-selection-summary.ko.png",
+          "section": "continuing-the-filings-selection"
+        },
+        {
+          "document": "indexing",
+          "file": "en/indexing.md",
+          "heading": "## Continuing the Filings selection {#continuing-the-filings-selection}",
+          "legacyAsset": "assets/parse-chunk-compact-selection-summary.en.png",
+          "section": "continuing-the-filings-selection"
+        }
+      ]
+    },
+    {
+      "id": "prod-browser-storage-and-backup",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open Settings > Browser storage with backup/import/reset controls visible. Do not export private conversations, import, or reset.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Browser storage and backup controls",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Browser storage",
+          "label": {
+            "en": "Browser storage",
+            "ko": "브라우저 저장소"
+          }
+        },
+        {
+          "number": 2,
+          "target": "backup controls",
+          "label": {
+            "en": "backup controls",
+            "ko": "백업 조작"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/prod-browser-storage-and-backup.ko.full.png",
+          "focused": "assets/captures/prod-browser-storage-and-backup.ko.png",
+          "mobile": "assets/captures/prod-browser-storage-and-backup.ko.mobile.png",
+          "alt": "추정 브라우저 저장 용량·항목별 용량·보내기/가져오기 버튼이 있는 PROD 데이터 설정 화면.",
+          "caption": "1. 브라우저 저장소 · 2. 백업 조작"
+        },
+        "en": {
+          "original": "assets/captures/prod-browser-storage-and-backup.en.full.png",
+          "focused": "assets/captures/prod-browser-storage-and-backup.en.png",
+          "mobile": "assets/captures/prod-browser-storage-and-backup.en.mobile.png",
+          "alt": "The PROD data-and-help settings with estimated browser storage, per-key usage and export/import buttons.",
+          "caption": "1. Browser storage · 2. backup controls"
+        }
+      },
+      "references": [
+        {
+          "document": "settings",
+          "file": "ko/settings.md",
+          "heading": "## 브라우저 저장소 {#browser-storage}",
+          "legacyAsset": "assets/prod-browser-storage-and-backup.ko.png",
+          "section": "browser-storage"
+        },
+        {
+          "document": "settings",
+          "file": "en/settings.md",
+          "heading": "## Browser storage {#browser-storage}",
+          "legacyAsset": "assets/prod-browser-storage-and-backup.en.png",
+          "section": "browser-storage"
+        }
+      ]
+    },
+    {
+      "id": "public-answer-with-citation",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an existing grounded answer and its citation, using the prepared public corpus. Do not submit a new paid request; report a missing prerequisite if no suitable record exists.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Grounded answer and citation",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Grounded answer",
+          "label": {
+            "en": "Grounded answer",
+            "ko": "근거가 확인된 답변"
+          }
+        },
+        {
+          "number": 2,
+          "target": "citation",
+          "label": {
+            "en": "citation",
+            "ko": "인용"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/public-answer-with-citation.ko.full.png",
+          "focused": "assets/captures/public-answer-with-citation.ko.png",
+          "mobile": "assets/captures/public-answer-with-citation.ko.mobile.png",
+          "alt": "AMD 7nm TSMC 공급 리스크 질문에 대한 공개 답변이 확인된 인용 1개와 6단계 실행 요약과 함께 완료된 화면.",
+          "caption": "1. 근거가 확인된 답변 · 2. 인용"
+        },
+        "en": {
+          "original": "assets/captures/public-answer-with-citation.en.full.png",
+          "focused": "assets/captures/public-answer-with-citation.en.png",
+          "mobile": "assets/captures/public-answer-with-citation.en.mobile.png",
+          "alt": "A public answer to the AMD 7 nm TSMC supply-risk question, completed with one verified citation and the six-stage execution summary.",
+          "caption": "1. Grounded answer · 2. citation"
+        }
+      },
+      "references": [
+        {
+          "document": "quickstart",
+          "file": "ko/quickstart.md",
+          "heading": "## 3. 답변과 근거 읽기 {#qs-app-3}",
+          "legacyAsset": "assets/public-answer-with-citation.ko.png",
+          "section": "qs-app-3"
+        },
+        {
+          "document": "quickstart",
+          "file": "en/quickstart.md",
+          "heading": "## 3. Read the answer and its evidence {#qs-app-3}",
+          "legacyAsset": "assets/public-answer-with-citation.en.png",
+          "section": "qs-app-3"
+        }
+      ]
+    },
+    {
+      "id": "runtime-readiness-status",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=system&tab=status",
+      "state": "Show current runtime readiness and the next action indicated by the real environment.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Runtime readiness and next action",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Runtime readiness",
+          "label": {
+            "en": "Runtime readiness",
+            "ko": "실행 준비 상태"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 48,
+                "y": 48,
+                "w": 2198,
+                "h": 452
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 48,
+                "y": 48,
+                "w": 2198,
+                "h": 452
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "next action",
+          "label": {
+            "en": "next action",
+            "ko": "다음 조치"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 48,
+                "y": 528,
+                "w": 1087,
+                "h": 697
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 48,
+                "y": 528,
+                "w": 1087,
+                "h": 697
+              }
+            }
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/runtime-readiness-status.ko.full.png",
+          "focused": "assets/captures/runtime-readiness-status.ko.png",
+          "alt": "준비 상태·런타임 모드·데이터베이스 연결·BM25 준비와 코퍼스 총량을 보여주는 시스템 화면.",
+          "caption": "1. 실행 준비 상태 · 2. 다음 조치"
+        },
+        "en": {
+          "original": "assets/captures/runtime-readiness-status.en.full.png",
+          "focused": "assets/captures/runtime-readiness-status.en.png",
+          "alt": "The System view reporting ready status, runtime mode, connected database, BM25 readiness and corpus totals.",
+          "caption": "1. Runtime readiness · 2. next action"
+        }
+      },
+      "references": [
+        {
+          "document": "environment",
+          "file": "ko/environment.md",
+          "heading": "## 실행 환경 열고 확인하기 {#step-1}",
+          "legacyAsset": "assets/runtime-readiness-status.ko.png",
+          "section": "step-1"
+        },
+        {
+          "document": "environment",
+          "file": "en/environment.md",
+          "heading": "## Open and verify the environment {#step-1}",
+          "legacyAsset": "assets/runtime-readiness-status.en.png",
+          "section": "step-1"
+        }
+      ]
+    },
+    {
+      "id": "schema-handoff",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=pipeline&stage=setup",
+      "state": "Show an existing schema-drift diagnosis in local DEV with Needs attention, copyable check/recover guidance and re-check controls. If the schema is healthy, report the missing prerequisite; do not change the database to create drift or execute recovery commands.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Schema diagnosis and terminal handoff",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Diagnosed schema state",
+          "label": {
+            "en": "Diagnosed schema state",
+            "ko": "진단된 스키마 상태"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Check/recover handoff",
+          "label": {
+            "en": "Check/recover handoff",
+            "ko": "검사·복구 명령 안내"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/schema-handoff.ko.full.png",
+          "focused": "assets/captures/schema-handoff.ko.png",
+          "alt": "스키마 불일치 진단과 터미널 핸드오프: 확인 필요 상태, 복사 가능한 점검·복구 명령, 재확인 안내",
+          "caption": "1. 진단된 스키마 상태 · 2. 검사·복구 명령 안내"
+        },
+        "en": {
+          "original": "assets/captures/schema-handoff.en.full.png",
+          "focused": "assets/captures/schema-handoff.en.png",
+          "alt": "Schema-drift diagnosis with terminal handoff: needs attention, copyable check/recover commands, and re-check guidance",
+          "caption": "1. Diagnosed schema state · 2. Check/recover handoff"
+        }
+      },
+      "references": [
+        {
+          "document": "indexing",
+          "file": "ko/indexing.md",
+          "heading": "## 터미널 작업 후 같은 단계에서 계속하기 {#return-from-terminal-preparation}",
+          "legacyAsset": "assets/schema-handoff.ko.png",
+          "section": "return-from-terminal-preparation"
+        },
+        {
+          "document": "indexing",
+          "file": "en/indexing.md",
+          "heading": "## Return from terminal preparation {#return-from-terminal-preparation}",
+          "legacyAsset": "assets/schema-handoff.en.png",
+          "section": "return-from-terminal-preparation"
+        }
+      ]
+    },
+    {
+      "id": "search-trial-input-and-ranked-results",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=measure&tab=playground",
+      "state": "Open an existing Search trial result with query settings and ranked candidates visible. Do not submit a new paid search.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Search settings and ranked candidates",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Search settings",
+          "label": {
+            "en": "Search settings",
+            "ko": "검색 설정"
+          }
+        },
+        {
+          "number": 2,
+          "target": "ranked candidates",
+          "label": {
+            "en": "ranked candidates",
+            "ko": "순위별 후보"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/search-trial-input-and-ranked-results.ko.full.png",
+          "focused": "assets/captures/search-trial-input-and-ranked-results.ko.png",
+          "alt": "검색 연습장에 질의를 입력하고 순위가 매겨진 결과 목록이 표시된 화면.",
+          "caption": "1. 검색 설정 · 2. 순위별 후보"
+        },
+        "en": {
+          "original": "assets/captures/search-trial-input-and-ranked-results.en.full.png",
+          "focused": "assets/captures/search-trial-input-and-ranked-results.en.png",
+          "alt": "A search trial in the playground with a typed query and the ranked result list below it.",
+          "caption": "1. Search settings · 2. ranked candidates"
+        }
+      },
+      "references": [
+        {
+          "document": "retrieval",
+          "file": "ko/retrieval.md",
+          "heading": "## 검색 테스트와 원문 확인 {#step-8}",
+          "legacyAsset": "assets/search-trial-input-and-ranked-results.ko.png",
+          "section": "step-8"
+        },
+        {
+          "document": "retrieval",
+          "file": "en/retrieval.md",
+          "heading": "## Test retrieval and read the source {#step-8}",
+          "legacyAsset": "assets/search-trial-input-and-ranked-results.en.png",
+          "section": "step-8"
+        }
+      ]
+    },
+    {
+      "id": "selected-stage-details-and-run-details",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an existing completed conversation and its Run details panel on the Performance tab. Keep the query identifier, available tab controls and recorded timings visible. Do not rerun the question.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Run details panel on Performance, including its tab controls and recorded timings",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Run-detail tabs",
+          "label": {
+            "en": "Run-detail tabs",
+            "ko": "실행 상세 탭"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Recorded durations and calls",
+          "label": {
+            "en": "Recorded durations and calls",
+            "ko": "기록된 시간과 호출"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/selected-stage-details-and-run-details.ko.full.png",
+          "focused": "assets/captures/selected-stage-details-and-run-details.ko.png",
+          "mobile": "assets/captures/selected-stage-details-and-run-details.ko.mobile.png",
+          "alt": "질문 식별자와 실제 단계별 시간이 표시된 실행 상세의 성능 탭.",
+          "caption": "1. 실행 상세 탭 · 2. 기록된 시간과 호출"
+        },
+        "en": {
+          "original": "assets/captures/selected-stage-details-and-run-details.en.full.png",
+          "focused": "assets/captures/selected-stage-details-and-run-details.en.png",
+          "mobile": "assets/captures/selected-stage-details-and-run-details.en.mobile.png",
+          "alt": "The Performance tab of Run details with the question identifier and actual recorded stage timings.",
+          "caption": "1. Run-detail tabs · 2. Recorded durations and calls"
+        }
+      },
+      "references": [
+        {
+          "document": "answers",
+          "file": "ko/answers.md",
+          "heading": "### 단계 펼침과 실행 상세 {#stage-details}",
+          "legacyAsset": "assets/selected-stage-details-and-run-details.ko.png",
+          "section": "stage-details"
+        },
+        {
+          "document": "answers",
+          "file": "en/answers.md",
+          "heading": "### Explore a stage or open run details {#stage-details}",
+          "legacyAsset": "assets/selected-stage-details-and-run-details.en.png",
+          "section": "stage-details"
+        }
+      ]
+    },
+    {
+      "id": "settings-and-preview-drawer",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open Conversation settings → Search. Keep the current preset and expand Preset parameters and changes. Show the five direct section tabs and parameter cards; do not save or change settings.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Conversation settings Search section, section tabs and expanded parameter cards",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Conversation settings section tabs",
+          "label": {
+            "en": "Choose a section directly",
+            "ko": "필요한 항목으로 바로 이동"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Current preset and parameter cards",
+          "label": {
+            "en": "Selected preset and its parameters",
+            "ko": "선택한 프리셋과 파라미터"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/settings-and-preview-drawer.ko.full.png",
+          "focused": "assets/captures/settings-and-preview-drawer.ko.png",
+          "mobile": "assets/captures/settings-and-preview-drawer.ko.mobile.png",
+          "alt": "필터·검색·근거·실행 한도·미리보기 탭과 검색 파라미터 카드가 표시된 대화 설정.",
+          "caption": "1. 항목 바로 이동 · 2. 현재 검색 파라미터"
+        },
+        "en": {
+          "original": "assets/captures/settings-and-preview-drawer.en.full.png",
+          "focused": "assets/captures/settings-and-preview-drawer.en.png",
+          "mobile": "assets/captures/settings-and-preview-drawer.en.mobile.png",
+          "alt": "Conversation settings showing five section tabs and the selected search preset's parameter cards.",
+          "caption": "1. Direct section navigation · 2. Current search parameters"
+        }
+      },
+      "references": [
+        {
+          "document": "settings",
+          "file": "ko/settings.md",
+          "heading": "## 필터·프리셋과 근거 선택 조정하기 {#step-10}",
+          "legacyAsset": "assets/settings-and-preview-drawer.ko.png",
+          "section": "step-10"
+        },
+        {
+          "document": "settings",
+          "file": "en/settings.md",
+          "heading": "## Adjust filters, presets, and evidence choices {#step-10}",
+          "legacyAsset": "assets/settings-and-preview-drawer.en.png",
+          "section": "step-10"
+        }
+      ]
+    },
+    {
+      "id": "next-request-preview",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open Conversation settings → Preview with an existing unsent question. Show selected scope, effective preset and loaded server evidence/run policy. No new request is sent; no settings are changed.",
+      "prerequisite": "Use an existing unsent sample draft and published corpus. If missing or server policy fails to load, report blocked. Do not submit a model request.",
+      "framing": "focused",
+      "cropTarget": "Next request preview: question, selected filters and search settings; include the server policy heading",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Question and selected filters",
+          "label": {
+            "en": "Inputs for the next question",
+            "ko": "다음 질문과 선택한 범위"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Effective search settings and edit link",
+          "label": {
+            "en": "Review values or return to Search",
+            "ko": "검색값 확인과 검색 탭 이동"
+          }
+        },
+        {
+          "number": 3,
+          "target": "Server evidence and run policy",
+          "label": {
+            "en": "Public service limits",
+            "ko": "공개 서비스 적용 한도"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/next-request-preview.ko.full.png",
+          "focused": "assets/captures/next-request-preview.ko.png",
+          "mobile": "assets/captures/next-request-preview.ko.mobile.png",
+          "alt": "다음 질문·선택한 문서 범위·검색값·서버 정책을 읽기 전용으로 보여주는 미리보기.",
+          "caption": "1. 질문과 범위 · 2. 검색 설정 · 3. 서버 한도"
+        },
+        "en": {
+          "original": "assets/captures/next-request-preview.en.full.png",
+          "focused": "assets/captures/next-request-preview.en.png",
+          "mobile": "assets/captures/next-request-preview.en.mobile.png",
+          "alt": "Read-only preview of the next question, selected document scope, search values and server policy.",
+          "caption": "1. Question and scope · 2. Search settings · 3. Server limits"
+        }
+      },
+      "references": [
+        {
+          "document": "settings",
+          "file": "ko/settings.md",
+          "heading": "## 범위별 필터와 입력 중인 값 {#filters}",
+          "section": "filters"
+        },
+        {
+          "document": "settings",
+          "file": "en/settings.md",
+          "heading": "## Scoped filters and unfinished input {#filters}",
+          "section": "filters"
+        }
+      ]
+    },
+    {
+      "id": "snapshot-management-list",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=snapshots",
+      "state": "Open the existing snapshot management list with visibility/status fields. Do not publish, edit, or delete a snapshot.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Snapshot list and visibility state",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Snapshot list",
+          "label": {
+            "en": "Snapshot list",
+            "ko": "스냅샷 목록"
+          }
+        },
+        {
+          "number": 2,
+          "target": "visibility state",
+          "label": {
+            "en": "visibility state",
+            "ko": "공개 상태"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/snapshot-management-list.ko.full.png",
+          "focused": "assets/captures/snapshot-management-list.ko.png",
+          "alt": "저장된 스냅샷 항목이 보이는 스냅샷 관리 목록 화면.",
+          "caption": "1. 스냅샷 목록 · 2. 공개 상태"
+        },
+        "en": {
+          "original": "assets/captures/snapshot-management-list.en.full.png",
+          "focused": "assets/captures/snapshot-management-list.en.png",
+          "alt": "The snapshot management list with a saved snapshot entry.",
+          "caption": "1. Snapshot list · 2. visibility state"
+        }
+      },
+      "references": [
+        {
+          "document": "snapshots",
+          "file": "ko/snapshots.md",
+          "heading": "## 저장 스냅샷 찾기 {#management}",
+          "legacyAsset": "assets/snapshot-management-list.ko.png",
+          "section": "management"
+        },
+        {
+          "document": "snapshots",
+          "file": "en/snapshots.md",
+          "heading": "## Find a saved snapshot {#management}",
+          "legacyAsset": "assets/snapshot-management-list.en.png",
+          "section": "management"
+        }
+      ]
+    },
+    {
+      "id": "snapshot-detail-panel",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=snapshots",
+      "state": "Open the Snapshot details drawer of an existing ready snapshot so its visibility badge, stored metrics, recorded configuration, source-evaluation link, and the Use for review and Publish controls are visible. Do not apply, publish, or hide the snapshot.",
+      "prerequisite": "Use existing local data and records matching this state. If no ready saved snapshot exists, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Open snapshot details drawer",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Recorded metrics and configuration",
+          "label": {
+            "en": "Recorded metrics and configuration",
+            "ko": "기록된 지표와 설정"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Source evaluation and apply/visibility controls",
+          "label": {
+            "en": "Source evaluation and apply/visibility controls",
+            "ko": "기준 평가와 적용·공개 조작"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/snapshot-detail-panel.ko.full.png",
+          "focused": "assets/captures/snapshot-detail-panel.ko.png",
+          "mobile": "assets/captures/snapshot-detail-panel.ko.mobile.png",
+          "alt": "준비된 스냅샷의 상세 패널에 저장된 지표·기록된 설정·기준 평가 보기 링크와 적용·게시 조작이 표시된 화면.",
+          "caption": "1. 기록된 지표와 설정 · 2. 기준 평가와 적용·공개 조작"
+        },
+        "en": {
+          "original": "assets/captures/snapshot-detail-panel.en.full.png",
+          "focused": "assets/captures/snapshot-detail-panel.en.png",
+          "mobile": "assets/captures/snapshot-detail-panel.en.mobile.png",
+          "alt": "The snapshot details drawer for a ready snapshot, with stored metrics, recorded configuration, the source-evaluation link, and apply/publish controls.",
+          "caption": "1. Recorded metrics and configuration · 2. Source evaluation and apply/visibility controls"
+        }
+      },
+      "references": [
+        {
+          "document": "snapshots",
+          "file": "ko/snapshots.md",
+          "heading": "### 스냅샷 상세 {#snapshot-details}",
+          "legacyAsset": null,
+          "section": "snapshot-details"
+        },
+        {
+          "document": "snapshots",
+          "file": "en/snapshots.md",
+          "heading": "### Snapshot details {#snapshot-details}",
+          "legacyAsset": null,
+          "section": "snapshot-details"
+        }
+      ]
+    },
+    {
+      "id": "snapshot-comparison-results",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=measure&tab=snapshots",
+      "state": "Compare two existing compatible saved snapshots with Compare stored results and show the comparability badge, recorded metric deltas, and common-case changes. Do not run an evaluation or model call and do not change snapshot visibility.",
+      "prerequisite": "Use existing local data and records matching this state. If two compatible saved snapshots are unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Snapshot comparison metrics and common cases",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Comparability badge and metric deltas",
+          "label": {
+            "en": "Comparability badge and metric deltas",
+            "ko": "비교 가능 배지와 지표 차이"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Common-case changes",
+          "label": {
+            "en": "Common-case changes",
+            "ko": "공통 문항 변화"
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/snapshot-comparison-results.ko.full.png",
+          "focused": "assets/captures/snapshot-comparison-results.ko.png",
+          "mobile": "assets/captures/snapshot-comparison-results.ko.mobile.png",
+          "alt": "호환되는 저장 스냅샷 두 개의 비교 결과로 비교 가능 배지·지표 차이·공통 문항 변화가 표시된 화면.",
+          "caption": "1. 비교 가능 배지와 지표 차이 · 2. 공통 문항 변화"
+        },
+        "en": {
+          "original": "assets/captures/snapshot-comparison-results.en.full.png",
+          "focused": "assets/captures/snapshot-comparison-results.en.png",
+          "mobile": "assets/captures/snapshot-comparison-results.en.mobile.png",
+          "alt": "A snapshot comparison between two compatible saved snapshots, with the comparability badge, metric deltas and common-case rank changes.",
+          "caption": "1. Comparability badge and metric deltas · 2. Common-case changes"
+        }
+      },
+      "references": [
+        {
+          "document": "snapshots",
+          "file": "ko/snapshots.md",
+          "heading": "### 공통 문항과 순위 변화 {#case-changes}",
+          "legacyAsset": null,
+          "section": "case-changes"
+        },
+        {
+          "document": "snapshots",
+          "file": "en/snapshots.md",
+          "heading": "### Common cases and rank deltas {#case-changes}",
+          "legacyAsset": null,
+          "section": "case-changes"
+        }
+      ]
+    },
+    {
+      "id": "source-deletion",
+      "status": "pending",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=pipeline",
+      "state": "In the Filings stage, open Delete originals for the existing selected filings. Show the exact filing/document targets and the confirmation controls. Do not confirm deletion.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Delete-originals confirmation dialog with exact targets",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Deletion scope",
+          "label": {
+            "en": "Deletion scope",
+            "ko": "삭제 범위"
+          }
+        },
+        {
+          "number": 2,
+          "target": "cancel/confirm controls",
+          "label": {
+            "en": "cancel/confirm controls",
+            "ko": "취소·확인 조작"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/source-deletion.ko.full.png",
+          "focused": "assets/captures/source-deletion.ko.png",
+          "alt": "확인 전 정확한 공시 대상과 공시·문서 ID를 나열하는 원문 삭제 대화 상자.",
+          "caption": "1. 삭제 범위 · 2. 취소·확인 조작"
+        },
+        "en": {
+          "original": "assets/captures/source-deletion.en.full.png",
+          "focused": "assets/captures/source-deletion.en.png",
+          "alt": "The delete-originals dialog listing the exact filing targets with filing IDs and document IDs before confirmation.",
+          "caption": "1. Deletion scope · 2. cancel/confirm controls"
+        }
+      },
+      "references": [
+        {
+          "document": "acquisition",
+          "file": "ko/acquisition.md",
+          "heading": "## 웹에서 현재 원문 삭제 {#delete-current-originals-from-filings}",
+          "legacyAsset": "assets/source-deletion.ko.png",
+          "section": "delete-current-originals-from-filings"
+        },
+        {
+          "document": "acquisition",
+          "file": "en/acquisition.md",
+          "heading": "## Delete current originals from Filings {#delete-current-originals-from-filings}",
+          "legacyAsset": "assets/source-deletion.en.png",
+          "section": "delete-current-originals-from-filings"
+        }
+      ]
+    },
+    {
+      "id": "web-readiness-before-first-question",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=build&tab=pipeline",
+      "state": "In the existing DEV environment, show the two prepared Quick Start filings in Build > Documents with their embedding coverage, and the completed preparation stages with BM25 readiness in Build > Pipeline. Show readiness before any answer request. Do not prepare missing data for the screenshot.",
+      "prerequisite": "Use existing local data and records matching this state. If unavailable, report blocked instead of fabricating a state or triggering a model call/job.",
+      "framing": "focused",
+      "cropTarget": "Prepared Quick Start filings with embedding coverage, and the completed preparation stages with BM25 readiness",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Prepared filings",
+          "label": {
+            "en": "Prepared filings",
+            "ko": "준비된 공시"
+          },
+          "bounds": {
+            "en": {
+              "focused": {
+                "x": 41,
+                "y": 472,
+                "w": 2164,
+                "h": 288
+              },
+              "mobile": {
+                "x": 20,
+                "y": 645,
+                "w": 660,
+                "h": 700
+              }
+            },
+            "ko": {
+              "focused": {
+                "x": 41,
+                "y": 472,
+                "w": 2164,
+                "h": 288
+              },
+              "mobile": {
+                "x": 20,
+                "y": 645,
+                "w": 660,
+                "h": 700
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "Embedding coverage",
+          "label": {
+            "en": "Embedding coverage",
+            "ko": "임베딩 완료율"
+          },
+          "bounds": {
+            "en": {
+              "focused": {
+                "x": 1655,
+                "y": 472,
+                "w": 560,
+                "h": 288
+              },
+              "mobile": {
+                "x": 45,
+                "y": 870,
+                "w": 300,
+                "h": 420
+              }
+            },
+            "ko": {
+              "focused": {
+                "x": 1655,
+                "y": 472,
+                "w": 560,
+                "h": 288
+              },
+              "mobile": {
+                "x": 45,
+                "y": 870,
+                "w": 300,
+                "h": 420
+              }
+            }
+          }
+        },
+        {
+          "number": 3,
+          "target": "Index readiness",
+          "label": {
+            "en": "Index readiness",
+            "ko": "인덱스 준비 상태"
+          },
+          "bounds": {
+            "en": {
+              "detail": {
+                "x": 110,
+                "y": 678,
+                "w": 698,
+                "h": 156
+              },
+              "detailMobile": {
+                "x": 82,
+                "y": 648,
+                "w": 566,
+                "h": 156
+              }
+            },
+            "ko": {
+              "detail": {
+                "x": 110,
+                "y": 654,
+                "w": 698,
+                "h": 156
+              },
+              "detailMobile": {
+                "x": 82,
+                "y": 650,
+                "w": 566,
+                "h": 156
+              }
+            }
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/web-readiness-before-first-question.ko.full.png",
+          "focused": "assets/captures/web-readiness-before-first-question.ko.png",
+          "mobile": "assets/captures/web-readiness-before-first-question.ko.mobile.png",
+          "detailOriginal": "assets/captures/web-readiness-before-first-question.ko.detail-full.png",
+          "detailFocused": "assets/captures/web-readiness-before-first-question.ko.detail.png",
+          "detailMobile": "assets/captures/web-readiness-before-first-question.ko.detail-mobile.png",
+          "detailMobileOriginal": "assets/captures/web-readiness-before-first-question.ko.detail-mobile-full.png",
+          "alt": "DEV Build 문서 목록에 Quick Start 공시 두 건이 임베딩 완료 100%로 표시된 화면.",
+          "caption": "1. 준비된 공시 · 2. 임베딩 완료율",
+          "detailAlt": "원문 수집·파싱·청킹·임베딩·키워드 인덱스(BM25)가 모두 완료로 표시된 DEV 데이터 처리 흐름.",
+          "detailCaption": "3. 인덱스 준비 상태"
+        },
+        "en": {
+          "original": "assets/captures/web-readiness-before-first-question.en.full.png",
+          "focused": "assets/captures/web-readiness-before-first-question.en.png",
+          "mobile": "assets/captures/web-readiness-before-first-question.en.mobile.png",
+          "detailOriginal": "assets/captures/web-readiness-before-first-question.en.detail-full.png",
+          "detailFocused": "assets/captures/web-readiness-before-first-question.en.detail.png",
+          "detailMobile": "assets/captures/web-readiness-before-first-question.en.detail-mobile.png",
+          "detailMobileOriginal": "assets/captures/web-readiness-before-first-question.en.detail-mobile-full.png",
+          "alt": "The DEV Build document inventory listing both Quick Start filings at 100% embedded.",
+          "caption": "1. Prepared filings · 2. Embedding coverage",
+          "detailAlt": "The DEV data workflow with Filings, Parse & chunk, Embeddings and Lexical index (BM25) all complete.",
+          "detailCaption": "3. Index readiness"
+        }
+      },
+      "references": [
+        {
+          "document": "quickstart-dev",
+          "file": "ko/quickstart-dev.md",
+          "heading": "### 7. 질문 전 준비 완료 확인 {#qs-web-7}",
+          "legacyAsset": "assets/web-readiness-before-first-question.ko.png",
+          "section": "qs-web-7"
+        },
+        {
+          "document": "quickstart-dev",
+          "file": "en/quickstart-dev.md",
+          "heading": "### 7. Confirm readiness before asking {#qs-web-7}",
+          "legacyAsset": "assets/web-readiness-before-first-question.en.png",
+          "section": "qs-web-7"
+        }
+      ],
+      "detail": true
+    },
+    {
+      "id": "routing-unsupported",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an actual stage-0 rejection for the exact query 고양이와 대화하기. Show the localized scope notice and all later stages not performed.",
+      "prerequisite": "Use an existing local run matching the stated outcome. If unavailable, report blocked; do not fabricate results or submit a paid request without separate authorization.",
+      "framing": "focused",
+      "cropTarget": "Execution summary containing the stopping stage, localized reason and later stages",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Actual stopping stage",
+          "label": {
+            "en": "Stopping stage",
+            "ko": "중단 단계"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Localized reason and downstream stages not performed",
+          "label": {
+            "en": "Scope guidance and skipped stages",
+            "ko": "범위 안내와 미실행 단계"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/routing-unsupported.ko.full.png",
+          "focused": "assets/captures/routing-unsupported.ko.png",
+          "alt": "역할극 요청이 0단계에서 종료된 실제 실행",
+          "caption": "1. 중단 단계 · 2. 범위 안내와 미실행 단계"
+        },
+        "en": {
+          "original": "assets/captures/routing-unsupported.en.full.png",
+          "focused": "assets/captures/routing-unsupported.en.png",
+          "alt": "An actual role-play request stopped at stage 0",
+          "caption": "1. Stopping stage · 2. Scope guidance and skipped stages"
+        }
+      },
+      "references": [
+        {
+          "document": "answers",
+          "file": "ko/answers.md",
+          "heading": "early scope guidance",
+          "legacyAsset": null,
+          "section": "path-decision"
+        },
+        {
+          "document": "answers",
+          "file": "en/answers.md",
+          "heading": "early scope guidance",
+          "legacyAsset": null,
+          "section": "path-decision"
+        }
+      ]
+    },
+    {
+      "id": "routing-missing-company",
+      "status": "pending",
+      "mode": "prod",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open an actual missing-company result for SanDisk growth drivers. Show the stage-1 scope notice and recorded classifier calls, without presenting NOT_IN_DOCS.",
+      "prerequisite": "Use an existing local run matching the stated outcome. If unavailable, report blocked; do not fabricate results or submit a paid request without separate authorization.",
+      "framing": "focused",
+      "cropTarget": "Execution summary containing the stopping stage, localized reason and later stages",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Actual stopping stage",
+          "label": {
+            "en": "Stopping stage",
+            "ko": "중단 단계"
+          }
+        },
+        {
+          "number": 2,
+          "target": "Localized reason and downstream stages not performed",
+          "label": {
+            "en": "Scope guidance and skipped stages",
+            "ko": "범위 안내와 미실행 단계"
+          }
+        }
+      ],
+      "mobile": false,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/routing-missing-company.ko.full.png",
+          "focused": "assets/captures/routing-missing-company.ko.png",
+          "alt": "제공하지 않는 기업 요청이 1단계에서 종료된 실제 실행",
+          "caption": "1. 중단 단계 · 2. 범위 안내와 미실행 단계"
+        },
+        "en": {
+          "original": "assets/captures/routing-missing-company.en.full.png",
+          "focused": "assets/captures/routing-missing-company.en.png",
+          "alt": "An actual unavailable-company request stopped at stage 1",
+          "caption": "1. Stopping stage · 2. Scope guidance and skipped stages"
+        }
+      },
+      "references": [
+        {
+          "document": "answers",
+          "file": "ko/answers.md",
+          "heading": "early scope guidance",
+          "legacyAsset": null,
+          "section": "path-decision"
+        },
+        {
+          "document": "answers",
+          "file": "en/answers.md",
+          "heading": "early scope guidance",
+          "legacyAsset": null,
+          "section": "path-decision"
+        }
+      ]
+    },
+    {
+      "id": "conversation-evidence-policy",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open Conversation settings → Evidence in DEV. Show the DEV badge, four history/evidence fields, and Additional instructions with existing values. Do not edit, restore defaults, or send.",
+      "prerequisite": "Use the existing DEV environment and current conversation settings. These settings screens require no retrieval or model execution. Do not prepare data solely for these shots.",
+      "framing": "focused",
+      "cropTarget": "Evidence section heading, history/evidence fields, and Additional instructions",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Four evidence/history fields",
+          "label": {
+            "en": "Evidence policy and history",
+            "ko": "근거 정책과 대화 이력"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 40,
+                "y": 123,
+                "w": 1398,
+                "h": 274
+              },
+              "mobile": {
+                "x": 32,
+                "y": 250,
+                "w": 686,
+                "h": 592
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 40,
+                "y": 124,
+                "w": 1398,
+                "h": 274
+              },
+              "mobile": {
+                "x": 32,
+                "y": 271,
+                "w": 686,
+                "h": 591
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "Additional instructions",
+          "label": {
+            "en": "Additional instructions in this section",
+            "ko": "이곳에서 편집하는 추가 지침"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 40,
+                "y": 475,
+                "w": 1398,
+                "h": 298
+              },
+              "mobileDetail": {
+                "x": 32,
+                "y": 32,
+                "w": 686,
+                "h": 382
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 40,
+                "y": 476,
+                "w": 1398,
+                "h": 298
+              },
+              "mobileDetail": {
+                "x": 32,
+                "y": 34,
+                "w": 686,
+                "h": 421
+              }
+            }
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/conversation-evidence-policy.ko.full.png",
+          "focused": "assets/captures/conversation-evidence-policy.ko.png",
+          "mobile": "assets/captures/conversation-evidence-policy.ko.mobile.png",
+          "alt": "근거 탭에 대화 이력·근거 입력과 추가 지침을 모아 표시한 DEV 대화 설정.",
+          "caption": "1. 근거 정책과 대화 이력 · 2. 이곳에서 편집하는 추가 지침",
+          "mobileDetail": "assets/captures/conversation-evidence-policy.ko.mobile-detail.png",
+          "mobileDetailOriginal": "assets/captures/conversation-evidence-policy.ko.mobile-detail-full.png",
+          "mobileDetailAlt": "좁은 화면에서 따로 보여 주는 추가 지침 입력과 적용 범위 설명.",
+          "mobileDetailCaption": "2. 이곳에서 편집하는 추가 지침"
+        },
+        "en": {
+          "original": "assets/captures/conversation-evidence-policy.en.full.png",
+          "focused": "assets/captures/conversation-evidence-policy.en.png",
+          "mobile": "assets/captures/conversation-evidence-policy.en.mobile.png",
+          "alt": "DEV conversation settings with evidence/history fields and Additional instructions together in Evidence.",
+          "caption": "1. Evidence policy and history · 2. Additional instructions in this section",
+          "mobileDetail": "assets/captures/conversation-evidence-policy.en.mobile-detail.png",
+          "mobileDetailOriginal": "assets/captures/conversation-evidence-policy.en.mobile-detail-full.png",
+          "mobileDetailAlt": "The Additional instructions field and its scope note as a separate narrow-screen figure.",
+          "mobileDetailCaption": "2. Additional instructions in this section"
+        }
+      },
+      "references": [
+        {
+          "document": "settings",
+          "file": "ko/settings.md",
+          "heading": "## 근거 크기와 실행 한도 {#budgets}",
+          "section": "budgets"
+        },
+        {
+          "document": "settings",
+          "file": "en/settings.md",
+          "heading": "## Evidence size and execution limits {#budgets}",
+          "section": "budgets"
+        }
+      ],
+      "mobileDetail": true
+    },
+    {
+      "id": "conversation-run-limits",
+      "status": "accepted",
+      "mode": "dev",
+      "route": "/docreview-rag/?view=review",
+      "state": "Open Conversation settings → Run limits in DEV. Show the DEV badge, current budget fields and CPU starting preset guidance. Do not select a new preset, edit values, restore defaults, or send.",
+      "prerequisite": "Use the existing DEV environment and current conversation settings. These settings screens require no retrieval or model execution. Do not prepare data solely for these shots.",
+      "framing": "focused",
+      "cropTarget": "Run limits heading, starting preset, budget fields and CPU evidence-size explanation",
+      "callouts": [
+        {
+          "number": 1,
+          "target": "Workflow budget inputs",
+          "label": {
+            "en": "Budget for the whole question",
+            "ko": "질문 전체 실행 예산"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 40,
+                "y": 298,
+                "w": 1356,
+                "h": 362
+              },
+              "mobile": {
+                "x": 32,
+                "y": 24,
+                "w": 685,
+                "h": 861
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 40,
+                "y": 299,
+                "w": 1302,
+                "h": 362
+              },
+              "mobile": {
+                "x": 32,
+                "y": 24,
+                "w": 685,
+                "h": 859
+              }
+            }
+          }
+        },
+        {
+          "number": 2,
+          "target": "CPU starting preset explanation",
+          "label": {
+            "en": "Starting preset also changes evidence size",
+            "ko": "근거 크기도 바꾸는 시작 프리셋"
+          },
+          "bounds": {
+            "ko": {
+              "focused": {
+                "x": 40,
+                "y": 1177,
+                "w": 1398,
+                "h": 46
+              },
+              "mobileDetail": {
+                "x": 33,
+                "y": 648,
+                "w": 652,
+                "h": 73
+              }
+            },
+            "en": {
+              "focused": {
+                "x": 40,
+                "y": 1216,
+                "w": 1398,
+                "h": 46
+              },
+              "mobileDetail": {
+                "x": 32,
+                "y": 767,
+                "w": 659,
+                "h": 69
+              }
+            }
+          }
+        }
+      ],
+      "mobile": true,
+      "variants": {
+        "ko": {
+          "original": "assets/captures/conversation-run-limits.ko.full.png",
+          "focused": "assets/captures/conversation-run-limits.ko.png",
+          "mobile": "assets/captures/conversation-run-limits.ko.mobile.png",
+          "alt": "실행 예산 입력과 CPU 시작 프리셋의 근거 크기 변경 안내를 표시한 DEV 실행 한도 탭.",
+          "caption": "1. 질문 전체 실행 예산 · 2. 근거 크기도 바꾸는 시작 프리셋",
+          "mobileDetail": "assets/captures/conversation-run-limits.ko.mobile-detail.png",
+          "mobileDetailOriginal": "assets/captures/conversation-run-limits.ko.mobile-detail-full.png",
+          "mobileDetailAlt": "좁은 화면에서 따로 보여 주는 실행 한도 안내 패널과 CPU 시작 프리셋 설명.",
+          "mobileDetailCaption": "2. 근거 크기도 바꾸는 시작 프리셋"
+        },
+        "en": {
+          "original": "assets/captures/conversation-run-limits.en.full.png",
+          "focused": "assets/captures/conversation-run-limits.en.png",
+          "mobile": "assets/captures/conversation-run-limits.en.mobile.png",
+          "alt": "DEV conversation Run limits with budget inputs and guidance explaining that the CPU preset also updates evidence size.",
+          "caption": "1. Budget for the whole question · 2. Starting preset also changes evidence size",
+          "mobileDetail": "assets/captures/conversation-run-limits.en.mobile-detail.png",
+          "mobileDetailOriginal": "assets/captures/conversation-run-limits.en.mobile-detail-full.png",
+          "mobileDetailAlt": "The run-limit guidance panel and the CPU starting preset note as a separate narrow-screen figure.",
+          "mobileDetailCaption": "2. Starting preset also changes evidence size"
+        }
+      },
+      "references": [
+        {
+          "document": "settings",
+          "file": "ko/settings.md",
+          "heading": "## 근거 크기와 실행 한도 {#budgets}",
+          "section": "budgets"
+        },
+        {
+          "document": "settings",
+          "file": "en/settings.md",
+          "heading": "## Evidence size and execution limits {#budgets}",
+          "section": "budgets"
+        }
+      ],
+      "mobileDetail": true
+    }
+  ]
+}

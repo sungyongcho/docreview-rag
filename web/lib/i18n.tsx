@@ -9,10 +9,12 @@ export type Locale = "ko" | "en";
 export const LOCALE_KEY = "docreview.locale";
 type Values = Record<string, string | number>;
 
-/** An explicit document language wins over a preference saved in another tab. */
-export function preferredLocale(pathname: string, saved: string | null): Locale {
+/** Resolve explicit document language, saved choice, then the browser's primary language. */
+export function preferredLocale(pathname: string, saved: string | null, browserLanguage = typeof navigator === "undefined" ? "en" : navigator.language): Locale {
   const route = pathname.match(/\/docs\/(ko|en)(?:\/[^/]+)?\/?$/)?.[1];
-  return route === "en" || (!route && saved === "en") ? "en" : "ko";
+  if (route === "ko" || route === "en") return route;
+  if (saved === "ko" || saved === "en") return saved;
+  return /^ko(?:-|$)/i.test(browserLanguage ?? "") ? "ko" : "en";
 }
 
 /** Keep the current document and deployment prefix when switching languages. */
@@ -95,12 +97,10 @@ export function translate(locale: Locale, source: string, values: Values = {}) {
 const I18nContext = createContext({ locale: "en" as Locale, setLocale: (_locale: Locale) => {}, t: (source: string, values?: Values) => translate("en", source, values) });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, update] = useState<Locale>("ko");
+  const [locale, update] = useState<Locale>("en");
   const setLocale = useCallback((value: Locale) => {
     update(value);
     persistLocale(value);
-    const destination = localizedDocumentationPath(window.location.pathname, value, window.location.hash);
-    if (destination && destination !== window.location.pathname + window.location.hash) window.location.assign(destination);
   }, []);
   useEffect(() => {
     const initial = preferredLocale(window.location.pathname, savedLocale());
@@ -119,8 +119,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>;
 }
 export function useI18n() { return useContext(I18nContext); }
-export function LanguageSwitch({ locale: documentLocale }: { locale?: Locale } = {}) {
+export function LanguageSwitch({ locale: documentLocale, onChange }: { locale?: Locale; onChange?: (locale: Locale) => void } = {}) {
   const { locale, setLocale } = useI18n();
   const active = documentLocale ?? locale;
-  return <div className="language-switch" role="group" aria-label="Language / 언어"><button type="button" lang="en" aria-pressed={active === "en"} onClick={() => setLocale("en")}>EN</button><button type="button" lang="ko" aria-pressed={active === "ko"} onClick={() => setLocale("ko")}>한국어</button></div>;
+  const choose = onChange ?? setLocale;
+  return <div className="language-switch" role="group" aria-label="Language / 언어"><button type="button" lang="en" aria-pressed={active === "en"} onClick={() => choose("en")}>EN</button><button type="button" lang="ko" aria-pressed={active === "ko"} onClick={() => choose("ko")}>한국어</button></div>;
 }

@@ -6,7 +6,7 @@ import "./public-run-limits.css";
 import type { ReleaseLimits } from "@/lib/types";
 
 /** Read the applied public policy rather than displaying a browser profile as server policy. */
-export function PublicRunLimits() {
+export function PublicRunLimits({ view = "all" }: { view?: "all" | "evidence" | "summary" } = {}) {
   const { t, locale } = useI18n();
   const [policy, setPolicy] = useState<ReleaseLimits | null>(null);
   const [failed, setFailed] = useState(false);
@@ -36,6 +36,26 @@ export function PublicRunLimits() {
     ["Maximum output tokens", number(policy.per_call.max_output_tokens), "Output ceiling for a single model call."],
     ["Maximum cost per call (USD)", `$${policy.per_call.max_cost_usd}`, "Spending ceiling per model call, not a fixed charge."],
   ];
+  const evidenceRows = [
+    ["Conversation history turns", number(policy.prompt_policy.history_turns)],
+    ["Maximum evidence characters", number(policy.prompt_policy.max_context_chars)],
+    ["Evidence overfetch", number(policy.prompt_policy.evidence_overfetch)],
+    ["Maximum hits per document", number(policy.prompt_policy.max_hits_per_document)],
+  ];
+  function facts(rows: string[][]) {
+    return <dl className="public-limit-facts">{rows.map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{value}</dd></div>)}</dl>;
+  }
+  if (view === "evidence") return <section className="public-run-limits">
+    <p className="helper">{t("These values are controlled by the public service and cannot be edited here.")}</p>
+    {facts(evidenceRows)}
+    <details className="request-preview-disclosure"><summary>{t("Additional instructions")}</summary><p className="public-policy-instructions">{policy.prompt_policy.additional_instructions || t("None")}</p></details>
+  </section>;
+  if (view === "summary") return <section className="public-run-limits public-limit-summary">
+    <p className="helper">{t("Server policy is shown here; browser-only overrides are not applied in PROD.")}</p>
+    <h4>{t("Whole question")}</h4>{facts([...questionRows, ...evidenceRows.filter(([label]) => label !== "Maximum evidence characters")])}
+    <h4>{t("Single model call")}</h4>{facts(callRows)}
+    <details className="request-preview-disclosure"><summary>{t("Additional instructions")}</summary><p className="public-policy-instructions">{policy.prompt_policy.additional_instructions || t("None")}</p></details>
+  </section>;
   /** Reuse the same compact table structure for the two distinct budget scopes. */
   function table(title: string, rows: string[][]) {
     return <div className="public-limits-table-wrap"><table className="public-limits-table"><caption>{t(title)}</caption><thead><tr><th scope="col">{t("Setting")}</th><th scope="col">{t("Applied value")}</th><th scope="col">{t("Meaning")}</th></tr></thead><tbody>{rows.map(([name, value, explanation]) => <tr key={name}><th scope="row">{t(name)}</th><td>{value}</td><td>{t(explanation)}</td></tr>)}</tbody></table></div>;

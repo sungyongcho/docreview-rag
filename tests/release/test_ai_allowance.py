@@ -185,10 +185,15 @@ def test_concurrent_calls_share_one_request_admission_and_denials_do_not_spend(t
 def _fake_openai():
     """Use the actual provider boundary with an injected client that never opens a socket."""
     from app.llm.provider import OpenAILLMProvider
-    from app.workflow.gate import IntentClassification
+    from app.workflow.gate import RoutingClassification
 
     response = SimpleNamespace(
-        output_parsed=IntentClassification(intent="casual_chat", reason="Synthetic response"),
+        output_parsed=RoutingClassification(
+            intent="service_help",
+            reason="A service question.",
+            requested_issuers=(),
+            target_scope="unclear",
+        ),
         output_text="",
         usage=SimpleNamespace(input_tokens=20, output_tokens=20),
         id="fake",
@@ -248,7 +253,7 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         }
     }
     with TestClient(app) as client:
-        pure = client.post("/retrieve", json={**payload, "query": "What was revenue?"})
+        pure = client.post("/retrieve", json={**payload, "query": "hello"})
         assert pure.status_code == 200
         assert create.await_count == 0
         assert (asyncio.run(ledger.status()))[0] == 1
@@ -259,17 +264,14 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         assert denied.json()["error"]["code"] == "rate_limited"
         assert int(denied.headers["Retry-After"]) > 0
         assert create.await_count == 1
-        assert (
-            client.post("/retrieve", json={**payload, "query": "What was revenue?"}).status_code
-            == 200
-        )
+        assert client.post("/retrieve", json={**payload, "query": "hello"}).status_code == 200
 
 
 def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
     """A low dollar cap blocks a large legal token request before the client or ledger changes."""
     from app.llm.schemas import Prompt
     from app.release.config import ReleaseSettings
-    from app.workflow.gate import IntentClassification
+    from app.workflow.gate import RoutingClassification
 
     async def scenario():
         """Reproduce the previous $0.001 reservation for a $0.0252 possible call."""
@@ -283,7 +285,7 @@ def test_full_openai_input_and_output_cost_is_refused_before_dispatch(tmp_path):
         token = active_allowance.set(ledger)
         try:
             result = await provider.complete(
-                Prompt(system="Classify.", user="word " * 9000), IntentClassification, budget
+                Prompt(system="Classify.", user="word " * 9000), RoutingClassification, budget
             )
         finally:
             active_allowance.reset(token)
@@ -302,7 +304,7 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
 
     from app.llm.schemas import Prompt
     from app.release.config import ReleaseSettings
-    from app.workflow.gate import IntentClassification
+    from app.workflow.gate import RoutingClassification
 
     class LargeSchema(BaseModel):
         """Use a schema whose description materially exceeds a small input ceiling."""
@@ -327,7 +329,7 @@ def test_openai_preflight_includes_schema_and_allows_default_small_call(tmp_path
         )
         try:
             ordinary = await provider.complete(
-                Prompt(system="Classify.", user="Explain it."), IntentClassification, budget
+                Prompt(system="Classify.", user="Explain it."), RoutingClassification, budget
             )
             refused = await provider.complete(
                 Prompt(system="Classify.", user="Explain it."),
@@ -393,7 +395,7 @@ def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
     from app.llm.schemas import Prompt
     from app.release.ai_allowance import RequestAIAllowance, active_request_allowance
     from app.release.config import ReleaseSettings
-    from app.workflow.gate import IntentClassification
+    from app.workflow.gate import RoutingClassification
 
     async def scenario():
         """Exercise actual Luna preflight with maximum output reservations and fake responses."""
@@ -417,14 +419,14 @@ def test_five_visitors_fit_two_three_call_questions_with_luna(tmp_path):
                         for _ in range(3):
                             result = await provider.complete(
                                 Prompt(system="Classify.", user="Evidence " * 8000),
-                                IntentClassification,
+                                RoutingClassification,
                                 budget,
                             )
                             assert result.status == "ok"
                     finally:
                         active_request_allowance.reset(request_token)
-                assert (await allowance.peek(f"visitor-{visitor}")).remaining_day == 3
-                assert (await allowance.peek(f"visitor-{visitor}")).remaining_minute == 0
+                assert (await allowance.peek(f"visitor-{visitor}")).remaining_day == 48
+                assert (await allowance.peek(f"visitor-{visitor}")).remaining_minute == 8
         finally:
             active_allowance.reset(token)
         assert create.await_count == 30

@@ -3,14 +3,14 @@
 # Bump this version on every helper change.
 _DOCREVIEW_PREVIOUS_HASH="${DOCREVIEW_HELPER_SHA256:-}"
 _DOCREVIEW_PREVIOUS_VERSION="${DOCREVIEW_ALIAS_VERSION:-}"
-DOCREVIEW_ALIAS_VERSION="2.0.0"
+DOCREVIEW_ALIAS_VERSION="3.1.0"
 typeset -ga _DOCREVIEW_COMMAND_NAMES
 typeset -gA _DOCREVIEW_OWNED_FUNCTIONS
 _DOCREVIEW_INSTALL_STATE=install
 # Retire only previously owned registrations absent from this version's public command set.
 for _DOCREVIEW_OLD_NAME in "${_DOCREVIEW_COMMAND_NAMES[@]}"; do
     [ -n "${_DOCREVIEW_OLD_NAME}" ] || continue
-    case " rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-start-quick rag-start-fresh rag-reset rag-corpus rag-schema rag-help rag-alias-delete " in
+    case " rag-alias rag-dev rag-prod rag-help " in
         *" ${_DOCREVIEW_OLD_NAME} "*) ;;
         *)
             if [ "$(typeset -f "${_DOCREVIEW_OLD_NAME}")" = "${_DOCREVIEW_OWNED_FUNCTIONS[$_DOCREVIEW_OLD_NAME]-}" ]; then
@@ -21,7 +21,7 @@ done
 if [ -n "${_DOCREVIEW_PREVIOUS_VERSION}" ] || typeset -f rag-help >/dev/null 2>&1; then
     _DOCREVIEW_INSTALL_STATE='already installed'
     [ "${_DOCREVIEW_PREVIOUS_VERSION}" = "${DOCREVIEW_ALIAS_VERSION}" ] || _DOCREVIEW_INSTALL_STATE='update required'
-    for _DOCREVIEW_NAME in rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-start-quick rag-start-fresh rag-reset rag-corpus rag-schema rag-help rag-alias-delete; do
+    for _DOCREVIEW_NAME in rag-alias rag-dev rag-prod rag-help; do
         if ! typeset -f "${_DOCREVIEW_NAME}" >/dev/null 2>&1 || [ "$(typeset -f "${_DOCREVIEW_NAME}")" != "${_DOCREVIEW_OWNED_FUNCTIONS[$_DOCREVIEW_NAME]-}" ]; then
             _DOCREVIEW_INSTALL_STATE='update required'
         fi
@@ -133,14 +133,11 @@ import tempfile
 from pathlib import Path
 
 mode, target, filename, previous = sys.argv[1:]
-legacy = str(Path(target).with_name(Path(target).name.replace('-', '_')))
 previous_paths = {previous} if previous else set()
-if previous:
-    previous_paths.add(str(Path(previous).with_name(Path(previous).name.replace('-', '_'))))
 p = Path(filename).expanduser().resolve()
 exists = p.exists()
 if not exists and mode != 'install':
-    sys.exit(1 if mode in ('check', 'legacy-check') else 0)
+    sys.exit(1 if mode == 'check' else 0)
 try:
     original = p.read_bytes() if exists else b''
 except OSError as error:
@@ -149,7 +146,6 @@ except OSError as error:
 lines = original.splitlines(keepends=True)
 kept = []
 registered = False
-legacy_registered = False
 previous_registered = False
 owned_count = 0
 replacement_index = None
@@ -164,12 +160,10 @@ for line in lines:
     simple = (len(tokens) >= 2 and tokens[0] in ('source', '.')
               and tokens[2:] in ([], ['>', '/dev/null']))
     matches = simple and tokens[1] == target
-    old_match = simple and tokens[1] == legacy
     prior_match = simple and tokens[1] in previous_paths
     previous_registered = previous_registered or prior_match
     registered = registered or matches
-    legacy_registered = legacy_registered or old_match
-    removing = matches or (old_match and mode in ('migrate', 'remove', 'sync')) or (prior_match and mode in ('sync', 'remove'))
+    removing = matches or (prior_match and mode in ('sync', 'remove'))
     if removing:
         owned_count += 1
         if replacement_index is None:
@@ -178,26 +172,22 @@ for line in lines:
         kept.append(line)
 if mode == 'check':
     sys.exit(0 if registered else 1)
-if mode == 'legacy-check':
-    if legacy_registered:
-        print('Old helper registration: ' + legacy)
-    sys.exit(0 if legacy_registered else 1)
-if mode == 'sync' and not (registered or legacy_registered or previous_registered):
+if mode == 'sync' and not (registered or previous_registered):
     print('No owned startup registration found; commands are loaded in this shell only.')
     sys.exit(0)
 if mode == 'sync' and registered and owned_count == 1:
     print('Startup registration is already current: ' + str(p))
     sys.exit(0)
-if mode in ('install', 'migrate', 'sync'):
+if mode in ('install', 'sync'):
     if registered and mode == 'install':
         sys.exit(0)
     registration = ('source ' + shlex.quote(target) + ' >/dev/null\n').encode()
-    if mode in ('migrate', 'sync') and replacement_index is not None:
+    if mode == 'sync' and replacement_index is not None:
         updated = b''.join(kept[:replacement_index]) + registration + b''.join(kept[replacement_index:])
     else:
         updated = original + (b'\n' if original and not original.endswith(b'\n') else b'') + registration
 else:
-    if not registered and not legacy_registered and not previous_registered:
+    if not registered and not previous_registered:
         print('No registration for this checkout in: ' + str(p))
         sys.exit(0)
     updated = b''.join(kept)
@@ -224,7 +214,7 @@ try:
 finally:
     if os.path.exists(temporary):
         os.unlink(temporary)
-print(('Installed registration in: ' if mode in ('install', 'migrate', 'sync') else
+print(('Installed registration in: ' if mode in ('install', 'sync') else
        'Removed this checkout\'s source line from: ') + str(p))
 PYCODE
 }
@@ -234,7 +224,6 @@ _docreview_uninstall() {
     local answer
     printf 'Target: %s\n' "${_DOCREVIEW_ROOT}/rag-alias.sh"
     printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
-    _docreview_startup legacy-check || [ "$?" = 1 ] || return 1
     if [ -n "${_DOCREVIEW_PENDING_REGISTRATION_SOURCE:-}" ]; then
         printf 'Previous registration: %s\n' "${_DOCREVIEW_PENDING_REGISTRATION_SOURCE}"
     fi
@@ -247,11 +236,11 @@ _docreview_uninstall() {
     _docreview_startup remove "${_DOCREVIEW_PENDING_REGISTRATION_SOURCE:-}" || return 1
     if [ "${_DOCREVIEW_EXECUTED:-0}" = 1 ]; then
         printf '%s\n' 'Startup registration removed. Project files were kept.' \
-            'In an already loaded shell, run rag-alias-delete to remove its commands.'
+            'In an already loaded shell, run rag-alias remove to remove its commands.'
     else
         # Preserve any command the user replaced after registration.
         local name
-        for name in rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-reset rag-corpus rag-schema rag-start-quick rag-start-fresh rag-help rag-alias-delete; do
+        for name in rag-alias rag-dev rag-prod rag-help; do
             if [ "$(typeset -f "$name")" = "${_DOCREVIEW_OWNED_FUNCTIONS[$name]}" ]; then
                 unset -f "$name"
             fi
@@ -285,7 +274,7 @@ esac
 # Validate command registration and wrapper targets without running application operations.
 _docreview_verify() {
     local target
-    for target in scripts/stack/__main__.py scripts/diagnostics/ollama.py scripts/stack/quickstart.sh scripts/stack/commands.py scripts/schema/__main__.py; do
+    for target in scripts/stack/cli.py scripts/stack/__main__.py scripts/diagnostics/ollama.py scripts/stack/quickstart.sh scripts/stack/commands.py scripts/schema/__main__.py; do
         if [ ! -r "${_DOCREVIEW_ROOT}/$target" ]; then
             printf '[ERROR] Missing helper target: %s\n' "${_DOCREVIEW_ROOT}/$target" >&2
             return 1
@@ -341,26 +330,6 @@ _docreview_install() {
         printf '%s\n' '[ERROR] Python 3 is required to check and install startup registration.' >&2
         return 1
     fi
-    if _docreview_startup legacy-check; then
-        _docreview_line '[MIGRATION] This helper is now named rag-alias.sh; the old path is unavailable.'
-        printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
-        printf 'Replace this checkout registration with rag-alias.sh? [y/N] '
-        IFS= read -r _DOCREVIEW_ANSWER || _DOCREVIEW_ANSWER=n
-        case "${_DOCREVIEW_ANSWER}" in
-            y|Y|yes|YES) ;;
-            *) printf '%s\n' 'Cancelled; startup registration is unchanged.'; _docreview_activation; return 0 ;;
-        esac
-        _docreview_verify || return 1
-        _docreview_startup migrate || return 1
-        _docreview_startup check || return 1
-        _DOCREVIEW_INSTALL_READY=1
-        _docreview_line '[OK] Replaced the old registration; its backup was preserved.'
-        _docreview_activation
-        return 0
-    else
-        _DOCREVIEW_REGISTRATION_STATUS=$?
-        [ "${_DOCREVIEW_REGISTRATION_STATUS}" = 1 ] || return "${_DOCREVIEW_REGISTRATION_STATUS}"
-    fi
     if _docreview_startup check; then
         _docreview_verify || return 1
         _DOCREVIEW_INSTALL_READY=1
@@ -374,7 +343,7 @@ _docreview_install() {
     fi
     _docreview_line "[SETUP] Install DocReview helper for ${_DOCREVIEW_PARENT_SHELL}"
     printf 'Startup file: %s\n' "${_DOCREVIEW_RC}"
-    printf '%s\n' 'Registers rag-help and the helper commands; run rag-start-quick separately for application setup.'
+    printf '%s\n' 'Registers rag-help and the helper commands; run rag-dev start separately for application setup.'
     printf 'Install this checkout registration? [y/N] '
     IFS= read -r _DOCREVIEW_ANSWER || _DOCREVIEW_ANSWER=n
     case "${_DOCREVIEW_ANSWER}" in
@@ -498,151 +467,153 @@ rag-alias() {
     _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
 
     case "${1:-}" in
+        remove)
+            [ "$#" -eq 1 ] || { printf '%s\n' 'Usage: rag-alias remove' >&2; return 2; }
+            _docreview_uninstall ;;
         update|--check-updates)
             [ "$#" -le 2 ] || { printf '%s\n' 'Usage: rag-alias update [PATH]' >&2; return 2; }
             if [ "$1" = update ]; then _docreview_update update "${2:-}"; else _docreview_update check "${2:-}"; fi ;;
         ''|--help|-h)
-            printf '%s\n' 'Usage: rag-alias update [CHECKOUT_OR_HELPER_PATH]' \
+            printf '%s\n' 'Usage: rag-alias update [CHECKOUT_OR_HELPER_PATH] | remove' \
                 'Compare installed and checkout hashes; reload helper-owned commands and repair the existing startup line.' \
                 'Use --check-updates [PATH] for a read-only comparison. Customized commands and unrelated startup lines are preserved.' ;;
         *) printf '%s\n' 'Usage: rag-alias update [PATH] or rag-alias --check-updates [PATH]' >&2; return 2 ;;
     esac
 }
 
-# Remove only this checkout's registration and unchanged owned commands.
-rag-alias-delete() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
-
-    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-        printf '%s\n' 'Usage: rag-alias-delete' 'Confirm removal of this checkout registration; keep project files.'
-    else
-        _docreview_uninstall
-    fi
-}
-
-rag-up() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
-
-    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-        printf '%s\n' 'Usage: rag-up [COMPOSE_UP_ARGS...]' 'Build/start DEV and prepare an empty DB; existing data is never reset.' 'Requires Python setup from rag-start-quick or uv sync --locked.'
-    else
-        rag-dev up --build -d "$@"
-    fi
-}
-# Run the selected module in the checkout that registered these commands.
+# Run explicit mode actions; no retired command aliases are registered.
 _docreview_python() {
     if [ ! -x "${_DOCREVIEW_ROOT}/.venv/bin/python" ]; then
-        printf '%s\n' '[FAIL] Project Python is missing. Run rag-start-quick or uv sync --locked first.' >&2
+        printf '%s\n' '[FAIL] Project Python is missing. Run rag-dev start or rag-prod start first.' >&2
         return 2
     fi
     (cd "${_DOCREVIEW_ROOT}" && _docreview_runtime .venv/bin/python -m "$@")
 }
-rag-dev() {
+_docreview_mode() {
+    local _mode="$1"; shift
     local -a _DOCREVIEW_ARGS
     local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
     _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
-
-    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-        printf '%s\n' 'Usage: rag-dev [COMPOSE_ARGS...]' 'Manage the development stack; default: up -d.' 'Examples: rag-dev ps; rag-dev logs -f app; rag-dev down.'
-    else
-        _docreview_python scripts.stack dev "$@"
-    fi
+    case "${1:-help}" in
+        help|--help|-h)
+            if [ "$#" -le 1 ]; then rag-help; return; fi
+            _docreview_python scripts.stack.cli "${_mode}" "$@" ;;
+        start)
+            shift
+            # Reject non-local or DEV ready-data intent before bootstrapping dependencies.
+            case " $* " in
+                *" --ready "*)
+                    if [ "${_mode}" = dev ]; then
+                        printf '%s\n' '[FAIL] DEV has no --ready option; use corpus commands or the web.' >&2
+                        return 2
+                    fi
+                    case " $* " in
+                        *" --local "*) ;;
+                        *) printf '%s\n' '[FAIL] Ready-data startup requires --local.' >&2; return 2 ;;
+                    esac ;;
+            esac
+            _docreview_runtime bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "${_mode}" "$@" ;;
+        reset)
+            if [ "${2:-}" = environment ]; then
+                local _reset_python
+                _reset_python="$(uv python find --no-python-downloads 3.14)" || {
+                    printf '%s\n' 'Python 3.14 is required; run uv python install 3.14.' >&2
+                    return 2
+                }
+                (cd "${_DOCREVIEW_ROOT}" && _docreview_runtime "${_reset_python}" -m scripts.stack.cli "${_mode}" "$@")
+            else
+                _docreview_python scripts.stack.cli "${_mode}" "$@"
+            fi ;;
+        *) _docreview_python scripts.stack.cli "${_mode}" "$@" ;;
+    esac
 }
-rag-prod() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
+rag-dev() { _docreview_mode dev "$@"; }
+rag-prod() { _docreview_mode prod "$@"; }
 
-    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-        printf '%s\n' 'Usage: rag-prod [COMPOSE_ARGS...]' 'Manage the local public preview; default: up -d.' 'Examples: rag-prod ps; rag-prod logs -f web; rag-prod down.'
-    else
-        _docreview_python scripts.stack prod "$@"
-    fi
-}
-rag-ollama-check() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
- _docreview_python scripts.diagnostics.ollama "$@"; }
-rag-start-quick() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
- _docreview_runtime bash "${_DOCREVIEW_ROOT}/scripts/stack/quickstart.sh" "$@"; }
-rag-start-fresh() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
-
-    if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-        printf '%s\n' 'Usage: rag-start-fresh [--extreme] [--no-start] [--discard-tracked] [--status] [--verbose|-vv]' \
-            'Preview and clean this checkout, preserving .env and local tool settings; then run quick setup.' \
-            'Only uppercase Y confirms (Y/n); --extreme asks twice, removes .env and Ollama models, and stops.'
-    else
-        local _fresh_python
-        _fresh_python="$(uv python find --no-python-downloads 3.14)" || {
-            printf '%s\n' 'Python 3.14 is required. Run uv python install 3.14, then rag-start-fresh. Nothing changed.' >&2
-            return 2
-        }
-        (cd "${_DOCREVIEW_ROOT}" && _docreview_runtime "${_fresh_python}" -m scripts.stack.fresh "$@")
-    fi
-}
-rag-reset() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
- _docreview_python scripts.stack.commands reset "$@"; }
-rag-corpus() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
- _docreview_python scripts.stack.commands corpus "$@"; }
-rag-schema() {
-    local -a _DOCREVIEW_ARGS
-    local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
-    _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
- _docreview_python scripts.schema "$@"; }
 rag-help() {
     local -a _DOCREVIEW_ARGS
     local DOCREVIEW_VERBOSE="${DOCREVIEW_VERBOSE:-0}"
     _docreview_options "$@"; set -- "${_DOCREVIEW_ARGS[@]}"
-
+    local _lang=en
+    if [ "${1:-}" = --lang ] && [ "$#" -eq 2 ]; then _lang="$2"
+    elif [ "$#" -gt 0 ] && [ "${1:-}" != --help ] && [ "${1:-}" != -h ]; then
+        printf '%s\n' 'Usage: rag-help [--lang en|ko]' >&2; return 2
+    fi
+    case "${_lang}" in en|ko) ;; *) printf '%s\n' 'Language must be en or ko.' >&2; return 2 ;; esac
     _docreview_banner
-    _docreview_line 'Every command accepts --verbose (-vv). 모든 명령에 --verbose (-vv)를 붙일 수 있습니다'
-    _docreview_heading '[QUICK START]'
-    _docreview_row 'rag-start-quick' 'Prepare first run'
-    _docreview_line '    Cloned and unsure what to do? Run rag-start-quick.'
-    _docreview_row 'rag-start-fresh [--no-start|--extreme]' 'Clean checkout and start'
-    _docreview_line '    Preserves .env and Ollama models; --extreme deletes both, then stops.'
-    _docreview_line '    Then open the printed URL. Acquire, parse/chunk, embeddings, compute BM25.'
-    _docreview_heading '[STACK]'
-    _docreview_row 'rag-up [COMPOSE_UP_ARGS...]' 'Build DEV stack'
-    _docreview_row 'rag-dev [COMPOSE_ARGS...]' 'Manage DEV stack'
-    _docreview_row 'rag-prod [COMPOSE_ARGS...]' 'Manage public preview'
-    _docreview_heading '[DATA AND DIAGNOSTICS]'
-    _docreview_row 'rag-ollama-check [--setup|--details|--web-url URL]' 'Check model connection'
-    _docreview_row 'rag-schema check|prepare|recover' 'Inspect/recover local schema'
-    _docreview_row 'rag-corpus KIND [OPTIONS...]' 'Manage corpus jobs'
-    _docreview_line '    Example: rag-corpus acquire_edgar --identifier NVDA --year 2024'
-    _docreview_heading '[RESET]'
-    _docreview_row 'rag-reset [--keep-sources|--sample|--status]' 'Reset data and rebuild'
-    _docreview_line '    Deletes ORM data/sources; preserves .env, settings, exports and volumes.'
-    _docreview_row 'rag-schema recreate [--keep-sources|--sample]' 'Reset data; stay stopped'
-    _docreview_line '    No backup. Review preview; only uppercase Y confirms (Y/n).'
-    _docreview_heading '[HELP]'
-    _docreview_row 'rag-help' 'Show command summary'
-    _docreview_row 'rag-alias update [PATH]' 'Refresh loaded helper'
-    _docreview_row 'rag-alias-delete' 'Remove helper registration'
-    _docreview_line 'Every command accepts --help for options and examples.'
+    if [ "${_lang}" = ko ]; then
+        _docreview_line '로컬 환경용 명령입니다. 실제 서비스에 배포하지 않습니다.'
+        _docreview_heading '[시작]'
+        _docreview_row 'rag-dev start' '기존 데이터를 보존하며 DEV 시작'
+        _docreview_row 'rag-prod start' '기존 데이터를 보존하며 로컬 PROD 시작'
+        _docreview_line '    처음 실행하면 빈 DB를 준비합니다. 서버 실행과 검색 준비는 별도입니다.'
+        _docreview_heading '[실행 관리]'
+        _docreview_row 'rag-dev|rag-prod status' '컨테이너 상태 확인'
+        _docreview_row 'rag-dev|rag-prod logs [서비스] [-f]' '로그 확인'
+        _docreview_row 'rag-dev|rag-prod stop' '중지; 데이터 보존'
+        _docreview_row 'rag-dev|rag-prod restart' '선택한 모드로 재시작; 데이터 보존'
+        _docreview_row 'rag-dev|rag-prod doctor [옵션]' '연결 및 실행 환경 진단'
+        _docreview_row 'rag-dev|rag-prod compose <인자...>' '고급 Compose 명령'
+        _docreview_heading '[DEV 데이터]'
+        _docreview_row 'rag-dev corpus <작업> [옵션]' '공시 수집·저장·임베딩·BM25'
+        _docreview_line '    inspect / status / readiness로 원본·작업·준비 상태를 확인합니다.'
+        _docreview_row 'rag-dev schema <작업> [옵션]' '스키마 검사·준비·복구'
+        _docreview_heading '[초기화 — 삭제 전 확인]'
+        _docreview_row 'rag-dev reset data --local' 'ORM 데이터 초기화; 자동 시작 안 함'
+        _docreview_line '    --keep-sources / --sample / --status 옵션을 지원합니다.'
+        _docreview_row 'rag-prod reset environment --local --all-modes' '이 저장소 전체 실행 환경 초기화'
+        _docreview_line '    rag-dev에서도 동일합니다. .env·소스·외부 번들·다른 프로젝트는 보존합니다.'
+        _docreview_line '    컨테이너·볼륨·전용 이미지·생성 데이터를 정리한 뒤 종료합니다.'
+        _docreview_heading '[로컬 PROD 데이터 준비]'
+        _docreview_row 'rag-prod prepare --local [옵션]' '저장된 공개 번들 복원·검증·재사용'
+        _docreview_line '    옵션: --artifacts 경로 / --check.'
+        _docreview_row 'rag-prod start --local --ready' 'PROD 시작 후 저장된 데이터 준비'
+        _docreview_line '    자동 유료 임베딩은 없습니다. DEV에는 --ready가 없습니다.'
+        _docreview_line '    DEV와 다른 DB·저장 경로를 사용합니다. PROD 전용 데이터 초기화는 아직 지원하지 않습니다.'
+        _docreview_heading '[도움말]'
+        _docreview_row 'rag-help --lang en|ko' '도움말 언어 선택'
+        _docreview_row 'rag-dev|rag-prod help [명령]' '상세 옵션 확인'
+        _docreview_row 'rag-alias update [경로] | remove' '명령 설치 갱신·제거'
+    else
+        _docreview_line 'Local environments only. These commands never deploy the service.'
+        _docreview_heading '[START]'
+        _docreview_row 'rag-dev start' 'Start DEV; preserve existing data'
+        _docreview_row 'rag-prod start' 'Start local PROD; preserve data'
+        _docreview_line '    First use prepares an empty DB. Server startup does not mean search readiness.'
+        _docreview_heading '[STACK]'
+        _docreview_row 'rag-dev|rag-prod status' 'Inspect container status'
+        _docreview_row 'rag-dev|rag-prod logs [SERVICE] [-f]' 'Read logs'
+        _docreview_row 'rag-dev|rag-prod stop' 'Stop; preserve data'
+        _docreview_row 'rag-dev|rag-prod restart' 'Restart in selected mode; preserve data'
+        _docreview_row 'rag-dev|rag-prod doctor [OPTIONS]' 'Diagnose local connections'
+        _docreview_row 'rag-dev|rag-prod compose <ARGS...>' 'Explicit advanced Compose command'
+        _docreview_heading '[DEV DATA]'
+        _docreview_row 'rag-dev corpus <OPERATION> [OPTIONS]' 'Acquire, ingest, embed, compute BM25'
+        _docreview_line '    inspect / status / readiness report sources, jobs and actual readiness.'
+        _docreview_row 'rag-dev schema <ACTION> [OPTIONS]' 'Check, prepare or recover schema'
+        _docreview_heading '[RESET — CONFIRM BEFORE DELETION]'
+        _docreview_row 'rag-dev reset data --local' 'Reset ORM data; remain stopped'
+        _docreview_line '    Options: --keep-sources / --sample / --status.'
+        _docreview_row 'rag-prod reset environment --local --all-modes' 'Reset this checkout runtime'
+        _docreview_line '    Same under rag-dev. Preserve .env, source work, external bundles and other projects.'
+        _docreview_line '    Remove containers, volumes, dedicated images and generated files, then exit.'
+        _docreview_heading '[LOCAL PROD DATA]'
+        _docreview_row 'rag-prod prepare --local [OPTIONS]' 'Restore, verify or reuse a public bundle'
+        _docreview_line '    Options: --artifacts PATH / --check.'
+        _docreview_row 'rag-prod start --local --ready' 'Start PROD and prepare saved data'
+        _docreview_line '    No automatic paid embeddings. DEV has no --ready shortcut.'
+        _docreview_line '    PROD storage is separate from DEV. PROD-only data reset is not connected yet.'
+        _docreview_heading '[HELP]'
+        _docreview_row 'rag-help --lang en|ko' 'Choose help language'
+        _docreview_row 'rag-dev|rag-prod help [COMMAND]' 'Show detailed options'
+        _docreview_row 'rag-alias update [PATH] | remove' 'Refresh or remove helper registration'
+    fi
+    _docreview_line 'Every command accepts --verbose (-vv).'
     _docreview_line "Checkout: ${_DOCREVIEW_ROOT}"
 }
 
 typeset -ga _DOCREVIEW_COMMAND_NAMES
-_DOCREVIEW_COMMAND_NAMES=(rag-alias rag-up rag-dev rag-prod rag-ollama-check rag-reset rag-corpus rag-schema rag-start-quick rag-start-fresh rag-help rag-alias-delete)
+_DOCREVIEW_COMMAND_NAMES=(rag-alias rag-dev rag-prod rag-help)
 typeset -gA _DOCREVIEW_OWNED_FUNCTIONS
 _DOCREVIEW_OWNED_FUNCTIONS=()
 for _DOCREVIEW_COMMAND in "${_DOCREVIEW_COMMAND_NAMES[@]}"; do

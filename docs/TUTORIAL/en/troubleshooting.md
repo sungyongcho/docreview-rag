@@ -8,9 +8,12 @@ Check the smallest relevant state, make the corresponding correction, and verify
 
 A `query_scope_unavailable` failure before the path decision belongs to **0. Path decision**; stages 1–5 remain unrun. A failure while resolving scope after the decision belongs to stage 1. In DEV, the existing failed-answer card shows the specific missing-file, invalid-JSON, invalid-manifest, alias-conflict or permission cause, the manifest path, and one **Open Documents** or **Open Jobs** action. A recent acquisition job is context, not proof that it caused the failure; if it is queued/running, wait for completion before retrying.
 
-Inspect the named file and run `rag-schema check` / `rag-corpus status`. Correct that input, then submit the question again; an unsuccessful lazy load is not cached and an API restart is unnecessary. Acquisition publishes manifests atomically, so readers see a complete committed file. **Run details → Trace** retains the original sanitized exception text. Production shows only the localized headline and a generic retry hint.
+Inspect the named file and run `rag-dev schema check` / `rag-dev corpus status`. Correct that input, then submit the question again; an unsuccessful lazy load is not cached and an API restart is unnecessary. Acquisition publishes manifests atomically, so readers see a complete committed file. **Run details → Trace** retains the original sanitized exception text. Production shows only the localized headline and a generic retry hint.
+
+<!-- screenshot: manifest-failure-diagnosis -->
 
 ![A failed quick-evaluation job showing its GoldenDataError manifest diagnosis card with timestamps and the error classification.](../assets/manifest-failure-diagnosis.en.png)
+
 ## The page, API, or database is unavailable {#connection}
 
 > [!DEV]
@@ -19,7 +22,7 @@ Inspect the named file and run `rag-schema check` / `rag-corpus status`. Correct
 Open **System → System status**, or read the terminal logs when the page cannot load.
 
 ```bash
-rag-dev ps
+rag-dev status
 rag-dev logs --tail=80 web
 rag-dev logs --tail=80 app
 ```
@@ -90,7 +93,10 @@ Open **Manage history** in Jobs. **Sync history** reads the server again; it doe
 
 **Delete job history** permanently removes both visible and archived terminal job records only. Review the displayed count and type `DELETE JOB HISTORY`. The server must first create a private backup of the complete records; a backup failure leaves the records intact. Download the backup through **Download job history backup** after success. If the eligible count changed, sync and review again. Restoring an archive does not reimport a deleted backup, and no action automatically reruns a job.
 
+<!-- screenshot: job-history-and-reset-dialogs -->
+
 ![The manage-history dialog with archive, restore and permanent-delete controls over job history.](../assets/job-history-and-reset-dialogs.en.png)
+
 ## Runtime reset: inspect eligibility before deletion {#reset}
 
 > [!DEV]
@@ -108,8 +114,12 @@ The reset covers runtime DB records, downloaded filings, generated evaluation ar
 
 On failure or interruption, read completed stages and recovery instructions before another action; some data may already be gone. Release a reset hold only through the documented recovery action after inspecting the recorded state. Normal shutdown and restarting with retained data use [runtime resume](runtime.md#resume), not reset.
 
-## Transient status failures
+<!-- heading-alias: transient-status-failures -->
+## Transient status failures {#transient}
 
+A brief status-check failure keeps the last known state and shows a non-blocking waiting notice rather than immediately disabling the page.
+
+<!-- details: transient-details | Polling, grace periods, and retries -->
 A failed liveness check receives a 20-second grace period, measured from the start
 of the first failing check; confirmation occurs on the next retry. Checks retry every
 3 seconds, with separate 5-second timeouts for health and readiness. During the grace
@@ -145,6 +155,7 @@ document filters, evaluation runs and snapshots time out after 15 seconds with "
 timed out"; writes are never timed out or retried. **Build → Pipeline** refreshes its four
 reads independently, keeps the last known state for any read that fails and shows an inline
 notice for it, and raises a toast only when you pressed Refresh yourself.
+<!-- /details -->
 
 ## Connection state and notifications {#connection-feedback}
 
@@ -154,4 +165,10 @@ Connection delay appears in a compact in-flow status row with **Retry connection
 
 Repeated identical keyed events keep one notice without restarting its timer. Hover, keyboard focus and explicit expansion pause dismissal until all reading interactions end. Close a notice with its dismiss button; persistent warnings remain until dismissed or resolved. Backend retries and job delivery rules are unchanged.
 
-![The top-right notification rail showing a connection notice while a PROD conversation stays usable.](../assets/connection-status-and-notification-rail.en.png)
+Open **System → System status** and select **Refresh** to check the current connection. The image below shows a healthy PROD state; delayed checks and error notices appear only when those conditions occur.
+
+<!-- screenshot: connection-status-and-notification-rail -->
+
+![The healthy PROD System status screen with Refresh, readiness, mode and database connection.](../assets/captures/connection-status-and-notification-rail.en.png)
+
+*Healthy connection example · 1. Refresh connection status · 2. Readiness, mode and database connection*

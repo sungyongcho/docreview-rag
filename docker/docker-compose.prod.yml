@@ -1,6 +1,9 @@
 # Local visitor preview: production permissions with the same live source editing.
 # Actual deployment uses deploy/gcp/docker-compose.deploy.yml and a static web build.
 services:
+  db:
+    volumes: !override
+      - prod_pg_data:/var/lib/postgresql/data
   app:
     extra_hosts: !reset []
     build:
@@ -16,9 +19,16 @@ services:
       LOCAL_LLM_TIMEOUT_S: !reset null
       LOCAL_LLM_MAX_INPUT_TOKENS: !reset null
       LOCAL_LLM_MAX_OUTPUT_TOKENS: !reset null
+    volumes:
+      - ./data/local-prod/corpus:/app/data/corpus
+      - ./data/local-prod/eval-runs:/app/data/eval_runs
+      - ./data/local-prod/runtime:/app/data/runtime
   web:
     environment:
       NEXT_PUBLIC_ADMIN_MODE: canned
       NEXT_PUBLIC_OPERATOR_BASE_URL: ""
       NEXT_PUBLIC_OPERATOR_TOKEN: ""
       NEXT_PUBLIC_DB_ENDPOINT: ""
+
+volumes:
+  prod_pg_data:

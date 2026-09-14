@@ -34,7 +34,7 @@ def checkout(tmp_path, monkeypatch):
             "-c",
             "user.name=Fixture",
             "-c",
-            "user.email=fixture@example.invalid",
+            "user.email=fixture@example.test",
             "commit",
             "-qm",
             "Fixture baseline",
@@ -106,6 +106,23 @@ def test_clean_restores_data_and_preserves_configuration_with_own_receipt(checko
     assert json.loads((checkout / "data/browser-reset.json").read_text())["reset_id"]
 
 
+def test_environment_reset_preserves_dirty_and_untracked_source_work(checkout):
+    """Runtime cleanup removes generated files while preserving all source modifications."""
+    populate(checkout)
+    (checkout / "source.py").write_text("active source edit")
+    (checkout / "new_source.py").write_text("untracked source")
+    (checkout / "NOTES.md").write_text("untracked notes")
+    assert fresh.start_fresh(checkout, no_start=True, runtime_only=True) == 0
+    assert (checkout / "source.py").read_text() == "active source edit"
+    assert (checkout / "new_source.py").read_text() == "untracked source"
+    assert (checkout / "NOTES.md").read_text() == "untracked notes"
+    assert (checkout / ".env").read_text() == "keep"
+    assert (checkout / "data/corpus/manifest.json").read_text() == '{"modified": true}'
+    assert not (checkout / ".venv").exists()
+    assert not (checkout / "web/node_modules").exists()
+    assert json.loads(fresh.receipt_path(checkout, "start-fresh").read_text())["restarted"] is False
+
+
 @pytest.mark.parametrize(
     "answers", [[""], ["y"], ["yes"], ["Y "], ["confirm"], ["Y", "y"], ["Y", ""]]
 )
@@ -136,7 +153,7 @@ def test_extreme_removes_environment_but_retains_template_and_never_starts(
     assert ".env*" in prompts[1]
     assert not (checkout / ".env").exists() and not (checkout / ".env.local").exists()
     assert (checkout / ".env.example").read_text() == "template"
-    assert "Run rag-start-quick" in capsys.readouterr().out
+    assert "Run rag-dev start" in capsys.readouterr().out
 
 
 def test_noninteractive_does_not_even_inventory(checkout, monkeypatch):

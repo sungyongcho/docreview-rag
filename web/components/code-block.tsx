@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
+import { translate, useI18n, type Locale } from "@/lib/i18n";
 
-export function CodeBlock({ code, language, html }: { code: string; language: string; html: string }) {
-  const { t, locale } = useI18n();
+export function CodeBlock({ code, language, html, locale: documentLocale }: { code: string; language: string; html: string; locale?: Locale }) {
+  const { locale: preference } = useI18n();
+  const locale = documentLocale ?? preference;
+  const t = (source: string) => translate(locale, source);
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
   useEffect(() => setStatus("idle"), [code]);
   async function copy() {

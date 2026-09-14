@@ -57,7 +57,7 @@ def local_target(root: Path) -> tuple[dict, dict[str, str]]:
     )
     databases = [row for row in rows if row["Service"] == "db"]
     if len(databases) != 1:
-        raise ValueError("Start this checkout's DB first: rag-dev up -d db")
+        raise ValueError("Start this checkout's DB first: rag-dev compose up -d db")
     targets = []
     database = None
     for row in rows:
@@ -297,8 +297,8 @@ def run(
                 file=sys.stderr,
             )
             print(
-                "Inspect the journal and run rag-schema check; "
-                "then restore the API with: rag-dev up -d",
+                "Inspect the journal and run rag-dev schema check; "
+                "then restore the API with: rag-dev compose up -d",
                 file=sys.stderr,
             )
             raise RuntimeError(
@@ -321,11 +321,11 @@ def run(
                 )
                 + ("Database outcome is unconfirmed. " if uncertain else "Database is unchanged. ")
                 + "Preserve data/.schema-recreate-journal/journal.json "
-                "and run rag-schema check before another reset.",
+                "and run rag-dev schema check before another reset.",
                 file=sys.stderr,
             )
         print(
-            "The API may be stopped. Restore it without requesting a build: rag-dev up -d",
+            "The API may be stopped. Restore it without requesting a build: rag-dev compose up -d",
             file=sys.stderr,
         )
         if isinstance(error, PermissionError):
@@ -346,7 +346,7 @@ def run(
             )
             print(
                 "After inspecting the journal, restore the API without requesting a build: "
-                "rag-dev up -d",
+                "rag-dev compose up -d",
                 file=sys.stderr,
             )
             return "incomplete"
@@ -361,7 +361,7 @@ def run(
         + (
             "Guided setup will now rebuild/start DEV and verify readiness. "
             if restart_planned
-            else "Run rag-up, then re-check Build and repeat data preparation. "
+            else "Run rag-dev start, then re-check Build and repeat data preparation. "
         )
         + "No paid work was started."
     )

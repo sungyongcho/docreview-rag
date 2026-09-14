@@ -70,9 +70,13 @@ def run(mode: str, arguments: list[str], *, root: Path = ROOT, quiet: bool = Fal
         )
     bindings = load_local_environment(root / ".env", mode=mode)
     environment = compose_environment(mode, bindings)
+    if mode == "prod" and action in {"up", "start", "restart"}:
+        from scripts.stack.prod import ensure_storage
+
+        ensure_storage(root)
     operator = LocalOperator(root)
     newly_started = False
-    if mode == "prod" and action in {"up", "start", "restart", "down"}:
+    if mode == "prod" and action in {"up", "start", "restart", "down", "stop"}:
         operator.stop()
     elif mode == "dev":
         if action == "up":
@@ -104,7 +108,7 @@ def run(mode: str, arguments: list[str], *, root: Path = ROOT, quiet: bool = Fal
             operator.stop()
         return 130
     finally:
-        if mode == "dev" and (action == "down" or (action == "up" and not detached)):
+        if mode == "dev" and (action in {"down", "stop"} or (action == "up" and not detached)):
             operator.stop()
     if result.returncode != 0 and newly_started and detached:
         operator.stop()

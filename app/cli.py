@@ -99,8 +99,8 @@ def _add_ingest_parser(subparsers: Subparsers) -> None:
     parser = subparsers.add_parser(
         "ingest",
         help="Queue parsing and chunking; run embeddings and BM25 separately.",
-        description="Parse and store selected sources. Then run rag-corpus backfill_embeddings "
-        "and rag-corpus rebuild_bm25 before hybrid retrieval.",
+        description="Parse and store selected sources. Then run rag-dev corpus backfill_embeddings "
+        "and rag-dev corpus rebuild_bm25 before hybrid retrieval.",
     )
     parser.add_argument("--manifest", required=True, help="Corpus-relative manifest name.")
     parser.add_argument("--selection", required=True, help="Explicit processing selection ID.")

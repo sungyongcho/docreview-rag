@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile } from "@/lib/types";
-import { RequestPreviewContent, presetChanges, presetDescription } from "./request-preview";
+import { RequestPreviewContent, RetrievalPresetComparison, presetChanges, presetDescription } from "./request-preview";
 afterEach(cleanup);
 describe("request preview", () => {
   it("updates next-request JSON without editing its profile and separates it from historical settings", () => {
@@ -17,11 +17,32 @@ describe("request preview", () => {
     expect(screen.getByText(/"query": "Revised question"/)).toBeVisible();
     expect(JSON.stringify(profile)).toBe(original);
     expect(screen.getByText("These are the next question’s settings, not the selected run’s recorded settings.")).toBeVisible();
-    const card = screen.getByRole("button", { name: "Balanced" }).closest("section")!;
+    expect(screen.queryByRole("button", { name: "Balanced" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Preset parameters and changes")).not.toBeInTheDocument();
+  });
+  it("keeps alternative preset descriptions in the search comparison", () => {
+    render(<RetrievalPresetComparison profile={DEFAULT_SESSION_PROFILE} editable={false} />);
+    fireEvent.click(screen.getByText("Compare retrieval presets"));
+    expect(screen.queryByRole("button", { name: "Custom" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Balanced" }));
     expect(screen.getByRole("button", { name: "Balanced" })).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(screen.getByRole("button", { name: "Balanced" }));
     expect(screen.getByRole("button", { name: "Balanced" })).toHaveAttribute("aria-expanded", "false");
+  });
+  it("navigates to editors without mutating the draft and omits inactive search settings", () => {
+    const onOpenSection = vi.fn();
+    const profile = structuredClone(DEFAULT_SESSION_PROFILE);
+    profile.retrieval_preset = "custom";
+    profile.custom_retrieval = { ...resolvedRetrievalProfile(profile), strategy: "vector" };
+    const original = JSON.stringify(profile);
+    render(<RequestPreviewContent profile={profile} query="Compare filings" onOpenSection={onOpenSection} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit search settings" }));
+    expect(onOpenSection).toHaveBeenCalledExactlyOnceWith("retrieval");
+    expect(screen.queryByText("Keyword ranking")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rank fusion constant")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reranker")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(JSON.stringify(profile)).toBe(original);
   });
   it("derives preset changes and visible settings from the effective retrieval profiles", () => {
     const baseline = resolvedRetrievalProfile(DEFAULT_SESSION_PROFILE);

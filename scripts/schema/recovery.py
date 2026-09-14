@@ -95,9 +95,7 @@ def wait_recovery(origin: str, *, timeout: float = 180) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            with opener.open(
-                origin + "/docreview-rag/api/admin/corpus/", timeout=5
-            ) as response:
+            with opener.open(origin + "/docreview-rag/api/admin/corpus/", timeout=5) as response:
                 status = json.load(response)["status"]
             if (
                 status["database_connected"]

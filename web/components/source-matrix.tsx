@@ -6,6 +6,7 @@ import type { AcquisitionForm, AcquisitionPair } from "@/components/build-pipeli
 import { type AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
+import { companyDisplayName } from "@/lib/company-labels";
 import { PORTFOLIO_FILINGS } from "@/lib/published-scope";
 import { DevModeBubble } from "./dev-mode-bubble";
 import { HoverBubble } from "./hover-bubble";
@@ -37,8 +38,9 @@ interface SourceMatrixProps {
 }
 
 /** Stage missing or recoverable pairs and submit the exact synchronized draft atomically. */
-export function SourceMatrix({ sources, companies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, corpusScope = "auto", onAskScope }: SourceMatrixProps) {
-  const { t } = useI18n();
+export function SourceMatrix({ sources, companies: rawCompanies, acquisition, onChange, disabled = false, onValidityChange, onDownload, downloadDisabled, onDeleteSources, deleteDisabled = false, onOpenJobs, locked = false, corpusScope = "auto", onAskScope }: SourceMatrixProps) {
+  const { t, locale } = useI18n();
+  const companies = rawCompanies.map(company => ({ ...company, name: companyDisplayName(company.name, locale) }));
   const scopeId = useId();
   const [scopeOpen, setScopeOpen] = useState(false);
   const latestYear = new Date().getFullYear() - 1;
@@ -141,7 +143,7 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
   }
 
   if (locked) {
-    const publicCompanies = PUBLIC_COMPANIES;
+    const publicCompanies = PUBLIC_COMPANIES.map(company => ({ ...company, name: companyDisplayName(company.name, locale) }));
     const visible = sources.filter((source) => !hiddenCompanies.includes(`${source.registry}:${source.issuer}`));
     /** Add a target company to the browser basket; only published years become query filters. */
     function choosePublicCompanies(values: string[]) {
@@ -195,7 +197,7 @@ export function SourceMatrix({ sources, companies, acquisition, onChange, disabl
     {!rows.some((group) => group.rows.length) && <p>{t(locked ? "No published filings yet. They appear here once the operator publishes a snapshot." : "No sources yet. Add a company and fiscal year below.")}</p>}
     <section className="source-basket" aria-label={t("Company basket")}><header><div className="source-basket-title"><h4>{t("Company basket")}</h4><span className="source-scope-trigger" onMouseEnter={() => setScopeOpen(true)} onMouseLeave={() => setScopeOpen(false)} onKeyDown={(event) => { if (event.key === "Escape") setScopeOpen(false); }}>
       <button type="button" aria-label={t("Supported document scope")} aria-describedby={scopeOpen ? scopeId : undefined} onFocus={() => setScopeOpen(true)} onBlur={() => setScopeOpen(false)} onClick={() => setScopeOpen((open) => !open)}><Info size={14} aria-hidden="true" /></button>
-      {scopeOpen && <div id={scopeId} role="tooltip" className="source-scope-tooltip"><strong>DocReview RAG v2.0</strong><p>{t("Supported documents: SEC 10-K filings and DART annual business reports.")}</p><dl>{(["dart", "sec"] as const).map((registry) => <div key={registry}><dt>{registry.toUpperCase()}</dt><dd>{companies.filter((company) => company.registry === registry).map((company) => `${company.name} (${company.issuer})`).join(", ") || t("Checking status")}</dd></div>)}<div><dt>{t("Fiscal years")}</dt><dd>{t("Default: {first}–{last}", { first: latestYear - 5, last: latestYear })}</dd></div></dl><p>{t("Existing source and selected years are also available. Actual filing availability varies by company and year.")}</p></div>}
+      {scopeOpen && <div id={scopeId} role="tooltip" className="source-scope-tooltip"><strong>DocReview RAG</strong><p>{t("Supported documents: SEC 10-K filings and DART annual business reports.")}</p><dl>{(["dart", "sec"] as const).map((registry) => <div key={registry}><dt>{registry.toUpperCase()}</dt><dd>{companies.filter((company) => company.registry === registry).map((company) => `${company.name} (${company.issuer})`).join(", ") || t("Checking status")}</dd></div>)}<div><dt>{t("Fiscal years")}</dt><dd>{t("Default: {first}–{last}", { first: latestYear - 5, last: latestYear })}</dd></div></dl><p>{t("Existing source and selected years are also available. Actual filing availability varies by company and year.")}</p></div>}
     </span></div><div className="source-basket-tools">
       <span className="source-basket-tool"><button type="button" aria-label={t("Select everything on disk")} disabled={disabled} onClick={() => { setHiddenCompanies([]); onChange(acquisitionDraft(rows.flatMap((group) => group.rows.flatMap((row) => row.cells.filter((cell) => cell.documents.some((source) => source.on_disk)).map((cell) => cell.pair))))); }}><ListChecks size={16} aria-hidden="true" /></button><span role="tooltip">{t("Select everything on disk")}</span></span>
       <span className="source-basket-tool"><button type="button" aria-label={t("Clear selection")} disabled={disabled || !merged.length} onClick={() => { setStaged([]); onChange(acquisitionDraft([])); }}><ListX size={16} aria-hidden="true" /></button><span role="tooltip">{t("Clear selection")}</span></span>

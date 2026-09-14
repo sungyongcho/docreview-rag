@@ -256,7 +256,7 @@ def test_extreme_success_reports_scope_without_restart(fresh_io, tmp_path, monke
     monkeypatch.setattr(fresh.subprocess, "run", bootstrap)
     assert fresh.start_fresh(tmp_path, extreme=True) == 0
     bootstrap.assert_not_called()
-    assert "Run rag-start-quick" in capsys.readouterr().out
+    assert "Run rag-dev start" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("gate", [1, 2])
@@ -343,7 +343,7 @@ def test_host_interruption_points_to_schema_state_without_claiming_operator_evid
     assert commands.main() == 130
     output = capsys.readouterr().err
     assert "data/.schema-recreate-journal" in output
-    assert "rag-schema check" in output
+    assert "rag-dev schema check" in output
     assert "rag-reset --status" not in output
     assert "No automatic retry or restart" in output
 

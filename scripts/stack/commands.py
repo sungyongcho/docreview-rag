@@ -82,7 +82,7 @@ class LocalClient:
                 ),
                 "reset_precondition_failed": (
                     "A reset prerequisite failed. Open Reset runtime data > Reset "
-                    "diagnosis and check rag-dev ps -a before requesting a new "
+                    "diagnosis and check rag-dev status -a before requesting a new "
                     "preview."
                 ),
                 "reset_inspection_failed": (
@@ -103,7 +103,7 @@ class LocalClient:
                     "Preview rejected; no reset was submitted. "
                     if path == "/wipe/preview"
                     else (
-                        "Execution may be uncertain. Run rag-reset --status "
+                        "Execution may be uncertain. Run rag-dev reset data --local --status "
                         "before any resubmission. "
                     )
                 )
@@ -131,7 +131,8 @@ def reset_status(root: Path) -> int:
     """Read reset evidence without prompting, retrying deletion, or needing a surviving .env."""
     host_status = fresh_status(root, "reset") if receipt_path(root, "reset").exists() else None
     print(
-        "Operator reset evidence (extreme or web reset); host clean-start status: rag-schema check."
+        "Operator reset evidence (extreme or web reset); "
+        "host clean-start status: rag-dev schema check."
     )
     try:
         result = operator_client(root).request("/wipe")
@@ -208,7 +209,7 @@ def corpus(args: argparse.Namespace, root: Path) -> int:
         return 0
     result = client.request("/corpus/jobs/", body)
     print(json.dumps(result, indent=2))
-    print("Track this job with rag-corpus status or the development web Jobs panel.")
+    print("Track this job with rag-dev corpus status or the development web Jobs panel.")
     return 0
 
 
@@ -247,7 +248,7 @@ def main() -> int:
             "in the web UI. "
             "Public read-only deployments cannot perform admin operations."
         ),
-        epilog="Example: rag-corpus acquire_edgar --identifier NVDA --year 2024",
+        epilog="Example: rag-dev corpus acquire_edgar --identifier NVDA --year 2024",
     )
     jobs.add_argument(
         "kind",
@@ -305,7 +306,7 @@ def main() -> int:
         print(
             f"Local database work failed ({type(error).__name__}). "
             "The reset outcome may be partial or uncertain. Preserve data/.schema-recreate-journal "
-            "and run rag-schema check before requesting another preview; no deletion is retried.",
+            "and run rag-dev schema check before another preview; no deletion is retried.",
             file=sys.stderr,
         )
         return 1
@@ -323,12 +324,13 @@ def main() -> int:
         if args.command == "reset" and not args.status:
             message = (
                 "Host clean start interrupted. A reset may be partial: preserve "
-                "data/.schema-recreate-journal and run rag-schema check before another preview. "
+                "data/.schema-recreate-journal; run rag-dev schema check before another preview. "
                 "No automatic retry or restart occurs."
             )
         else:
             message = (
-                "Stopped waiting. For extreme/web reset evidence run rag-reset --status; "
+                "Stopped waiting. For extreme/web reset evidence "
+                "run rag-dev reset data --local --status; "
                 "check corpus jobs in the web UI."
             )
         print(message, file=sys.stderr)

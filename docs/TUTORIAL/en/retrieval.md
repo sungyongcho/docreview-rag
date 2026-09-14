@@ -4,7 +4,7 @@ Search trial runs one real query against the prepared index and shows every retu
 component ranks and source identity. Retrieval does not establish that an answer is correct; read a
 promising excerpt against the original report before choosing a retrieval profile.
 
-## 8. Test retrieval and read the source {#step-8}
+## Test retrieval and read the source {#step-8}
 
 > [!GOAL]
 > Test the prepared indexes against a real question and read the ranked passages that will support an answer.
@@ -16,7 +16,7 @@ promising excerpt against the original report before choosing a retrieval profil
 
 1. Open **Measure → Search trial** and confirm that the report has chunks and the selected retrieval lanes are ready; complete [index preparation](indexing.md) as needed.
 2. Enter the question below and choose Hybrid, BM25, `k=5`, and no reranker for the initial inspection.
-3. Choose **Preview retrieval**. The previously full-width input workspace gains actual results after execution; component rankings, document IDs, excerpts, and final ranks explain the selected passages.
+3. Choose **Preview retrieval**. After execution, the previously full-width input workspace shows actual results; component rankings, document IDs, excerpts, and final ranks explain the selected passages.
 4. Inspect a relevant passage and its original source. Check the company, fiscal year, and whether the text actually addresses the question; a high score alone is insufficient.
 5. If results are empty or irrelevant, verify document readiness and scope before changing the question or retrieval profile, using [search troubleshooting](troubleshooting.md) and [settings](settings.md).
 6. Continue to [ask the first question](answers.md#step-9), or go directly to [retrieval evaluation](evaluation.md#step-11).
@@ -28,6 +28,8 @@ What drove NVIDIA data center revenue growth in fiscal 2024?
 OpenAI query embeddings can incur cost even when corpus embeddings are ready. **Preview review** is a
 separate answer operation with provider usage and a recorded run. Do not invoke it just to inspect
 retrieval. Preview retrieval does not persist an evaluation result or alter a conversation profile.
+
+<!-- screenshot: search-trial-input-and-ranked-results -->
 
 ![A search trial in the playground with a typed query and the ranked result list below it.](../assets/search-trial-input-and-ranked-results.en.png)
 Example: `NVIDIA fiscal 2024 revenue` returns five NVIDIA FY2024 passages in the prepared corpus. Each result retains its source offsets and SHA-256. This is retrieval only; no answer is generated.

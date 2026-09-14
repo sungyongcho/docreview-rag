@@ -120,7 +120,7 @@ def extract_artifacts(root: Path, destination: Path) -> None:
         target.chmod(0o640)
 
 
-def validate_database(manifest: dict, report: dict) -> None:
+def validate_database(manifest: dict, report: dict, *, allow_runtime_history: bool = False) -> None:
     """Compare restored database identity, vectors, snapshots and history to the bundle."""
     expected_ids = sorted(row["document_id"] for row in manifest["documents"])
     expected_paths = sorted(f"/app/data/eval_runs/{name}" for name in EVALUATIONS)
@@ -138,7 +138,9 @@ def validate_database(manifest: dict, report: dict) -> None:
         or report["linked_evaluations"] != 4
     ):
         raise ValueError("Expected four public snapshots linked to the four evaluation files")
-    if any(report[name] for name in ("runs", "traces", "operator_jobs")):
+    if not allow_runtime_history and any(
+        report[name] for name in ("runs", "traces", "operator_jobs")
+    ):
         raise ValueError("The public bundle must not contain private runtime history")
 
 

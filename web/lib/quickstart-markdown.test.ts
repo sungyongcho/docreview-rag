@@ -18,7 +18,8 @@ describe("split quick start guides", () => {
   it.each(["overview", "environment", "quickstart", "quickstart-dev"])("keeps localized structure, checkpoint IDs and technical instructions aligned for %s", (name) => {
     const en = source("en", name); const ko = source("ko", name);
     const english = renderTutorial(en, { locale: "en" }); const korean = renderTutorial(ko, { locale: "ko" });
-    expect(english.headings.map((heading) => heading.depth)).toEqual(korean.headings.map((heading) => heading.depth));
+    // Legacy bookmark aliases differ by locale and are not visible heading levels.
+    expect(english.headings.filter((heading) => heading.depth > 0).map((heading) => heading.depth)).toEqual(korean.headings.filter((heading) => heading.depth > 0).map((heading) => heading.depth));
     expect(Array.from(en.matchAll(/\{#([a-z][a-z0-9-]*)\}/g), (match) => match[1])).toEqual(Array.from(ko.matchAll(/\{#([a-z][a-z0-9-]*)\}/g), (match) => match[1]));
     expect(english.codes).toEqual(korean.codes);
     expect(inlineCodes(en)).toEqual(inlineCodes(ko));
@@ -31,13 +32,13 @@ describe("split quick start guides", () => {
     const sections = splitQuickStart(developer);
     expect(environment.indexOf("{#qs-setup}")).toBeLessThan(environment.indexOf("{#schema-recovery}"));
     expect(environment).toContain("git clone https://github.com/sungyongcho/docreview-rag.git");
-    expect(environment).toContain("source ./rag-alias.sh\nrag-help\nrag-start-quick");
+    expect(environment).toContain("source ./rag-alias.sh\nrag-help\nrag-dev start");
     expect(environment).toContain("OPENAI_API_KEY_LOCAL=<your-own-openai-development-key>");
     expect(environment).toContain("{#open-build}");
     for (const mode of ["cli", "web"] as const) expect(Array.from(sections[mode].matchAll(/\{#qs-(?:cli|web)-(\d+)\}/g), (match) => Number(match[1]))).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(developer).not.toContain("git clone"); expect(developer).not.toContain("{#qs-setup}");
     expect(sections.common).toContain("environment.md#qs-setup");
-    expect(visitor).not.toMatch(/git clone|rag-start-quick|\[!DEV\]|```(?:bash|dotenv)|qs-cli|qs-web/);
+    expect(visitor).not.toMatch(/git clone|rag-dev start|\[!DEV\]|```(?:bash|dotenv)|qs-cli|qs-web/);
     expect(Array.from(visitor.matchAll(/\{#qs-app-(\d+)\}/g), (match) => Number(match[1]))).toEqual([1, 2, 3, 4, 5]);
     expect(visitor).toContain("answers.md"); expect(visitor).toContain("documents.md#visibility"); expect(visitor).toContain("snapshots.md#comparison");
   });

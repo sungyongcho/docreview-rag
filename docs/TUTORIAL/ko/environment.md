@@ -1,8 +1,9 @@
-# 환경 준비
+<!-- heading-alias: 환경-준비 -->
+# 환경 준비 {#environment-setup}
 
 저장소를 clone했는데 무엇부터 할지 모르겠다면 `source ./rag-alias.sh` 후
-`rag-start-quick`를 실행하세요. `rag-start-fresh`는 확인된 체크아웃 정리,
-`rag-reset`는 설정·볼륨을 보존하는 ORM 데이터·원문 초기화입니다.
+`rag-dev start`를 실행하세요. `rag-prod reset environment --local --all-modes`는 확인된 체크아웃 정리,
+`rag-dev reset data --local`는 설정·볼륨을 보존하는 ORM 데이터·원문 초기화입니다.
 모든 명령에 `--verbose` (`-vv`)를 붙일 수 있습니다. [CLI 안내](cli.md)를 참고하세요.
 
 이 페이지는 GitHub에서 DocReview RAG를 clone한 뒤 로컬에서 처음부터 실행하는 사람을 위한 안내입니다. 아래 Part 1을 따라 서비스를 준비하고 데이터 준비 화면을 엽니다. 이미 실행 중인 앱을 바로 체험하려면 [Quick Start](quickstart.md)를 보세요.
@@ -19,17 +20,21 @@ git clone https://github.com/sungyongcho/docreview-rag.git
 cd docreview-rag
 source ./rag-alias.sh
 rag-help
-rag-start-quick
+rag-dev start
 ```
 
-source 한 번으로 설치와 활성화를 진행합니다. Y는 자동 등록을 저장하고 로그인 셸로 재시작하며 배너에서 rag-help 입력을 안내합니다. N은 이번 셸만 불러옵니다. 다시 source하면 버전과 등록된 정의를 비교해 [already installed] 또는 [update required]를 표시하며 이후 변경은 `rag-alias update`로 반영합니다.
+`source` 한 번으로 설치와 활성화를 진행합니다.
+
+- **Y**: 자동 등록을 저장하고 로그인 셸로 재시작합니다. 배너에서 `rag-help` 입력을 안내합니다.
+- **N**: 이번 셸에만 명령을 불러옵니다.
+- 다시 `source`하면 버전과 등록된 정의를 비교해 `[already installed]` 또는 `[update required]`를 표시하며, 이후 변경은 `rag-alias update`로 반영합니다.
 
 Helper는 저장소에 포함됩니다. `source`는 현재 터미널에 등록하며,
 선택적인 [영구 등록 방법](cli.md#명령-등록과-도움말)은 명령 안내를 참고하세요.
-첫 실행은 `.env`가 없을 때만 생성합니다. 파일을 로컬에서 편집하고 `rag-start-quick`를 다시 실행하세요.
+첫 실행은 `.env`가 없을 때만 생성합니다. 파일을 로컬에서 편집하고 `rag-dev start`를 다시 실행하세요.
 
 ```dotenv
-SEC_USER_AGENT=Your Real Name your-real-contact@example.org
+SEC_USER_AGENT=Your Real Name your-real-contact@example.com
 DART_API_KEY=<your-own-dart-key>
 OPENAI_API_KEY_LOCAL=<your-own-openai-development-key>
 EMBEDDING_PROVIDER=openai
@@ -44,10 +49,12 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 
 빈 DB에만 스키마를 생성하고 기존 정상 DB는 보존합니다. 스키마가 맞지 않으면 자동 초기화하지
 않고 원인을 안내합니다. 설정·도구 누락을 해결한 뒤 같은 명령을 재실행하세요.
-설치 문제를 고치려고 `rag-reset`를 실행하지 마세요.
+설치 문제를 고치려고 `rag-dev reset data --local`를 실행하지 마세요.
 표시된 주소(기본 `http://localhost:8000/docreview-rag/`)를 엽니다.
 
 설정 명령은 사전 요구사항 → 로컬 설정 → 프로젝트 서비스 상태·시작 → 스키마 준비 → DEV 서버 준비 확인의 다섯 단계를 표시합니다. `db`, `app`, `web` 각각의 중지·시작 중·비정상·실행 상태를 구분합니다. 헬스 체크가 없는 컨테이너가 실행 중이라는 사실만으로 서버 준비 완료를 선언하지 않습니다. 이미 정상 실행 중인 서비스도 Compose가 개발 설정을 적용하기 전에 표시합니다.
+
+<!-- details: setup-failure-recovery | 설정 또는 시작이 실패했을 때 명령이 제공하는 것 -->
 
 설정에서 중단되면 각 키의 `.env` 줄·shell 값·실제 적용 출처를 보여 주고 인증 정보는 숨깁니다.
 `[f]`로 이번 실행의 잘못된 export를 제외하거나 `[e]`로 공개 임베딩 설정 두 개를 저장할 수
@@ -56,19 +63,23 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 시작·readiness 실패 시 기존 읽기 전용 진단을 실행하고, 확인 후 볼륨을 보존하는
 종료·빌드·시작 복구를 한 번 제안합니다.
 
-## 1. 실행 환경 열고 확인하기 {#step-1}
+<!-- /details -->
+
+## 실행 환경 열고 확인하기 {#step-1}
 
 > [!GOAL]
 > 현재 환경에서 문서를 살펴보고 필요한 준비 작업을 할 수 있는지 확인합니다.
 >
 > **준비** [Part 1: 환경 준비](#qs-setup) 또는 호환되는 DB가 연결된 실행 중인 서비스 · **완료** API가 응답하고 DB가 연결되며 스키마를 사용할 수 있습니다.
 
-사이드바 **시스템 → 시스템 상태**를 엽니다. 페이지 제목은 **실행 준비 상태**입니다. 모드 표시를 읽고 준비 과정을 실습하려면 개발 환경을 사용하세요. 공개 모드는 권한이 달라 일부 조작이 보이지 않을 수 있습니다. 이 확인을 위해 원문 수집·임베딩·답변 요청을 실행할 필요는 없으며, 질문이나 기업을 입력하지 않습니다. 대신 서비스 주소가 의도한 환경인지 확인하세요. 화면이 같아 보여도 API·DB 주소가 다르면 다른 데이터를 사용하는 환경일 수 있습니다. 코퍼스 수치는 두 빌드 모두 표시되며 쓰기 가능 여부만 감춥니다.
+사이드바 **시스템 → 시스템 상태**를 엽니다. 페이지 제목은 **실행 준비 상태**입니다. 준비 과정을 실습하려면 개발 환경을 사용하세요. 모드 표시를 먼저 읽으세요. 공개 모드는 권한이 달라 일부 조작이 보이지 않을 수 있습니다.
+
+이 확인은 읽기 전용이며 원문 수집·임베딩·답변 요청을 실행하지 않으므로 질문이나 기업을 입력하지 않습니다. 대신 서비스 주소가 의도한 환경인지 확인하세요. 화면이 같아 보여도 API·DB 주소가 다르면 다른 데이터를 사용하는 환경일 수 있습니다. 코퍼스 수치는 두 빌드 모두 표시되며 쓰기 가능 여부만 감춥니다.
 
 1. **새로고침**을 한 번 누르고 **확인 중…**이 끝날 때까지 기다립니다. 상태 정보가 갱신되며, 시스템 메뉴나 연결 경고에서 API 상태를 읽습니다.
 2. 데이터베이스·스키마 항목을 확인합니다. 코퍼스 수치와 모델 정책은 같은 환경의 다른 준비 항목입니다.
 3. 완료 여부를 확인합니다. API가 응답하고 DB가 연결되며 스키마를 사용할 수 있으면 현재 환경에서 문서 준비를 허용하는지도 파악한 것입니다. 코퍼스가 비어 있어도 이 조건은 충족할 수 있으며, 기존 데이터 확인은 다음 단계에서 합니다. 알 수 없는 항목은 확인되지 않은 상태이므로 통과로 해석하지 않습니다.
-4. 페이지는 열리는데 API 확인이 실패하면 `rag-dev ps`와 `rag-dev logs --tail=80 app`을 확인하고, [문제 해결](troubleshooting.md)에서 기록된 증상에 맞는 조치를 적용한 뒤 다시 새로고침합니다. 새 DB라면 위의 스키마 준비를 따르고, 스키마 불일치가 있다고 기존 DB를 삭제하지 않습니다.
+4. 페이지는 열리는데 API 확인이 실패하면 `rag-dev status`와 `rag-dev logs --tail=80 app`을 확인하고, [문제 해결](troubleshooting.md)에서 기록된 증상에 맞는 조치를 적용한 뒤 다시 새로고침합니다. 새 DB라면 위의 스키마 준비를 따르고, 스키마 불일치가 있다고 기존 DB를 삭제하지 않습니다.
 
 | 항목 | 확인할 내용 | 이것만으로 알 수 없는 것 |
 |---|---|---|
@@ -79,7 +90,12 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 | 코퍼스 | 빈 상태·일부 준비 상태를 포함해 실제 수치가 수집되었는지. | 모든 벡터가 의도한 모델로 만들어졌는지. |
 | 모델 가용성 | 선택한 엔진이 사용 가능하거나 빠진 조건이 설명되는지. | 모델 요청의 성공이나 답변 근거의 충분함. |
 
-![준비 상태·런타임 모드·데이터베이스 연결·BM25 준비와 코퍼스 총량을 보여주는 시스템 화면.](../assets/runtime-readiness-status.ko.png)
+<!-- screenshot: runtime-readiness-status -->
+
+![준비 상태·런타임 모드·데이터베이스 연결·BM25 준비와 코퍼스 총량을 보여주는 시스템 화면.](../assets/captures/runtime-readiness-status.ko.png)
+
+*1. 실행 준비 상태 · 2. 다음 조치*
+
 데이터 준비 화면을 열고 아래 개발용 준비 안내로 이어갑니다.
 
 ## 데이터 준비 화면을 열고 이어가기 {#open-build}
@@ -96,8 +112,6 @@ SEC 연락처와 DART 키는 원문 수집에 필요하고, 임베딩 생성에�
 uv run python -m scripts.schema check
 ```
 
-비어 있는 로컬 DB에만 다음 명령으로 스키마를 준비한 뒤 다시 확인합니다.
-
 일반 Compose 시작은 DB health 확인 후 빈 DB 스키마를 자동 준비합니다. 이미지 진입점은 기존 DB를 변경 없이 검사하고, 불일치하면 API 실행을 차단합니다. DEV·로컬 PROD 모드·해당 이미지의 배포 Compose에 적용됩니다. 웹만 열리고 API가 차단됐다면 `rag-dev logs --tail 80 app`에서 진단과 로컬 `check`/`recover` 명령을 확인하세요. DB 없는 공개 예시 모드는 검사를 건너뜁니다. 원문 수집과 인덱싱은 여전히 별도 선행조건입니다.
 
 DB만 따로 시작한 경우에는 빈 DB에 한해 다음 수동 준비도 가능합니다.
@@ -108,22 +122,30 @@ uv run python -m scripts.schema prepare
 
 기존의 호환되지 않는 DB는 보존되며 준비 명령이 변경을 거부합니다. 이미지를 다시 빌드하거나 서비스를 재시작해도 호환되지 않는 DB 구조가 복구되지는 않습니다. 인덱싱 전 호환되거나 비어 있는 로컬 DB를 선택하세요. 로컬 DEV DB 내용을 버리기로 명시적으로 선택한 경우에만 CLI 안내의 `scripts.schema recreate` 경로를 검토하세요. 자동 초기화는 하지 않습니다. 서비스 중지나 실제 저장 권한 문제에는 해당 문제의 터미널 명령과 확인할 결과가 별도로 표시됩니다.
 
-### 로컬 컨테이너 파일 소유권
+<!-- heading-alias: 로컬-컨테이너-파일-소유권 -->
+### 로컬 컨테이너 파일 소유권 {#local-container-file-ownership}
 
 로컬 Compose는 이미지의 비루트 UID 10001을 유지하고 `HOST_GID`를 앱의 기본 그룹으로
-사용합니다(기본값 1000, `rag-dev`는 실행한 호스트 그룹을 전달). 기존 DB 초기화 절차를
+사용합니다(기본값 1000, `rag-dev`는 실행한 호스트 그룹을 전달). 호스트의 `data/` 디렉터리는
+해당 그룹의 쓰기를 허용해야 합니다. 기본 그룹이 1000이 아닌 호스트에서 Compose를 직접
+실행한다면 `HOST_GID`를 `id -g` 값으로 지정하세요. 이 로컬 Compose 정책을 업데이트한 뒤에는
+`rag-dev start`로 앱 컨테이너를 재생성해야 합니다. 소스 자동 반영만으로 기존 컨테이너의 기본
+그룹이나 실행 명령이 바뀌지는 않습니다. [초기화 복구](cli.md)를 참고하세요.
+
+<!-- details: container-file-ownership | 권한·umask·복구 상세 -->
+
+기존 DB 초기화 절차를
 거친 뒤 API 시작 시 `umask 0002`를 적용합니다. 새 원문·다운로드·평가 디렉터리는 그룹이
 쓸 수 있고, 저장된 로컬 모델 설정은 호스트 그룹이 읽을 수 있는 0640 권한입니다.
 이미지 기본 사용자와 배포 Compose는 바꾸지 않는 로컬 bind mount 공유 정책입니다.
 
-호스트의 `data/` 디렉터리는 해당 그룹의 쓰기를 허용해야 합니다. 기본 그룹이 1000이 아닌
-호스트에서 Compose를 직접 실행한다면 `HOST_GID`를 `id -g` 값으로 지정하세요. 예전에
+예전에
 컨테이너가 만든 파일의 기존 권한은 자동 변경되지 않습니다. 초기화 미리보기는 차단된 원문
 경로에 필요한 관리자 권한 복구 명령을 출력합니다. 오래된 `data/local-settings` 또는
 `data/eval_runs`에도 호스트 접근이 필요하면 소유자가 같은 범위 제한 ACL 복구를 해당
-디렉터리에 적용해야 합니다. 소유권·ACL은 자동 변경하지 않습니다. 이 로컬 Compose 정책을
-업데이트한 뒤에는 `rag-dev up -d`로 앱 컨테이너를 재생성하세요. 소스 자동 반영만으로 기존
-컨테이너의 기본 그룹이나 실행 명령이 바뀌지는 않습니다. [초기화 복구](cli.md)를 참고하세요.
+디렉터리에 적용해야 합니다. 소유권·ACL은 자동 변경하지 않습니다.
+
+<!-- /details -->
 
 오류의 **이 부분을 살펴보세요**로 관련 파이프라인 단계에 이동합니다. DB·스키마 문제는 설치 안내로 연결합니다. 도착한 단계에서 현재 진단과 터미널 안내를 확인하며, 다른 오류 영역에는 원인과 이동 링크만 간단히 표시합니다.
 
@@ -131,7 +153,7 @@ uv run python -m scripts.schema prepare
 
 ## 실행 환경과 준비 작업 구분하기 {#environment-boundaries}
 
-Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도로 설치합니다. **설정 → 로컬 LLM**에서 **Default**를 선택하고 **연결 진단 실행**으로 확인한 뒤 필요한 연결 변경을 수행합니다. **서버 추가…**는 다른 주소를 사용할 때만 선택합니다. [macOS·Linux 설치 안내](ollama.md)에서 설치와 백엔드 접근을 설명하며 `rag-ollama-check`는 읽기 전용 진단입니다. 답변 모델이 없다는 사실만으로 API·DB·스키마가 고장 났다고 판단하지 않습니다.
+Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도로 설치합니다. **설정 → 로컬 LLM**에서 **Default**를 선택하고 **연결 진단 실행**으로 확인한 뒤 필요한 연결 변경을 수행합니다. **서버 추가…**는 다른 주소를 사용할 때만 선택합니다. [macOS·Linux 설치 안내](ollama.md)에서 설치와 백엔드 접근을 설명하며 `rag-dev doctor`는 읽기 전용 진단입니다. 답변 모델이 없다는 사실만으로 API·DB·스키마가 고장 났다고 판단하지 않습니다.
 
 개발 서비스는 소스 자동 반영과 문서 실시간 편집을 지원합니다. API 재시작은
 실행 중인 작업을 중단할 수 있으므로 재시도 여부를 결정하기 전에 작업 기록을
@@ -139,10 +161,21 @@ Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도
 
 이번 릴리스는 DEV와 PROD를 각각의 실행 모드로 지원합니다. DEV 안의 **배포 화면 미리보기**는 [후속 이슈 #211](https://github.com/sungyongcho/docreview-rag/issues/211)로 미루며 이번 릴리스에서는 제공하지 않습니다.
 
-`rag-prod`는 공개 권한을 적용하는 독립된 로컬 PROD 모드를 시작합니다. 사이트를 외부에
+`rag-prod start`는 공개 권한을 적용하는 독립된 로컬 PROD 모드를 시작합니다. 사이트를 외부에
 게시하는 명령은 아닙니다. 개발 환경에서 로컬 모델 연결이 정상이어도 공개
 모드에서 로컬 LLM이 허용되는 것은 아닙니다. 의도적으로 모드를 바꾸려면
 [CLI 환경 명령](cli.md#dev와-prod-미리보기), 저장 연결은 [설정](settings.md)을 참고하세요.
+
+준비된 로컬 포트폴리오는
+`rag-prod start --local --ready --artifacts /path/to/public-bundle`로 시작합니다.
+이미 PROD가 실행 중이면 `rag-prod prepare --local --artifacts /path/to/public-bundle`을
+사용하고, 데이터를 변경하지 않고 검사하려면 `--check`를 추가하세요. 저장된 공개
+데이터와 임베딩을 복원하며 답변 모델을 내려받는 것은 아닙니다. 원문 다운로드나
+유료 임베딩 생성을 자동 실행하지 않습니다. PROD의 `prod_pg_data` 볼륨과
+`data/local-prod/{corpus,eval-runs,runtime}` 파일은 DEV 저장소와 분리됩니다.
+모드 전환은 각 DB를 보존하며 대화를 서로 복사하지 않습니다.
+[번들 선택·검증 안내](cli.md#local-prod-data)를 참고하세요. 빈 로컬 PROD DB에서
+문서 준비 필요 안내는 정상이며, 이를 해결하려고 DEV를 초기화하지 마세요.
 
 준비 표시를 초록색으로 만들기 위해 파괴적 초기화를 사용하지 마세요.
 새로고침은 상태를 읽으며 복구·적재·인덱스 생성·답변 모델 호출을 실행하지 않습니다.
@@ -156,7 +189,7 @@ Ollama는 로컬 답변을 위한 선택 사항이며 DocReview 스택과 별도
 
 ```text
 visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
-                          │  Cloudflare Worker (gomoku repo)
+                          │  Cloudflare Worker
             ┌─────────────┴──────────────┐
    /docreview-rag/*        /docreview-rag/api/*
             │                              │  plain HTTP
@@ -195,9 +228,10 @@ API는 `deploy/gcp/operator_tunnel.sh`로만 닿으며, 이 스크립트는 loop
    아티팩트 번들(코퍼스·데이터베이스·평가 기록)을 복원한 뒤 스택을 띄웁니다.
 4. `deploy/gcp/print_origin.sh`가 `DEPLOY_DOCREVIEW_ORIGIN=http://<ip>:8000`과
    `DEPLOY_DOCREVIEW_SITE_ORIGIN=https://<site>.web.app`을 출력합니다.
-5. 그 줄들을 gomoku 저장소의 `.env`에 붙여 넣고 그쪽 `03_deploy_cloudflare.sh`를
-   실행합니다. Worker가 `/docreview-rag/api/*`는 VM으로, 나머지
-   `/docreview-rag/*`는 Firebase Hosting으로 보냅니다.
+5. 사이트의 Cloudflare Worker 라우팅 설정에 이 값들을 적용합니다.
+   `/docreview-rag/api/*` 요청은 `DEPLOY_DOCREVIEW_ORIGIN`으로, 나머지
+   `/docreview-rag/*`는 `DEPLOY_DOCREVIEW_SITE_ORIGIN`으로 전달되도록
+   설정하고, 해당 사이트의 라우팅 배포 절차로 Worker를 배포합니다.
 6. `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh`가
    `NEXT_PUBLIC_ADMIN_MODE`를 비운 채 공개 번들을 빌드하고 배포합니다.
 
@@ -211,7 +245,7 @@ IP를 예약하면 이를 피할 수 있지만 월 약 $3가 듭니다.
 | GCP e2-medium | `us-central1` 온디맨드: 공유 vCPU 2개, RAM 4 GB, 시간당 약 $0.034(상시 가동 시 월 약 $25) + `pd-standard` 30 GB 디스크 월 약 $1 | 약 $26 |
 | 외부 IP | 임시 IP. 고정 IP를 예약하면 월 약 $3 | $0 |
 | Firebase Hosting | 무료 등급(정적 내보내기) | $0 |
-| Cloudflare Worker | 무료 등급, gomoku Worker와 공유 | $0 |
+| Cloudflare Worker | 무료 등급 | $0 |
 | OpenAI | `DOCREVIEW_PUBLIC_DAILY_COST_USD`(compose 파일에서 `0.10`)로 UTC 하루 단위 상한 | ≤ $0.10/day |
 
 트레이드오프: VM이 북미에 있어 유럽 방문자는 약 100 ms의 지연이 더 붙습니다.

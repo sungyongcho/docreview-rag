@@ -6,6 +6,7 @@ import type { AcquisitionPair } from "./build-pipeline";
 import type { AcquisitionCompany } from "@/lib/acquisition-catalog";
 import { pairKey, sourceSelectionRows, type SourceInventory } from "@/lib/source-selection";
 import { useI18n } from "@/lib/i18n";
+import { companyDisplayName } from "@/lib/company-labels";
 import "./source-matrix.css";
 
 interface Props {
@@ -27,7 +28,7 @@ interface Props {
 
 /** Render a compact, accessible company/year grid for selection or a read-only summary. */
 export function SourceSelectionGrid({ sources, pairs, availablePairs = [], companies, disabled, scopeMode = false, corpusScope = "auto", selectedOnly = false, eligibleOnly = false, onToggle, addedCompanies = [], onEditCompany, onRemoveCompany, renderYearEditor }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const selected = new Set(pairs.map(pairKey));
   const groups = sourceSelectionRows(sources, [...pairs, ...availablePairs], companies, selectedOnly);
@@ -38,7 +39,8 @@ export function SourceSelectionGrid({ sources, pairs, availablePairs = [], compa
       group.rows.push({ issuer: company.issuer, label: `${company.issuer}${name && name !== company.issuer ? ` · ${name}` : ""}`, cells: [] });
     }
   }
-  return <div className="source-selection-grid">{groups.map(({ registry, rows: allRows }) => {
+  return <div className="source-selection-grid">{groups.map(({ registry, rows: sourceRows }) => {
+    const allRows = sourceRows.map(row => ({ ...row, label: companyDisplayName(row.label, locale) }));
     const rows = eligibleOnly ? allRows.map((row) => ({ ...row, cells: row.cells.filter((cell) => cell.documents.length > 0 && cell.documents.every((source) => source.on_disk && source.ready === true)) })).filter((row) => row.cells.length > 0) : allRows;
     if (!rows.length) return null;
     const outsideScope = scopeMode && corpusScope !== "auto" && corpusScope !== registry;

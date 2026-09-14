@@ -151,7 +151,7 @@ stage_origin() {
   while IFS= read -r line; do
     ui_row "${line%%=*}" "${line#*=}"
   done <<< "${output}"
-  ui_dim "Add these values to ~/Documents/gomoku/.env and run its 03_deploy_cloudflare.sh."
+  ui_dim "Configure the site's routing Worker with these origins and deploy it through its own routing workflow."
   ui_dim "Build and deploy the static site with scripts/deploy/firebase.sh."
 }
 

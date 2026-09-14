@@ -1,15 +1,16 @@
 # Documents and corpus readiness
 
-## Portfolio document inventory
-
-The PROD inventory uses the same fixed published portfolio set as Filings. Open a document to inspect real chunk text and citations. A missing publication does not mean its DEV source was deleted. Publishing the prepared target documents is a separate operator action.
+<!-- heading-alias: portfolio-document-inventory -->
+## Portfolio document inventory {#portfolio}
 
 Use Documents to connect a company and fiscal year to a specific original filing,
 its stored chunks, and its indexing state. The list and details answer different
 questions: the list finds a filing; the details establish what has actually been
 prepared for that source.
 
-## 2. Inspect the existing corpus {#step-2}
+The PROD inventory uses the same fixed published portfolio set as Filings. Open a document to inspect real chunk text and citations. A missing publication does not mean its DEV source was deleted. Publishing the prepared target documents is a separate operator action.
+
+## Inspect the existing corpus {#step-2}
 
 > [!GOAL]
 > Identify work you can reuse and the first preparation step that is still missing.
@@ -22,6 +23,8 @@ Open sidebar **Build → Documents**, or select the Documents tab in Build if yo
 2. Read the details: original filing identity, source link when available, chunk counts, embedding identities, snapshot membership, and related work. The detail header makes the company name and **FY** badge prominent, with the stable document ID, issuer code, and form underneath; if a company name is unavailable, the identifier remains visible and the interface does not invent a name.
 3. Check the missing preparation in the table below. A positive embedding count is not enough: inspect the recorded embedding identity, and check BM25 in Pipeline even when the document's embedding coverage is complete.
 4. If no document exists, wait for loading to finish and confirm the empty state after clearing filters. Proceed to acquisition instead of selecting an unrelated record. No matches can mean active filters, no ingested data, or no published data in public mode, so follow [visibility](#visibility) and remove the relevant filter chips; a load error is not an empty catalog, so use **Retry** or **Retry filters** and follow [Troubleshooting](troubleshooting.md) if it persists.
+
+<!-- screenshot: document-detail -->
 
 ![The opened Samsung Electronics FY2022 filing shows its company name, 2022 fiscal year, 1,175 stored chunks and complete embeddings.](../assets/document-detail.en.png)
 
@@ -57,16 +60,19 @@ year in its filing date. Read the report period and filing date in details.
 
 ## Lists, details, and returning to work {#navigation}
 
-When the actual content area reaches 1100 px, selecting a document opens a split view.
-The list starts at 360 px and can be resized from 320 to 600 px while leaving at least
-560 px for details. Drag the separator, or focus it and use arrow keys; Shift makes
-larger changes, Home and End select the available limits, and double-click resets it.
-Documents and Jobs remember their widths independently.
-
-On narrower screens, details replace the list. **Back to documents** returns with
+Selecting a document opens a split view when the content area is wide enough; on
+narrower screens, details replace the list. **Back to documents** returns with
 the search, filters, selection, and list scroll retained. Tab changes and navigation
 between workspaces keep the relevant state during the session. When returning to a
 conversation after a readiness check, use the explicit **Back** action.
+
+<!-- details: split-view | Split-view resizing -->
+The split view opens when the actual content area reaches 1100 px. The list starts
+at 360 px and can be resized from 320 to 600 px while leaving at least 560 px for
+details. Drag the separator, or focus it and use arrow keys; Shift makes larger
+changes, Home and End select the available limits, and double-click resets it.
+Documents and Jobs remember their widths independently.
+<!-- /details -->
 
 Preparation-related errors offer **Inspect this step** to open the relevant pipeline stage. Inspect the prerequisite and any terminal work there, then return and refresh Documents. Following the link does not ingest, embed, rebuild an index, or mark a failed request complete.
 

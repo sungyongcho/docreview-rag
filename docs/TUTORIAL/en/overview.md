@@ -1,41 +1,73 @@
 # DocReview RAG guide
 
-DocReview connects SEC and DART filings to answers you can verify against the original text. You can follow a claim back to its citation, inspect the retrieval that supplied the evidence, and compare recorded retrieval evaluations. The manual follows those tasks across the app; Help explains an individual control while you are using it.
+Ask about SEC and DART filings, verify original evidence, and compare search results. Try the public service without installing anything locally.
 
-To try the running service, begin with [Quick Start](quickstart.md). To run a fresh clone, begin with [Environment setup](environment.md#qs-setup). All 17 guides are readable in DEV and PROD; a DEV badge identifies an operation that requires a development environment.
+## What would you like to try? {#start}
 
-## Where to start {#start}
+<!-- guide-features -->
 
-| Your starting point | Follow this path | Result |
-|---|---|---|
-| A running public instance | [Quick Start](quickstart.md) → [Answers](answers.md) → [Documents](documents.md) and [Snapshots](snapshots.md) | Read a supported answer, verify its sources, and inspect published results. |
-| A fresh clone or empty local database | [Environment setup](environment.md#qs-setup) → [Quick Start for DEV MODE](quickstart-dev.md) | Start DEV and prepare two example filings for retrieval. |
-| An existing local corpus | [Documents](documents.md#step-2) → the missing [preparation step](quickstart-dev.md) | Reuse downloaded sources, chunks, compatible embeddings, and BM25. |
+- **[Ask about a company](quickstart.md#qs-app-2)**
 
-The public portfolio covers NVIDIA and AMD FY2019–FY2024 and Samsung Electronics and SK hynix FY2022–FY2024: 18 filings. A new DEV installation does not inherit those prepared database rows or downloaded sources. Its default filing selection describes intended work; it does not prove that work has run.
+  Choose a filing, ask a question, and inspect the answer and execution summary.
 
-An empty filtered list and an empty public catalog are also different from an empty database. Check the current filters and [document visibility](documents.md#visibility) before deciding what is missing.
+  [Open conversation →](/docreview-rag/?view=review)
 
-CLI and Web share results when they use the same database, source directory, and effective configuration. The corpus helper submits the same jobs as Build; direct tools that bypass the queue may have no Jobs entry. Inspect what is already complete before repeating a download, ingestion, index build, or paid model call.
+  [Quick Start](quickstart.md)
 
-## Twelve-step learning path {#learning-path}
+- **[Check an answer's sources](answers.md#inspection)**
 
-Use this sequence for the full local exercise. The navigation groups usage before preparation, while the numbered steps keep their procedure order. Begin with [Part 1: Setup](environment.md#qs-setup); continue through [DEV preparation](quickstart-dev.md), then search, answers, settings, and evaluation. Skip work already complete in this environment.
+  Open a cited passage to verify the claim, company, and year.
+
+  [Browse filings →](/docreview-rag/?view=build&tab=documents)
+
+  [Inspect answers](answers.md) · [Document guide](documents.md)
+
+- **[Compare search results](snapshots.md#comparison)**
+
+  Compare published snapshots to see which evidence search found or missed.
+
+  [Open comparisons →](/docreview-rag/?view=measure&tab=compare)
+
+  [Snapshot guide](snapshots.md) · [Understand retrieval](retrieval.md)
+
+## Working on your own machine? {#local-start}
+
+Read all 17 guides in either mode. DEV badges mark tasks that need a development environment. Choose your starting point below.
+
+<!-- guide-local-paths -->
+
+- **[Start from a fresh clone](environment.md#qs-setup)**
+
+  Set up the environment and prepare two filings with [Quick Start for DEV MODE](quickstart-dev.md).
+
+- **[Continue with existing data](documents.md#step-2)**
+
+  Check sources, chunks, compatible embeddings, and BM25; run only the missing [preparation step](quickstart-dev.md).
+
+The public corpus has 18 filings: NVIDIA and AMD FY2019–FY2024, plus Samsung Electronics and SK hynix FY2022–FY2024. Fresh DEV installations lack this corpus; their default selection only describes work to prepare.
+
+An empty list does not mean an empty database. Check filters and [document visibility](documents.md#visibility) before rebuilding.
+
+CLI and Web share results with the same database, source directory, and configuration. The corpus helper submits Build jobs; tools outside the queue may have no Jobs entry. Check existing results before downloads, ingestion, indexing, or paid calls.
+
+## The full workflow, in three stages {#learning-path}
+
+These 12 steps follow the preparation and review order. Open a step for prerequisites and expected results; skip completed work. To try the public service, start with the tasks above.
 
 <!-- tutorial-steps -->
 
-Parsing creates the chunks used by two independent indexes: semantic embeddings and lexical BM25. Hybrid retrieval needs both; vector retrieval needs compatible embeddings, and lexical retrieval needs BM25. Evaluation additionally needs a dataset with expected evidence. You can evaluate retrieval before generating an answer.
+Chunks feed two indexes: embeddings and BM25. Hybrid search needs both; vector search needs compatible embeddings, and lexical search needs BM25. With a dataset of expected evidence, you can evaluate retrieval before generating answers.
 
 ## Find the right workspace {#workspaces}
 
 | Workspace | Task and result |
 |---|---|
-| Conversation | Ask a scoped question, follow the run, and verify claims through citations and retrieved candidates. |
-| Build → Pipeline | Inspect preparation dependencies, then run the missing stage in DEV. Selecting a node only opens that stage. |
-| Build → Documents | Find a filing, inspect its identity and chunks, and check stored embedding coverage. |
-| Build → Jobs | Follow queued work through progress, completion, a recorded error, or an explicit retry. |
-| Measure | Try retrieval and run evaluations in DEV; inspect published snapshots and comparisons in PROD. |
-| System → System status | Separate API, database, schema, corpus, and model availability before diagnosing a blocked task. |
+| Conversation | Ask, follow the run, and verify answers through citations and retrieved candidates. |
+| Build → Pipeline | Check dependencies and run missing stages in DEV. Selecting a node only opens its screen. |
+| Build → Documents | Inspect filing details, chunks, and embedding coverage. |
+| Build → Jobs | Check progress, completion, and errors; explicitly retry work when needed. |
+| Measure | Run retrieval and evaluation in DEV; compare published snapshots in PROD. |
+| System → System status | Check API, database, schema, corpus, and model status to locate a problem. |
 
 Corpus preparation, dataset editing, live evaluation, and local-model setup require DEV. Public visitors can read eligible documents and published snapshots and use the configured OpenAI answer service within its allowance. [Settings](settings.md) explains request choices; [Runtime](runtime.md) explains what the execution records establish.
 
@@ -49,7 +81,8 @@ The documentation menu preserves the 17-guide reading path. Previous/next links 
 
 For a failure, use [Troubleshooting](troubleshooting.md) to connect the recorded symptom to a specific check. For implementation context, read [Architecture](architecture.md). Use the [CLI reference](cli.md) when a task requires a terminal.
 
-### Back, forward and shared locations
+<!-- heading-alias: back-forward-and-shared-locations -->
+### Back, forward and shared locations {#navigation}
 
 Use the header's **Back** and **Forward** arrows to return between the conversation and an inspection screen. Click the current location to choose an entry in **Navigation history**; arrow keys, Home/End, Enter, and Escape operate the list. On a narrow screen it opens as a bottom sheet.
 
@@ -57,13 +90,21 @@ App navigation and browser history share the same sequence. Returning restores r
 
 The URL identifies the workspace, tab, selected preparation stage or evaluation result, and local conversation. Reload restores that location. A conversation missing from this browser falls back to its most recent saved conversation. Message text and drafts are never included in the URL.
 
-![Returning from a guide page restores the prior conversation and its recorded answer in PROD mode.](../assets/manual-navigation-and-task-return.en.png)
+<!-- screenshot: manual-navigation-and-task-return -->
+
+![Returning from a guide page restores the prior conversation and its recorded answer in PROD mode.](../assets/captures/manual-navigation-and-task-return.en.png)
+
+*1. Restored question and answer · 2. Preserved conversation context*
+
 ## Browser storage {#browser-storage}
 
 PROD stores conversations, defaults, filters, presets, language/theme, and Help preferences in this browser and origin. They are not synchronized. Before clearing site data, open **Settings → Data & help → Browser storage** and export a backup. The [storage guide](settings.md#browser-storage) explains the inventory, import, and clearing scopes. DEV retains its own storage behavior.
 
-## Public OpenAI allowance
+<!-- heading-alias: public-openai-allowance -->
+## Public OpenAI allowance {#allowance}
 
-The public policy allows 2 requests per minute and 5 per rolling 24 hours per IP, with a shared $0.10 allowance per UTC day and a $0.005 ceiling per model call. The configured text model is `gpt-5.6-luna`; semantic search uses `text-embedding-3-large` at 384 dimensions. **Limits & availability** reports the server's current availability, not an account invoice or a promised number of answers.
+In PROD only, the answer-model caption shows **Remaining · Minute 7/10 · Day 32/50**, using current server values rather than a browser estimate. It refreshes after a request, when you return to the tab, and every 30 seconds while the conversation view is visible. During a request it waits for the next usage update; a failed lookup shows that remaining usage is unavailable. The counts are shared by IP and do not override the shared cost budget. DEV and canned demonstrations do not query or display this public usage indicator.
+
+The public policy allows 10 requests per minute and 50 per rolling 24 hours per IP, with a shared $0.10 allowance per UTC day and a $0.005 ceiling per model call. The configured text model is `gpt-5.6-luna`; semantic search uses `text-embedding-3-large` at 384 dimensions. **Limits & availability** reports the server's current availability, not an account invoice or a promised number of answers.
 
 Answer calls and query embeddings reserve allowance immediately before the OpenAI call. Keyword-only retrieval and saved-result reads do not use it. IP windows expire with time; the shared day resets at UTC midnight. The reservation ledger at `data/runtime/public-ai-limits.sqlite3` survives application restarts on the same persistent volume. It coordinates processes on one host, not multiple independent hosts. [Environment setup](environment.md#production-deployment) describes that deployment boundary.

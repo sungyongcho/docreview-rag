@@ -8,6 +8,53 @@
   color: var(--text);
 }
 
+/* The overview offers task entry points before the full local learning sequence. */
+.guide-overview { container: guide-overview / inline-size; }
+.guide-overview .tutorial-body > p { margin-block: 16px; font-size: 15px; line-height: 1.65; }
+.guide-overview .tutorial-body > h1 + p { font-size: 18px; line-height: 1.6; }
+.tutorial-body ul.guide-feature-cards, .tutorial-body ul.guide-local-cards, .tutorial-body ul.guide-learning-groups { display: grid; list-style: none; gap: 14px; padding: 0; margin: 20px 0 28px; }
+.tutorial-body ul.guide-feature-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tutorial-body ul.guide-local-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tutorial-body li.guide-route-card { min-width: 0; margin: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.tutorial-body .guide-feature-cards > li.guide-route-card { display: flex; flex-direction: column; }
+.guide-feature-cards .guide-route-content { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.guide-feature-cards .guide-route-content > p:first-child { min-height: 2.8em; }
+.guide-feature-cards .guide-route-content > p:nth-child(2) { flex: 1; }
+.guide-feature-cards .guide-route-content > p:last-child { min-height: 3.3em; }
+.guide-route-icon { display: block; margin-bottom: 14px; color: var(--muted); }
+.tutorial-body .guide-route-content > p { margin: 0 0 12px; font-size: 14px; line-height: 1.65; }
+.tutorial-body .guide-route-content > p:first-child { font-size: 16px; line-height: 1.4; }
+.tutorial-body .guide-route-content > p:first-child a { text-decoration: none; }
+.tutorial-body .guide-route-content > p:last-child { margin-bottom: 0; font-size: 13px; }
+.guide-feature-cards .guide-route-content > p:nth-last-child(2) > a:only-child { display: inline-flex; align-items: center; min-height: 36px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); font-size: 13px; font-weight: 600; text-decoration: none; }
+.guide-feature-cards .guide-route-content > p:last-child > a { display: inline-block; }
+.tutorial-body .guide-route-card a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.guide-route-card:focus-within { border-color: var(--muted); }
+.tutorial-body .guide-local-cards .guide-route-card { display: flex; align-items: flex-start; gap: 14px; padding: 16px; }
+.guide-local-cards .guide-route-icon { flex: none; margin: 2px 0 0; }
+.tutorial-body ul.guide-learning-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.tutorial-body li.guide-learning-group { min-width: 0; margin: 0; padding: 16px 0 0; border-top: 2px solid var(--border); list-style: none; }
+.tutorial-body .guide-learning-group > p { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.tutorial-body .guide-learning-group > .guide-phase-title { color: var(--text); font-size: 15px; }
+.tutorial-body ol.guide-step-list { list-style: none; padding: 0; margin: 0; }
+.tutorial-body li.guide-step { display: flex; align-items: center; gap: 9px; margin: 0; padding: 9px 0; border-bottom: 1px solid var(--border); min-height: 44px; }
+.guide-step-number { flex: none; color: var(--muted); font: 11px/1.5 ui-monospace, monospace; }
+.tutorial-body .guide-step > a { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; text-decoration: none; }
+.tutorial-body .guide-step > p { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 1.45; }
+.guide-step > svg { flex: none; color: var(--muted); }
+.guide-step a:hover { text-decoration: underline; }
+@container guide-overview (max-width: 600px) {
+  .tutorial-body ul.guide-feature-cards, .tutorial-body ul.guide-learning-groups { grid-template-columns: minmax(0, 1fr); }
+  .tutorial-body li.guide-route-card { display: flex; align-items: flex-start; gap: 14px; padding: 16px; }
+  .tutorial-body .guide-feature-cards > li.guide-route-card { flex-direction: row; }
+  .guide-feature-cards .guide-route-content > p:first-child, .guide-feature-cards .guide-route-content > p:last-child { min-height: 0; }
+  .guide-route-icon { flex: none; margin: 2px 0 0; }
+}
+@container guide-overview (max-width: 480px) {
+  .tutorial-body ul.guide-local-cards { grid-template-columns: minmax(0, 1fr); }
+  .guide-overview .tutorial-body > h1 + p { font-size: 17px; }
+}
+
 .docs-pagination {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -61,6 +108,79 @@
 
 .docs-site .docs-content {
   max-width: 720px;
+}
+
+/* Reading rhythm stays local to the manual and the development story. */
+.docs-site .tutorial-body {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.docs-site .tutorial-body > :is(p, ul, ol) { margin-block: 0 16px; }
+.docs-site .tutorial-body h2 { margin-block: 38px 12px; }
+.docs-site .tutorial-body h3 { margin-block: 28px 10px; }
+.docs-site .tutorial-body h4 { margin-block: 24px 10px; }
+.docs-site .tutorial-body :is(h1, h2, h3, h4, h5, h6) { position: relative; break-after: avoid; }
+.docs-site .tutorial-body strong { font-weight: 650; }
+.docs-site .tutorial-body :is(figure, pre, .markdown-table-wrap, .code-card > div) { min-width: 0; max-width: 100%; }
+.docs-site .tutorial-body figure { margin-inline: 0; }
+.docs-site .tutorial-body .katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-block: 3px; }
+.docs-site .tutorial-body img { margin-block: 18px; }
+.docs-site .tutorial-body .markdown-table-wrap { margin-block: 18px; }
+.docs-site .tutorial-body .markdown-table-wrap table { overflow-wrap: normal; }
+
+.docs-learning-step {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: .02em;
+}
+
+.docs-heading-alias { position: absolute; top: 0; inset-inline-start: 0; width: 0; height: 0; scroll-margin-top: 100px; }
+
+.docs-details {
+  margin-block: 18px 24px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  min-width: 0;
+}
+
+.docs-details > summary {
+  padding-block: 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.docs-details > summary::marker { color: var(--muted); }
+.docs-details > summary:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; border-radius: 3px; }
+.docs-details[open] { padding-bottom: 14px; }
+.docs-details[open] > summary { margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.docs-details > :last-child { margin-bottom: 0; }
+.docs-details :is(p, ul, ol) { margin-block: 0 14px; }
+.docs-site .docs-details :is(h2, h3, h4):first-of-type { margin-top: 8px; }
+.docs-site .docs-details .markdown-table-wrap { margin-block: 12px; }
+
+.docs-outline :is(.docs-outline-child, [data-depth="3"]) { padding-inline-start: 12px; font-size: 12px; }
+.docs-outline nav ol ol { margin: 4px 0 8px 10px; padding: 0; }
+.docs-outline nav ol ol a { font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 700px) {
+  .docs-site .tutorial-body h2 { margin-top: 32px; }
+  .docs-site .tutorial-body h3 { margin-top: 24px; }
+  .docs-site .tutorial-body h4 { margin-top: 20px; }
+  .docs-details { padding-inline: 12px; }
+  .docs-details > summary { min-height: 44px; }
 }
 
 .docs-goal {
@@ -229,3 +349,15 @@
 .tutorial-body .katex {
   font-size: 1.06em;
 }
+
+/* Explanatory status labels share the app verdict palette without button behavior. */
+.tutorial-body .docs-status-badge { display: inline; padding: .12em .6em; border: 1px solid var(--warn, #b88b2e); border-radius: 999px; background: color-mix(in srgb, var(--warn, #b88b2e) 16%, transparent); color: var(--text); font-size: .82em; font-weight: 600; line-height: 1.8; white-space: normal; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.tutorial-body .docs-status-badge.is-supported { border-color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.tutorial-body .docs-status-badge:is(.is-empty-scope, .is-scope-conflict, .is-not-generated) { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
+
+/* The same Lucide arrows as WorkspaceHistory identify controls without adding actions. */
+.tutorial-body .docs-control-label { display: inline-flex; align-items: center; box-sizing: border-box; gap: 6px; min-height: 28px; max-width: 100%; padding: 3px 7px; margin-inline: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; line-height: 20px; vertical-align: middle; white-space: normal; }
+.tutorial-body .docs-control-label > span { font-size: inherit; font-weight: inherit; line-height: inherit; }
+.tutorial-body .docs-control-label > svg { flex: none; align-self: center; width: 16px; height: 16px; }
+.docs-control-path { display: inline; }
+.docs-control-separator { color: var(--muted); white-space: pre; }

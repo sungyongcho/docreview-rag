@@ -23,6 +23,33 @@ const performance = {
 function field(label: string) { return screen.getByText(label, { selector: "dt" }).parentElement!.querySelector("dd")!; }
 
 describe("recorded stage detail data", () => {
+  it.each(["document_review", "service_help", "out_of_scope"])("shows the recorded %s branch in stage 0 without repeating stage 1 scope fields", (intent) => {
+    const path = { intent, source: "classifier", matched_rule: "structured_classifier", history_turns: 0, rationale: "Recorded classification reason", stopping_stage: intent === "document_review" ? "gate" : "path", stopping_reason: intent === "document_review" ? "unknown_issuer" : "unsupported_request", resolved_scope: state.resolvedScope };
+    const { container, rerender } = render(<ReviewStageDetails stage="path" state={state} performance={{ path_decision: path }} />);
+    expect(container.querySelectorAll(".review-path-option")).toHaveLength(3);
+    expect(container.querySelectorAll('.review-path-option[aria-current="step"]')).toHaveLength(1);
+    const selected = container.querySelector('.review-path-option[aria-current="step"]')!;
+    expect(selected).toHaveTextContent(intent === "document_review" ? "Continue to stage 1" : intent === "service_help" ? "Fixed guidance, then stop" : "Scope notice, then stop");
+    expect(screen.getByText("Recorded classification reason")).toBeInTheDocument();
+    expect(screen.queryByText("Company", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText("Fiscal year", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText("Retrieval query", { selector: "dt" })).toBeNull();
+    if (intent === "document_review") expect(screen.queryByText("Stopping reason", { selector: "dt" })).toBeNull();
+    rerender(<ReviewStageDetails stage="gate" state={state} performance={{ path_decision: path }} />);
+    expect(container.querySelector(".review-path-options")).toBeNull();
+    expect(field("Company")).toHaveTextContent("NVDA");
+    expect(field("Fiscal year")).toHaveTextContent("FY2024");
+  });
+
+  it("does not infer stage 0 from resolved scope and does not reclassify historical conversation routes", () => {
+    const { container, rerender } = render(<ReviewStageDetails stage="path" state={state} performance={{ model_calls: [] }} />);
+    expect(container.querySelector('[aria-current="step"]')).toBeNull();
+    expect(screen.getByText("No service path was recorded. A later scope or result does not establish this decision.")).toBeInTheDocument();
+    rerender(<ReviewStageDetails stage="path" state={state} performance={{ path_decision: { intent: "casual_chat", rationale: "Original conversation decision" } }} />);
+    expect(container.querySelector('[aria-current="step"]')).toBeNull();
+    expect(screen.getByText("This historical run used a conversation route. Its recorded classification is preserved.")).toBeInTheDocument();
+    expect(screen.getByText("Original conversation decision")).toBeInTheDocument();
+  });
   it("shows actual scope and routing without deriving them from the question", () => {
     render(<ReviewStageDetails stage="gate" state={state} performance={performance} />);
     expect(field("Company")).toHaveTextContent("NVDA");
@@ -51,10 +78,25 @@ describe("recorded stage detail data", () => {
   });
   it("shows the recorded answer decision, citation chunk IDs and workflow reasons", () => {
     render(<ReviewStageDetails stage="check" state={state} performance={performance} />);
-    expect(field("Verification decision")).toHaveTextContent("Citation chunk IDs11");
-    expect(field("Verification decision").querySelector("pre")).toBeNull();
-    expect(field("Verification decision")).toHaveTextContent("Chunk 11 supports the claim.");
+    expect(field("Verification decision")).toHaveTextContent(/^SUPPORTED$/);
+    expect(screen.queryByText("Final label")).toBeNull();
+    expect(field("Citation chunk IDs")).toHaveTextContent("11");
+    expect(field("Reason")).toHaveTextContent("Chunk 11 supports the claim.");
+    expect(field("Answer")).toHaveTextContent("The filing supports the answer.");
+    expect(field("Answer").parentElement).toHaveClass("review-field-wide");
     expect(field("Reasons")).toHaveTextContent("grade_references_filtered");
+  });
+  it("preserves empty reasons, unknown decision fields and the lower tables", () => {
+    render(<ReviewStageDetails stage="check" state={state} performance={{
+      stage_results: [{ node: "check", decision: { label: "SUPPORTED", answer: "Recorded answer", reason: "Recorded justification", citation_chunk_ids: [4336, 5301], audit_detail: "Retained extension" }, reasons: [] }],
+      stages: [{ node: "check", status: "completed", elapsed_ms: 3410 }],
+      model_calls: [{ node: "check", model: "recorded-model", attempts: 1 }],
+    }} />);
+    expect(field("Reasons").querySelector(".review-value-empty")).toHaveTextContent("None");
+    expect(field("audit detail")).toHaveTextContent("Retained extension");
+    expect(field("Citation chunk IDs")).toHaveTextContent("43365301");
+    expect(screen.getByRole("table", { name: "Stage timings" })).toHaveTextContent("3.41s");
+    expect(screen.getByRole("table", { name: "Model calls / attempts" })).toHaveTextContent("recorded-model");
   });
   it("links the final label to evidence and the run details without a fetch", () => {
     const evidence = vi.fn(); const details = vi.fn();

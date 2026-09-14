@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Print the two origin values the Cloudflare Worker (gomoku repo) needs.
-# Paste the output into the gomoku .env, then run its 03_deploy_cloudflare.sh.
+# Print the two origin values for the site's Cloudflare Worker routing.
+# Apply them in the site's Worker routing config, then deploy it through that site's routing workflow.
 # Re-run after every VM stop/start: the external IP is ephemeral.
 set -euo pipefail
 

@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNotifications } from "@/components/notifications";
 import { LocalConnectionSettings } from "@/components/local-connection-settings";
 import { LOCAL_ENGINE_VISIBLE } from "@/lib/build-mode";
+import { buildFingerprint, fullBuildFingerprint, builtAtIso, useBuildTimestamp } from "@/lib/build-info";
 import { browserStorageUsage, resetDefaultProfile, resetExperimentDefaults, saveDefaultPrompt } from "@/lib/storage";
 import type { Capabilities, Readiness, ReviewEngineState, ReviewSessionDraft } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
@@ -48,6 +49,8 @@ export function SettingsModal(props: Props) {
   const localAllowed = LOCAL_ENGINE_VISIBLE && props.capabilities?.environment === "dev" && props.capabilities.can_configure_local_llm;
   const [category, setCategory] = useState<SettingsCategory>(dev ? "prompt" : "data");
   const [search, setSearch] = useState("");
+  const fingerprint = buildFingerprint();
+  const updated = useBuildTimestamp();
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => { if (props.open) setCategory(props.initialCategory === "limits" ? "limits" : props.initialCategory === "local" ? "local" : props.initialCategory === "about" ? "about" : dev ? props.initialCategory === "data" ? "data" : "prompt" : "data"); }, [props.open, props.initialCategory, dev, localAllowed]);
   useEffect(() => {
@@ -78,7 +81,7 @@ export function SettingsModal(props: Props) {
         {categories.filter(([, label]) => t(label).toLowerCase().includes(search.toLowerCase())).map(([id,label]) => <button key={id} type="button" aria-pressed={category === id} onClick={() => setCategory(id)}>{id === "prompt" ? <ShieldCheck /> : <HelpCircle />}<span>{t(label)}</span>{(id === "prompt" || id === "limits" || id === "local") && <span aria-hidden="true"><DevelopmentBadge locale={locale} compact /></span>}</button>)}
       </aside>
       <section className="settings-content"><header><div><p className="eyebrow">{props.capabilities?.environment?.toUpperCase() ?? t("Checking environment")}</p><h2 id="settings-title">{t(categories.find(([id]) => id === category)?.[1] ?? "Settings")}</h2></div><button className="icon-button" type="button" aria-label={t("Close settings")} onClick={props.onClose}><X /></button></header><NotificationOutlet priority={50} placement="overlay" />
-        {category === "about" && <section className="settings-about"><CreatorSignature variant="about" /><p className="helper">{t("Evidence-first SEC and DART filing review")}</p><dl className="request-facts"><div><dt>{t("Version")}</dt><dd>v2</dd></div><div><dt>{t("Environment")}</dt><dd>{props.capabilities?.environment?.toUpperCase() ?? t("Unknown")}</dd></div></dl><GuidesNavigation /></section>}
+        {category === "about" && <section className="settings-about"><CreatorSignature variant="about" /><p className="helper">{t("Evidence-first SEC and DART filing review")}</p><dl className="request-facts">{fingerprint && <><div><dt>Build</dt><dd>{fingerprint}</dd></div><div><dt>Source fingerprint</dt><dd>{fullBuildFingerprint()}</dd></div></>}{updated && <><div><dt>Build created</dt><dd>{updated}</dd></div><div><dt>Build time (UTC)</dt><dd>{builtAtIso()}</dd></div></>}<div><dt>{t("Environment")}</dt><dd>{props.capabilities?.environment?.toUpperCase() ?? t("Unknown")}</dd></div></dl><GuidesNavigation /></section>}
         {category === "local" && <LocalConnectionSettings readOnly={!localAllowed} readiness={props.readiness} localModel={props.profile.local_model} selectedEngine={props.profile.engine} onOpenModelSelection={props.onOpenModelSelection} onChanged={props.onLocalConnectionChanged} />}
         {category === "prompt" && dev && <div className="settings-form"><label>{t("Immutable evidence guard")}<textarea readOnly value={GUARD} /></label><label>{t("Additional operator instructions")}<textarea maxLength={8000} value={props.profile.prompt_policy.additional_instructions} onChange={(event) => patchPolicy({ additional_instructions: event.target.value })} /></label><label>{t("Final prompt preview")}<textarea readOnly value={`${GUARD}${props.profile.prompt_policy.additional_instructions.trim() ? `\n\n${props.profile.prompt_policy.additional_instructions.trim()}` : ""}\n\n[conversation history: ${props.profile.prompt_policy.history_turns} turns]\n[evidence inserted here]`} /></label><button className="button primary" type="button" onClick={() => {
   saveDefaultPrompt(props.profile.prompt_policy.additional_instructions);

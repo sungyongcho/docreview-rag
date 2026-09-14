@@ -191,7 +191,7 @@ def test_successful_reset_reports_the_callers_restart_intent(
         assert "not restarted automatically" not in output
     else:
         assert "not restarted automatically" in output
-        assert "Run rag-up" in output
+        assert "Run rag-dev start" in output
 
 
 @pytest.mark.parametrize("owner_repairs", [False, True])
