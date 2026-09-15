@@ -69,6 +69,17 @@ def index() -> ManifestScopeIndex:
     return ManifestScopeIndex.from_entries(ENTRIES)
 
 
+def test_display_name_resolves_only_when_that_company_has_documents() -> None:
+    """Reuse approved display names for present issuers without admitting absent catalog entries."""
+    entry = ENTRIES[0].model_copy(update={"aliases": ("NVDA", "NVIDIA CORP")})
+    scope_index = ManifestScopeIndex.from_entries((entry,))
+    assert [item.issuer for item in scope_index.named_target("NVIDIA")] == ["NVDA"]
+    assert resolve_query_scope("NVIDIA's revenue", scope_index).filters.issuers == ("NVDA",)
+    assert scope_index.named_target("Intel") == ()
+    assert scope_index.named_target("SanDisk") == ()
+    assert scope_index.named_target("NVIDIA competitor") == ()
+
+
 @pytest.mark.parametrize("alias", ["삼성전자", "Samsung Electronics", "005930"])
 def test_samsung_aliases_resolve_to_dart_korean(alias: str) -> None:
     """Resolve every committed Samsung spelling to one canonical corpus scope."""

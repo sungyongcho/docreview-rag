@@ -31,7 +31,7 @@ PRESERVED = {
     ".idea",
     ".freshstart-keep",
 }
-VOLUMES = {"pg_data", "web_next", "web_node_modules", "ollama_models"}
+VOLUMES = {"pg_data", "prod_pg_data", "web_next", "web_node_modules", "ollama_models"}
 
 
 def git(root: Path, *args: str) -> str:
@@ -78,7 +78,9 @@ def tracked_state(root: Path) -> dict[str, str]:
     }
 
 
-def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
+def inventory(
+    root: Path, *, extreme: bool, discard_tracked: bool, runtime_only: bool = False
+) -> dict:
     """Pin removable file identities and tracked changes; never follow directory links."""
     root = root.resolve()
     if Path(git(root, "rev-parse", "--show-toplevel").strip()).resolve() != root:
@@ -100,7 +102,7 @@ def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
     changed = set(filter(None, git(root, "diff", "--name-only", "-z").split("\0")))
     changed.update(filter(None, git(root, "diff", "--cached", "--name-only", "-z").split("\0")))
     outside = sorted(path for path in changed if not path.startswith("data/"))
-    if outside and not discard_tracked:
+    if outside and not discard_tracked and not runtime_only:
         raise ValueError(
             "Tracked changes outside data/ block cleanup: "
             + ", ".join(outside)
@@ -113,6 +115,24 @@ def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
         """Protect exact paths and descendants, including root environment files."""
         return any(relative == item or relative.startswith(item + "/") for item in keep) or (
             not extreme and relative.split("/", 1)[0].startswith(".env")
+        )
+
+    def generated(relative: str) -> bool:
+        """Limit environment resets to known generated trees, preserving source work."""
+        roots = {
+            "data",
+            ".venv",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".mypy_cache",
+            "node_modules",
+            "web/node_modules",
+            "web/.next",
+            "web/out",
+            "web/.turbo",
+        }
+        return "__pycache__" in PurePosixPath(relative).parts or any(
+            relative == item or relative.startswith(item + "/") for item in roots
         )
 
     files = {}
@@ -131,9 +151,11 @@ def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
                 raise ValueError(f"Nested Git repository refused: {relative}; nothing changed.")
             if stat.S_ISDIR(info.st_mode):
                 visit(path)
-                if not any(item.startswith(relative + "/") for item in tracked | keep):
+                if (not runtime_only or generated(relative)) and not any(
+                    item.startswith(relative + "/") for item in tracked | keep
+                ):
                     directories.append(relative)
-            elif relative not in tracked:
+            elif relative not in tracked and (not runtime_only or generated(relative)):
                 files[relative] = [
                     info.st_dev,
                     info.st_ino,
@@ -143,7 +165,7 @@ def inventory(root: Path, *, extreme: bool, discard_tracked: bool) -> dict:
                 ]
 
     visit(root)
-    revert = sorted(path for path in changed if not preserved(path))
+    revert = [] if runtime_only else sorted(path for path in changed if not preserved(path))
     # Environment templates are tracked product files, even in extreme mode.
     return {
         "files": files,
@@ -329,13 +351,20 @@ def remove_files(root: Path, files: dict) -> None:
 
 
 def start_fresh(
-    root: Path, *, extreme: bool = False, no_start: bool = False, discard_tracked: bool = False
+    root: Path,
+    *,
+    extreme: bool = False,
+    no_start: bool = False,
+    discard_tracked: bool = False,
+    runtime_only: bool = False,
 ) -> int:
     """Delete only a confirmed, unchanged checkout inventory and optionally bootstrap again."""
     if not sys.stdin.isatty():
         raise ValueError("Run interactively to review the preview; nothing changed.")
     root = root.resolve()
-    files = inventory(root, extreme=extreme, discard_tracked=discard_tracked)
+    files = inventory(
+        root, extreme=extreme, discard_tracked=discard_tracked, runtime_only=runtime_only
+    )
     resources = docker_inventory(root, extreme=extreme)
     preview(root, files, resources)
     expires = time.monotonic() + 300
@@ -347,7 +376,7 @@ def start_fresh(
     if time.monotonic() >= expires:
         raise ValueError("Preview expired; nothing changed.")
     if files != inventory(
-        root, extreme=extreme, discard_tracked=discard_tracked
+        root, extreme=extreme, discard_tracked=discard_tracked, runtime_only=runtime_only
     ) or resources != docker_inventory(root, extreme=extreme):
         raise ValueError("Preview changed; nothing changed. Run again for a new preview.")
     completed = []
@@ -433,9 +462,7 @@ def start_fresh(
         "when the web interface next connects. Other applications are unchanged."
     )
     if extreme:
-        print(
-            "Services remain stopped. Run rag-start-quick to create .env and prepare setup again."
-        )
+        print("Services remain stopped. Run rag-dev start to create .env and prepare setup again.")
     elif not no_start:
         result = subprocess.run(
             ["bash", str(root / "scripts/stack/quickstart.sh")], cwd=root, check=False
@@ -481,7 +508,8 @@ def main() -> int:
         return 1
     except KeyboardInterrupt, EOFError:
         print(
-            "Interrupted. Run rag-start-fresh --status before requesting another preview.",
+            "Interrupted. Run rag-prod reset environment --local --all-modes --status "
+            "before requesting another preview.",
             file=sys.stderr,
         )
         return 130

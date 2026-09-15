@@ -1,8 +1,8 @@
-# Evaluate retrieval against known evidence
+# Evaluate retrieval against known evidence {#evaluate-retrieval-against-known-evidence}
 
 Evaluation asks whether the search system can find the evidence specified by a golden dataset. A run records its dataset, retrieval configuration, progress, and results; it does not require a generated answer first, and its retrieval scores do not certify the factual accuracy of an answer model.
 
-## Public exploration and recorded evidence
+## Public exploration and recorded evidence {#public-exploration-and-recorded-evidence}
 
 Saved snapshots use a responsive card grid in DEV and PROD. Each card shows a short title, search settings and evidence hit rate; only DEV shows a visibility badge. Full titles, dataset files, document counts, timestamps and all metrics remain in the detail drawer. Select a card to open the existing right-side drawer with full metadata and configuration. Close with X, Escape or the backdrop; DEV actions remain available only in DEV.
 
@@ -12,14 +12,18 @@ In PROD, the result-comparison form follows the DEV layout with gray, fixed data
 
 The run list contains a compact recorded-result summary: evidence hit rate, MRR, mean search latency, and evaluated question count. Expand **Recorded configuration** for all parameters and metrics; select question IDs below to inspect individual results. These are retrieval measurements, not final-answer accuracy.
 
+<!-- details: prod-exploration-details | What PROD visitors can open and change -->
+
 PROD retains the evaluation workflow layout. Published dataset questions and expected source spans, recorded run settings, and case scores can be searched, sorted and paged. Only the exact published dataset version is shown; unavailable evidence is not replaced by today's editable file.
 
 Open **Explore evaluation settings** in the same side drawer layout as DEV. Dataset metadata and core search settings appear first; Quick/Matrix, chunk targets and tuning parameters are under **Advanced evaluation options**. The body scrolls independently above the fixed Cancel and locked evaluation actions. The request preview is not submitted. Saving this exploration uses browser storage only and never changes recorded scores. Queueing evaluations, editing datasets, and creating snapshots keep their DEV badges and remain locked.
 
+<!-- /details -->
+
 > [!DEV]
 > Evaluation execution and dataset editing run in DEV only. Visitors can explore settings and read published questions, recorded evaluations and comparisons.
 
-## 11. Run a retrieval evaluation {#step-11}
+## Run a retrieval evaluation {#step-11}
 
 > [!GOAL]
 > Record one retrieval evaluation whose dataset and search conditions you understand.
@@ -42,18 +46,25 @@ Open **Explore evaluation settings** in the same side drawer layout as DEV. Data
 6. Read the outcome against its source evidence. The selected run succeeded, the result ID and dataset are correct, and you inspected at least one hit/miss. Do not treat a successful job from another suite as the result of this setup.
 7. If sources are unavailable or the corpus is not ready, read the named source error, then return to [Documents](documents.md) and [Indexing](indexing.md). For a failed or interrupted job, use [evaluation recovery](troubleshooting.md#evaluation) before retrying.
 
+<!-- screenshot: focused-evaluation-detail -->
+
 ![A completed evaluation result opened to its metrics, recorded settings and per-question outcomes.](../assets/focused-evaluation-detail.en.png)
+
 Continue to [12. Compare results and save a snapshot](snapshots.md#step-12).
 
-## Golden-set identity and readiness
+## Golden-set identity and readiness {#golden-set-identity-and-readiness}
 
 Select one JSON filename in Golden, new evaluation setup, or the pipeline. Bundled files carry a **Built-in** marker and are read-only. Source, question language, review status, and execution readiness remain separate; source checks do not imply human approval.
+
+<!-- details: evaluation-readiness-checks | What the readiness check verifies and records -->
 
 The read-only preparation check matches required official filing identities, verifies source SHA-256 and answer intervals, and binds answer document IDs to the current acquisition IDs. It does not create `sec-evaluation` or `dart-evaluation` selections, change reference answers, or download missing files. Missing-original links open source preparation. Source details show company names and fiscal years.
 
 Quick evaluations require chunks for each exact evidence-source version and the selected search indexes. Matrix evaluations require a compatible database, writable source storage, and verified originals; they build isolated indexes themselves. Submission repeats the same check before creating a job, and execution checks again after waiting for its turn. Unready input returns `evaluation_not_ready` rather than registering a job destined to fail.
 
 Results record golden-set identity and review provenance separately from search scope. Quick search uses the current index for the suite's registry and corpus language. Matrix search uses a temporary explicit selection of all registered originals in that registry; temporary references do not modify the acquisition manifest. Changing corpus scope can change the validity of absent-evidence cases, which remain review candidates.
+
+<!-- /details -->
 
 ## Choose among seven suites {#suites}
 
@@ -79,7 +90,9 @@ The filename and small source/language summary sit directly under the selector. 
 
 **Create draft**, beside the selector, creates a named `.json` file by copying the selection or starting empty. The trash icon beside **View source JSON** deletes the selected user file after a **Yes / No** confirmation; built-in suites cannot be deleted. **Add question** opens a new editable question. Use **Save draft**, then **Check format and sources**. There is no separate JSON publication step, and bundled files cannot be overwritten.
 
-All active dataset files live in `data/golden/`. User files use a `docreview-golden-set` envelope with `suite_id`, `registry`, `question_language`, timestamps, `checked_sha256`, and `cases`. Files survive database resets and `rag-start-fresh`; DB draft rows are not the source of truth.
+All active dataset files live in `data/golden/`. User files use a `docreview-golden-set` envelope with `suite_id`, `registry`, `question_language`, timestamps, `checked_sha256`, and `cases`. Files survive database resets and `rag-prod reset environment --local --all-modes`; DB draft rows are not the source of truth.
+
+<!-- details: golden-editor-details | Question editor behavior and completeness rules -->
 
 Selecting a question opens a wide editor in the same area. The header keeps the file name, the completion state, **Delete draft** and **Save draft** visible while the fields scroll. **Question list** restores the previous search, sort, and scroll position. Unsaved navigation offers **Save draft and leave**, **Discard and leave**, or **Continue editing**.
 
@@ -89,7 +102,14 @@ Start with the question and choose whether original documents can answer it. Evi
 
 Bundled filenames display a gray, noninteractive lock: create a draft to edit. New evaluation parameters are grouped into candidates/fusion, BM25, and reranking/language. Small information icons explain their purpose on hover or keyboard focus.
 
-![The golden question detail showing the question text, answerability controls, reference answer and expected source chunk.](../assets/golden-question-editor.en.png)
+<!-- /details -->
+
+<!-- screenshot: golden-question-editor -->
+
+![The golden question detail showing the question text, answerability controls, reference answer and expected source chunk.](../assets/captures/golden-question-editor.en.png)
+
+*1. Question fields · 2. expected evidence*
+
 ## Modes, results, and interpretation {#metrics}
 
 Quick uses the current index. **Matrix · isolated corpus** tests configured chunk targets and retrieval combinations in an isolated corpus; it can involve substantially more preparation and work. Inspect its scope and provider costs before using it as a comparison experiment.
@@ -104,16 +124,18 @@ Quick uses the current index. **Matrix · isolated corpus** tests configured chu
 
 Follow per-case changes rather than only the aggregate score. **Use selected set** applies a selected result's search settings to the conversation; it does not generate a new answer. [Snapshots](snapshots.md) explain how to preserve and compare the result with its search data.
 
-## Workflow and management tabs
+## Workflow and management tabs {#workflow-and-management-tabs}
 
 The four workflow steps are Search trial, Golden dataset, Run evaluation, and Compare & snapshots. Manage contains Presets. Save future dataset and mode defaults explicitly inside New evaluation; snapshot comparison starts with no selected pair.
 
-## Find runs by dataset file
+## Find runs by dataset file {#find-runs-by-dataset-file}
 
 Dataset selection, evaluation history, and comparisons share JSON filenames. New results
 record the filename and dataset content hash used by that execution. Historical filenames
 are resolved only from an explicit catalog identity; missing names are shown as unavailable.
 The dataset card displays source, question language, and question count beneath the filename.
+
+<!-- details: dataset-history-filters | History filters, comparison rules, and result IDs -->
 
 Evaluation history supports dataset, status, and text filters plus newest, oldest, filename,
 and duration sorting. Comparing from a result preselects its dataset and baseline. Select
@@ -127,7 +149,12 @@ Internal result IDs remain in URLs and recorded configuration, not primary label
 another result still follows its exact ID. A question table only shows scores matching the
 selected dataset's recorded content hash.
 
+<!-- /details -->
+
+<!-- screenshot: dataset-filtered-history-and-comparison -->
+
 ![The run list filtered to one dataset with two results selected for comparison.](../assets/dataset-filtered-history-and-comparison.en.png)
+
 In **New evaluation**, use **Save as evaluation defaults** to remember only the selected dataset and run mode. **Reset evaluation defaults** resets future defaults without changing this form. Neither action starts a job or changes chat presets.
 
 Answerability determines the internal verdict: evidence-backed questions use `SUPPORTED`; absent-evidence questions use `NOT_IN_DOCS` with no source spans. Incomplete authoring data stays saveable, but strict validation is required for preparation, job registration, and execution.

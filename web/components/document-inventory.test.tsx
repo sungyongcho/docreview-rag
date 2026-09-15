@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminDocument, AdminDocumentPage, DocumentDetail } from "@/lib/types";
 import { DocumentInventory } from "./document-inventory";
+import { I18nProvider } from "@/lib/i18n";
 
 const api = vi.hoisted(() => ({
   getAdminDocuments: vi.fn(), getDocumentDetail: vi.fn(), getDocumentFacets: vi.fn(),
@@ -52,6 +53,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("DocumentInventory", () => {
+  it.each([true, false])("localizes Korean companies across detail, rows, facets and groups without changing filters (live=%s)", async (live) => {
+    localStorage.clear(); localStorage.setItem("docreview.locale", "en");
+    const document = { ...filing("samsung-2024"), registry: "dart", language: "ko", issuer: "005930", issuer_name: "삼성전자" };
+    const getPage = live ? api.getAdminDocuments : api.getPublishedDocuments;
+    getPage.mockResolvedValue({ documents: [document], total: 1, next_cursor: null });
+    (live ? api.getDocumentFacets : api.getPublishedDocumentFacets).mockResolvedValue({ ...facets, issuers: [{ value: "005930", label: "005930 · 삼성전자", count: 1 }] });
+    (live ? api.getDocumentDetail : api.getPublishedDocumentDetail).mockResolvedValue({ ...detail(document.doc_id), document });
+    render(<I18nProvider><DocumentInventory live={live} fallbackDocuments={[]} /></I18nProvider>);
+    expect(await screen.findByRole("option", { name: "005930 · Samsung Electronics (1)" })).toHaveValue("005930");
+    expect(within(await screen.findByRole("row", { name: /samsung-2024/ })).getByText("005930 · Samsung Electronics")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Group documents" }), { target: { value: "issuer" } });
+    expect(screen.getByText("Company · 005930 · Samsung Electronics")).toBeVisible();
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter company" }), { target: { value: "005930" } });
+    await waitFor(() => expect(getPage.mock.calls.at(-1)?.[0].get("issuer")).toBe("005930"));
+    expect(screen.getByRole("button", { name: "Remove filter: Company" })).toHaveTextContent("Samsung Electronics");
+    fireEvent.click(await screen.findByRole("button", { name: document.doc_id }));
+    expect(await screen.findByRole("heading", { name: "Samsung Electronics" })).toBeVisible();
+    fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: "ko" }));
+    expect(await screen.findByRole("heading", { name: "삼성전자" })).toBeVisible();
+    expect(document.issuer_name).toBe("삼성전자");
+  });
+
   it.each([true, false])("shows company names in the list, detail, groups and facets while filtering by code (live=%s)", async (live) => {
     const namedDocument = { ...filing("nvda-2024"), issuer: "NVDA", issuer_name: "NVIDIA" };
     const earlierDocument = { ...filing("nvda-2023"), issuer: "NVDA", fiscal_year: 2024 };

@@ -5,19 +5,24 @@ import { ChunkMap } from "@/components/chunk-map";
 import { CodeBlock } from "@/components/code-block";
 import { DevelopmentBadge } from "@/components/development-badge";
 import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
+import { DocumentationLanguageSwitch, DocumentationReadingBoundary } from "@/components/documentation-reading";
 import { EvalMeter } from "@/components/eval-meter";
 import { PipelineMap } from "@/components/pipeline-map";
 import { ProductBrand } from "@/components/product-brand";
 import { QuickStartOutline, QuickStartPanels, QuickStartProvider } from "@/components/quickstart-guide";
+import { RoutingDemo } from "@/components/routing-demo";
 import { RrfMerger } from "@/components/rrf-merger";
+import { ScopeDemo } from "@/components/scope-demo";
 import { TableNormalize } from "@/components/table-normalize";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { TutorialImage } from "@/components/tutorial-image";
 import { TutorialMarkdown } from "@/components/tutorial-markdown";
 import { DOCUMENTATION_BASE, developmentStoryDocument, documentationDocument } from "@/lib/documentation-registry.mjs";
-import { LanguageSwitch } from "@/lib/i18n";
 import { splitQuickStart } from "@/lib/quickstart-markdown.mjs";
 import { DOCUMENTS, renderTutorial } from "@/lib/tutorial-markdown.mjs";
+import { tutorialImageDimensions } from "@/lib/tutorial-images.mjs";
+import capturePlan from "../../docs/TUTORIAL/capture-plan.json";
+import { captureCallouts, captureDetail, captureMobile, captureMobileDetail, captureOriginal } from "@/lib/tutorial-captures.mjs";
 import "katex/dist/katex.min.css";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -33,12 +38,40 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const document = story ? developmentStoryDocument(locale) : documentationDocument(documentId, locale)!;
   const source = readFileSync(resolve(process.cwd(), "../docs/TUTORIAL", document.file), "utf8");
   const parsed = renderTutorial(source, { locale, math: story });
+  const imageDimensions = tutorialImageDimensions(resolve(process.cwd(), "../docs/TUTORIAL"), parsed.images);
+  const supplementDimensions = tutorialImageDimensions(resolve(process.cwd(), "../docs/TUTORIAL"), capturePlan.scenes.filter((scene) => scene.status === "accepted" && (scene.mobile || scene.detail)).flatMap((scene) => Object.values(scene.variants).flatMap((variant) => [variant.mobile, variant.mobileDetail, variant.detailFocused, variant.detailMobile]).filter((path): path is string => Boolean(path))));
   const highlighted = new Map<string, string>();
   for (const block of parsed.codes) highlighted.set(block.language + "\0" + block.code, await codeToHtml(block.code, { lang: block.language in bundledLanguages ? block.language as keyof typeof bundledLanguages : "text", themes: { light: "github-light", dark: "github-dark" }, defaultColor: false }));
   const render = (markdown: string) => renderTutorial(markdown, {
-    locale, assetVersion: tutorialRevision, math: story, renderImage: (image) => <TutorialImage {...image} />, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
-      const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "chunk-map": ChunkMap, "table-normalize-demo": TableNormalize, "pipeline-map": PipelineMap } as const)[block.language];
-      return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} html={highlighted.get(block.language + "\0" + block.code)!} />;
+    locale, assetVersion: tutorialRevision, imageDimensions, math: story, statusBadges: !story, overviewLayout: documentId === "overview", renderImage: (image) => {
+      const mobile = captureMobile(capturePlan, image.captureId, locale, tutorialRevision);
+      const mobileSize = mobile ? supplementDimensions[mobile.path] : undefined;
+      const narrowDetail = captureMobileDetail(capturePlan, image.captureId, locale, tutorialRevision);
+      const narrowDetailSize = narrowDetail ? supplementDimensions[narrowDetail.path] : undefined;
+      const detail = captureDetail(capturePlan, image.captureId, locale, tutorialRevision);
+      const detailSize = detail ? supplementDimensions[detail.path] : undefined;
+      const detailMobileSize = detail?.mobilePath ? supplementDimensions[detail.mobilePath] : undefined;
+      return <>
+        <TutorialImage {...image}
+          originalSrc={captureOriginal(capturePlan, image.captureId, locale, tutorialRevision)}
+          callouts={captureCallouts(capturePlan, image.captureId, locale)}
+          mobileSrc={mobile?.src} mobileWidth={mobileSize?.width} mobileHeight={mobileSize?.height}
+          displayWidth={image.captureId && image.width ? Math.min(720, Math.round(image.width / 2)) : undefined} />
+        {detail ? <TutorialImage src={detail.src} alt={detail.alt} caption={detail.caption} locale={locale}
+          width={detailSize?.width} height={detailSize?.height} originalSrc={detail.originalSrc}
+          captureId={image.captureId ? `${image.captureId}-detail` : undefined} callouts={detail.callouts}
+          mobileSrc={detail.mobileSrc} mobileWidth={detailMobileSize?.width} mobileHeight={detailMobileSize?.height}
+          displayWidth={detailSize ? Math.min(720, Math.round(detailSize.width / 2)) : undefined} /> : null}
+        {narrowDetail ? <span className="tutorial-image-narrow-only">
+          <TutorialImage src={narrowDetail.src} alt={narrowDetail.alt} caption={narrowDetail.caption} locale={locale}
+            width={narrowDetailSize?.width} height={narrowDetailSize?.height} originalSrc={narrowDetail.originalSrc}
+            captureId={image.captureId ? `${image.captureId}-mobile-detail` : undefined} callouts={narrowDetail.callouts}
+            displayWidth={narrowDetailSize ? Math.round(narrowDetailSize.width / 2) : undefined} />
+        </span> : null}
+      </>;
+    }, renderDevelopmentNotice: (content) => <aside className="docs-development-notice"><DevelopmentBadge locale={locale} tooltip={false} /><div>{content}</div></aside>, renderCode: (block) => {
+      const Demo = ({ "bm25-demo": Bm25Explorer, "rrf-demo": RrfMerger, "eval-demo": EvalMeter, "chunk-demo": ChunkBoundary, "chunk-map": ChunkMap, "table-normalize-demo": TableNormalize, "pipeline-map": PipelineMap, "routing-demo": RoutingDemo, "scope-demo": ScopeDemo } as const)[block.language];
+      return Demo ? <Demo locale={locale} /> : <CodeBlock code={block.code} language={block.language} locale={locale} html={highlighted.get(block.language + "\0" + block.code)!} />;
     }
   });
   const tutorial = render(source);
@@ -54,15 +87,18 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
     <a className="docs-skip" href="#docs-content">{locale === "ko" ? "본문으로 바로가기" : "Skip to content"}</a>
     <header className="docs-header">
       <div className="docs-header-inner">
-        <Link className="docs-brand" href={`/docs/${locale}/`}><ProductBrand /></Link>
-        <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><LanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
+        <Link className="docs-brand" href={`/docs/${locale}/`}><ProductBrand showUpdated={false} /></Link>
+        <span className="docs-header-label">{locale === "ko" ? "가이드와 개발 기록" : "Guides & development"}</span><DocumentationLanguageSwitch locale={locale} /><ThemeSwitch locale={locale} />
         <Link className="docs-back" href="/" aria-label={locale === "ko" ? "서비스로 돌아가기" : "Return to service"}><ArrowLeft size={15} /><span className="docs-back-long">{locale === "ko" ? "서비스로 돌아가기" : "Return to service"}</span><span className="docs-back-short">{locale === "ko" ? "서비스" : "Service"}</span></Link>
       </div>
     </header>
     <div className="docs-layout">
       <aside className="docs-sidebar"><DocumentationMenu current={document.id} documents={documents} locale={locale} /></aside>
-      <main id="docs-content" className="docs-content" tabIndex={-1}>
-        <nav className="docs-breadcrumb" aria-label={locale === "ko" ? "현재 위치" : "Breadcrumb"}>{story || document.groupTitle === document.label ? <span>{document.label}</span> : <><Link href={`/docs/${locale}/`}>{document.groupTitle}</Link><span aria-hidden="true">/</span><span>{document.label}</span></>}</nav>
+      <main id="docs-content" data-document-id={documentId} data-document-locale={locale} className={`docs-content${documentId === "overview" ? " guide-overview" : ""}`} tabIndex={-1}>
+        <nav className="docs-breadcrumb" aria-label={locale === "ko" ? "현재 위치" : "Breadcrumb"}>
+          {!(story || document.groupTitle === document.label) && <><Link href={`/docs/${locale}/`}>{document.groupTitle}</Link><span className="docs-breadcrumb-separator" aria-hidden="true">/</span></>}
+          <span className="docs-breadcrumb-current" aria-current="page"><span>{document.label}</span>{document.id === "quickstart-dev" && <DevelopmentBadge locale={locale} compact tooltip={false} text="DEV MODE" />}</span>
+        </nav>
         {story ? <aside className="docs-mode-guide" aria-label={locale === "ko" ? "개발 기록 상태" : "Development log status"}>
           <span className="docs-mode-shared">{locale === "ko" ? "초안 · 개요" : "Draft / Outline"}</span>
           <p>{locale === "ko" ? "사용자가 보충하는 개발 기록 초안입니다. 공개 데모와 DEV에서 읽을 수 있습니다." : "A working draft the author is still revising, readable in the public demo and DEV."}</p>
@@ -82,5 +118,5 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
       <aside className="docs-toc">{sections ? <QuickStartOutline headings={tutorial.headings} locale={locale} /> : <DocumentationOutline headings={tutorial.headings} locale={locale} />}</aside>
     </div>
   </div>;
-  return sections ? <QuickStartProvider>{page}</QuickStartProvider> : page;
+  return <DocumentationReadingBoundary documentId={documentId} locale={locale}>{sections ? <QuickStartProvider>{page}</QuickStartProvider> : page}</DocumentationReadingBoundary>;
 }

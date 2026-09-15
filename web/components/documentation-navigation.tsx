@@ -5,6 +5,7 @@ import { DevelopmentBadge } from "@/components/development-badge";
 import { HoverBubble } from "@/components/hover-bubble";
 import { DEV_ONLY_NOTE } from "@/lib/dev-mode";
 import { DOCUMENTATION_BASE, documentationDocument, legacyDocumentationTarget, localizedDocumentationRoute } from "@/lib/documentation-registry.mjs";
+import { readingLine } from "@/lib/documentation-reading";
 import { preferredLocale, savedLocale, useI18n, type Locale } from "@/lib/i18n";
 import type { TutorialDocument, TutorialHeading } from "@/lib/tutorial-markdown.mjs";
 import { Activity, BookOpen, Camera, ChartColumn, Compass, Cpu, Database, Download, Files, LifeBuoy, MessageSquareText, MonitorCog, Network, Search, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
@@ -105,16 +106,48 @@ export function DocumentationMenu({ current, documents, locale }: { current: str
   </div>;
 }
 
+interface OutlineSection extends TutorialHeading {
+  children: TutorialHeading[];
+}
+
+/** Alias markers (depth 0) and screenshot placeholders are not real outline sections. */
+function outlineTree(headings: TutorialHeading[]): OutlineSection[] {
+  const tree: OutlineSection[] = [];
+  for (const heading of headings) {
+    if (![2, 3].includes(heading.depth) || heading.text.trim() === "SCREENSHOT NEEDED") continue;
+    const parent = heading.depth === 2 ? undefined : tree.at(-1);
+    if (parent) parent.children.push(heading);
+    else tree.push({ ...heading, children: [] });
+  }
+  return tree;
+}
+
+/** Outlines longer than this collapse to the active section's subsections. */
+const OUTLINE_FULL_LIMIT = 12;
+
 export function DocumentationOutline({ headings, locale }: { headings: TutorialHeading[]; locale: Locale }) {
-  const sections = headings.filter((heading) => heading.depth === 2);
-  const [active, setActive] = useState("");
+  const sections = outlineTree(headings);
+  const compact = sections.reduce((count, section) => count + 1 + section.children.length, 0) > OUTLINE_FULL_LIMIT;
+  const listed = sections.flatMap((section) => [section, ...section.children]);
+  const [active, setActive] = useState(sections[0]?.id ?? "");
+  const [expanded, setExpanded] = useState(sections[0]?.id ?? "");
   useEffect(() => {
     function update() {
-      let selected = sections[0]?.id ?? "";
-      for (const section of sections) {
-        if ((document.getElementById(section.id)?.getBoundingClientRect().top ?? Infinity) <= 150) selected = section.id;
+      const line = readingLine();
+      let current = "";
+      let parent = sections[0]?.id ?? "";
+      let lastParent = parent;
+      for (const section of listed) {
+        if (section.depth === 2) lastParent = section.id;
+        const element = document.getElementById(section.id);
+        if (element?.closest("[hidden], details:not([open])")) continue;
+        const top = element?.getBoundingClientRect().top ?? Infinity;
+        if (top > line) continue;
+        current = section.id;
+        parent = section.depth === 2 ? section.id : lastParent;
       }
-      setActive(selected);
+      setActive(current || sections[0]?.id || "");
+      setExpanded(parent);
     }
     let frame = 0;
     function onScroll() {
@@ -124,16 +157,21 @@ export function DocumentationOutline({ headings, locale }: { headings: TutorialH
     update();
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
+    document.addEventListener("toggle", onScroll, true);
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      document.removeEventListener("toggle", onScroll, true);
     };
   }, [headings]);
   return <div className="docs-outline">
     <p className="docs-outline-title">{locale === "ko" ? "이 페이지에서" : "On this page"}</p>
     <nav aria-label={locale === "ko" ? "목차" : "Table of contents"}><ol>{sections.map((section) => <li key={section.id}>
       <a href={`#${section.id}`} aria-current={active === section.id ? "location" : undefined}>{section.text}</a>
+      {section.children.length > 0 && (!compact || section.id === expanded) && <ol>{section.children.map((child) => <li key={child.id}>
+        <a href={`#${child.id}`} aria-current={active === child.id ? "location" : undefined}>{child.text}</a>
+      </li>)}</ol>}
     </li>)}</ol></nav>
   </div>;
 }

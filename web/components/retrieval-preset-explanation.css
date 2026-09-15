@@ -1,0 +1,23 @@
+.retrieval-preset-explanation { container-type: inline-size; }
+.request-preview-disclosure.retrieval-preset-explanation > summary,
+.settings-preview-content > .request-preview-disclosure.retrieval-preset-explanation > summary {
+  padding-block: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.preset-explanation-note { color: var(--muted); font-size: 14px; line-height: 1.65; }
+.preset-parameter-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 16px 0; }
+.preset-parameter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); align-content: start; align-items: start; gap: 10px 14px; min-width: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.preset-parameter dt { min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.preset-parameter dt code { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.preset-parameter dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.preset-parameter-value { max-width: 180px; text-align: end; font-size: 16px; line-height: 1.5; }
+.preset-parameter-value strong { font-weight: 650; }
+.preset-parameter-baseline { color: var(--muted); font-size: 13px; }
+.preset-parameter-description { grid-column: 1 / -1; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.preset-parameter-inactive { margin: 8px 0 0; font-size: 13px; }
+.preset-parameter[data-inactive] { border-style: dashed; }
+@container (min-width: 620px) {
+  .preset-parameter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

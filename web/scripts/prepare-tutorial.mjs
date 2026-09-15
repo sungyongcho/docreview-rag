@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { resolve, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { renderTutorial } from "../lib/tutorial-markdown.mjs";
+import { validateCapturePlan } from "../lib/tutorial-captures.mjs";
 import { DEVELOPMENT_STORY_SOURCES, documentationDocuments, validateDocumentationRegistry } from "../lib/documentation-registry.mjs";
 
 export const DOCUMENTATION_REGISTRY_FILE = fileURLToPath(new URL("../lib/documentation-registry.json", import.meta.url));
@@ -69,6 +70,18 @@ export async function prepareTutorial(root = resolve(process.cwd(), "../docs/TUT
     documents.set(storyFile, story);
   }
   const copies = new Map();
+  const captureAssets = [];
+  if ([...documents.values()].some((document) => document.captures.length)) {
+    const captureSource = await readFile(resolve(root, "capture-plan.json"), "utf8");
+    const capturePlan = validateCapturePlan(JSON.parse(captureSource), documents);
+    digest.update(captureSource);
+    for (const scene of capturePlan.scenes.filter((scene) => scene.status === "accepted")) {
+      for (const locale of capturePlan.locales) {
+        const variant = scene.variants[locale];
+        captureAssets.push(variant.original, variant.focused, ...(scene.mobile ? [variant.mobile] : []), ...(scene.mobileDetail ? [variant.mobileDetail, variant.mobileDetailOriginal] : []), ...(scene.detail ? [variant.detailFocused, variant.detailOriginal, ...(scene.mobile ? [variant.detailMobile, variant.detailMobileOriginal] : [])] : []));
+      }
+    }
+  }
   for (const [file, document] of documents) {
     for (const link of document.links) {
       const target = documents.get(link.file ?? file);
@@ -80,6 +93,12 @@ export async function prepareTutorial(root = resolve(process.cwd(), "../docs/TUT
       if (!source.startsWith(assetsRoot + sep)) throw new Error(`Image escapes tutorial assets: ${path}`);
       copies.set(source, resolve(output, path.slice(7)));
     }
+  }
+  for (const path of captureAssets) {
+    const assetsRoot = await realpath(resolve(root, "assets"));
+    const source = await realpath(resolve(root, path));
+    if (!source.startsWith(assetsRoot + sep)) throw new Error(`Capture escapes tutorial assets: ${path}`);
+    copies.set(source, resolve(output, path.slice(7)));
   }
   for (const [source, target] of copies) digest.update(target.slice(output.length) + "\0").update(await readFile(source));
   // Keep the shared directory's ownership when host and container builders alternate.

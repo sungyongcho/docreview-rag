@@ -34,10 +34,25 @@ Requires [uv](https://docs.astral.sh/uv/) and Docker Compose v2.24.4+ (Node.js 2
 git clone https://github.com/sungyongcho/docreview-rag.git
 cd docreview-rag
 source ./rag-alias.sh   # registers rag-* helpers in the current shell
-rag-start-quick          # env template, dependencies, dev stack
+rag-dev start          # env template, dependencies, dev stack
 ```
 
 Open `http://localhost:8000/docreview-rag/`. Full walkthrough: [English](docs/TUTORIAL/en/quickstart-dev.md) · [한국어](docs/TUTORIAL/ko/quickstart-dev.md)
+
+To try the visitor experience with a saved public deployment bundle instead of
+preparing DEV data yourself:
+
+```bash
+rag-prod start --local --ready --artifacts /path/to/public-bundle
+# If local PROD is already running:
+rag-prod prepare --local --artifacts /path/to/public-bundle
+```
+
+Local PROD uses a separate database volume and reuses saved embeddings without
+automatic downloads or paid embedding generation. Bundle validation and search
+readiness must pass; starting the web server alone does not prepare data. DEV has no
+`--ready`. See bundle selection, read-only checks and recovery limits in the
+[English](docs/TUTORIAL/en/cli.md#local-prod-data) · [한국어](docs/TUTORIAL/ko/cli.md#local-prod-data) CLI guide.
 
 ## Project Structure
 

@@ -1,12 +1,14 @@
-# Turn sources into searchable evidence
+# Turn sources into searchable evidence {#turn-sources-into-searchable-evidence}
 
-## Published pipeline statistics
+## Published pipeline statistics {#published-pipeline-statistics}
 
-PROD shows actual chunk and embedding counts for the selected published documents. Loading, an empty catalog and a failed listing are distinct states, never sample results. BM25 keyword statistics are computed over the server corpus by language; scope selection restricts candidates without rebuilding those statistics. Existing evaluation results and snapshot comparisons keep their original scope.
+PROD shows actual chunk and embedding counts for the selected published documents. Loading, an empty catalog and a failed listing are distinct states, never sample results.
+
+BM25 keyword statistics are computed over the server corpus by language; scope selection restricts candidates without rebuilding those statistics. Existing evaluation results and snapshot comparisons keep their original scope.
 
 When verified downloaded originals outnumber ingested documents in a registry, Parse & chunk retains completion for existing data and displays **Complete · new originals available**. Select the new originals to process them. Running jobs still show their actual progress; the additional-source notice clears after the current counts agree.
 
-## Return from terminal preparation
+## Return from terminal preparation {#return-from-terminal-preparation}
 
 When a prerequisite needs terminal work, the selected preparation step displays its diagnosis, terminal instructions, a copyable command and the expected result. Complete that command in this checkout, return to the same step, and click **Check updated status**. Continue only when the reported prerequisite has actually changed; the refresh button does not execute setup or fabricate completion.
 
@@ -15,6 +17,8 @@ Schema checking is read-only. Empty-schema preparation preserves existing databa
 The terminal panel is compact and collapsible. It opens for a prerequisite blocking the selected step. Source acquisition can remain available while indexing needs schema recovery; open setup checks to inspect that separate condition. Company and year suggestions open directly below their input and may temporarily cover hints or quick-add controls.
 
 Every pipeline stage can be inspected: Filings, Parse & chunk, Embeddings, BM25, Ask, Answer model, and Evaluate. The diagnosis distinguishes ready to run, already complete, blocked, running/queued, and unknown/checking. Missing sources lead to Filings; missing chunks lead to Parse & chunk; missing indexes or answer configuration lead to their own stage. An unknown response is not success. **Go to prerequisite step** opens the relevant step without starting it; use that step’s compact terminal panel and recheck when needed.
+
+<!-- screenshot: schema-handoff -->
 
 ![Schema-drift diagnosis with terminal handoff: needs attention, copyable check/recover commands, and re-check guidance](../assets/schema-handoff.en.png)
 
@@ -25,7 +29,7 @@ Parsing creates documents and citable chunks. Embeddings support semantic matchi
 lexical statistics. The two index paths can be prepared independently after chunking. A green connection
 indicator is not proof that either index matches the current corpus.
 
-## 5. Parse and create chunks {#step-5}
+## Parse and create chunks {#step-5}
 
 > [!GOAL]
 > Store the explicitly selected reports as searchable, traceable chunks.
@@ -41,7 +45,7 @@ Open **Build → Pipeline → Parse & chunk → Selected documents**. Review the
 
 Each Ingest action processes only its explicit selection while the common catalog remains intact. The operation stores source-linked structures and chunks and leaves embeddings and BM25 to Build steps 3 and 4; changing chunks invalidates existing BM25 statistics. Reuse work already completed by CLI against this same DB.
 
-## 6. Prepare embeddings {#step-6}
+## Prepare embeddings {#step-6}
 
 > [!GOAL]
 > Prepare vectors produced by the intended embedding model.
@@ -61,7 +65,7 @@ The orange traffic-cone duration note below the cost notice is always visible in
 
 > Embedding a fresh clone, an enlarged corpus or an empty index can take a long time.
 
-## 7. Prepare BM25 {#step-7}
+## Prepare BM25 {#step-7}
 
 > [!GOAL]
 > Make keyword retrieval statistics agree with the current chunks.
@@ -77,7 +81,7 @@ Open **Build → Pipeline → Lexical index (BM25)** and inspect the current sta
 
 BM25 rebuilding does not call an answer model or OpenAI. Hybrid retrieval needs both its configured lanes, so read the readiness description to distinguish hybrid availability from vector-only availability. Retrieval evaluation depends on an index and evaluation dataset, not on generating an answer first.
 
-## Continuing the Filings selection
+## Continuing the Filings selection {#continuing-the-filings-selection}
 
 The compact summary shows each company/year once; raw document IDs are in chip details rather
 than primary labels. Large selections collapse to eight companies per registry with **Show all
@@ -87,9 +91,18 @@ count; Documents is secondary and Jobs is a tertiary action. **Advanced** is a s
 for manual manifest selections, without repeating the default count. Its individual Ingest actions
 remain available independently of the default draft.
 
+<!-- details: advanced-manifest-selection | Manifest references and the Advanced view -->
+
 The primary action records one immutable manifest/selection reference for exactly the selected downloaded documents. Jobs and retries retain that reference even if you later change the draft. Missing files or unrequested company/year pairs are never silently dropped. **Advanced** retains existing manifest rows and per-selection **Ingest** controls; use it for a separately named selection rather than the default flow.
 
-![The pipeline view with the BM25 stage running, its live progress bar and the multi-company filing selection summary.](../assets/parse-chunk-compact-selection-summary.en.png)
+<!-- /details -->
+
+<!-- screenshot: parse-chunk-compact-selection-summary -->
+
+![The Parse/chunk stage with its compact selected-filings summary and preparation action.](../assets/captures/parse-chunk-compact-selection-summary.en.png)
+
+*1. Exact filing selection · 2. Parse/chunk action*
+
 ## Job progress and evaluation queue {#job-progress}
 
 The step card and running badge show reported overall job progress. The execution panel shows the
@@ -104,8 +117,11 @@ message. Submitting the same active evaluation shows an existing-queue notice an
 Database, schema, write-access and missing-index blockers remain visible next to the disabled action.
 A missing BM25 index requires step 4; queueing an evaluation never computes it automatically.
 
+<!-- screenshot: bm25-and-evaluation-progress -->
+
 ![The Job Center while a BM25 lexical-index rebuild runs, with the running entry and bounded history.](../assets/bm25-and-evaluation-progress.en.png)
-## Answer model (Build step 6)
+
+## Answer model (Build step 6) {#answer-model-build-step-6}
 
 Build shows separate **OpenAI** and **Local** rows. Green means ready to answer, amber means configured with a limitation (missing key, unloaded model, slow CPU below 15 tok/s, or a server problem), and grey means not configured. The step is complete when at least one visible engine is green; both lights also appear on the flow map. Each row names its current model; OpenAI shows the key slot and Local shows the server protocol, reported CPU/GPU placement and last measured generation speed. Missing placement or timing is labelled unknown/unmeasured. CPU measurements expire after 15 minutes and are shown only while the measured model is loaded.
 
@@ -113,7 +129,7 @@ Use **Open System status** for OpenAI or **Open Local LLM settings** to connect 
 
 Step 2 keeps physical missing-file counts separate from **Needs repair**. DART requires both the current XML and its matching ZIP. If either current file is missing or damaged, download the same filing again before parsing. All selected missing or blocked filings show their exact diagnostic, including duplicate registrations and unsupported paths that require explicit cleanup or reset.
 
-### Updating while using the local web app
+### Updating while using the local web app {#updating-while-using-the-local-web-app}
 
 Parsing/chunking, embedding, and BM25 jobs wait for active questions to finish before
 changing search data. New questions pause during that interval; the composer keeps
@@ -130,4 +146,8 @@ This coordination covers the single-process web API and its corpus jobs. Run
 standalone ingestion/indexing CLI commands while web questions are stopped; those
 separate processes do not participate in the web job admission gate.
 
+<!-- details: search-pause-indicator | What the header shows during an update -->
+
 During web updates, the header beside Notifications shows a blue animated search-pause indicator. Hover or focus to read the job and reported percentage; click for details and View jobs. Missing percentages remain indeterminate. Job progress updates in place inside Notifications. A green check briefly confirms search readiness; orange means another preparation step is required and red indicates a failed update. The pipeline shows its status once beside the stage title.
+
+<!-- /details -->

@@ -15,6 +15,8 @@ import { retrievalReadiness } from "@/lib/pipeline";
 import type { OperatorJob } from "@/lib/types";
 
 export interface ComposerToolbarProps {
+  /** Refresh server usage after the active request ends; never decrement a local estimate. */
+  requestPending?: boolean;
   /** A public catalog/scope blocker takes precedence over global index readiness. */
   publicScopeStatus?: string | null;
   engineControls?: ReactNode;
@@ -170,7 +172,7 @@ export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: Compo
   );
 }
 
-export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef }: ComposerToolbarProps) {
+export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChange, canUseCustom, onLocked, onOpenSettings, onOpenCustom, readiness, live, onOpenBuild, engineControls, settingsOpen = false, settingsTriggerRef, requestPending = false }: ComposerToolbarProps) {
   const { t, locale } = useI18n();
   const filters = filterCount(profile);
   const preset = presetDescription(profile, profile.retrieval_preset);
@@ -180,21 +182,42 @@ export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChan
   const readinessStatus = !live && publicScopeStatus ? publicScopeStatus : readinessStatusLabel(readiness);
   // A public surface has one answer model; show it with the chat allowances where DEV shows the engine picker.
   const publicModel = !live && !engineControls ? readiness?.active_review_model ?? null : null;
+  const showRemainingUsage = Boolean(publicModel && readiness?.environment === "prod" && readiness.mode === "runtime");
   const [limits, setLimits] = useState<ReleaseLimits | null>(null);
+  const [limitsFailed, setLimitsFailed] = useState(false);
+  const active = useRetainedPanelActive();
   useEffect(() => {
-    if (!publicModel) return;
+    if (!showRemainingUsage || !active) return;
+    setLimits(null); setLimitsFailed(false);
+    if (requestPending) return;
     let cancelled = false;
-    getReleaseLimits().then((value) => { if (!cancelled) setLimits(value); }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [publicModel]);
+    let inFlight = false;
+    const refresh = async () => {
+      if (document.visibilityState === "hidden" || inFlight) return;
+      inFlight = true;
+      try {
+        const value = await getReleaseLimits();
+        if (![value.remaining_minute, value.remaining_day, value.per_minute, value.per_day].every((count) => Number.isFinite(count) && count >= 0)) throw new Error("Invalid request allowance");
+        if (!cancelled) { setLimits(value); setLimitsFailed(false); }
+      } catch {
+        if (!cancelled) { setLimits(null); setLimitsFailed(true); }
+      } finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [showRemainingUsage, publicModel, active, requestPending]);
   const modelControls = publicModel && <div className="composer-model-control composer-engine-field">
     <span className="composer-control-label">{t("Answer model")}<ControlHelp label={t("About chat limits")}>
       <p>{t("Questions on this website call OpenAI on the server. Model choice and per-call caps are fixed here; DEV mode adds local models.")}</p>
-      {limits && <p>{t("{minute} questions per minute · {day} per day · shared daily budget ${cost}", { minute: limits.per_minute, day: limits.per_day, cost: limits.daily_cost_usd })}</p>}
-      {limits && <p>{t("Per call: up to {input} input tokens, {output} output tokens, ${cost}", { input: limits.max_input_tokens.toLocaleString(locale), output: limits.max_output_tokens.toLocaleString(locale), cost: limits.max_cost_usd })}</p>}
+      {showRemainingUsage && limits && <p>{t("{minute} questions per minute · {day} per day · shared daily budget ${cost}", { minute: limits.per_minute, day: limits.per_day, cost: limits.daily_cost_usd })}</p>}
+      {showRemainingUsage && limits && <p>{t("Per call: up to {input} input tokens, {output} output tokens, ${cost}", { input: limits.max_input_tokens.toLocaleString(locale), output: limits.max_output_tokens.toLocaleString(locale), cost: limits.max_cost_usd })}</p>}
+      {showRemainingUsage && <p>{t("Remaining request counts are shared by your IP address. Shared cost limits may also restrict availability. Counts refresh after a request and while this view is open.")}</p>}
     </ControlHelp></span>
     <span className="chip composer-model-chip" title={publicModel}>{publicModel}</span>
-    <span className="composer-control-description">{limits ? t("{minute}/min · {day}/day", { minute: limits.per_minute, day: limits.per_day }) : t("OpenAI · fixed model")}</span>
+    {showRemainingUsage ? <span className={`composer-control-description composer-allowance${limits && (limits.remaining_minute === 0 || limits.remaining_day === 0) ? " exhausted" : ""}`} role="status" aria-live="polite">{limits ? <><span>{t("Remaining")}</span><span>{t("Minute {remaining}/{limit}", { remaining: limits.remaining_minute, limit: limits.per_minute })}</span><span>{t("Day {remaining}/{limit}", { remaining: limits.remaining_day, limit: limits.per_day })}</span></> : t(requestPending ? "Usage updates after this request" : limitsFailed ? "Remaining usage unavailable" : "Checking remaining usage…")}</span> : <span className="composer-control-description">{t("OpenAI · fixed model")}</span>}
   </div>;
 
 
@@ -204,7 +227,7 @@ export function ComposerToolbar({ publicScopeStatus, profile, query = "", onChan
         <div className="composer-scope-control"><span className="composer-control-label">{t("Corpus scope")}<ControlHelp label={t("About corpus scope")}><p><strong>{t("Auto")}</strong> — {t("Auto chooses SEC or DART from the question and filters. The server result appears in progress.")}</p><p><strong>SEC</strong> — {t("Search SEC filings from U.S. registrants.")}</p><p><strong>DART</strong> — {t("Search Korean DART filings.")}</p></ControlHelp></span><div className="lab-tabs composer-scope-tabs" role="group" aria-label={t("Corpus scope")} data-help="review.scope">{SCOPE_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={profile.corpus_scope === option.value} onClick={() => onChange({ corpus_scope: option.value })}>{t(option.label)}</button>)}</div><p className="composer-control-description">{t(profile.corpus_scope === "auto" ? "Automatic source routing" : profile.corpus_scope === "sec" ? "U.S. SEC filings" : "Korean DART filings")}</p></div>
         {engineControls}{modelControls}
         <div className="composer-preset-control"><div className="composer-control-label"><label htmlFor="composer-retrieval-preset">{t("Retrieval preset")}</label><ControlHelp label={t("About retrieval presets")}><p>{t(preset.purpose)}</p><code>{preset.settings}</code><p>{t("Open Settings and preview to inspect the next request.")}</p></ControlHelp></div><RetrievalPresetSelect id="composer-retrieval-preset" profile={profile} editable={canUseCustom} onChange={onChange} onManage={onOpenCustom} onLocked={onLocked} /><p className="composer-control-description">{effective.strategy} · k {effective.k} · {t("Candidates")} {effective.candidate_k}</p></div>
-        <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip" type="button" data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={16} aria-hidden="true" /><span className="composer-settings-label">{filters > 0 ? t("Settings and preview · {p0}", { p0: filters }) : t("Settings and preview")}</span></button>
+        <div className="composer-toolbar-actions"><button ref={settingsTriggerRef} className="chip composer-settings-trigger" type="button" title={t("Settings and preview")} data-help="review.rag" aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={onOpenSettings}><SlidersHorizontal size={18} aria-hidden="true" /><span className="composer-settings-label">{filters > 0 ? t("Settings and preview · {p0}", { p0: filters }) : t("Settings and preview")}</span></button>
         {profile.snapshot_id !== null && (
           <span className="chip snapshot" data-help="review.snapshot">{t("Snapshot #")}{profile.snapshot_id}
             <button type="button" aria-label={t("Clear snapshot")} onClick={() => onChange({ snapshot_id: null, applied_from_evaluation: null })}>×</button>

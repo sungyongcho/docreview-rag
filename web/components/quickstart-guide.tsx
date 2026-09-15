@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { DocumentationOutline } from "@/components/documentation-navigation";
+import { initialQuickStartMode, latestReadingState, linkedQuickStartMode } from "@/lib/documentation-reading";
 import type { TutorialHeading } from "@/lib/tutorial-markdown.mjs";
 
 type Mode = "cli" | "web";
@@ -9,13 +10,22 @@ const ModeContext = createContext<{ mode: Mode; select: (mode: Mode) => void }>(
 
 /** Preserve a linked step when changing interface or switching document language. */
 export function QuickStartProvider({ children }: { children: ReactNode }) {
+  // The server and first client render agree; apply browser-only hints before paint.
   const [mode, setMode] = useState<Mode>("web");
-  useEffect(() => {
+  const hinted = linkedQuickStartMode() ?? latestReadingState()?.quickstart;
+  useLayoutEffect(() => {
+    if (hinted && hinted !== mode) setMode(hinted);
+  }, [hinted, mode]);
+  useLayoutEffect(() => {
+    setMode(initialQuickStartMode());
     const followHash = () => { if (window.location.hash.startsWith("#qs-cli")) setMode("cli"); else if (window.location.hash.startsWith("#qs-web")) setMode("web"); };
     followHash();
     window.addEventListener("hashchange", followHash);
     return () => window.removeEventListener("hashchange", followHash);
   }, []);
+  useLayoutEffect(() => {
+    window.dispatchEvent(new Event("docreview:quickstart-ready"));
+  }, [mode]);
   function select(next: Mode) {
     setMode(next);
     const hash = window.location.hash.replace(/^#qs-(cli|web)/, `#qs-${next}`);

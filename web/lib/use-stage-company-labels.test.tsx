@@ -27,7 +27,7 @@ it("loads only an opened panel and reuses its registry-scoped catalog on reopeni
 it("separates registries and routes public views only through the published catalog", async () => {
   vi.mocked(getPublishedDocumentFacets).mockImplementation(async (registry) => registry === "sec" ? facets("NVDA", "NVIDIA") : facets("005930", "삼성전자"));
   const { result } = renderHook(() => useStageCompanyLabels(true, "published", "dart,sec"));
-  await waitFor(() => expect(result.current.labels).toEqual({ "sec:NVDA": "NVIDIA", "dart:005930": "삼성전자" }));
+  await waitFor(() => expect(result.current.labels).toEqual({ "sec:NVDA": "NVIDIA", "dart:005930": "Samsung Electronics" }));
   expect(getDocumentFacets).not.toHaveBeenCalled();
 });
 

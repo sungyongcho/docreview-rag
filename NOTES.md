@@ -20,3 +20,7 @@
 [2026-09-11] [tests/api/test_06_review_lifecycle.py:429] [type: debt] Resolved: provider-error and redaction tests pass against the migrated canonical corpus manifest (sec-*/dart-* ids).
 [2026-09-11] [web/app/docs/[locale]/[slug]/page.tsx] [type: question] Resolved: `npm run build` completes the static export (43 pages) after the tutorial-markdown math declaration was added to the type surface.
 [2026-09-11] [web/app/styles.css, web/app/v2.css] [type: note] The three narrow-viewport items (skipped-phase reason at 360px, history/theme hit-target overlap at 360px, topbar breadcrumb at 390px) still need a real-browser recheck; current rules already use minmax(0,1fr) grids and ellipsis truncation, so confirm before changing layout.
+
+[2026-09-14] [tests/scripts/deploy/test_gcp_backend.py:458] [type: debt] The deployment contract test expects a USD 0.10 daily allowance, but the committed deployment configuration specifies USD 0.30; reconcile the expectation without changing billing limits implicitly.
+[2026-09-14] [deploy/gcp/verify_artifacts.py:57] [type: debt] Direct basedpyright checking reports Optional archive streams and a file_digest stream typing mismatch in the existing verifier; narrow the validated regular-file stream types.
+[2026-09-14] [docker/Dockerfile:9] [type: bug] Docker image assembly still copies docs/DEVELOPMENT_STORY_OUTLINE.md after the user deleted it; reconcile the obsolete COPY reference without restoring the deleted document.

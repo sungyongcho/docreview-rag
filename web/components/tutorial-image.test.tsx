@@ -77,6 +77,51 @@ it("bounds wheel zoom and expands the scrollable image without scaling its capti
   expect(image).toHaveStyle({ width: "800px" });
 });
 
+it("keeps numbered callouts in the image gutter with leaders to their targets", () => {
+  const callouts = [
+    { number: 1, label: "First", bounds: { x: 40, y: 20, w: 100, h: 80 } },
+    { number: 2, label: "Second", bounds: { x: 200, y: 300, w: 50, h: 50 } },
+  ];
+  render(<TutorialImage {...source} width={400} height={400} callouts={callouts} displayWidth={200} />);
+  const trigger = screen.getByRole("link", { name: "Recorded run · Expand image" });
+  expect(trigger).toHaveStyle({ maxWidth: "200px" });
+  expect(trigger.querySelector(".tutorial-image-figure-callouts")).not.toBeNull();
+  const badges = trigger.querySelectorAll(".tutorial-image-callout");
+  expect(badges).toHaveLength(2);
+  expect(badges[0]).toHaveStyle({ top: "5%" });
+  expect(badges[1]).toHaveStyle({ top: "75%" });
+  const leaders = trigger.querySelectorAll(".tutorial-image-leader");
+  expect(leaders[0]).toHaveStyle({ top: "5%", width: "10%", maxWidth: "62px" });
+  expect(leaders[1]).toHaveStyle({ top: "75%", width: "50%", maxWidth: "62px" });
+  expect(trigger.querySelector(".tutorial-image-callouts")).toHaveAttribute("aria-hidden", "true");
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.querySelectorAll(".tutorial-image-callout")).toHaveLength(2);
+  const stage = within(dialog).getByRole("region", { name: "Scrollable image" });
+  const image = within(dialog).getByRole("img");
+  Object.defineProperty(stage, "clientWidth", { configurable: true, value: 800 });
+  Object.defineProperty(image, "naturalWidth", { configurable: true, value: 1200 });
+  fireEvent.resize(window);
+  fireEvent.load(image);
+  expect(image).toHaveStyle({ width: "762px" });
+  expect(dialog.querySelector(".tutorial-image-canvas")).toHaveStyle({ width: "800px" });
+});
+
+it("uses a mobile variant with its own callout bounds under the mobile breakpoint", () => {
+  render(<TutorialImage {...source} width={400} height={400} mobileSrc="/docreview-rag/tutorial-assets/captures/x.en.mobile.png" mobileWidth={100} mobileHeight={200}
+    callouts={[{ number: 1, label: "First", bounds: { x: 40, y: 20, w: 100, h: 80 }, mobileBounds: { x: 10, y: 50, w: 30, h: 30 } }]} />);
+  const trigger = screen.getByRole("link", { name: "Recorded run · Expand image" });
+  const mobileSource = trigger.querySelector("source")!;
+  expect(mobileSource).toHaveAttribute("media", "(max-width: 900px)");
+  expect(trigger.style.getPropertyValue("--tutorial-mobile-frame-width")).toBe("88px");
+  expect(mobileSource).toHaveAttribute("srcset", "/docreview-rag/tutorial-assets/captures/x.en.mobile.png");
+  expect(mobileSource).toHaveAttribute("width", "100");
+  expect(trigger.querySelectorAll(".tutorial-image-callouts")).toHaveLength(2);
+  const mobileBadge = trigger.querySelector(".tutorial-image-callouts-mobile .tutorial-image-callout")!;
+  expect(mobileBadge).toHaveStyle({ top: "25%" });
+  expect(trigger.querySelector(".tutorial-image-callouts-mobile .tutorial-image-leader")).toHaveStyle({ top: "25%", width: "10%", maxWidth: "62px" });
+});
+
 it("preserves modified-click access and closes a viewer when its revision changes", () => {
   const { rerender } = render(<TutorialImage {...source} />);
   const trigger = screen.getByRole("link", { name: "Recorded run · Expand image" });

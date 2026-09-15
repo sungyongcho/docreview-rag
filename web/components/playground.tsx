@@ -1,6 +1,8 @@
 "use client";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { useI18n } from "@/lib/i18n";
+import { isReviewLimitation, reviewLimitationMessage, scopeFailureProgress } from "@/lib/scope-failure";
+import { ReviewProgressSteps, initialReviewProgress, finishReviewProgress, type ReviewProgressState } from "./review-progress";
 
 
 import { Play, Search } from "lucide-react";
@@ -111,10 +113,20 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
   const [retrieval, setRetrieval] = useState<RetrievalPreview | null>(null);
   const [review, setReview] = useState<ReviewSummary | null>(null);
   const [shown, setShown] = useState<"retrieval" | "review" | null>(null);
+  const [limitation, setLimitation] = useState<ReviewProgressState | null>(null);
+
+  /** Policy stops replace the preview result without emitting a technical failure notification. */
+  function showLimitation(reason: unknown): boolean {
+    if (!(reason instanceof ApiError) || !isReviewLimitation(reason.pathDecision)) return false;
+    setLimitation({ ...finishReviewProgress(scopeFailureProgress(reason, initialReviewProgress()), "failed", 0), elapsedMs: undefined });
+    setShown(null);
+    return true;
+  }
 
   async function runRetrieval() {
     if (!question.trim() || busy || (!live && publicScopeBlocked)) return;
     setBusy("retrieval");
+    setLimitation(null);
     try {
       // A public surface has no admin preview; the public /retrieve answers with the same rankings for a custom profile.
       const payload = live
@@ -123,6 +135,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
       setRetrieval(toRetrievalPreview({ query: question.trim(), profile, score_stage: "rrf", ...(payload as unknown as Record<string, unknown>) }));
       setShown("retrieval");
     } catch (reason) {
+      if (showLimitation(reason)) return;
       notify(reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Retrieval preview failed."), "error", "playground-retrieval", undefined, { event: "playground-retrieval-error", detail: notificationErrorDetail(reason), ...(reason instanceof ApiError && reason.code === "query_scope_empty" ? { actionLabel: "Check document preparation", target: { view: "build" as const, tab: "pipeline" as const, stage: 1 } } : {}) });
     } finally {
       setBusy(null);
@@ -132,10 +145,12 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
   async function runReview() {
     if (!question.trim() || busy || (!live && publicScopeBlocked)) return;
     setBusy("review");
+    setLimitation(null);
     try {
       setReview(toReviewSummary(await previewReview(question.trim(), profile)));
       setShown("review");
     } catch (reason) {
+      if (showLimitation(reason)) return;
       notify(reason instanceof Error ? t(notificationErrorMessage(reason)) : t("Review preview failed."), "error", "playground-review", undefined, { event: "playground-review-error", detail: notificationErrorDetail(reason), ...(reason instanceof ApiError && reason.code === "query_scope_empty" ? { actionLabel: "Check document preparation", target: { view: "build" as const, tab: "pipeline" as const, stage: 1 } } : {}) });
     } finally {
       setBusy(null);
@@ -160,6 +175,7 @@ export function Playground({ publicProfile, publicScopeBlocked = false, live, pr
         <p className="helper">{t(live ? "Preview review calls the answer model once and records provider usage." : "Search runs on the published corpus within the server's public ranges. Nothing is persisted.")}</p>
       </section>
       {busy && <p className="helper" role="status">{t(busy === "retrieval" ? "Previewing…" : "Reviewing…")}</p>}
+      {limitation?.pathDecision && <section className="surface playground-results"><p>{reviewLimitationMessage(limitation.pathDecision, t)}</p><ReviewProgressSteps state={limitation} catalogMode={live ? "live" : "published"} /></section>}
       {shown !== null && <section className="surface playground-results" aria-live="polite">
         {shown === "retrieval" && retrieval && <>
           <div className="surface-heading"><div><h2>{t("Retrieval preview")}</h2><p className="helper">{t("Score stage ·")}{" "}{t(retrieval.score_stage)}</p></div></div>

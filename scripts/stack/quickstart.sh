@@ -13,9 +13,15 @@ for arg in "$@"; do
 done
 set -- "${args[@]}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+mode="${1:-dev}"
+case "$mode" in
+    dev|prod) if [[ $# -gt 0 ]]; then shift; fi ;;
+    --help|-h) mode=dev ;;
+    *) printf '%s\n' 'Expected dev or prod.' >&2; exit 2 ;;
+esac
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
-    printf '%s\n' 'Usage: rag-start-quick [--verbose|-vv|--status]' \
-        'Prepare a new local DEV checkout without deleting existing data.' \
+    printf '%s\n' "Usage: rag-${mode} start [--local] [--timeout SECONDS] [--verbose|-vv]" \
+        'Prepare the selected local mode without deleting existing data.' \
         'Requires uv, Docker Engine, and Docker Compose 2.24.4+.' \
         'Order: prerequisites -> local .env -> Compose state/start -> schema -> server readiness.' \
         'Creates .env only when absent; edit the named settings locally and rerun this command.' \
@@ -25,21 +31,28 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
         'Does not download filings, generate embeddings, or ask a model.'
     exit 0
 fi
-if [[ "${1:-}" == --status && $# -eq 1 ]]; then
-    cd "$root"
-    status_python="$(uv python find --no-python-downloads 3.14)" || { printf '%s\n' 'Python 3.14 is required to read receipts; run uv python install 3.14.' >&2; exit 2; }
-    exec "$status_python" -c 'from pathlib import Path; from scripts.stack.fresh import status; raise SystemExit(status(Path.cwd(), "start-quick"))'
-fi
-if [[ $# -ne 0 ]]; then printf '%s\n' 'Usage: rag-start-quick [--help]' >&2; exit 2; fi
+start_args=("$@")
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --local|--ready) shift ;;
+        --artifacts)
+            [[ $# -ge 2 && -n "$2" ]] || { printf '%s\n' 'Expected an artifact directory.' >&2; exit 2; }
+            shift 2 ;;
+        --timeout)
+            [[ $# -ge 2 && "$2" =~ ^[0-9]+([.][0-9]+)?$ ]] || { printf '%s\n' 'Expected a positive timeout.' >&2; exit 2; }
+            shift 2 ;;
+        *) printf 'Unknown start option: %s\n' "$1" >&2; exit 2 ;;
+    esac
+done
 printf '%s\n' '+-- [BOOTSTRAP] Tools and Python --+' \
     'Requires uv and Docker; prepares locked local dependencies without starting a model.'
 for tool in uv docker; do
-    command -v "$tool" >/dev/null || { printf 'Install %s, then rerun rag-start-quick.\n' "$tool" >&2; exit 1; }
+    command -v "$tool" >/dev/null || { printf 'Install %s, then rerun rag-%s start.\n' "$tool" "$mode" >&2; exit 1; }
 done
 cd "$root"
 printf '%s\n' 'Checking prerequisites: uv, Docker Engine, Docker Compose.'
-docker info >/dev/null 2>&1 || { printf '%s\n' 'Docker Engine is unavailable. Start Docker/check access, then rerun rag-start-quick.' >&2; exit 1; }
+docker info >/dev/null 2>&1 || { printf 'Docker Engine is unavailable. Check access, then rerun rag-%s start.\n' "$mode" >&2; exit 1; }
 docker compose version --short >/dev/null
 printf '%s\n' '+-- [PYTHON] Prepare the local runner --+' 'Install locked dependencies; configuration is checked next. No model request is made.'
 uv run --quiet --no-project --isolated --python 3.14 -- python -m scripts.stack.terminal "Install Python dependencies" -- uv sync --locked
-exec .venv/bin/python -m scripts.stack.quickstart
+exec .venv/bin/python -m scripts.stack.cli "$mode" start "${start_args[@]}"

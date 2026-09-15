@@ -1,9 +1,10 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Readiness, ReviewSessionDraft } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { ComposerBanner, ComposerToolbar, composerBanner, readinessChipLabel, readinessStatusLabel, type ComposerToolbarProps } from "./composer-toolbar";
+import * as api from "@/lib/api";
 
 const READINESS: Readiness = {
   status: "ready",
@@ -48,7 +49,55 @@ function renderToolbar(overrides: Partial<ComposerToolbarProps> = {}) {
   return props;
 }
 
-afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+describe("PROD remaining request allowance", () => {
+  const limits = { per_minute: 10, per_day: 50, remaining_minute: 7, remaining_day: 32, max_input_tokens: 12000, max_output_tokens: 600, max_cost_usd: "0.005", daily_cost_usd: "0.10", remaining_daily_cost_usd: "0.08", retry_after_seconds: 0, minute_reset_seconds: 30, day_reset_seconds: 3600, daily_cost_reset_at_utc: "2026-09-15T00:00:00Z", scope: "shared_storage" as const };
+
+  it("shows server counts, refreshes on focus and reports unavailable data without inventing zero", async () => {
+    const load = vi.spyOn(api, "getReleaseLimits").mockResolvedValue(limits);
+    renderToolbar({ live: false, readiness: readiness({}, { environment: "prod" }) });
+    expect(await screen.findByText("Minute 7/10")).toBeInTheDocument();
+    expect(screen.getByText("Day 32/50")).toBeInTheDocument();
+    load.mockResolvedValue({ ...limits, remaining_minute: 0 });
+    fireEvent(window, new Event("focus"));
+    await screen.findByText("Minute 0/10");
+    expect(document.querySelector(".composer-allowance")).toHaveClass("exhausted");
+    load.mockRejectedValue(new Error("offline"));
+    fireEvent(window, new Event("focus"));
+    await screen.findByText("Remaining usage unavailable");
+    expect(screen.queryByText("Minute 0/10")).toBeNull();
+    load.mockResolvedValue({ ...limits, remaining_day: 31 });
+    fireEvent(window, new Event("focus"));
+    await screen.findByText("Day 31/50");
+  });
+
+  it.each([
+    { live: true, environment: "dev" as const, mode: "runtime" as const },
+    { live: false, environment: "dev" as const, mode: "runtime" as const },
+    { live: false, environment: "prod" as const, mode: "canned" as const },
+  ])("does not query public usage for $environment/$mode with live=$live", async ({ live, environment, mode }) => {
+    const load = vi.spyOn(api, "getReleaseLimits").mockResolvedValue(limits);
+    renderToolbar({ live, readiness: readiness({}, { environment, mode }) });
+    await act(async () => {});
+    expect(load).not.toHaveBeenCalled();
+    expect(document.querySelector(".composer-allowance")).toBeNull();
+  });
+
+  it("reads fresh usage after a request ends and removes refresh listeners on unmount", async () => {
+    const load = vi.spyOn(api, "getReleaseLimits").mockResolvedValue(limits);
+    const props: ComposerToolbarProps = { profile: DEFAULT_SESSION_PROFILE, onChange: vi.fn(), canUseCustom: false, onLocked: vi.fn(), onOpenSettings: vi.fn(), onOpenBuild: vi.fn(), live: false, readiness: readiness({}, { environment: "prod" }), requestPending: true };
+    const view = render(<ComposerToolbar {...props} />);
+    expect(screen.getByText("Usage updates after this request")).toBeInTheDocument();
+    expect(load).not.toHaveBeenCalled();
+    view.rerender(<ComposerToolbar {...props} requestPending={false} />);
+    await screen.findByText("Minute 7/10");
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    view.unmount();
+    fireEvent(window, new Event("focus"));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("corpus readiness summary", () => {
   it("labels the global corpus and omits unpublished totals in public mode", () => {

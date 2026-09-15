@@ -1,6 +1,7 @@
 "use client";
 import { useI18n } from "@/lib/i18n";
 import { DEFAULT_SESSION_PROFILE, resolvedRetrievalProfile, type ReviewSessionDraft } from "@/lib/types";
+import "./retrieval-preset-explanation.css";
 
 const FIELDS = [
   ["strategy", "Search strategy", "Chooses vector, keyword, or combined retrieval."],
@@ -18,8 +19,12 @@ export function RetrievalPresetExplanation({ profile }: { profile: ReviewSession
   const effective = resolvedRetrievalProfile(profile);
   const baseline = resolvedRetrievalProfile({ ...DEFAULT_SESSION_PROFILE, retrieval_preset: "balanced" });
   function display(value: unknown) { return typeof value === "boolean" ? t(value ? "Enabled" : "Disabled") : value == null ? t("None") : String(value); }
-  return <details className="request-preview-disclosure"><summary>{t("Preset parameters and changes")}</summary><p className="helper">{t("Values are compared with Balanced. Wider retrieval can add latency; it does not guarantee a more accurate answer.")}</p><dl className="request-facts">{FIELDS.map(([key, label, description]) => {
+  return <details className="request-preview-disclosure retrieval-preset-explanation"><summary>{t("Preset parameters and changes")}</summary><p className="preset-explanation-note">{t("Values are compared with Balanced. Wider retrieval can add latency; it does not guarantee a more accurate answer.")}</p><dl className="preset-parameter-grid">{FIELDS.map(([key, label, description]) => {
     const inactive = (key === "rrf_k" || key === "reranker") && effective.strategy !== "hybrid" || key === "lexical_ranker" && effective.strategy === "vector";
-    return <div key={key}><dt>{t(label)} (<code>{key}</code>)<p className="helper">{t(description)}</p></dt><dd>{effective[key] !== baseline[key] ? `${display(baseline[key])} → ` : ""}{display(effective[key])}{inactive && <p className="helper">{t("Not used by this search strategy.")}</p>}</dd></div>;
+    return <div key={key} className="preset-parameter" data-inactive={inactive || undefined}>
+      <dt>{t(label)}<code>{key}</code></dt>
+      <dd className="preset-parameter-value">{effective[key] !== baseline[key] && <span className="preset-parameter-baseline">{display(baseline[key])} → </span>}<strong>{display(effective[key])}</strong></dd>
+      <dd className="preset-parameter-description">{t(description)}{inactive && <p className="preset-parameter-inactive">{t("Not used by this search strategy.")}</p>}</dd>
+    </div>;
   })}</dl></details>;
 }

@@ -16,16 +16,16 @@ function Editor() {
   const [tab, setTab] = useState<ConversationSettingsTab>("limits");
   return <ConversationSettings profile={profile} tab={tab} editable query="Keep this question" onChange={update => setProfile(old => ({ ...old, ...update }))} onTabChange={setTab} onClose={() => {}} />;
 }
-it("keeps edited values when switching Basic/Advanced/Preview and previews the same request", () => {
+it("keeps edited values across settings sections and previews the same request", () => {
   render(<Editor />);
   fireEvent.change(screen.getByLabelText("Maximum wall clock seconds"), { target: { value: "180" } });
-  fireEvent.click(screen.getByRole("button", { name: "Basic" }));
-  expect(screen.getByText("Advanced settings changed: 1")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+  expect(screen.getByText("Search and policy changes from defaults: 1")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Preview" }));
   expect(screen.getByText("Keep this question")).toBeVisible();
   fireEvent.click(screen.getByText("Request payload"));
   expect(screen.getByText(/"query": "Keep this question"/)).toHaveTextContent('"max_wall_clock_s": 180');
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run limits" }));
   expect(screen.getByLabelText("Maximum wall clock seconds")).toHaveValue(180);
 });
 it("saves a named copy and updates mounted selectors without applying it to a conversation", () => {
@@ -89,7 +89,7 @@ it("saves presets with 500 candidates and fractional BM25 values", () => {
 });
 
 it("shows server policy guidance in public mode without local CPU advice", () => {
-  render(<ConversationSettings profile={DEFAULT_SESSION_PROFILE} tab="filters" editable={false} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
+  render(<ConversationSettings profile={DEFAULT_SESSION_PROFILE} tab="limits" editable={false} onChange={vi.fn()} onTabChange={vi.fn()} onClose={vi.fn()} />);
   expect(screen.getByText("Question execution limits")).toBeVisible();
   expect(screen.queryByText(/CPU start:/)).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox", { name: "Limit preset" })).toBeNull();

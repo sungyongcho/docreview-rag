@@ -2,8 +2,9 @@
 
 import { useI18n } from "@/lib/i18n";
 import type { ReviewExecution } from "@/lib/types";
-import { RecordedStageTimings, RecordedTable, RecordedValue, type CompanyLabels, type RecordedColumn, type ValueKind } from "./review-stage-value";
+import { RecordedStageTimings, RecordedTable, RecordedValue, recordedFieldLabel, type CompanyLabels, type RecordedColumn, type ValueKind } from "./review-stage-value";
 import "./review-stage-details.css";
+import { ReviewPathChoice } from "./review-path-choice";
 
 export type DisclosureStage = "path" | "gate" | "retrieve" | "grade" | "check" | "report";
 interface Field { label: string; value: unknown; kind?: ValueKind; wide?: boolean; count?: boolean }
@@ -17,6 +18,18 @@ function record(value: unknown): Record<string, unknown> {
 /** Retain recorded rows in collection order, including repeated stage passes. */
 function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item) => item !== null && typeof item === "object" && !Array.isArray(item)).map(record) : [];
+}
+
+/** Flatten a recorded decision once, preserving unknown fields and empty historical values. */
+function verificationFields(value: unknown): Field[] {
+  const entries = Object.entries(record(value));
+  if (!entries.length) return [{ label: "Verification decision", value }];
+  return entries.map(([key, item]) => ({
+    label: key === "label" ? "Verification decision" : recordedFieldLabel(key),
+    value: item,
+    kind: key.endsWith("_id") || key.endsWith("_ids") ? "code" : "plain",
+    wide: !["label", "citation_chunk_ids"].includes(key),
+  }));
 }
 
 /** Map the visual strip to the actual nodes recorded by the server. */
@@ -53,7 +66,13 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
   const resolved = record(settings.resolved_profile ?? performance?.resolved_profile);
   const skip = state.pathDecision?.intent === "casual_chat" && ["retrieve", "grade", "check"].includes(stage) ? "Skipped: conversation reply without retrieval" : stage === "check" && state.skippedNodes?.check ? "Skipped: relevance threshold not met" : null;
   const sections: Section[] = [];
-  if (stage === "path" || stage === "gate") sections.push({ fields: [
+  if (stage === "path") sections.push({ fields: [
+    { label: "Decision source", value: path.source },
+    { label: "Deterministic rule", value: path.matched_rule, kind: "code" },
+    { label: "History turns considered", value: path.history_turns },
+    ...(path.stopping_stage === "path" ? [{ label: "Stopping reason", value: path.stopping_reason, wide: true }] : []),
+  ] });
+  if (stage === "gate") sections.push({ fields: [
     { label: "Selected corpus", value: path.selected_scope ?? state.selectedScope },
     { label: "Source", value: filters.registries, kind: "registry" }, { label: "Company", value: filters.issuers, kind: "issuer" }, { label: "Fiscal year", value: filters.fiscal_years, kind: "year" },
     { label: "Routing reason", value: path.rationale ?? scope.source, wide: true },
@@ -61,13 +80,16 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
     { label: "Path decision", value: path.intent }, { label: "Decision source", value: path.source },
     { label: "Routing queries", value: path.routing_queries ?? performance?.routing_queries, wide: true },
     { label: "Retrieval query", value: path.retrieval_query, wide: true }, { label: "Stopping reason", value: path.stopping_reason },
+    { label: "Stopping stage", value: path.stopping_stage },
+    { label: "Requested companies", value: path.requested_issuers },
+    { label: "Missing companies", value: path.missing_issuers },
   ] });
   if (stage === "retrieve") sections.push({ fields: [{ label: "Search preset", value: retrieval.preset ?? requested.retrieval_preset ?? settings.retrieval_preset }, { label: "Retrieval k", value: retrieval.k ?? resolved.k }] });
   if (!["path", "gate"].includes(stage)) for (const [index, result] of (results.length ? results : [{}]).entries()) {
     const fields: Field[] = [];
     if (stage === "retrieve") fields.push({ label: "Candidate count", value: Array.isArray(result.candidates) ? result.candidates.length : undefined });
     if (stage === "grade") fields.push({ label: "Kept candidate IDs", value: result.kept_chunk_ids, count: true, kind: "code" }, { label: "Rejected candidate IDs", value: result.rejected_chunk_ids, count: true, kind: "code" });
-    if (stage === "check") fields.push({ label: "Verification decision", value: result.decision, wide: true }, { label: "Reasons", value: result.reasons, wide: true });
+    if (stage === "check") fields.push(...verificationFields(result.decision), { label: "Reasons", value: result.reasons });
     if (stage === "report") fields.push({ label: "Final label", value: finalLabel ? t(finalLabel) : record(result.decision).label }, { label: "Reasons", value: result.reasons, wide: true }, { label: "Request time", value: performance?.total_elapsed_ms ?? state.elapsedMs, kind: "duration" });
     fields.push({ label: "Failure", value: result.failure, wide: true });
     sections.push({ fields, candidates: stage === "retrieve" && Array.isArray(result.candidates) ? records(result.candidates) : undefined, pass: results.length > 1 ? index + 1 : undefined });
@@ -75,10 +97,11 @@ export function ReviewStageDetails({ stage, state, performance, finalLabel, comp
   const missing = new Set(sections.flatMap((section) => section.fields.filter((field) => field.value === undefined || field.value === null).map((field) => `${section.pass ? `${t("Recorded pass")} ${section.pass} · ` : ""}${t(field.label)}`)));
   if (!timings) missing.add(t("Stage timings"));
   if (!calls) missing.add(t("Model calls / attempts"));
-  const hasRecordedFields = Boolean(skip) || calls !== undefined || timings !== undefined || sections.some((section) => section.fields.some((field) => field.value !== undefined && field.value !== null));
+  const hasRecordedFields = Boolean(skip) || (stage === "path" && Object.keys(path).length > 0) || calls !== undefined || timings !== undefined || sections.some((section) => section.fields.some((field) => field.value !== undefined && field.value !== null));
   if (!hasRecordedFields) return <div className="review-stage-details"><p className="review-stage-empty">{t("This stage was not recorded for this run.")}</p></div>;
-  return <div className="review-stage-details">
+  return <div className="review-stage-details" data-stage={stage}>
     <h4 className="review-stage-mapping">{DISCLOSURE_LABELS[stage][0]}. {t(DISCLOSURE_LABELS[stage][1])} · <code>{nodes.join(", ")}</code></h4>
+    {stage === "path" && <ReviewPathChoice path={path} />}
     {skip && <p className="review-stage-skip">{t(skip)}</p>}
     {sections.map((section, index) => <section key={index}>
       {section.pass && <h4>{t("Recorded pass")} {section.pass}</h4>}

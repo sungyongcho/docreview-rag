@@ -88,3 +88,31 @@
 .conversation-search-defaults .button { min-height: 34px; padding: 6px 10px; font-size: 12px; }
 .conversation-search-defaults .helper { margin: 0 0 8px; }
 .conversation-search-defaults [role="status"] { margin-top: 8px; color: var(--good); }
+.conversation-settings-sections.conversation-settings-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.conversation-settings-sections.conversation-settings-tabs button { min-width: 0; min-height: 44px; padding: 8px 6px; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.conversation-section-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.conversation-section-heading h3 { margin: 0; font-size: 17px; line-height: 1.4; }
+.conversation-search-section { display: grid; gap: 16px; }
+.conversation-search-section .conversation-section-heading { margin-bottom: 0; }
+.conversation-search-section > select { width: 100%; max-width: 440px; min-height: 44px; }
+.conversation-custom-retrieval { min-width: 0; }
+.conversation-settings-body > div > section > .helper,
+.conversation-settings-body .conversation-filter-scope { font-size: 14px; line-height: 1.65; }
+.conversation-instructions { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.conversation-instructions label { display: grid; gap: 8px; font-size: 14px; font-weight: 600; }
+.conversation-instructions textarea { min-height: 120px; width: 100%; resize: vertical; }
+.conversation-instructions .helper { font-size: 13px; line-height: 1.6; }
+.conversation-settings-footer { flex: none; padding: 12px 24px; border-top: 1px solid var(--border); }
+.conversation-settings-footer .action-row { justify-content: space-between; gap: 8px; }
+.conversation-settings-footer .helper { margin: 6px 0 0; font-size: 12px; line-height: 1.5; }
+.conversation-settings-footer .button { min-height: 36px; font-size: 13px; }
+.conversation-settings-dialog .public-run-limits > .helper { font-size: 14px; }
+.conversation-settings-dialog .public-limits-table { font-size: 14px; }
+.conversation-settings-dialog .public-limits-table caption { font-size: 15px; }
+.conversation-settings-dialog .public-limits-table thead th { font-size: 12px; }
+@media (max-width: 760px) {
+  .conversation-settings-dialog > .conversation-settings-sections.conversation-settings-tabs { margin-inline: 12px; padding-inline: 3px; }
+  .conversation-settings-sections.conversation-settings-tabs button { padding-inline: 3px; font-size: 13px; }
+  .conversation-settings-footer { padding: 10px 16px; }
+  .conversation-settings-footer .button { min-height: 44px; }
+}

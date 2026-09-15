@@ -74,7 +74,7 @@ def test_production_blocks_admin_even_with_retained_live_configuration(tmp_path,
         )
         assert client.get("/release").json()["admin_mode"] == "readonly"
         limits = client.get("/limits").json()
-        assert (limits["per_minute"], limits["per_day"]) == (2, 5)
+        assert (limits["per_minute"], limits["per_day"]) == (10, 50)
         assert limits["daily_cost_usd"] == "0.10"
         assert limits["per_call"]["max_cost_usd"] == "0.005"
         assert '"supportedSubmitMethods": []' in client.get("/docs").text

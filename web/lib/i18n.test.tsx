@@ -24,6 +24,7 @@ function TestScreen() {
 
 describe("Korean and English UI", () => {
   it("changes interface language without rewriting user content and follows another tab", () => {
+    localStorage.setItem(LOCALE_KEY, "ko");
     render(<I18nProvider><TestScreen /></I18nProvider>);
     expect(screen.getByRole("heading")).toHaveTextContent("데이터 준비");
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Do not translate this question" } });
@@ -100,6 +101,7 @@ describe("Korean and English UI", () => {
     const { LocalEngineSettings } = await import("@/components/local-engine-settings");
     const { DEFAULT_SESSION_PROFILE } = await import("./types");
     try {
+      localStorage.setItem(LOCALE_KEY, "ko");
       localStorage.setItem(ONBOARDING_KEY, "done");
       render(<Provider><ServiceShell /></Provider>);
       expect(screen.getByRole("button", { name: "시스템 · 확인 중" })).toHaveTextContent("확인 중");
@@ -154,6 +156,27 @@ describe("Korean and English UI", () => {
     expect(document.documentElement.lang).toBe("en");
   });
 
+  it("changes the app locale in place even on a document route", () => {
+    window.history.replaceState({}, "", "/docreview-rag/docs/ko/cli/");
+    render(<I18nProvider><TestScreen /></I18nProvider>);
+    expect(screen.getByRole("heading")).toHaveTextContent("데이터 준비");
+    fireEvent.click(screen.getByRole("button", { name: "EN" }));
+    expect(screen.getByRole("heading")).toHaveTextContent("Build");
+    expect(localStorage.getItem(LOCALE_KEY)).toBe("en");
+    expect(window.location.pathname).toBe("/docreview-rag/docs/ko/cli/");
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it("hands language choices to a document-supplied callback instead of the app locale", () => {
+    const chosen = vi.fn();
+    render(<I18nProvider><LanguageSwitch locale="ko" onChange={chosen} /></I18nProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "EN" }));
+    expect(chosen).toHaveBeenCalledWith("en");
+    expect(screen.getByRole("button", { name: "EN" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "한국어" })).toHaveAttribute("aria-pressed", "true");
+    expect(localStorage.getItem(LOCALE_KEY)).toBeNull();
+  });
+
   it("keeps document identity and deployment prefix during language changes", () => {
     expect(localizedDocumentationPath("/docreview-rag/docs/en/cli/", "ko")).toBe("/docreview-rag/docs/ko/cli/");
     expect(localizedDocumentationPath("/docs", "en")).toBe("/docs/en/");
@@ -162,6 +185,52 @@ describe("Korean and English UI", () => {
     expect(localizedDocumentationPath("/documents/", "en")).toBeNull();
     expect(preferredLocale("/docs/ko/", "en")).toBe("ko");
     expect(preferredLocale("/docs/", "en")).toBe("en");
-    expect(preferredLocale("/docs/", "invalid")).toBe("ko");
+    expect(preferredLocale("/docs/", "invalid", "en-US")).toBe("en");
+  });
+
+  it.each([["ko", "ko"], ["ko-KR", "ko"], ["en-US", "en"], ["fr-FR", "en"], ["ja-JP", "en"], ["kok-IN", "en"], ["", "en"]] as const)("uses %s as the first-visit browser language", (browserLanguage, expected) => {
+    expect(preferredLocale("/docreview-rag/", null, browserLanguage)).toBe(expected);
+    expect(preferredLocale("/docs/", "invalid", browserLanguage)).toBe(expected);
+  });
+
+  it("keeps saved choices and explicit document locales ahead of the browser language", () => {
+    expect(preferredLocale("/", "en", "ko-KR")).toBe("en");
+    expect(preferredLocale("/", "ko", "fr-FR")).toBe("ko");
+    expect(preferredLocale("/docs/en/", "ko", "ko-KR")).toBe("en");
+    expect(preferredLocale("/docs/ko/", "en", "en-US")).toBe("ko");
+  });
+
+  it.each([["ko-KR", "/docs/ko/"], ["de-DE", "/docs/en/"]] as const)("uses the browser language for an unlocalized guide entry (%s)", (language, destination) => {
+    const browserLanguage = vi.spyOn(window.navigator, "language", "get").mockReturnValue(language);
+    try {
+      window.history.replaceState({}, "", "/docreview-rag/docs/");
+      render(<DocumentationRedirect documentId="overview" />);
+      expect(navigation.replace).toHaveBeenCalledWith(destination);
+    } finally { browserLanguage.mockRestore(); }
+  });
+
+  it("keeps browser-based selection and manual switching usable when preference storage is blocked", () => {
+    const browserLanguage = vi.spyOn(window.navigator, "language", "get").mockReturnValue("ko-KR");
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("Storage blocked"); });
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage blocked"); });
+    try {
+      render(<I18nProvider><TestScreen /></I18nProvider>);
+      expect(screen.getByRole("heading")).toHaveTextContent("데이터 준비");
+      fireEvent.click(screen.getByRole("button", { name: "EN" }));
+      expect(screen.getByRole("heading")).toHaveTextContent("Build");
+    } finally { read.mockRestore(); write.mockRestore(); browserLanguage.mockRestore(); }
+  });
+
+  it.each([["ko-KR", "데이터 준비", "EN", "Build", "en"], ["fr-FR", "Build", "한국어", "데이터 준비", "ko"]] as const)("detects %s on first visit and restores an explicit choice after remount", (language, first, button, chosen, saved) => {
+    const browserLanguage = vi.spyOn(window.navigator, "language", "get").mockReturnValue(language);
+    try {
+      const page = render(<I18nProvider><TestScreen /></I18nProvider>);
+      expect(screen.getByRole("heading")).toHaveTextContent(first);
+      fireEvent.click(screen.getByRole("button", { name: button }));
+      expect(localStorage.getItem(LOCALE_KEY)).toBe(saved);
+      page.unmount();
+      render(<I18nProvider><TestScreen /></I18nProvider>);
+      expect(screen.getByRole("heading")).toHaveTextContent(chosen);
+    } finally { browserLanguage.mockRestore(); }
   });
 });

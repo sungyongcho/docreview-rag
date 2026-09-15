@@ -214,7 +214,7 @@ def test_container_probe_stops_before_http_in_prod(monkeypatch) -> None:
 @pytest.mark.parametrize(
     "message, reason",
     [
-        ("connection refused; http://secret:password@private.example", "refused"),
+        ("connection refused; http://secret:password@example.test", "refused"),
         ("TLS certificate failed private-test-key", "tls"),
         ("Name or service not known private-test-key", "dns"),
     ],
@@ -346,7 +346,7 @@ def test_shared_failure_has_actionable_setup_and_opt_in_namespace_details(
     output = capsys.readouterr().out
     assert "connection refused" in output
     assert "systemctl status ollama --no-pager" in output
-    assert "rag-ollama-check --setup" in output
+    assert "rag-dev doctor --setup" in output
     assert "Advanced:" in output
     assert "localhost is the app container" in output
     assert "ollama list" in output

@@ -9,7 +9,7 @@ import { NotificationCenter } from "@/components/notification-center";
 import { NotificationSignals } from "@/components/notification-signals";
 import type { NotificationTarget, NotificationDetail } from "@/lib/notification-registry";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
-import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure } from "@/lib/scope-failure";
+import { scopeFailurePatch, scopeFailureProgress, publicScopeFailure, isReviewLimitation, reviewLimitationMessage } from "@/lib/scope-failure";
 import { ScopeFailureSummary } from "@/components/scope-failure-summary";
 import { BrowserStorageSupport } from "@/components/browser-storage";
 import { applyFreshStartReset, FRESH_START_RECEIPT_KEY, browserStorage, configureBrowserStorage, loadDefaultProfile, loadActiveConversation, saveActiveConversation, subscribeStorageRestored, productionBrowserStorageEnabled } from "@/lib/storage";
@@ -20,7 +20,7 @@ import { conversationSettingsError } from "@/lib/saved-presets";
 import { configurePresetStorage } from "@/lib/preset-storage";
 import { ProfileCompatibilityNotice } from "./profile-compatibility-notice";
 import { SlowCpuNotice } from "./slow-cpu-notice";
-import { ProductBrand } from "@/components/product-brand";
+import { BuildInfo, ProductBrand } from "@/components/product-brand";
 import { CreatorSignature } from "@/components/creator-signature";
 import { GuidesNavigation } from "@/components/guides-navigation";
 import type { DisclosureStage } from "@/components/review-stage-details";
@@ -92,7 +92,6 @@ interface NavigationEntry {
   position: number;
   target: NavigationTarget;
   conversationId: string;
-  query: string;
   conversationTab: ConversationSettingsTab | null;
   scroll: Array<{ element: HTMLElement; top: number; left: number }>;
   focus: HTMLElement | null;
@@ -103,15 +102,33 @@ export function ServiceShell() {
   return <div><div><NotificationProvider><ServiceSession /></NotificationProvider></div></div>;
 }
 
+// Application status text, not a generated answer. It is stored as this canonical English source and
+// translated when rendered, so a conversation saved in one language reads correctly in the other.
+const INTERRUPTION_NOTICE = "The request was interrupted. Send the question again.";
+// Conversations saved before the canonical key hold the already-translated sentence. Only these exact
+// whole-message notices are recognised; no other stored text is rewritten or matched by substring.
+const STORED_INTERRUPTION_NOTICES: ReadonlySet<string> = new Set([
+  INTERRUPTION_NOTICE,
+  "요청이 중단되었습니다. 질문을 다시 보내세요.",
+]);
+
+/** Identify the app's own interruption notice, including notices stored by earlier versions. */
+function isInterruptionNotice(message: { role: string; text?: string }): boolean {
+  return message.role === "assistant" && !!message.text && STORED_INTERRUPTION_NOTICES.has(message.text.trim());
+}
+
 /** Restored requests cannot resume themselves after a reload or browser import. */
-function restoreInterruptedConversations(saved: Conversation[], t: (key: string) => string): Conversation[] {
-  return saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: t("The request was interrupted. Send the question again."), execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
+function restoreInterruptedConversations(saved: Conversation[]): Conversation[] {
+  return saved.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.pending ? { ...message, pending: false, text: INTERRUPTION_NOTICE, execution: message.execution ? finishReviewProgress(message.execution, "failed", Math.max(0, Date.now() - (message.execution.startedAt ?? Date.now()))) : undefined } : message) }));
 }
 
 function ServiceSession() {
   const { confirm, confirmationDialog } = useConfirmation();
   const { t, locale } = useI18n();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const currentConversations = useRef(conversations);
+  currentConversations.current = conversations;
+  const draftSavePending = useRef(false);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<View>("review");
   const [navigationHistory, setNavigationHistory] = useState<NavigationEntry[]>([]);
@@ -128,20 +145,13 @@ function ServiceSession() {
   const [measureTab, setMeasureTab] = useState<MeasureTab>("playground");
   const [systemTab, setSystemTab] = useState<SystemTab>("status");
   const [measureResultId, setMeasureResultId] = useState<number | null>(null);
-  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const composerInput = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    // Grow with the draft up to the CSS max-height; browsers without field-sizing need the measurement.
-    const element = composerInput.current;
-    if (!element || "fieldSizing" in element.style) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
-  }, [query]);
+  const composerComposing = useRef(false);
   const [runDetailsMessageId, setRunDetailsMessageId] = useState<string | null>(null);
   const [runDetailsStage, setRunDetailsStage] = useState<{ stage: DisclosureStage | null } | undefined>();
   const [pendingHelpTarget, setPendingHelpTarget] = useState<string | null>(null);
@@ -241,7 +251,7 @@ function ServiceSession() {
       if (!initialized.current) {
         initialized.current = true;
         const saved = loadConversations();
-        const restored = restoreInterruptedConversations(saved, t);
+        const restored = restoreInterruptedConversations(saved);
         const initial = restored.length ? restored : [newConversation(adminBuild && value.environment === "dev" && value.can_edit_prompt_policy ? undefined : newProdProfile())];
         if (!restored.length && value.environment === "prod") {
           initial[0].publishedTargets = ["AMD", "NVDA"].flatMap(issuer => [2019, 2020, 2021, 2022, 2023, 2024].map(year => ({ registry: "sec" as const, issuer, year })));
@@ -289,7 +299,7 @@ function ServiceSession() {
   useEffect(() => { if (initialized.current) saveActiveConversation(activeId); }, [activeId]);
   useEffect(() => subscribeStorageRestored(() => {
     if (!initialized.current || !productionBrowserStorageEnabled()) return;
-    const loaded = restoreInterruptedConversations(loadConversations(), t);
+    const loaded = restoreInterruptedConversations(loadConversations());
     const next = loaded.length ? loaded : [newConversation(loadDefaultProfile())];
     const selected = next.find(item => item.id === loadActiveConversation()) ?? next[0];
     setConversations(next); setActiveId(selected.id); setProfile(selected.profile ?? DEFAULT_SESSION_PROFILE);
@@ -299,6 +309,49 @@ function ServiceSession() {
     () => conversations.find((conversation) => conversation.id === activeId) ?? conversations[0],
     [activeId, conversations],
   );
+  const query = active?.draft ?? "";
+
+  /** Keep each conversation's composer independent without serializing on every keystroke. */
+  function setQuery(value: string | ((current: string) => string)) {
+    const targetId = active?.id;
+    setConversations((current) => current.map((conversation) => {
+      if (conversation.id !== targetId) return conversation;
+      const draft = typeof value === "function" ? value(conversation.draft ?? "") : value;
+      if (draft === (conversation.draft ?? "")) return conversation;
+      draftSavePending.current = true;
+      return { ...conversation, draft };
+    }));
+  }
+
+  /** Flush the latest conversation state before leaving the page or unmounting. */
+  const saveDraft = useCallback(() => {
+    if (!draftSavePending.current) return;
+    saveConversations(currentConversations.current);
+    draftSavePending.current = false;
+  }, []);
+  useEffect(() => {
+    if (!draftSavePending.current) return;
+    const timer = window.setTimeout(saveDraft, 300);
+    return () => window.clearTimeout(timer);
+  }, [conversations, saveDraft]);
+  useEffect(() => {
+    /** Mobile browsers may hide a page without delivering pagehide before termination. */
+    const saveWhenHidden = () => { if (document.visibilityState === "hidden") saveDraft(); };
+    window.addEventListener("pagehide", saveDraft);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", saveDraft);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+      saveDraft();
+    };
+  }, [saveDraft]);
+  useEffect(() => {
+    // Grow with the draft up to the CSS max-height; browsers without field-sizing need the measurement.
+    const element = composerInput.current;
+    if (!element || "fieldSizing" in element.style) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+  }, [query]);
   useLayoutEffect(() => {
     const target = lastReview.current;
     if (view !== "review" || !target || target.conversationId !== active?.id) return;
@@ -400,7 +453,7 @@ function ServiceSession() {
     const scroll = Array.from(panel?.querySelectorAll<HTMLElement>("*") ?? [])
       .filter((element) => !element.closest("[hidden]") && (element.scrollTop !== 0 || element.scrollLeft !== 0 || element.matches(".messages, .lab-shell")))
       .map((element) => ({ element, top: element.scrollTop, left: element.scrollLeft }));
-    return { position: navigationPosition.current, target: currentTarget(), conversationId: active?.id ?? activeId, query, conversationTab, scroll, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+    return { position: navigationPosition.current, target: currentTarget(), conversationId: active?.id ?? activeId, conversationTab, scroll, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
   }
 
   /** Keep navigation metadata local and preserve unrelated URL/Next history state. */
@@ -487,7 +540,6 @@ function ServiceSession() {
         if (restored) {
           setActiveId(restored.id);
           setProfile(restored.profile ?? DEFAULT_SESSION_PROFILE);
-          if (restored.id !== activeId) setQuery(entry.query);
         }
         setConversationTab(entry.conversationTab);
       } else if (nextPosition < origin.position) {
@@ -653,7 +705,8 @@ function ServiceSession() {
     if (patch.pending === false && notificationView.current !== "review") {
       const failed = patch.execution?.outcome === "failed";
       const cancelled = patch.execution?.outcome === "cancelled";
-      notify(failed ? patch.text ?? t("Review failed.") : t(cancelled ? "Review cancelled." : "Review completed."), failed ? "error" : cancelled ? "warning" : "success", `review:${conversationId}:${messageId}`, undefined, { event: "review-result", target: { view: "review", conversationId }, title: failed ? "Review failed" : cancelled ? "Review cancelled" : "Review completed", detail: notificationDetail });
+      const limited = patch.execution?.outcome === "limited";
+      notify(limited && patch.execution?.pathDecision ? reviewLimitationMessage(patch.execution.pathDecision, t) : failed ? patch.text ?? t("Review failed.") : t(cancelled ? "Review cancelled." : "Review completed."), failed ? "error" : cancelled || limited ? "warning" : "success", `review:${conversationId}:${messageId}`, undefined, { event: "review-result", target: { view: "review", conversationId }, title: limited ? "Request scope guidance" : failed ? "Review failed" : cancelled ? "Review cancelled" : "Review completed", detail: limited ? undefined : notificationDetail });
     }
     setConversations((current) => saveConversations(current.map((conversation) => conversation.id === conversationId ? { ...conversation, updatedAt: new Date().toISOString(), messages: conversation.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message) } : conversation)));
   }
@@ -1016,7 +1069,7 @@ function ServiceSession() {
     <main className={`service-shell ${sidebarOpen ? "" : "sidebar-collapsed"}${helpVisible ? " help-open" : ""}${runDetailsMessage ? " run-details-open" : ""}`}>{confirmationDialog}
       {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label={t("Close navigation overlay")} onClick={closeSidebar} />}
       <aside id="service-navigation" className="sidebar" inert={!sidebarOpen} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); closeSidebar(); } }}>
-        <div className="brand"><ProductBrand /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
+        <div className="brand"><ProductBrand onActivate={() => createReview()} actionLabel={`DocReview RAG · ${t("New chat")}`} /><button className="icon-button sidebar-close" type="button" aria-label={t("Close sidebar")} onClick={closeSidebar}><X size={18} /></button></div>
         <button className="new-review" data-tour="new-review" type="button" aria-pressed={view === "review" && !!active && active.messages.length === 0} onClick={() => createReview()}><SquarePen size={17} /><span>{t("New chat")}</span></button>
         <p className="sidebar-label">{t("Recent reviews")}</p>
         <div className="conversation-list" data-tour="recent-reviews">
@@ -1029,7 +1082,7 @@ function ServiceSession() {
             </div>
           ))}
         </div>
-        {environment && (environment === "prod"
+        <BuildInfo onOpen={() => openSettings("about")} mode={environment && (environment === "prod"
             ? <DevModeBubble>
               <a className="runtime-mode-badge prod" href={SOURCE_REPOSITORY_URL} target="_blank" rel="noreferrer" aria-label={modeLabel ?? undefined}>
                 <strong>PROD</strong><span>{t("MODE")}</span>
@@ -1037,7 +1090,7 @@ function ServiceSession() {
             </DevModeBubble>
             : <div className={`runtime-mode-badge ${environment}`} role="note" aria-label={modeLabel ?? undefined} title={t("Server environment: {p0}", { p0: modeLabel ?? "" })}>
               <strong>{environment.toUpperCase()}</strong><span>{t("MODE")}</span>
-            </div>)}
+            </div>)} />
         <div className="sidebar-nav">
           <GuidesNavigation />
           <button data-tour="build" type="button" aria-pressed={view === "build"} onClick={() => navigate({ view: "build" })}><Hammer size={17} /><span>{t("Build")}</span>{buildNeedsAttention && <><i className="nav-dot" aria-hidden="true" /><span className="sr-only">{t(", needs attention")}</span></>}</button>
@@ -1071,10 +1124,10 @@ function ServiceSession() {
             <div className="messages-inner">
               {!active?.messages.length && (
                 <div className="welcome">
-                  <ProductBrand hero />
+                  <ProductBrand hero onActivate={() => createReview()} actionLabel={`DocReview RAG · ${t("New chat")}`} />
                   <p className="eyebrow">{t("Grounded by design")}</p>
                   <h1>{t("Review filings with verifiable evidence.")}</h1>
-                  <p>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.")}</p>
+                  <p className="welcome-description">{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.").split("NOT_IN_DOCS")[0]}<span className="verdict not-in-docs welcome-verdict">{t("Not in documents")}</span>{t("Ask across SEC 10-K and DART reports. Unsupported answers terminate as NOT_IN_DOCS.").split("NOT_IN_DOCS")[1]}</p>
                   <ol className="first-review-path"><li><strong>01</strong><span>{t("Ask about a filing")}</span></li><li><strong>02</strong><span>{t("Open its original evidence")}</span></li><li><strong>03</strong><span>{t("Inspect execution and compare retrieval")}</span></li></ol>
                   <div className="welcome-links"><button className="button ghost" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Explore the implementation")}</button><a href={`/docreview-rag/docs/${locale}/`}>{t("Read the guide")}</a></div>
                   {readiness?.mode === "canned" && <p className="notice">{t("Demonstration data — no live provider calls.")}</p>}
@@ -1085,10 +1138,19 @@ function ServiceSession() {
                       <div className="action-row"><button className="button primary" type="button" onClick={() => navigate({ view: "build", tab: "pipeline" })}>{t("Open Build")}</button></div>
                     </div>
                   ) : (
-                    <div className="suggestions" data-tour="evidence-fallback">
-                      <button type="button" onClick={() => setQuery("What drove NVIDIA data center revenue growth?")}>{t("NVIDIA growth drivers")}</button>
-                      <button type="button" onClick={() => setQuery("삼성전자 메모리 사업의 주요 위험은 무엇인가요?")}>{t("Samsung memory risks")}</button>
-                    </div>
+                    <section className="welcome-examples" data-tour="evidence-fallback" aria-label={t("Example questions")}>
+                      <p className="welcome-examples-hint">{t("Choose an example to edit before sending.")}</p>
+                      <div className="suggestions">
+                        {[
+                          { source: "SEC", language: "en", title: "NVIDIA growth drivers", question: "What drove NVIDIA data center revenue growth?" },
+                          { source: "DART", language: "ko", title: "Samsung memory risks", question: "삼성전자 메모리 사업의 주요 위험은 무엇인가요?" },
+                          { source: "SEC", language: "en", title: "AMD supply-chain risks", question: "What manufacturing and supply-chain risks did AMD identify in its FY2024 10-K?" },
+                          { source: "DART", language: "en", title: "SK hynix HBM outlook", question: "What did SK hynix report about HBM demand and its business outlook in 2024? Cite the filing evidence." },
+                          { source: "SEC", language: "ko", title: "NVIDIA revenue comparison", question: "NVIDIA의 FY2024 총매출은 얼마이며, FY2023과 비교해 어떻게 달라졌나요?" },
+                          { source: "DART", language: "ko", title: "Samsung semiconductor investment", question: "삼성전자의 2024년 반도체 시설투자 목적과 주요 투자 내용을 설명해 주세요." },
+                        ].map((example) => <button key={example.title} type="button" aria-label={t(example.title)} onClick={() => { setQuery(example.question); composerInput.current?.focus(); }}><span className="suggestion-meta"><span className="suggestion-source">{example.source}</span><span>{example.source === "SEC" ? "10-K" : t("Annual report")} · {example.language === "en" ? "English" : "한국어"}</span></span><strong>{t(example.title)}</strong><span className="suggestion-question" lang={example.language}>{example.question}</span></button>)}
+                      </div>
+                    </section>
                   )}
                 </div>
               )}
@@ -1114,6 +1176,7 @@ function ServiceSession() {
             {localCpuSpeed !== null && <SlowCpuNotice key={`${activeId}:${localModel}`} profile={activeSessionProfile} model={localModel ?? ""} speed={localCpuSpeed} onOpenLimits={() => openConversationSettings("limits")} />}
             {conversationTab && <ConversationSettings speed={localCpuSpeed} query={query} onManagePresets={() => { setConversationTab(null); navigate({ view: "measure", tab: "presets" }); }} key={activeId} tab={conversationTab} profile={activeSessionProfile} editable={adminLive} onValidityChange={setConversationInputsValid} onChange={updateSessionProfile} onTabChange={setConversationTab} onClose={() => setConversationTab(null)} />}
             <ComposerToolbar
+              requestPending={activeReview !== null}
               publicScopeStatus={adminLive ? null : publicCorpus.status === "loading" ? "Loading published filings…" : publicCorpus.status === "error" ? "Published filings could not be loaded." : !publicCorpus.documents.length ? "No published filings" : activeSessionProfile.doc_ids.length === 0 ? "No filings in scope" : null}
               query={query}
               engineControls={localAllowed && <LocalEngineSettings profile={activeSessionProfile} readiness={runtimeHealth.readiness} onChange={updateSessionProfile} />}
@@ -1134,7 +1197,7 @@ function ServiceSession() {
             {permissions && compatibilityIssue && <ProfileCompatibilityNotice key={`${activeId}:${compatibilityIssue}`} message={compatibilityIssue} conversationId={activeId} />}
             {!adminLive && !publicPolicy && <p className="helper" role="status">{t(publicPolicyFailed ? "Server execution limits could not be loaded. Browser defaults are not the applied policy." : "Loading server execution limits…")}{publicPolicyFailed && <button type="button" className="button ghost" onClick={() => setPublicPolicyRevision(value => value + 1)}>{t("Retry")}</button>}</p>}
             <label className="composer">
-              <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
+              <textarea ref={composerInput} data-help="review.composer" value={query} onChange={(event) => setQuery(event.target.value)} onCompositionStart={() => { composerComposing.current = true; }} onCompositionEnd={() => { composerComposing.current = false; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { if (composerComposing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; event.preventDefault(); void submit(); } }} placeholder={t("Ask a question about the filing corpus")} rows={1} />
               <button data-tour="send" data-help="review.send" type="button" aria-label={t("Send question")} disabled={busy || runtimeHealth.kind === "api_down" || runtimeHealth.kind === "checking" || sendBlocked || !query.trim()} onClick={() => void submit()}><Send size={17} /></button>
             </label>
 
@@ -1271,6 +1334,8 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
   }
   if (message.evidenceLabel === "Related evidence — not direct support") return { className: "not-in-docs", text: "Not in documents" };
   if (message.evidenceLabel === "Retrieved candidates — answer not generated") return { className: "failed", text: "Answer not generated" };
+  const decision = message.execution?.pathDecision;
+  if (isReviewLimitation(decision) && decision?.stopping_reason === "unsupported_request") return { className: "unsupported-request", text: "Unsupported request" };
   return null;
 }
 
@@ -1293,7 +1358,7 @@ function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onS
       <div className="message-body">
         {pill && <span className={`verdict ${pill.className}`}>{t(pill.text)}</span>}
         {message.execution?.pathDecision && <PathDecisionBadge decision={message.execution.pathDecision} catalogMode={catalogMode} />}
-        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{message.scopeFailure ? t("Query scope metadata is unavailable.") : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
+        {message.role === "assistant" ? (message.text ? <MarkdownMessage>{isReviewLimitation(message.execution?.pathDecision) ? reviewLimitationMessage(message.execution!.pathDecision!, t) : message.scopeFailure ? t("Query scope metadata is unavailable.") : isInterruptionNotice(message) ? t(INTERRUPTION_NOTICE) : message.evidenceLabel === "Retrieved candidates — answer not generated" ? t(message.text) : message.text}</MarkdownMessage> : null) : <p>{message.text}</p>}
         {message.scopeFailure && <ScopeFailureSummary message={message} developer={catalogMode === "live"} onOpenFix={onOpenFix} />}
         {message.execution && <div className="review-execution-wrap"><details className="review-execution-summary" open={summaryOpen} onToggle={(event) => setSummaryOpen(event.currentTarget.open)}><summary>{t("Execution summary")}</summary><ReviewProgressSteps showDetailsAction={false} catalogMode={catalogMode} state={message.execution} performance={message.performance} finalLabel={message.evidenceLabel === "Cited evidence" ? "Supported" : message.evidenceLabel === "Related evidence — not direct support" ? "Not in documents" : message.evidenceLabel === "Retrieved candidates — answer not generated" ? "Answer not generated" : message.execution.pathDecision?.intent === "casual_chat" ? "Conversation reply" : undefined} onSwitchScope={onSwitchScope} onOpenDetails={onOpenDetails} onShowEvidence={message.evidence?.length ? showEvidence : undefined} />{message.pending && onStop && <button className="button ghost" type="button" onClick={onStop}>{t("Stop request")}</button>}</details>{onOpenDetails && <div className="review-stage-actions"><button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails()}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button></div>}</div>}
         {message.evidence?.length ? (

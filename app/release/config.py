@@ -53,8 +53,8 @@ class ReleaseSettings(DotenvFirstSettings):
     mode: Literal["canned", "runtime"] = "canned"
     host: str = "0.0.0.0"
     port: int = Field(default=7860, ge=1, le=65_535)
-    rate_limit_per_minute: int = Field(default=2, ge=1, le=1_000)
-    rate_limit_per_day: int = Field(default=5, ge=1, le=100_000)
+    rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
+    rate_limit_per_day: int = Field(default=50, ge=1, le=100_000)
     rate_limit_max_clients: int = Field(default=1_024, ge=1, le=100_000)
     trust_proxy_headers: bool = False
     allow_ingest: bool = False

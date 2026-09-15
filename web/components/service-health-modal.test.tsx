@@ -56,11 +56,12 @@ it("explains preparation without a false database warning", () => {
 });
 
 it("renders the preparation notice in Korean", () => {
+  localStorage.setItem("docreview.locale", "ko");
   render(<I18nProvider><ServiceHealthModal kind="preparation_needed" visible checking={false} {...handlers} /></I18nProvider>);
   expect(screen.getByRole("dialog")).toHaveTextContent("문서 준비가 필요합니다");
   expect(screen.getByRole("dialog")).toHaveTextContent("DB가 연결되어 있고 스키마도 호환됩니다.");
   expect(screen.getByRole("dialog")).not.toHaveTextContent("DB 준비가 필요합니다");
-  cleanup();
+  cleanup(); localStorage.removeItem("docreview.locale");
 });
 
 it.each(["en", "ko"])("wraps DB errors in closed terminal details (%s)", (locale) => {

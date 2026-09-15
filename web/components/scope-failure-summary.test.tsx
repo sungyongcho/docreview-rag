@@ -18,8 +18,8 @@ it.each(["en", "ko"] as const)("renders DEV cause, file, terminal checks and one
   render(<I18nProvider><ScopeFailureSummary message={message} developer onOpenFix={onOpenFix} /></I18nProvider>);
   expect(screen.getByText(translate(locale, "The corpus manifest is not valid JSON."))).toBeVisible();
   expect(screen.getByText("data/corpus/manifest.json")).toBeVisible();
-  expect(screen.getByText("rag-schema check")).toBeVisible();
-  expect(screen.getByText("rag-corpus status")).toBeVisible();
+  expect(screen.getByText("rag-dev schema check")).toBeVisible();
+  expect(screen.getByText("rag-dev corpus status")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: translate(locale, "Open Documents") }));
   expect(onOpenFix).toHaveBeenCalledWith("documents");
   expect(message.trace).toContain("broken JSON at line 3");

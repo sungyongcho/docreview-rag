@@ -167,6 +167,288 @@ function stubPublicApi(firstVisit = false) {
   return fetchMock;
 }
 
+it("categorizes bilingual starter questions and fills the draft without submitting", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  const fetchMock = stubPublicApi();
+  render(<ServiceShell />);
+  const examples = await screen.findByRole("region", { name: "Example questions" });
+  expect(within(examples).getAllByText("SEC")).toHaveLength(3);
+  expect(within(examples).getAllByText("DART")).toHaveLength(3);
+  expect(within(examples).getAllByRole("button")).toHaveLength(6);
+  for (const source of ["SEC", "DART"]) {
+    const cards = within(examples).getAllByRole("button").filter((button) => button.querySelector(".suggestion-source")?.textContent === source);
+    expect(new Set(cards.map((button) => button.querySelector(".suggestion-question")?.getAttribute("lang")))).toEqual(new Set(["ko", "en"]));
+  }
+  expect(document.querySelector(".welcome-verdict.not-in-docs")).toHaveTextContent("Not in documents");
+  const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.click(within(examples).getByRole("button", { name: "NVIDIA growth drivers" }));
+  expect(input).toHaveValue("What drove NVIDIA data center revenue growth?");
+  expect(input).toHaveFocus();
+  fireEvent.click(within(examples).getByRole("button", { name: "Samsung memory risks" }));
+  expect(input).toHaveValue("삼성전자 메모리 사업의 주요 위험은 무엇인가요?");
+  for (const button of within(examples).getAllByRole("button")) {
+    fireEvent.click(button);
+    expect(input).toHaveValue(button.querySelector(".suggestion-question")!.textContent);
+    expect(input).toHaveFocus();
+  }
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/review/stream"))).toBe(false);
+});
+
+it.each(["en", "ko"] as const)("localizes stored failure notices without translating answer content (%s)", async (locale) => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  localStorage.setItem("docreview.locale", locale);
+  stubPublicApi();
+  seedAnsweredConversation();
+  const english = "The model call reached its output token limit (600 of 600) at the grade step.";
+  const korean = "모델 호출의 출력 토큰 한도에 도달했습니다. 사용량: 600 / 600. 중단 단계: grade.";
+  const conversations = loadConversations();
+  // Identical source text in a supported answer must remain unmodified.
+  conversations[0].messages[1].text = english;
+  conversations[0].messages.push({ id: "failure", role: "assistant", text: english, evidenceLabel: "Retrieved candidates — answer not generated" });
+  saveConversations(conversations);
+  render(<I18nProvider><ServiceShell /></I18nProvider>);
+  await waitFor(() => expect(screen.getAllByText(english)).toHaveLength(locale === "ko" ? 1 : 2));
+  if (locale === "ko") expect(screen.getByText(korean)).toBeVisible();
+  const next = locale === "ko" ? "en" : "ko";
+  fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: next }));
+  await waitFor(() => expect(screen.getAllByText(english)).toHaveLength(next === "ko" ? 1 : 2));
+  if (next === "ko") expect(screen.getByText(korean)).toBeVisible();
+  else expect(screen.queryByText(korean)).toBeNull();
+  expect(loadConversations()[0].messages.at(-1)?.text).toBe(english);
+});
+
+const INTERRUPTION_EN = "The request was interrupted. Send the question again.";
+const INTERRUPTION_KO = "요청이 중단되었습니다. 질문을 다시 보내세요.";
+
+it.each(["en", "ko"] as const)("stores a restored interruption by its canonical source and reads it in either language (%s)", async (locale) => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  localStorage.setItem("docreview.locale", locale);
+  stubPublicApi();
+  seedAnsweredConversation();
+  const conversations = loadConversations();
+  conversations[0].messages.push({ id: "pending", role: "assistant", text: "", pending: true });
+  saveConversations(conversations);
+  render(<I18nProvider><ServiceShell /></I18nProvider>);
+  await waitFor(() => expect(screen.getByText(locale === "ko" ? INTERRUPTION_KO : INTERRUPTION_EN)).toBeVisible());
+  // Storage keeps the English source key, so a saved conversation is not tied to its writing language.
+  await waitFor(() => expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN));
+  const next = locale === "ko" ? "en" : "ko";
+  fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: next }));
+  await waitFor(() => expect(screen.getByText(next === "ko" ? INTERRUPTION_KO : INTERRUPTION_EN)).toBeVisible());
+  expect(screen.queryByText(next === "ko" ? INTERRUPTION_EN : INTERRUPTION_KO)).toBeNull();
+  expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
+});
+
+it.each([INTERRUPTION_EN, INTERRUPTION_KO])("reads an interruption notice stored by an earlier version in the current language (%s)", async (stored) => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  localStorage.setItem("docreview.locale", "en");
+  stubPublicApi();
+  seedAnsweredConversation();
+  const conversations = loadConversations();
+  const answer = conversations[0].messages[1].text;
+  conversations[0].messages.push({ id: "legacy", role: "assistant", text: stored });
+  saveConversations(conversations);
+  render(<I18nProvider><ServiceShell /></I18nProvider>);
+  await waitFor(() => expect(screen.getByText(INTERRUPTION_EN)).toBeVisible());
+  expect(screen.queryByText(INTERRUPTION_KO)).toBeNull();
+  fireEvent(window, new StorageEvent("storage", { key: "docreview.locale", newValue: "ko" }));
+  await waitFor(() => expect(screen.getByText(INTERRUPTION_KO)).toBeVisible());
+  // Only the app's own notice is localized; the generated answer and the stored text stay untouched.
+  expect(screen.getByText(answer)).toBeVisible();
+  expect(loadConversations()[0].messages.at(-1)?.text).toBe(stored);
+});
+
+it("opens a new chat from the app logo while preserving the previous conversation", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  stubPublicApi();
+  seedAnsweredConversation();
+  render(<ServiceShell />);
+  await screen.findByText("Data center revenue grew on Hopper demand.");
+  fireEvent.click(screen.getByRole("button", { name: "DocReview RAG · New chat" }));
+  await screen.findByRole("region", { name: "Example questions" });
+  expect(loadConversations().find((conversation) => conversation.id === "seeded")?.messages).toHaveLength(2);
+  expect(screen.queryByText("Data center revenue grew on Hopper demand.")).toBeNull();
+});
+
+it("renders a streamed scope stop as guidance without an answer-failure verdict", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+  const fetchMock = stubPublicApi();
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) return ordinaryFetch(input, init);
+    const path = { intent: "document_review", source: "classifier", matched_rule: "classifier_review", rationale: "Company analysis", history_turns: 0, selected_scope: "auto", resolved_scope: null, routing_queries: {}, retrieval_query: "SanDisk growth", scope_outcome: "empty", stopping_stage: "gate", stopping_reason: "unknown_issuer", missing_issuers: ["SanDisk"], suggested_scope: null };
+    return new Response(`event: error\ndata: ${JSON.stringify({ error: { code: "unknown_issuer", message: "No filings are available for: SanDisk.", path_decision: path } })}\n\n`, { headers: { "Content-Type": "text/event-stream" } });
+  });
+  render(<ServiceShell />);
+  const input = await screen.findByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(input, { target: { value: "SanDisk growth" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect((await screen.findAllByText(/The available filings do not cover SanDisk/)).length).toBeGreaterThan(0);
+  expect(screen.queryByText("Answer not generated")).toBeNull();
+  expect(screen.queryByText("Execution complete")).toBeNull();
+  expect(document.querySelectorAll(".review-progress-steps li.not-run")).toHaveLength(4);
+});
+
+describe("composer draft persistence", () => {
+  beforeEach(() => {
+    cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
+  });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it.each(["pagehide", "hidden", "unmount", "idle"] as const)("restores the exact draft after %s and a fresh mount", async (boundary) => {
+    stubPublicApi();
+    const mounted = render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    const draft = "  삼성전자 revenue\nKeep this follow-up  ";
+    fireEvent.change(input, { target: { value: draft } });
+    if (boundary === "pagehide") fireEvent(window, new Event("pagehide"));
+    else if (boundary === "hidden") {
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      fireEvent(document, new Event("visibilitychange"));
+    }
+    else if (boundary === "unmount") mounted.unmount();
+    else await waitFor(() => expect(loadConversations()[0].draft).toBe(draft));
+    expect(loadConversations()[0].draft).toBe(draft);
+    mounted.unmount();
+    configureBrowserStorage(undefined);
+    configureBrowserStorage("prod");
+    render(<ServiceShell />);
+    await waitFor(() => expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toHaveValue(draft));
+  });
+
+  it("keeps conversation drafts independent through switching, history, and reload", async () => {
+    seedAnsweredConversation();
+    const first = loadConversations()[0];
+    saveConversations([first, { ...first, id: "second", title: "Second review", draft: "Saved second draft" }]);
+    stubPublicApi();
+    const mounted = render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    const composer = () => screen.getByPlaceholderText("Ask a question about the filing corpus");
+    expect(composer()).toHaveValue("");
+    fireEvent.change(composer(), { target: { value: "First draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Second review" }));
+    expect(composer()).toHaveValue("Saved second draft");
+    fireEvent.change(composer(), { target: { value: "Latest second draft" } });
+    await traverseHistory("Back");
+    expect(composer()).toHaveValue("First draft");
+    await traverseHistory("Forward");
+    expect(composer()).toHaveValue("Latest second draft");
+    mounted.unmount();
+    render(<ServiceShell />);
+    await waitFor(() => expect(composer()).toHaveValue("Latest second draft"));
+    fireEvent.click(screen.getByRole("button", { name: "NVIDIA data center" }));
+    expect(composer()).toHaveValue("First draft");
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    expect(composer()).toHaveValue("");
+  });
+
+  it("clears the persisted draft on submission without losing a newer follow-up", async () => {
+    const fetchMock = stubPublicApi();
+    const ordinaryFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) return ordinaryFetch(input, init);
+      return new Response(`event: error\ndata: ${JSON.stringify({ error: { code: "unsupported_request", message: "Please ask a filing question." } })}\n\n`, { headers: { "content-type": "text/event-stream" } });
+    });
+    const mounted = render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(input, { target: { value: "Submitted question" } });
+    fireEvent(window, new Event("pagehide"));
+    expect(loadConversations()[0].draft).toBe("Submitted question");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+    expect(input).toHaveValue("");
+    expect(loadConversations()[0].draft).toBe("");
+    fireEvent.change(input, { target: { value: "Next unsent question" } });
+    await waitFor(() => expect(loadConversations()[0].messages.at(-1)?.pending).toBe(false));
+    mounted.unmount();
+    render(<ServiceShell />);
+    await waitFor(() => expect(screen.getByPlaceholderText("Ask a question about the filing corpus")).toHaveValue("Next unsent question"));
+    expect(loadConversations()[0].messages[0].text).toBe("Submitted question");
+  });
+
+  it("batches typing and retains a session draft when browser storage becomes unavailable", async () => {
+    stubPublicApi();
+    render(<ServiceShell />);
+    await screen.findByRole("button", { name: "System · healthy" });
+    await flushEffects();
+    const saved = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Blocked", "SecurityError"); });
+    const input = screen.getByPlaceholderText("Ask a question about the filing corpus");
+    fireEvent.change(input, { target: { value: "Keep" } });
+    fireEvent.change(input, { target: { value: "Keep this draft" } });
+    expect(saved.mock.calls.filter(([key]) => key === "docreview:conversations:v2")).toHaveLength(0);
+    fireEvent(window, new Event("pagehide"));
+    expect(loadConversations()[0].draft).toBe("Keep this draft");
+    expect(input).toHaveValue("Keep this draft");
+    expect(saved.mock.calls.filter(([key]) => key === "docreview:conversations:v2")).toHaveLength(1);
+  });
+});
+
+describe("composer IME handling", () => {
+  async function readyComposer() {
+    cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+    const fetchMock = stubPublicApi();
+    render(<ServiceShell />);
+    const input = await screen.findByPlaceholderText("Ask a question about the filing corpus") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "삼성전자 실적" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+    const streamCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream"));
+    return { input, streamCalls };
+  }
+
+  it("never sends on a composing Enter or the legacy keyCode 229", async () => {
+    const { input, streamCalls } = await readyComposer();
+    fireEvent.compositionStart(input);
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(true);
+    fireEvent.compositionEnd(input);
+    expect(streamCalls()).toHaveLength(0);
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(streamCalls()).toHaveLength(0);
+  });
+
+  it("sends once and clears the draft on Enter after composition ends", async () => {
+    const { input, streamCalls } = await readyComposer();
+    fireEvent.compositionStart(input);
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+    await waitFor(() => expect(input.value).toBe(""));
+  });
+
+  it("keeps Shift+Enter on the draft and still sends a plain Enter once", async () => {
+    const { input, streamCalls } = await readyComposer();
+    expect(fireEvent.keyDown(input, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(streamCalls()).toHaveLength(0);
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(streamCalls()).toHaveLength(1));
+  });
+});
+
+it("presents a streamed unsupported-request stop as a verdict badge, not muted text", async () => {
+  cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
+  const fetchMock = stubPublicApi();
+  const ordinaryFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).replace(/\/?(\?|$)/, "$1").endsWith("/review/stream")) return ordinaryFetch(input, init);
+    const path = { intent: "out_of_scope", source: "classifier", matched_rule: "classifier_out_of_scope", rationale: "Casual role-play", history_turns: 0, selected_scope: "auto", resolved_scope: null, routing_queries: {}, retrieval_query: "Talk to a cat", scope_outcome: "unsupported", stopping_stage: "path", stopping_reason: "unsupported_request", suggested_scope: null };
+    return new Response(`event: error\ndata: ${JSON.stringify({ error: { code: "unsupported_request", message: "Please ask a question about company filings or financial information.", path_decision: path } })}\n\n`, { headers: { "Content-Type": "text/event-stream" } });
+  });
+  render(<ServiceShell />);
+  const input = await screen.findByPlaceholderText("Ask a question about the filing corpus");
+  fireEvent.change(input, { target: { value: "Talk to a cat" } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send question" })).toBeEnabled());
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(document.querySelector(".verdict.unsupported-request")).not.toBeNull());
+  expect(document.querySelector(".verdict.unsupported-request")).toHaveTextContent("Unsupported request");
+  expect(document.querySelectorAll(".verdict")).toHaveLength(1);
+  expect(document.querySelector(".verdict.not-in-docs")).toBeNull();
+  expect(document.querySelector(".review-scope-badge")).toBeNull();
+  expect(screen.getAllByText("Please ask a question about company filings or financial information.").some((element) => !element.closest(".review-routing"))).toBe(true);
+});
+
 it("applies server policy to restored DEV conversations without rewriting saved settings", async () => {
   cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done"); window.history.replaceState(null, "", "/");
   const original = structuredClone(DEFAULT_SESSION_PROFILE);
@@ -231,7 +513,8 @@ it("keeps the sidebar mode unknown until the server reports development", async 
     await act(async () => release());
     const modeBadge = await screen.findByRole("note", { name: "DEV MODE" });
     expect(modeBadge).toHaveAttribute("title", "Server environment: DEV MODE");
-    expect(modeBadge.nextElementSibling).toHaveClass("sidebar-nav");
+    expect(modeBadge.parentElement).toHaveClass("sidebar-build-heading");
+    expect(modeBadge.closest(".sidebar-build-info")?.nextElementSibling).toHaveClass("sidebar-nav");
     fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
     expect(screen.getByRole("button", { name: "Toggle sidebar" })).toHaveAttribute("title", "DEV MODE");
     expect(screen.queryByText(/LOCAL MODEL/)).not.toBeInTheDocument();
@@ -976,7 +1259,6 @@ it("preserves streamed messages and the submitted settings while background disc
     expect(screen.getByText("Waiting for the server")).toBeVisible();
     expect(screen.getByRole("list", { name: "Evidence review progress" }).children).toHaveLength(6);
     fireEvent.click(screen.getByRole("button", { name: /^Settings and preview/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
     fireEvent.click(screen.getByRole("button", { name: "Evidence" }));
     fireEvent.change(screen.getByLabelText("Conversation history turns"), { target: { value: "4" } });
     local = { enabled: true, protocol: "ollama", models: [{ name: "answer", selectable: true, size_bytes: null, family: null, parameter_size: null, quantization_level: null, capabilities: ["completion"], loaded: false }] };
@@ -1018,9 +1300,10 @@ it("opens the unified public filter editor from an offscreen Help destination", 
   fireEvent.click(topic!);
   fireEvent.click(document.querySelector<HTMLButtonElement>(".help-go-button")!);
   const dialog = await screen.findByRole("dialog", { name: "Conversation settings" });
-  expect(within(dialog).getByRole("button", { name: "Basic" })).toHaveAttribute("aria-pressed", "true");
-  expect(within(dialog).queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
-  expect(within(dialog).queryByRole("button", { name: "Run limits" })).not.toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "Filters" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByRole("button", { name: "Search" })).toBeVisible();
+  expect(within(dialog).getByRole("button", { name: "Run limits" })).toBeVisible();
+  expect(within(dialog).queryByLabelText("Maximum wall clock seconds")).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.some(([url]) => String(url).replace(/\/?(\?|$)/, "$1").includes("/admin/"))).toBe(false);
 });
 
@@ -1074,7 +1357,10 @@ it("keeps confirmed routing with its submitted profile while next-request contro
     await waitFor(() => expect(submitted).toBeDefined());
     expect(screen.getByText("Waiting for server-confirmed routing")).toBeVisible();
     await act(async () => { stream.enqueue(encoder.encode(`event: stage\ndata: ${JSON.stringify({ node: "route", phase: "end", status: "completed", elapsed_ms: 5, resolved_scope: scope })}\n\n`)); });
-    expect(screen.getByText(/Source: DART · Company: 005930 · Fiscal year: 2024/)).toBeVisible();
+    const confirmedScope = document.querySelector(".review-routing-confirmed")!;
+    expect(within(confirmedScope as HTMLElement).getByText("Source").nextElementSibling).toHaveTextContent("DART");
+    expect(within(confirmedScope as HTMLElement).getByText("Company").nextElementSibling).toHaveTextContent("005930");
+    expect(within(confirmedScope as HTMLElement).getByText("Fiscal year").nextElementSibling).toHaveTextContent("2024");
     fireEvent.change(input, { target: { value: "Next draft stays here" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Corpus scope" })).getByRole("button", { name: "SEC" }));
     fireEvent.change(screen.getByLabelText("Retrieval preset"), { target: { value: "accuracy" } });

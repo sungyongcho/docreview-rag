@@ -1,4 +1,6 @@
 .review-progress-steps li { position: relative; }
+.review-progress-steps li.limited { color: var(--phase-warning); border-color: var(--phase-warning); }
+.review-progress-steps li.review-stage-selected.limited::after { background: var(--phase-warning); }
 .review-progress-steps .review-stage-toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; padding: 0; background: transparent; color: inherit; cursor: pointer; }
 .review-progress-steps .review-stage-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .review-progress-steps li.review-stage-selectable:is(:hover, :has(.review-stage-toggle:focus-visible), .review-stage-selected) strong { text-decoration: underline; text-underline-offset: 3px; }
@@ -18,6 +20,13 @@
 .review-stage-details .review-value-chip { display: inline-block; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; max-width: 100%; }
 .review-stage-details .review-value-chip.registry { font-size: 11px; font-weight: 600; }
 .review-stage-details .review-value-empty, .review-stage-details .review-value-missing, .review-stage-details .review-unrecorded { color: var(--muted); }
+.review-stage-details .review-stage-fields dd .review-value-empty { display: inline-block; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); font-weight: 500; }
+.review-stage-details[data-stage="check"] .review-stage-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; }
+.review-stage-details[data-stage="check"] .review-field-wide { grid-column: 1 / -1; }
+.review-stage-details[data-stage="check"] .review-stage-fields dd { line-height: 1.65; }
+@container (max-width: 420px) {
+  .review-stage-details[data-stage="check"] .review-stage-fields { grid-template-columns: minmax(0, 1fr); }
+}
 .review-stage-details .review-recorded-table { width: 100%; table-layout: auto; border-collapse: collapse; font-size: 11px; text-align: left; }
 .review-stage-details th, .review-stage-details td { padding: 4px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: normal; white-space: nowrap; }
 .review-stage-details caption { text-align: left; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
@@ -31,6 +40,20 @@
 
 .review-progress-heading .review-stage-actions { margin: 0 0 0 auto; }
 .review-stage-details > section { min-width: 0; }
+.review-path-choice { display: grid; gap: 12px; min-width: 0; }
+.review-path-intro, .review-path-unrecorded { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.review-path-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0; margin: 0; list-style: none; }
+.review-path-option { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 14px; margin: 0; border: 1px solid var(--border); border-radius: 8px; min-width: 0; color: var(--muted); }
+.review-path-option.selected { border-color: var(--text); background: var(--surface-2); color: var(--text); }
+.review-path-option-heading { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.review-path-option-heading svg, .review-path-destination svg, .review-path-selected svg { flex: none; }
+.review-path-option p { flex: 1; font-size: 12px; line-height: 1.6; }
+.review-path-destination { display: flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1.5; }
+.review-path-selected { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; background: var(--text); color: var(--bg); font-size: 10px; font-weight: 600; }
+.review-path-explanation { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.review-path-explanation > strong { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.review-path-explanation > p { font-size: 13px; line-height: 1.65; color: var(--text); }
+@container (max-width: 580px) { .review-path-options { grid-template-columns: minmax(0, 1fr); } }
 .review-stage-details .review-recorded-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
 .review-stage-details .review-recorded-table { min-width: max-content; }
 .review-stage-details .review-value-chip.citation { white-space: nowrap; }
@@ -50,9 +73,20 @@
 .review-stage-actions > .review-summary-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .review-summary-action > svg { flex: none; color: var(--muted); }
 
+/* The run-details action reserves header space beside the summary, never beside the expanded body. */
 .review-execution-wrap { position: relative; margin: 16px 0; }
-.review-execution-wrap > .review-execution-summary { margin: 0; }
-.review-execution-wrap > .review-execution-summary > summary { min-height: 32px; align-content: center; }
-.review-execution-wrap:has(> .review-stage-actions) > .review-execution-summary > summary { padding-right: 160px; }
-.review-execution-wrap > .review-stage-actions { position: absolute; top: 12px; right: 12px; margin: 0; }
+.review-execution-wrap > .review-execution-summary { min-width: 0; margin: 0; padding: 4px 14px; }
+.review-execution-wrap > .review-execution-summary > summary { min-height: 36px; align-content: center; box-sizing: border-box; font-size: 13px; line-height: 1.5; }
+.review-execution-wrap > .review-execution-summary[open] { padding-bottom: 12px; }
+.review-execution-wrap > .review-execution-summary[open] > summary { margin-bottom: 10px; }
+.review-execution-wrap:has(> .review-stage-actions) > .review-execution-summary > summary { padding-right: 144px; }
+.review-execution-wrap > .review-stage-actions { position: absolute; top: 5px; right: 9px; margin: 0; align-items: center; }
+.review-execution-wrap > .review-stage-actions > .review-summary-action { min-height: 36px; padding: 4px 6px; border-color: transparent; background: transparent; font-size: 13px; line-height: 1.5; white-space: nowrap; }
+.review-execution-wrap > .review-stage-actions > .review-summary-action:is(:hover, :focus-visible) { border-color: var(--border); background: var(--surface-2); }
 .message.pending .review-execution-wrap { margin-top: 0; }
+@media (max-width: 560px), (pointer: coarse) {
+  .review-execution-wrap > .review-execution-summary { padding-inline: 12px; }
+  .review-execution-wrap > .review-execution-summary > summary,
+  .review-execution-wrap > .review-stage-actions > .review-summary-action { min-height: 44px; }
+  .review-execution-wrap > .review-stage-actions { right: 7px; }
+}

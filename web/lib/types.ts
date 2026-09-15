@@ -50,7 +50,7 @@ export interface ReviewResolvedScope {
 }
 /** Server-recorded intent and scope decision, retained with each conversation turn. */
 export interface ReviewPathDecision {
-  intent: "document_review" | "casual_chat";
+  intent: "document_review" | "casual_chat" | "service_help" | "out_of_scope";
   source: "deterministic" | "classifier";
   matched_rule: string;
   rationale: string;
@@ -59,8 +59,14 @@ export interface ReviewPathDecision {
   resolved_scope: ReviewResolvedScope | null;
   routing_queries: Record<string, string>;
   retrieval_query: string;
-  scope_outcome: "not_applicable" | "resolved" | "conflict" | "empty";
+  scope_outcome: "not_applicable" | "resolved" | "conflict" | "empty" | "unsupported" | "ambiguous";
   stopping_reason: string | null;
+  stopping_stage?: "path" | "gate" | null;
+  stopping_message?: string | null;
+  requested_issuers?: string[];
+  missing_issuers?: string[];
+  /** Actual calls recorded before the path or scope decision stopped this request. */
+  model_call_count?: number;
   suggested_scope: "auto" | null;
 }
 export interface ReviewExecution {
@@ -71,7 +77,7 @@ export interface ReviewExecution {
   relevant: number;
   steps: number;
   observed?: ReviewEventNode[];
-  outcome?: "running" | "completed" | "failed" | "cancelled";
+  outcome?: "running" | "completed" | "failed" | "cancelled" | "limited";
   revalidating?: boolean;
   retries?: number;
   elapsedMs?: number;
@@ -203,6 +209,8 @@ export interface Conversation {
   updatedAt: string;
   messages: ChatMessage[];
   profile: ReviewSessionDraft | null;
+  /** Unsent composer text saved in this browser; absent for older conversations. */
+  draft?: string;
   /** Browser-only exact public selection; absent means all, [] means explicitly empty. */
   publishedScope?: string[];
   publishedTargets?: PublicTarget[];

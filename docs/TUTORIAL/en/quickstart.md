@@ -28,7 +28,10 @@ A `SUPPORTED` answer still needs source verification. Open its citations and **R
 
 `NOT_IN_DOCS` means the available evidence did not support the requested answer. An operational failure is a separate outcome; read the reason instead of interpreting it as a finding about the filing. [Answers](answers.md#inspection) explains the inspection controls, and [Retrieval](retrieval.md#step-8) explains the evidence path.
 
+<!-- screenshot: public-answer-with-citation -->
+
 ![A public answer to the AMD 7 nm TSMC supply-risk question, completed with one verified citation and the six-stage execution summary.](../assets/public-answer-with-citation.en.png)
+
 ## 4. Browse the source documents {#qs-app-4}
 
 Open **Build → Documents**, search for the company or document identifier, and select a row. Read the filing identity, fiscal year, source link when available, and chunk previews. Use **Reset filters** if a filtered list hides the filing you expected.

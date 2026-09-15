@@ -4,7 +4,7 @@
 
 Prepare NVIDIA filings, inspect retrieved evidence, and verify your first answer against the original report.
 This preserves the earlier local development sequence; use the focused guides for current control labels and navigation.
-The ASCII text logo identifies this interface as v2.
+The ASCII text logo identifies this interface as DocReview RAG.
 
 Data and runtime state prepared with `rag-dev` are also visible in the dashboard connected to that environment.
 Check completed work in the dashboard and continue from there; do not repeat ingestion or embedding just to
@@ -31,7 +31,7 @@ source acquisition and ingestion happen in the screens below. Keep and reuse an 
 After [loading the project commands](cli.md#register-commands-and-open-help), start the services:
 
 ```bash
-rag-dev up --build -d
+rag-dev start
 ```
 
 Open [DocReview RAG](http://localhost:8000/docreview-rag/). If `APP_PORT` differs, adjust the URL.
@@ -193,11 +193,12 @@ The exact answer wording is not deterministic.
 
 **Screen check:** open citation cards and inspect document identity, fiscal year, and original excerpts.
 Do not rely on the `SUPPORTED` badge alone. Verify that the evidence supports the asserted growth drivers.
-Open **Execution summary** to follow five phases:
+Open **Execution summary** to follow six phases:
 
 | Phase | What it checks |
 |---|---|
-| 1. Understand the question | Determine intent and filing scope. |
+| 0. Path decision | Decide whether the request is filing analysis or service guidance; out-of-scope requests end with a notice. |
+| 1. Understand the question | Check the requested company, year, and selected scope against the provided filings. |
 | 2. Retrieve evidence | Fetch candidate evidence from the prepared corpus. |
 | 3. Select relevant evidence | Evaluate whether candidates support the question. |
 | 4. Verify answer and citations | Check claims and citations against the sources. |
@@ -205,7 +206,9 @@ Open **Execution summary** to follow five phases:
 
 Green completion indicators require actual server events. Before an event arrives the interface waits;
 a phase that did not run is never filled in as complete. Returning to an earlier phase resets later indicators.
-Casual conversation does not use the retrieval phase list. **Stop request** interrupts the current request.
+Out-of-scope requests end at stage 0 and unavailable companies, years, or scopes end at stage 1,
+each with its own notice; later phases do not run. These endings are scope guidance, not
+evidence verdicts or failures. **Stop request** interrupts the current request.
 Open **Run trace** for its ID, usage, and failure category. Completed execution does not by itself mean that
 the document evidence was sufficient.
 
@@ -217,8 +220,8 @@ time follow real events; there is no estimated completion time. Older saved runs
 No live Gemma timing measurement was performed for this guide.
 
 **Completion:** the first exercise is complete when the answer is supported by the NVIDIA excerpts and the
-run has no operational failure. `NOT_IN_DOCS` means insufficient document evidence and is distinct from
-connectivity or provider errors. A CLI search result alone is not a generated answer.
+run has no operational failure. `NOT_IN_DOCS` means a valid scope was searched but document
+evidence is insufficient; it is distinct from stage scope notices and from connectivity or provider errors. A CLI search result alone is not a generated answer.
 
 ## 8. Change settings and evaluate
 
@@ -242,7 +245,7 @@ Restore defaults uses startup settings. See [connection cleanup](cli.md#reset-lo
 
 **Purpose:** include Korean business reports.
 
-Set a real `DART_API_KEY` and run `rag-dev up -d` to apply it. Reuse existing data when ready.
+Set a real `DART_API_KEY` and run `rag-dev start` to apply it. Reuse existing data when ready.
 Select Filings and use its Change… inputs to select DART, stock code `005930`, and fiscal year `2024`. Download missing filings,
 wait for success, and read the returned `selection_id`. Preparation status updates automatically.
 In Parse & chunk, choose the common `manifest.json` and that selection before clicking Ingest.
@@ -292,10 +295,10 @@ Open **Help**. The home view keeps four task-group filters and topic rows togeth
 **Purpose:** retain the exercise data while stopping the service.
 
 ```bash
-rag-dev down
+rag-dev compose down
 ```
 
-On the next `rag-dev up -d`, Documents and browser conversations should remain. Do not download or embed
+On the next `rag-dev start`, Documents and browser conversations should remain. Do not download or embed
 prepared data again. Optionally inspect [local prod preview](cli.md#development-and-local-prod-preview).
 
 Deletion is optional. Read [shutdown and selective cleanup](cli.md#shutdown-and-selective-cleanup) for the

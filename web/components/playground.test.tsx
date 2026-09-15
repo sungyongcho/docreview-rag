@@ -12,6 +12,17 @@ const HIT = {
 };
 
 describe("Playground", () => {
+  it.each(["Preview retrieval", "Preview review"])("shows a policy result for %s without a misleading search result", async (button) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "unknown_issuer", message: "Missing company", path_decision: {
+      intent: "document_review", source: "classifier", matched_rule: "classifier_review", rationale: "Company analysis", history_turns: 0,
+      selected_scope: "auto", resolved_scope: null, routing_queries: {}, retrieval_query: "SanDisk", scope_outcome: "empty", stopping_stage: "gate", stopping_reason: "unknown_issuer", missing_issuers: ["SanDisk"], suggested_scope: null,
+    } } }), { status: 422, headers: { "content-type": "application/json" } })));
+    render(<Playground live profile={DEFAULT_PROFILE} onProfileChange={vi.fn()} onOpenSnapshots={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    expect(await screen.findByText("Stopped at stage 1: filing scope unavailable")).toBeVisible();
+    expect(screen.getAllByText(/The available filings do not cover SanDisk/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("No component rankings were returned.")).toBeNull();
+  });
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();

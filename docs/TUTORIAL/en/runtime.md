@@ -18,9 +18,16 @@ Three different views answer different questions: **System → System status** c
 
 Failed and interrupted jobs offer **Retry as new job** when the server supports it. Retry creates new work; it does not prove that earlier partial work will be skipped. Review the scope, especially before embedding costs. CLI work performed directly against the same database appears in corpus state but need not have a web job record.
 
-Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text. Selecting a historical job shows its actual target, progress and result; it is not work started for the guide.
+Selecting a historical job shows its actual target, progress and result; it is not work started for the guide.
+
+<!-- details: status-visuals | Reading status colors and motion -->
+Green completion marks require confirmed readiness or completion. A pulse/spinner indicates actual execution, red indicates failure, amber identifies a missing prerequisite, and neutral means unknown or uncollected. Reduced-motion preferences stop repetitive animation without removing the status text.
+<!-- /details -->
+
+<!-- screenshot: jobs-status-and-retry -->
 
 ![The Job Center listing a completed BM25 rebuild with its request options, progress and timings.](../assets/jobs-status-and-retry.en.png)
+
 ## Execution summary and real timing {#timings}
 
 Open a completed or failed answer's **Execution summary** for the stages actually reached. Auto scope preserves the user's Auto choice while separately showing the registry, companies, years, and reason reported by the server. Before routing resolves, the interface waits; it does not infer a confirmed decision from the question in the browser.
@@ -36,9 +43,16 @@ Open **Run details → Performance** beside the answer. **Execution performance*
 | Loading / input processing / generation | Separate local-provider timings when that provider returned them. |
 | Tokens per second | Calculated only when generated-token count and generation duration exist. |
 
-The accessible table supplies exact values beside the visual bars. Original node IDs, model names, and logs stay intact even when the surrounding labels are translated. A saved run records its original ID, iteration and provider-request counts, token counts and elapsed time. CPU/GPU placement remains uncollected unless supported by actual evidence; a long duration alone does not establish a hardware bottleneck. A failed request can collect only browser request time, with routing, stage timings and model calls left explicitly uncollected. Older saved runs can lack telemetry without being corrupt.
+The accessible table supplies exact values beside the visual bars. Original node IDs, model names, and logs stay intact even when the surrounding labels are translated. A saved run records its original ID, iteration and provider-request counts, token counts and elapsed time.
+
+<!-- details: missing-telemetry | Uncollected and missing measurements -->
+CPU/GPU placement remains uncollected unless supported by actual evidence; a long duration alone does not establish a hardware bottleneck. A failed request can collect only browser request time, with routing, stage timings and model calls left explicitly uncollected. Older saved runs can lack telemetry without being corrupt.
+<!-- /details -->
+
+<!-- screenshot: execution-performance-and-run-trace -->
 
 ![The run trace of an evaluation with measured stage durations and request totals.](../assets/execution-performance-and-run-trace.en.png)
+
 ## Run limits versus provider limits {#limits}
 
 > [!DEV]
@@ -54,7 +68,9 @@ The failure field tells you what to change:
 
 Adjust a run budget under **Review settings → Run limits**. Prompt/evidence size is under **Review settings → Evidence**; it is a separate control. A provider timeout or authentication error is not fixed by raising the run token limit. Each OpenAI call is separately capped by the server ceiling described in [OpenAI per-call caps](settings.md#openai-call-caps); the smaller of the run limit and that cap applies. Public request-rate and monetary allowances are another boundary, shown under System's limits. See [execution troubleshooting](troubleshooting.md#execution).
 
+<!-- details: trace-api | Trace and API inspection -->
 **Run details → Trace** exposes the recorded run ID and failure fields. For API inspection, the resources are `GET /runs/{run_id}` and `GET /runs/{run_id}/traces`; there is no run-list route. Opt-in stream stage telemetry uses `X-DocReview-Telemetry: stages`. Existing clients without that header retain the default event contract.
+<!-- /details -->
 
 ## Local-model facts {#local-models}
 
@@ -65,7 +81,7 @@ Adjust a run budget under **Review settings → Run limits**. Prompt/evidence si
 
 If replacement discovery or saving fails, the working connection is preserved. Resolve the reported endpoint or model-capability error before trying again. A server responding to health checks can still fail an actual generation request. Changing the answer engine also does not replace the embedding identity already stored in the corpus.
 
-Installed, loaded, and answer-capable are separate facts. An installed model can be unloaded during normal standby; an unavailable inventory is unconfirmed, not a count of zero. DocReview only displays metadata actually returned by the server. It does not collect maximum/loaded context values or infer execution hardware from a model name. The [Ollama guide](ollama.md#models) explains independent model inspection. `rag-ollama-check` provides read-only connection diagnostics; [CLI reference](cli.md#diagnose-local-model-connectivity) defines its options.
+Installed, loaded, and answer-capable are separate facts. An installed model can be unloaded during normal standby; an unavailable inventory is unconfirmed, not a count of zero. DocReview only displays metadata actually returned by the server. It does not collect maximum/loaded context values or infer execution hardware from a model name. The [Ollama guide](ollama.md#models) explains independent model inspection. `rag-dev doctor` provides read-only connection diagnostics; [CLI reference](cli.md#diagnose-local-model-connectivity) defines its options.
 
 ## Local operations {#operations}
 
@@ -84,14 +100,14 @@ The **Command target** filter narrows each category to **Python**, **Web**, **Da
 Normal shutdown preserves the database volume and files:
 
 ```bash
-rag-dev down
+rag-dev compose down
 ```
 
 In a later terminal, from the repository root:
 
 ```bash
 source ./rag-alias.sh
-rag-dev up -d
+rag-dev start
 ```
 
 Reuse services that are already running. Refresh System, inspect Documents and Jobs, then return to the saved conversation. Do not repeat download, ingestion, embedding, or evaluation when the required result is already present. Inspect interrupted jobs explicitly before retrying; they are not resumed automatically.
@@ -100,7 +116,8 @@ Saved conversations and their profiles remain in that browser. In-page workspace
 
 The embedded **Production preview** inside DEV is deferred to [issue #211](https://github.com/sungyongcho/docreview-rag/issues/211) and is not available in this release. See [environment boundaries](environment.md#environment-boundaries).
 
-## Recorded provider usage
+<!-- heading-alias: recorded-provider-usage -->
+## Recorded provider usage {#provider-usage}
 
 Open **System → Usage** in DEV to inspect recorded review calls and embedding backfills. Groups identify the provider, local/external execution and the credential slot name; no credential value is exposed. Each group contains model/role rows and request, token and cost subtotals. Header totals sum the same rows. The latest review-run footer stays available. Historical traces are classified from their recorded API URL; their credential slot remains **unknown** instead of being guessed from the current configuration.
 
@@ -116,8 +133,14 @@ Open the bell in the top bar, next to the language and theme controls. Its badge
 
 Select an entry to mark it read and open its related job, evaluation result, conversation, settings category or System status. An entry without a destination only changes its read state. Escape closes the panel and returns focus to the bell; arrow keys move between entries. Long messages expand without discarding text. Error pictograms and accents identify failures; when the API supplies a cause, file and fix action, expand **Technical details** to inspect them. Server-originated messages remain exactly as received.
 
+<!-- details: notification-behavior | Toast and alert details -->
 Transient toasts float at the top right under the top bar, fade in and out, and never push the page down; at most three show at once and a hovered or focused toast pauses its timer. A queued or running job updates its entry silently, so the top-bar status pill and the Job Center carry live progress and only a finished, failed or cancelled job raises a toast. A job's progress updates one entry, while distinct successful actions keep their own records. Identical repeated errors share a count. Existing decision dialogs and visible result cards remain authoritative; their matching banner is suppressed, and the center closes when a modal opens. Desktop job notifications remain optional under **System → Operations**, mirroring the same job entry. Clicking an alert navigates only: it does not retry, reset or start another model request.
 
 The center also records actual connection transitions, local-model changes and slow-CPU measurements, preset content changes, comparison outcomes and available reset/fresh-start receipts. A preset poll with unchanged contents or an intermediate adapter-loading state does not create an alert. A fresh-start receipt describes recorded cleanup, not proof that every restarted service is ready; inspect System status before continuing.
+<!-- /details -->
 
-![The notification center open with unread counts and the All/Jobs/Errors tabs.](../assets/notification-center.en.png)
+<!-- screenshot: notification-center -->
+
+![The notification center open with unread counts and the All/Jobs/Errors tabs.](../assets/captures/notification-center.en.png)
+
+*1. Notification list · 2. detail*

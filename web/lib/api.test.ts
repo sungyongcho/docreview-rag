@@ -195,6 +195,18 @@ it.each(["http", "sse"] as const)("preserves manifest diagnostic fields on %s re
   vi.unstubAllGlobals();
 });
 
+it.each(["http", "sse"] as const)("preserves the expected stop contract on %s review errors", async (transport) => {
+  const path = { intent: "out_of_scope", stopping_stage: "path", stopping_reason: "unsupported_request", requested_issuers: [], missing_issuers: [] };
+  const failure = { code: "unsupported_request", message: "Please ask about filings.", path_decision: path };
+  const response = transport === "sse" ? streamResponse([`event: error\ndata: ${JSON.stringify({ error: failure })}\n\n`]) : new Response(JSON.stringify({ error: failure }), { status: 422, headers: { "Content-Type": "application/json" } });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+  const error = await streamReview("Talk to a cat", DEFAULT_SESSION_PROFILE, null, [], () => undefined).catch(error => error);
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error.pathDecision).toEqual(path);
+  expect(error.code).toBe("unsupported_request");
+  vi.unstubAllGlobals();
+});
+
 it("preserves structured API failure details for notification entries", async () => {
   const failure={code:"query_scope_unavailable",message:"Original API message.",detail:"ValueError: original detail",cause:"invalid_json",path:"manifest.json"};
   vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({error:failure}),{status:503,headers:{"Content-Type":"application/json"}})));

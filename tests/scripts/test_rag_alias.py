@@ -127,7 +127,7 @@ def test_help_color_policy_and_alignment(shell, environment):
         if environment:
             assert "\x1b" not in output
         else:
-            assert "\x1b[1m" in output and "\x1b[36;1m[QUICK START]" in output
+            assert "\x1b[1m" in output and "\x1b[36;1m[START]" in output
         plain = re.sub(r"\x1b\[[0-9;]*m", "", output)
         rows = [line for line in plain.splitlines() if line.startswith("  rag-")]
         assert len({re.search(r"\S.*?\s{2,}(\S)", line).start(1) for line in rows}) == 1
@@ -167,7 +167,7 @@ def test_python_help_matches_color_policy_without_mutating_parent(shell, tmp_pat
             [
                 *args,
                 "-c",
-                'source "$HELPER" >/dev/null; rag-schema --help && '
+                'source "$HELPER" >/dev/null; rag-dev schema --help && '
                 '[ "$FORCE_COLOR" = 1 ] && [ -z "${NO_COLOR+x}" ] && '
                 '[ -z "${PYTHON_COLORS+x}" ]',
             ],
@@ -196,7 +196,7 @@ def test_uninstall_cancellation_preserves_commands_and_startup_file(shell, tmp_p
     result = run_shell(
         shell,
         'source "$1" >/dev/null; _DOCREVIEW_RC="$TEST_STARTUP"; '
-        "rag-alias-delete; typeset -f rag-help >/dev/null",
+        "rag-alias remove; typeset -f rag-help >/dev/null",
         env={"TEST_STARTUP": str(startup)},
         input="n\n",
     )
@@ -219,7 +219,7 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
         'source "$1" >/dev/null; _DOCREVIEW_RC="$TEST_STARTUP"; '
         'rag-dev() { printf "%s\\n" foreign-command; }; '
         "alias rag-prod-up='printf foreign-alias'; "
-        "rag-alias-delete; rag-dev; alias rag-prod-up; "
+        "rag-alias remove; rag-dev; alias rag-prod-up; "
         "if typeset -f rag-help >/dev/null; then exit 7; fi; "
         "if typeset -f rag-reset >/dev/null; then exit 8; fi; "
         "if typeset -f rag-corpus >/dev/null; then exit 9; fi",
@@ -234,19 +234,18 @@ def test_uninstall_preserves_foreign_commands_and_exact_source_ownership(shell, 
     assert backups[0].read_text() == original
 
 
-def test_fresh_start_help_and_registration(shell):
-    """Both shells expose separate quick/fresh/reset commands and indented safety notes."""
+def test_explicit_mode_commands_and_registration(shell):
+    """Both shells expose mode commands with distinct startup and destructive actions."""
     result = run_shell(
         shell,
-        'source "$1" >/dev/null; typeset -f rag-reset; typeset -f rag-start-fresh; '
-        "typeset -f rag-corpus; rag-help",
+        'source "$1" >/dev/null; typeset -f rag-dev; typeset -f rag-prod; rag-help',
     )
-    assert "scripts.stack.commands reset" in result.stdout
-    assert "scripts.stack.fresh" in result.stdout
-    assert "scripts.stack.commands corpus" in result.stdout
-    assert "rag-reset [--keep-sources|--sample|--status]" in result.stdout
-    assert "    Deletes ORM data/sources; preserves .env" in result.stdout
-    assert "only uppercase Y confirms (Y/n)" in result.stdout
+    assert "_docreview_mode dev" in result.stdout
+    assert "_docreview_mode prod" in result.stdout
+    assert "rag-dev start" in result.stdout
+    assert "rag-prod reset environment --local --all-modes" in result.stdout
+    assert "Preserve .env, source work, external bundles and other projects" in result.stdout
+    assert "CONFIRM BEFORE DELETION" in result.stdout
     assert "[STACK]" in result.stdout
 
 
@@ -334,6 +333,7 @@ def test_install_preserves_symlink_and_quotes_checkout_path(shell, tmp_path):
     shutil.copy2(SCRIPT, script)
     for name in [
         "stack/__main__.py",
+        "stack/cli.py",
         "stack/quickstart.sh",
         "stack/commands.py",
         "schema/__main__.py",
@@ -361,33 +361,32 @@ def test_install_preserves_symlink_and_quotes_checkout_path(shell, tmp_path):
     assert "[INSTALLED]" in result.stdout
 
 
-def test_help_lists_unique_commands_with_compact_descriptions(shell):
-    """The rendered menu keeps one short row per command and groups flag variants inline."""
+def test_help_lists_mode_actions_with_compact_descriptions(shell):
+    """The menu advertises mode actions once and exposes only the four public commands."""
     result = run_shell(shell, 'source "$1" >/dev/null; rag-help')
     rows = [line.strip() for line in result.stdout.splitlines() if line.startswith("  rag-")]
-    assert 1 <= len(rows) <= 15
-    commands = []
+    assert 1 <= len(rows) <= 20
     invocations = []
+    commands = set()
     for row in rows:
         invocation, description = re.split(r"\s{2,}", row, maxsplit=1)
-        commands.append(invocation.split()[0])
+        commands.update(invocation.split()[0].split("|"))
         invocations.append(invocation)
-        assert 1 <= len(description.split()) <= 4, row
+        assert 1 <= len(description.split()) <= 8, row
     assert len(invocations) == len(set(invocations))
-    assert commands.count("rag-schema") == 2
-    assert "rag-schema" in commands
-    assert "rag-ollama-check" in commands
-    assert "--help" not in "\n".join(rows)
-    assert result.stdout.count("Every command accepts --help") == 1
-    assert "Example: rag-corpus acquire_edgar" in result.stdout
+    assert commands == {"rag-dev", "rag-prod", "rag-help", "rag-alias"}
+    assert result.stdout.count("Every command accepts --verbose (-vv)") == 1
+    assert "Restore, verify or reuse a public bundle" in result.stdout
 
 
 def test_removed_aliases_are_not_registered(shell):
-    """Removed duplicate names cannot stay callable after loading the compact helper."""
+    """Removed legacy names cannot stay callable after loading the redesigned helper."""
     run_shell(
         shell,
         'source "$1" >/dev/null; '
-        "for name in rag-dev-up rag-dev-down rag-prod-up rag-prod-down rag-diagnose; do "
+        "for name in rag-up rag-down rag-dev-up rag-dev-down rag-prod-up rag-prod-down "
+        "rag-diagnose rag-start-quick rag-start-fresh rag-reset rag-schema rag-corpus "
+        "rag-ollama-check rag-alias-delete rag-prod-prepare; do "
         'if command -v "$name" >/dev/null 2>&1; then exit 7; fi; done',
     )
 
@@ -421,7 +420,12 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
     }
     menu = run_shell(shell, 'source "$1" >/dev/null; rag-help').stdout
     commands = list(
-        dict.fromkeys(line.split()[0] for line in menu.splitlines() if line.startswith("  rag-"))
+        dict.fromkeys(
+            name
+            for line in menu.splitlines()
+            if line.startswith("  rag-")
+            for name in line.split()[0].split("|")
+        )
     )
     assert commands
     result = run_shell(
@@ -446,23 +450,131 @@ def test_every_advertised_help_preserves_checkout_and_registration(shell, tmp_pa
     assert after == before
 
 
-def test_quickstart_is_first_and_reset_commands_have_their_own_block(shell):
-    """The primary setup action stands alone before separate data and reset choices."""
+def test_start_and_destructive_reset_have_separate_help_blocks(shell):
+    """Startup is non-destructive while whole-environment reset has explicit boundaries."""
     menu = run_shell(shell, 'source "$1" >/dev/null; rag-help').stdout
-    quick = menu.split("[QUICK START]", 1)[1].split("[STACK]", 1)[0]
-    assert [line.split()[0] for line in quick.splitlines() if line.startswith("  rag-")] == [
-        "rag-start-quick",
-        "rag-start-fresh",
+    start = menu.split("[START]", 1)[1].split("[STACK]", 1)[0]
+    assert [
+        re.split(r"\s{2,}", line.strip())[0]
+        for line in start.splitlines()
+        if line.startswith("  rag-")
+    ] == ["rag-dev start", "rag-prod start"]
+    assert "Server startup does not mean search readiness." in start
+    reset = menu.split("[RESET — CONFIRM BEFORE DELETION]", 1)[1].split("[PROD DATA", 1)[0]
+    assert "rag-dev reset data --local" in reset
+    assert "rag-prod reset environment --local --all-modes" in reset
+    assert "other projects" in reset
+    assert "then exit" in reset
+    assert "--extreme" not in menu
+    assert "--discard-tracked" not in menu
+
+
+@pytest.mark.parametrize(
+    ("language", "heading", "safety"),
+    [
+        ("en", "[START]", "These commands never deploy the service."),
+        ("ko", "[시작]", "실제 서비스에 배포하지 않습니다."),
+    ],
+)
+def test_bilingual_help_is_shell_only(shell, tmp_path, language, heading, safety):
+    """Both translations render without Python or services and retain explicit local scope."""
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    cat = shutil.which("cat")
+    assert cat
+    (tools / "cat").symlink_to(cat)
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; PATH="$BANNER_TOOLS"; rag-help --lang "$HELP_LANG"',
+        env={"BANNER_TOOLS": str(tools), "HELP_LANG": language},
+    )
+    assert heading in result.stdout and safety in result.stdout
+    assert "rag-prod prepare --local" in result.stdout
+    assert "rag-prod reset environment --local --all-modes" in result.stdout
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("mode", ["dev", "prod"])
+def test_mode_without_action_only_shows_help(shell, tmp_path, mode):
+    """Bare mode commands never bootstrap dependencies or implicitly restart the stack."""
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; _docreview_runtime() { exit 97; }; "$MODE_COMMAND"',
+        env={"MODE_COMMAND": "rag-" + mode, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
+    )
+    assert "[START]" in result.stdout
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("mode", ["dev", "prod"])
+def test_invalid_ready_start_is_blocked_before_bootstrap(shell, tmp_path, mode):
+    """DEV or missing-local ready startup cannot install dependencies or alter services."""
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; _docreview_runtime() { exit 97; }; '
+        'if "$MODE_COMMAND" start --ready; then exit 98; else [ "$?" = 2 ]; fi',
+        env={"MODE_COMMAND": "rag-" + mode, "HOME": str(tmp_path), "ZDOTDIR": str(tmp_path)},
+    )
+    assert ("DEV has no --ready" if mode == "dev" else "requires --local") in result.stderr
+
+
+@pytest.mark.parametrize("mode", ["dev", "prod"])
+def test_mode_dispatch_preserves_explicit_actions_and_arguments(shell, mode):
+    """Mode wrappers pass arguments intact to the dispatcher without invoking services."""
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; _docreview_python() { printf "<%s>\\n" "$@"; }; '
+        '"$MODE_COMMAND" logs "service with spaces" -f',
+        env={"MODE_COMMAND": "rag-" + mode},
+    )
+    assert result.stdout.splitlines() == [
+        "<scripts.stack.cli>",
+        f"<{mode}>",
+        "<logs>",
+        "<service with spaces>",
+        "<-f>",
     ]
-    assert "Then open the printed URL." in quick
-    reset = menu.split("[RESET]", 1)[1].split("[HELP]", 1)[0]
-    assert "rag-schema check|prepare|recover" in menu
-    assert "rag-schema recreate" in reset
-    assert "rag-reset" in reset
-    assert "    Deletes ORM data/sources" in reset
-    assert "--extreme deletes both" in quick
-    assert "    No backup." in reset
-    assert 10 <= sum(line.startswith("  rag-") for line in menu.splitlines()) <= 15
+
+
+@pytest.mark.parametrize("mode", ["dev", "prod"])
+def test_start_dispatch_preserves_mode_without_reset(shell, mode):
+    """Startup invokes only the bootstrap entrypoint with the selected mode and flags."""
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; _docreview_runtime() { printf "<%s>\\n" "$@"; }; '
+        '"$MODE_COMMAND" start --help',
+        env={"MODE_COMMAND": "rag-" + mode},
+    )
+    assert result.stdout.splitlines() == [
+        "<bash>",
+        f"<{ROOT}/scripts/stack/quickstart.sh>",
+        f"<{mode}>",
+        "<--help>",
+    ]
+
+
+@pytest.mark.parametrize("mode", ["dev", "prod"])
+def test_environment_reset_uses_python_outside_checkout_venv(shell, mode):
+    """A reset delegates explicit scope flags without relying on the removable venv."""
+    result = run_shell(
+        shell,
+        'source "$1" >/dev/null; uv() { '
+        '[ "$*" = "python find --no-python-downloads 3.14" ] || return 97; '
+        'printf "%s\\n" "$TEST_PYTHON"; }; '
+        '_docreview_runtime() { printf "<%s>\\n" "$@"; }; '
+        '"$MODE_COMMAND" reset environment --local --all-modes',
+        env={"MODE_COMMAND": "rag-" + mode, "TEST_PYTHON": sys.executable},
+    )
+    assert result.stdout.splitlines() == [
+        f"<{sys.executable}>",
+        "<-m>",
+        "<scripts.stack.cli>",
+        f"<{mode}>",
+        "<reset>",
+        "<environment>",
+        "<--local>",
+        "<--all-modes>",
+    ]
 
 
 def helper_checkout(tmp_path, shell):
@@ -486,8 +598,8 @@ def helper_checkout(tmp_path, shell):
 
 
 @pytest.mark.parametrize("accept", [False, True])
-def test_old_registration_migrates_only_after_explicit_confirmation(shell, tmp_path, accept):
-    """A renamed helper explains the missing path and preserves a backup before migration."""
+def test_legacy_filename_registration_is_foreign_state(shell, tmp_path, accept):
+    """Installing the current helper leaves obsolete filename registrations untouched."""
     helper, legacy, startup, environment = helper_checkout(tmp_path, shell)
     foreign = "source /another/checkout/helper.sh\n"
     original = (
@@ -495,14 +607,13 @@ def test_old_registration_migrates_only_after_explicit_confirmation(shell, tmp_p
     )
     startup.write_text(original)
     result = run_shell(shell, '"$HELPER"', env=environment, input="y\n" if accept else "n\n")
-    assert "[MIGRATION]" in result.stdout
-    assert str(legacy) in result.stdout
+    assert "[MIGRATION]" not in result.stdout
     assert not legacy.exists()
     if not accept:
         assert startup.read_text() == original
         assert not list(tmp_path.glob(startup.name + ".docreview-backup-*"))
         return
-    assert str(legacy) not in startup.read_text()
+    assert startup.read_text().startswith(original)
     assert shlex.quote(str(helper)) in startup.read_text()
     assert foreign in startup.read_text()
     backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
@@ -512,8 +623,8 @@ def test_old_registration_migrates_only_after_explicit_confirmation(shell, tmp_p
     assert "[MIGRATION]" not in again.stdout
 
 
-def test_uninstall_removes_current_and_legacy_registration_only_for_this_checkout(shell, tmp_path):
-    """Explicit removal covers both owned names without touching another checkout's line."""
+def test_uninstall_preserves_legacy_and_foreign_registration(shell, tmp_path):
+    """Explicit removal touches the current helper path without claiming obsolete names."""
     helper, legacy, startup, environment = helper_checkout(tmp_path, shell)
     foreign = "source /another/checkout/" + legacy.name + "\n"
     original = (
@@ -521,8 +632,8 @@ def test_uninstall_removes_current_and_legacy_registration_only_for_this_checkou
     )
     startup.write_text(original)
     result = run_shell(shell, '"$HELPER" --delete', env=environment, input="y\n")
-    assert str(legacy) in result.stdout
-    assert startup.read_text() == foreign
+    assert "Removed this checkout" in result.stdout
+    assert startup.read_text() == "source " + shlex.quote(str(legacy)) + "\n" + foreign
     backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
     assert len(backups) == 1 and backups[0].read_text() == original
     assert helper.exists() and not legacy.exists()
@@ -532,12 +643,14 @@ def lifecycle_checkout(tmp_path, shell):
     """Create two harmless owned-command versions and a confined startup environment."""
     helper, _legacy, startup, environment = helper_checkout(tmp_path, shell)
     original = helper.read_text()
-    pattern = r"(?ms)^rag-up\(\) \{.*?^\}"
+    pattern = r"(?m)^rag-prod\(\) \{[^\n]*\}$"
     assert len(re.findall(pattern, original)) == 1
     versions = [
         re.sub(
             pattern,
-            lambda _, name=name: "rag-up() {\n    printf '%s\n' 'fixture-version-" + name + "'\n}",
+            lambda _, name=name: (
+                "rag-prod() {\n    printf '%s\n' 'fixture-version-" + name + "'\n}"
+            ),
             original,
             count=1,
         )
@@ -657,8 +770,8 @@ def test_update_reloads_owned_functions_and_preserves_custom_commands(shell, tmp
         'set -e; source "$HELPER" >/dev/null; '
         'rag-dev() { printf "%s\n" fixture-custom-dev; }; '
         'cp "$NEXT_HELPER" "$HELPER"; rag-alias --check-updates; '
-        'printf "%s\n" BEFORE_UPDATE; rag-up --help; '
-        'rag-alias update; printf "%s\n" AFTER_UPDATE; rag-up --help; rag-dev; '
+        'printf "%s\n" BEFORE_UPDATE; rag-prod --help; '
+        'rag-alias update; printf "%s\n" AFTER_UPDATE; rag-prod --help; rag-dev; '
         + metadata_command(),
         env=environment,
     )
@@ -690,7 +803,8 @@ def test_update_repairs_only_the_existing_moved_checkout_registration(shell, tmp
         'set -e; source "$HELPER" >/dev/null; mv "$OLD_ROOT" "$MOVED_ROOT"; '
         'cp "$NEXT_HELPER" "$MOVED_ROOT/rag-alias.sh"; '
         'if rag-alias --check-updates; then exit 91; else [ "$?" = 2 ]; fi; '
-        'rag-alias update "$UPDATE_TARGET"; rag-up --help; rag-alias update; ' + metadata_command(),
+        'rag-alias update "$UPDATE_TARGET"; rag-prod --help; rag-alias update; '
+        + metadata_command(),
         env=environment,
     )
     assert "fixture-version-two" in result.stdout
@@ -719,7 +833,7 @@ def test_update_rejects_unusable_targets_without_changing_loaded_state(
     target.parent.mkdir()
     if invalid_kind != "missing":
         target.write_text(
-            "# This is not a DocReview helper.\nrag-up() { printf fixture-invalid; }\n"
+            "# This is not a DocReview helper.\nrag-prod() { printf fixture-invalid; }\n"
         )
     if invalid_kind == "unreadable":
         target.chmod(0)
@@ -729,7 +843,7 @@ def test_update_rejects_unusable_targets_without_changing_loaded_state(
             shell,
             'set -e; source "$HELPER" >/dev/null; '
             'if rag-alias "$UPDATE_MODE" "$UPDATE_TARGET"; then exit 92; else [ "$?" = 2 ]; fi; '
-            "rag-up --help; " + metadata_command(),
+            "rag-prod --help; " + metadata_command(),
             env=environment,
         )
     finally:
@@ -752,7 +866,7 @@ def test_interactive_source_activates_immediately_and_persists_only_with_consent
     result = run_lifecycle_tty(
         shell,
         'exec() { printf "RESTART:%s\\n" "$*"; }; source "$HELPER"; '
-        "typeset -f rag-alias >/dev/null; rag-up --help",
+        "typeset -f rag-alias >/dev/null; rag-prod --help",
         environment,
         answers=answer,
     )
@@ -790,7 +904,7 @@ def test_readonly_source_contexts_never_prompt_or_persist(shell, tmp_path, conte
     )
     result = run_lifecycle_tty(
         shell,
-        command + "; rag-up --help",
+        command + "; rag-prod --help",
         environment,
         answers="y\n",
         interactive=context != "noninteractive",
@@ -809,7 +923,7 @@ def test_update_after_declined_source_never_prompts_for_registration(shell, tmp_
     startup.write_text(original)
     result = run_lifecycle_tty(
         shell,
-        'source "$HELPER"; cp "$NEXT_HELPER" "$HELPER"; rag-alias update; rag-up --help',
+        'source "$HELPER"; cp "$NEXT_HELPER" "$HELPER"; rag-alias update; rag-prod --help',
         environment,
         answers="n\ny\n",
     )
@@ -902,7 +1016,7 @@ def test_update_check_never_executes_the_candidate_helper(shell, tmp_path):
     result = run_shell(
         shell,
         'set -e; source "$HELPER" >/dev/null; cp "$NEXT_HELPER" "$HELPER"; '
-        "rag-alias --check-updates; rag-up --help; " + metadata_command(),
+        "rag-alias --check-updates; rag-prod --help; " + metadata_command(),
         env=environment,
     )
     assert "Update available" in result.stdout
@@ -929,7 +1043,7 @@ def test_moved_update_retries_registration_after_access_is_restored(shell, tmp_p
             'set -e; source "$HELPER" >/dev/null; mv "$OLD_ROOT" "$MOVED_ROOT"; '
             'cp "$NEXT_HELPER" "$MOVED_ROOT/rag-alias.sh"; chmod 000 "$STARTUP"; '
             'if rag-alias update "$MOVED_ROOT"; then exit 93; else [ "$?" = 1 ]; fi; '
-            'chmod 600 "$STARTUP"; rag-alias update; rag-up --help; ' + metadata_command(),
+            'chmod 600 "$STARTUP"; rag-alias update; rag-prod --help; ' + metadata_command(),
             env=environment,
         )
     finally:
@@ -945,7 +1059,7 @@ def test_moved_update_retries_registration_after_access_is_restored(shell, tmp_p
 
 
 def test_unchanged_update_deduplicates_owned_lines_in_place(shell, tmp_path):
-    """An unchanged code version still repairs duplicate current and legacy registration lines."""
+    """An unchanged version deduplicates current registration while preserving foreign lines."""
     helper, startup, environment, hashes = lifecycle_checkout(tmp_path, shell)
     legacy = helper.with_name("rag_alias.sh")
     current = "source " + shlex.quote(str(helper)) + " >/dev/null\n"
@@ -972,7 +1086,11 @@ def test_unchanged_update_deduplicates_owned_lines_in_place(shell, tmp_path):
     assert startup.read_text() == (
         "# Before owned registration\n"
         + current
-        + "# Keep between markers\n# Keep after markers\n"
+        + "# Keep between markers\n"
+        + "source "
+        + shlex.quote(str(legacy))
+        + " >/dev/null\n"
+        + "# Keep after markers\n"
         + foreign
     )
     backups = list(tmp_path.glob(startup.name + ".docreview-backup-*"))
@@ -985,13 +1103,14 @@ def test_source_detects_registered_definition_and_version_states(shell, change):
     """Re-sourcing refreshes stale/custom commands and reports precisely one install state."""
     mutation = {
         "none": "",
-        "function": "rag-up() { echo custom; };",
-        "alias": "alias rag-up='echo custom';",
-        "missing": "unset -f rag-up;",
+        "function": "rag-prod() { echo custom; };",
+        "alias": "alias rag-prod='echo custom';",
+        "missing": "unset -f rag-prod;",
         "version": "DOCREVIEW_ALIAS_VERSION=0.0.0;",
     }[change]
     result = run_shell(
-        shell, 'source "$1" >/dev/null; ' + mutation + ' source "$1"; typeset -f rag-up >/dev/null'
+        shell,
+        'source "$1" >/dev/null; ' + mutation + ' source "$1"; typeset -f rag-prod >/dev/null',
     )
     expected = "[already installed]" if change == "none" else "[update required]"
     assert result.stdout.strip() == expected

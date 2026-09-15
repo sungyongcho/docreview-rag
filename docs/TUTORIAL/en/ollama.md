@@ -1,4 +1,4 @@
-# Set up Ollama on macOS and Linux
+# Set up Ollama on macOS and Linux {#set-up-ollama-on-macos-and-linux}
 
 > [!DEV]
 > Connecting and configuring a local answer server in DocReview requires DEV. Installation and service commands are performed by the owner of that computer.
@@ -7,7 +7,7 @@ Use this guide when **Settings → Local LLM** cannot find an answer model, or w
 
 The commands below are for you to run deliberately. Reading this page or opening the guide does not install software, download models, change services, or send a question to a model.
 
-## Prepare an installed model
+## Prepare an installed model {#prepare-an-installed-model}
 
 Use **Prepare model** in the pipeline answer-model card or **Settings → Local LLM**. The button loads the selected installed Ollama answer model without downloading a model or sending a question. It reports success only after the server confirms the model is loaded. Loading uses RAM/VRAM and can fail if memory is insufficient. The request keeps the model loaded for five minutes; it may unload after inactivity. Connection diagnostics remain read-only. OpenAI-compatible endpoints do not expose this Ollama-specific action.
 
@@ -164,7 +164,7 @@ DocReview sends every local call with hidden reasoning disabled (`think: false`)
 | CPU only (`size_vram` 0) | 80–95 tokens/s for an uncached 2.5k-token grade prompt (about 30 s); a repeated prompt prefix is served from cache | about 10 tokens/s (12–14 in isolation) | 36–103 s end to end: grade 19–68 s, verification 17–35 s; the first call after a restart adds a 10–20 s model load | The measured warm-model runs fit 120 s; 300 s leaves more room for a cold load, without guaranteeing completion. Keep `LOCAL_LLM_MAX_OUTPUT_TOKENS` at 600 (grade needs 150–300, verification 140–160). In this measured case, 8,000 evidence characters reduced prompt evaluation with the same outcome. Keep k at the tested value of 5; larger candidate sets were not verified on this CPU. Set `LOCAL_LLM_TIMEOUT_S=300`. |
 | GPU or mixed | not measured | not measured | not measured | Start from the CPU settings and lower the wall clock once measured |
 
-Before these changes the same question failed after 77–144 s at the grade step with `output_tokens: used=600 limit=600` and an invalid JSON body: the 600 tokens were hidden reasoning. The `ollama run MODEL ""` preload in the [archived README](../README_archive.md) loads the model with Ollama's default 4,096-token window; DocReview's first call reloads it at the configured window, which is expected. A prompt projected above the remaining input allowance is refused before the call (see [run limits](runtime.md#limits)).
+Before these changes the same question failed after 77–144 s at the grade step with `output_tokens: used=600 limit=600` and an invalid JSON body: the 600 tokens were hidden reasoning. The `ollama run MODEL ""` preload in the [archived README](https://github.com/sungyongcho/docreview-rag/blob/main/docs/README_archive.md) loads the model with Ollama's default 4,096-token window; DocReview's first call reloads it at the configured window, which is expected. A prompt projected above the remaining input allowance is refused before the call (see [run limits](runtime.md#limits)).
 
 ## Connect in DocReview {#connect}
 
@@ -185,10 +185,10 @@ A reachable server and installed answer models do not establish that a model is 
 After [registering the project commands](cli.md#register-commands-and-open-help), run:
 
 ```bash
-rag-ollama-check
-rag-ollama-check --web-url http://localhost:8000
-rag-ollama-check --details
-rag-ollama-check --setup
+rag-dev doctor
+rag-dev doctor --web-url http://localhost:8000
+rag-dev doctor --details
+rag-dev doctor --setup
 ```
 
 The first command uses the configured web address. Set `--web-url` only when using another frontend address; it is not an Ollama URL. `--details` exposes additional host/container and listener evidence. `--setup` prints manual setup instructions. The diagnostics do not install Ollama, change settings, download or load a model, or generate an answer.
@@ -207,7 +207,7 @@ Read failures by layer rather than repeating installation:
 
 For logs and measured execution, continue with [runtime](runtime.md#local-models). The [CLI reference](cli.md#diagnose-local-model-connectivity) owns the full diagnostic-command details.
 
-Unlike `rag-ollama-check`, `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001` loads and runs the model: it builds the workflow's grade prompt from `/retrieve`, calls Ollama with the structured-output schema across thinking on/off and output ceilings, and reports prompt tokens, tokens per second, hidden-reasoning length and JSON validity. Run it only against an isolated stack; it refuses to run in production mode. The [supported configurations](#configurations) table comes from it.
+Unlike `rag-dev doctor`, `.venv/bin/python -m scripts.diagnostics.local_grade --api-url http://127.0.0.1:8001` loads and runs the model: it builds the workflow's grade prompt from `/retrieve`, calls Ollama with the structured-output schema across thinking on/off and output ceilings, and reports prompt tokens, tokens per second, hidden-reasoning length and JSON validity. Run it only against an isolated stack; it refuses to run in production mode. The [supported configurations](#configurations) table comes from it.
 
 ### Optional CPU starting preset {#cpu-starting-preset}
 

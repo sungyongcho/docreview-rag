@@ -453,8 +453,8 @@ def test_production_compose_has_no_admin_bypass():
     assert app["environment"]["DOCREVIEW_ADMIN_MODE"] == "off"
     assert app["environment"]["DOCREVIEW_OPENAI_MODEL"] == "gpt-5.6-luna"
     assert app["environment"]["REVIEW_MODEL"] == "gpt-5.6-luna"
-    assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_MINUTE"] == "2"
-    assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_DAY"] == "5"
+    assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_MINUTE"] == "10"
+    assert app["environment"]["DOCREVIEW_RATE_LIMIT_PER_DAY"] == "50"
     assert app["environment"]["DOCREVIEW_PUBLIC_DAILY_COST_USD"] == "0.10"
     assert app["environment"]["DOCREVIEW_OPENAI_MAX_COST_USD"] == "0.005"
     assert any(

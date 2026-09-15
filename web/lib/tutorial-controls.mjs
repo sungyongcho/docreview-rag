@@ -1,0 +1,92 @@
+import { Activity, ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, ChevronDown, CircleHelp, Copy, Files, FlaskConical, Hammer, MessageSquare, Search, Send, Settings, SlidersHorizontal, SquarePen, Terminal } from "lucide-react";
+
+// Icons are the same Lucide assets used by the app navigation and controls.
+// Text-only controls intentionally have no invented icon.
+const GROUPS = [
+  [ArrowLeft, ["Back", "이전"]],
+  [ArrowRight, ["Forward", "앞으로", "Read the full guide", "전체 가이드 읽기", "Go to this control", "이 컨트롤로 이동", "해당 컨트롤로 이동"]],
+  [SquarePen, ["New chat", "New review", "새 대화"]],
+  [MessageSquare, ["Conversation", "대화"]],
+  [Settings, ["Settings", "설정", "Open settings", "설정 열기"]],
+  [SlidersHorizontal, ["Settings and preview", "설정 및 미리보기"]],
+  [CircleHelp, ["Help", "도움말", "Show tutorial", "튜토리얼 보기"]],
+  [Search, ["Search help", "도움말 검색", "Search", "Retrieval", "검색", "검색 설정"]],
+  [Send, ["Send question", "질문 전송"]],
+  [ArrowUpRight, ["Open run details", "Run details", "실행 상세 열기", "실행 상세"]],
+  [ChevronDown, ["Navigation history", "방문 기록"]],
+  [Hammer, ["Build", "데이터 준비"]],
+  [Files, ["Documents", "문서", "Open Documents", "문서 열기"]],
+  [FlaskConical, ["Measure", "품질 검증"]],
+  [Activity, ["System", "시스템"]],
+  [BookOpen, ["User guide", "사용 가이드", "Guides & development", "가이드와 개발 기록"]],
+  [Terminal, ["Development log", "개발 기록", "CLI reference", "CLI 안내"]],
+  [Copy, ["Copy", "Copy code", "복사", "코드 복사"]],
+  [null, [
+    "Execution summary", "실행 요약", "Stop request", "요청 중단", "Cancel", "취소", "Close", "닫기",
+    "Pipeline", "파이프라인", "Jobs", "작업", "Open Jobs", "작업 열기", "Open Build", "데이터 준비 열기",
+    "System status", "시스템 상태", "Operations", "운영", "Local Operations", "로컬 운영",
+    "Local LLM", "로컬 LLM", "Run limits", "실행 한도", "Data & help", "데이터와 도움말", "About", "프로젝트 정보",
+    "Browser storage", "브라우저 저장소", "Export", "내보내기", "Import", "가져오기",
+    "Basic", "기본", "Advanced", "고급", "Preview", "미리보기", "Trace", "트레이스",
+    "Evidence", "근거", "Review settings", "검토 설정", "Conversation settings", "대화 설정",
+    "Run trace", "실행 트레이스", "Execution performance", "실행 성능", "Performance", "성능",
+    "Retrieved evidence candidates", "검색한 근거 후보", "Inspect request", "요청 보기",
+    "Retrieval presets", "검색 프리셋", "Snapshots", "스냅샷", "Snapshot management", "스냅샷 관리",
+    "Snapshot details", "스냅샷 상세", "Saved snapshots", "저장 스냅샷",
+    "Compare stored results", "저장된 결과 비교", "View source evaluation", "기준 평가 보기",
+    "Publish", "게시", "Hide", "숨기기",
+    "Compare & snapshots", "비교 및 스냅샷", "Search trial", "검색 실험", "Run evaluation", "평가 실행",
+    "Golden dataset", "골든 데이터셋", "Corpus total", "전체 코퍼스", "Corpus scope", "문서 범위",
+    "Answer model", "답변 모델", "Filters", "필터", "Companies", "회사", "Fiscal years", "회계연도",
+    "Sync selection", "선택 동기화", "Refresh", "새로고침", "Retry", "재시도",
+    "Connect", "연결", "Disconnect", "연결 해제", "Add a server…", "서버 추가…", "Server settings", "서버 설정",
+    "Run connection diagnostics", "연결 진단 실행", "Use Default", "기본값 사용",
+    "Save draft", "초안 저장", "Delete draft", "초안 삭제", "New evaluation", "새 평가",
+    "Queue evaluation", "평가 대기열에 추가", "Check format and sources", "형식과 원본 검사",
+    "View source JSON", "원본 JSON 보기", "Use selected set", "선택 세트 사용",
+    "Use for review", "검토에 사용", "Check updated status", "갱신된 상태 확인",
+    "Compute BM25", "BM25 계산", "Recompute BM25", "BM25 다시 계산",
+    "Parse & chunk selected sources", "선택 원문 파싱·청크 생성", "Backfill embeddings", "임베딩 채우기",
+    "Ingest", "적재", "Change selection in Filings", "공시에서 선택 변경",
+    "Recommended", "추천", "Reference", "자세한 설명", "Read the guide", "실습 가이드 읽기",
+    "What to do", "사용 순서", "Reset filters", "필터 초기화", "Limits & availability", "사용 한도와 가용성",
+    "Filings", "원문 수집", "company/year matrix", "회사·연도 표", "Parse & chunk", "파싱·청킹",
+    "Selected documents", "선택한 문서", "Embeddings", "임베딩", "Lexical index (BM25)", "키워드 인덱스(BM25)",
+    "Usage", "사용량", "Prompt", "프롬프트", "Connection details", "연결 상세", "Add & connect", "추가하고 연결",
+    "Search/add company or year", "회사 또는 연도 검색/추가", "?", "Default", "Built-in", "기본 제공",
+    "Production preview", "배포 화면 미리보기", "Explore an example", "예시로 체험하기", "Inspect this step", "이 부분을 살펴보세요",
+    "Delete all downloaded originals", "다운로드 원문 모두 삭제", "Select all downloaded originals", "다운로드된 원문 모두 선택",
+    "Delete conversation", "대화 삭제", "Confirm original deletion", "원본 삭제 확인",
+    "Verify answer and citations", "답변·인용 검증", "Expand all", "모두 펼치기", "Collapse all", "모두 접기",
+    "Previous page", "이전 페이지", "Next page", "다음 페이지", "Show evidence", "근거 보기",
+    "Switch to Auto and restore question", "자동으로 전환하고 질문 복원", "Path decision", "경로 결정",
+    "Understand the question", "질문 의도 확인", "Recorded passes", "기록된 회차", "Ranked candidates (N)", "순위별 후보 (N)",
+    "Corpus total · N filings", "전체 코퍼스 · 공시 N건", "Retry filters", "필터 다시 불러오기",
+    "Next step", "다음 단계", "Back to documents", "문서 목록으로", "Runtime readiness", "실행 준비 상태",
+    "Check schema", "스키마 검사", "Run in terminal", "터미널에서 실행 필요", "Recorded configuration", "기록된 설정",
+    "Explore evaluation settings", "평가 설정 살펴보기", "Advanced evaluation options", "고급 평가 옵션",
+    "Create draft", "초안 만들기", "Add question", "질문 추가", "Question list", "질문 목록",
+    "Save draft and leave", "초안 저장 후 나가기", "Discard and leave", "변경 버리고 나가기", "Continue editing", "계속 편집",
+    "Select evidence from documents", "문서에서 근거 선택", "Save as evaluation defaults", "평가 기본값으로 저장",
+    "Reset evaluation defaults", "평가 기본값 초기화", "Go to prerequisite step", "선행 단계로 이동",
+    "View all jobs", "전체 작업 보기", "Open System status", "시스템 상태 열기",
+    "Quick · current index", "빠른 평가 · 현재 인덱스", "Matrix · isolated corpus", "매트릭스 · 격리 코퍼스",
+    "Sync", "동기화", "Deselect", "선택 해제", "원문 단계에서 선택 변경", "BM25 재계산", "Default로 복귀",
+    "선택한 원문 파싱 및 청크 생성", "문서 목록 열기", "로컬 작업", "대화에 적용", "상태 업데이트 확인",
+    "선택 설정 적용", "새로 고침", "요청 중지", "다시 시도", "답변 엔진·로컬 모델",
+    "Preview retrieval", "검색 근거 확인", "Preview review", "답변 미리보기", "검색 테스트",
+    "평가 설정 체험", "문항 목록", "변경 버리고 이동", "초안 저장 후 이동", "문항 추가",
+    "다음 평가 기본값으로 저장", "비교·스냅샷", "형식·근거 검사", "데이터셋", "평가 데이터셋 준비",
+    "선행 단계 살펴보기", "기업", "DB 적재", "한도와 사용 가능 상태", "조합별 평가 · 격리된 문서", "누락 임베딩 생성",
+  ]],
+];
+
+const controls = new Map(GROUPS.flatMap(([Icon, labels]) => labels.map((label) => [label, { label, Icon }])));
+
+/** Match authored UI names and known navigation paths, never arbitrary emphasized prose. */
+export function tutorialControlParts(value) {
+  const parts = value.split(/\s+→\s+/);
+  const entries = parts.map((part) => controls.get(part) ?? controls.get(part.replace(/^\d+\.\s*/, "")));
+  if (parts.length === 1 && !entries[0] || entries.every((entry) => !entry)) return null;
+  return entries.map((entry, index) => ({ Icon: entry?.Icon ?? null, label: parts[index] }));
+}

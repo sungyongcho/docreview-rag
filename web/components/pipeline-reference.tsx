@@ -26,11 +26,11 @@ export function pipelineReferenceCommand(stage: StageId, acquisition: Acquisitio
   const years = acquisition.years.split(/[\s,]+/).filter(Boolean);
   if (stage === "filings") {
     if (!identifiers.length || !years.length || years.some((year) => !/^\d{4}$/.test(year))) return null;
-    return acquisitionGroups(identifiers, companies).map((group) => `rag-corpus ${group.registry === "dart" ? "acquire_dart" : "acquire_edgar"} ${group.identifiers.map((identifier) => `--identifier ${quote(identifier)}`).join(" ")} ${[...new Set(years)].map((year) => `--year ${year}`).join(" ")}`).join("\n");
+    return acquisitionGroups(identifiers, companies).map((group) => `rag-dev corpus ${group.registry === "dart" ? "acquire_dart" : "acquire_edgar"} ${group.identifiers.map((identifier) => `--identifier ${quote(identifier)}`).join(" ")} ${[...new Set(years)].map((year) => `--year ${year}`).join(" ")}`).join("\n");
   }
-  if (stage === "index") return manifest && selectionId ? `rag-corpus ingest_manifest --manifest ${quote(manifest)} --selection ${quote(selectionId)}` : null;
-  if (stage === "embeddings") return "rag-corpus backfill_embeddings";
-  if (stage === "lexical") return "rag-corpus rebuild_bm25";
+  if (stage === "index") return manifest && selectionId ? `rag-dev corpus ingest_manifest --manifest ${quote(manifest)} --selection ${quote(selectionId)}` : null;
+  if (stage === "embeddings") return "rag-dev corpus backfill_embeddings";
+  if (stage === "lexical") return "rag-dev corpus rebuild_bm25";
   if ((stage === "ask") && provider && ["openai", "deterministic", "sbert"].includes(provider) && question.trim()) return `MODE=dev uv run python -m app.cli retrieve --provider ${quote(provider)} --query ${quote(question.trim())}`;
   return null;
 }

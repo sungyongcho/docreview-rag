@@ -55,12 +55,48 @@ describe("documentation navigation", () => {
     expect(screen.getByRole("navigation", { name: "문서 선택" }).querySelectorAll("a")).toHaveLength(16);
   });
 
-  it("lists only second-level sections without a disclosure toggle", () => {
+  it("lists second-level sections with their third-level children", () => {
     const { container } = render(<DocumentationOutline locale="en" headings={[{ id: "title", text: "Title", depth: 1 }, { id: "step-5", text: "Parse", depth: 2 }, { id: "detail", text: "Detail", depth: 3 }]} />);
     expect(container.querySelector("details")).toBeNull();
     expect(container.querySelector(".docs-outline-title")).toHaveTextContent("On this page");
-    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getAllByRole("link")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Parse" })).toHaveAttribute("href", "#step-5");
+    expect(screen.getByRole("link", { name: "Detail" })).toHaveAttribute("href", "#detail");
+  });
+
+  it("ignores alias markers and screenshot placeholders in the outline", () => {
+    render(<DocumentationOutline locale="en" headings={[
+      { id: "alias-old", text: "Old anchor", depth: 0 },
+      { id: "install", text: "Install", depth: 2 },
+      { id: "install-cli", text: "CLI install", depth: 3 },
+      { id: "shot", text: "SCREENSHOT NEEDED", depth: 2 },
+      { id: "usage", text: "Usage", depth: 2 },
+    ]} />);
+    expect(screen.getAllByRole("link")).toHaveLength(3);
+    expect(screen.queryByRole("link", { name: "Old anchor" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "SCREENSHOT NEEDED" })).not.toBeInTheDocument();
+  });
+
+  it("collapses a long outline to the active section's children", () => {
+    const headings = [1, 2, 3, 4].flatMap((index) => [{ id: `s${index}`, text: `Section ${index}`, depth: 2 }, ...[1, 2, 3].map((child) => ({ id: `s${index}-${child}`, text: `Part ${index}.${child}`, depth: 3 }))]);
+    const { container } = render(<DocumentationOutline locale="en" headings={headings} />);
+    expect(container.querySelectorAll("nav > ol > li")).toHaveLength(4);
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Section 1", "Part 1.1", "Part 1.2", "Part 1.3", "Section 2", "Section 3", "Section 4"]);
+    expect(screen.queryByRole("link", { name: "Part 2.1" })).not.toBeInTheDocument();
+  });
+
+  it("tracks the section at the reading line and expands its parent", () => {
+    const headings = [1, 2, 3, 4].flatMap((index) => [{ id: `s${index}`, text: `Section ${index}`, depth: 2 }, ...[1, 2, 3].map((child) => ({ id: `s${index}-${child}`, text: `Part ${index}.${child}`, depth: 3 }))]);
+    const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const tops: Record<string, number> = { s1: -500, "s1-1": -400, "s1-2": -300, "s1-3": -200, s2: -10 };
+      const top = tops[this.id] ?? 500;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+    render(<>{headings.map((heading) => heading.depth === 2 ? <h2 key={heading.id} id={heading.id} /> : <h3 key={heading.id} id={heading.id} />)}<DocumentationOutline locale="en" headings={headings} /></>);
+    spy.mockRestore();
+    expect(screen.getByRole("link", { name: "Section 2" })).toHaveAttribute("aria-current", "location");
+    expect(screen.getByRole("link", { name: "Section 1" })).not.toHaveAttribute("aria-current");
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Section 1", "Section 2", "Part 2.1", "Part 2.2", "Part 2.3", "Section 3", "Section 4"]);
   });
 
   it("redirects an old localized walkthrough anchor to its new section", () => {

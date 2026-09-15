@@ -13,7 +13,7 @@ import "./document-identity.css";
 import styles from "./master-detail.module.css";
 
 import { getAdminDocuments, getDocumentDetail, getDocumentFacets, getPublishedDocuments, getPublishedDocumentDetail, getPublishedDocumentFacets } from "@/lib/api";
-import { companyLabel } from "@/lib/company-labels";
+import { companyDisplayName, companyLabel } from "@/lib/company-labels";
 import type { AdminDocument, DocumentDetail, DocumentEmbeddingStatus, DocumentFacets } from "@/lib/types";
 import { useNotifications } from "@/components/notifications";
 
@@ -189,13 +189,14 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
   }
 
   const visibleDocuments = loading && loadedRequestKey !== `${live}:${queryKey}` ? [] : documents;
-  const documentGroups = groupDocuments(visibleDocuments, documentGroup, t);
+  const documentGroups = groupDocuments(visibleDocuments, documentGroup, t, locale);
+  const companyFacets = documentFacets.issuers.map(facet => ({ ...facet, label: companyDisplayName(facet.label ?? facet.value, locale) }));
   const selectedExcluded = selectedId !== null && !loading && !listError && !documents.some((document) => document.doc_id === selectedId);
   const showDetail = selectedId !== null && layout.detailOpen;
   const compact = showDetail && !layout.narrow;
   const activeFilters = [
     { label: t("Search"), value: documentQuery, remove: () => setDocumentQuery("") },
-    { label: t("Company"), value: documentIssuer, displayValue: documentFacets.issuers.find((facet) => facet.value === documentIssuer)?.label ?? companyLabel(documentIssuer, documents.find((document) => document.issuer === documentIssuer)?.issuer_name), remove: () => setDocumentIssuer("all") },
+    { label: t("Company"), value: documentIssuer, displayValue: companyFacets.find((facet) => facet.value === documentIssuer)?.label ?? companyLabel(documentIssuer, documents.find((document) => document.issuer === documentIssuer)?.issuer_name, locale), remove: () => setDocumentIssuer("all") },
     { label: t("Fiscal year"), value: documentYear, remove: () => setDocumentYear("all") },
     { label: t("Registry"), value: documentRegistry, remove: () => setDocumentRegistry("all") },
     { label: t("Language"), value: documentLanguage, remove: () => setDocumentLanguage("all") },
@@ -213,7 +214,7 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
       </div>
       <div className={styles.toolbar} data-help="build.documents.filters">
         <label>{t("Search")}<input aria-label={t("Search documents")} placeholder={t("Document, issuer, or stock code")} value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} /></label>
-        <FacetSelect label={t("Company")} value={documentIssuer} allLabel="All companies" facets={documentFacets.issuers} onChange={setDocumentIssuer} />
+        <FacetSelect label={t("Company")} value={documentIssuer} allLabel="All companies" facets={companyFacets} onChange={setDocumentIssuer} />
         <FacetSelect label={t("Fiscal year")} value={documentYear} allLabel="All years" facets={documentFacets.years} onChange={setDocumentYear} />
         <button className="button" type="button" aria-expanded={filtersOpen} aria-controls="document-advanced-filters" onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={15} />{t("Filters")}{activeFilters.length > 0 ? ` · ${activeFilters.length}` : ""}</button>
       </div>
@@ -239,8 +240,8 @@ export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onO
               const chunks = document.chunk_count ?? 0;
               const coverage = chunks > 0 ? Math.round((document.embedded_chunks ?? 0) / chunks * 100) : 0;
               return <div key={document.doc_id} role="row" aria-selected={selectedId === document.doc_id} className={styles.documentRow} onClick={() => selectDocument(document.doc_id)}>
-                <div role="cell"><button className={styles.title} type="button" onClick={(event) => { event.stopPropagation(); selectDocument(document.doc_id); }}>{document.doc_id}</button><small>{document.registry.toUpperCase()} · {document.form}</small></div>
-                <div role="cell"><span>{companyLabel(document.issuer, document.issuer_name)}</span><small>{t("FY {year}", { year: document.fiscal_year })}</small></div>
+                <div role="cell"><button className={styles.title} type="button" onClick={(event) => { event.stopPropagation(); selectDocument(document.doc_id); }}>{document.doc_id}</button><small>{document.registry.toUpperCase()} · {documentFormLabel(document.form, t)}</small></div>
+                <div role="cell"><span>{companyLabel(document.issuer, document.issuer_name, locale)}</span><small>{t("FY {year}", { year: document.fiscal_year })}</small></div>
                 <div role="cell"><span className={`coverage-badge ${document.embedding_status ?? "missing"}`}>{t(document.embedding_status === "complete" && chunks > 0 ? "Embedded" : document.parse_status)}</span><small>{t("{coverage}% embedded", { coverage })}</small></div>
                 <span role="cell" className={styles.count}>{chunks.toLocaleString(locale)}</span>
               </div>;
@@ -277,7 +278,7 @@ function FacetSelect({ label, value, allLabel, facets, onChange, translateValues
   return <label>{t(label)}<select aria-label={t("Filter {p0}", { p0: label.toLowerCase() })} value={value} onChange={(event) => onChange(event.target.value)}><option value="all">{t(allLabel)}</option>{facets.map((facet) => <option key={facet.value} value={facet.value}>{translateValues ? t(facet.label ?? facet.value) : facet.label ?? facet.value} ({facet.count.toLocaleString(locale)})</option>)}</select></label>;
 }
 
-function groupDocuments(documents: AdminDocument[], group: DocumentGroup, labelFor: (key: string) => string): Array<[string, AdminDocument[]]> {
+function groupDocuments(documents: AdminDocument[], group: DocumentGroup, labelFor: (key: string) => string, locale: string): Array<[string, AdminDocument[]]> {
   if (group === "none") return [["", documents]];
   const grouped = new Map<string, AdminDocument[]>();
   for (const document of documents) {
@@ -288,10 +289,20 @@ function groupDocuments(documents: AdminDocument[], group: DocumentGroup, labelF
     const label = group === "registry"
       ? `${labelFor("Registry")} · ${value.toUpperCase()}`
       : group === "issuer"
-      ? `${labelFor("Company")} · ${companyLabel(value, rows.find((document) => document.issuer_name?.trim())?.issuer_name)}`
+      ? `${labelFor("Company")} · ${companyLabel(value, rows.find((document) => document.issuer_name?.trim())?.issuer_name, locale)}`
       : `${labelFor("Fiscal year")} · ${value}`;
     return [label, rows];
   }).toSorted(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+// Registries store the report type in their own language. Only the displayed label is localized; the
+// raw value stays the filter identity and is never rewritten.
+const FORM_LABEL_SOURCES: Readonly<Record<string, string>> = { "사업보고서": "Annual report" };
+
+/** Show a registry's report type in the reading language without changing the stored form value. */
+function documentFormLabel(form: string, t: (source: string) => string): string {
+  const source = FORM_LABEL_SOURCES[form];
+  return source ? t(source) : form;
 }
 
 /** Format calendar dates in UTC so the filing day stays unchanged across time zones. */
@@ -310,11 +321,11 @@ function formatBytes(value: number, locale: string): string {
 function DocumentDetailPanel({ detail, onOpenPipeline, onOpenJobs }: { detail: DocumentDetail; onOpenPipeline?: (stage?: string) => void; onOpenJobs?: () => void }) {
   const { t, locale } = useI18n();
   const { document } = detail;
-  const company = document.issuer_name?.trim() || document.issuer || document.doc_id;
+  const company = companyDisplayName(document.issuer_name?.trim() || document.issuer || document.doc_id, locale);
   const missing = Math.max(document.chunk_count - detail.embedded_chunks, 0);
   const coverage = document.chunk_count > 0 ? Math.round(detail.embedded_chunks / document.chunk_count * 100) : 0;
   return <section className="surface document-detail">
-    <header className="document-detail-heading"><div className="document-identity"><p className="eyebrow">{document.registry.toUpperCase()} · {document.language.toUpperCase()}</p><div className="document-company-line"><h2 className="document-company">{company}</h2><span className="document-fiscal-year" aria-label={`${t("Fiscal year")}: ${document.fiscal_year}`}>{t("FY {year}", { year: document.fiscal_year })}</span></div><p className="document-identifier"><code>{document.doc_id}</code><span>{document.issuer} · {document.form}</span></p></div><span className={`coverage-badge ${document.chunk_count > 0 && missing === 0 ? "complete" : detail.embedded_chunks > 0 ? "partial" : "missing"}`}>{t("{coverage}% embedded", { coverage })}</span></header>
+    <header className="document-detail-heading"><div className="document-identity"><p className="eyebrow">{document.registry.toUpperCase()} · {document.language.toUpperCase()}</p><div className="document-company-line"><h2 className="document-company">{company}</h2><span className="document-fiscal-year" aria-label={`${t("Fiscal year")}: ${document.fiscal_year}`}>{t("FY {year}", { year: document.fiscal_year })}</span></div><p className="document-identifier"><code>{document.doc_id}</code><span>{document.issuer} · {documentFormLabel(document.form, t)}</span></p></div><span className={`coverage-badge ${document.chunk_count > 0 && missing === 0 ? "complete" : detail.embedded_chunks > 0 ? "partial" : "missing"}`}>{t("{coverage}% embedded", { coverage })}</span></header>
     <section className="document-detail-section"><h3>{t("Original filing")}</h3><dl className="document-meta-grid"><div><dt>{t("Issuer identity")}</dt><dd>{document.issuer_id}</dd></div><div><dt>{t("Filing identity")}</dt><dd>{document.filing_id}</dd></div><div><dt>{t("Filed")}</dt><dd>{formatFilingDate(document.filing_date, locale)}</dd></div><div><dt>{t("Report period")}</dt><dd>{formatFilingDate(document.report_period, locale)}</dd></div><div><dt>{t("Source size")}</dt><dd>{formatBytes(document.source_length, locale)}</dd></div><div><dt>{t("Parse status")}</dt><dd>{t(document.parse_status)}</dd></div><div className="wide"><dt>{t("Source")}</dt><dd>{/^https?:\/\//i.test(document.source_url) ? <a href={document.source_url} target="_blank" rel="noreferrer">{t("Open original filing")}</a> : "—"}</dd></div><div className="wide"><dt>{t("Source SHA-256")}</dt><dd><code>{document.source_sha256}</code></dd></div></dl></section>
     <section className="document-detail-section"><h3>{t("Chunks & search readiness")}</h3><div className="document-stat-grid"><div><span>{t("Total chunks")}</span><strong>{document.chunk_count.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div><div><span>{t("Text / table")}</span><strong>{detail.text_chunks.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")} / {detail.table_chunks.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div><div><span>{t("Embedded")}</span><strong>{detail.embedded_chunks.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div><div><span>{t("Missing vectors")}</span><strong className={missing > 0 ? "negative" : "positive"}>{missing.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong></div></div></section>
     <section className="document-detail-section"><h3>{t("Section distribution")}</h3>{detail.item_counts.length ? <div className="document-section-list">{detail.item_counts.map((item) => <div key={item.item}><span>{item.item}</span><strong>{item.count.toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</strong><progress max={document.chunk_count || 1} value={item.count} /></div>)}</div> : <p className="helper">{t("No section identities were recorded.")}</p>}</section>

@@ -1,4 +1,4 @@
-# Architecture
+# Architecture {#architecture}
 
 DocReview prepares SEC and DART filings through one source-preserving pipeline. This page explains the contracts and records behind that pipeline, so you can tell where a dependency, an identity, or a failure belongs before you change a running system.
 

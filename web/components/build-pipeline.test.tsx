@@ -252,7 +252,7 @@ describe("BuildPipeline", () => {
 
     // A handler alone is not enough: the button only appears when a local operator is attached.
     renderPipeline(input, { databaseConnected: false, schemaStatus: "unavailable", schemaMessage: "db down", operationsAvailable: false, onRunOperation });
-    expect(screen.getAllByText("rag-dev up --build -d").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("rag-dev start").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Start database" })).toBeNull();
     expect(onRunOperation).toHaveBeenCalledTimes(1);
   });
@@ -541,7 +541,7 @@ it.each(["embeddings", "lexical"] as const)("keeps %s teaching UI and locks only
   fireEvent.click(scoped.getByText("Implementation and terminal reference"));
   expect(within(reference).getByText("Mechanism")).toBeVisible();
   expect(within(reference).getByText("Design trade-off")).toBeVisible();
-  expect(within(reference).getByText(stageId === "embeddings" ? "rag-corpus backfill_embeddings" : "rag-corpus rebuild_bm25")).toBeVisible();
+  expect(within(reference).getByText(stageId === "embeddings" ? "rag-dev corpus backfill_embeddings" : "rag-dev corpus rebuild_bm25")).toBeVisible();
   const action = scoped.getByRole("button", { name: "Next step" });
   expect(action).toBeEnabled();
   fireEvent.click(action);

@@ -95,7 +95,7 @@ it("runs selected-server diagnostics without saving or replacing the active conn
   const panel = await screen.findByRole("region", { name: "Connection diagnostics" });
   expect(panel).toHaveTextContent("The server refused the connection.");
   expect(panel).toHaveTextContent("Check that Ollama is running");
-  expect(panel).toHaveTextContent("Run rag-ollama-check");
+  expect(panel).toHaveTextContent("Run rag-dev doctor");
   expect(changed).not.toHaveBeenCalled();
   expect(fetchMock.mock.calls[1][1]?.body).toBe('{"server_id":"studio"}');
   expect(String(fetchMock.mock.calls[1][0])).toMatch(/\/diagnostics\/?$/);
@@ -176,7 +176,7 @@ it("offers a load retry and copies the safe CLI diagnostic commands exactly", as
   await waitFor(() => expect(screen.getByLabelText("Model server")).toBeEnabled());
   fireEvent.click(screen.getByText("Diagnose from the terminal"));
   fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith("source ./rag-alias.sh\nrag-ollama-check"));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith("source ./rag-alias.sh\nrag-dev doctor"));
 });
 
 

@@ -173,7 +173,7 @@ def setup_help() -> None:
     print("     ollama pull 'MODEL_NAME'         Replace MODEL_NAME; downloads that model.")
     print("  4. Open DocReview Settings > Local LLM and select Default server.")
     print("     Use Add a server only for another server; then connect and choose a model.")
-    print("     rag-ollama-check                Recheck the app's active server; no URL needed.")
+    print("     rag-dev doctor                Recheck the app's active server; no URL needed.")
     print("  Advanced: the CLI host and the app container have separate localhost addresses.")
     print("  A successful host ollama list does not prove the app can reach the server.")
     print("  The default connection handles the app-side address; inspect diagnosis if it fails.")
@@ -207,12 +207,12 @@ def show_diagnostics(report: dict[str, Any], *, details: bool = False) -> int:
     remedies = {
         "select_server": "Open Settings > Local LLM and select Default server, or Add a server.",
         "check_ollama_service": "On the Ollama computer: systemctl status ollama --no-pager. "
-        "If Ollama is not installed or running, follow rag-ollama-check --setup.",
+        "If Ollama is not installed or running, follow rag-dev doctor --setup.",
         "check_ollama_models": "On the Ollama computer: ollama list (installed models), "
         "then ollama ps (loaded models; empty can mean normal standby). "
-        "For model preparation, use rag-ollama-check --setup.",
+        "For model preparation, use rag-dev doctor --setup.",
         "check_listener": "Check the selected server's listener and app access; "
-        "use rag-ollama-check --details for the host/container distinction.",
+        "use rag-dev doctor --details for the host/container distinction.",
         "check_network": "Check that DocReview can reach the selected server; "
         "a successful host CLI check alone is not sufficient.",
         "review_protocol": "Review the selected server's protocol in Settings > Local LLM.",
@@ -220,7 +220,7 @@ def show_diagnostics(report: dict[str, Any], *, details: bool = False) -> int:
         "do not paste them into diagnostic output.",
         "review_tls": "Check this server's HTTPS protocol and trusted certificate.",
         "run_connection_diagnostics": "Refresh the connection diagnosis in Settings > Local LLM "
-        "or run rag-ollama-check again after correcting the reported condition.",
+        "or run rag-dev doctor again after correcting the reported condition.",
     }
     pending: list[str] = []
     observed: set[str] = set()
@@ -428,7 +428,9 @@ def diagnose(
             ready = ready_response.json().get("review_engines", {}).get("local", {})
         except httpx.HTTPError as error:
             show(2, "FAIL", f"App HTTP request failed ({failure_kind(error)}).")
-            print("  Run rag-dev up -d, then rag-dev logs app web. No model URL was guessed.")
+            print(
+                "  Run rag-dev compose up -d, then rag-dev logs app web. No model URL was guessed."
+            )
             return 1
         except ValueError, AttributeError:
             show(
@@ -500,7 +502,7 @@ def main() -> int:
     """Run normal diagnostics or the bounded internal container probe."""
     parser = argparse.ArgumentParser(
         description=__doc__,
-        epilog="Run rag-ollama-check without options for the active/default server. "
+        epilog="Run rag-dev doctor without options for the active/default server. "
         "Use --setup for manual installation and model preparation steps.",
     )
     parser.add_argument(
