@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.ingestion.manifest import DocumentReference, Manifest
 from app.ingestion.registry import registry_for
-from app.ingestion.source_catalog import ACQUISITION_COMPANIES
+from app.ingestion.source_catalog import catalog_aliases
 from app.retrieval.language import detect_query_languages
 from app.retrieval.types import RetrievalFilters
 
@@ -110,11 +110,7 @@ class ManifestScopeIndex:
         alias_owners: dict[str, IssuerMetadata] = {}
         display_aliases: dict[str, str] = {}
         for issuer in self.issuers:
-            names = (
-                company.name
-                for company in ACQUISITION_COMPANIES
-                if (company.registry, company.issuer) == (issuer.registry, issuer.issuer)
-            )
+            names = catalog_aliases(issuer.registry, issuer.issuer)
             for alias in (*issuer.aliases, *names):
                 key = _normalized(alias)
                 owner = alias_owners.get(key)

@@ -23,6 +23,44 @@ ACQUISITION_COMPANIES = (
     AcquisitionCompany("dart", "035420", "NAVER"),
 )
 
+# Everyday spellings users type for a catalog company: the name in the other script,
+# transliterations, and widely used short forms (삼전, 하닉, 엔비, 암드). Matching is
+# case-insensitive (NFKC + casefold), so one spelling covers Samsung/SAMSUNG/samsung.
+# Keep every entry unambiguous inside this catalog: the scope index refuses to start
+# when two issuers claim one alias. Derogatory nicknames are deliberately excluded.
+# These aliases attach only to issuers that have filings in the corpus manifest.
+COMPANY_ALIASES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("sec", "NVDA"): ("Nvidia", "Nvidia Corporation", "엔비디아", "엔비"),
+    ("sec", "AMD"): ("에이엠디", "암드"),
+    ("sec", "INTC"): ("Intel Corporation", "인텔"),
+    ("sec", "MU"): ("Micron", "마이크론", "마이크론 테크놀로지"),
+    ("dart", "005930"): (
+        "Samsung",
+        "Samsung Electronics Co., Ltd.",
+        "삼성",
+        "삼성 전자",
+        "삼전",
+    ),
+    ("dart", "000660"): (
+        "SK Hynix Inc.",
+        "Hynix",
+        "SK하이닉스",
+        "SK 하이닉스",
+        "에스케이하이닉스",
+        "하이닉스",
+        "하닉",
+    ),
+    ("dart", "035420"): ("Naver Corporation", "네이버"),
+}
+
+
+def catalog_aliases(registry: str, issuer: str) -> tuple[str, ...]:
+    """Return the approved display name plus everyday spellings for one catalog issuer."""
+    names = tuple(
+        c.name for c in ACQUISITION_COMPANIES if (c.registry, c.issuer) == (registry, issuer)
+    )
+    return (*names, *COMPANY_ALIASES.get((registry, issuer), ()))
+
 
 def approved_company(registry: str, issuer: str) -> bool:
     """Accept only exact registry/issuer identities from the tested catalog."""

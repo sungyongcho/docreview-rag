@@ -226,6 +226,8 @@ The second is stage 1, **understand the question**. It identifies the requested 
 
 An unprovided company is neither a wrong question nor proof the company does not exist. Ambiguous names get a clarification request, and a missing company never broadens the search to every company or substitutes another. A supported alias such as NVIDIA can resolve to the NVDA company in the corpus, but appearing on a filing-acquisition candidate list alone does not mean filings are present. A requested year or selected scope that matches no provided filing also stops before search.
 
+The alias table holds more than official names. At first it knew only the names printed on filings and the ticker codes, so "nvidia stock price" passed while "엔비디아 주가", "삼성 주가" and "하이닉스 주가" ended with a no-filings notice. The fix was to add the spellings Korean speakers actually type as aliases on the filing-acquisition company catalog: the name in the other script (엔비디아, Samsung), transliterations (에이엠디 for AMD), and widely used short forms and slang such as 삼전 (Samsung Electronics), 하닉 (SK hynix), 엔비 (NVIDIA) and 암드 (AMD); derogatory nicknames are excluded. Comparison is case-insensitive after Unicode normalization, so Samsung, samsung and SAMSUNG are one entry, and the longest overlapping alias wins so "삼성전자" is never shortened to "삼성". The rule path and the model classifier share the same table, so a model that extracts "삼성" verbatim still resolves to the same company. An alias claimed by two issuers is refused at server startup, which keeps ambiguous words such as SK out of the table.
+
 <!-- heading-alias: why-question-language-does-not-select-the-corpus -->
 #### Why question language does not select the corpus {#language-and-scope}
 

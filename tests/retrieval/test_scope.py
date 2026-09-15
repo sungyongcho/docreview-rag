@@ -80,15 +80,61 @@ def test_display_name_resolves_only_when_that_company_has_documents() -> None:
     assert scope_index.named_target("NVIDIA competitor") == ()
 
 
-@pytest.mark.parametrize("alias", ["삼성전자", "Samsung Electronics", "005930"])
+@pytest.mark.parametrize(
+    "alias", ["삼성전자", "Samsung Electronics", "005930", "삼성", "삼전", "samsung", "Samsung"]
+)
 def test_samsung_aliases_resolve_to_dart_korean(alias: str) -> None:
-    """Resolve every committed Samsung spelling to one canonical corpus scope."""
+    """Resolve every committed Samsung spelling, including everyday short forms."""
     scope = resolve_query_scope(f"{alias} 매출", index())
 
     assert scope.source == "alias"
     assert scope.filters.issuers == ("005930",)
     assert scope.filters.registries == ("dart",)
     assert scope.filters.languages == ("ko",)
+
+
+@pytest.mark.parametrize(
+    ("query", "issuer", "registry"),
+    [
+        ("하이닉스의 주가는?", "000660", "dart"),
+        ("하닉 영업이익", "000660", "dart"),
+        ("SK 하이닉스 매출", "000660", "dart"),
+        ("hynix revenue", "000660", "dart"),
+        ("엔비디아의 주가는?", "NVDA", "sec"),
+        ("엔비 매출 성장", "NVDA", "sec"),
+        ("nvidia 의 주가는?", "NVDA", "sec"),
+    ],
+)
+def test_everyday_company_spellings_resolve(query: str, issuer: str, registry: str) -> None:
+    """Korean names, transliterations and common short forms map to the catalog issuer."""
+    scope = resolve_query_scope(query, index())
+
+    assert scope.source == "alias"
+    assert scope.filters.issuers == (issuer,)
+    assert scope.filters.registries == (registry,)
+
+
+def test_everyday_spelling_resolves_classifier_extracted_names() -> None:
+    """The model path hands back the user's spelling; the same alias table resolves it."""
+    scope_index = index()
+
+    assert [item.issuer for item in scope_index.named_target("삼성")] == ["005930"]
+    assert [item.issuer for item in scope_index.named_target("하이닉스")] == ["000660"]
+    assert [item.issuer for item in scope_index.named_target("엔비디아")] == ["NVDA"]
+    # Catalog aliases only attach to issuers that have documents in the manifest.
+    assert scope_index.named_target("Intel") == ()
+    assert scope_index.named_target("암드") == ()
+    assert resolve_query_scope("암드 실적", scope_index).source == "query_language"
+
+
+def test_longest_alias_wins_over_its_short_form() -> None:
+    """삼성전자 must not be reported as the short alias 삼성 nested inside it."""
+    matches = index().match("삼성전자와 엔비디아 비교")
+
+    assert [(item.alias, item.issuer) for item in matches] == [
+        ("삼성전자", "005930"),
+        ("엔비디아", "NVDA"),
+    ]
 
 
 def test_multiple_issuers_and_scripts_remain_multiple() -> None:

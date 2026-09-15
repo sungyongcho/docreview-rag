@@ -73,7 +73,17 @@ def test_exact_service_intents_return_bounded_guidance(query: str) -> None:
     assert decision.canned_answer
 
 
-@pytest.mark.parametrize("query", ["Nvidia revenue", "삼성전자 매출"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Nvidia revenue",
+        "삼성전자 매출",
+        "삼성의 주가는?",
+        "삼전 영업이익",
+        "엔비디아의 주가는?",
+        "samsung 매출",
+    ],
+)
 def test_known_company_filing_questions_stay_deterministic(query: str, scope_index) -> None:
     """Resolve fully covered issuer questions without spending a classifier call."""
     decision = deterministic_decision(query, scope_index=scope_index)
