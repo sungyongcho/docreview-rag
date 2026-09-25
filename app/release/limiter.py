@@ -195,11 +195,6 @@ class DailyCostLimiter:
             self._reserved += self._reservation
             return True, self._daily_limit - self._reserved
 
-    async def remaining(self) -> Decimal:
-        """Return today's unreserved allowance without reserving provider spend."""
-        remaining, _reset = await self.status()
-        return remaining
-
     async def status(self) -> tuple[Decimal, datetime]:
         """Return unreserved allowance and the next UTC calendar reset."""
         async with self._lock:

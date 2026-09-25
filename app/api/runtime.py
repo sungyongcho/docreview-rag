@@ -288,11 +288,9 @@ class RuntimeApiServices(ApiServices):
         bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
         corpus_root: Path | None = None,
         scope_index: ManifestScopeIndex | None = None,
-        snapshot_codec: CandidateSnapshotCodec | None = None,
         intent_classifier_enabled: bool = False,
         query_routing_enabled: bool = False,
         allow_custom_prompt_policy: bool = True,
-        snapshot_service: SnapshotService | None = None,
         allow_snapshot_query: bool = True,
     ) -> None:
         if (llm_provider is None) != (provider_budget is None):
@@ -336,11 +334,11 @@ class RuntimeApiServices(ApiServices):
         self._corpus_root = corpus_root
         self._scope_index = scope_index
         self._scope_signature: tuple[int, int] | None = None
-        self._snapshot_codec = snapshot_codec or CandidateSnapshotCodec(secrets.token_bytes(32))
+        self._snapshot_codec = CandidateSnapshotCodec(secrets.token_bytes(32))
         self._intent_classifier_enabled = intent_classifier_enabled
         self._query_routing_enabled = query_routing_enabled
         self._allow_custom_prompt_policy = allow_custom_prompt_policy
-        self._snapshots = snapshot_service or SnapshotService(session_factory=session_factory)
+        self._snapshots = SnapshotService(session_factory=session_factory)
         self._allow_snapshot_query = allow_snapshot_query
 
     @property

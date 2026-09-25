@@ -36,7 +36,6 @@ class ApiProblemError(Exception):
             "missing_file", "invalid_json", "invalid_manifest", "alias_conflict", "permission"
         ]
         | None = None,
-        corpus_job: JsonObject | None = None,
         failed_stage: Literal["path", "gate"] | None = None,
     ) -> None:
         super().__init__(message)
@@ -51,7 +50,6 @@ class ApiProblemError(Exception):
             detail=detail,
             path=path,
             cause=cause,
-            corpus_job=corpus_job,
             failed_stage=failed_stage,
         )
 

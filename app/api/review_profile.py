@@ -1,7 +1,6 @@
 """Strict conversation-level review settings and server-owned retrieval presets."""
 
 from collections.abc import Mapping
-from decimal import Decimal
 from typing import Annotated, Final, Literal, Self
 
 from pydantic import (
@@ -202,8 +201,3 @@ def resolve_retrieval_profile(profile: ReviewSessionProfile) -> ResolvedRetrieva
         preset=profile.retrieval_preset,
         **selected.model_dump(mode="python"),
     )
-
-
-def zero_cost() -> Decimal:
-    """Return the exact cost identity used by local provider budgets."""
-    return Decimal("0")

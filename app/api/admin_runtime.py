@@ -104,9 +104,6 @@ class RuntimeAdminApiServices:
         runtime: RuntimeApiServices,
         corpus: RuntimeCorpusAdminService | None = None,
         evaluations: EvaluationAdminService | None = None,
-        golden: GoldenAdminService | None = None,
-        snapshots: SnapshotService | None = None,
-        job_store: JobStore | None = None,
     ) -> None:
         self._runtime = runtime
         self._documents = DocumentCatalog(
@@ -115,7 +112,7 @@ class RuntimeAdminApiServices:
             company_names=runtime.company_names,
             embedding_identity=runtime.embedding_provider.identity,
         )
-        self._job_store = job_store or JobStore(session_factory=runtime.session_factory)
+        self._job_store = JobStore(session_factory=runtime.session_factory)
         self._job_history = JobHistoryService(
             runtime.session_factory, get_settings().corpus_dir.parent / "job-history-backups"
         )
@@ -137,8 +134,8 @@ class RuntimeAdminApiServices:
             execution_lock=execution_lock,
             execution_coordinator=execution_coordinator,
         )
-        self._golden = golden or GoldenAdminService()
-        self._snapshots = snapshots or SnapshotService()
+        self._golden = GoldenAdminService()
+        self._snapshots = SnapshotService()
 
     async def readiness_status(self) -> CorpusStatus:
         """Return corpus status for ``/ready``, reusing a recent reading longer while a job runs.
