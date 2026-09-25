@@ -262,10 +262,8 @@ def test_package_exports_the_complete_production_surface():
         "OpenAIEmbeddingProvider",
         "RetrievalResult",
         "embed_missing_chunks",
-        "hybrid_search",
         "lexical_search",
         "retrieve",
-        "rrf_fuse",
         "vector_search",
     }
 

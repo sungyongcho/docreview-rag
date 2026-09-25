@@ -41,9 +41,6 @@ BLOCKS = {
     "sec-0001045810-24-000029": (1341, 52, 66),
 }
 
-# Legacy filings contain many wrapper divs, so their block counts are unusually large.
-LEGACY_FILES = frozenset({"sec-0000002488-20-000008", "sec-0001045810-20-000010"})
-
 # Final check 2: (all document characters, characters assigned to sections).
 COVERAGE = {
     "sec-0000002488-20-000008": (358178, 352812),
@@ -57,9 +54,6 @@ COVERAGE = {
     "sec-0001045810-23-000017": (306714, 295261),
     "sec-0001045810-24-000029": (329808, 318319),
 }
-
-# Near-100% coverage usually means cover or TOC material leaked into Item 1.
-COVERAGE_BAND = {"number": (95.0, 99.0), "xref": (93.0, 97.0)}
 
 # Final check 1: expected segmentation strategy for each document.
 SEGMENT_TYPE = {
@@ -147,7 +141,6 @@ XREF_ITEM_SHAPE = {
 }
 
 # Final check 4: source offsets for NVDA-FY2024 headings.
-NVDA_FY2024_FILE = "data/corpus/sec/NVDA/0001045810-24-000029/primary.html"
 NVDA_FY2024_OFFSETS = {
     "1": (198007, "Item 1. Business"),
     "1A": (289841, "Item 1A. Risk Factors"),

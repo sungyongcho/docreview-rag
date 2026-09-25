@@ -9,7 +9,6 @@ from app.ingestion.tables import (
     merge_unit_columns,
     render_table,
     split_header,
-    table_captions,
     table_to_markdown,
     to_grid,
     to_markdown,
@@ -290,17 +289,17 @@ def test_caption_only_table_reports_captions_and_no_markdown() -> None:
     html = "<table><tr><td>(단위 : 사)</td></tr></table>"
 
     assert table_to_markdown(html) == ""
-    assert table_captions(html) == ["(단위 : 사)"]
+    assert render_table(html)[0] == ["(단위 : 사)"]
 
 
 def test_data_table_keeps_captions_inline_and_reports_none() -> None:
-    """A table with data rows keeps its captions in markdown, not in table_captions."""
+    """A table with data rows keeps its captions in markdown, not in reported captions."""
     html = (
         "<table><tr><td colspan='2'>(단위 : 백만원)</td></tr>"
         "<tr><td>매출액</td><td>300,870</td></tr></table>"
     )
 
-    assert table_captions(html) == []
+    assert render_table(html)[0] == []
     assert table_to_markdown(html).startswith("(단위 : 백만원)\n")
 
 

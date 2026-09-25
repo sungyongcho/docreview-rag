@@ -1,7 +1,7 @@
 """Source-anchored parsing contract shared by every registry adapter.
 
 Holds the neutral data contract (``Block``, ``Section``, ``ParsedFiling``) and the
-source-fidelity helpers -- reading, hashing, offset math, HTML normalization, and
+source-fidelity helpers -- hashing, offset math, HTML normalization, and
 leaf-block extraction -- that every registry parser builds on. Registry-specific
 segmentation lives in the adapter modules (``app.ingestion.edgar``,
 ``app.ingestion.dart``); nothing here knows one registry's markup from another's.
@@ -10,7 +10,6 @@ segmentation lives in the adapter modules (``app.ingestion.edgar``,
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 import hashlib
-from pathlib import Path
 import re
 from typing import Literal
 import warnings
@@ -108,11 +107,6 @@ DATA_TABLE_MIN_NUMERIC = 4  # minimum number of numeric cells
 DATA_TABLE_NUMERIC_DIVISOR = 4  # numeric cells must also be at least one quarter of all cells
 
 REPORTED_TITLE_MAX = 150  # maximum stored Section.reported_title length
-
-
-def read_source(path: str | Path) -> str:
-    """Return a filing source file decoded as UTF-8."""
-    return Path(path).read_bytes().decode("utf-8")
 
 
 def source_digest(source: str) -> str:

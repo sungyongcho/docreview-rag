@@ -98,7 +98,7 @@ def test_leaf_blocks_groups_a_legacy_table_as_one_block(parser_module: ModuleTyp
     assert "Revenue" in blocks[0].get_text(" ", strip=True)
 
 
-def test_read_source_preserves_crlf_for_source_offsets(
+def test_decoded_source_preserves_crlf_for_source_offsets(
     parser_module: ModuleType,
     tmp_path,
 ) -> None:
@@ -107,7 +107,7 @@ def test_read_source_preserves_crlf_for_source_offsets(
     source_bytes = "<html>\r\n<p>First</p>\r\n<p>café</p>\r\n</html>".encode()
     path.write_bytes(source_bytes)
 
-    raw = parser_module.read_source(path)
+    raw = path.read_bytes().decode("utf-8")
     soup = parser_module.normalize(raw)
     offsets = parser_module.line_offsets(raw)
     second = soup.find_all("p")[1]

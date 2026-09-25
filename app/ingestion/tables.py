@@ -498,9 +498,9 @@ def render_table(table: str | Tag | None) -> tuple[list[str], str]:
 
     ``markdown`` is exactly what :func:`table_to_markdown` returns: when the table
     has data rows its unit captions stay prepended inline. ``captions`` is non-empty
-    only for a caption-only table — the case :func:`table_captions` reports — which
-    renders no markdown of its own. A chunker that needs both answers per table can
-    therefore call this once instead of running the parse pipeline twice.
+    only for a caption-only table, which renders no markdown of its own. A chunker
+    that needs both answers per table can therefore call this once instead of
+    running the parse pipeline twice.
     """
     node = _table_node(table)
     if node is None:
@@ -648,17 +648,6 @@ def structured_table(table: str | Tag | None) -> StructuredTable:
     return StructuredTable(tuple(captions), rows[:header_count], rows[header_count:], caption_cells)
 
 
-def table_captions(table: str | Tag | None) -> list[str]:
-    """Return the unit annotations of a caption-only table.
-
-    DART writes many units as a one-cell table immediately ahead of the data table
-    they describe. Such a table renders no markdown of its own, so its captions are
-    returned for the caller to carry into the next table's context; a table that has
-    data rows keeps its captions inline and returns nothing here.
-    """
-    return render_table(table)[0]
-
-
 def table_to_markdown(table: str | Tag | None) -> str:
     """Convert an HTML table into markdown text.
 
@@ -683,43 +672,3 @@ def table_to_markdown(table: str | Tag | None) -> str:
     should be handled outside this function.
     """
     return render_table(table)[1]
-
-
-if __name__ == "__main__":  # pragma: no cover - eyeball helper
-    import argparse
-    from pathlib import Path
-
-    from app.ingestion.manifest import Manifest
-    from app.ingestion.parser import leaf_blocks, normalize
-
-    ap = argparse.ArgumentParser(description="Render filing tables as markdown.")
-    ap.add_argument("--doc", default="NVDA-FY2024", help="doc_id, e.g. NVDA-FY2024")
-    ap.add_argument("--manifest", type=Path, default=Path("data/corpus/manifest.json"))
-    ap.add_argument("--contains", default="Gross profit", help="pick tables containing this text")
-    ap.add_argument("--limit", type=int, default=2)
-    ap.add_argument("--selection", required=True)
-    a = ap.parse_args()
-
-    manifest_path = a.manifest
-    if not manifest_path.exists():
-        raise SystemExit(f"{manifest_path} not found; run this from the repository root")
-
-    manifest = Manifest.read(manifest_path)
-    sources = manifest.selected_sources(a.selection, manifest_path.parent)
-    entry = next((source for source in sources if source.document.document_id == a.doc), None)
-    if entry is None:
-        known = ", ".join(source.document.document_id for source in sources)
-        raise SystemExit(f"unknown doc {a.doc!r}; selected documents: {known}")
-
-    soup = normalize(entry.read())
-    shown = 0
-    for el in leaf_blocks(soup):
-        if el.name != "table" or a.contains not in el.get_text(" ", strip=True):
-            continue
-        print(f"\n{'─' * 70}\n{a.doc}\n{'─' * 70}")
-        print(table_to_markdown(el))
-        shown += 1
-        if shown >= a.limit:
-            break
-    if not shown:
-        print(f"no table in {a.doc} contains {a.contains!r}")

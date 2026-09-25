@@ -4,7 +4,7 @@ import pytest
 
 from app.ingestion.dart import DART_PARTS, parse_dart_filing
 from app.ingestion.edgar import CANONICAL, parse_filing
-from app.ingestion.registry import REGISTRIES, registry_for, resolve_registry, section_title
+from app.ingestion.registry import REGISTRIES, registry_for, section_title
 from tests.ingestion.support import filing_document, filing_source
 
 
@@ -14,14 +14,8 @@ def test_explicit_source_selects_the_registered_parser(tmp_path):
     path.write_text("<html>source</html>")
     for name, parser in [("sec", parse_filing), ("dart", parse_dart_filing)]:
         source = filing_source(path, document=filing_document(registry=name))
-        assert resolve_registry(source).parse is parser
-        assert resolve_registry(source).name == name
-
-
-def test_missing_registry_never_defaults_to_sec():
-    """Reject a legacy dictionary instead of implicitly treating it as SEC."""
-    with pytest.raises(AttributeError):
-        resolve_registry({})
+        assert registry_for(source.document.registry).parse is parser
+        assert registry_for(source.document.registry).name == name
 
 
 def test_unknown_registry_fails_closed():

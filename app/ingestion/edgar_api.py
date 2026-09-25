@@ -41,7 +41,6 @@ from app.ingestion.progress import ByteProgress, OperationProgress, OperationPro
 from app.ingestion.source_publication import fixed_path, publish_acquired
 
 DEFAULT_MANIFEST: Final[Path] = Path("data/corpus/manifest.json")
-CORPUS_ROOT: Final[Path] = Path("data/corpus")
 TICKERS_URL: Final[str] = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL: Final[str] = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 SUBMISSIONS_PAGE_URL: Final[str] = "https://data.sec.gov/submissions/{name}"
@@ -74,7 +73,6 @@ REQUEST_INTERVAL_SECONDS: Final[float] = 0.5
 BLOCK_PAGE_MARKER: Final[bytes] = b"Undeclared Automated Tool"
 # SEC rejects a User-Agent that names no way to reach the operator.
 CONTACT_MARKER: Final[str] = "@"
-PARTIAL_SUFFIX: Final[str] = ".part"
 
 # Opens the display for one entry's download. The library calls it and passes the
 # hook on; only the command knows that the hook is drawn as a bar.
