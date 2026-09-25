@@ -10,13 +10,11 @@ from openai import OpenAIError
 import pytest
 
 from app import cli
+from app.api.app import create_api_app
 from app.api.review_profile import ReviewSessionProfile
-from app.api.runtime import RuntimeApiServices, SessionFactory, build_runtime_services
+from app.api.runtime import RuntimeApiServices, SessionFactory
 from app.api.schemas import ReviewRequest
-from app.config import Settings, get_settings
-from app.llm.provider import OpenAILLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
-from app.main import create_app
 from app.observability.types import build_run_report
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.scope import ManifestScopeIndex
@@ -152,7 +150,7 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         "prompt_policy": {"max_context_chars": 10000, "workflow_budget": {"max_iterations": 4}},
     }
 
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_api_app(services)) as client:
         retrieved = client.post(
             "/retrieve",
             json={"query": "Revenue?", "session_profile": explicit_profile},
@@ -211,7 +209,7 @@ def test_balanced_retrieve_does_not_require_an_answer_or_translation_provider(hi
         query_routing_enabled=True,
     )
 
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_api_app(services)) as client:
         response = client.post("/retrieve", json={"query": "Revenue?"})
 
     assert response.status_code == 200
@@ -244,7 +242,7 @@ def test_korean_preset_retrieval_uses_the_issuer_language_without_translation(
             [filing_document(issuer="NVDA", aliases=("NVDA", "NVIDIA"))]
         ),
     )
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_api_app(services)) as client:
         response = client.post(
             "/retrieve",
             json={
@@ -349,46 +347,19 @@ def test_cli_and_http_use_the_same_public_evidence_shape(
 
 
 def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
-    """Serve the surface by default while refusing review until a provider is injected."""
-    with TestClient(create_app(), raise_server_exceptions=False) as client:
-        health = client.get("/health")
+    """Serve the surface while refusing review until a provider is injected."""
+    services = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
+    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
         review = client.post("/review", json={"query": "Revenue?"})
         openapi = client.get("/openapi.json")
 
-    assert health.status_code == 200
-    assert health.json() == {"status": "ok"}
     assert review.status_code == 503
     assert review.json()["error"] == {
         "code": "provider_unavailable",
         "message": "Review engine 'openai' is not configured.",
         "details": [],
     }
-    assert "/health" in openapi.json()["paths"]
     assert "/retrieve" in openapi.json()["paths"]
-
-
-def test_build_runtime_services_composes_from_settings():
-    """Wire the embedder, BM25 defaults, review provider, and secrets from Settings."""
-    settings = Settings.model_validate(
-        {
-            **get_settings().model_dump(),
-            "embedding_provider": "deterministic",
-            "bm25_k1": 1.4,
-            "openai_api_key_dev": "sk-review-test-key",
-            "review_model": "gpt-5.6-terra",
-        }
-    )
-
-    services = build_runtime_services(settings)
-
-    assert isinstance(services._embedding_provider, DeterministicEmbeddingProvider)
-    assert services._bm25_k1 == 1.4
-    assert isinstance(services._llm_providers["openai"], OpenAILLMProvider)
-    assert services._llm_providers["openai"].model_name == "gpt-5.6-terra"
-    assert "openai" in services._provider_budgets
-    assert services._provider_budgets["openai"].pricing.output_per_million_usd == Decimal("12.0")
-    assert "sk-review-test-key" in services._secret_values
-    assert services._corpus_root == settings.corpus_dir
 
 
 def test_semantically_invalid_filters_are_a_typed_400():
@@ -404,7 +375,7 @@ def test_semantically_invalid_filters_are_a_typed_400():
         retrieval_service=rejecting_retrieval,
     )
 
-    with TestClient(create_app(services), raise_server_exceptions=False) as client:
+    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
         response = client.post(
             "/retrieve",
             json={"query": "revenue", "session_profile": {"languages": ["en", "ko"]}},
@@ -440,7 +411,7 @@ def test_runtime_maps_provider_exceptions_to_nonsecret_503():
         workflow_service=unavailable_workflow,
     )
 
-    with TestClient(create_app(services), raise_server_exceptions=False) as client:
+    with TestClient(create_api_app(services), raise_server_exceptions=False) as client:
         response = client.post("/review", json={"query": "Revenue?"})
 
     assert response.status_code == 503

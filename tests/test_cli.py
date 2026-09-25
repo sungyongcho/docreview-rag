@@ -252,43 +252,8 @@ def test_database_unavailability_has_a_stable_nonsecret_exit(monkeypatch, capsys
     }
 
 
-def test_serve_passes_every_runtime_option_to_uvicorn(monkeypatch, capsys):
-    """Forward every bind option to the server, printing nothing."""
-    observed = {}
-
-    def serve(args):
-        """Record the options the serve command forwarded."""
-        observed.update(vars(args))
-
-    monkeypatch.setattr(cli, "_serve", serve)
-
-    exit_code = cli.main(
-        [
-            "serve",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            "9000",
-            "--workers",
-            "2",
-            "--log-level",
-            "warning",
-        ]
-    )
-
-    assert exit_code == cli.ExitCode.OK
-    assert capsys.readouterr() == ("", "")
-    assert observed == {
-        "command": "serve",
-        "host": "0.0.0.0",
-        "port": 9000,
-        "workers": 2,
-        "log_level": "warning",
-    }
-
-
 def test_python_module_entrypoint_exposes_all_commands():
-    """Expose all three commands when run as a module."""
+    """Expose both the retrieve and ingest commands when run as a module."""
     result = subprocess.run(
         [sys.executable, "-m", "app.cli", "--help"],
         check=False,
@@ -298,7 +263,7 @@ def test_python_module_entrypoint_exposes_all_commands():
 
     assert result.returncode == 0
     assert result.stderr == ""
-    assert "{retrieve,ingest,serve}" in result.stdout
+    assert "{retrieve,ingest}" in result.stdout
 
 
 def test_help_does_not_load_runtime_settings():
@@ -315,4 +280,4 @@ def test_help_does_not_load_runtime_settings():
 
     assert result.returncode == 0
     assert result.stderr == ""
-    assert "{retrieve,ingest,serve}" in result.stdout
+    assert "{retrieve,ingest}" in result.stdout

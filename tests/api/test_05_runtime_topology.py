@@ -1,4 +1,4 @@
-"""Runtime entrypoint, health, and the container topology it is served by."""
+"""Public runtime guards, the served resource set, and the container topology."""
 
 import asyncio
 import os
@@ -6,34 +6,22 @@ from pathlib import Path
 import subprocess
 import sys
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import pytest
 
+from app.api.app import create_api_app
 from app.api.errors import ApiProblemError
 from app.api.review_profile import PromptPolicy, ReviewSessionProfile
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest
-from app.main import app, create_app
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
-def test_runtime_factory_is_import_safe_and_creates_distinct_apps():
-    """Build a fresh application per call, with the module-level one already importable."""
-    first = create_app()
-    second = create_app()
-
-    assert isinstance(app, FastAPI)
-    assert isinstance(first, FastAPI)
-    assert first is not second
-
-
 def test_runtime_import_does_not_build_the_database_engine():
-    """Import cleanly under a database URL that could never be connected to."""
+    """Import the API runtime cleanly under a database URL that could never be connected to."""
     environment = dict(os.environ)
     environment["DATABASE_URL"] = "not-a-valid-sqlalchemy-url"
     result = subprocess.run(
-        [sys.executable, "-c", "import app.main; print('imported')"],
+        [sys.executable, "-c", "import app.api.runtime; print('imported')"],
         check=False,
         capture_output=True,
         text=True,
@@ -81,21 +69,11 @@ def test_public_runtime_rejects_snapshot_query_before_provider_or_database() -> 
     assert captured.value.error.code == "capability_disabled"
 
 
-def test_health_route_reports_process_liveness_without_external_services():
-    """Answer the health probe without reaching a database or a provider."""
-    with TestClient(create_app()) as client:
-        response = client.get("/health")
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-
 def test_runtime_openapi_includes_all_m5_resources():
-    """Publish health alongside every served resource."""
-    paths = set(create_app().openapi()["paths"])
+    """Publish every served resource."""
+    paths = set(create_api_app().openapi()["paths"])
 
     assert {
-        "/health",
         "/retrieve",
         "/documents",
         "/review",

@@ -53,7 +53,6 @@ from app.config import (
     DEFAULT_BM25_K1,
     BM25Idf,
     LexicalRanker,
-    Settings,
     get_settings,
 )
 from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, Trace
@@ -64,7 +63,6 @@ from app.llm.local import LocalLLMProvider
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import resolve_local_protocol
 from app.llm.local_inventory import LocalModelInventory
-from app.llm.local_runtime import build_local_runtime
 from app.llm.openai_limits import OpenAILimitsManager
 from app.llm.provider import LLMProvider
 from app.llm.schemas import Prompt, ProviderBudget
@@ -82,14 +80,10 @@ from app.observability.stages import (
 )
 from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNode, build_run_report
 from app.observability.usage import provider_identity
-from app.openai_models import resolve_openai_model
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
 from app.operator.jobs import JobStore, _default_session_factory
 from app.retrieval.cross_encoder import CrossEncoderReranker
-from app.retrieval.embeddings import (
-    EmbeddingProvider,
-    get_embedding_provider,
-)
+from app.retrieval.embeddings import EmbeddingProvider
 from app.retrieval.language import detect_query_language
 from app.retrieval.rerank import RerankProvider
 from app.retrieval.scope import (
@@ -236,8 +230,7 @@ class RuntimeApiServices(ApiServices):
     Retrieval defaults to the deterministic provider unless one is injected. Review is
     fail-closed until the provider and budget registries carry an engine's provider and
     its explicit budget; construction never creates the process database engine or
-    starts a paid call. Use :func:`build_runtime_services` to compose from validated
-    settings.
+    starts a paid call.
     """
 
     def __init__(
@@ -1602,94 +1595,3 @@ class RuntimeApiServices(ApiServices):
     ) -> SnapshotComparisonResponse:
         """Compare two stored snapshots without starting an evaluation."""
         return await self._snapshots.compare(baseline_id, candidate_id, public_only=True)
-
-
-def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServices:
-    """Compose the production service boundary from validated settings.
-
-    This is the single lever that makes deployed configuration real: the embedding
-    provider, the BM25 defaults, the review provider and budget, the corpus
-    root, and the secrets the redaction pass must strip all come from one ``Settings``
-    instance, exactly as the acceptance CLI reads them.
-
-    Parameters
-    ----------
-    settings : Settings | None
-        Validated settings, or ``None`` to load cached application settings.
-
-    Returns
-    -------
-    RuntimeApiServices
-        Fully configured service boundary; review stays fail-closed (typed 503)
-        until ``REVIEW_MODEL`` and the MODE-selected key slot are configured.
-    """
-    configured = settings if settings is not None else get_settings()
-    llm_provider: LLMProvider | None = None
-    provider_budget: ProviderBudget | None = None
-    providers: dict[str, LLMProvider] = {}
-    budgets: dict[str, ProviderBudget] = {}
-    if configured.review_model is not None:
-        from app.llm.provider import OpenAILLMProvider
-
-        selection = resolve_openai_model("review", configured.review_model)
-        llm_provider = OpenAILLMProvider(
-            model_name=selection.model,
-            role="review",
-            api_key=(
-                configured.openai_api_key.get_secret_value()
-                if configured.openai_api_key is not None
-                else None
-            ),
-        )
-        provider_budget = ProviderBudget(
-            max_input_tokens=configured.review_max_input_tokens,
-            max_output_tokens=configured.review_max_output_tokens,
-            max_cost_usd=configured.review_max_cost_usd,
-            pricing=selection.pricing,
-        )
-        providers["openai"] = llm_provider
-        budgets["openai"] = provider_budget
-    openai_limits = (
-        OpenAILimitsManager(provider_budget, enabled=configured.environment != "prod")
-        if provider_budget is not None
-        else None
-    )
-    local_connection, local_budget = build_local_runtime(
-        environment=configured.environment,
-        base_url=configured.local_llm_base_url,
-        protocol=configured.local_llm_protocol,
-        source=configured.local_llm_source,
-        api_key=configured.local_llm_api_key.get_secret_value()
-        if configured.local_llm_api_key
-        else None,
-        max_input_tokens=configured.local_llm_max_input_tokens,
-        max_output_tokens=configured.local_llm_max_output_tokens,
-    )
-    if local_budget is not None:
-        budgets["local"] = local_budget
-    secret_values = tuple(
-        secret.get_secret_value()
-        for secret in (
-            configured.openai_api_key,
-            configured.dart_api_key,
-            configured.local_llm_api_key,
-        )
-        if secret is not None and secret.get_secret_value().strip()
-    )
-    return RuntimeApiServices(
-        embedding_provider=get_embedding_provider(configured),
-        llm_providers=providers,
-        provider_budgets=budgets,
-        local_connection=local_connection,
-        openai_limits=openai_limits,
-        allow_local_engine=configured.environment != "prod",
-        local_timeout_s=configured.local_llm_timeout_s,
-        secret_values=secret_values,
-        credential_slot=configured.openai_key_slot,
-        bm25_k1=configured.bm25_k1,
-        bm25_b=configured.bm25_b,
-        bm25_idf=configured.bm25_idf,
-        corpus_root=configured.corpus_dir,
-        intent_classifier_enabled=True,
-        query_routing_enabled=True,
-    )
