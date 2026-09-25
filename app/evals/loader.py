@@ -5,7 +5,6 @@ from collections.abc import Iterable
 import hashlib
 import json
 from pathlib import Path
-import re
 
 from bs4 import BeautifulSoup
 from pydantic import TypeAdapter, ValidationError
@@ -19,7 +18,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_GOLDEN_PATH = REPO_ROOT / "data" / "golden" / "retrieval.json"
 DEFAULT_MANIFEST_PATH = REPO_ROOT / "data" / "corpus" / "manifest.json"
 GOLDEN_CASES = TypeAdapter(list[GoldenCase])
-DOC_ID_PATTERN = re.compile(r"[A-Za-z0-9.]+-FY[0-9]{4}")
 
 
 class GoldenDataError(ValueError):
@@ -58,8 +56,7 @@ def validate_unique_cases(
     cases : Iterable[GoldenCase]
         Every case in the batch, checked as one unit.
     error : type[Exception]
-        Exception class raised on a collision, so a batch of unadmitted
-        candidates fails in its own domain rather than the golden one.
+        Exception class raised on a collision.
     label : str
         Noun naming the batch's members in each message.
 
@@ -72,9 +69,7 @@ def validate_unique_cases(
     Notes
     -----
     Span identity is compared across cases; duplicates inside one case are
-    already rejected by ``GoldenCase`` itself. Candidate intake reuses this scan
-    because a candidate that would violate suite uniqueness after promotion has
-    to fail before promotion, not after.
+    already rejected by ``GoldenCase`` itself.
     """
     ids: set[str] = set()
     questions: set[str] = set()

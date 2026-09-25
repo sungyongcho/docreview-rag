@@ -10,9 +10,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import get_args
 
-from app.evals.reporting import markdown_table
 from app.evals.scoring import CaseScore, SuiteScore, score_suite
-from app.evals.types import GoldenCase, GoldenCategory, GoldenFacet
+from app.evals.types import GoldenCase, GoldenCategory
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,7 +123,7 @@ def _grouped(
     groups : Sequence[str]
         Taxonomy values in required output order.
     key : Callable[[GoldenCase], str]
-        Category or facet selector.
+        Taxonomy value selector, such as the category.
 
     Returns
     -------
@@ -171,70 +170,3 @@ def breakdown_by_category(
     """
     pairs = _validated_pairs(cases, scores)
     return _grouped(pairs, get_args(GoldenCategory), lambda case: case.category)
-
-
-def breakdown_by_facet(
-    cases: Sequence[GoldenCase],
-    scores: Sequence[CaseScore],
-) -> tuple[GroupScore, ...]:
-    """Group a complete scored suite by golden facet.
-
-    Parameters
-    ----------
-    cases : Sequence[GoldenCase]
-        Complete golden suite.
-    scores : Sequence[CaseScore]
-        Complete positive-case retrieval scores.
-
-    Returns
-    -------
-    tuple[GroupScore, ...]
-        Nonempty facet aggregates in ``GoldenFacet`` declaration order.
-
-    Raises
-    ------
-    ValueError
-        If case-score pairing is incomplete or inconsistent.
-    """
-    pairs = _validated_pairs(cases, scores)
-    return _grouped(pairs, get_args(GoldenFacet), lambda case: case.facet)
-
-
-def breakdown_markdown(dimension: str, groups: Sequence[GroupScore]) -> str:
-    """Render one nonempty taxonomy breakdown as a Markdown table.
-
-    Parameters
-    ----------
-    dimension : str
-        Nonblank column heading such as ``Category`` or ``Facet``.
-    groups : Sequence[GroupScore]
-        Ordered group aggregates to render.
-
-    Returns
-    -------
-    str
-        Deterministic Markdown with six-decimal metrics.
-
-    Raises
-    ------
-    ValueError
-        If ``dimension`` is blank or ``groups`` is empty.
-    """
-    if not dimension.strip():
-        raise ValueError("dimension must not be blank")
-    if not groups:
-        raise ValueError("groups must not be empty")
-    return markdown_table(
-        [dimension, "Cases", "Recall@k", "Hit rate@k", "MRR"],
-        ["left", "right", "right", "right", "right"],
-        [
-            [
-                group.group,
-                str(group.suite.case_count),
-                f"{group.suite.recall_at_k:.6f}",
-                f"{group.suite.hit_rate_at_k:.6f}",
-                f"{group.suite.mrr:.6f}",
-            ]
-            for group in groups
-        ],
-    )

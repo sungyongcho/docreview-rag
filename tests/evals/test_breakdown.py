@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.evals.breakdown import breakdown_by_category, breakdown_by_facet, breakdown_markdown
+from app.evals.breakdown import breakdown_by_category
 from app.evals.scoring import CaseScore
 from app.evals.types import GoldenCase
 
@@ -74,10 +74,6 @@ def test_breakdown_groups_in_declaration_order_with_macro_averages():
     assert by_category[0].suite.mrr == 0.75
     assert by_category[1].suite.hit_rate_at_k == 0.0
 
-    by_facet = breakdown_by_facet(cases, scores)
-    assert [group.group for group in by_facet] == ["factual", "comparison", "risk"]
-    assert all(group.suite.k == 5 for group in by_facet)
-
 
 def test_breakdown_rejects_partial_stray_or_mixed_scoring():
     """Reject partial, stray, absent-case, mixed-k, and duplicate-id scoring."""
@@ -106,8 +102,8 @@ def test_breakdown_rejects_partial_stray_or_mixed_scoring():
         breakdown_by_category([cases[0], duplicate_id], complete[:1])
 
 
-def test_breakdown_markdown_renders_the_exact_table():
-    """Render one deterministic Markdown table and reject empty input."""
+def test_breakdown_by_category_ignores_score_order():
+    """Average one mixed-hit group identically whatever order the scores arrive in."""
     cases = [
         _golden("m3c-01", "simple_lookup", "factual", "What was disclosed?"),
         _golden("m3c-02", "simple_lookup", "risk", "Which risk is named?"),
@@ -115,14 +111,14 @@ def test_breakdown_markdown_renders_the_exact_table():
     scores = [_case_score("m3c-01", 1.0, 1), _case_score("m3c-02", 0.0, None)]
     groups = breakdown_by_category(cases, scores)
 
-    assert breakdown_markdown("Category", groups) == (
-        "| Category | Cases | Recall@k | Hit rate@k | MRR |\n"
-        "|---|---:|---:|---:|---:|\n"
-        "| simple_lookup | 2 | 0.500000 | 0.500000 | 0.500000 |"
-    )
-    with pytest.raises(ValueError, match="must not be empty"):
-        breakdown_markdown("Category", [])
-    with pytest.raises(ValueError, match="dimension must not be blank"):
-        breakdown_markdown("   ", groups)
-
+    assert [
+        (
+            group.group,
+            group.suite.case_count,
+            group.suite.recall_at_k,
+            group.suite.hit_rate_at_k,
+            group.suite.mrr,
+        )
+        for group in groups
+    ] == [("simple_lookup", 2, 0.5, 0.5, 0.5)]
     assert breakdown_by_category(cases, list(reversed(scores))) == groups
