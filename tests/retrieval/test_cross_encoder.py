@@ -5,7 +5,6 @@ from collections.abc import Sequence
 import sys
 import threading
 import time
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -221,64 +220,3 @@ def test_component_rankings_record_proposals_not_rerank_survivors(monkeypatch):
     assert len(result.hits) == 1
     assert result.component_rankings.vector == (1, 2, 3, 4)
     assert result.component_rankings.lexical == (4, 3, 2, 1)
-
-
-def test_cli_accepts_rerank_flag():
-    """Expose optional cross-encoder reranking through the CLI."""
-    from app.retrieval.__main__ import arguments
-
-    args = arguments(["--query", "market risk", "--rerank"])
-
-    assert args.rerank is True
-
-
-def test_run_passes_cross_encoder_when_rerank_is_enabled(monkeypatch):
-    """Pass a cross-encoder to the service only when requested."""
-    import app.db.session as db_session
-    from app.retrieval import __main__ as cli
-
-    reranker = object()
-    seen: dict[str, Any] = {}
-
-    class Session:
-        """Test double for Session behavior."""
-
-        async def __aenter__(self):
-            return object()
-
-        async def __aexit__(self, exc_type, exc, traceback):
-            return None
-
-    class Engine:
-        """Test double for Engine behavior."""
-
-        async def dispose(self):
-            """Exercise dispose behavior."""
-            return None
-
-    async def retrieve(session, query, **kwargs):
-        """Exercise retrieve behavior."""
-        seen.update(kwargs)
-        return object()
-
-    settings = SimpleNamespace(
-        embedding_provider="deterministic",
-        lexical_ranker="ts_rank_cd",
-        query_language_routing=False,
-        bm25_k1=1.2,
-        bm25_b=0.75,
-        bm25_idf="lucene",
-    )
-    monkeypatch.setattr(db_session, "Session", Session)
-    monkeypatch.setattr(db_session, "engine", Engine())
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "get_embedding_provider", lambda _settings: object())
-    monkeypatch.setattr(cli, "CrossEncoderReranker", lambda: reranker)
-    monkeypatch.setattr(cli, "retrieve", retrieve)
-    monkeypatch.setattr(cli, "_payload", lambda **values: values)
-
-    args = cli.arguments(["--query", "market risk", "--rerank"])
-    payload = asyncio.run(cli._run(args))
-
-    assert seen["reranker"] is reranker
-    assert payload["result"] is not None

@@ -30,7 +30,7 @@ from app.ingestion.seed import (
     filing_records,
 )
 import app.retrieval as public
-from app.retrieval import __main__ as cli, bm25, service
+from app.retrieval import bm25, service
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.types import RetrievalFilters
 from tests.ingestion.support import filing_document, filing_source
@@ -476,41 +476,6 @@ def test_settings_reject_nonfinite_bm25_environment_values(monkeypatch, name, va
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError):
         Settings()
-
-
-def test_cli_exposes_the_ranker_flags():
-    """Expose lexical ranker and BM25 overrides through the CLI."""
-    args = cli.arguments(
-        [
-            "--query",
-            "market risk",
-            "--lexical-ranker",
-            "bm25",
-            "--bm25-k1",
-            "1.5",
-            "--bm25-b",
-            "0.4",
-            "--bm25-idf",
-            "robertson",
-            "--rebuild-bm25-stats",
-        ]
-    )
-
-    assert args.lexical_ranker == "bm25"
-    assert args.bm25_k1 == 1.5
-    assert args.bm25_b == 0.4
-    assert args.bm25_idf == "robertson"
-    assert args.rebuild_bm25_stats is True
-
-
-def test_cli_defaults_leave_every_ranker_override_unset():
-    """Leave lexical overrides unset by default."""
-    args = cli.arguments(["--query", "market risk"])
-    assert args.lexical_ranker is None
-    assert args.bm25_k1 is None
-    assert args.bm25_b is None
-    assert args.bm25_idf is None
-    assert args.rebuild_bm25_stats is False
 
 
 # --------------------------------------------------------------------------

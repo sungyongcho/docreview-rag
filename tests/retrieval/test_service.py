@@ -1,4 +1,4 @@
-"""Retrieval service composition and command-output tests."""
+"""Retrieval service composition tests."""
 
 import asyncio
 import math
@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 import app.retrieval as public
-from app.retrieval import __main__ as cli, service
-from app.retrieval.embeddings import DeterministicEmbeddingProvider, EmbeddingBackfillResult
+from app.retrieval import service
+from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.rerank import RerankProvider
 from app.retrieval.types import RetrievalFilters
 from tests.retrieval.support import hit
@@ -271,75 +271,6 @@ def test_package_exports_the_complete_production_surface():
     assert public.retrieve is service.retrieve
 
 
-def test_cli_acceptance_arguments_and_payload_keep_component_scores_private():
-    """Keep native component scores out of command output."""
-    args = cli.arguments(
-        [
-            "--query",
-            "NVDA 2024 R&D",
-            "--k",
-            "2",
-            "--candidate-k",
-            "4",
-            "--provider",
-            "deterministic",
-            "--embed-missing",
-        ]
-    )
-    result = service.RetrievalResult(
-        candidates=(hit(1, 1 / 61),),
-        hits=(hit(1, 1 / 61),),
-        score_stage="rrf",
-        component_rankings=service.ComponentRankings(vector=(1, 2), lexical=(1,)),
-    )
-    payload = cli._payload(
-        query=args.query,
-        provider=args.provider,
-        backfill=EmbeddingBackfillResult(3, 3, 0, 1),
-        result=result,
-    )
-
-    assert (args.k, args.candidate_k, args.embed_missing) == (2, 4, True)
-    assert payload["provider"] == "deterministic"
-    assert payload["backfill"] == {
-        "selected": 3,
-        "embedded": 3,
-        "skipped_stale": 0,
-        "batches": 1,
-    }
-    assert payload["score_stage"] == "rrf"
-    component_rankings = payload["component_rankings"]
-    assert isinstance(component_rankings, dict)
-    assert component_rankings == {
-        "vector": [1, 2],
-        "vector_by_language": {},
-        "lexical": [1],
-        "lexical_by_language": {},
-    }
-
-
-@pytest.mark.parametrize(
-    ("flag", "value", "message"),
-    [
-        ("--bm25-k1", "0", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-k1", "-1", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-k1", "nan", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-k1", "inf", "--bm25-k1 must be a finite positive number"),
-        ("--bm25-b", "-0.1", "--bm25-b must be a finite number between 0 and 1"),
-        ("--bm25-b", "1.1", "--bm25-b must be a finite number between 0 and 1"),
-        ("--bm25-b", "nan", "--bm25-b must be a finite number between 0 and 1"),
-        ("--bm25-b", "inf", "--bm25-b must be a finite number between 0 and 1"),
-    ],
-)
-def test_cli_rejects_invalid_bm25_overrides_during_argument_parsing(capsys, flag, value, message):
-    """Reject invalid BM25 overrides before command execution can touch the database."""
-    with pytest.raises(SystemExit) as exc_info:
-        cli.arguments(["--query", "market risk", flag, value, "--rebuild-bm25-stats"])
-
-    assert exc_info.value.code == 2
-    assert message in capsys.readouterr().err
-
-
 def test_routing_skips_the_lexical_component_only_for_korean_queries(monkeypatch):
     """Skip the English lexical component for a Korean query and keep it for English."""
     events = []
@@ -427,64 +358,6 @@ def test_routing_stays_off_for_a_caller_that_does_not_ask_for_it(monkeypatch):
     assert events == ["AMD의 매출은?"]
     assert result.component_rankings.lexical == (2,)
     assert "get_settings" not in vars(service)
-
-
-@pytest.mark.parametrize(
-    ("configured", "flags", "expected"),
-    [
-        (False, [], False),
-        (True, [], True),
-        (False, ["--route-by-language"], True),
-        (True, ["--no-route-by-language"], False),
-    ],
-)
-def test_cli_resolves_language_routing_from_settings_and_honours_an_override(
-    monkeypatch, configured, flags, expected
-):
-    """Read routing from settings at the command boundary, overridable in both ways."""
-    import app.db.session as db_session
-
-    seen: dict[str, object] = {}
-
-    class Session:
-        """Test double for Session behavior."""
-
-        async def __aenter__(self):
-            return object()
-
-        async def __aexit__(self, exc_type, exc, traceback):
-            return None
-
-    class Engine:
-        """Test double for Engine behavior."""
-
-        async def dispose(self):
-            """Exercise dispose behavior."""
-            return None
-
-    async def retrieve(session, query, **kwargs):
-        """Exercise retrieve behavior."""
-        seen.update(kwargs)
-        return service.RetrievalResult(
-            candidates=(hit(1, 1 / 61),),
-            hits=(hit(1, 1 / 61),),
-            score_stage="rrf",
-            component_rankings=service.ComponentRankings(vector=(1,), lexical=()),
-        )
-
-    settings = Settings(query_language_routing=configured)
-    monkeypatch.setattr(db_session, "Session", Session)
-    monkeypatch.setattr(db_session, "engine", Engine())
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli, "get_embedding_provider", lambda _settings: object())
-    monkeypatch.setattr(cli, "retrieve", retrieve)
-
-    payload = asyncio.run(cli._run(cli.arguments(["--query", "AMD의 매출은?", *flags])))
-
-    # The value the command executed and the value it reports must be the same one,
-    # or the evidence would name a query path the run did not take.
-    assert seen["route_by_language"] is expected
-    assert payload["route_by_language"] is expected
 
 
 def test_korean_corpus_filter_tokenizes_the_lexical_query(monkeypatch):

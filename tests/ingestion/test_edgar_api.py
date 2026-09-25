@@ -1,5 +1,6 @@
 """EDGAR corpus acquisition: request hygiene, non-filing bodies, and safe stores."""
 
+import asyncio
 from contextlib import contextmanager
 import gzip
 import hashlib
@@ -20,14 +21,13 @@ from app.ingestion.edgar_api import (
     fetch_document,
     fetch_filing_rows,
     merge_entries,
-    parse_years,
     pending,
     require_user_agent,
     resolve_ciks,
     submission_rows,
 )
 from app.ingestion.manifest import CorpusIdentity, Manifest
-from tests.ingestion.support import acquired_filing, client_returning, filing_document, run
+from tests.ingestion.support import acquired_filing, client_returning, filing_document
 
 USER_AGENT = "Jane Doe jane@example.com"
 URL = "https://www.sec.gov/Archives/edgar/data/1/one.htm"
@@ -36,7 +36,7 @@ FILING = b"<html><body>Item 1. Business</body></html>"
 
 def fetch(handler):
     """Fetch the fixed test URL through one mock handler."""
-    return run(fetch_document(client_returning(handler), URL, user_agent=USER_AGENT))
+    return asyncio.run(fetch_document(client_returning(handler), URL, user_agent=USER_AGENT))
 
 
 def entry(ticker: str, name: str):
@@ -154,18 +154,8 @@ def test_documents_already_on_disk_are_skipped(tmp_path):
         artifacts=filing.artifacts,
     )
     assert pending(documents, manifest=catalog, corpus_root=tmp_path) == [documents[1]]
-    assert pending(documents, manifest=catalog, corpus_root=tmp_path, force=True) == documents
     path.write_bytes(b"tampered")
     assert pending(documents, manifest=catalog, corpus_root=tmp_path) == documents
-
-
-def test_ticker_filter_is_case_insensitive(tmp_path):
-    """Normalize requested ticker spelling without changing document identity."""
-    documents = [entry("NVDA", "one"), entry("AMD", "two")]
-    catalog = read_catalog(tmp_path / "manifest.json")
-    assert pending(documents, manifest=catalog, corpus_root=tmp_path, tickers=["amd"]) == [
-        documents[1]
-    ]
 
 
 # --- transport ---
@@ -316,7 +306,7 @@ def test_download_stages_every_entry_and_paces_the_requests(tmp_path, monkeypatc
         return httpx.Response(200, content=FILING)
 
     entries = [entry("NVDA", "one"), entry("AMD", "two")]
-    stored = run(collect(client_returning(handler), entries))
+    stored = asyncio.run(collect(client_returning(handler), entries))
 
     assert [filing.document for filing in stored] == entries
     assert all(filing.payloads == (FILING,) for filing in stored)
@@ -344,14 +334,14 @@ def test_a_failed_document_keeps_the_documents_already_fetched(tmp_path, monkeyp
         lambda **kwargs: client_class(transport=httpx.MockTransport(handler)),
     )
     with pytest.raises(EdgarApiError, match="http 500"):
-        run(acquire_edgar(manifest, tickers=("NVDA", "AMD"), user_agent=USER_AGENT))
+        asyncio.run(acquire_edgar(manifest, tickers=("NVDA", "AMD"), user_agent=USER_AGENT))
 
     assert len(list(tmp_path.rglob("*.html"))) == 1
     assert next(tmp_path.rglob("*.html")).read_bytes() == FILING
 
 
 def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_path, monkeypatch):
-    """Drive the CLI-independent acquisition boundary without parsing or subprocesses."""
+    """Drive the reusable acquisition boundary without parsing or subprocesses."""
     monkeypatch.chdir(tmp_path)
     manifest = write_manifest(tmp_path, [entry("NVDA", "one")])
     updates = []
@@ -367,7 +357,7 @@ def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_p
         lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
     )
 
-    result = run(
+    result = asyncio.run(
         acquire_edgar(
             manifest,
             tickers=("NVDA",),
@@ -384,25 +374,6 @@ def test_reusable_acquisition_downloads_missing_files_and_reports_progress(tmp_p
         == FILING.decode()
     )
     assert updates[-1].current == updates[-1].total == 1
-
-
-# --- year range ---
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [("2024", [2024]), ("2020-2022", [2020, 2021, 2022])],
-)
-def test_year_range_covers_both_bounds(text, expected):
-    """A single year and a span both resolve to an inclusive range."""
-    assert list(parse_years(text)) == expected
-
-
-@pytest.mark.parametrize("text", ["", "24", "2020-", "2020-20", "twenty", "2024-2020"])
-def test_unusable_year_range_is_rejected(text):
-    """A malformed or backwards span fails before any request is made."""
-    with pytest.raises(ValueError, match="--years"):
-        parse_years(text)
 
 
 # --- discovery ---
@@ -433,7 +404,7 @@ def test_tickers_resolve_to_the_cik_sec_files_them_under():
         }
         return httpx.Response(200, json=payload)
 
-    resolved = run(resolve_ciks(client_returning(handler), ["nvda"], user_agent=USER_AGENT))
+    resolved = asyncio.run(resolve_ciks(client_returning(handler), ["nvda"], user_agent=USER_AGENT))
     assert resolved == {"NVDA": 1045810}
 
 
@@ -445,7 +416,7 @@ def test_unlisted_ticker_fails_instead_of_shrinking_the_corpus():
         return httpx.Response(200, json={"0": {"cik_str": 2488, "ticker": "AMD"}})
 
     with pytest.raises(EdgarApiError, match="not listed: NVDA"):
-        run(resolve_ciks(client_returning(handler), ["NVDA", "AMD"], user_agent=USER_AGENT))
+        asyncio.run(resolve_ciks(client_returning(handler), ["NVDA", "AMD"], user_agent=USER_AGENT))
 
 
 def test_submission_columns_join_by_position():
@@ -467,7 +438,7 @@ def test_discovered_filings_preserve_company_names_without_an_extra_request():
         payload["name"] = "NVIDIA Corporation"
         return httpx.Response(200, json=payload)
 
-    rows = run(fetch_filing_rows(client_returning(handler), 1045810, user_agent=USER_AGENT))
+    rows = asyncio.run(fetch_filing_rows(client_returning(handler), 1045810, user_agent=USER_AGENT))
     entries = annual_reports(rows, ticker="NVDA", cik=1045810, years=[2024])
     assert entries[0].aliases == ("NVDA", "NVIDIA Corporation")
     assert len(requests) == 1
@@ -499,7 +470,7 @@ def test_archived_submission_pages_are_followed(monkeypatch):
             return httpx.Response(200, json=submissions_payload([TEN_K], pages=["page-1.json"]))
         return httpx.Response(200, json=older)
 
-    rows = run(fetch_filing_rows(client_returning(handler), 1045810, user_agent=USER_AGENT))
+    rows = asyncio.run(fetch_filing_rows(client_returning(handler), 1045810, user_agent=USER_AGENT))
     assert [row["accessionNumber"] for row in rows] == [TEN_K[1], TEN_K_OLD[1]]
 
 
@@ -592,7 +563,7 @@ def test_each_download_opens_and_closes_its_own_progress(tmp_path, monkeypatch):
         return httpx.Response(200, content=FILING)
 
     entries = [entry("NVDA", "one"), entry("AMD", "two")]
-    stored = run(collect_with(client_returning(handler), entries, progress=factory))
+    stored = asyncio.run(collect_with(client_returning(handler), entries, progress=factory))
 
     assert len(stored) == 2
     assert opened == [item.document_id for item in entries]
@@ -614,7 +585,7 @@ def test_a_compressed_response_reports_bytes_without_a_false_total():
             headers={"content-encoding": "gzip", "content-length": str(len(compressed))},
         )
 
-    run(
+    asyncio.run(
         fetch_document(
             client_returning(handler),
             URL,
@@ -633,7 +604,7 @@ def test_an_uncompressed_response_keeps_its_declared_total():
         """Return an identity-encoded filing."""
         return httpx.Response(200, content=FILING)
 
-    run(
+    asyncio.run(
         fetch_document(
             client_returning(handler),
             URL,
@@ -668,7 +639,9 @@ def test_year_scope_does_not_download_other_catalog_years(tmp_path, monkeypatch)
         "AsyncClient",
         lambda **kwargs: original(transport=httpx.MockTransport(handler)),
     )
-    result = run(acquire_edgar(manifest, tickers=("NVDA",), years=(2024,), user_agent=USER_AGENT))
+    result = asyncio.run(
+        acquire_edgar(manifest, tickers=("NVDA",), years=(2024,), user_agent=USER_AGENT)
+    )
     assert len(result.fetched) == 1
     assert requested == [current.source_url]
     catalog = read_catalog(manifest)
@@ -695,7 +668,7 @@ def test_discovery_reports_company_years_before_and_after_lookup(monkeypatch):
     monkeypatch.setattr(edgar_api, "resolve_ciks", resolve)
     monkeypatch.setattr(edgar_api, "fetch_filing_rows", rows)
     monkeypatch.setattr(edgar_api, "REQUEST_INTERVAL_SECONDS", 0)
-    result = run(
+    result = asyncio.run(
         edgar_api.discover(
             client_returning(lambda request: httpx.Response(500)),
             tickers=("NVDA", "AMD"),

@@ -16,8 +16,8 @@ from urllib.request import ProxyHandler, build_opener
 from dotenv import dotenv_values, set_key
 
 from app.db.bootstrap import SchemaDriftError
+from app.db.startup import prepare as prepare_schema
 from scripts.diagnostics.ollama import diagnose
-from scripts.schema.status import prepare_schema
 from scripts.stack.__main__ import compose_command, compose_environment, run
 from scripts.stack.environment import load_local_environment
 from scripts.stack.fresh import write_receipt

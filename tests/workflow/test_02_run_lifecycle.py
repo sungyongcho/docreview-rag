@@ -4,13 +4,12 @@ import asyncio
 
 import pytest
 
-from app.llm.schemas import RawProviderResponse
 from app.observability.persistence import report_to_records
 from app.observability.types import Budget
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.runner import run_workflow
 from app.workflow.types import WorkflowRequest
-from tests.llm.support import DeterministicLLMProvider
+from tests.llm.support import DeterministicLLMProvider, TickClock, raw as _raw
 from tests.workflow.support import (
     hit as _hit,
     pricing as _pricing,
@@ -30,28 +29,6 @@ class SequenceClock:
     def __call__(self):
         self.value += 0.1
         return self.value
-
-
-class TickClock:
-    """Deterministic provider clock advancing by one millisecond."""
-
-    def __init__(self):
-        self.value = -1_000_000
-
-    def __call__(self):
-        self.value += 1_000_000
-        return self.value
-
-
-def _raw(output, *, input_tokens=10, output_tokens=5, request_id="req-1"):
-    """Build one raw provider response for the deterministic provider."""
-    return RawProviderResponse(
-        output_text=output,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        request_id=request_id,
-        refusal=None,
-    )
 
 
 def _provider(responses, *, projected=None):

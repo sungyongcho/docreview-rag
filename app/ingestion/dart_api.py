@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -36,6 +36,7 @@ from app.ingestion.acquisition import (
     read_catalog,
     selection_identity,
 )
+from app.ingestion.edgar_api import _declared_length
 from app.ingestion.manifest import (
     Acquisition,
     DartMetadata,
@@ -63,8 +64,6 @@ OK_STATUS: Final[str] = "000"
 NO_DATA_STATUS: Final[str] = "013"
 
 DEFAULT_MANIFEST_NAME: Final[str] = "manifest.json"
-
-ByteProgressFactory = Callable[[str], AbstractContextManager[ByteProgress | None]]
 
 ANNUAL_REPORT_FORM: Final[str] = "사업보고서"
 # ``pblntf_detail_ty=A001`` is accepted but not applied: the observed response also
@@ -158,28 +157,6 @@ class DartAcquisitionResult:
     manifest_entries: int
     manifest: str = "manifest.json"
     selection_id: str = ""
-
-
-def _declared_length(response: httpx.Response) -> int | None:
-    """Return the length of the body the caller will count, when it is knowable.
-
-    ``Content-Length`` describes the *encoded* body. A compressed response is handed
-    back decoded, so the header does not describe what is being counted and there is
-    no total: an open-ended byte counter is honest where a percentage would run past
-    100%. Counting raw bytes instead would mean trusting a client-side counter that
-    quietly stays at zero on transports that do not stream.
-    """
-    encoding = response.headers.get("content-encoding", "").strip().lower()
-    if encoding not in ("", "identity"):
-        return None
-    raw = response.headers.get("content-length")
-    if raw is None:
-        return None
-    try:
-        length = int(raw)
-    except ValueError:
-        return None
-    return length if length > 0 else None
 
 
 async def _read_body(
@@ -735,7 +712,6 @@ async def acquire_dart(
     corpus_dir: Path,
     api_key: str,
     on_progress: OperationProgressCallback | None = None,
-    progress_factory: ByteProgressFactory | None = None,
 ) -> DartAcquisitionResult:
     """Download and archive requested DART filings without parsing or ingesting them."""
     manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
@@ -778,9 +754,7 @@ async def acquire_dart(
         current: int,
         total: int | None,
     ) -> AbstractContextManager[ByteProgress | None]:
-        """Bridge one byte stream onto terminal or administrative progress."""
-        if progress_factory is not None:
-            return progress_factory(label)
+        """Bridge one byte stream onto administrative progress."""
         publish = on_progress
         if publish is None:
             return nullcontext(None)
@@ -910,65 +884,3 @@ async def acquire_dart(
     return DartAcquisitionResult(
         tuple(archived), added, len(existing.documents), selection_id=selection_id
     )
-
-
-if __name__ == "__main__":  # pragma: no cover - corpus acquisition helper
-    import argparse
-    import asyncio
-
-    from app.config import get_settings
-    from app.ingestion.progress import byte_bar, overall_bar
-
-    DEFAULT_STOCK_CODES = ("005930", "000660")
-    DEFAULT_FISCAL_YEARS = (2024,)
-
-    async def _download(
-        stock_codes: tuple[str, ...], fiscal_years: tuple[int, ...], corpus_dir: Path
-    ) -> None:
-        """Archive every requested issuer-year and merge the result into the manifest."""
-        secret = get_settings().dart_api_key
-        api_key = "" if secret is None else secret.get_secret_value()
-
-        try:
-            result = await acquire_dart(
-                stock_codes=stock_codes,
-                fiscal_years=fiscal_years,
-                corpus_dir=corpus_dir,
-                api_key=api_key,
-                progress_factory=byte_bar,
-            )
-        except ValueError as error:
-            raise SystemExit(str(error)) from None
-        manifest_path = corpus_dir / DEFAULT_MANIFEST_NAME
-        if not result.archived:
-            print(
-                f"nothing to fetch; every requested entry of {manifest_path} "
-                "matches its source file"
-            )
-            return
-        with overall_bar(len(result.archived), unit="filing", description="DART") as overall:
-            for entry in result.archived:
-                label = f"{entry.document.issuer} FY{entry.document.fiscal_year}"
-                overall.advance(label)
-                overall.write(
-                    f"{label}: {entry.primary.path} ({entry.primary.byte_length:,} bytes)"
-                )
-        print(
-            f"wrote {manifest_path}: {len(result.added)} new, "
-            f"{result.manifest_entries} filing(s) recorded"
-        )
-
-    ap = argparse.ArgumentParser(description="Download and archive DART annual reports.")
-    ap.add_argument("--stock-codes", nargs="+", default=list(DEFAULT_STOCK_CODES))
-    ap.add_argument(
-        "--fiscal-year",
-        nargs="+",
-        type=int,
-        default=list(DEFAULT_FISCAL_YEARS),
-        help="fiscal years to archive; the API is queried once per issuer and year",
-    )
-    ap.add_argument("--corpus-dir", type=Path, default=None)
-    args = ap.parse_args()
-
-    target = args.corpus_dir or get_settings().corpus_dir
-    asyncio.run(_download(tuple(args.stock_codes), tuple(args.fiscal_year), target))

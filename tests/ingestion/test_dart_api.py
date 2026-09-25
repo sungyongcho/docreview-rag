@@ -1,5 +1,6 @@
 """Open DART client: request validation, archive selection, and credential hygiene."""
 
+import asyncio
 import hashlib
 import io
 import json
@@ -30,7 +31,7 @@ from app.ingestion.dart_api import (
 )
 from app.ingestion.manifest import CorpusIdentity, Manifest
 from app.ingestion.source_publication import publish_acquired
-from tests.ingestion.support import acquired_filing, client_returning, filing_document, run
+from tests.ingestion.support import acquired_filing, client_returning, filing_document
 
 API_KEY = "k" * 40
 RCEPT_NO = "20250311001085"
@@ -68,7 +69,7 @@ def test_transport_failure_never_carries_the_api_key(monkeypatch):
         raise httpx.ConnectError("boom", request=request)
 
     with pytest.raises(DartApiError) as excinfo:
-        run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
+        asyncio.run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
 
     message = str(excinfo.value)
     assert API_KEY not in message
@@ -90,7 +91,7 @@ def test_transport_errors_are_retried_then_succeed(monkeypatch):
             raise httpx.RemoteProtocolError("dropped", request=request)
         return httpx.Response(200, content=payload)
 
-    body = run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
+    body = asyncio.run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
 
     assert body == payload
     assert calls["count"] == 2
@@ -107,7 +108,7 @@ def test_http_error_status_is_not_retried(monkeypatch):
         return httpx.Response(503)
 
     with pytest.raises(DartApiError, match="http 503"):
-        run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
+        asyncio.run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
     assert calls["count"] == 1
 
 
@@ -120,7 +121,7 @@ def test_non_zip_body_reports_the_dart_status():
         return httpx.Response(200, content=error)
 
     with pytest.raises(DartApiError) as excinfo:
-        run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
+        asyncio.run(fetch_corp_code_archive(client_returning(handler), api_key=API_KEY))
     assert excinfo.value.dart_status == "020"
 
 
@@ -168,7 +169,7 @@ def test_fetch_annual_report_rows_fixes_the_search_arguments():
         seen.update(dict(request.url.params))
         return httpx.Response(200, content=search_payload([]))
 
-    run(
+    asyncio.run(
         fetch_annual_report_rows(
             client_returning(handler), api_key=API_KEY, corp_code="00126380", filing_year=2025
         )
@@ -190,7 +191,7 @@ def test_fetch_annual_report_rows_treats_no_data_as_typed_failure():
         return httpx.Response(200, content=error)
 
     with pytest.raises(DartApiError) as excinfo:
-        run(
+        asyncio.run(
             fetch_annual_report_rows(
                 client_returning(handler), api_key=API_KEY, corp_code="00126380", filing_year=2025
             )
@@ -201,7 +202,7 @@ def test_fetch_annual_report_rows_treats_no_data_as_typed_failure():
 def test_fetch_annual_report_rows_rejects_a_malformed_corp_code():
     """Reject a corp code that cannot address a filing."""
     with pytest.raises(ValueError, match="eight digits"):
-        run(
+        asyncio.run(
             fetch_annual_report_rows(
                 httpx.AsyncClient(), api_key=API_KEY, corp_code="5930", filing_year=2025
             )
@@ -265,7 +266,7 @@ def test_fetch_document_archive_hashes_exactly_what_was_served():
         """Return the exact document archive payload."""
         return httpx.Response(200, content=payload)
 
-    document = run(
+    document = asyncio.run(
         fetch_document_archive(client_returning(handler), api_key=API_KEY, rcept_no=RCEPT_NO)
     )
 
@@ -282,14 +283,18 @@ def test_fetch_document_archive_rejects_an_error_body():
         return httpx.Response(200, content=error)
 
     with pytest.raises(DartApiError) as excinfo:
-        run(fetch_document_archive(client_returning(handler), api_key=API_KEY, rcept_no=RCEPT_NO))
+        asyncio.run(
+            fetch_document_archive(client_returning(handler), api_key=API_KEY, rcept_no=RCEPT_NO)
+        )
     assert excinfo.value.dart_status == "014"
 
 
 def test_fetch_document_archive_rejects_a_malformed_receipt_number():
     """Reject a malformed receipt number before any request."""
     with pytest.raises(ValueError, match="fourteen digits"):
-        run(fetch_document_archive(httpx.AsyncClient(), api_key=API_KEY, rcept_no="20250311"))
+        asyncio.run(
+            fetch_document_archive(httpx.AsyncClient(), api_key=API_KEY, rcept_no="20250311")
+        )
 
 
 # --- member selection and decoding ---
@@ -554,7 +559,7 @@ def test_dart_acquisition_skips_a_manifest_entry_whose_source_is_valid(tmp_path,
     monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
     updates = []
 
-    result = run(
+    result = asyncio.run(
         acquire_dart(
             stock_codes=("005930",),
             fiscal_years=(2024,),
@@ -602,7 +607,7 @@ def test_dart_acquisition_refetches_a_source_with_a_stale_digest(tmp_path, monke
         lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
     )
 
-    result = run(
+    result = asyncio.run(
         acquire_dart(
             stock_codes=("005930",),
             fiscal_years=(2024,),
@@ -649,7 +654,7 @@ def test_reusable_dart_acquisition_archives_and_merges_with_progress(tmp_path, m
         lambda **_kwargs: client_class(transport=httpx.MockTransport(handler)),
     )
 
-    result = run(
+    result = asyncio.run(
         acquire_dart(
             stock_codes=("005930",),
             fiscal_years=(2024,),
@@ -697,7 +702,7 @@ def test_known_issuer_reuses_identity_but_discovers_the_requested_year_live(tmp_
         "AsyncClient",
         lambda **kwargs: client(transport=httpx.MockTransport(handler)),
     )
-    result = run(
+    result = asyncio.run(
         acquire_dart(
             stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
         )
@@ -748,10 +753,10 @@ def test_unknown_issuer_fetches_archive_and_requires_an_exact_resolution(
     )
     if not index_contains_requested:
         with pytest.raises(DartApiError, match="000660"):
-            run(operation)
+            asyncio.run(operation)
         assert paths == ["/api/corpCode.xml"]
     else:
-        result = run(operation)
+        result = asyncio.run(operation)
         assert result.archived[0].document.issuer_id == "00164779"
         assert paths == ["/api/corpCode.xml", "/api/list.json", "/api/document.xml"]
 
@@ -797,7 +802,7 @@ def test_same_year_missing_receipt_is_reacquired_without_replacing_ready_filing(
         "AsyncClient",
         lambda **kwargs: client(transport=httpx.MockTransport(handler)),
     )
-    result = run(
+    result = asyncio.run(
         acquire_dart(
             stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
         )
@@ -866,7 +871,7 @@ def test_registered_archive_recovers_exact_receipt_and_preserves_other_inputs(
         "AsyncClient",
         lambda **kwargs: client(transport=httpx.MockTransport(handler)),
     )
-    result = run(
+    result = asyncio.run(
         acquire_dart(
             stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
         )
@@ -933,7 +938,7 @@ def test_dart_identity_conflicts_block_before_download_or_publication(
 
     monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
     with pytest.raises(ValueError, match="Conflicting primary|Archive identity"):
-        run(
+        asyncio.run(
             acquire_dart(
                 stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=API_KEY
             )
@@ -986,7 +991,7 @@ def test_unrelated_archive_lineage_does_not_block_selected_filing(tmp_path, monk
         raise AssertionError("Network must not be reached")
 
     monkeypatch.setattr(dart_api.httpx, "AsyncClient", unexpected_client)
-    result = run(
+    result = asyncio.run(
         acquire_dart(stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key="")
     )
     assert result.archived == ()
@@ -1027,7 +1032,7 @@ def test_missing_archive_cannot_hide_later_same_year_lineage_conflict(tmp_path, 
             catalog, stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path
         )
     with pytest.raises(ValueError, match="Archive identity"):
-        run(
+        asyncio.run(
             acquire_dart(
                 stock_codes=("005930",), fiscal_years=(2024,), corpus_dir=tmp_path, api_key=""
             )

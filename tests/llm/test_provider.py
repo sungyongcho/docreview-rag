@@ -19,23 +19,11 @@ from app.llm.schemas import (
     Prompt,
     ProviderBudget,
     ProviderRefusal,
-    RawProviderResponse,
     RelevanceJudgment,
     SchemaRejected,
     TokenPricing,
 )
-from tests.llm.support import DeterministicLLMProvider
-
-
-class TickClock:
-    """Deterministic monotonic nanosecond clock with one millisecond ticks."""
-
-    def __init__(self):
-        self.value = -1_000_000
-
-    def __call__(self):
-        self.value += 1_000_000
-        return self.value
+from tests.llm.support import DeterministicLLMProvider, TickClock, raw
 
 
 def prompt():
@@ -63,17 +51,6 @@ def valid_output():
     return (
         '{"label":"SUPPORTED","answer":"Research expense increased.",'
         '"citation_chunk_ids":[7],"reason":"The cited chunk contains the statement."}'
-    )
-
-
-def raw(output_text, *, input_tokens=10, output_tokens=5, request_id="req-1", refusal=None):
-    """Build one raw provider response with optional usage and refusal."""
-    return RawProviderResponse(
-        output_text=output_text,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        request_id=request_id,
-        refusal=refusal,
     )
 
 

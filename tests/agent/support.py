@@ -1,8 +1,6 @@
 """Builders shared by the agent tests."""
 
 from app.agent.provider import ProviderTurn
-from app.retrieval.types import ChunkHit
-from tests.retrieval.support import hit_values
 
 
 def turn(**changes):
@@ -15,14 +13,6 @@ def turn(**changes):
     }
     values.update(changes)
     return ProviderTurn(**values)
-
-
-def hit(chunk_id, *, score=0.5):
-    """Build one retrieval hit with offsets derived from its chunk id."""
-    start = chunk_id * 100
-    return ChunkHit(
-        **hit_values(chunk_id=chunk_id, score=score, start_char=start, end_char=start + 50)
-    )
 
 
 class FakeSession:

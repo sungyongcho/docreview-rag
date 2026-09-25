@@ -63,11 +63,9 @@ def _hash_rows(rows: list[tuple[object, ...]]) -> str:
 
 
 def _golden_sha256(config: dict[str, object]) -> object:
-    """Read canonical golden identity from quick or legacy evaluation config."""
+    """Read the canonical golden identity a quick evaluation recorded."""
     identity = config.get("admin_identity")
-    if isinstance(identity, dict) and identity.get("golden_sha256") is not None:
-        return identity["golden_sha256"]
-    return config.get("golden_sha256")
+    return identity.get("golden_sha256") if isinstance(identity, dict) else None
 
 
 def _cases_by_id(payload: dict[str, object]) -> dict[str, dict[str, object]]:

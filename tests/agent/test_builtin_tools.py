@@ -10,7 +10,8 @@ import pytest
 from app.agent.builtin_tools import _QueryEmbeddingCache, build_default_registry
 from app.agent.tools import ToolError
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-from tests.agent.support import FakeSessionFactory, hit
+from tests.agent.support import FakeSessionFactory
+from tests.retrieval.support import hit
 
 
 class CountingEmbeddings(DeterministicEmbeddingProvider):
@@ -56,7 +57,7 @@ def evidence_ids(tool, output):
 
 def test_search_filings_maps_filters_and_extracts_evidence(monkeypatch):
     """Map the tool arguments onto retrieval filters and close the per-call session."""
-    calls = patch_retrieve(monkeypatch, [(hit(7), hit(9))])
+    calls = patch_retrieve(monkeypatch, [(hit(7, 0.5), hit(9, 0.5))])
     factory = FakeSessionFactory()
     registry = build_default_registry(factory)
     tool = registry.get("search_filings")
@@ -79,7 +80,7 @@ def test_search_filings_maps_filters_and_extracts_evidence(monkeypatch):
 
 def test_search_filings_uses_the_configured_default_k(monkeypatch):
     """Fall back to the registry's search_k when the caller omits k."""
-    calls = patch_retrieve(monkeypatch, [(hit(7),)])
+    calls = patch_retrieve(monkeypatch, [(hit(7, 0.5),)])
     registry = build_default_registry(FakeSessionFactory(), search_k=7)
 
     tool = registry.get("search_filings")
@@ -127,7 +128,7 @@ def test_fetch_chunk_returns_the_stored_row_and_rejects_missing_ids():
 
 def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
     """Query each year separately, group the results in year order, and require a real span."""
-    calls = patch_retrieve(monkeypatch, [(hit(1),), (hit(2),)])
+    calls = patch_retrieve(monkeypatch, [(hit(1, 0.5),), (hit(2, 0.5),)])
     factory = FakeSessionFactory()
     registry = build_default_registry(factory, embedding_provider=DeterministicEmbeddingProvider())
     tool = registry.get("compare_years")
@@ -152,7 +153,7 @@ def test_compare_years_groups_hits_per_sorted_year(monkeypatch):
 
 def test_compare_years_shares_one_query_embedding_cache(monkeypatch):
     """Hand every per-year retrieval the same caching provider around the injected one."""
-    calls = patch_retrieve(monkeypatch, [(hit(1),), (hit(2),), (hit(3),)])
+    calls = patch_retrieve(monkeypatch, [(hit(1, 0.5),), (hit(2, 0.5),), (hit(3, 0.5),)])
     inner = CountingEmbeddings()
     registry = build_default_registry(FakeSessionFactory(), embedding_provider=inner)
     tool = registry.get("compare_years")

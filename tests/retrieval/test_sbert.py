@@ -75,15 +75,6 @@ def test_factory_builds_configured_sbert_provider_without_loading_model():
     assert provider._encoder.value is None
 
 
-def test_cli_accepts_sbert_provider():
-    """Accept the local embedding provider through the CLI."""
-    from app.retrieval.__main__ import arguments
-
-    args = arguments(["--query", "market risk", "--provider", "sbert"])
-
-    assert args.provider == "sbert"
-
-
 def test_missing_extra_raises_an_actionable_runtime_error(monkeypatch):
     """Raise an actionable error when the optional model package is absent."""
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)

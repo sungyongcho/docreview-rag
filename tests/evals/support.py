@@ -9,10 +9,10 @@ SOURCE_SHA256 = "a" * 64
 EVALUATION_RECORDED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def positive_case(case_id: str = "m3c-01") -> GoldenCase:
+def positive_case() -> GoldenCase:
     """Build a source-bearing case that :func:`relevant_hit` answers."""
     return GoldenCase(
-        id=case_id,
+        id="m3c-01",
         question="What evidence is supported?",
         category="simple_lookup",
         facet="factual",
@@ -34,10 +34,10 @@ def positive_case(case_id: str = "m3c-01") -> GoldenCase:
     )
 
 
-def absent_case(case_id: str = "m3c-02") -> GoldenCase:
+def absent_case() -> GoldenCase:
     """Build an absent case that carries no answer span."""
     return GoldenCase(
-        id=case_id,
+        id="m3c-02",
         question="What evidence is absent?",
         category="absent",
         facet="risk",

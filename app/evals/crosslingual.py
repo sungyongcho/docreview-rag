@@ -77,8 +77,8 @@ class CorpusProfile:
     """One measured corpus per command run.
 
     A profile binds everything that changes with the corpus — suite, golden twins,
-    manifest, and document count. The registry supplies the corpus language; the
-    shared ingestion contract supplies the token target for every corpus.
+    and manifest. The registry supplies the corpus language; the shared ingestion
+    contract supplies the token target for every corpus.
     """
 
     registry: str
@@ -87,9 +87,6 @@ class CorpusProfile:
     ko_golden: Path
     manifest_name: str
     selection_id: str
-    # Corpora are widened from the command line, so a profile pins a count only when
-    # the comparison depends on one. ``None`` evaluates whatever the manifest holds.
-    expected_documents: int | None
 
     @property
     def language(self) -> str:
@@ -110,7 +107,6 @@ CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
         ko_golden=KO_GOLDEN_PATH,
         manifest_name=DEFAULT_MANIFEST_NAME,
         selection_id="sec-evaluation",
-        expected_documents=None,
     ),
     "dart": CorpusProfile(
         registry="dart",
@@ -119,7 +115,6 @@ CORPUS_PROFILES: Final[dict[str, CorpusProfile]] = {
         ko_golden=DART_KO_GOLDEN_PATH,
         manifest_name=DEFAULT_MANIFEST_NAME,
         selection_id="dart-evaluation",
-        expected_documents=None,
     ),
 }
 DETERMINISTIC_EMBEDDING_MODEL: Final[str] = "token-hash-384"
@@ -935,7 +930,6 @@ async def _run_cli(
             settings=settings,
             manifest_name=profile.manifest_name,
             selection_id=profile.selection_id,
-            expected_documents=profile.expected_documents,
             on_progress=on_progress,
         )
         async with temporary_corpus_session(

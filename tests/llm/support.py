@@ -1,4 +1,4 @@
-"""Shared offline LLM provider double and structured-output schema for deterministic tests."""
+"""Shared offline LLM provider double, canned responses and clock for deterministic tests."""
 
 from collections.abc import Callable, Sequence
 import time
@@ -67,3 +67,25 @@ class DeterministicLLMProvider(LLMProvider):
         if not self._responses:
             raise RuntimeError("deterministic provider response queue is empty")
         return self._responses.pop(0)
+
+
+class TickClock:
+    """Deterministic monotonic nanosecond clock with one millisecond ticks."""
+
+    def __init__(self):
+        self.value = -1_000_000
+
+    def __call__(self):
+        self.value += 1_000_000
+        return self.value
+
+
+def raw(output_text, *, input_tokens=10, output_tokens=5, request_id="req-1", refusal=None):
+    """Build one raw provider response with optional usage and refusal."""
+    return RawProviderResponse(
+        output_text=output_text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        request_id=request_id,
+        refusal=refusal,
+    )

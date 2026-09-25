@@ -2,11 +2,12 @@
 
 Run Python modules from the repository root after `uv sync --locked`. Registered `rag-*` helpers
 select their own checkout from any directory. There are no compatibility modules or re-export
-packages. Schema preparation lives in `scripts.schema.status`; Quick Start calls that shared code.
+packages. Schema preparation lives in `app.db.startup`, the container gate; Quick Start and
+`scripts.schema` call that shared code.
 
 | Package | Entry points and ownership |
 |---|---|
-| `schema` | `python -m scripts.schema check\|prepare\|recover\|recreate`; `status.py` owns inspection/preparation, `recovery.py` isolated recovery, `recreate.py` confirmed recreation, `sources.py` source journals |
+| `schema` | `python -m scripts.schema check\|prepare\|recover\|recreate`; `status.py` owns inspection and reuses `app.db.startup` for preparation, `recovery.py` isolated recovery, `recreate.py` confirmed recreation, `sources.py` source journals |
 | `stack` | `python -m scripts.stack dev\|prod [COMPOSE_ARGS...]`; `environment.py` validates bindings, `operator.py` manages host Operations, `commands.py` implements `corpus` and reset status |
 | `stack` setup | `bash scripts/stack/quickstart.sh` bootstraps the locked Python environment then runs `python -m scripts.stack.cli MODE start` |
 | `diagnostics` | `python -m scripts.diagnostics.ollama` checks model connectivity; `python -m scripts.diagnostics.readiness` measures health/readiness during ingestion; `python -m scripts.diagnostics.local_grade` runs the explicit local-model benchmark |

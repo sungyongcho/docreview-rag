@@ -57,9 +57,9 @@ def test_load_chunking_filings_parses_the_manifest_once(monkeypatch, tmp_path):
         ),
     )
 
-    def parse_once(received, *, expected_documents, on_progress):
+    def parse_once(received, *, on_progress):
         """Record one manifest parse and return the prepared filings."""
-        calls.append((received, expected_documents))
+        calls.append(received)
         return parsed_filings
 
     monkeypatch.setattr(corpus, "parse_seed_filings", parse_once)
@@ -68,7 +68,7 @@ def test_load_chunking_filings_parses_the_manifest_once(monkeypatch, tmp_path):
     result = load_chunking_filings(settings=settings, selection_id="sec-evaluation")
 
     assert result is parsed_filings
-    assert calls == [(entries, None)]
+    assert calls == [entries]
 
 
 def test_the_temporary_schema_keeps_actual_normalized_constraints_and_vector_width():

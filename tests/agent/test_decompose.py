@@ -13,10 +13,11 @@ from app.agent.decompose import (
     decompose_query,
     make_decomposed_retriever,
 )
-from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
+from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
-from tests.agent.support import FakeSessionFactory, hit
-from tests.llm.support import DeterministicLLMProvider
+from tests.agent.support import FakeSessionFactory
+from tests.llm.support import DeterministicLLMProvider, raw
+from tests.retrieval.support import hit
 
 
 def budget():
@@ -29,17 +30,6 @@ def budget():
             input_per_million_usd=Decimal("2"),
             output_per_million_usd=Decimal("10"),
         ),
-    )
-
-
-def raw(output_text):
-    """Build one raw provider response carrying the given output text."""
-    return RawProviderResponse(
-        output_text=output_text,
-        input_tokens=10,
-        output_tokens=5,
-        request_id="req-1",
-        refusal=None,
     )
 
 
@@ -95,8 +85,8 @@ def test_decomposed_retriever_gathers_per_sub_question_sessions_and_fuses(monkey
         session.transaction_open = True
         queries.append(query)
         ranked = {
-            "What was 2023 revenue?": (hit(1), hit(2)),
-            "What was 2024 revenue?": (hit(2), hit(3)),
+            "What was 2023 revenue?": (hit(1, 0.5), hit(2, 0.5)),
+            "What was 2024 revenue?": (hit(2, 0.5), hit(3, 0.5)),
         }[query]
         return SimpleNamespace(hits=ranked)
 
@@ -126,7 +116,7 @@ def test_decomposed_retriever_logs_a_degraded_decomposition(monkeypatch, caplog)
     async def fake_retrieve(session, query, **kwargs):
         """Return one staged hit for the fallback query."""
         assert query == original
-        return SimpleNamespace(hits=(hit(1),))
+        return SimpleNamespace(hits=(hit(1, 0.5),))
 
     module = sys.modules[make_decomposed_retriever.__module__]
     monkeypatch.setattr(module, "retrieve", fake_retrieve)

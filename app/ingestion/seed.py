@@ -15,7 +15,6 @@ from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.db.models import (
     Chunk as ChunkModel,
     Corpus,
@@ -51,7 +50,7 @@ if TYPE_CHECKING:
 
 # One manifest describes one corpus, so the count belongs to the manifest a caller
 # names rather than to this module. There is no default count: the corpus is widened
-# from the command line now, so a module that asserted a size would be asserting one
+# by each acquisition, so a module that asserted a size would be asserting one
 # particular day's corpus. A caller that wants the guard passes the number it expects.
 DEFAULT_MANIFEST_NAME = "manifest.json"
 # Corpus language tags this module is willing to persist: exactly the languages some
@@ -555,46 +554,6 @@ def build_seed_batch(
     return SeedBatch(tuple(documents), tuple(chunks), tuple(filings))
 
 
-def prepare_seed_batch(
-    manifest_path: Path | None = None,
-    *,
-    selection_id: str,
-    embedding_provider: EmbeddingProvider | None = None,
-    manifest_name: str = DEFAULT_MANIFEST_NAME,
-    expected_documents: int | None = None,
-    parser: FilingParser | None = None,
-    chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker,
-    on_progress: OperationProgressCallback | None = None,
-) -> SeedBatch:
-    """Prepare and validate one complete corpus before any transaction opens.
-
-    Use the named manifest under the configured corpus directory unless an explicit
-    path is supplied. ``parser`` and ``chunker`` reach ``build_seed_batch`` unchanged,
-    so a caller measuring a different chunk target does not lose registry dispatch.
-    """
-    path = manifest_path or get_settings().corpus_dir / manifest_name
-    if embedding_provider is not None:
-        if chunker is not registry_chunker:
-            raise ValueError("choose either an embedding provider or an explicit chunker")
-        config = embedding_chunk_config(embedding_provider)
-
-        def configured_chunker(filing: ParsedFiling) -> list[Chunk]:
-            """Use the model budget resolved once for this processing selection."""
-            return chunk_filing(filing, config)
-
-        chunker = configured_chunker
-    return replace(
-        build_seed_batch(
-            load_manifest(path, selection_id=selection_id),
-            expected_documents=expected_documents,
-            parser=parser,
-            chunker=chunker,
-            on_progress=on_progress,
-        ),
-        selection_id=selection_id,
-    )
-
-
 class ManifestError(Exception):
     """One typed manifest failure with a stable machine-readable code.
 
@@ -642,12 +601,23 @@ def load_seed_batch(
             f"Manifest file was not found: {manifest_path}",
         )
     try:
-        return prepare_seed_batch(
-            manifest_path,
+        chunker: Callable[[ParsedFiling], list[Chunk]] = registry_chunker
+        if embedding_provider is not None:
+            config = embedding_chunk_config(embedding_provider)
+
+            def configured_chunker(filing: ParsedFiling) -> list[Chunk]:
+                """Use the model budget resolved once for this processing selection."""
+                return chunk_filing(filing, config)
+
+            chunker = configured_chunker
+        return replace(
+            build_seed_batch(
+                load_manifest(manifest_path, selection_id=selection_id),
+                expected_documents=expected_documents,
+                chunker=chunker,
+                on_progress=on_progress,
+            ),
             selection_id=selection_id,
-            embedding_provider=embedding_provider,
-            expected_documents=expected_documents,
-            on_progress=on_progress,
         )
     except json.JSONDecodeError as error:
         raise ManifestError(

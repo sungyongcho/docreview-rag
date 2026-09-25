@@ -7,7 +7,7 @@ from typing import Any, cast
 from pydantic import ValidationError
 import pytest
 
-from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
+from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.language import QueryLanguage
 from app.retrieval.translate import (
     QueryTranslation,
@@ -15,7 +15,7 @@ from app.retrieval.translate import (
     route_query,
     translate_query,
 )
-from tests.llm.support import DeterministicLLMProvider
+from tests.llm.support import DeterministicLLMProvider, raw
 
 KOREAN_QUERY = "AMD는 TSMC와 관련하여 어떤 7nm 공급 위험을 밝혔습니까?"
 ENGLISH_QUERY = "What specific 7 nm supply risk did AMD identify involving TSMC?"
@@ -31,17 +31,6 @@ def budget() -> ProviderBudget:
             input_per_million_usd=Decimal("0.4"),
             output_per_million_usd=Decimal("1.6"),
         ),
-    )
-
-
-def raw(output_text: str, *, refusal: str | None = None) -> RawProviderResponse:
-    """Return one canned provider response with fixed usage accounting."""
-    return RawProviderResponse(
-        output_text=output_text,
-        input_tokens=10,
-        output_tokens=5,
-        request_id="req-1",
-        refusal=refusal,
     )
 
 

@@ -108,7 +108,6 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                 session, EmbeddingIdentity("test", "allowed-before-snapshot", 384, "cl100k_base")
             )
             config = {
-                "golden_sha256": "a" * 64,
                 "strategy": "hybrid",
                 "embedding": {
                     "provider": "test",
@@ -116,7 +115,7 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
                     "dimensions": 384,
                     "tokenizer": "cl100k_base",
                 },
-                "admin_identity": {"corpus_fingerprint": fingerprint},
+                "admin_identity": {"corpus_fingerprint": fingerprint, "golden_sha256": "a" * 64},
             }
             baseline_path = tmp_path / "snapshot-first.json"
             candidate_path = tmp_path / "snapshot-second.json"
@@ -138,7 +137,13 @@ async def _exercise(tmp_path) -> tuple[bool, str]:
             )
             changed = EvalResult(
                 suite="snapshot-test",
-                config={**config, "golden_sha256": "c" * 64},
+                config={
+                    **config,
+                    "admin_identity": {
+                        "corpus_fingerprint": fingerprint,
+                        "golden_sha256": "c" * 64,
+                    },
+                },
                 metrics={"mrr": 0.5},
                 raw_artifact_path=str(changed_path),
             )

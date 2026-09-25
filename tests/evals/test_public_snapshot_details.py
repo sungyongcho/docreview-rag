@@ -22,7 +22,7 @@ def evidence(tmp_path):
     golden = json.loads(Path("data/golden/retrieval.json").read_text())[:3]
     digest = golden_payload_sha256(golden)
     config = {
-        "golden_sha256": digest,
+        "admin_identity": {"golden_sha256": digest},
         "retrieval_profile": {
             "k": 5,
             "strategy": "hybrid",
@@ -190,7 +190,7 @@ def test_historical_source_bound_artifact_requires_exact_original_and_frozen_sou
     source_file = golden_dir / "retrieval.json"
     source_file.write_bytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
-    evidence.result.config["golden_sha256"] = digest
+    evidence.result.config["admin_identity"]["golden_sha256"] = digest
     artifact = json.loads(evidence.path.read_text())
     artifact["suite"] = "sec-en"
     artifact["config"] = evidence.result.config
