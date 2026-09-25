@@ -14,7 +14,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, build_opener
 
 from dotenv import dotenv_values, set_key
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.bootstrap import SchemaDriftError
 from scripts.diagnostics.ollama import diagnose
@@ -25,8 +24,6 @@ from scripts.stack.environment import load_local_environment
 from scripts.stack.fresh import write_receipt
 from scripts.stack.prompts import SetupCancelledError, confirm, step
 from scripts.stack.terminal import activity, run_step
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def placeholder(value: str) -> bool:
@@ -438,37 +435,3 @@ def quickstart(
             error=type(error).__name__,
         )
         raise
-
-
-def main() -> int:
-    """Report setup failures without dumping configuration or provider credentials."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--verbose", "-vv", action="store_true")
-    parser.add_argument("--status", action="store_true")
-    args = parser.parse_args()
-    if args.verbose:
-        os.environ["DOCREVIEW_VERBOSE"] = "1"
-    if args.status:
-        from scripts.stack.fresh import status
-
-        return status(ROOT, "start-quick")
-    try:
-        return quickstart(ROOT)
-    except SetupCancelledError as error:
-        print(str(error))
-        return 0
-    except (ValueError, RuntimeError) as error:
-        print(str(error), file=sys.stderr)
-    except OSError, subprocess.CalledProcessError, SQLAlchemyError:
-        print(
-            "A local setup command failed. Check Docker/database access and rerun rag-dev start. "
-            "No database was reset.",
-            file=sys.stderr,
-        )
-    return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

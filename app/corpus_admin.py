@@ -1,4 +1,4 @@
-"""Local corpus administration and deterministic public-demo projections."""
+"""Local corpus administration and its administrator projections."""
 
 from __future__ import annotations
 
@@ -416,47 +416,6 @@ def _job_from_stored(job: StoredJob) -> AdminJob:
     )
 
 
-class CorpusAdminService(Protocol):
-    """Shared live and canned boundary consumed by the Gradio administrator tab."""
-
-    @property
-    def read_only(self) -> bool:
-        """Report whether operation controls must remain disabled."""
-        ...
-
-    async def snapshot(
-        self,
-        *,
-        registry: str = "",
-        issuer: str = "",
-        fiscal_year: int | None = None,
-        language: str = "",
-        parse_status: str = "",
-    ) -> CorpusSnapshot:
-        """Return one filtered corpus snapshot."""
-        ...
-
-    async def document_detail(self, doc_id: str) -> DocumentDetail | None:
-        """Return one selected document and bounded chunk previews."""
-        ...
-
-    async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
-        """Preview exact current original files without changing them."""
-        ...
-
-    async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
-        """Queue one safe administrator operation."""
-        ...
-
-    async def retry(self, job_id: str) -> AdminJob:
-        """Queue the same command from one failed job."""
-        ...
-
-    async def jobs(self) -> JobBoard:
-        """Return current queue and history state."""
-        ...
-
-
 def _matches(
     document: AdminDocument,
     *,
@@ -474,181 +433,6 @@ def _matches(
         and (not language or document.language == language)
         and (not parse_status or document.parse_status == parse_status)
     )
-
-
-class CannedCorpusAdminService:
-    """Deterministic read-only corpus administration portfolio fixture."""
-
-    _documents = (
-        AdminDocument(
-            doc_id="NVDA-FY2024",
-            registry="sec",
-            language="en",
-            issuer="NVDA",
-            issuer_id="0001045810",
-            fiscal_year=2024,
-            form="10-K",
-            parse_status="parsed",
-            filing_date="2024-02-21",
-            report_period="2024-01-28",
-            filing_id="0001045810-24-000029",
-            source_url="https://www.sec.gov/Archives/edgar/data/1045810/",
-            source_length=1_873_421,
-            source_sha256="3" * 64,
-            chunk_count=612,
-        ),
-        AdminDocument(
-            doc_id="005930-FY2024",
-            registry="dart",
-            language="ko",
-            issuer="005930",
-            issuer_id="00126380",
-            fiscal_year=2024,
-            form="사업보고서",
-            parse_status="parsed",
-            filing_date="2025-03-11",
-            report_period="2024-12-31",
-            filing_id="20250311001042",
-            source_url="https://dart.fss.or.kr/",
-            source_length=5_780_874,
-            source_sha256="5" * 64,
-            chunk_count=668,
-        ),
-    )
-
-    _details = {
-        "NVDA-FY2024": (
-            ChunkPreview(
-                chunk_id=42,
-                ordinal=41,
-                citation="NVDA FY2024 · Item 7",
-                span="chars 539406-540566",
-                source_sha256="3" * 64,
-                body="Data Center revenue increased as accelerated computing demand grew.",
-            ),
-        ),
-        "005930-FY2024": (
-            ChunkPreview(
-                chunk_id=84,
-                ordinal=83,
-                citation="삼성전자 FY2024 · 반도체 사업",
-                span="chars 12040-13220",
-                source_sha256="5" * 64,
-                body="메모리 시장과 설비투자에 관한 사업보고서 근거 예시입니다.",
-            ),
-        ),
-    }
-
-    def __init__(self) -> None:
-        self._history = (
-            AdminJob(
-                job_id="demo-success",
-                command=AdminCommand("rebuild_bm25"),
-                status="succeeded",
-                stage="complete",
-                current=1,
-                total=1,
-                message="BM25 statistics rebuilt",
-                created_at=datetime(2026, 1, 1, tzinfo=UTC),
-                started_at=datetime(2026, 1, 1, tzinfo=UTC),
-                finished_at=datetime(2026, 1, 1, tzinfo=UTC),
-            ),
-            AdminJob(
-                job_id="demo-failure",
-                command=AdminCommand("backfill_embeddings"),
-                status="failed",
-                stage="failed",
-                current=0,
-                total=None,
-                message="Provider unavailable in the read-only fixture",
-                created_at=datetime(2026, 1, 1, tzinfo=UTC),
-                started_at=datetime(2026, 1, 1, tzinfo=UTC),
-                finished_at=datetime(2026, 1, 1, tzinfo=UTC),
-            ),
-        )
-
-    @property
-    def read_only(self) -> bool:
-        """Keep every canned operation control disabled."""
-        return True
-
-    def initial_snapshot(self) -> CorpusSnapshot:
-        """Return the unfiltered fixture synchronously for DB-free UI construction."""
-        return CorpusSnapshot(
-            mode="canned",
-            status=CorpusStatus(
-                database_connected=False,
-                schema_status="compatible",
-                schema_message="Deterministic portfolio fixture; no database access.",
-                documents=2,
-                chunks=1_280,
-                embedded_chunks=1_280,
-                pending_embeddings=0,
-                bm25_ready=True,
-                writable=False,
-                provider="deterministic",
-            ),
-            manifests=(
-                ManifestSummary(
-                    "manifest.json",
-                    2,
-                    True,
-                    corpus_id="demo",
-                    registries=("sec", "dart"),
-                    sources_present=2,
-                ),
-            ),
-            documents=self._documents,
-        )
-
-    async def snapshot(
-        self,
-        *,
-        registry: str = "",
-        issuer: str = "",
-        fiscal_year: int | None = None,
-        language: str = "",
-        parse_status: str = "",
-    ) -> CorpusSnapshot:
-        """Return deterministic representative SEC and DART corpus state."""
-        documents = tuple(
-            document
-            for document in self._documents
-            if _matches(
-                document,
-                registry=registry,
-                issuer=issuer,
-                fiscal_year=fiscal_year,
-                language=language,
-                parse_status=parse_status,
-            )
-        )
-        return replace(self.initial_snapshot(), documents=documents)
-
-    async def document_detail(self, doc_id: str) -> DocumentDetail | None:
-        """Return one deterministic representative chunk preview."""
-        document = next((item for item in self._documents if item.doc_id == doc_id), None)
-        if document is None:
-            return None
-        return DocumentDetail(document, self._details.get(doc_id, ()))
-
-    async def preview_source_deletion(self, document_ids: tuple[str, ...]) -> dict[str, Any]:
-        """Reject deletion previews in the read-only demonstration."""
-        raise ValueError("Source deletion is unavailable in read-only mode.")
-
-    async def enqueue(self, command: AdminCommand, *, retry_of: str | None = None) -> AdminJob:
-        """Refuse mutation on the public portfolio fixture."""
-        del command, retry_of
-        raise PermissionError("Read-only portfolio demo; local administrator mode is required.")
-
-    async def retry(self, job_id: str) -> AdminJob:
-        """Refuse retries on the public portfolio fixture."""
-        del job_id
-        raise PermissionError("Read-only portfolio demo; local administrator mode is required.")
-
-    async def jobs(self) -> JobBoard:
-        """Return deterministic sample success and failure history."""
-        return JobBoard(None, (), self._history)
 
 
 OperationRunner = Callable[
@@ -694,11 +478,6 @@ class RuntimeCorpusAdminService:
         self._recovered_jobs = False
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._persister = ProgressPersister(self._persist_current_job)
-
-    @property
-    def read_only(self) -> bool:
-        """Enable controls only for this explicit live service."""
-        return False
 
     @property
     def _database_engine(self) -> AsyncEngine:

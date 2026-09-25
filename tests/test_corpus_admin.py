@@ -13,7 +13,6 @@ from app.config import Settings
 import app.corpus_admin as corpus_admin
 from app.corpus_admin import (
     AdminCommand,
-    CannedCorpusAdminService,
     OperationOutcome,
     RuntimeCorpusAdminService,
 )
@@ -26,34 +25,6 @@ from app.retrieval.embeddings import (
     EmbeddingBackfillResult,
 )
 from tests.live_postgres import live_postgres_unavailable
-
-
-def test_canned_snapshot_is_read_only_filterable_and_db_free() -> None:
-    """Expose representative SEC/DART state without any live dependency."""
-    service = CannedCorpusAdminService()
-
-    snapshot = asyncio.run(service.snapshot(registry="dart"))
-    detail = asyncio.run(service.document_detail("005930-FY2024"))
-
-    assert service.read_only is True
-    assert snapshot.mode == "canned"
-    assert snapshot.status.database_connected is False
-    assert snapshot.status.writable is False
-    assert [document.registry for document in snapshot.documents] == ["dart"]
-    assert [(item.registries, item.sources_present) for item in snapshot.manifests] == [
-        (("sec", "dart"), 2),
-    ]
-    assert detail is not None
-    assert len(detail.chunks) == 1
-    assert len(detail.chunks[0].body) <= 1_000
-
-
-def test_canned_service_refuses_every_operation() -> None:
-    """Keep the public portfolio fixture unable to reach any mutation path."""
-    service = CannedCorpusAdminService()
-
-    with pytest.raises(PermissionError, match="Read-only"):
-        asyncio.run(service.enqueue(AdminCommand("rebuild_bm25")))
 
 
 @pytest.mark.parametrize(

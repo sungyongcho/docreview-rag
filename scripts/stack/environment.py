@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import argparse
 import ipaddress
 from pathlib import Path
-import sys
 
 from dotenv import dotenv_values
 
@@ -62,25 +60,3 @@ def load_local_environment(path: Path = Path(".env"), *, mode: str = "dev") -> d
             )
         claimed[value] = key
     return values | {"MODE": mode}
-
-
-def write_null_environment(values: dict[str, str]) -> None:
-    """Write shell-safe null-delimited key/value pairs to standard output."""
-    for key, value in values.items():
-        sys.stdout.buffer.write(key.encode() + b"\0" + value.encode() + b"\0")
-
-
-def main() -> None:
-    """Emit only the validated public launcher contract for the selected mode."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("dev", "prod"), default="dev")
-    args = parser.parse_args()
-    try:
-        values = load_local_environment(mode=args.mode)
-    except LocalEnvironmentError as error:
-        raise SystemExit(str(error)) from error
-    write_null_environment(values)
-
-
-if __name__ == "__main__":
-    main()

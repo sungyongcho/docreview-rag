@@ -14,7 +14,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 from sqlalchemy.exc import SQLAlchemyError
 
 from scripts.stack.environment import load_local_environment
-from scripts.stack.fresh import receipt_path, start_fresh, status as fresh_status
+from scripts.stack.fresh import receipt_path, status as fresh_status
 from scripts.stack.operator import LocalOperator, OperatorLifecycleError
 from scripts.stack.prompts import SetupCancelledError
 from scripts.stack.quickstart import quickstart
@@ -226,13 +226,6 @@ def main() -> int:
     )
     reset_mode.add_argument("--keep-sources", action="store_true")
     reset_mode.add_argument("--sample", action="store_true")
-    fresh_parser = commands.add_parser(
-        "start-fresh", help="Clean this checkout, then start quick setup."
-    )
-    fresh_parser.add_argument("--status", action="store_true")
-    fresh_parser.add_argument("--extreme", action="store_true")
-    fresh_parser.add_argument("--no-start", action="store_true")
-    fresh_parser.add_argument("--discard-tracked", action="store_true")
     jobs = commands.add_parser(
         "corpus",
         help="Use the same corpus jobs as the development web UI.",
@@ -275,23 +268,12 @@ def main() -> int:
     jobs.add_argument("--manifest", help="Corpus-relative manifest path, as shown in the Build UI.")
     jobs.add_argument("--selection", help="Explicit processing selection ID from the Build UI.")
     jobs.add_argument("--expected-documents", type=int)
-    for child in (reset_parser, fresh_parser, jobs):
+    for child in (reset_parser, jobs):
         child.add_argument("--verbose", "-vv", action="store_true", help="Stream step output.")
     args = parser.parse_args()
     if args.verbose:
         os.environ["DOCREVIEW_VERBOSE"] = "1"
     try:
-        if args.command == "start-fresh":
-            return (
-                fresh_status(ROOT, "start-fresh")
-                if args.status
-                else start_fresh(
-                    ROOT,
-                    extreme=args.extreme,
-                    no_start=args.no_start,
-                    discard_tracked=args.discard_tracked,
-                )
-            )
         if args.command == "reset":
             return (
                 reset_status(ROOT)

@@ -19,6 +19,7 @@ from app.llm.schemas import (
     SchemaRejected,
     TokenPricing,
 )
+from app.openai_models import resolve_openai_model
 
 
 def metadata():
@@ -81,6 +82,27 @@ def test_token_pricing_uses_exact_decimal_arithmetic():
     assert pricing.estimate(100, 20) == Decimal("0.0004")
     with pytest.raises(ValueError):
         pricing.estimate(-1, 0)
+
+
+def test_token_pricing_charges_cached_and_cache_write_input_at_policy_prices():
+    """Charge cached and cache-write input at their own terra policy prices."""
+    policy = resolve_openai_model("review", "gpt-5.6-terra").pricing
+    pricing = TokenPricing(
+        input_per_million_usd=policy.input_per_million_usd,
+        output_per_million_usd=policy.output_per_million_usd,
+        cached_input_per_million_usd=policy.cached_input_per_million_usd,
+        cache_write_input_per_million_usd=policy.cache_write_input_per_million_usd,
+    )
+    million = 1_000_000
+
+    assert pricing.estimate(million, million) == Decimal("14.00")
+    assert pricing.estimate(
+        million,
+        million,
+        cached_input_tokens=200_000,
+        cache_write_input_tokens=100_000,
+    ) == Decimal("13.69")
+    assert pricing.estimate(0, 0) == Decimal("0")
 
 
 @pytest.mark.parametrize(

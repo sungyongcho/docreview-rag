@@ -177,22 +177,3 @@ def capture_stages[**P, R](function: Callable[P, Awaitable[R]]) -> Callable[P, A
             return await function(*args, **kwargs)
 
     return wrapped
-
-
-def observed_stage[**P, R](
-    node: WorkflowNode,
-) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-    """Measure one complete async stage without changing its public call signature."""
-
-    def decorate(function: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-        """Wrap an async boundary while preserving FastAPI and protocol introspection."""
-
-        @wraps(function)
-        async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
-            """Record the actual interval of the decorated operation."""
-            async with stage(node):
-                return await function(*args, **kwargs)
-
-        return wrapped
-
-    return decorate

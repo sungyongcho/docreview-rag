@@ -28,7 +28,6 @@ class ExitCode(IntEnum):
 
     OK = 0
     INVALID_INPUT = 2
-    INVALID_FILE = 3
     UNAVAILABLE = 4
 
 
@@ -371,7 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns
     -------
     int
-        Stable success, invalid-input, invalid-file, or unavailable exit code.
+        Stable success, invalid-input, or unavailable exit code.
 
     Notes
     -----
