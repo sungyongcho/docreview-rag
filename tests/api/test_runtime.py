@@ -1439,3 +1439,72 @@ def test_invalid_classification_is_a_technical_failure(classified_service):
         asyncio.run(service.retrieve(RetrieveRequest(query="SanDisk growth")))
     assert failure.value.status_code == 503
     assert failure.value.error.code == "provider_unavailable"
+
+
+@pytest.mark.parametrize(
+    "server,retrieval,expected",
+    [
+        ({}, None, (1.2, 0.75, "lucene")),
+        ({"bm25_k1": 1.6, "bm25_b": 0.5, "bm25_idf": "robertson"}, None, (1.6, 0.5, "robertson")),
+        (
+            {"bm25_k1": 1.6, "bm25_b": 0.5, "bm25_idf": "robertson"},
+            {"lexical_ranker": "bm25", "bm25_k1": 0.9, "bm25_b": 0.75, "bm25_idf": "lucene"},
+            (0.9, 0.75, "lucene"),
+        ),
+    ],
+)
+def test_served_retrieval_applies_bm25_precedence(server, retrieval, expected):
+    """Stated Custom values beat server settings, which beat the built-in defaults."""
+    from contextlib import asynccontextmanager
+
+    from app.api.schemas import RetrieveRequest
+    from app.retrieval.scope import ManifestScopeIndex
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+
+    calls = []
+
+    async def record(session, query, **kwargs):
+        """Capture the ranking plan at the retrieval boundary without a database."""
+        del session, query
+        calls.append(kwargs)
+        return RetrievalResult(
+            hits=(),
+            candidates=(),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
+        )
+
+    @asynccontextmanager
+    async def no_database():
+        """Open no session; the recording retrieval service never uses one."""
+        yield None
+
+    services = RuntimeApiServices(
+        embedding_provider=DeterministicEmbeddingProvider(),
+        session_factory=no_database,  # type: ignore[arg-type]
+        retrieval_service=record,
+        scope_index=ManifestScopeIndex.from_entries(
+            (
+                filing_document(
+                    registry="dart",
+                    issuer="005930",
+                    fiscal_year=2024,
+                    aliases=("삼성전자", "Samsung Electronics"),
+                ),
+            )
+        ),
+        **server,
+    )
+    profile = ReviewSessionProfile.model_validate(
+        {"retrieval_preset": "korean", "fiscal_years": [2024]}
+        if retrieval is None
+        else {"retrieval_preset": "custom", "custom_retrieval": retrieval, "fiscal_years": [2024]}
+    )
+
+    response = asyncio.run(
+        services.retrieve(RetrieveRequest(query="삼성전자 매출", session_profile=profile))
+    )
+
+    assert [(call["bm25_k1"], call["bm25_b"], call["bm25_idf"]) for call in calls] == [expected]
+    resolved = response.resolved_profile
+    assert (resolved.bm25_k1, resolved.bm25_b, resolved.bm25_idf) == expected

@@ -33,6 +33,7 @@ from app.api.admin_schemas import (
     GoldenSuiteResource,
     RetrievalProfile,
 )
+from app.api.review_profile import ServerBM25, with_server_bm25
 from app.config import Settings, get_settings
 from app.corpus_admin import CorpusStatus
 from app.db.models import Chunk, EvalResult
@@ -470,6 +471,8 @@ class EvaluationAdminService:
         self, request: EvaluationRunRequest, *, retry_of: str | None = None
     ) -> EvaluationJobResource:
         """Atomically deduplicate and queue a request, including concurrent callers."""
+        server = ServerBM25(self._settings.bm25_k1, self._settings.bm25_b, self._settings.bm25_idf)
+        request = request.model_copy(update={"profile": with_server_bm25(request.profile, server)})
         async with self._enqueue_lock:
             return await self._enqueue(request, retry_of=retry_of)
 

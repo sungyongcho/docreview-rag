@@ -12,7 +12,12 @@ from typing import Annotated
 
 from pydantic import Field, StrictBool, model_validator
 
-from app.api.review_profile import CustomRetrievalProfile, StrictProfileModel
+from app.api.review_profile import (
+    CustomRetrievalProfile,
+    ServerBM25,
+    StrictProfileModel,
+    with_server_bm25,
+)
 
 BUILTIN_IDS = frozenset({"balanced", "korean", "accuracy"})
 DEFAULT_PRESET_DIRECTORY = Path(__file__).resolve().parents[2] / "data" / "presets"
@@ -52,6 +57,19 @@ class PresetCatalog(StrictProfileModel):
     unchanged: bool = False
     presets: list[StoredPreset] = Field(default_factory=list)
     errors: list[PresetFileError] = Field(default_factory=list)
+
+
+def effective_catalog(catalog: PresetCatalog, server: ServerBM25) -> PresetCatalog:
+    """Present each preset with the BM25 values a request selecting it applies."""
+    if not catalog.presets:
+        return catalog
+    presets = [
+        preset.model_copy(
+            update={"retrieval": with_server_bm25(preset.retrieval, server, builtin=preset.builtin)}
+        )
+        for preset in catalog.presets
+    ]
+    return catalog.model_copy(update={"presets": presets})
 
 
 class PresetStore:

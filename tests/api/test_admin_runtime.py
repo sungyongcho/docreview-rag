@@ -304,3 +304,74 @@ def test_source_deletion_preview_accepts_the_plan_lists_from_the_corpus_service(
     assert resource.documents[0].document_id == "dart-20250311001085"
     assert resource.files[0].retained is False
     assert resource.retained_inputs == 2
+
+
+def test_previews_run_and_present_the_effective_bm25_values(monkeypatch):
+    """A preview keeps its stated BM25 value and takes the rest from the server settings."""
+    from contextlib import asynccontextmanager
+
+    from app.api import admin_runtime
+    from app.api.admin_schemas import RetrievalPreviewRequest, ReviewPreviewRequest
+    from app.retrieval.service import ComponentRankings, RetrievalResult
+
+    calls = []
+
+    async def prepare(*args):
+        """Skip index readiness checks that would need a database."""
+        del args
+
+    async def retrieve(session, query, **kwargs):
+        """Capture the hybrid retrieval plan without a database."""
+        del session, query
+        calls.append(kwargs)
+        return RetrievalResult(
+            hits=(),
+            candidates=(),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
+        )
+
+    @asynccontextmanager
+    async def no_database():
+        """Open no session; the recording retrieval never uses one."""
+        yield None
+
+    monkeypatch.setattr(admin_runtime, "prepare_search", prepare)
+    monkeypatch.setattr(admin_runtime, "retrieve", retrieve)
+    services = RuntimeAdminApiServices(
+        runtime=RuntimeApiServices(
+            embedding_provider=DeterministicEmbeddingProvider(),
+            session_factory=no_database,  # type: ignore[arg-type]
+            bm25_k1=1.6,
+            bm25_b=0.5,
+            bm25_idf="robertson",
+        )
+    )
+    payload = {"query": "Revenue?", "profile": {"lexical_ranker": "bm25", "bm25_b": 0.3}}
+
+    response = asyncio.run(
+        services.retrieval_preview(RetrievalPreviewRequest.model_validate(payload))
+    )
+
+    assert [(call["bm25_k1"], call["bm25_b"], call["bm25_idf"]) for call in calls] == [
+        (1.6, 0.3, "robertson")
+    ]
+    assert (response.profile.bm25_k1, response.profile.bm25_b, response.profile.bm25_idf) == (
+        1.6,
+        0.3,
+        "robertson",
+    )
+
+    reviewed = []
+
+    async def review_with_retrieval(review, retrieval):
+        """Capture the Custom plan the review preview hands to the workflow."""
+        del retrieval
+        reviewed.append(review)
+        raise LookupError("review boundary reached")
+
+    monkeypatch.setattr(services._runtime, "review_with_retrieval", review_with_retrieval)
+    with pytest.raises(LookupError, match="review boundary"):
+        asyncio.run(services.review_preview(ReviewPreviewRequest.model_validate(payload)))
+    custom = reviewed[0].session_profile.custom_retrieval
+    assert (custom.bm25_k1, custom.bm25_b, custom.bm25_idf) == (1.6, 0.3, "robertson")

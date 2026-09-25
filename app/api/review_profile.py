@@ -1,7 +1,7 @@
 """Strict conversation-level review settings and server-owned retrieval presets."""
 
 from collections.abc import Mapping
-from typing import Annotated, Final, Literal, Self
+from typing import Annotated, Final, Literal, NamedTuple, Self
 
 from pydantic import (
     BaseModel,
@@ -46,6 +46,7 @@ class CustomRetrievalProfile(StrictProfileModel):
     candidate_k: Annotated[StrictInt, Field(gt=0, le=500)] = 20
     rrf_k: Annotated[StrictInt, Field(gt=0, le=10_000)] = DEFAULT_RRF_K
     lexical_ranker: LexicalRanker | None = "ts_rank_cd"
+    # An omitted BM25 value resolves through the server settings; see with_server_bm25.
     bm25_k1: Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)] = DEFAULT_BM25_K1
     bm25_b: Annotated[StrictFloat, Field(ge=0, le=1, allow_inf_nan=False)] = DEFAULT_BM25_B
     bm25_idf: BM25Idf = DEFAULT_BM25_IDF
@@ -181,12 +182,75 @@ class ResolvedRetrievalProfile(StrictProfileModel):
     reranker: RerankerName | None
 
 
-def resolve_retrieval_profile(profile: ReviewSessionProfile) -> ResolvedRetrievalProfile:
-    """Expand a named preset or validated Custom settings into one exact plan."""
+class ServerBM25(NamedTuple):
+    """Server BM25 settings for every value a retrieval plan does not state."""
+
+    k1: float = DEFAULT_BM25_K1
+    b: float = DEFAULT_BM25_B
+    idf: BM25Idf = DEFAULT_BM25_IDF
+
+
+_BUILTIN_BM25: Final[Mapping[str, object]] = {
+    "bm25_k1": DEFAULT_BM25_K1,
+    "bm25_b": DEFAULT_BM25_B,
+    "bm25_idf": DEFAULT_BM25_IDF,
+}
+
+
+def with_server_bm25[P: BaseModel](
+    retrieval: P, server: ServerBM25 | None = None, *, builtin: bool = False
+) -> P:
+    """Fill the BM25 values a retrieval plan does not state from the server settings.
+
+    Parameters
+    ----------
+    retrieval : P
+        A Custom, stored, or administrator retrieval plan with ``bm25_*`` fields.
+    server : ServerBM25 | None
+        The configured server values; ``None`` means the built-in defaults.
+    builtin : bool
+        Whether the plan comes from a shipped built-in preset file.
+
+    Returns
+    -------
+    P
+        The plan with the BM25 values a request selecting it actually uses.
+
+    Notes
+    -----
+    A request or file states a value by supplying it, and a stated value wins. A
+    built-in preset that repeats a built-in default carries no deliberate tuning, so
+    that value inherits the server setting too; a different built-in value is kept.
+    """
+    configured = server or ServerBM25()
+    inherited = {
+        name: value
+        for name, value in (
+            ("bm25_k1", float(configured.k1)),
+            ("bm25_b", float(configured.b)),
+            ("bm25_idf", configured.idf),
+        )
+        if name not in retrieval.model_fields_set
+        or (builtin and getattr(retrieval, name) == _BUILTIN_BM25[name])
+    }
+    if not inherited:
+        return retrieval
+    return type(retrieval).model_validate({**retrieval.model_dump(), **inherited})
+
+
+def resolve_retrieval_profile(
+    profile: ReviewSessionProfile, server: ServerBM25 | None = None
+) -> ResolvedRetrievalProfile:
+    """Expand a named preset or validated Custom settings into one exact plan.
+
+    BM25 values the plan does not state come from ``server`` (the built-in defaults
+    when ``None``), so the resolved plan always carries the values actually applied.
+    """
     from app.api.preset_store import preset_store
 
     selected = profile.custom_retrieval
-    if profile.retrieval_preset != "custom":
+    builtin = profile.retrieval_preset != "custom"
+    if builtin:
         selected = next(
             (
                 preset.retrieval
@@ -197,6 +261,7 @@ def resolve_retrieval_profile(profile: ReviewSessionProfile) -> ResolvedRetrieva
         )
     if selected is None:
         raise ValueError("retrieval preset settings are missing")
+    selected = with_server_bm25(selected, server, builtin=builtin)
     return ResolvedRetrievalProfile(
         preset=profile.retrieval_preset,
         **selected.model_dump(mode="python"),

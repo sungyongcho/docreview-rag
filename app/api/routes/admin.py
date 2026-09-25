@@ -56,7 +56,8 @@ from app.api.admin_schemas import (
     UsageResponse,
 )
 from app.api.errors import ApiProblemError, not_found, translate_runtime_errors
-from app.api.preset_store import PresetCatalog, StoredPreset, preset_store
+from app.api.preset_store import PresetCatalog, StoredPreset, effective_catalog, preset_store
+from app.api.review_profile import with_server_bm25
 from app.api.schemas import (
     ErrorResponse,
     SnapshotComparisonResponse,
@@ -639,7 +640,7 @@ def _require_preset_dev() -> None:
 def list_presets(services: AdminServices, version: str | None = None) -> PresetCatalog:
     """Read a debounced catalog or return only its unchanged version."""
     _require_preset_dev()
-    return preset_store.catalog(version)
+    return effective_catalog(preset_store.catalog(version), services.bm25_parameters)
 
 
 @router.put("/presets", response_model=StoredPreset)
@@ -647,7 +648,11 @@ def put_preset(preset: StoredPreset, services: AdminServices) -> StoredPreset:
     """Atomically create or update one custom DEV preset."""
     _require_preset_dev()
     try:
-        return preset_store.save(preset)
+        return preset_store.save(
+            preset.model_copy(
+                update={"retrieval": with_server_bm25(preset.retrieval, services.bm25_parameters)}
+            )
+        )
     except ValueError as error:
         raise ApiProblemError(status_code=400, code="invalid_preset", message=str(error)) from error
     except OSError as error:
@@ -670,4 +675,4 @@ def delete_preset(services: AdminServices, id: str = Query(min_length=1)) -> Pre
         raise ApiProblemError(
             status_code=503, code="preset_write_failed", message="Could not delete the preset file."
         ) from error
-    return preset_store.catalog()
+    return effective_catalog(preset_store.catalog(), services.bm25_parameters)

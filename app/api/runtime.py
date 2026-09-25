@@ -29,6 +29,7 @@ from app.api.evidence import (
 from app.api.review_profile import (
     ResolvedRetrievalProfile,
     ReviewSessionProfile,
+    ServerBM25,
     public_custom_retrieval_violation,
     resolve_retrieval_profile,
 )
@@ -427,6 +428,11 @@ class RuntimeApiServices(ApiServices):
         """Expose the server-selected provider without exposing its credentials."""
         return self._embedding_provider
 
+    @property
+    def bm25_parameters(self) -> ServerBM25:
+        """Expose the configured BM25 values that fill what a retrieval plan leaves unstated."""
+        return ServerBM25(self._bm25_k1, self._bm25_b, self._bm25_idf)
+
     async def _retrieve_with_session(
         self,
         session: AsyncSession,
@@ -437,7 +443,7 @@ class RuntimeApiServices(ApiServices):
         query_variants: dict[str, str] | None = None,
     ) -> RetrievalResult:
         """Retrieve against an open session, forwarding the configured ranking plan."""
-        plan = profile or resolve_retrieval_profile(ReviewSessionProfile())
+        plan = profile or resolve_retrieval_profile(ReviewSessionProfile(), self.bm25_parameters)
         return await self._retrieval_service(
             session,
             query,
@@ -529,7 +535,7 @@ class RuntimeApiServices(ApiServices):
         session_profile: ReviewSessionProfile,
     ) -> tuple[ResolvedRetrievalProfile, ResolvedQueryScope]:
         """Resolve the session profile and its explicit query scope."""
-        profile = resolve_retrieval_profile(session_profile)
+        profile = resolve_retrieval_profile(session_profile, self.bm25_parameters)
         explicit_filters = session_profile.explicit_filters()
         if session_profile.snapshot_id is not None and explicit_filters.snapshot_id is None:
             explicit_filters = explicit_filters.model_copy(
@@ -905,7 +911,9 @@ class RuntimeApiServices(ApiServices):
                         candidate_expires_at=0,
                         score_stage="rrf",
                         component_rankings={},
-                        resolved_profile=resolve_retrieval_profile(request.session_profile),
+                        resolved_profile=resolve_retrieval_profile(
+                            request.session_profile, self.bm25_parameters
+                        ),
                         resolved_scope=None,
                         path_decision=path,
                     )

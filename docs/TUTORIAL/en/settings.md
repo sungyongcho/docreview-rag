@@ -63,7 +63,7 @@ Balanced provides the default starting point. Korean enables language-aware retr
 
 In **Settings and preview → Search**, inspect the current parameter cards or expand **Compare retrieval presets** to read the alternatives. DEV also provides direct custom editing. The **?** help describes the selected definition beside the control without running a review. **Preview** summarizes only the selected configuration.
 
-`k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
+`k` is the returned result count; `candidate_k` is the candidate count used before final selection. RRF combines component ranks. BM25 parameters affect lexical scoring. A BM25 value stated by Custom or a saved preset applies first, then the server's `BM25_K1`, `BM25_B` and `BM25_IDF` settings, then the defaults `1.2`, `0.75` and `lucene`. The shipped presets repeat those defaults, so they follow the server settings; in DEV the preset list shows the applied values, and each run records them in its resolved retrieval profile. A reranker changes ordering, not the underlying filing text. Use [retrieval inspection](retrieval.md) to assess the change before attributing a quality improvement to it.
 
 <!-- heading-alias: retrieval-preset-files-and-json-editing -->
 ### Retrieval preset files and JSON editing {#preset-files}

@@ -6,6 +6,7 @@ from typing import cast
 from fastapi.testclient import TestClient
 import pytest
 
+from app.api.review_profile import ServerBM25
 from app.api.runtime import RuntimeApiServices
 from app.corpus_admin import CorpusStatus, RuntimeCorpusAdminService
 from app.llm.provider import DeterministicLLMProvider
@@ -236,6 +237,21 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
 
     assert services._llm_provider is None
     assert services._provider_budget is None
+
+
+def test_runtime_composition_serves_the_configured_bm25_settings(monkeypatch, tmp_path) -> None:
+    """Hand BM25_* settings to the served runtime and keep the built-in defaults otherwise."""
+    monkeypatch.chdir(tmp_path)
+    for name in ("BM25_K1", "BM25_B", "BM25_IDF"):
+        monkeypatch.delenv(name, raising=False)
+    default = build_runtime_services(ReleaseSettings(mode="runtime"))
+    monkeypatch.setenv("BM25_K1", "1.6")
+    monkeypatch.setenv("BM25_B", "0.5")
+    monkeypatch.setenv("BM25_IDF", "robertson")
+    configured = build_runtime_services(ReleaseSettings(mode="runtime"))
+
+    assert default.bm25_parameters == ServerBM25(1.2, 0.75, "lucene")
+    assert configured.bm25_parameters == ServerBM25(1.6, 0.5, "robertson")
 
 
 def test_release_admin_modes_hide_or_enable_the_local_surface() -> None:

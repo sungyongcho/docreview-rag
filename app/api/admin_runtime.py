@@ -51,7 +51,7 @@ from app.api.admin_schemas import (
 )
 from app.api.document_catalog import DocumentCatalog
 from app.api.errors import ApiProblemError, unavailable
-from app.api.review_profile import ReviewSessionProfile
+from app.api.review_profile import ReviewSessionProfile, ServerBM25, with_server_bm25
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import (
     EvidenceHit,
@@ -136,6 +136,11 @@ class RuntimeAdminApiServices:
         )
         self._golden = GoldenAdminService()
         self._snapshots = SnapshotService()
+
+    @property
+    def bm25_parameters(self) -> ServerBM25:
+        """Expose the served BM25 values so preset responses match what requests apply."""
+        return self._runtime.bm25_parameters
 
     async def readiness_status(self) -> CorpusStatus:
         """Return corpus status for ``/ready``, reusing a recent reading longer while a job runs.
@@ -842,16 +847,17 @@ class RuntimeAdminApiServices:
         request: RetrievalPreviewRequest,
     ) -> RetrievalPreviewResponse:
         """Return evidence and component ranks for one session-scoped profile."""
+        profile = with_server_bm25(request.profile, self.bm25_parameters)
         async with self._runtime.search_access(), self._runtime.session_factory() as session:
             result = await self._retrieve_profile(
                 session,
                 request.query,
-                request.profile,
+                profile,
                 request.filters,
             )
         return RetrievalPreviewResponse(
             query=request.query,
-            profile=request.profile,
+            profile=profile,
             score_stage=result.score_stage,
             component_rankings=result.component_rankings.model_dump(mode="python"),
             results=tuple(EvidenceHit.from_chunk_hit(hit) for hit in result.hits),
@@ -859,6 +865,7 @@ class RuntimeAdminApiServices:
 
     async def review_preview(self, request: ReviewPreviewRequest) -> ReviewPreviewResponse:
         """Run an evidence-checked review through one explicit retrieval profile."""
+        profile = with_server_bm25(request.profile, self.bm25_parameters)
 
         async def retrieval_override(
             session: AsyncSession,
@@ -867,7 +874,7 @@ class RuntimeAdminApiServices:
             filters: RetrievalFilters,
         ) -> RetrievalResult:
             """Ignore workflow k in favor of the profile's validated cutoff."""
-            return await self._retrieve_profile(session, query, request.profile, filters)
+            return await self._retrieve_profile(session, query, profile, filters)
 
         report = await self._runtime.review_with_retrieval(
             ReviewRequest(
@@ -875,7 +882,7 @@ class RuntimeAdminApiServices:
                 session_profile=ReviewSessionProfile.model_validate(
                     {
                         "retrieval_preset": "custom",
-                        "custom_retrieval": request.profile.model_dump(),
+                        "custom_retrieval": profile.model_dump(),
                         "doc_ids": request.filters.doc_ids,
                         "registries": request.filters.registries,
                         "kinds": request.filters.kinds,
@@ -891,6 +898,6 @@ class RuntimeAdminApiServices:
             retrieval_override,
         )
         return ReviewPreviewResponse(
-            profile=request.profile,
+            profile=profile,
             run=RunResponse.from_run_report(report),
         )

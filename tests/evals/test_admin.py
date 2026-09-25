@@ -705,3 +705,42 @@ def test_restart_restores_persisted_evaluation_history(tmp_path):
         assert service._jobs["eval-new"].status == "interrupted"
 
     asyncio.run(scenario())
+
+
+@pytest.mark.usefixtures("ready_evaluation_inputs")
+def test_queued_profiles_fill_unstated_bm25_values_from_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Queued evaluations record and run server BM25 values only where they state none."""
+
+    async def scenario() -> None:
+        """Queue one default and one partially stated profile and capture both runs."""
+        service = EvaluationAdminService(
+            settings=Settings(corpus_dir=tmp_path, bm25_k1=1.6, bm25_b=0.5, bm25_idf="robertson"),
+            provider=DeterministicEmbeddingProvider(),
+            artifact_dir=tmp_path / "runs",
+        )
+        ran = {}
+
+        async def quick(job_id, request):
+            """Capture the profile a completed quick evaluation received."""
+            ran[job_id] = request.profile
+            return 7, 6, tmp_path / "runs" / "result.json"
+
+        monkeypatch.setattr(service, "_quick", quick)
+        inherited = await service.enqueue(EvaluationRunRequest(suite_id="sec-en"))
+        stated = await service.enqueue(
+            EvaluationRunRequest.model_validate({"suite_id": "sec-ko", "profile": {"bm25_k1": 0.9}})
+        )
+        await service._queue.join()
+
+        for job, expected in (
+            (inherited, (1.6, 0.5, "robertson")),
+            (stated, (0.9, 0.5, "robertson")),
+        ):
+            recorded = job.request.profile
+            assert (recorded.bm25_k1, recorded.bm25_b, recorded.bm25_idf) == expected
+            profile = ran[job.job_id]
+            assert (profile.bm25_k1, profile.bm25_b, profile.bm25_idf) == expected
+
+    asyncio.run(scenario())
