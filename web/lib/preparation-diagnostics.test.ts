@@ -5,7 +5,7 @@ import type { Pipeline, Stage, StageId, StageStatus } from "./pipeline";
 import { diagnosePreparation } from "./preparation-diagnostics";
 import type { PreparationRuntime } from "./preparation-diagnostics";
 
-const HEALTHY: PreparationRuntime = { databaseConnected: true, schemaStatus: "ok", writable: true };
+const HEALTHY: PreparationRuntime = { databaseConnected: true, schemaStatus: "compatible", writable: true };
 
 /** Build a stage snapshot without implying a command has run. */
 function snapshot(id: StageId, status: StageStatus, overrides: Partial<Stage> = {}): Pipeline {

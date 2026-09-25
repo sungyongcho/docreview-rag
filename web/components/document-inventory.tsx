@@ -34,17 +34,15 @@ interface DocumentInventoryProps {
   live: boolean;
   active?: boolean;
   refreshRevision?: string;
-  /** Initial inventory supplied by the enclosing workspace. */
-  fallbackDocuments: AdminDocument[];
   onOpenPipeline?: (stage?: string) => void;
   onInspectPipeline?: () => void;
   onOpenJobs?: () => void;
 }
 
-export function DocumentInventory({ live, fallbackDocuments, onOpenPipeline, onOpenJobs, onInspectPipeline, active = true, refreshRevision = "" }: DocumentInventoryProps) {
+export function DocumentInventory({ live, onOpenPipeline, onOpenJobs, onInspectPipeline, active = true, refreshRevision = "" }: DocumentInventoryProps) {
   const { t, locale } = useI18n();
   const { notify } = useNotifications();
-  const [documents, setDocuments] = useState<AdminDocument[]>(fallbackDocuments);
+  const [documents, setDocuments] = useState<AdminDocument[]>([]);
   const [documentQuery, setDocumentQuery] = useState("");
   const [documentRegistry, setDocumentRegistry] = useState("all");
   const [documentIssuer, setDocumentIssuer] = useState("all");

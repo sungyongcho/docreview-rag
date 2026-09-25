@@ -1,6 +1,7 @@
 import type { AdminDocument, CorpusSnapshot, EvaluationJob, GoldenSuite, ManifestSummary } from "./types";
 import { DEFAULT_PROFILE } from "./types";
 
+/** Golden suite catalog fixture served by test API stubs. */
 export const CANNED_SUITES: GoldenSuite[] = [
   ["sec-en", "SEC 10-K · English", "sec", "en", "en"],
   ["sec-ko", "SEC 10-K · Korean questions", "sec", "ko", "en"],
@@ -25,7 +26,7 @@ export const CANNED_SUITES: GoldenSuite[] = [
   source_error: null,
 }));
 
-/** Stored portfolio numbers shown when no administrator API is reachable. */
+/** Portfolio corpus fixture served by test API stubs in place of the administrator API. */
 export const CANNED_CORPUS: { status: CorpusSnapshot["status"]; manifests: ManifestSummary[]; documents: AdminDocument[] } = {
   status: {
     database_connected: false,
@@ -64,6 +65,7 @@ export const CANNED_CORPUS: { status: CorpusSnapshot["status"]; manifests: Manif
   ],
 };
 
+/** Archived evaluation job fixture served by test API stubs. */
 export const CANNED_JOB: EvaluationJob = {
   result_summaries: [],
   job_id: "archived-crosslingual-vector-ko",

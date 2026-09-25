@@ -12,7 +12,6 @@ export interface DocumentationRegistry {
     id: string; slug: string; group: string; order: number; source: string; icon?: string; developmentOnly?: boolean;
     title: Record<DocumentationLocale, string>; summary: Record<DocumentationLocale, string>;
     related: string[]; steps: Array<{ number: number; anchor: string; title: Record<DocumentationLocale, string> }>;
-    legacyFiles?: string[]; legacyAnchors?: Partial<Record<DocumentationLocale, Record<string, string>>>;
     localizedSections?: Array<Record<DocumentationLocale, string>>;
   }>;
 }
@@ -24,6 +23,5 @@ export const DOCUMENTS: TutorialDocument[];
 export function validateDocumentationRegistry(value?: DocumentationRegistry): DocumentationRegistry;
 export function documentationDocuments(value?: DocumentationRegistry): TutorialDocument[];
 export function documentationDocument(id: string, locale?: DocumentationLocale, value?: DocumentationRegistry): TutorialDocument | undefined;
-export function legacyDocumentationTarget(locale: DocumentationLocale, hash: string, value?: DocumentationRegistry): { document: TutorialDocument; hash: string } | null;
 export function documentationLink(file: string, hash: string, locale?: DocumentationLocale, value?: DocumentationRegistry): { document: TutorialDocument; hash: string } | null;
 export function localizedDocumentationRoute(pathname: string, locale: DocumentationLocale, hash?: string, value?: DocumentationRegistry): string | null;

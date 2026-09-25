@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DOCUMENTS } from "@/lib/documentation-registry.mjs";
-import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline, DocumentationRedirect } from "./documentation-navigation";
+import { DocumentationMenu, DocumentationOutline, DocumentationRedirect } from "./documentation-navigation";
 
 const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
@@ -40,12 +40,6 @@ describe("documentation navigation", () => {
     expect(Array.from(links, (link) => link.getAttribute("href")?.replace(/\/$/, ""))).toEqual([`/docs/${locale}/environment`, `/docs/${locale}/quickstart`, `/docs/${locale}/quickstart-dev`]);
     expect(Array.from(links, (link) => Boolean(link.querySelector(".development-badge")))).toEqual([false, false, true]);
     expect(links[2]).toHaveTextContent("Quick Start for DEV MODE");
-  });
-
-  it.each(["qs-setup", "qs-web-4"])("redirects an old Quick Start bookmark %s without changing its checkpoint", (anchor) => {
-    window.history.replaceState({}, "", `/docreview-rag/docs/en/quickstart/#${anchor}`);
-    render(<DocumentationLegacyAnchor locale="en" />);
-    expect(navigation.replace).toHaveBeenCalledWith(`/docs/en/${anchor === "qs-setup" ? "environment" : "quickstart-dev"}/#${anchor}`);
   });
 
   it("marks the Korean development log without hiding the user guide", () => {
@@ -97,19 +91,6 @@ describe("documentation navigation", () => {
     expect(screen.getByRole("link", { name: "Section 2" })).toHaveAttribute("aria-current", "location");
     expect(screen.getByRole("link", { name: "Section 1" })).not.toHaveAttribute("aria-current");
     expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Section 1", "Section 2", "Part 2.1", "Part 2.2", "Part 2.3", "Section 3", "Section 4"]);
-  });
-
-  it("redirects an old localized walkthrough anchor to its new section", () => {
-    window.history.replaceState({}, "", "/docreview-rag/docs/en/#run-a-quick-evaluation");
-    render(<DocumentationLegacyAnchor locale="en" />);
-    expect(navigation.replace).toHaveBeenCalledWith("/docs/en/evaluation/#step-11");
-  });
-
-  it("preserves an old root fragment when resolving the saved language", () => {
-    localStorage.setItem("docreview.locale", "ko");
-    window.history.replaceState({}, "", "/docreview-rag/docs/#전체-초기화가-필요할-때");
-    render(<DocumentationRedirect documentId="overview" />);
-    expect(navigation.replace).toHaveBeenCalledWith("/docs/ko/troubleshooting/#reset");
   });
 
   it("translates a legacy CLI fragment when the saved language differs", () => {

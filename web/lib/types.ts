@@ -199,8 +199,6 @@ export interface Conversation {
   profile: ReviewSessionDraft | null;
   /** Unsent composer text saved in this browser; absent for older conversations. */
   draft?: string;
-  /** Browser-only exact public selection; absent means all, [] means explicitly empty. */
-  publishedScope?: string[];
   publishedTargets?: PublicTarget[];
   pipelineDraft?: { candidates?: PublicTarget[]; targets: PublicTarget[]; stage: string; checked: string[] };
 }

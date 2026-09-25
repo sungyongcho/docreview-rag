@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newConversation, HELP_KEY, ONBOARDING_KEY, loadConversations, saveConversations, saveDefaultProfile, loadDefaultProfile, configureBrowserStorage, readStoredValue } from "@/lib/storage";
 import type { DocumentFacets, Readiness, OperatorJob } from "@/lib/types";
 import { DEFAULT_SESSION_PROFILE } from "@/lib/types";
-import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
 import { TOUR_TARGETS } from "./onboarding";
 import { ServiceShell, terminalAnswer } from "./service-shell";
 
@@ -239,7 +239,8 @@ it.each(["en", "ko"] as const)("stores a restored interruption by its canonical 
   expect(loadConversations()[0].messages.at(-1)?.text).toBe(INTERRUPTION_EN);
 });
 
-it.each([INTERRUPTION_EN, INTERRUPTION_KO])("reads an interruption notice stored by an earlier version in the current language (%s)", async (stored) => {
+it("reads a stored interruption notice in the current language", async () => {
+  const stored = INTERRUPTION_EN;
   cleanup(); localStorage.clear(); localStorage.setItem(ONBOARDING_KEY, "done");
   localStorage.setItem("docreview.locale", "en");
   stubPublicApi();
@@ -1753,7 +1754,7 @@ it("opens model selection from Build without submitting or changing the engine",
   const fetchMock = stubLiveApi(READY_RUNTIME.corpus, async () => ({ ...liveReadiness(READY_RUNTIME.corpus), review_engines: { openai: { enabled: true }, local } }));
   const originalFetch = fetchMock.getMockImplementation()!;
   fetchMock.mockImplementation(async (input) => String(input).replace(/\/?(\?|$)/, "$1").endsWith("/admin/local-llm/connection")
-    ? new Response(JSON.stringify({ base_url: "http://ollama:11434", initial_base_url: "http://ollama:11434", protocol: "auto", source: "environment", local }), { headers: { "content-type": "application/json" } })
+    ? new Response(JSON.stringify({ base_url: "http://ollama:11434", initial_base_url: "http://ollama:11434", protocol: "auto", source: "environment", error: null, local, selected_server_id: "default", servers: [{ id: "default", name: "Default", base_url: "http://ollama:11434", protocol: "auto", is_default: true }] }), { headers: { "content-type": "application/json" } })
     : originalFetch(input));
   vi.resetModules();
   const { ServiceShell: LiveShell } = await import("./service-shell");

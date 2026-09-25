@@ -13,7 +13,7 @@ const CAPS: OpenAICallLimits = {
 const READINESS = {
   status: "ready", mode: "runtime", admin_mode: "live", policy_revision: "r", models: {}, review_enabled: true, active_review_model: "m",
   openai_call_limits: CAPS,
-  corpus: { availability: "ready", database_connected: true, schema_status: "ok", schema_message: null, documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true },
+  corpus: { availability: "ready", database_connected: true, schema_status: "compatible", schema_message: null, documents: 1, chunks: 1, embedded_chunks: 1, pending_embeddings: 0, bm25_ready: true, writable: true },
 } as unknown as Readiness;
 
 function jsonResponse(payload: unknown, status = 200) {

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { CANNED_SUITES } from "./canned";
+import { CANNED_SUITES } from "./canned-test-support";
 import { DEFAULT_PROFILE } from "./types";
 import { evaluationDataset, evaluationSettings } from "./evaluation-labels";
 

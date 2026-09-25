@@ -1,6 +1,5 @@
 import { answerEngineStates, answerEngineSummary } from "./answer-engine-state";
 import { LOCAL_ENGINE_VISIBLE } from "./build-mode";
-import { CANNED_CORPUS } from "./canned";
 import type { CorpusSnapshot, CorpusCounts, ManifestSummary, OperatorJob, Readiness, RetrievalProfile } from "./types";
 import type { RuntimeHealthKind } from "./use-runtime-health";
 
@@ -41,7 +40,7 @@ export interface Pipeline {
   corpusReady: boolean;
   readOnly: boolean;
   /** `pending`: a live build with neither readiness nor the administrator snapshot yet. */
-  source: "admin" | "readiness" | "fixture" | "pending";
+  source: "admin" | "readiness" | "pending";
 }
 
 export interface PipelineInput {
@@ -51,7 +50,7 @@ export interface PipelineInput {
   /** A failed connection check is retrying while last-known readiness is retained. */
   connectionPending?: boolean;
   readiness: Readiness | null;
-  /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness or the fixture. */
+  /** `/admin/corpus.status` once loaded in live mode; `null` falls back to readiness. */
   corpus: CorpusCounts | null;
   manifests: ManifestSummary[];
   sourceInventory?: NonNullable<CorpusSnapshot["sources"]>;
@@ -191,7 +190,7 @@ export function retrievalReadiness(counts: CorpusCounts | null, strategy: Retrie
   if (counts.database_connected === false || ["empty", "drifted", "unavailable"].includes(counts.schema_status ?? "")) {
     return { status: "blocked", blockedBy: "index", hint: "Resolve database setup before continuing." };
   }
-  if (counts.database_connected !== true || !["ok", "compatible"].includes(counts.schema_status ?? "")
+  if (counts.database_connected !== true || counts.schema_status !== "compatible"
     || counts.chunks == null || counts.pending_embeddings == null && strategy !== "lexical") {
     return { status: "unknown", blockedBy: null, hint: "Readiness not confirmed" };
   }
@@ -228,11 +227,9 @@ export function derivePipeline(input: PipelineInput): Pipeline {
   const readinessCorpus = input.readiness && input.readiness.corpus.availability !== "not_applicable"
     ? input.readiness.corpus
     : null;
-  // A live build never derives real state from the portfolio fixture; it waits.
-  const fixtureAllowed = !input.live && !input.publicScope;
-  const source: Pipeline["source"] = input.corpus ? "admin" : readinessCorpus ? "readiness" : fixtureAllowed ? "fixture" : "pending";
-  const counts: CorpusCounts = input.corpus ?? readinessCorpus ?? (fixtureAllowed ? CANNED_CORPUS.status : PENDING_COUNTS);
-  const manifests = source === "admin" ? input.manifests.filter((item) => item.valid) : source === "fixture" ? CANNED_CORPUS.manifests : [];
+  const source: Pipeline["source"] = input.corpus ? "admin" : readinessCorpus ? "readiness" : "pending";
+  const counts: CorpusCounts = input.corpus ?? readinessCorpus ?? PENDING_COUNTS;
+  const manifests = source === "admin" ? input.manifests.filter((item) => item.valid) : [];
   const documents = count(counts.documents);
   const chunks = count(counts.chunks);
   const embedded = count(counts.embedded_chunks);
@@ -330,9 +327,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
       drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? ["Live retrieval on the published corpus"] : [] };
     } else if (chunks > 0) {
       const strategy = input.profile?.strategy ?? "hybrid";
-      const readiness = source === "fixture"
-        ? { status: "done" as const, blockedBy: null, hint: "" }
-        : retrievalReadiness(counts, strategy, readOnly ? [] : input.jobs);
+      const readiness = retrievalReadiness(counts, strategy, readOnly ? [] : input.jobs);
       drafts.ask = { ...readiness, statusDetail: readiness.status === "done" ? `${strategy} ready` : readiness.hint, numbers: readiness.status === "done" ? [`${n(chunks)} chunks searchable`] : [] };
     } else {
       drafts.ask = { status: "blocked", statusDetail: `after ${stepRef(2, "Parse & chunk")}`, numbers: ["Nothing to search yet."], hint: "Finish steps 1–2 to enable retrieval.", blockedBy: "index" };
@@ -371,7 +366,7 @@ export function derivePipeline(input: PipelineInput): Pipeline {
     if (readOnly && READ_ONLY_STAGES.has(id)) {
       // Keep the action so the card can render it disabled with the read-only note.
       status = "readonly";
-      statusDetail = source === "fixture" ? "Portfolio fixture" : "stored";
+      statusDetail = "stored";
       hint = "";
     }
 

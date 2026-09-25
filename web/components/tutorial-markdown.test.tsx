@@ -176,11 +176,11 @@ describe("Tutorial Markdown", () => {
     expect(parsed.codes[0].code).toBe("<!-- guide-features -->\n- Example");
     expect(() => renderTutorial("[Unsupported](/docreview-rag/?action=delete)", { overviewLayout: true })).toThrow("Unknown tutorial link");
   });
-  it("uses explicit bilingual heading targets and maps legacy walkthrough links", () => {
-    const parsed = renderTutorial("# Guide\n\n## 5. Parse {#step-5}\n\n[Legacy](walkthrough.md#4-ingest-the-source-into-documents-and-chunks)", { locale: "en" });
+  it("uses explicit bilingual heading targets and resolves registered document links", () => {
+    const parsed = renderTutorial("# Guide\n\n## 5. Parse {#step-5}\n\n[Indexing](indexing.md#step-5)", { locale: "en" });
     expect(parsed.headings[1]).toEqual({ id: "step-5", text: "Parse", depth: 2 });
     render(<TutorialMarkdown content={parsed.content} />);
-    expect(screen.getByRole("link", { name: "Legacy" })).toHaveAttribute("href", "/docreview-rag/docs/en/indexing/#step-5");
+    expect(screen.getByRole("link", { name: "Indexing" })).toHaveAttribute("href", "/docreview-rag/docs/en/indexing/#step-5");
     expect(() => renderTutorial("# Guide\n\n## One {#same}\n\n## Two {#same}")).toThrow("Duplicate explicit tutorial heading");
   });
   it("creates unique Korean heading links without treating fenced code as a heading", () => {

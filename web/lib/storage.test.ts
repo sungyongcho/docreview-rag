@@ -120,8 +120,7 @@ describe("operations filter storage", () => {
 });
 
 
-it("drops retired snapshot and chat-preset fields from saved evaluation defaults", () => {
+it("ignores retired snapshot and chat-preset fields in saved evaluation defaults", () => {
   window.localStorage.setItem("docreview:experiment-defaults:v1", JSON.stringify({ suite_id: "dart-ko", golden_revision_id: null, mode: "quick", snapshot_id: 12, baseline_snapshot_id: 8, retrieval_preset: "accuracy" }));
   expect(loadExperimentDefaults()).toEqual({ suite_id: "dart-ko", golden_revision_id: null, mode: "quick" });
-  expect(JSON.parse(window.localStorage.getItem("docreview:experiment-defaults:v1")!)).not.toHaveProperty("snapshot_id");
 });

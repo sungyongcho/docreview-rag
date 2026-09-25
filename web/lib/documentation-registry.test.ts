@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { renderTutorial } from "./tutorial-markdown.mjs";
 import { describe, expect, it } from "vitest";
-import { DEVELOPMENT_STORY_SOURCES, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, legacyDocumentationTarget, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
+import { DEVELOPMENT_STORY_SOURCES, DOCUMENTATION_REGISTRY, DOCUMENTS, developmentStoryDocument, documentationLink, localizedDocumentationRoute, validateDocumentationRegistry } from "./documentation-registry.mjs";
 
 describe("documentation registry", () => {
   it("provides seventeen paired documents and twelve unique tutorial steps", () => {
@@ -24,28 +24,20 @@ describe("documentation registry", () => {
     expect(() => validateDocumentationRegistry(registry)).toThrow();
   });
 
-  it("maps old walkthrough links to focused bilingual sections", () => {
-    expect(documentationLink("walkthrough.md", "5-prepare-embeddings-and-bm25", "en")).toMatchObject({ document: { id: "indexing" }, hash: "step-6" });
-    expect(legacyDocumentationTarget("ko", "#빠른-평가-실행하기")).toMatchObject({ document: { id: "evaluation" }, hash: "step-11" });
-    expect(legacyDocumentationTarget("ko", "#run-a-quick-evaluation")).toMatchObject({ document: { id: "evaluation", locale: "ko" }, hash: "step-11" });
+  it("resolves only registered Markdown files", () => {
+    expect(documentationLink("indexing.md", "step-6", "en")).toMatchObject({ document: { id: "indexing", locale: "en" }, hash: "step-6" });
     expect(documentationLink("../../README.md", "", "en")).toBeNull();
   });
 
   it("preserves focused document identity and stable anchors across locales", () => {
     expect(localizedDocumentationRoute("/docreview-rag/docs/en/indexing/", "ko", "#step-7")).toBe("/docreview-rag/docs/ko/indexing/#step-7");
-    expect(localizedDocumentationRoute("/docs/en/", "ko", "#1-open-the-development-environment")).toBe("/docs/ko/environment/#step-1");
     expect(localizedDocumentationRoute("/docs/ko/cli/", "en", "#초기-schema-준비")).toBe("/docs/en/cli/#initial-schema-setup");
     expect(localizedDocumentationRoute("/docs/cli/", "en", "#초기-schema-준비")).toBe("/docs/en/cli/#initial-schema-setup");
     expect(localizedDocumentationRoute("/docs/en/ollama/", "ko", "#diagnostics")).toBe("/docs/ko/ollama/#diagnostics");
     expect(localizedDocumentationRoute("/docs/en/unknown/", "ko")).toBeNull();
   });
 
-  it.each(["en", "ko"] as const)("preserves old Quick Start setup and procedure bookmarks (%s)", (locale) => {
-    for (const anchor of ["qs-setup", "qs-cli", "qs-web", "qs-next", ...Array.from({ length: 7 }, (_, index) => `qs-cli-${index + 1}`), ...Array.from({ length: 7 }, (_, index) => `qs-web-${index + 1}`)]) {
-      const id = anchor === "qs-setup" ? "environment" : "quickstart-dev";
-      expect(documentationLink("quickstart.md", anchor, locale)).toMatchObject({ document: { id, locale }, hash: anchor });
-      expect(localizedDocumentationRoute("/docreview-rag/docs/en/quickstart/", locale, `#${anchor}`)).toBe(`/docreview-rag/docs/${locale}/${id}/#${anchor}`);
-    }
+  it.each(["en", "ko"] as const)("keeps Quick Start anchors on their own documents (%s)", (locale) => {
     expect(documentationLink("quickstart.md", "qs-app-1", locale)).toMatchObject({ document: { id: "quickstart" }, hash: "qs-app-1" });
     expect(localizedDocumentationRoute("/docs/en/quickstart-dev/", locale, "#qs-web-4")).toBe(`/docs/${locale}/quickstart-dev/#qs-web-4`);
   });

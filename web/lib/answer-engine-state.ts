@@ -14,11 +14,10 @@ export interface AnswerEngineState {
 }
 
 /** Derive display readiness; a null conversation choice requires selection when several models exist. */
-export function answerEngineStates(readiness: Partial<Pick<Readiness, "review_engines" | "review_enabled" | "active_review_model">> | null, localModel?: string | null, now = Date.now()): AnswerEngineState[] {
+export function answerEngineStates(readiness: Partial<Pick<Readiness, "review_engines" | "active_review_model">> | null, localModel?: string | null, now = Date.now()): AnswerEngineState[] {
   const engines = readiness?.review_engines;
   const openai = engines?.openai;
-  // Older readiness snapshots omitted per-engine metadata.
-  const openaiEnabled = openai?.enabled ?? (!engines && readiness?.review_enabled === true);
+  const openaiEnabled = openai?.enabled === true;
   const first: AnswerEngineState = {
     id: "openai", label: "OpenAI", light: "grey", reason: "Not configured",
     model: openai?.model ?? readiness?.active_review_model ?? null, keySlot: openai?.key_slot,

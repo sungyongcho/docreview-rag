@@ -39,7 +39,7 @@ it("reports an exact missing original and rechecks the selected revision", async
 
 it("uses one filename selector and forwards the exact user dataset identity", async () => {
   const { PipelineGoldenPicker } = await import("./golden-preparation");
-  const { CANNED_SUITES } = await import("@/lib/canned");
+  const { CANNED_SUITES } = await import("@/lib/canned-test-support");
   const onSelect = vi.fn();
   vi.mocked(getGoldenSuites).mockResolvedValue(CANNED_SUITES);
   vi.mocked(getGoldenRevisions).mockImplementation(async suite => suite === "sec-en" ? [{ revision_id: 77, suite_id: "sec-en", filename: "custom.json", status: "draft", version: 1, payload: [], sha256: "a".repeat(64), parent_id: null, created_at: "2026-09-08T00:00:00Z", updated_at: "2026-09-08T00:00:00Z" }] : []);

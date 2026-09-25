@@ -60,7 +60,7 @@ describe("DocumentInventory", () => {
     getPage.mockResolvedValue({ documents: [document], total: 1, next_cursor: null });
     (live ? api.getDocumentFacets : api.getPublishedDocumentFacets).mockResolvedValue({ ...facets, issuers: [{ value: "005930", label: "005930 · 삼성전자", count: 1 }] });
     (live ? api.getDocumentDetail : api.getPublishedDocumentDetail).mockResolvedValue({ ...detail(document.doc_id), document });
-    render(<I18nProvider><DocumentInventory live={live} fallbackDocuments={[]} /></I18nProvider>);
+    render(<I18nProvider><DocumentInventory live={live} /></I18nProvider>);
     expect(await screen.findByRole("option", { name: "005930 · Samsung Electronics (1)" })).toHaveValue("005930");
     expect(within(await screen.findByRole("row", { name: /samsung-2024/ })).getByText("005930 · Samsung Electronics")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
@@ -88,7 +88,7 @@ describe("DocumentInventory", () => {
     (live ? api.getDocumentDetail : api.getPublishedDocumentDetail).mockResolvedValue({
       ...detail("nvda-2024"), document: namedDocument,
     });
-    render(<DocumentInventory live={live} fallbackDocuments={[]} />);
+    render(<DocumentInventory live={live} />);
     expect(await screen.findByRole("option", { name: "NVDA · NVIDIA (2)" })).toHaveValue("NVDA");
     expect(within(await screen.findByRole("row", { name: /nvda-2024/ })).getByText("NVDA · NVIDIA")).toBeInTheDocument();
 
@@ -118,7 +118,7 @@ describe("DocumentInventory", () => {
     api.getAdminDocuments.mockResolvedValue({ documents: [unknownDocument], total: 1, next_cursor: null });
     api.getDocumentFacets.mockResolvedValue({ ...facets, issuers: [{ value: "ZZZZ", label: null, count: 1 }] });
     api.getDocumentDetail.mockResolvedValue({ ...detail("unknown-2025"), document: unknownDocument });
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     expect(await screen.findByRole("option", { name: "ZZZZ (1)" })).toHaveValue("ZZZZ");
     expect(within(await screen.findByRole("row", { name: /unknown-2025/ })).getByText("ZZZZ", { exact: true })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "unknown-2025" }));
@@ -128,7 +128,7 @@ describe("DocumentInventory", () => {
   });
 
   it("starts with a full-width inventory, opens the title and row, and exposes removable filters", async () => {
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     expect(document.querySelector(".document-detail")).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Filter registry" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
@@ -146,7 +146,7 @@ describe("DocumentInventory", () => {
   it("ignores a late list response after a new search", async () => {
     const old = deferred<AdminDocumentPage>();
     api.getAdminDocuments.mockReturnValueOnce(old.promise).mockResolvedValueOnce(page(["latest"]));
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     await waitFor(() => expect(api.getAdminDocuments).toHaveBeenCalledTimes(1));
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), { target: { value: "latest" } });
     expect(await screen.findByRole("button", { name: "latest" })).toBeInTheDocument();
@@ -158,7 +158,7 @@ describe("DocumentInventory", () => {
   it.each(["success", "failure"])("prevents a late detail %s from replacing the current selection", async (outcome) => {
     const first = deferred<DocumentDetail>();
     api.getDocumentDetail.mockReturnValueOnce(first.promise).mockResolvedValueOnce(detail("doc-b"));
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
     expect(screen.getByText("Loading document details…")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "doc-b" }));
@@ -171,7 +171,7 @@ describe("DocumentInventory", () => {
   it("does not append an old next page into a new query", async () => {
     const next = deferred<AdminDocumentPage>();
     api.getAdminDocuments.mockResolvedValueOnce(page(["doc-a"], "cursor-2")).mockReturnValueOnce(next.promise).mockResolvedValueOnce(page(["new-query"]));
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     fireEvent.click(await screen.findByRole("button", { name: "Load next 50" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), { target: { value: "new-query" } });
     expect(await screen.findByRole("button", { name: "new-query" })).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe("DocumentInventory", () => {
 
   it("replaces stale details with an explicit error or filtered-out state", async () => {
     api.getDocumentDetail.mockResolvedValueOnce(detail("doc-a")).mockRejectedValueOnce(new Error("detail unavailable"));
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
     expect(await screen.findByRole("heading", { name: "Issuer doc-a" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "doc-b" }));
@@ -198,7 +198,7 @@ describe("DocumentInventory", () => {
       observe(target: Element) { this.callback([{ contentRect: { width: 900 }, target } as ResizeObserverEntry], this as unknown as ResizeObserver); }
       disconnect() {}
     });
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     fireEvent.change(screen.getByRole("textbox", { name: "Search documents" }), { target: { value: "doc" } });
     const rowButton = await screen.findByRole("button", { name: "doc-a" });
     const scroller = document.querySelector('[aria-busy="false"]') as HTMLElement;
@@ -215,7 +215,7 @@ describe("DocumentInventory", () => {
 
   it("reports malformed facets without crashing and retries the filter request", async () => {
     api.getDocumentFacets.mockResolvedValueOnce({}).mockResolvedValueOnce(facets);
-    render(<DocumentInventory live fallbackDocuments={[]} />);
+    render(<DocumentInventory live />);
     expect(await screen.findByText("Could not load document filters.")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "doc-a" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry filters" }));
@@ -225,7 +225,7 @@ describe("DocumentInventory", () => {
   });
 
   it("uses only public reads for visitors and hides operator actions", async () => {
-    render(<DocumentInventory live={false} fallbackDocuments={[]} onOpenPipeline={vi.fn()} onOpenJobs={vi.fn()} />);
+    render(<DocumentInventory live={false} onOpenPipeline={vi.fn()} onOpenJobs={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
     expect(await screen.findByRole("heading", { name: "Issuer doc-a" })).toBeInTheDocument();
     expect(api.getAdminDocuments).not.toHaveBeenCalled();
@@ -242,7 +242,7 @@ it.each(["filters", "documents", "details"] as const)("offers pipeline inspectio
   if (failure === "filters") api.getDocumentFacets.mockRejectedValueOnce(new Error("Filters unavailable"));
   if (failure === "documents") api.getAdminDocuments.mockRejectedValueOnce(new Error("Documents unavailable"));
   if (failure === "details") api.getDocumentDetail.mockRejectedValueOnce(new Error("Details unavailable"));
-  render(<DocumentInventory live fallbackDocuments={[]} onInspectPipeline={inspect} />);
+  render(<DocumentInventory live onInspectPipeline={inspect} />);
   if (failure === "details") fireEvent.click(await screen.findByRole("button", { name: "doc-a" }));
   fireEvent.click(await screen.findByRole("button", { name: "Inspect this step" }));
   expect(inspect).toHaveBeenCalledTimes(1);
@@ -252,19 +252,19 @@ it.each(["filters", "documents", "details"] as const)("offers pipeline inspectio
 
 it("refreshes retained inventory on activation and corpus completion without resetting filters", async () => {
   api.getAdminDocuments.mockResolvedValue(page([]));
-  const view = render(<DocumentInventory live active={false} refreshRevision="" fallbackDocuments={[]} />);
+  const view = render(<DocumentInventory live active={false} refreshRevision="" />);
   expect(api.getAdminDocuments).not.toHaveBeenCalled();
-  view.rerender(<DocumentInventory live active refreshRevision="" fallbackDocuments={[]} />);
+  view.rerender(<DocumentInventory live active refreshRevision="" />);
   await waitFor(() => expect(api.getAdminDocuments).toHaveBeenCalledTimes(1));
   fireEvent.change(screen.getByLabelText("Search"), { target: { value: "NVDA" } });
   await waitFor(() => expect(api.getAdminDocuments).toHaveBeenCalledTimes(2));
   api.getAdminDocuments.mockResolvedValue(page(["doc-after-ingest"]));
-  view.rerender(<DocumentInventory live active refreshRevision="ingest:succeeded" fallbackDocuments={[]} />);
+  view.rerender(<DocumentInventory live active refreshRevision="ingest:succeeded" />);
   expect(await screen.findByRole("button", { name: "doc-after-ingest" })).toBeVisible();
   expect(screen.getByLabelText("Search")).toHaveValue("NVDA");
   expect(api.getAdminDocuments.mock.calls.at(-1)?.[0].get("query")).toBe("NVDA");
-  view.rerender(<DocumentInventory live active={false} refreshRevision="ingest:succeeded" fallbackDocuments={[]} />);
+  view.rerender(<DocumentInventory live active={false} refreshRevision="ingest:succeeded" />);
   api.getAdminDocuments.mockResolvedValue(page(["doc-after-return"]));
-  view.rerender(<DocumentInventory live active refreshRevision="ingest:succeeded" fallbackDocuments={[]} />);
+  view.rerender(<DocumentInventory live active refreshRevision="ingest:succeeded" />);
   expect(await screen.findByRole("button", { name: "doc-after-return" })).toBeVisible();
 });

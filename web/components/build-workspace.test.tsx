@@ -3,7 +3,7 @@ import { useState } from "react";
 import { NotificationProvider } from "./notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { CANNED_CORPUS, CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
 import type { OperatorJob, OperatorJobStatus, Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";
 import { BuildWorkspace, type BuildTab, type BuildWorkspaceProps } from "./build-workspace";

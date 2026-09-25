@@ -57,7 +57,7 @@ export async function prepareTutorial(root = resolve(process.cwd(), "../docs/TUT
     if (document.headings.filter((heading) => heading.depth === 1).length !== 1) throw new Error(`Tutorial requires one main heading: ${item.file}`);
     const declared = new Set(item.steps.map((step) => step.anchor));
     for (const heading of document.headings) if (/^step-\d+$/.test(heading.id) && !declared.has(heading.id)) throw new Error(`Undeclared tutorial step: ${item.file}#${heading.id}`);
-    for (const anchor of [...declared, ...Object.values(item.legacyAnchors?.[item.locale] ?? {}), ...(item.localizedSections ?? []).map((section) => section[item.locale])].filter(Boolean)) {
+    for (const anchor of [...declared, ...(item.localizedSections ?? []).map((section) => section[item.locale])].filter(Boolean)) {
       if (!document.headings.some((heading) => heading.id === anchor)) throw new Error(`Missing tutorial heading: ${item.file}#${anchor}`);
     }
     documents.set(item.file, document);

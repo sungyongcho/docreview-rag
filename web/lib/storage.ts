@@ -4,7 +4,6 @@ import type { Conversation, ExperimentDefaults, ReviewSessionDraft } from "./typ
 import { DEFAULT_EXPERIMENT_DEFAULTS, DEFAULT_SESSION_PROFILE, DEFAULT_PROFILE } from "./types";
 
 const STORAGE_KEY = "docreview:conversations:v2";
-const LEGACY_STORAGE_KEY = "docreview:conversations:v1";
 export const ONBOARDING_KEY = "docreview:onboarding:v1";
 const DEFAULT_PROFILE_KEY = "docreview:profile-defaults:v1";
 const DESKTOP_JOB_NOTIFICATIONS_KEY = "docreview:desktop-job-notifications:v1";
@@ -19,16 +18,9 @@ const MAX_MESSAGES = 100;
 export function loadConversations(): Conversation[] {
   if (typeof window === "undefined") return [];
   try {
-    const current = browserStorage().getItem(STORAGE_KEY);
-    const value: unknown = JSON.parse(current ?? browserStorage().getItem(LEGACY_STORAGE_KEY) ?? "[]");
+    const value: unknown = JSON.parse(browserStorage().getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(value)) return [];
-    const migrated = value.filter(isConversation).map(migrateConversation);
-    if (productionBrowserStorageEnabled() && current === null && value.length) {
-      const raw = JSON.stringify({ version: 2, value: JSON.stringify(migrated) });
-      if (preserveCorruptValues() && writeRaw(STORAGE_KEY, raw)) writeRaw(LEGACY_STORAGE_KEY, null);
-      else sessionValues.set(STORAGE_KEY, raw);
-    }
-    return migrated.slice(0, MAX_CONVERSATIONS);
+    return value.filter(isConversation).map(migrateConversation).slice(0, MAX_CONVERSATIONS);
   } catch {
     return [];
   }
@@ -94,12 +86,7 @@ export function loadExperimentDefaults(): ExperimentDefaults {
     const mode = value.mode === "matrix" || value.mode === "quick"
       ? value.mode
       : DEFAULT_EXPERIMENT_DEFAULTS.mode;
-    const normalized = { suite_id: suiteId, mode, golden_revision_id: positiveId(value.golden_revision_id) };
-    if (Object.keys(value).some(key => !["suite_id", "mode", "golden_revision_id"].includes(key))) {
-      try { browserStorage().setItem(EXPERIMENT_DEFAULTS_KEY, JSON.stringify(normalized)); }
-      catch (error) { if (!(error instanceof DOMException)) throw error; }
-    }
-    return normalized;
+    return { suite_id: suiteId, mode, golden_revision_id: positiveId(value.golden_revision_id) };
   } catch {
     return DEFAULT_EXPERIMENT_DEFAULTS;
   }
@@ -167,20 +154,9 @@ function positiveId(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
+/** Fill profile fields added after a conversation was saved; a missing profile takes the defaults. */
 function migrateConversation(conversation: Conversation): Conversation {
-  const profile = conversation.profile as unknown as Record<string, unknown> | null;
-  if (profile && "engine" in profile) {
-    return {
-      ...conversation,
-      profile: mergeProfile(profile as Partial<ReviewSessionDraft>),
-    };
-  }
-  return {
-    ...conversation,
-    profile: profile
-      ? { ...DEFAULT_SESSION_PROFILE, retrieval_preset: "custom", custom_retrieval: profile as unknown as import("./types").RetrievalProfile }
-      : DEFAULT_SESSION_PROFILE,
-  };
+  return { ...conversation, profile: objectValue(conversation.profile) ? mergeProfile(conversation.profile) : DEFAULT_SESSION_PROFILE };
 }
 
 function isConversation(value: unknown): value is Conversation {
@@ -194,7 +170,6 @@ function isConversation(value: unknown): value is Conversation {
     (item.draft === undefined || typeof item.draft === "string") &&
     (item.publishedTargets === undefined || Array.isArray(item.publishedTargets) && item.publishedTargets.every((target) => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year) && (target.document_ids === undefined || Array.isArray(target.document_ids) && target.document_ids.every((id) => typeof id === "string")))) &&
     (item.pipelineDraft === undefined || objectValue(item.pipelineDraft) && Array.isArray(item.pipelineDraft.targets) && item.pipelineDraft.targets.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year)) && (item.pipelineDraft.candidates === undefined || Array.isArray(item.pipelineDraft.candidates) && item.pipelineDraft.candidates.every(target => objectValue(target) && ["sec", "dart"].includes(String(target.registry)) && typeof target.issuer === "string" && Number.isInteger(target.year))) && typeof item.pipelineDraft.stage === "string" && Array.isArray(item.pipelineDraft.checked) && item.pipelineDraft.checked.every(step => typeof step === "string")) &&
-    (item.publishedScope === undefined || Array.isArray(item.publishedScope) && item.publishedScope.every((id) => typeof id === "string")) &&
     Array.isArray(item.messages)
   );
 }
@@ -343,7 +318,7 @@ function validStoredValue(key: string, raw: string): boolean {
   if (key === OPERATIONS_TARGET_FILTER_KEY) return raw === "all" || OPERATION_TARGETS.includes(raw as OperatorTarget);
   try {
     const value: unknown = JSON.parse(raw);
-    if (key === STORAGE_KEY || key === LEGACY_STORAGE_KEY) return Array.isArray(value) && value.every(v => isConversation(v)
+    if (key === STORAGE_KEY) return Array.isArray(value) && value.every(v => isConversation(v)
       && (v.profile == null || validProfile(v.profile)) && v.messages.every(message => objectValue(message) && typeof message.id === "string" && typeof message.text === "string" && ["user", "assistant"].includes(String(message.role))));
     if (key === DEFAULT_PROFILE_KEY) return validProfile(value);
     if (key === "docreview:retrieval-presets:v1") return Array.isArray(value) && value.every(item => objectValue(item) && typeof item.id === "string" && typeof item.name === "string" && validRetrieval(item.retrieval));
@@ -394,7 +369,7 @@ function readProductionValue(key: string): string | null {
   if (raw === null && canonical !== key) { source = key; raw = readRaw(key); }
   if (raw === null) return null;
   const version = keyVersion(canonical);
-  if (!(canonical.startsWith("docreview:conversations:") ? [1, 2].includes(version) : version === 1)) {
+  if (!(canonical.startsWith("docreview:conversations:") ? version === 2 : version === 1)) {
     corruptValues.set(source, raw); storageWarning("version", source); return null;
   }
   let value = raw; let migrated = true;
@@ -501,7 +476,7 @@ export function validateBrowserSettings(text: string): BrowserStorageExport {
   for (const entry of value.entries) {
     if (!objectValue(entry) || typeof entry.key !== "string" || !ownedStorageKey(entry.key) || seen.has(entry.key) || entry.version !== keyVersion(entry.key) || typeof entry.value !== "string") throw new Error("Invalid browser settings entry.");
     seen.add(entry.key);
-    if (!(entry.key.startsWith("docreview:conversations:") ? [1, 2].includes(entry.version as number) : [0, 1].includes(entry.version as number))) throw new Error("Unsupported setting version.");
+    if (!(entry.key.startsWith("docreview:conversations:") ? entry.version === 2 : [0, 1].includes(entry.version as number))) throw new Error("Unsupported setting version.");
     // Recovery bytes may be exported without being executable settings; known values must validate.
     if (entry.key !== RECOVERY_KEY) {
       let raw = entry.value;

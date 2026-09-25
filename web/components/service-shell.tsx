@@ -104,16 +104,10 @@ export function ServiceShell() {
 // Application status text, not a generated answer. It is stored as this canonical English source and
 // translated when rendered, so a conversation saved in one language reads correctly in the other.
 const INTERRUPTION_NOTICE = "The request was interrupted. Send the question again.";
-// Conversations saved before the canonical key hold the already-translated sentence. Only these exact
-// whole-message notices are recognised; no other stored text is rewritten or matched by substring.
-const STORED_INTERRUPTION_NOTICES: ReadonlySet<string> = new Set([
-  INTERRUPTION_NOTICE,
-  "요청이 중단되었습니다. 질문을 다시 보내세요.",
-]);
 
-/** Identify the app's own interruption notice, including notices stored by earlier versions. */
+/** Identify the app's own interruption notice by its exact stored text; nothing else is matched. */
 function isInterruptionNotice(message: { role: string; text?: string }): boolean {
-  return message.role === "assistant" && !!message.text && STORED_INTERRUPTION_NOTICES.has(message.text.trim());
+  return message.role === "assistant" && message.text?.trim() === INTERRUPTION_NOTICE;
 }
 
 /** Restored requests cannot resume themselves after a reload or browser import. */
@@ -377,7 +371,7 @@ function ServiceSession() {
 
   const storedSessionProfile = active?.profile ?? profile;
   const publicCorpus = usePublishedCorpus(!adminLive);
-  const publicIds = publicTargetIds(publicCorpus.documents, active?.publishedTargets, active?.publishedScope);
+  const publicIds = publicTargetIds(publicCorpus.documents, active?.publishedTargets);
   const activeSessionProfile = adminLive ? storedSessionProfile : effectivePublishedProfile(applyProdPolicy(storedSessionProfile, publicPolicy ?? newProdProfile().prompt_policy), publicCorpus.documents, publicIds);
   useEffect(() => {
     if (adminLive || publicCorpus.status !== "ready" || !active?.publishedTargets) return;
@@ -394,7 +388,7 @@ function ServiceSession() {
     if (!targetId) return;
     const reset = { doc_ids: [], registries: [], issuers: [], fiscal_years: [] };
     setConversations((current) => saveConversations(current.map((conversation) => conversation.id === targetId
-      ? { ...conversation, publishedScope: undefined, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
+      ? { ...conversation, publishedTargets: createPublicTargets(publicCorpus.documents, targets ?? publicCorpus.documents.filter((doc) => ids.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...reset }, updatedAt: new Date().toISOString() }
       : conversation)));
   }
   /** Keep pipeline experiments separate from the committed search scope. */
@@ -611,7 +605,6 @@ function ServiceSession() {
     return () => { finished = true; cancelAnimationFrame(frame); window.clearTimeout(timeout); observer.disconnect(); };
   }, [pendingHelpTarget, view, buildTab, measureTab, systemTab, conversationTab]);
 
-  // Saved error actions keep their old category identifiers but open the current owner.
   /** Keep settings callbacks and guarded workspace history as the only notification destinations. */
   function openNotification(target: NotificationTarget) {
     if (target.view === "settings") {
@@ -628,15 +621,12 @@ function ServiceSession() {
     openSettings(category);
   }
 
-  function openSettings(category?: SettingsCategory | "review" | "limits" | "runtime" | "experiments" | "snapshot") {
-    if (category === "review") return openConversationSettings("filters");
+  function openSettings(category?: SettingsCategory | "runtime") {
     if (category === "limits") {
       if (adminLive) { setSettingsCategory("limits"); setSettingsOpen(true); return; }
       return navigate({ view: "system", tab: "status" });
     }
     if (category === "runtime") return navigate({ view: "system", tab: "status" });
-    if (category === "experiments") return navigate({ view: "measure", tab: "runs" });
-    if (category === "snapshot") return navigate({ view: "measure", tab: "snapshots" });
     setSettingsCategory(category);
     setSettingsOpen(true);
   }
@@ -858,7 +848,7 @@ function ServiceSession() {
     setProfile((current) => ({ ...current, ...update }));
     if (targetId) setConversations((current) => saveConversations(current.map((conversation) =>
       conversation.id === targetId
-        ? { ...conversation, ...(dimensionsChanged ? { publishedScope: undefined, publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
+        ? { ...conversation, ...(dimensionsChanged ? { publishedTargets: createPublicTargets(publicCorpus.documents, publicCorpus.documents.filter((doc) => selection?.includes(doc.doc_id)).map((doc) => ({ registry: doc.registry as "sec" | "dart", issuer: doc.issuer, year: doc.fiscal_year }))) } : {}), updatedAt: new Date().toISOString(), profile: { ...(conversation.profile ?? DEFAULT_SESSION_PROFILE), ...update } }
         : conversation,
     )));
   }

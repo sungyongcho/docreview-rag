@@ -9,7 +9,7 @@ import type { CorpusCounts, ManifestSummary, OperatorJob, Readiness } from "./ty
 function fullCorpus(overrides: Partial<CorpusCounts> = {}): CorpusCounts {
   return {
     database_connected: true,
-    schema_status: "ok",
+    schema_status: "compatible",
     schema_message: null,
     documents: 29,
     chunks: 21927,
@@ -566,46 +566,6 @@ describe("derivePipeline", () => {
       active_review_model: null,
     });
     expect(stage(derivePipeline(liveInput({ readiness })), "answer_model").status).toBe("blocked");
-  });
-
-  // Case 10: static public build with no API at all; the portfolio fixture stands in.
-  it("preserves the intentional portfolio fixture when the public connection is confirmed", () => {
-    const pipeline = derivePipeline({
-      live: false,
-      healthKind: "healthy",
-      readiness: null,
-      corpus: null,
-      manifests: [],
-      registryCounts: {},
-      jobs: [],
-      evaluationResults: 0,
-      snapshots: 0,
-    });
-
-    expect(pipeline.source).toBe("fixture");
-    expect(pipeline.readOnly).toBe(true);
-    expect(pipeline.next).toBeNull();
-    expect(pipeline.corpusReady).toBe(true);
-
-    for (const id of ["filings", "index", "embeddings", "lexical", "evaluate"] as const) {
-      const item = stage(pipeline, id);
-      expect(item.status, id).toBe("readonly");
-      expect(item.statusDetail, id).toBe("Portfolio fixture");
-      expect(item.hint, id).toBe("");
-    }
-
-    expect(stage(pipeline, "filings").numbers).toEqual(["22 filings in the published corpus"]);
-    expect(stage(pipeline, "filings").action?.label).toBe("Download missing filings");
-    expect(stage(pipeline, "ask").status).toBe("done");
-
-    const evaluate = stage(pipeline, "evaluate");
-    expect(evaluate.action).toEqual({ label: "Open Quality checks", kind: "compare" });
-    // No published snapshot yet, so the read-only card keeps the unmeasured numbers line.
-    expect(evaluate.numbers).toEqual(["Not measured yet."]);
-
-    const answerModel = stage(pipeline, "answer_model");
-    expect(answerModel.status).toBe("unknown");
-    expect(answerModel.statusDetail).toBe("Checking…");
   });
 
   // Case 11: public UI in front of a live API; numbers come from /ready and /snapshots.

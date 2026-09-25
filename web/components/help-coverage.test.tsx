@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
 import { HELP_TOPICS, type HelpScreen } from "@/lib/help-content";
 import { derivePipeline, type PipelineInput } from "@/lib/pipeline";
 import { ONBOARDING_KEY } from "@/lib/storage";

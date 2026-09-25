@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned";
+import { CANNED_JOB, CANNED_SUITES } from "@/lib/canned-test-support";
 import { I18nProvider } from "@/lib/i18n";
 import type { OperatorJob } from "@/lib/types";
 import { DEFAULT_PROFILE, DEFAULT_SESSION_PROFILE } from "@/lib/types";

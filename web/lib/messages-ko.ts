@@ -2330,7 +2330,6 @@ export const KO: Record<string, string> = {
   "A job finished, but no evaluation results are available. Refresh results or run a quick evaluation to measure retrieval quality.": "작업은 끝났지만 평가 결과가 없습니다. 결과를 갱신하거나 빠른 평가로 검색 품질을 확인하세요.",
   "Queue a quick evaluation on the sec-en suite, then compare results and freeze a snapshot.": "평가 데이터셋을 골라 빠른 평가를 실행한 뒤 결과를 비교하고 스냅샷으로 보관하세요.",
   "Compare published snapshots": "게시된 스냅샷 비교",
-  "Portfolio fixture": "공개 예시 데이터",
   "Waiting for the current job to finish.": "현재 작업이 끝나기를 기다립니다.",
   "Download missing filings": "누락된 원문 다운로드",
   "Set HOST_GID=<id -g> in .env and restart the app so the container can write data/.": ".env의 HOST_GID를 id -g 결과로 설정하고 앱을 재시작하면 컨테이너가 data/에 쓸 수 있습니다.",

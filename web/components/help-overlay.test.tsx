@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { findHelpTopic } from "@/lib/help-content";
+import { HELP_TOPICS } from "@/lib/help-content";
 import { HELP_GROUPS, getHelpPrimer } from "@/lib/help-primer";
 import { HelpOverlay as HelpOverlayComponent, type HelpOverlayProps } from "./help-overlay";
 import type { Capabilities } from "@/lib/types";
@@ -114,7 +114,7 @@ describe("HelpOverlay", () => {
     expect(panel.querySelector("details")).toBeNull();
     const row = panel.querySelector<HTMLButtonElement>('.help-home-topics button[data-help-item="review.scope"]')!;
     fireEvent.click(row);
-    const topic = findHelpTopic("review.scope")!;
+    const topic = Object.values(HELP_TOPICS).flat().find((item) => item.id === "review.scope")!;
     const primer = getHelpPrimer(topic);
     const detail = panel.querySelector<HTMLElement>("article.help-topic-detail")!;
     expect(detail).toHaveAttribute("data-help-item", topic.id);

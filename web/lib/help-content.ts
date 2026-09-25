@@ -728,12 +728,3 @@ export function helpScreen(view: "review" | "build" | "measure" | "system", tab:
   if (view === "build") return tab === "pipeline" ? "build" : tab === "jobs" ? "build.jobs" : tab === "documents" ? "build.documents" : null;
   return MEASURE_SCREENS.has(tab) ? `measure.${tab}` as HelpScreen : null;
 }
-
-/** Find a topic on any screen, for See also links that point across screens. */
-export function findHelpTopic(id: string): HelpTopic | null {
-  for (const topics of Object.values(HELP_TOPICS)) {
-    const topic = topics.find((item) => item.id === id);
-    if (topic) return topic;
-  }
-  return null;
-}

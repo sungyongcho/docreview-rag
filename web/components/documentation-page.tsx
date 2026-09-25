@@ -4,7 +4,7 @@ import { ChunkBoundary } from "@/components/chunk-boundary";
 import { ChunkMap } from "@/components/chunk-map";
 import { CodeBlock } from "@/components/code-block";
 import { DevelopmentBadge } from "@/components/development-badge";
-import { DocumentationLegacyAnchor, DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
+import { DocumentationMenu, DocumentationOutline } from "@/components/documentation-navigation";
 import { DocumentationLanguageSwitch, DocumentationReadingBoundary } from "@/components/documentation-reading";
 import { EvalMeter } from "@/components/eval-meter";
 import { PipelineMap } from "@/components/pipeline-map";
@@ -83,7 +83,6 @@ export async function DocumentationPage({ documentId, locale = "ko" }: { documen
   const next = story ? undefined : nextId ? documents.find((item) => item.id === nextId) : documents[index + 1];
   const related = document.related.map((id) => documents.find((item) => item.id === id)!);
   const page = <div className="docs-site" lang={locale}>
-    {(document.id === "overview" || document.id === "quickstart") && <DocumentationLegacyAnchor locale={locale} />}
     <a className="docs-skip" href="#docs-content">{locale === "ko" ? "본문으로 바로가기" : "Skip to content"}</a>
     <header className="docs-header">
       <div className="docs-header-inner">

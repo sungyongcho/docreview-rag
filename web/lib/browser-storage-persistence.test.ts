@@ -54,19 +54,16 @@ describe("production browser persistence", () => {
     for (const [key, value] of Object.entries(archived)) expect(localStorage.getItem(key)).toBe(value);
   });
 
-  it("migrates valid legacy conversations, theme and locale once", () => {
-    localStorage.setItem("docreview:conversations:v1", JSON.stringify(conversations));
+  it("migrates unversioned theme and locale preferences once", () => {
     localStorage.setItem("docreview:theme", "dark"); localStorage.setItem("docreview.locale", "ko");
     const set = vi.spyOn(Storage.prototype, "setItem");
     configureBrowserStorage("prod");
-    expect(loadConversations()).toEqual(conversations);
     expect(browserStorage().getItem("docreview:theme")).toBe("dark");
     expect(browserStorage().getItem("docreview.locale")).toBe("ko");
-    expect(localStorage.getItem("docreview:conversations:v1")).toBeNull();
     expect(localStorage.getItem("docreview:theme")).toBeNull();
     expect(localStorage.getItem("docreview.locale")).toBeNull();
     const snapshot = physicalEntries(); const writes = set.mock.calls.length;
-    configureBrowserStorage("prod"); loadConversations(); browserStorage().getItem("docreview.locale");
+    configureBrowserStorage("prod"); browserStorage().getItem("docreview.locale");
     expect(set).toHaveBeenCalledTimes(writes); expect(physicalEntries()).toEqual(snapshot);
     expect(JSON.parse(localStorage.getItem("docreview:theme:v1")!)).toEqual({ version: 1, value: "dark" });
   });
@@ -226,14 +223,19 @@ it("exports the new session overlay as well as damaged originals when recovery c
   expect(browserStorage().getItem("docreview:storage-recovery:v1")).toContain("{broken");
 });
 
-it("never deletes the legacy conversation record when its replacement cannot persist", () => {
-  localStorage.setItem("docreview:conversations:v1", JSON.stringify(conversations)); configureBrowserStorage("prod");
-  const original = localStorage.getItem("docreview:conversations:v1");
-  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
-  expect(loadConversations()).toEqual(conversations);
-  expect(localStorage.getItem("docreview:conversations:v1")).toBe(original);
-  set.mockRestore(); configureBrowserStorage(undefined); configureBrowserStorage("prod");
-  expect(loadConversations()).toEqual(conversations);
+it("keeps a retired conversation record in recovery with one version warning instead of migrating it", () => {
+  const raw = JSON.stringify(conversations);
+  localStorage.setItem("docreview:conversations:v1", raw);
+  const warning = vi.fn(); const unsubscribe = subscribeStorageWarnings(warning);
+  configureBrowserStorage("prod");
+  expect(loadConversations()).toEqual([]);
+  expect(localStorage.getItem("docreview:conversations:v1")).toBe(raw);
+  expect(warning.mock.calls.filter(([entry]) => entry.reason === "version")).toHaveLength(1);
+  const backup = validateBrowserSettings(exportBrowserSettings());
+  expect(backup.entries.some((entry) => entry.key === "docreview:conversations:v1")).toBe(false);
+  const recovery = backup.entries.find((entry) => entry.key === "docreview:storage-recovery:v1")!;
+  expect(JSON.parse(JSON.parse(recovery.value).value)).toEqual({ "docreview:conversations:v1": raw });
+  unsubscribe();
 });
 
 it.each([{ fiscal_years: 42 }, { issuers: [12] }, { prompt_policy: { history_turns: "many" } }, { custom_retrieval: { k: "lots" } }])("rejects malformed profile fields before importing %j", patch => {

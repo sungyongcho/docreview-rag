@@ -56,9 +56,9 @@ export function createPublicTargets(documents: PublishedDocument[], pairs: Publi
   })).values()];
 }
 
-/** Only actual published IDs can enter a request; legacy saved selections remain supported. */
-export function publicTargetIds(documents: PublishedDocument[], targets: PublicTarget[] | undefined, legacy?: string[]): string[] | undefined {
-  if (targets === undefined) return legacy;
+/** Only actual published IDs can enter a request; the caller's fallback selection applies when no targets are saved. */
+export function publicTargetIds(documents: PublishedDocument[], targets: PublicTarget[] | undefined, fallback?: string[]): string[] | undefined {
+  if (targets === undefined) return fallback;
   return [...new Set(targets.flatMap((target) => target.document_ids ?? documents.filter((doc) => doc.registry === target.registry && doc.issuer === target.issuer && doc.fiscal_year === target.year).map((doc) => doc.doc_id)))];
 }
 

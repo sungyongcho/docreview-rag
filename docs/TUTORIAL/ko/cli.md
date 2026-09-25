@@ -469,7 +469,7 @@ rag-dev compose exec -T db psql -U filing -d filing -c '\dt'
 ```
 
 새 DB에는 아직 앱 테이블이 없습니다. 원문과 `.env` 등은 그대로 있어야 합니다.
-[초기 schema 준비](#초기-schema-준비)로 빈 DB에 테이블을 만들고 [실습 가이드](walkthrough.md)의 DB 적재부터 다시 진행합니다.
+[초기 schema 준비](#초기-schema-준비)로 빈 DB에 테이블을 만들고 [실습 가이드](overview.md)의 DB 적재부터 다시 진행합니다.
 embedding 재생성은 다시 유료입니다. 웹 재시작 후 DB 문서와 과거 job/eval 기록 상태를 확인합니다.
 브라우저의 예전 대화는 남지만 삭제된 DB 근거·run을 더 이상 조회하지 못할 수 있습니다.
 
@@ -573,7 +573,7 @@ job의 `queued`·`running`은 진행 중, `succeeded`·`failed`·`cancelled`는 
 
 실패가 발생한 단계와 조치가 연결되고, schema 재생성이나 원문 삭제를 진단 대신 쓰지 않습니다.
 
-해당 상태가 복구되면 실패했던 단계부터 이어갑니다. 웹 실습은 [첫 공시부터 인용 답변까지](walkthrough.md)에서 이어갑니다.
+해당 상태가 복구되면 실패했던 단계부터 이어갑니다. 웹 실습은 [첫 공시부터 인용 답변까지](overview.md)에서 이어갑니다.
 
 <!-- heading-alias: 명령-등록-해제 -->
 ## 명령 등록 해제 {#remove-command-registration}

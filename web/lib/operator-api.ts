@@ -2,7 +2,7 @@ import type { components as OperatorComponents } from "./operator-api-generated"
 import { requestFetch } from "./http-request";
 
 // Read at call time: Next inlines NEXT_PUBLIC_* either way, and tests can stub the env per case.
-function operatorBaseUrl() {
+export function operatorBase() {
   return process.env.NEXT_PUBLIC_OPERATOR_BASE_URL ?? "";
 }
 
@@ -36,11 +36,7 @@ export interface OperatorJob {
 }
 
 export function operatorAvailable() {
-  return Boolean(operatorBaseUrl() && operatorToken());
-}
-
-export function operatorBase() {
-  return operatorBaseUrl();
+  return Boolean(operatorBase() && operatorToken());
 }
 
 export class OperatorRequestError extends Error {
@@ -52,7 +48,7 @@ export class OperatorRequestError extends Error {
 
 async function operatorRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!operatorAvailable()) throw new Error("Local Operations is not enabled for this build.");
-  const response = await requestFetch(`${operatorBaseUrl()}${path}`, {
+  const response = await requestFetch(`${operatorBase()}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
