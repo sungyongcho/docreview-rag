@@ -114,7 +114,6 @@ def test_middleware_exempts_lexical_and_reports_server_reset(tmp_path):
         limiter=ledger,
         shared_allowance=ledger,
         trust_proxy_headers=False,
-        allow_ingest=False,
         salt=ledger.salt,
     )
 
@@ -234,7 +233,6 @@ def test_lexical_classifier_is_metered_but_pure_lexical_is_free(tmp_path):
         limiter=ledger,
         shared_allowance=ledger,
         trust_proxy_headers=False,
-        allow_ingest=False,
         public_read_only=True,
         salt=ledger.salt,
     )
@@ -375,7 +373,6 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
         limiter=ledger,
         shared_allowance=ledger,
         trust_proxy_headers=False,
-        allow_ingest=False,
         salt=ledger.salt,
     )
     with TestClient(app) as client:

@@ -9,7 +9,7 @@ from app.release.config import ReleaseSettings
 
 
 def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> None:
-    """Default to the offline mode with ingestion, proxy trust and the provider all off."""
+    """Default to the offline mode with proxy trust and the provider off."""
     for name in ("OPENAI_API_KEY", "DOCREVIEW_OPENAI_API_KEY", "OPENAI_API_KEY_LOCAL", "MODE"):
         monkeypatch.delenv(name, raising=False)
 
@@ -18,7 +18,6 @@ def test_release_defaults_to_canned_without_provider_activation(monkeypatch) -> 
     assert settings.mode == "canned"
     assert settings.openai_api_key is None
     assert settings.openai_enabled is False
-    assert settings.allow_ingest is False
     assert settings.admin_mode == "readonly"
     assert settings.rate_limit_per_minute == 10
     assert settings.rate_limit_per_day == 50

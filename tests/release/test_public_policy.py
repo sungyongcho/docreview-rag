@@ -56,14 +56,12 @@ def test_production_blocks_admin_even_with_retained_live_configuration(tmp_path,
         mode="runtime",
         admin_mode="live",
         host="127.0.0.1",
-        allow_ingest=True,
         public_allowance_path=tmp_path / "limits.sqlite3",
     )
     services = RuntimeApiServices(embedding_provider=DeterministicEmbeddingProvider())
     with TestClient(create_release_app(settings, services=services)) as client:
         headers = {"x-docreview-public": "true"} if public_header else {}
         assert client.get("/admin/corpus", headers=headers).status_code == 403
-        assert client.post("/ingest", json={}, headers=headers).status_code == 403
         capabilities = client.get("/capabilities", headers=headers).json()
         assert capabilities["can_change_custom_retrieval"] is True
         assert not any(

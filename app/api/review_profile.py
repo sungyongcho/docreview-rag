@@ -70,11 +70,9 @@ class CustomRetrievalProfile(StrictProfileModel):
 
 
 # Public surfaces may run the Custom preset only inside the cost envelope the
-# built-in presets already spend: k stays within twice the preset default (5),
-# candidate_k within the Accuracy preset's 50, and any legacy context ceiling
-# within the default prompt policy's 12,000 characters.
+# built-in presets already spend: k stays within twice the preset default (5) and
+# candidate_k within the Accuracy preset's 50.
 PUBLIC_CUSTOM_RETRIEVAL_MAXIMA: Final[Mapping[str, int]] = {"k": 10, "candidate_k": 50}
-PUBLIC_MAX_CONTEXT_CHARS: Final[int] = 12_000
 
 
 def public_custom_retrieval_violation(retrieval: Mapping[str, object]) -> str | None:

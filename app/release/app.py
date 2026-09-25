@@ -301,7 +301,6 @@ def create_release_app(
         ReleaseGuardMiddleware,
         limiter=limiter,
         trust_proxy_headers=active_settings.trust_proxy_headers,
-        allow_ingest=active_settings.allow_ingest and active_settings.environment != "prod",
         enforce_rate_limit=enforce_public_limits,
         public_read_only=not active_settings.admin_enabled,
         allow_local_engine=active_settings.environment != "prod",

@@ -191,12 +191,9 @@ def test_release_app_blocks_ingest_and_rate_limits_post_requests() -> None:
     request = {"query": "What revenue was reported?", "k": 1, "filters": {}}
 
     with TestClient(create_release_app(settings)) as client:
-        ingest = client.post("/ingest", json={})
         unavailable = client.post("/retrieve", json=request)
         limited = client.post("/retrieve", json=request)
 
-    assert ingest.status_code == 403
-    assert ingest.headers["x-content-type-options"] == "nosniff"
     assert unavailable.status_code == 503
     assert unavailable.json()["error"]["code"] == "service_unavailable"
     assert limited.status_code == 429
@@ -300,7 +297,6 @@ def test_live_operator_disables_only_public_request_limits() -> None:
     assert guard.kwargs["enforce_rate_limit"] is False
     assert guard.kwargs["cost_limiter"] is not None
     assert guard.kwargs["public_read_only"] is False
-    assert guard.kwargs["allow_ingest"] is False
 
 
 def test_capabilities_and_limit_peek_reflect_release_mode_without_consuming_slots() -> None:

@@ -321,9 +321,8 @@ operation after every parse/chunk run. Build step 4 offers **Compute BM25** init
 and **Recompute BM25** when statistics or a successful rebuild record exist; it also
 permits recomputation while ready.
 
-The direct runtime seed API retains its combined ingest-and-BM25 behavior for existing
-API clients; isolated evaluation corpus arms likewise prepare their own statistics.
-These are separate from the Build/CLI ingestion job.
+Isolated evaluation corpus arms prepare their own statistics; they are separate from the
+Build/CLI ingestion job.
 
 ## Python CLI reference {#python-cli-reference}
 

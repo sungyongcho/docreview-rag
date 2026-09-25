@@ -24,7 +24,6 @@ def _guarded_app(*, enforce_rate_limit: bool = True) -> FastAPI:
         ReleaseGuardMiddleware,
         limiter=InProcessRateLimiter(per_minute=1, per_day=2, max_clients=8),
         trust_proxy_headers=False,
-        allow_ingest=False,
         enforce_rate_limit=enforce_rate_limit,
         salt=b"x" * 32,
     )
@@ -34,11 +33,6 @@ def _guarded_app(*, enforce_rate_limit: bool = True) -> FastAPI:
     async def work() -> dict[str, str]:
         """Return a trivial payload so the guards have something to wrap."""
         return {"status": "ok"}
-
-    @app.post("/ingest")
-    async def ingest() -> dict[str, str]:
-        """Stand in for an ingestion route the guards must block."""
-        return {"status": "unexpected"}
 
     return app
 
@@ -60,26 +54,13 @@ def test_security_headers_and_rate_limit_are_visible() -> None:
     assert denied.json()["error"]["code"] == "rate_limited"
 
 
-def test_public_ingestion_is_disabled_before_service_execution() -> None:
-    """Refuse ingestion before the route runs, not after."""
-    with TestClient(_guarded_app()) as client:
-        response = client.post("/ingest")
-
-    assert response.status_code == 403
-    assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["cache-control"] == "no-store"
-    assert response.json()["error"]["code"] == "release_read_only"
-
-
-def test_local_operator_bypasses_public_rate_limit_but_not_ingest_guard() -> None:
-    """Keep loopback operator work unlimited without opening the public ingest route."""
+def test_local_operator_bypasses_public_rate_limit() -> None:
+    """Keep loopback operator work unlimited and unmetered."""
     with TestClient(_guarded_app(enforce_rate_limit=False)) as client:
         responses = [client.post("/work") for _ in range(3)]
-        ingest = client.post("/ingest")
 
     assert [response.status_code for response in responses] == [200, 200, 200]
     assert all("x-ratelimit-remaining-minute" not in response.headers for response in responses)
-    assert ingest.status_code == 403
 
 
 def test_daily_cost_limiter_reserves_worst_case_and_resets_by_day() -> None:
@@ -113,7 +94,6 @@ def test_review_route_fails_closed_after_daily_cost_reservation() -> None:
         ReleaseGuardMiddleware,
         limiter=InProcessRateLimiter(per_minute=10, per_day=10, max_clients=4),
         trust_proxy_headers=False,
-        allow_ingest=False,
         cost_limiter=DailyCostLimiter(
             daily_limit_usd=Decimal("0.01"),
             reservation_usd=Decimal("0.01"),
@@ -141,7 +121,6 @@ def test_public_proxy_marker_blocks_dev_only_review_policy() -> None:
         ReleaseGuardMiddleware,
         limiter=InProcessRateLimiter(per_minute=10, per_day=10, max_clients=4),
         trust_proxy_headers=False,
-        allow_ingest=False,
     )
 
     @app.post("/review")
@@ -174,7 +153,6 @@ def _review_app() -> FastAPI:
         ReleaseGuardMiddleware,
         limiter=InProcessRateLimiter(per_minute=50, per_day=50, max_clients=4),
         trust_proxy_headers=False,
-        allow_ingest=False,
     )
 
     @app.post("/review")
@@ -244,21 +222,20 @@ def test_public_custom_retrieval_above_bounds_names_the_field(retrieval, field) 
 
 
 @pytest.mark.parametrize(
-    ("payload", "profile"),
+    "profile",
     [
-        ({}, {"prompt_policy": {"additional_instructions": "Be concise."}}),
-        ({"budget": {"max_iterations": 1}}, {}),
-        ({}, {"engine": "local"}),
-        ({}, {"snapshot_id": 3}),
+        {"prompt_policy": {"additional_instructions": "Be concise."}},
+        {"engine": "local"},
+        {"snapshot_id": 3},
     ],
 )
-def test_public_prompt_budget_local_and_snapshot_controls_stay_locked(payload, profile) -> None:
+def test_public_prompt_local_and_snapshot_controls_stay_locked(profile) -> None:
     """Keep every non-retrieval developer control behind the one DEV-mode lock."""
     with TestClient(_review_app()) as client:
         response = client.post(
             "/review",
             headers={"X-DocReview-Public": "true"},
-            json={"query": "Revenue?", "session_profile": profile, **payload},
+            json={"query": "Revenue?", "session_profile": profile},
         )
 
     assert response.status_code == 403
@@ -341,7 +318,6 @@ def test_public_proxy_marker_retains_cost_limits_without_charging_private_reques
         ReleaseGuardMiddleware,
         limiter=InProcessRateLimiter(per_minute=10, per_day=20, max_clients=8),
         trust_proxy_headers=False,
-        allow_ingest=False,
         enforce_rate_limit=False,
         cost_limiter=DailyCostLimiter(
             daily_limit_usd=Decimal("0.04"),

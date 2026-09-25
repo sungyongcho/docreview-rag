@@ -12,12 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.review_profile import (
-    PUBLIC_MAX_CONTEXT_CHARS,
-    PromptPolicy,
-    public_custom_retrieval_violation,
-)
-from app.observability.types import Budget
+from app.api.review_profile import PromptPolicy, public_custom_retrieval_violation
 from app.release.ai_allowance import (
     AIAllowanceError,
     RequestAIAllowance,
@@ -86,7 +81,7 @@ def _forbidden(code: str, message: str) -> JSONResponse:
 PUBLIC_LOCK_MESSAGE = "This control runs in DEV mode only."
 
 
-def _control_denial(payload: object, profile: dict[str, object]) -> str | None:
+def _control_denial(profile: dict[str, object]) -> str | None:
     """Name the developer control a public request may not use, or None when it may proceed.
 
     Bounded Custom retrieval is public; malformed fields are left to route validation.
@@ -97,20 +92,6 @@ def _control_denial(payload: object, profile: dict[str, object]) -> str | None:
             return PUBLIC_LOCK_MESSAGE
     except ValidationError:
         pass  # The route returns its normal typed validation error.
-    if isinstance(payload, dict):
-        try:
-            if payload.get("budget") is not None and Budget.model_validate(payload["budget"]) != (
-                Budget()
-            ):
-                return PUBLIC_LOCK_MESSAGE
-        except ValidationError:
-            pass  # Request validation still reports malformed values.
-        context_chars = payload.get("max_context_chars")
-        if isinstance(context_chars, int) and context_chars > PUBLIC_MAX_CONTEXT_CHARS:
-            return (
-                f"{PUBLIC_LOCK_MESSAGE} max_context_chars must be at most "
-                f"{PUBLIC_MAX_CONTEXT_CHARS} on the public surface; received {context_chars}."
-            )
     if profile.get("snapshot_id") is not None:
         return PUBLIC_LOCK_MESSAGE
     if profile.get("retrieval_preset") == "custom":
@@ -159,7 +140,6 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         *,
         limiter: InProcessRateLimiter | SharedAIAllowance,
         trust_proxy_headers: bool,
-        allow_ingest: bool,
         enforce_rate_limit: bool = True,
         public_read_only: bool = False,
         allow_local_engine: bool = True,
@@ -171,7 +151,6 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._limiter = limiter
         self._trust_proxy_headers = trust_proxy_headers
-        self._allow_ingest = allow_ingest
         self._enforce_rate_limit = enforce_rate_limit
         self._public_read_only = public_read_only
         self._allow_local_engine = allow_local_engine
@@ -223,13 +202,13 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         if local and not self._allow_local_engine:
             return _forbidden("disabled_in_prod", "Local LLM is disabled in production.")
         if public:
-            denial = PUBLIC_LOCK_MESSAGE if local else _control_denial(payload, profile)
+            denial = PUBLIC_LOCK_MESSAGE if local else _control_denial(profile)
             if denial is not None:
                 return _forbidden("capability_disabled", denial)
         return None
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """Gate one request through the ingest lock and the per-client rate limit.
+        """Gate one request through the public controls and the per-client rate limit.
 
         Parameters
         ----------
@@ -250,11 +229,6 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
         Only state-changing methods consume the rate limit; reads pass through
         so probes and static assets stay unmetered.
         """
-        if request.url.path == "/ingest" and not self._allow_ingest:
-            return _forbidden(
-                "release_read_only", "Ingestion is disabled on the public release surface."
-            )
-
         public = self._public_read_only or request.headers.get("x-docreview-public") == "true"
         if public and (request.url.path == "/admin" or request.url.path.startswith("/admin/")):
             return _forbidden("capability_disabled", "Administrator resources are private.")

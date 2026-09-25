@@ -148,13 +148,13 @@ def test_nonlive_public_retrieval_cannot_bypass_custom_policy_guard(tmp_path) ->
 @pytest.mark.parametrize(
     "field,value", [("max_context_chars", 15000), ("budget", {"max_iterations": 10})]
 )
-def test_legacy_review_limits_cannot_bypass_public_controls(tmp_path, field, value) -> None:
-    """Older clients cannot use top-level fields to evade disabled run or evidence controls."""
+def test_retired_top_level_review_limits_are_rejected_as_unknown_fields(tmp_path, field, value):
+    """Run and evidence limits live in the session profile; top-level copies fail validation."""
     app, _ = connection_app(tmp_path, "prod", "readonly")
     with TestClient(app) as client:
         response = client.post("/review", json={"query": "hello", field: value})
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "capability_disabled"
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_validation_failed"
 
 
 @pytest.mark.parametrize("action", ["disconnect", "servers", "select", "diagnostics"])

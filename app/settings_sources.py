@@ -59,7 +59,6 @@ class DotenvFirstSettings(BaseSettings):
             "environment",
             "mode",
             "admin_mode",
-            "allow_ingest",
             "trust_proxy_headers",
             "local_llm_base_url",
             "local_llm_protocol",

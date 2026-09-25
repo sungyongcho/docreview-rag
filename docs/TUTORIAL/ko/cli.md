@@ -338,9 +338,7 @@ rag-dev corpus status
 실행할 때마다 BM25도 명시적으로 다시 계산합니다. Build 4단계는 처음에 **BM25 계산**,
 통계나 성공한 계산 기록이 있으면 **BM25 재계산**을 표시하며 준비 완료 후에도 재계산할 수 있습니다.
 
-직접 호출하는 runtime seed API는 기존 API 사용자의 호환성을 위해 파싱과 BM25를
-함께 수행합니다. 격리 평가용 코퍼스도 자체 통계를 준비합니다. 이 경로들은 Build/CLI
-파싱 작업과 별개입니다.
+격리 평가용 코퍼스는 자체 통계를 준비합니다. 이 경로는 Build/CLI 파싱 작업과 별개입니다.
 
 <!-- heading-alias: python-cli-참고 -->
 ## Python CLI 참고 {#python-cli-reference}
