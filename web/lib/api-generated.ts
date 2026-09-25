@@ -31,37 +31,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Corpus Jobs
-         * @description Return current corpus job queue and bounded history.
-         */
-        get: operations["corpus_jobs_admin_corpus_jobs_get"];
+        get?: never;
         put?: never;
         /**
          * Enqueue Corpus
          * @description Queue one safe corpus acquisition, ingest, or indexing operation.
          */
         post: operations["enqueue_corpus_admin_corpus_jobs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/corpus/jobs/{job_id}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Retry Corpus
-         * @description Retry one known failed corpus job.
-         */
-        post: operations["retry_corpus_admin_corpus_jobs__job_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -180,26 +156,6 @@ export interface paths {
          * @description Return metrics and per-case changes between compatible artifacts.
          */
         get: operations["compare_evaluations_admin_evaluations_compare_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/evaluations/jobs/{job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Evaluation Job
-         * @description Return one evaluation job by its public identifier.
-         */
-        get: operations["evaluation_job_admin_evaluations_jobs__job_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -912,26 +868,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/ingest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ingest Manifest
-         * @description Parse and persist one explicit local manifest before responding.
-         */
-        post: operations["ingest_manifest_ingest_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/public/documents": {
         parameters: {
             query?: never;
@@ -1567,17 +1503,6 @@ export interface components {
             status: "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
             /** Total */
             total: number | null;
-        };
-        /**
-         * CorpusJobsResource
-         * @description Current and terminal snapshots of the shared corpus job queue.
-         */
-        CorpusJobsResource: {
-            active: components["schemas"]["CorpusJobResource"] | null;
-            /** History */
-            history: components["schemas"]["CorpusJobResource"][];
-            /** Queued */
-            queued: components["schemas"]["CorpusJobResource"][];
         };
         /** @enum {string} */
         CorpusOperationKind: "acquire_edgar" | "acquire_dart" | "ingest_manifest" | "ingest_selected" | "delete_sources" | "backfill_embeddings" | "rebuild_bm25";
@@ -2798,42 +2723,6 @@ export interface components {
             code: "grade_references_filtered";
             /** Removed Chunk Ids */
             removed_chunk_ids: number[];
-        };
-        /**
-         * IngestRequest
-         * @description One explicit local manifest ingestion request.
-         *
-         *     ``manifest_path`` is resolved inside the configured corpus directory; the API never
-         *     opens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL
-         *     runs only when a caller asks for it, never as a per-request side effect.
-         */
-        IngestRequest: {
-            /**
-             * Chunk Batch Size
-             * @default 500
-             */
-            chunk_batch_size: number;
-            /**
-             * Create Schema
-             * @default false
-             */
-            create_schema: boolean;
-            /** Expected Documents */
-            expected_documents?: number | null;
-            /** Manifest Path */
-            manifest_path: string;
-            /** Selection Id */
-            selection_id: string;
-        };
-        /**
-         * IngestResponse
-         * @description Committed corpus row counts from synchronous ingestion.
-         */
-        IngestResponse: {
-            /** Chunks */
-            chunks: number;
-            /** Documents */
-            documents: number;
         };
         /**
          * JobHistoryRequest
@@ -4539,44 +4428,6 @@ export interface operations {
             };
         };
     };
-    corpus_jobs_admin_corpus_jobs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CorpusJobsResource"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     enqueue_corpus_admin_corpus_jobs_post: {
         parameters: {
             query?: never;
@@ -4589,55 +4440,6 @@ export interface operations {
                 "application/json": components["schemas"]["CorpusOperationRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CorpusJobResource"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    retry_corpus_admin_corpus_jobs__job_id__retry_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -4923,55 +4725,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvaluationComparisonResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    evaluation_job_admin_evaluations_jobs__job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EvaluationJobResource"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Request validation failed. */
@@ -6626,66 +6379,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalListResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    ingest_manifest_ingest_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["IngestRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IngestResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Request validation failed. */

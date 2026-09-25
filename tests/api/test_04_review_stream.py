@@ -10,6 +10,7 @@ from starlette.requests import ClientDisconnect
 
 from app.api.deps import ApiServices
 from app.api.errors import ApiProblemError
+from app.api.evidence import EvidenceSelection
 from app.api.routes import stream as stream_module
 from app.api.schemas import RetrieveResponse, ReviewRequest
 from app.observability.types import build_run_report
@@ -202,7 +203,9 @@ def test_stream_send_failure_cancels_the_review_task():
         """Drive the response through an ASGI send that fails on the first body."""
         services = BlockingServices()
         response = await stream_module.review_stream(
-            ReviewRequest(query="Revenue?"),
+            ReviewRequest(
+                query="Revenue?", evidence_selection=EvidenceSelection(candidate_token="test")
+            ),
             cast(ApiServices, services),
         )
         scope = {

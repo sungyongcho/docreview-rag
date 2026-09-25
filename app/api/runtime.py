@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from pydantic import JsonValue, TypeAdapter
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ApiServices
 from app.api.document_catalog import DocumentCatalog
@@ -39,7 +39,6 @@ from app.api.schemas import (
     EvalResultResource,
     EvidenceCandidate,
     EvidenceHit,
-    IngestRequest,
     RetrieveRequest,
     RetrieveResponse,
     ReviewRequest,
@@ -57,17 +56,10 @@ from app.config import (
     Settings,
     get_settings,
 )
-from app.db.bootstrap import bootstrap_schema
 from app.db.models import Chunk, Document, EvalResult, EvaluationSnapshot, Run, Trace
 from app.db.queries import join_current_parse
 from app.evals.snapshots import SnapshotService
 from app.ingestion.company_names import CompanyNames, read_company_names
-from app.ingestion.seed import (
-    ManifestError,
-    SeedResult,
-    load_seed_batch,
-    persist_seed_batch_with_stats,
-)
 from app.llm.local import LocalLLMProvider
 from app.llm.local_connection import LocalConnectionManager
 from app.llm.local_engine import resolve_local_protocol
@@ -92,7 +84,7 @@ from app.observability.types import JsonObject, RunReport, StepTrace, WorkflowNo
 from app.observability.usage import provider_identity
 from app.openai_models import resolve_openai_model
 from app.operator.corpus_access import CorpusAccess, CorpusUpdatingError
-from app.operator.jobs import JobStore
+from app.operator.jobs import JobStore, _default_session_factory
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import (
     EmbeddingProvider,
@@ -127,20 +119,6 @@ from app.workflow.types import WorkflowRequest, WorkflowState
 type ParseStatus = Literal["parsed", "needs_profile_update"]
 
 _PARSE_STATUS = TypeAdapter[ParseStatus](ParseStatus)
-
-
-def _default_session_factory() -> AsyncSession:
-    """Create a session lazily so importing the API does not build an engine."""
-    from app.db.session import Session
-
-    return Session()
-
-
-def _default_database_engine() -> AsyncEngine:
-    """Resolve the process engine only for an operation that requires schema access."""
-    from app.db.session import engine
-
-    return engine
 
 
 class SessionFactory(Protocol):
@@ -266,7 +244,6 @@ class RuntimeApiServices(ApiServices):
         self,
         *,
         session_factory: SessionFactory = _default_session_factory,
-        database_engine: AsyncEngine | None = None,
         embedding_provider: EmbeddingProvider,
         llm_providers: dict[str, LLMProvider] | None = None,
         provider_budgets: dict[str, ProviderBudget] | None = None,
@@ -281,8 +258,6 @@ class RuntimeApiServices(ApiServices):
         run_id_factory: Callable[[], str] | None = None,
         secret_values: Iterable[str] = (),
         credential_slot: str | None = None,
-        route_by_language: bool = False,
-        lexical_ranker: LexicalRanker = "ts_rank_cd",
         bm25_k1: float = DEFAULT_BM25_K1,
         bm25_b: float = DEFAULT_BM25_B,
         bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
@@ -297,7 +272,6 @@ class RuntimeApiServices(ApiServices):
             raise ValueError("llm provider and budget registries must be configured together")
         self.corpus_access = CorpusAccess()
         self._session_factory = session_factory
-        self._database_engine = database_engine
         self._embedding_provider = embedding_provider
         self._llm_providers = dict(llm_providers or {})
         self._provider_budgets = dict(provider_budgets or {})
@@ -319,8 +293,6 @@ class RuntimeApiServices(ApiServices):
         self._run_id_factory = run_id_factory or (lambda: f"run-{uuid4().hex}")
         self._secret_values = tuple(secret_values)
         self._credential_slot = credential_slot
-        self._route_by_language = route_by_language
-        self._lexical_ranker: LexicalRanker = lexical_ranker
         self._bm25_k1 = bm25_k1
         self._bm25_b = bm25_b
         self._bm25_idf: BM25Idf = bm25_idf
@@ -448,7 +420,7 @@ class RuntimeApiServices(ApiServices):
             rrf_k=plan.rrf_k,
             reranker=CrossEncoderReranker() if plan.reranker else None,
             route_by_language=plan.route_by_language,
-            lexical_ranker=plan.lexical_ranker or self._lexical_ranker,
+            lexical_ranker=plan.lexical_ranker or "ts_rank_cd",
             bm25_k1=plan.bm25_k1,
             bm25_b=plan.bm25_b,
             bm25_idf=plan.bm25_idf,
@@ -996,77 +968,6 @@ class RuntimeApiServices(ApiServices):
                 rows = (await session.execute(statement)).all()
         return tuple(_document_resource(document, count) for document, count in rows)
 
-    def _resolve_manifest_path(self, value: str) -> Path:
-        """Confine the requested manifest to the configured corpus directory.
-
-        The API is a network boundary: an unconfined path would let any caller use
-        ingestion as a file-existence and parse oracle for the whole filesystem.
-        """
-        root = (self._corpus_root or get_settings().corpus_dir).resolve()
-        candidate = Path(value)
-        resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
-        if resolved != root and not resolved.is_relative_to(root):
-            raise bad_request(
-                "manifest_outside_corpus",
-                "manifest_path must resolve inside the configured corpus directory.",
-            )
-        return resolved
-
-    async def ingest(self, request: IngestRequest) -> SeedResult:
-        """Prepare a confined local manifest off-loop and atomically persist it.
-
-        Parameters
-        ----------
-        request : IngestRequest
-            Explicit corpus-relative manifest and bounded batch settings.
-
-        Returns
-        -------
-        SeedResult
-            Committed document and chunk counts.
-
-        Raises
-        ------
-        ApiProblemError
-            If the manifest is invalid, escapes the corpus directory, or the database
-            is unavailable.
-
-        Notes
-        -----
-        CPU and file parsing run in a worker thread; the M1 persister retains
-        transaction ownership, and BM25 statistics are rebuilt in the same call
-        because every chunk upsert invalidates them. Schema DDL runs only when
-        ``create_schema`` asks for it.
-        """
-        manifest_path = self._resolve_manifest_path(request.manifest_path)
-        try:
-            batch = await asyncio.to_thread(
-                load_seed_batch,
-                manifest_path,
-                selection_id=request.selection_id,
-                embedding_provider=self._embedding_provider,
-                expected_documents=request.expected_documents,
-            )
-        except ManifestError as error:
-            raise bad_request(error.code, error.message) from error
-
-        async with translate_runtime_errors(), self.corpus_access.update():
-            if request.create_schema:
-                database_engine = (
-                    self._database_engine
-                    if self._database_engine is not None
-                    else _default_database_engine()
-                )
-                await bootstrap_schema(database_engine)
-            async with self._session_factory() as session:
-                # The seed API remains an atomic convenience for existing API callers;
-                # Build/CLI jobs require a separate explicit rebuild_bm25 operation.
-                return await persist_seed_batch_with_stats(
-                    session,
-                    batch,
-                    chunk_batch_size=request.chunk_batch_size,
-                )
-
     @capture_stages
     async def review(
         self,
@@ -1414,7 +1315,7 @@ class RuntimeApiServices(ApiServices):
                     code=error.code,
                     message=error.message,
                 ) from error
-        routed_queries: dict[str, str] = dict(snapshot.routing_queries or {}) if snapshot else {}
+        routed_queries: dict[str, str] = dict(snapshot.routing_queries) if snapshot else {}
         if snapshot is None and self._query_routing_enabled and profile.route_by_language:
             source_language = detect_query_language(retrieval_query)
             for language in scope.filters.languages or ("en",):
@@ -1614,9 +1515,7 @@ class RuntimeApiServices(ApiServices):
                             "requested_profile": request.session_profile.model_dump(mode="json"),
                             "resolved_profile": profile.model_dump(mode="json"),
                             "resolved_scope": scope.model_dump(mode="json"),
-                            "routing_queries": routed_queries
-                            if snapshot is None or snapshot.routing_queries is not None
-                            else None,
+                            "routing_queries": routed_queries,
                             "selection": (
                                 {
                                     "candidate_snapshot_sha256": hashlib.sha256(
@@ -1709,7 +1608,7 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
     """Compose the production service boundary from validated settings.
 
     This is the single lever that makes deployed configuration real: the embedding
-    provider, the measured lexical plan, the review provider and budget, the corpus
+    provider, the BM25 defaults, the review provider and budget, the corpus
     root, and the secrets the redaction pass must strip all come from one ``Settings``
     instance, exactly as the acceptance CLI reads them.
 
@@ -1787,8 +1686,6 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
         local_timeout_s=configured.local_llm_timeout_s,
         secret_values=secret_values,
         credential_slot=configured.openai_key_slot,
-        route_by_language=configured.query_language_routing,
-        lexical_ranker=configured.lexical_ranker,
         bm25_k1=configured.bm25_k1,
         bm25_b=configured.bm25_b,
         bm25_idf=configured.bm25_idf,

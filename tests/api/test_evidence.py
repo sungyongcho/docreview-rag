@@ -90,6 +90,7 @@ def test_snapshot_rejects_tampering_and_outside_ids() -> None:
         profile=profile(),
         filters=RetrievalFilters(),
         candidates=candidates,
+        routing_queries={},
     )
 
     try:

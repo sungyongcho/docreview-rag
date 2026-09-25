@@ -53,7 +53,7 @@ class CandidateSnapshot(StrictEvidenceModel):
     profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     filters_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     candidates: tuple[SnapshotCandidate, ...]
-    routing_queries: dict[str, str] | None = None
+    routing_queries: dict[str, str]
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> Self:
@@ -143,7 +143,7 @@ class CandidateSnapshotCodec:
         profile: ResolvedRetrievalProfile,
         filters: RetrievalFilters,
         candidates: Sequence[ChunkHit],
-        routing_queries: dict[str, str] | None = None,
+        routing_queries: dict[str, str],
     ) -> tuple[str, CandidateSnapshot]:
         """Return an opaque token and its non-secret validated payload."""
         issued_at = int(self._clock())

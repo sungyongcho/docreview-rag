@@ -3,7 +3,6 @@
 import asyncio
 from decimal import Decimal
 import json
-import threading
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -11,13 +10,10 @@ from openai import OpenAIError
 import pytest
 
 from app import cli
-from app.api.errors import ApiProblemError
 from app.api.review_profile import ReviewSessionProfile
-import app.api.runtime as runtime_module
 from app.api.runtime import RuntimeApiServices, SessionFactory, build_runtime_services
-from app.api.schemas import IngestRequest, ReviewRequest
+from app.api.schemas import ReviewRequest
 from app.config import Settings, get_settings
-from app.ingestion.seed import SeedResult
 from app.llm.provider import OpenAILLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.main import create_app
@@ -26,7 +22,6 @@ from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from app.retrieval.scope import ManifestScopeIndex
 from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.types import NodeError, initial_state
-from tests.ingestion.seed.support import sample_batch
 from tests.ingestion.support import filing_document
 from tests.llm.support import DeterministicLLMProvider
 
@@ -144,8 +139,6 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
         workflow_service=workflow_service,
         run_persister=run_persister,
         run_id_factory=lambda: "run-integration",
-        lexical_ranker="bm25",
-        route_by_language=True,
         scope_index=ManifestScopeIndex.from_entries(
             (filing_document(issuer="ACME", document_id=hit.doc_id),)
         ),
@@ -375,13 +368,11 @@ def test_default_runtime_is_live_but_review_is_fail_closed_without_provider():
 
 
 def test_build_runtime_services_composes_from_settings():
-    """Wire the embedder, lexical plan, review provider, and secrets from Settings."""
+    """Wire the embedder, BM25 defaults, review provider, and secrets from Settings."""
     settings = Settings.model_validate(
         {
             **get_settings().model_dump(),
             "embedding_provider": "deterministic",
-            "lexical_ranker": "bm25",
-            "query_language_routing": True,
             "bm25_k1": 1.4,
             "openai_api_key_dev": "sk-review-test-key",
             "review_model": "gpt-5.6-terra",
@@ -391,8 +382,6 @@ def test_build_runtime_services_composes_from_settings():
     services = build_runtime_services(settings)
 
     assert isinstance(services._embedding_provider, DeterministicEmbeddingProvider)
-    assert services._lexical_ranker == "bm25"
-    assert services._route_by_language is True
     assert services._bm25_k1 == 1.4
     assert isinstance(services._llm_providers["openai"], OpenAILLMProvider)
     assert services._llm_providers["openai"].model_name == "gpt-5.6-terra"
@@ -503,86 +492,3 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
     assert secret not in repr(result)
     assert secret not in persisted_run.system_prompt
     assert secret not in json.dumps(persisted_run.report)
-
-
-def test_runtime_prepares_ingestion_off_the_event_loop(monkeypatch, tmp_path):
-    """Prepare the corpus on another thread, leaving the event loop free."""
-    manifest = tmp_path / "manifest.json"
-    caller_thread = threading.get_ident()
-    preparation_threads = []
-    bootstraps = []
-
-    def prepare(path, *, expected_documents, selection_id, embedding_provider):
-        """Record which thread prepared the batch."""
-        assert path == manifest and selection_id == "selected"
-        preparation_threads.append(threading.get_ident())
-        return sample_batch()
-
-    async def bootstrap(engine):
-        """Record that schema bootstrap ran."""
-        bootstraps.append(engine)
-
-    async def persist(session, batch, *, chunk_batch_size):
-        """Stand in for persistence, returning an empty seed result."""
-        return SeedResult(documents=len(batch.documents), chunks=len(batch.chunks))
-
-    monkeypatch.setattr(runtime_module, "load_seed_batch", prepare)
-    monkeypatch.setattr(runtime_module, "bootstrap_schema", bootstrap)
-    monkeypatch.setattr(runtime_module, "persist_seed_batch_with_stats", persist)
-    services = RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
-        database_engine=object(),  # pyright: ignore[reportArgumentType]
-        corpus_root=tmp_path,
-    )
-
-    result = asyncio.run(
-        services.ingest(
-            IngestRequest(
-                manifest_path="manifest.json",
-                selection_id="selected",
-                expected_documents=1,
-            )
-        )
-    )
-
-    assert result == SeedResult(documents=1, chunks=2)
-    assert len(preparation_threads) == 1
-    assert preparation_threads[0] != caller_thread
-    # Schema DDL is opt-in: without create_schema no bootstrap runs; with it, one does.
-    assert bootstraps == []
-    asyncio.run(
-        services.ingest(
-            IngestRequest(
-                manifest_path="manifest.json",
-                selection_id="selected",
-                expected_documents=1,
-                create_schema=True,
-            )
-        )
-    )
-    assert len(bootstraps) == 1
-
-
-def test_ingest_confines_manifests_to_the_corpus_directory(tmp_path):
-    """Reject absolute and relative escapes from the configured corpus root."""
-    services = RuntimeApiServices(
-        embedding_provider=DeterministicEmbeddingProvider(),
-        session_factory=cast(SessionFactory, FakeSession),
-        corpus_root=tmp_path,
-    )
-
-    for escape in ("/etc/passwd", "../outside.json"):
-        try:
-            asyncio.run(
-                services.ingest(
-                    IngestRequest(
-                        manifest_path=escape, selection_id="selected", expected_documents=1
-                    )
-                )
-            )
-        except ApiProblemError as error:
-            assert error.status_code == 400
-            assert error.error.code == "manifest_outside_corpus"
-        else:
-            raise AssertionError(f"escape was accepted: {escape}")

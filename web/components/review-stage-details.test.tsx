@@ -47,7 +47,6 @@ describe("recorded stage detail data", () => {
     expect(screen.getByText("No service path was recorded. A later scope or result does not establish this decision.")).toBeInTheDocument();
     rerender(<ReviewStageDetails stage="path" state={state} performance={{ path_decision: { intent: "casual_chat", rationale: "Original conversation decision" } }} />);
     expect(container.querySelector('[aria-current="step"]')).toBeNull();
-    expect(screen.getByText("This historical run used a conversation route. Its recorded classification is preserved.")).toBeInTheDocument();
     expect(screen.getByText("Original conversation decision")).toBeInTheDocument();
   });
   it("shows actual scope and routing without deriving them from the question", () => {

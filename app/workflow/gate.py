@@ -14,7 +14,7 @@ from app.llm.schemas import NonBlank, StrictSchema
 if TYPE_CHECKING:
     from app.retrieval.scope import ManifestScopeIndex, MatchedAlias
 
-ConversationIntent = Literal["document_review", "service_help", "out_of_scope", "casual_chat"]
+ConversationIntent = Literal["document_review", "service_help", "out_of_scope"]
 
 SERVICE_GUIDANCE = (
     "DocReview analyzes the SEC and DART filings available in its corpus. "
@@ -534,12 +534,6 @@ class RoutingClassification(StrictSchema):
         if self.target_scope != "explicit" and self.requested_issuers:
             raise ValueError("issuer names require explicit target scope")
         return self
-
-
-class ChatReply(StrictSchema):
-    """One concise retrieval-free conversational answer."""
-
-    answer: NonBlank
 
 
 class ConversationDecision(StrictSchema):

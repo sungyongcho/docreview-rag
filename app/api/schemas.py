@@ -21,7 +21,11 @@ from pydantic.functional_validators import model_validator
 
 from app.api.evidence import EvidenceSelection
 from app.api.execution import ExecutionData
-from app.api.review_profile import ResolvedRetrievalProfile, ReviewSessionProfile
+from app.api.review_profile import (
+    ResolvedRetrievalProfile,
+    ReviewSessionProfile,
+    _tuple_from_json_array,
+)
 from app.ingestion.registry import section_title as registry_section_title
 from app.llm.schemas import NonNegativeDecimal
 from app.observability.persistence import redact_sensitive_text, sanitize_json
@@ -42,11 +46,6 @@ from app.workflow.types import (
     WorkflowReport,
     run_status_for_failure,
 )
-
-
-def _tuple_from_json_array(value: object) -> object:
-    """Accept transport JSON arrays while retaining strict nested validation."""
-    return tuple(value) if isinstance(value, list) else value
 
 
 def _require_nonblank(value: str) -> str:
@@ -225,28 +224,6 @@ class DocumentListResponse(StrictApiModel):
     """Deterministically ordered document resources."""
 
     documents: tuple[DocumentResource, ...]
-
-
-class IngestRequest(StrictApiModel):
-    """One explicit local manifest ingestion request.
-
-    ``manifest_path`` is resolved inside the configured corpus directory; the API never
-    opens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL
-    runs only when a caller asks for it, never as a per-request side effect.
-    """
-
-    manifest_path: NonBlank
-    selection_id: NonBlank
-    expected_documents: PositiveInt | None = None
-    chunk_batch_size: PositiveInt = 500
-    create_schema: StrictBool = False
-
-
-class IngestResponse(StrictApiModel):
-    """Committed corpus row counts from synchronous ingestion."""
-
-    documents: NonnegativeInt
-    chunks: NonnegativeInt
 
 
 class ReviewRequest(StrictApiModel):

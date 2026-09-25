@@ -60,6 +60,7 @@ from app.operator.jobs import (
     JobStore,
     JobTurnCancelledError,
     ProgressPersister,
+    _default_session_factory,
 )
 from app.retrieval.cross_encoder import CrossEncoderReranker
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
@@ -68,13 +69,6 @@ from app.retrieval.types import RetrievalFilters
 
 MAX_EVALUATION_JOBS: Final[int] = 20
 MAX_QUEUED_EVALUATIONS: Final[int] = 8
-
-
-def _default_session_factory() -> AsyncSession:
-    """Create one process-configured session for an evaluation operation."""
-    from app.db.session import Session
-
-    return Session()
 
 
 class SessionFactory(Protocol):

@@ -18,16 +18,18 @@ from pydantic import (
     model_validator,
 )
 
+from app.api.review_profile import (
+    CustomRetrievalProfile,
+    RetrievalStrategy,
+    _tuple_from_json_array,
+)
 from app.api.schemas import EvidenceHit, RunResponse
-from app.config import DEFAULT_BM25_B, DEFAULT_BM25_IDF, DEFAULT_BM25_K1, BM25Idf, LexicalRanker
+from app.config import LexicalRanker
 from app.evals.source_binding import SourceCheck
 from app.llm.local_connection import ConnectionSource, LocalProtocol, validate_base_url
 from app.llm.openai_limits import OpenAICallLimits
-from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.types import RetrievalFilters
 
-type RetrievalStrategy = Literal["vector", "lexical", "hybrid"]
-type RerankerName = Literal["cross_encoder"]
 type GoldenSuiteId = Literal[
     "sec-en",
     "sec-ko",
@@ -61,14 +63,7 @@ type DocumentSort = Literal[
 type DocumentEmbeddingStatus = Literal["complete", "partial", "missing"]
 
 PositiveInt = Annotated[StrictInt, Field(gt=0)]
-FinitePositive = Annotated[StrictFloat, Field(gt=0, allow_inf_nan=False)]
-UnitFloat = Annotated[StrictFloat, Field(ge=0, le=1, allow_inf_nan=False)]
 NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
-
-
-def _tuple_from_json_array(value: object) -> object:
-    """Normalize the JSON array representation without coercing child values."""
-    return tuple(value) if isinstance(value, list) else value
 
 
 class StrictAdminModel(BaseModel):
@@ -77,34 +72,8 @@ class StrictAdminModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class RetrievalProfile(StrictAdminModel):
+class RetrievalProfile(CustomRetrievalProfile):
     """One explicit retrieval plan that never mutates process-wide settings."""
-
-    strategy: RetrievalStrategy = "hybrid"
-    k: Annotated[StrictInt, Field(gt=0, le=100)] = 5
-    candidate_k: Annotated[StrictInt, Field(gt=0, le=500)] = 20
-    rrf_k: Annotated[StrictInt, Field(gt=0, le=10_000)] = DEFAULT_RRF_K
-    lexical_ranker: LexicalRanker | None = "ts_rank_cd"
-    bm25_k1: FinitePositive = DEFAULT_BM25_K1
-    bm25_b: UnitFloat = DEFAULT_BM25_B
-    bm25_idf: BM25Idf = DEFAULT_BM25_IDF
-    route_by_language: StrictBool = False
-    reranker: RerankerName | None = None
-
-    @model_validator(mode="after")
-    def validate_plan(self) -> Self:
-        """Reject contradictory lanes, depths, routing, and reranking."""
-        if self.candidate_k < self.k:
-            raise ValueError("candidate_k must be at least k")
-        if self.strategy == "vector" and self.lexical_ranker is not None:
-            raise ValueError("vector strategy must not name a lexical ranker")
-        if self.strategy != "vector" and self.lexical_ranker is None:
-            raise ValueError("lexical and hybrid strategies require a lexical ranker")
-        if self.route_by_language and self.strategy != "hybrid":
-            raise ValueError("language routing requires the hybrid strategy")
-        if self.reranker is not None and self.strategy != "hybrid":
-            raise ValueError("reranking requires the hybrid strategy")
-        return self
 
 
 class EvaluationPreparationResource(StrictAdminModel):
@@ -470,14 +439,6 @@ class CorpusJobResource(StrictAdminModel):
     finished_at: datetime | None
     error_code: str | None
     result_refs: dict[str, object] | None
-
-
-class CorpusJobsResource(StrictAdminModel):
-    """Current and terminal snapshots of the shared corpus job queue."""
-
-    active: CorpusJobResource | None
-    queued: tuple[CorpusJobResource, ...]
-    history: tuple[CorpusJobResource, ...]
 
 
 class AdminDocumentResource(StrictAdminModel):

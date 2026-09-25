@@ -10,7 +10,6 @@ from fastapi.responses import FileResponse
 from app.api.admin_deps import AdminServices
 from app.api.admin_schemas import (
     CorpusJobResource,
-    CorpusJobsResource,
     CorpusOperationRequest,
     CorpusSnapshotResource,
     DocumentDetailResponse,
@@ -176,23 +175,6 @@ async def enqueue_corpus(
     """Queue one safe corpus acquisition, ingest, or indexing operation."""
     async with translate_runtime_errors():
         return await services.enqueue_corpus(request)
-
-
-@router.get("/corpus/jobs", response_model=CorpusJobsResource)
-async def corpus_jobs(services: AdminServices) -> dict[str, Any]:
-    """Return current corpus job queue and bounded history."""
-    return await services.corpus_jobs()
-
-
-@router.post(
-    "/corpus/jobs/{job_id}/retry",
-    response_model=CorpusJobResource,
-    responses={400: {"model": ErrorResponse}},
-)
-async def retry_corpus(job_id: str, services: AdminServices) -> dict[str, Any]:
-    """Retry one known failed corpus job."""
-    async with translate_runtime_errors():
-        return await services.retry_corpus(job_id)
 
 
 @router.post("/evaluations/preparation", response_model=EvaluationPreparationResource)
@@ -468,19 +450,6 @@ async def cancel_operator_job(job_id: str, services: AdminServices) -> OperatorJ
     """Cancel queued work or cooperatively cancel a supported running corpus job."""
     async with translate_runtime_errors():
         return await services.cancel_operator_job(job_id)
-
-
-@router.get(
-    "/evaluations/jobs/{job_id}",
-    response_model=EvaluationJobResource,
-    responses={404: {"model": ErrorResponse}},
-)
-async def evaluation_job(job_id: str, services: AdminServices) -> EvaluationJobResource:
-    """Return one evaluation job by its public identifier."""
-    job = await services.evaluation_job(job_id)
-    if job is None:
-        raise not_found("evaluation_job", job_id)
-    return job
 
 
 @router.get(

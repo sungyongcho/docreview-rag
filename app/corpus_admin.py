@@ -53,6 +53,7 @@ from app.operator.jobs import (
     JobTurnCancelledError,
     ProgressPersister,
     StoredJob,
+    _default_session_factory,
 )
 from app.operator.progress import advance_progress, finish_progress, start_progress
 from app.retrieval.bm25 import backfill_term_stats
@@ -93,13 +94,6 @@ def _default_engine() -> AsyncEngine:
     from app.db.session import engine
 
     return engine
-
-
-def _default_session_factory() -> AsyncSession:
-    """Create one process-configured session for an administrative operation."""
-    from app.db.session import Session
-
-    return Session()
 
 
 class SessionFactory(Protocol):

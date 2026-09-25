@@ -379,7 +379,10 @@ def test_streamed_actual_call_denial_keeps_error_and_done(tmp_path, first_call):
         salt=ledger.salt,
     )
     with TestClient(app) as client:
-        response = client.post("/review/stream", json={"query": "What was revenue?"})
+        response = client.post(
+            "/review/stream",
+            json={"query": "What was revenue?", "evidence_selection": {"candidate_token": "test"}},
+        )
     assert response.status_code == 200
     assert "event: error" in response.text
     assert "daily_cost_limit" in response.text

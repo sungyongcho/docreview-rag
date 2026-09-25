@@ -385,14 +385,6 @@ class RuntimeAdminApiServices:
         )
         return asdict(job)
 
-    async def corpus_jobs(self) -> dict[str, Any]:
-        """Return JSON-ready corpus queue and history state."""
-        return asdict(await self._corpus.jobs())
-
-    async def retry_corpus(self, job_id: str) -> dict[str, Any]:
-        """Retry one known failed corpus job."""
-        return asdict(await self._corpus.retry(job_id))
-
     async def suites(self) -> tuple[GoldenSuiteResource, ...]:
         """Return strict golden-suite metadata and source readiness."""
         return await self._evaluations.suites()
@@ -558,13 +550,6 @@ class RuntimeAdminApiServices:
                 job.kind != "delete_sources"
                 and job.status in {"failed", "interrupted"}
                 and job.kind != "embedding_usage"
-                and not (
-                    job.domain == "corpus"
-                    and job.kind == "ingest_manifest"
-                    and not (
-                        job.request_json.get("manifest") and job.request_json.get("selection_id")
-                    )
-                )
             ),
             created_at=job.created_at,
             started_at=job.started_at,
@@ -764,10 +749,6 @@ class RuntimeAdminApiServices:
                 **totals(models),
             }
         )
-
-    async def evaluation_job(self, job_id: str) -> EvaluationJobResource | None:
-        """Return one evaluation job when known."""
-        return await self._evaluations.job(job_id)
 
     async def evaluation_result(self, result_id: int) -> EvaluationResultDetailResponse | None:
         """Return one persisted evaluation result detail."""

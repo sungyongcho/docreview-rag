@@ -98,7 +98,6 @@ def test_runtime_openapi_includes_all_m5_resources():
         "/health",
         "/retrieve",
         "/documents",
-        "/ingest",
         "/review",
         "/runs/{run_id}",
         "/runs/{run_id}/traces",

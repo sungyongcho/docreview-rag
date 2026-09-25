@@ -9,7 +9,7 @@ import pytest
 
 from app.llm.local import LocalLLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
-from app.workflow.gate import ChatReply
+from tests.llm.support import ChatReply
 
 
 def budget() -> ProviderBudget:

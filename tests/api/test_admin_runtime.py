@@ -1,4 +1,4 @@
-"""Historical operator jobs stay visible without becoming executable commands."""
+"""Historical operator jobs stay visible; a retry revalidates their stored command."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -15,7 +15,7 @@ from app.retrieval.embeddings import DeterministicEmbeddingProvider
 
 
 def test_job_board_reads_history_without_revalidating_ingestion_arguments():
-    """Retain a completed old request while refusing an incomplete request's retry."""
+    """Show an old incomplete ingestion request as stored without revalidating it."""
     now = datetime.now(UTC)
     job = StoredJob(
         job_id="old-ingest",
@@ -43,7 +43,6 @@ def test_job_board_reads_history_without_revalidating_ingestion_arguments():
     board = asyncio.run(service.operator_jobs())
     assert board.jobs[0].request == {"manifest": "manifest.json"}
     assert board.jobs[0].message == job.message
-    assert board.jobs[0].can_retry is False
 
 
 def test_document_detail_checks_schema_before_serializing():

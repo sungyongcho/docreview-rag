@@ -887,43 +887,6 @@
         "title": "CorpusJobResource",
         "type": "object"
       },
-      "CorpusJobsResource": {
-        "additionalProperties": false,
-        "description": "Current and terminal snapshots of the shared corpus job queue.",
-        "properties": {
-          "active": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CorpusJobResource"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "history": {
-            "items": {
-              "$ref": "#/components/schemas/CorpusJobResource"
-            },
-            "title": "History",
-            "type": "array"
-          },
-          "queued": {
-            "items": {
-              "$ref": "#/components/schemas/CorpusJobResource"
-            },
-            "title": "Queued",
-            "type": "array"
-          }
-        },
-        "required": [
-          "active",
-          "queued",
-          "history"
-        ],
-        "title": "CorpusJobsResource",
-        "type": "object"
-      },
       "CorpusOperationKind": {
         "enum": [
           "acquire_edgar",
@@ -3961,71 +3924,6 @@
           "removed_chunk_ids"
         ],
         "title": "GradeReferencesFiltered",
-        "type": "object"
-      },
-      "IngestRequest": {
-        "additionalProperties": false,
-        "description": "One explicit local manifest ingestion request.\n\n``manifest_path`` is resolved inside the configured corpus directory; the API never\nopens an arbitrary server path. ``create_schema`` mirrors the CLI flag: schema DDL\nruns only when a caller asks for it, never as a per-request side effect.",
-        "properties": {
-          "chunk_batch_size": {
-            "default": 500,
-            "exclusiveMinimum": 0.0,
-            "title": "Chunk Batch Size",
-            "type": "integer"
-          },
-          "create_schema": {
-            "default": false,
-            "title": "Create Schema",
-            "type": "boolean"
-          },
-          "expected_documents": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Documents"
-          },
-          "manifest_path": {
-            "title": "Manifest Path",
-            "type": "string"
-          },
-          "selection_id": {
-            "title": "Selection Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "manifest_path",
-          "selection_id"
-        ],
-        "title": "IngestRequest",
-        "type": "object"
-      },
-      "IngestResponse": {
-        "additionalProperties": false,
-        "description": "Committed corpus row counts from synchronous ingestion.",
-        "properties": {
-          "chunks": {
-            "minimum": 0.0,
-            "title": "Chunks",
-            "type": "integer"
-          },
-          "documents": {
-            "minimum": 0.0,
-            "title": "Documents",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "documents",
-          "chunks"
-        ],
-        "title": "IngestResponse",
         "type": "object"
       },
       "JobHistoryRequest": {
@@ -8285,46 +8183,6 @@
       }
     },
     "/admin/corpus/jobs": {
-      "get": {
-        "description": "Return current corpus job queue and bounded history.",
-        "operationId": "corpus_jobs_admin_corpus_jobs_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CorpusJobsResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Corpus Jobs",
-        "tags": [
-          "admin"
-        ]
-      },
       "post": {
         "description": "Queue one safe corpus acquisition, ingest, or indexing operation.",
         "operationId": "enqueue_corpus_admin_corpus_jobs_post",
@@ -8381,69 +8239,6 @@
           }
         },
         "summary": "Enqueue Corpus",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/corpus/jobs/{job_id}/retry": {
-      "post": {
-        "description": "Retry one known failed corpus job.",
-        "operationId": "retry_corpus_admin_corpus_jobs__job_id__retry_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CorpusJobResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Retry Corpus",
         "tags": [
           "admin"
         ]
@@ -8973,69 +8768,6 @@
           }
         },
         "summary": "Compare Evaluations",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/evaluations/jobs/{job_id}": {
-      "get": {
-        "description": "Return one evaluation job by its public identifier.",
-        "operationId": "evaluation_job_admin_evaluations_jobs__job_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "job_id",
-            "required": true,
-            "schema": {
-              "title": "Job Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluationJobResource"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Evaluation Job",
         "tags": [
           "admin"
         ]
@@ -11185,78 +10917,6 @@
         "summary": "List Eval Results",
         "tags": [
           "eval"
-        ]
-      }
-    },
-    "/ingest": {
-      "post": {
-        "description": "Parse and persist one explicit local manifest before responding.",
-        "operationId": "ingest_manifest_ingest_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IngestRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IngestResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        },
-        "summary": "Ingest Manifest",
-        "tags": [
-          "ingest"
         ]
       }
     },

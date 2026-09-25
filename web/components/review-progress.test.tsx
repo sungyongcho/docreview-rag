@@ -77,7 +77,6 @@ describe("Five real-event review phases", () => {
     const state = finishReviewProgress(reviewProgressFromEvent(event("chat"), initialReviewProgress()), "completed", 200);
     render(<ReviewProgressSteps state={state} />);
     expect(screen.getAllByRole("listitem")).toHaveLength(6);
-    expect(screen.getAllByText("Skipped: conversation reply without retrieval")).toHaveLength(3);
     expect(screen.getByText("Execution complete")).toBeVisible();
   });
 
@@ -260,7 +259,6 @@ describe("recorded path decisions", () => {
     expect(screen.getByText("Candidates").nextElementSibling).toHaveTextContent("0");
     expect(screen.getByText("Relevant evidence").nextElementSibling).toHaveTextContent("0");
     expect(screen.getByText("Model steps").nextElementSibling).toHaveTextContent("2");
-    expect(screen.getAllByText("Skipped: conversation reply without retrieval")).toHaveLength(3);
     expect(state.pathDecision?.history_turns).toBe(2);
   });
   it("preserves scope stops and their corrective action from stream events", () => {

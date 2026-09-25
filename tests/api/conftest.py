@@ -8,7 +8,6 @@ import pytest
 from app.api.app import create_api_app
 from app.api.review_profile import resolve_retrieval_profile
 from app.api.schemas import EvidenceHit, RetrieveResponse
-from app.ingestion.seed import SeedResult
 from app.observability.types import StepTrace, build_run_report
 from app.retrieval.types import ChunkHit
 from app.workflow.types import EvidenceCitation, ProviderFailure, WorkflowReport
@@ -133,7 +132,6 @@ class FakeApiServices:
     def __init__(self):
         self.hits = ()
         self.documents = ()
-        self.seed_result = SeedResult(documents=0, chunks=0)
         self.review_result = None
         self.stream_states: tuple[tuple[str, object], ...] = ()
         self.runs = {}
@@ -142,10 +140,8 @@ class FakeApiServices:
         self.snapshots = ()
         self.snapshot_comparison = None
         self.retrieve_error = None
-        self.ingest_error = None
         self.review_error = None
         self.last_retrieve_request = None
-        self.last_ingest_request = None
         self.last_review_request = None
         self.last_eval_limit = None
 
@@ -170,13 +166,6 @@ class FakeApiServices:
     async def list_documents(self):
         """Return the configured document collection."""
         return self.documents
-
-    async def ingest(self, request):
-        """Record the request and return the seed result, or raise the staged error."""
-        self.last_ingest_request = request
-        if self.ingest_error is not None:
-            raise self.ingest_error
-        return self.seed_result
 
     async def review(self, request, on_node=None):
         """Replay staged node states when observed, then return the configured report."""

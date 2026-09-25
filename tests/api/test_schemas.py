@@ -9,7 +9,6 @@ from app.api.review_profile import ReviewSessionProfile
 from app.api.schemas import (
     BudgetLimitFailure,
     EvidenceHit,
-    IngestRequest,
     RetrieveRequest,
     ReviewRequest,
     RunResponse,
@@ -67,10 +66,8 @@ def test_evidence_projection_leaves_unknown_sections_untitled(hit):
     assert foreign.section_title is None
 
 
-def test_ingest_and_review_requests_reject_empty_bodies():
+def test_review_request_rejects_an_empty_body():
     """Refuse an empty body rather than defaulting the required fields."""
-    with pytest.raises(ValidationError):
-        IngestRequest.model_validate_json("{}")
     with pytest.raises(ValidationError):
         ReviewRequest.model_validate_json("{}")
 

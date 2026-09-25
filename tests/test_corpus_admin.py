@@ -873,6 +873,27 @@ def test_restored_embedding_usage_ledger_cannot_be_retried_or_read_as_a_command(
     asyncio.run(scenario())
 
 
+def test_historical_ingestion_without_selection_is_refused_on_retry(tmp_path):
+    """An old ingest row without a selection stays unexecutable when its retry is requested."""
+
+    async def scenario():
+        """Retry one restored failed row without reaching a database or provider."""
+        store = _LedgerStore()
+        row = await store.create(
+            job_id="old-ingest",
+            domain="corpus",
+            kind="ingest_manifest",
+            request_json={"manifest": "manifest.json"},
+        )
+        store.rows[row.job_id] = replace(row, status="failed")
+        service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path), job_store=store)
+        with pytest.raises(ValueError, match="manifest and selection_id"):
+            await service.retry(row.job_id)
+        assert list(store.rows) == [row.job_id]
+
+    asyncio.run(scenario())
+
+
 def _status_service(tmp_path, monkeypatch, *, tables=None):
     """Build a service whose schema and count probes are counted and never load documents."""
     service = RuntimeCorpusAdminService(settings=Settings(corpus_dir=tmp_path))

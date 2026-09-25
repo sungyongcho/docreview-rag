@@ -53,17 +53,8 @@ async def _local_engine_readiness(
         return {"enabled": False, "reason": "disabled_in_prod"}
     if connection is not None:
         return await connection.public_state()
-    if not settings.local_llm_enabled:
+    if inventory is None or not settings.local_llm_enabled:
         return {"enabled": False, "reason": "not_configured"}
-    if inventory is None:
-        assert settings.local_llm_base_url is not None
-        inventory = LocalModelInventory(
-            base_url=settings.local_llm_base_url,
-            protocol=settings.local_llm_protocol,
-            api_key=settings.local_llm_api_key.get_secret_value()
-            if settings.local_llm_api_key
-            else None,
-        )
     return (await inventory.snapshot()).public_state()
 
 

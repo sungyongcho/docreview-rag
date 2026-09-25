@@ -159,14 +159,6 @@ class FakeAdminServices:
         """Echo one safe operation kind."""
         return _corpus_job(request)
 
-    async def corpus_jobs(self):
-        """Return an empty queue."""
-        return {"active": None, "queued": (), "history": ()}
-
-    async def retry_corpus(self, job_id):
-        """Return one retry identity."""
-        return _corpus_job(CorpusOperationRequest(kind="rebuild_bm25"), job_id)
-
     async def suites(self):
         """Return no suites for this route fixture."""
         return ()
@@ -194,10 +186,6 @@ class FakeAdminServices:
     async def evaluation_jobs(self):
         """Return an empty evaluation job list."""
         return EvaluationJobsResponse(jobs=())
-
-    async def evaluation_job(self, job_id):
-        """Return no job for this route fixture."""
-        return None
 
     async def operator_job(self, job_id):
         """Return no persisted unified job for this route fixture."""

@@ -39,6 +39,7 @@ from app.db.queries import join_current_parse
 from app.evals.admin import SUITES
 from app.evals.artifacts import read_strict_json
 from app.evals.index_identity import index_fingerprint
+from app.operator.jobs import _default_session_factory
 from app.retrieval.embeddings import EmbeddingIdentity, matching_embedding
 
 PUBLIC_COMPARE_MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
@@ -53,13 +54,6 @@ def _public_comparison_unavailable() -> ApiProblemError:
         code="snapshot_comparison_unavailable",
         message="The stored comparison is unavailable within the public evidence limits.",
     )
-
-
-def _default_session_factory() -> AsyncSession:
-    """Create one caller-owned session."""
-    from app.db.session import Session
-
-    return Session()
 
 
 def _hash_rows(rows: list[tuple[object, ...]]) -> str:

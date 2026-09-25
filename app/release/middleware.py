@@ -341,11 +341,7 @@ class ReleaseGuardMiddleware(BaseHTTPMiddleware):
                         },
                         headers={"X-DocReview-Daily-Cost-Remaining-USD": format(remaining, "f")},
                     )
-            token = active_allowance.set(self._shared_allowance)
-            try:
-                response = await call_next(request)
-            finally:
-                active_allowance.reset(token)
+            response = await call_next(request)
             response.headers["X-RateLimit-Remaining-Minute"] = str(decision.remaining_minute)
             response.headers["X-RateLimit-Remaining-Day"] = str(decision.remaining_day)
             return response

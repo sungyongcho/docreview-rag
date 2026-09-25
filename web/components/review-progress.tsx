@@ -67,7 +67,6 @@ export function phaseStatus(state: ReviewProgressState, index: number): string {
   const current = currentStepIndex(state.node);
   if (state.pathStatus === "failed" || state.pathStatus === "cancelled") return "not-run";
   if (state.skippedNodes?.[REVIEW_STEPS[index]?.node]) return "skipped";
-  if ((state.pathDecision?.intent === "casual_chat" || (state.observed ?? []).includes("chat")) && ["retrieve", "grade", "check"].includes(REVIEW_STEPS[index]?.node)) return "skipped";
   const stopped = state.outcome === "failed" || state.outcome === "cancelled";
   const seen = new Set((state.observed ?? [state.node]).map(currentStepIndex));
   if (state.completedNodes) {
@@ -97,7 +96,7 @@ export function finishReviewProgress(state: ReviewProgressState, outcome: "compl
     const steps = !Array.isArray(data?.model_calls) && typeof count === "number" && Number.isInteger(count) && count >= 0 ? count : state.steps;
     return { ...state, steps, pathStatus: "done", node: state.pathDecision?.stopping_stage === "gate" ? "route" : "gate", outcome: "limited", activeNode: null, elapsedMs };
   }
-  const stages = Array.isArray(data?.stages) ? data.stages.map(objectRecord).filter((value) => value && ["gate", "route", "retrieve", "chat", "grade", "check", "report"].includes(String(value.node)) && value.phase !== "start" && ["completed", "failed"].includes(String(value.status))) : [];
+  const stages = Array.isArray(data?.stages) ? data.stages.map(objectRecord).filter((value) => value && ["gate", "route", "retrieve", "grade", "check", "report"].includes(String(value.node)) && value.phase !== "start" && ["completed", "failed"].includes(String(value.status))) : [];
   if (stages.length) {
     let recorded: ReviewProgressState = { ...state, node: "waiting", observed: [], completedNodes: [], activeNode: null, retries: 0 };
     for (const stage of stages) recorded = reviewProgressFromEvent({ display_stage: stage!.display_stage === "path" ? "path" : undefined, node: stage!.node as ReviewProgress["node"], phase: "end", status: stage!.status as "completed" | "failed", evidence_count: recorded.evidence, relevant_count: recorded.relevant, step_count: recorded.steps }, recorded);
@@ -154,7 +153,6 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
   const decision = state.pathDecision;
   const resolved = decision?.resolved_scope ?? state.resolvedScope;
   const selected = decision?.selected_scope ?? state.selectedScope;
-  const chat = decision?.intent === "casual_chat" || (state.observed ?? []).includes("chat");
   const reason = resolved?.source === "explicit" ? "Explicit scope or filters" : resolved?.source === "alias" ? "Company alias matched in the question" : resolved?.source === "query_language" ? "Question language" : "Routing reason not collected";
   const waiting = state.outcome === "running" && state.selectedScope !== undefined;
   return <div className="review-routing">
@@ -166,7 +164,7 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
       {decision.intent === "document_review" && Object.entries(decision.routing_queries).length > 0 && <details><summary>{t("Routing queries")}</summary>{Object.entries(decision.routing_queries).map(([registry, query]) => <p key={registry}><strong>{registry.toUpperCase()}</strong>: {query}</p>)}</details>}
     </div>}
     <div className="review-routing-facts">
-      {decision && <div className="review-routing-meta"><strong>{t(decision.intent === "out_of_scope" ? "Unsupported request" : decision.intent === "service_help" ? "Service guidance" : decision.intent === "casual_chat" ? "Conversation reply" : "Document review")}</strong><span><span className="review-routing-label">{t(decision.source === "classifier" ? "Classifier" : "Deterministic rule")}</span> <code>{decision.matched_rule}</code></span></div>}
+      {decision && <div className="review-routing-meta"><strong>{t(decision.intent === "out_of_scope" ? "Unsupported request" : decision.intent === "service_help" ? "Service guidance" : "Document review")}</strong><span><span className="review-routing-label">{t(decision.source === "classifier" ? "Classifier" : "Deterministic rule")}</span> <code>{decision.matched_rule}</code></span></div>}
       {(selected || decision) && <dl className="review-routing-fact-list">
         {selected && <div className="review-routing-selected"><dt>{t("Selected corpus")}</dt><dd>{t(selected === "auto" ? "Auto" : selected.toUpperCase())}</dd></div>}
         {decision && <div className="review-scope-outcome"><dt>{t("Scope outcome")}</dt><dd>{t(decision.scope_outcome === "unsupported" ? "Unsupported request" : decision.scope_outcome === "ambiguous" ? "Company clarification needed" : decision.scope_outcome === "conflict" ? "Scope conflict" : decision.scope_outcome === "empty" ? "Empty scope" : decision.scope_outcome === "not_applicable" ? "No retrieval" : "Scope resolved")}</dd></div>}
@@ -174,7 +172,7 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
       {resolved ? <>
         <div className="review-routing-confirmed"><p className="review-routing-label">{t("Server-confirmed scope")}</p><dl className="review-routing-scope-grid"><div><dt>{t("Source")}</dt><dd>{resolved.filters.registries.length ? resolved.filters.registries.map((registry) => registry.toUpperCase()).join(", ") : t("No source restriction")}</dd></div><div><dt>{t("Company")}</dt><dd>{resolved.filters.issuers.join(", ") || t("No company restriction")}</dd></div><div><dt>{t("Fiscal year")}</dt><dd>{resolved.filters.fiscal_years.join(", ") || t("No year restriction")}</dd></div></dl></div>
         <div className="review-routing-reason"><p className="review-routing-label">{t("Routing reason")}</p><p>{t(reason)}</p></div>
-      </> : chat ? <p>{t("No retrieval")}</p> : <p>{t(waiting ? "Waiting for server-confirmed routing" : "Routing details not collected")}</p>}
+      </> : <p>{t(waiting ? "Waiting for server-confirmed routing" : "Routing details not collected")}</p>}
     </div>
   </div>;
 }
@@ -209,24 +207,23 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
     return () => window.clearInterval(timer);
   }, [state.outcome, state.startedAt]);
   const current = currentStepIndex(state.node);
-  const chat = state.pathDecision?.intent === "casual_chat" || state.node === "chat" || ((state.observed ?? []).includes("chat") && !(state.observed ?? []).some((node) => node === "retrieve" || node === "candidates"));
   const status = state.outcome ?? "running";
   const scopeStop = state.pathDecision?.stopping_reason === "ambiguous_issuer" ? "Stopped at stage 1: company clarification needed" : state.pathDecision?.scope_outcome === "conflict" ? "Stopped at stage 1: scope conflict" : "Stopped at stage 1: filing scope unavailable";
-  const announcement = limited ? state.pathDecision?.stopping_stage === "path" ? state.pathDecision.stopping_reason === "service_guidance" ? "Stopped at stage 0: service guidance" : "Stopped at stage 0: unsupported request" : scopeStop : status === "completed" ? "Execution complete" : status === "failed" ? "Stopped after the last reported step" : status === "cancelled" ? "Request cancelled" : state.node === "waiting" ? "Waiting for the server" : chat ? "Replying…" : REVIEW_STEPS[current]?.label ?? "Waiting for the server";
+  const announcement = limited ? state.pathDecision?.stopping_stage === "path" ? state.pathDecision.stopping_reason === "service_guidance" ? "Stopped at stage 0: service guidance" : "Stopped at stage 0: unsupported request" : scopeStop : status === "completed" ? "Execution complete" : status === "failed" ? "Stopped after the last reported step" : status === "cancelled" ? "Request cancelled" : state.node === "waiting" ? "Waiting for the server" : REVIEW_STEPS[current]?.label ?? "Waiting for the server";
   return <div className={`review-progress ${status}`} role="status" aria-live="polite">
     <div className="review-progress-heading">{status === "running" && !state.activeNode && <WaitingGlyph />}<strong>{t(announcement)}</strong>{state.revalidating && <span><RotateCcw size={12} />{t("Re-checking selected evidence")}</span>}{Boolean(state.retries) && <span>{t("Repeated phases: {p0}", { p0: state.retries! })}</span>}<div className="review-stage-actions">{onShowEvidence && <button className="button review-summary-action" type="button" onClick={onShowEvidence}><FileSearch size={14} aria-hidden="true" />{t("Show evidence")}</button>}{onOpenDetails && showDetailsAction && <button className="button review-summary-action" type="button" data-run-details-open onClick={() => onOpenDetails(openStage ?? undefined)}>{t("Open run details")}<ArrowUpRight size={14} aria-hidden="true" /></button>}</div></div>
     <ol className="review-progress-steps" aria-label={t("Evidence review progress")}>
       <li className={stageClass("path", pathPhase)}>
         {toggle("path", "Path decision", pathPhase)}
         <span className="review-phase-icon" aria-hidden="true">{pathPhase === "done" ? <Check size={14} /> : pathPhase === "current" ? <LoaderCircle size={14} /> : pathPhase === "failed" || pathPhase === "cancelled" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
-        <span><strong>0. {t("Path decision")}</strong><small>{state.pathDecision ? t(state.pathDecision.intent === "out_of_scope" ? "Unsupported request" : state.pathDecision.intent === "service_help" ? "Service guidance" : state.pathDecision.intent === "casual_chat" ? "Conversation reply" : "Document review") : t("Intent and filing scope")}</small></span>
+        <span><strong>0. {t("Path decision")}</strong><small>{state.pathDecision ? t(state.pathDecision.intent === "out_of_scope" ? "Unsupported request" : state.pathDecision.intent === "service_help" ? "Service guidance" : "Document review") : t("Intent and filing scope")}</small></span>
       </li>
       {REVIEW_STEPS.map((step, index) => {
         const phase = phaseStatus(state, index);
         return <li key={step.node} className={stageClass(step.node, phase)} aria-current={phase === "current" || phase === "waiting" ? "step" : undefined}>
           {toggle(step.node, step.label, phase)}
           <span className="review-phase-icon" aria-hidden="true">{phase === "done" ? <Check size={14} /> : phase === "current" ? <LoaderCircle size={14} /> : phase === "failed" || phase === "cancelled" || phase === "skipped" ? <TriangleAlert size={14} /> : <Circle size={12} />}</span>
-          <span><strong>{index + 1}. {t(step.label)}</strong><small className={phase === "skipped" ? "review-phase-reason" : undefined}>{t(phase === "skipped" ? chat ? "Skipped: conversation reply without retrieval" : "Skipped: relevance threshold not met" : phase === "not-run" ? "Not performed in this request" : step.detail)}</small></span>
+          <span><strong>{index + 1}. {t(step.label)}</strong><small className={phase === "skipped" ? "review-phase-reason" : undefined}>{t(phase === "skipped" ? "Skipped: relevance threshold not met" : phase === "not-run" ? "Not performed in this request" : step.detail)}</small></span>
         </li>;
       })}
     </ol>
@@ -239,7 +236,6 @@ export function ReviewProgressSteps({ state, onSwitchScope, performance, finalLa
       <div><dt>{t("Model steps")}</dt><dd>{state.steps}</dd></div>
       {state.elapsedMs !== undefined && <div><dt>{t("Request time")}</dt><dd>{(state.elapsedMs / 1000).toLocaleString(locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 })}s</dd></div>}
     </dl>
-    {chat && <p className="review-progress-counts">{t("No retrieval")}</p>}
     {status === "running" && state.startedAt && <p className="review-progress-counts" aria-live="off">{t("Elapsed")}: {Math.max(0, Math.floor((now - state.startedAt) / 1000))}s · {state.lastEventAt ? t("Last update: {seconds}s ago", { seconds: Math.max(0, Math.floor((now - state.lastEventAt) / 1000)) }) : t("Waiting for the first server event")}</p>}
   </div>;
 }

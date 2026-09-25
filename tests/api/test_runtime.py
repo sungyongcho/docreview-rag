@@ -247,52 +247,6 @@ def test_missing_candidate_metadata_is_an_explicit_failure(hit):
     assert failure.value.error.code == "evidence_metadata_unavailable"
 
 
-def test_ingest_forwards_selection_and_model_planning_provider(tmp_path, monkeypatch):
-    """Pass the selected source set and actual embedding provider through the thread boundary."""
-    from contextlib import asynccontextmanager
-
-    import app.api.runtime as runtime_module
-    from app.api.schemas import IngestRequest
-    from app.ingestion.seed import SeedResult
-    from app.retrieval.embeddings import DeterministicEmbeddingProvider
-    from tests.ingestion.seed.support import sample_batch
-
-    provider = DeterministicEmbeddingProvider()
-    batch = sample_batch()
-    manifest = tmp_path / "manifest.json"
-
-    @asynccontextmanager
-    async def sessions():
-        """Keep this argument-contract check free of database calls."""
-        yield object()
-
-    def load(path, *, selection_id, embedding_provider, expected_documents):
-        """Inspect the actual model-aware planning arguments."""
-        assert path == manifest
-        assert selection_id == "selected"
-        assert embedding_provider is provider
-        return batch
-
-    async def persist(session, received, *, chunk_batch_size):
-        """Preserve the prepared batch at the persistence boundary."""
-        assert received is batch
-        return SeedResult(documents=1, chunks=2)
-
-    monkeypatch.setattr(runtime_module, "load_seed_batch", load)
-    monkeypatch.setattr(runtime_module, "persist_seed_batch_with_stats", persist)
-    service = RuntimeApiServices(
-        session_factory=sessions, embedding_provider=provider, corpus_root=tmp_path
-    )
-    result = asyncio.run(
-        service.ingest(
-            IngestRequest(
-                manifest_path="manifest.json", selection_id="selected", create_schema=False
-            )
-        )
-    )
-    assert result.documents == 1 and result.chunks == 2
-
-
 @pytest.fixture
 def routing_service():
     """Use a two-registry manifest and stop at the actual retrieval boundary."""

@@ -1,4 +1,4 @@
-"""Shared offline LLM provider double for deterministic tests."""
+"""Shared offline LLM provider double and structured-output schema for deterministic tests."""
 
 from collections.abc import Callable, Sequence
 import time
@@ -6,7 +6,13 @@ import time
 from pydantic import BaseModel
 
 from app.llm.provider import Clock, LLMProvider
-from app.llm.schemas import Prompt, ProviderBudget, RawProviderResponse
+from app.llm.schemas import NonBlank, Prompt, ProviderBudget, RawProviderResponse, StrictSchema
+
+
+class ChatReply(StrictSchema):
+    """One concise retrieval-free conversational answer."""
+
+    answer: NonBlank
 
 
 class DeterministicLLMProvider(LLMProvider):

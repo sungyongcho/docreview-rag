@@ -19,7 +19,6 @@ from app.api.schemas import (
     ApiError,
     ErrorResponse,
     RetrieveRequest,
-    RetrieveResponse,
     ReviewRequest,
     RunResponse,
     StreamNodeEvent,
@@ -128,7 +127,7 @@ async def review_stream(
         with record_stages(on_stage if telemetry == "stages" else None):
             try:
                 active_request = request
-                if request.evidence_selection is None and hasattr(services, "retrieve"):
+                if request.evidence_selection is None:
                     prepared = await services.retrieve(
                         RetrieveRequest(
                             query=request.query,
@@ -136,16 +135,15 @@ async def review_stream(
                             conversation_history=request.conversation_history,
                         )
                     )
-                    if isinstance(prepared, RetrieveResponse):
-                        await queue.put(("candidates", prepared.model_dump_json()))
-                        if prepared.candidate_token is not None:
-                            active_request = request.model_copy(
-                                update={
-                                    "evidence_selection": EvidenceSelection(
-                                        candidate_token=prepared.candidate_token
-                                    )
-                                }
-                            )
+                    await queue.put(("candidates", prepared.model_dump_json()))
+                    if prepared.candidate_token is not None:
+                        active_request = request.model_copy(
+                            update={
+                                "evidence_selection": EvidenceSelection(
+                                    candidate_token=prepared.candidate_token
+                                )
+                            }
+                        )
                 report = await services.review(active_request, on_node)
                 payload = RunResponse.from_run_report(report).model_dump_json()
                 await queue.put(("report", payload))

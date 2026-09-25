@@ -16,6 +16,7 @@ from starlette.requests import ClientDisconnect
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.app import create_api_app
 from app.api.deps import ApiServices
+from app.api.evidence import EvidenceSelection
 from app.api.routes.stream import review_stream
 from app.api.runtime_gate import RuntimeResetGate, RuntimeResetMiddleware
 from app.api.schemas import ReviewRequest
@@ -128,7 +129,10 @@ def test_stream_remains_active_until_cancelled_producer_cleanup_finishes(failure
                     cleaned.set()
 
         response = await review_stream(
-            ReviewRequest(query="Revenue?"), cast(ApiServices, Services())
+            ReviewRequest(
+                query="Revenue?", evidence_selection=EvidenceSelection(candidate_token="test")
+            ),
+            cast(ApiServices, Services()),
         )
         wrapped = RuntimeResetMiddleware(response, gate)
         scope = {

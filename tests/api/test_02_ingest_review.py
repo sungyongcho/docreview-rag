@@ -1,40 +1,4 @@
-"""M5.1 synchronous ingest and review route tests."""
-
-from app.api.errors import bad_request
-from app.ingestion.seed import SeedResult
-
-
-def test_ingest_route_completes_synchronously(client_factory, services):
-    """Return the seed counts in the response rather than a job handle."""
-    services.seed_result = SeedResult(documents=2, chunks=24)
-
-    response = client_factory(services).post(
-        "/ingest",
-        json={
-            "manifest_path": "data/corpus/manifest.json",
-            "selection_id": "sec-evaluation",
-            "expected_documents": 2,
-            "chunk_batch_size": 100,
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"documents": 2, "chunks": 24}
-    assert services.last_ingest_request.selection_id == "sec-evaluation"
-    assert services.last_ingest_request.manifest_path == "data/corpus/manifest.json"
-
-
-def test_missing_manifest_is_a_typed_client_error(client_factory, services):
-    """Report a missing manifest as a 400 naming the failure."""
-    services.ingest_error = bad_request("manifest_not_found", "Manifest file was not found.")
-
-    response = client_factory(services).post(
-        "/ingest",
-        json={"manifest_path": "missing.json", "selection_id": "sec-evaluation"},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "manifest_not_found"
+"""M5.1 synchronous review route tests."""
 
 
 def test_review_route_returns_supported_evidence_synchronously(

@@ -214,7 +214,7 @@ visitor ──HTTPS──> sungyongcho.com/docreview-rag/*
 TLS ends at Cloudflare. The VM speaks plain HTTP on port `8000`, and the GCP firewall
 admits only Cloudflare's published IPv4 ranges, so nothing else can reach it directly.
 Caddy proxies only the public paths and adds `X-DocReview-Public: true`; that header is
-what hides `/admin/*` and `/ingest`, so Caddy must stay in front of every externally
+what hides `/admin/*`, so Caddy must stay in front of every externally
 reachable port. The operator API is reachable only through
 `deploy/gcp/operator_tunnel.sh`, which forwards the loopback-only port `8001`.
 
