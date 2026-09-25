@@ -1,4 +1,4 @@
-import type { AdminDocument, CorpusSnapshot, EvaluationComparison, EvaluationJob, GoldenSuite, ManifestSummary } from "./types";
+import type { AdminDocument, CorpusSnapshot, EvaluationJob, GoldenSuite, ManifestSummary } from "./types";
 import { DEFAULT_PROFILE } from "./types";
 
 export const CANNED_SUITES: GoldenSuite[] = [
@@ -88,17 +88,4 @@ export const CANNED_JOB: EvaluationJob = {
   created_at: "2026-09-01T00:00:00Z",
   started_at: "2026-09-01T00:00:00Z",
   finished_at: "2026-09-01T00:00:01Z",
-};
-
-export const CANNED_COMPARISON: EvaluationComparison = {
-  baseline_id: 15,
-  candidate_id: 16,
-  suite: "m8-crosslingual-v1",
-  metrics: [
-    { name: "recall_at_k", baseline: 0.4166666667, candidate: 0.125, delta: -0.2916666667 },
-    { name: "hit_rate_at_k", baseline: 0.4166666667, candidate: 0.125, delta: -0.2916666667 },
-    { name: "mrr", baseline: 0.2777777778, candidate: 0.0638888889, delta: -0.2138888889 },
-    { name: "mean_latency_ms", baseline: 35.35722075, candidate: 37.69624275, delta: 2.339022 },
-  ],
-  cases: [],
 };

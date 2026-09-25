@@ -100,7 +100,7 @@ export function SystemWorkspace({ live, ready = true, readiness, localModel, loc
 }
 
 function ApiInspector({ ready }: { ready: boolean }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { notify } = useNotifications();
   const [rawRequest, setRawRequest] = useState("");
   const [rawResponse, setRawResponse] = useState("");

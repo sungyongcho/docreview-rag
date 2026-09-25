@@ -15,7 +15,7 @@ import { evaluationDataset, evaluationSettings } from "@/lib/evaluation-labels";
 import { GoldenPreparation } from "./golden-preparation";
 import { notificationErrorDetail, notificationErrorMessage } from "@/lib/notification-registry";
 import { NotificationOutlet } from "./notifications";
-import { preparationErrorTarget, preparationTarget, type PreparationTarget } from "@/lib/preparation-navigation";
+import { preparationErrorTarget, type PreparationTarget } from "@/lib/preparation-navigation";
 import type { Readiness } from "@/lib/types";
 import { DEFAULT_PROFILE } from "@/lib/types";
 import { createPortal } from "react-dom";
@@ -74,15 +74,6 @@ import { ProfileFields } from "@/components/profile-fields";
 import { useNotifications } from "@/components/notifications";
 
 export type MeasureTab = "playground" | "golden" | "runs" | "compare" | "snapshots" | "presets";
-
-export const MEASURE_TABS: Array<[MeasureTab, string]> = [
-  ["playground", "Search trial"],
-  ["golden", "Golden dataset"],
-  ["runs", "Run evaluation"],
-  ["compare", "Compare & snapshots"],
-  ["snapshots", "Snapshot management"],
-  ["presets", "Presets"],
-];
 
 export interface MeasureWorkspaceProps {
   publicProfile?: import("@/lib/types").ReviewSessionDraft;
@@ -759,7 +750,6 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
   const datasetSelect = (helpId: string) => <label data-help={helpId}>{t("Golden suite")}<select disabled={goldenBusy} value={selectedGoldenRevision ? `file:${selectedGoldenRevision}` : suiteId} onChange={event => selectDataset(event.target.value)}>{suites.map(suite => <option key={suite.suite_id} value={suite.suite_id}>{suite.title ?? suite.filename} · {suite.filename} ({t("Built-in")})</option>)}{allGoldenFiles.map(file => <option key={file.revision_id} value={`file:${file.revision_id}`}>{file.filename}</option>)}</select></label>;
   // A public surface learns dataset names only from the published snapshots it can read.
   const publicSuites = useMemo(() => { const seen = new Map<string, string>(); for (const snapshot of snapshots) { const id = snapshot.eval_result?.suite; if (id && !seen.has(id)) seen.set(id, snapshot.suite_title ?? id); } return [...seen.entries()]; }, [snapshots]);
-  const lockedRuns = (message: string) => <div className="empty-state"><p>{t(message)}</p><button className="button" type="button" onClick={() => changeTab("snapshots")}>{t("Open Snapshots")}</button></div>;
 
   return (
     <section className={`lab-shell measure-workspace${tab === "golden" && goldenDetailOpen ? " golden-editing" : ""}`}>{confirmationDialog}
@@ -906,12 +896,6 @@ export function MeasureWorkspace({ publicProfile, publicScopeBlocked, capabiliti
 
     </section>
   );
-}
-
-function goldenAnswers(value: Record<string, unknown>): Array<Record<string, unknown>> {
-  return Array.isArray(value.answers)
-    ? value.answers.filter((answer): answer is Record<string, unknown> => typeof answer === "object" && answer !== null)
-    : [];
 }
 
 /** Show each stored artifact's provenance before presenting metric changes. */

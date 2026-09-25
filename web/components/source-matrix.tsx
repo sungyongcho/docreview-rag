@@ -8,7 +8,6 @@ import { acquisitionDraft, acquisitionPairs, pairKey, selectedSourceState, sourc
 import { useI18n } from "@/lib/i18n";
 import { companyDisplayName } from "@/lib/company-labels";
 import { PORTFOLIO_FILINGS } from "@/lib/published-scope";
-import { DevModeBubble } from "./dev-mode-bubble";
 import { HoverBubble } from "./hover-bubble";
 import { DevLockedButton } from "./dev-locked-button";
 import { TokenSelect, type TokenOption } from "./token-select";

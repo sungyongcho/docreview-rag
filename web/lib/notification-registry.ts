@@ -154,15 +154,6 @@ export const NOTIFICATION_EVENTS = {
     },
     "surface": "measure-golden"
   },
-  "golden-save-notice": {
-    "classification": "persistent",
-    "title": "Golden dataset",
-    "target": {
-      "view": "measure",
-      "tab": "golden"
-    },
-    "surface": "measure-golden"
-  },
   "golden-save-error": {
     "classification": "persistent",
     "title": "Golden dataset",
@@ -354,55 +345,6 @@ export const NOTIFICATION_EVENTS = {
       "tab": "operations"
     },
     "surface": "operations"
-  },
-  "defaults-suites-error": {
-    "classification": "persistent",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "defaults-snapshots-error": {
-    "classification": "persistent",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "defaults-revisions-error": {
-    "classification": "persistent",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "experiment-defaults-notice": {
-    "classification": "transient",
-    "title": "Experiment defaults",
-    "target": {
-      "view": "measure",
-      "tab": "runs",
-      "resultId": null
-    },
-    "surface": "measure-runs"
-  },
-  "profile-defaults-notice": {
-    "classification": "transient",
-    "title": "Settings",
-    "target": {
-      "view": "settings",
-      "category": "prompt"
-    },
-    "surface": "settings"
   },
   "limits-error": {
     "classification": "persistent",

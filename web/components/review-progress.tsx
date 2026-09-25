@@ -179,10 +179,6 @@ export function RoutingSummary({ state, onSwitchScope }: { state: ReviewProgress
   </div>;
 }
 
-export function progressCountsLabel({ evidence, relevant, steps }: ReviewProgressState): string {
-  return `${evidence} candidates · ${relevant} relevant · ${steps} model steps`;
-}
-
 export function WaitingGlyph() {
   return <span className="waiting-glyph" aria-hidden="true">◐</span>;
 }

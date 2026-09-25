@@ -19,7 +19,7 @@ export interface ProfileFieldsProps {
 }
 
 export function ProfileFields({ profile, onChange, helpPrefix, conversation = false, fields = "all" }: ProfileFieldsProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const uid = useId();
   const fieldId = (name: string) => `${uid}-${name}`;
   function patch(update: Partial<RetrievalProfile>) { onChange({ ...profile, ...update }); }

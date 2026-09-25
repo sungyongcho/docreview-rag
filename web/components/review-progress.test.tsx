@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PathDecisionBadge, REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, progressCountsLabel, reviewProgressFromEvent } from "./review-progress";
+import { PathDecisionBadge, REVIEW_STEPS, ReviewProgressSteps, candidateProgress, currentStepIndex, finishReviewProgress, initialReviewProgress, phaseStatus, reviewProgressFromEvent } from "./review-progress";
 import type { ReviewProgress } from "@/lib/api";
 
 afterEach(cleanup);
@@ -90,10 +90,6 @@ describe("Five real-event review phases", () => {
     expect(phaseStatus(state, 1)).toBe("done");
     expect(state.stageTimings).toEqual([{ node: "retrieve", elapsed_ms: 125, status: "completed" }]);
     expect(REVIEW_STEPS.map((_, i) => phaseStatus(state, i))).not.toContain("current");
-  });
-
-  it("keeps the three real count segments", () => {
-    expect(progressCountsLabel({ node: "check", evidence: 20, relevant: 6, steps: 3 })).toBe("20 candidates · 6 relevant · 3 model steps");
   });
 
   it("waits for server routing and displays actual scope independently of the selected mode", () => {

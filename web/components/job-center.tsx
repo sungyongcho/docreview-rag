@@ -133,14 +133,6 @@ export function JobProgress({ job }: { job: OperatorJob }) {
   </div>;
 }
 
-export function JobActivityPanel({ board, loading, onOpenJobs }: { board: OperatorJobBoard; loading: boolean; onOpenJobs: () => void }) {
-  const { t, locale } = useI18n();
-  const active = board.jobs.find((job) => job.status === "running") ?? null;
-  const queued = board.jobs.filter((job) => job.status === "queued").toSorted((left, right) => (left.queue_position ?? 0) - (right.queue_position ?? 0));
-  const latest = board.jobs.find((job) => ["succeeded", "failed", "interrupted", "cancelled"].includes(job.status)) ?? null;
-  return <section className="surface job-activity"><div className="surface-heading"><div><h2>{t("Job activity")}</h2><p className="helper">{t("Persistent corpus and evaluation queue")}</p></div><button className="button" type="button" onClick={onOpenJobs}>{t("View all jobs")}</button></div>{loading && !board.jobs.length ? <p className="helper">{t("Loading job activity…")}</p> : active ? <article className="active-job"><div className="job-title"><div><strong>{t(jobCopy(active).label)}</strong><p>{t(jobCopy(active).purpose)}</p></div><span className={`job-status ${active.status}`}>{t(active.status)}</span></div><JobProgress job={active} /><p className="helper">{t("Started")}{" "}{active.started_at ? new Date(active.started_at).toLocaleTimeString(locale === "ko" ? "ko-KR" : "en-US") : "—"}{t("· elapsed")}{" "}{elapsedLabel(active, locale)}</p></article> : <p className="helper">{t("No job is running.")}{latest ? t(" Latest: {p0} · {p1}.", { p0: t(jobCopy(latest).label), p1: t(latest.status) }) : ""}</p>}{queued.length > 0 && <div className="queued-jobs"><strong>{t("Queued ·")}{" "}{queued.length}</strong>{queued.slice(0, 3).map((job) => <span key={job.job_id}>#{job.queue_position} {t(jobCopy(job).label)}</span>)}</div>}</section>;
-}
-
 /** Keep job selection explicit and expose only actions supported by its current state. */
 export function JobCenter({ board, loading, stale = false, onRetry, onCancel, onRefresh, onOpenResult, onOpenPipeline, historyEnabled = false, focusJobId }: { focusJobId?: string; board: OperatorJobBoard; loading: boolean; stale?: boolean; onRetry: (jobId: string) => void; onCancel: (jobId: string) => void; onRefresh: () => void; onOpenResult: (resultId: number) => void; onOpenPipeline?: (stage: string) => void; historyEnabled?: boolean }) {
   const { t, locale } = useI18n();

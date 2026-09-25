@@ -8,9 +8,9 @@ import { ChevronRight, SlidersHorizontal, LoaderCircle } from "lucide-react";
 import { RetrievalPresetSelect } from "./retrieval-preset-select";
 import { presetDescription } from "@/components/request-preview";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import type { CorpusScope, Readiness, ReleaseLimits, RetrievalPreset, ReviewSessionDraft } from "@/lib/types";
+import type { CorpusScope, Readiness, ReleaseLimits, ReviewSessionDraft } from "@/lib/types";
 import { getReleaseLimits } from "@/lib/api";
-import { applyRetrievalPreset, resolvedRetrievalProfile } from "@/lib/types";
+import { resolvedRetrievalProfile } from "@/lib/types";
 import { retrievalReadiness } from "@/lib/pipeline";
 import type { OperatorJob } from "@/lib/types";
 
@@ -160,7 +160,7 @@ export interface ComposerBannerProps {
 }
 
 export function ComposerBanner({ banner, onOpenBuild, onOpenAnswerModel }: ComposerBannerProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (!banner) return null;
   return (
     <p className={`composer-banner ${banner.kind}`} role="status">

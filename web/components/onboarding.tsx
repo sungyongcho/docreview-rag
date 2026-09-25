@@ -51,7 +51,7 @@ export function Onboarding({
   /** The shell's committed workspace and tab; a change re-measures the step's target once the shell has navigated. */
   location?: string;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const steps = useMemo(
     () => STEPS.filter((item) => item.optional !== "operations" || includeOperations).map((item) => !publicMode ? item : item.title === "Start with Build" ? { ...item, description: "Choose published filings in Build, then explore the real chunks, retrieval results and citations." } : item.title === "Ask or adjust the session" ? { ...item, description: "Pick scope and preset inline, then type. The readiness chip tells you what the corpus can do right now." } : item),
     [includeOperations, publicMode],

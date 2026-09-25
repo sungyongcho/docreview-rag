@@ -97,4 +97,4 @@ export function SettingsModal(props: Props) {
 }
 
 function formatStorage(value: number): string { return value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`; }
-function Metric({ label, value }: { label: string; value: string }) { const { t, locale } = useI18n(); return <div className="setting-metric"><span>{t(label)}</span><strong>{value}</strong></div>; }
+function Metric({ label, value }: { label: string; value: string }) { const { t } = useI18n(); return <div className="setting-metric"><span>{t(label)}</span><strong>{value}</strong></div>; }

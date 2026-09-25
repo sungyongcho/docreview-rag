@@ -2003,22 +2003,6 @@ textarea[aria-invalid="true"] {
   margin-top: 7px;
 }
 
-.job-activity {
-  display: grid;
-  gap: 12px;
-}
-
-.job-activity .surface-heading {
-  padding: 0;
-}
-
-.active-job {
-  display: grid;
-  gap: 9px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-
 .job-title {
   display: flex;
   align-items: flex-start;
@@ -2108,18 +2092,6 @@ textarea[aria-invalid="true"] {
   font-size: 11px;
   font-weight: 400;
   white-space: nowrap;
-}
-
-.queued-jobs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.queued-jobs strong {
-  color: var(--text);
 }
 
 .job-center {

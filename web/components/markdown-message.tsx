@@ -11,7 +11,7 @@ function SafeLink({ href, children, ...props }: ComponentPropsWithoutRef<"a">) {
 }
 
 function OmittedImage({ alt }: { alt?: string }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   return <span className="markdown-image-omitted">{t("[Image omitted")}{alt ? t(": {p0}", { p0: alt }) : ""}]</span>;
 }
 

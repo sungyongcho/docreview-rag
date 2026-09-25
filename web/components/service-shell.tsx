@@ -2,7 +2,6 @@
 import { applyProdPolicy, newProdProfile } from "@/lib/prod-profile";
 import { usePublishedCorpus } from "@/lib/use-published-corpus";
 import { effectivePublishedProfile, publicTargetIds, pinPublicTargets, createPublicTargets } from "@/lib/published-scope";
-import { HoverBubble } from "./hover-bubble";
 import { useConfirmation } from "./use-confirmation";
 import { SearchUpdateStatus, SEARCH_UPDATE_KINDS, searchUpdateProgress } from "./search-update-status";
 import { NotificationCenter } from "@/components/notification-center";
@@ -27,7 +26,7 @@ import type { DisclosureStage } from "@/components/review-stage-details";
 import { RunDetailsPanel } from "@/components/run-details-panel";
 import { EvidenceCandidates } from "@/components/evidence-candidates";
 import { LanguageSwitch } from "@/lib/i18n";
-import { localCpuWarning, localModelIssue, selectedLocalModel, SLOW_LOCAL_CPU_TOKENS_PER_SECOND } from "@/lib/local-models";
+import { localCpuWarning, localModelIssue, selectedLocalModel } from "@/lib/local-models";
 
 import {
   Activity,
@@ -59,7 +58,7 @@ import { HelpOverlay } from "@/components/help-overlay";
 import { MarkdownMessage } from "@/components/markdown-message";
 import { MeasureWorkspace, type MeasureTab } from "@/components/measure-workspace";
 import { Onboarding, type TourView } from "@/components/onboarding";
-import { PathDecisionBadge, ReviewProgressSteps, WaitingGlyph, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer, type ReviewProgressState } from "@/components/review-progress";
+import { PathDecisionBadge, ReviewProgressSteps, reviewProgressFromEvent, initialReviewProgress, candidateProgress, finishReviewProgress, resolvedScopeFromServer } from "@/components/review-progress";
 import { ServiceHealthModal } from "@/components/service-health-modal";
 import { SettingsModal, type SettingsCategory } from "@/components/settings-modal";
 import { DevModeBubble, DevPromotionProvider } from "@/components/dev-mode-bubble";
@@ -201,7 +200,7 @@ function ServiceSession() {
   const helpCapabilities = useMemo(() => permissions ? { ...permissions, can_use_operations: Boolean(operationsAvailable), can_configure_local_llm: Boolean(localAllowed), can_change_custom_retrieval: Boolean(adminLive && permissions.can_change_custom_retrieval), can_edit_run_limits: Boolean(adminLive && permissions.can_edit_run_limits) } : null, [permissions, operationsAvailable, localAllowed, adminLive]);
   const initialized = useRef(false);
   const tourInitialized = useRef(false);
-  const { notify, dismissNotice } = useNotifications();
+  const { notify } = useNotifications();
   const notificationView = useRef(view);notificationView.current = view;
   const operatorJobs = useOperatorJobs(adminBuild && permissions?.can_build_snapshot === true, runtimeHealth.check);
   const workPending = operatorJobs.board.active_count > 0 || operatorJobs.board.queued_count > 0;
@@ -1340,7 +1339,7 @@ function verdictPill(message: ChatMessage): { className: string; text: string } 
 }
 
 function ReviewMessage({ message, catalogMode, latestEvidence, busy, onStop, onSwitchScope, onMark, onUseSelected, onOpenDetails, onOpenFix }: ReviewMessageProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [summaryOpen, setSummaryOpen] = useState(Boolean(message.pending));
   const pill = message.role === "assistant" ? verdictPill(message) : null;
   const article = useRef<HTMLElement>(null);

@@ -112,10 +112,6 @@ const OPERATOR_ACTIONS: ReadonlySet<StageActionKind> = new Set(["acquire", "inge
 /** Stages whose work runs only in DEV mode. */
 const OPERATOR_STAGES: ReadonlySet<Stage["id"]> = new Set(["filings", "index", "embeddings", "lexical", "evaluate"]);
 
-export function splitList(value: string): string[] {
-  return value.split(/[\s,]+/).filter(Boolean);
-}
-
 function isApiDown(pipeline: Pipeline): boolean {
   return pipeline.stages.some((stage) => stage.status === "unknown" && stage.statusDetail === "API unavailable");
 }
@@ -332,7 +328,7 @@ interface RuntimeProblem {
 }
 
 function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaStatus, schemaMessage, writable, answerModel, onRunOperation, onRefresh }: RuntimeStripProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (pipeline.readOnly) {
     return <span className="runtime-readonly" data-help="build.runtime">{t("Read-only portfolio · stored snapshots + live retrieval")}</span>;
   }
@@ -385,7 +381,7 @@ function RuntimeStrip({ pipeline, live, databaseConnected, returnStage, schemaSt
 }
 
 function ActionButton({ stage, primary, handler, disabled, locked = false }: { stage: Stage; primary: boolean; handler: (kind: StageActionKind) => () => void; disabled: (kind: StageActionKind) => boolean; locked?: boolean }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   if (!stage.action) return null;
   const { kind, label } = stage.action;
   if (locked && OPERATOR_ACTIONS.has(kind)) return <DevLockedButton reason={kind === "evaluate" ? "evaluation" : "corpus"} className={primary ? "button primary" : "button"}>{t(label)}</DevLockedButton>;
@@ -427,7 +423,7 @@ interface StageCardProps {
 }
 
 function StageCard({ candidates, answerEngines, onOpenLocalSettings, onLocalPrepared, onDownload, onDeleteSources, sourceDeletionDisabled, busy, sources = [], onChangeFilings, recovery, stage, evaluationSetup, isNext, readOnly, handler, disabled, acquisition, onAcquisitionChange, documents, companies, onAskScope, corpusScope, onAcquisitionValidityChange, manifests, onOpenDocuments, onOpenJobs, onOpenStatus, onCancelJob }: StageCardProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const job = stage.job;
   const repeatsJobMessage = job && (stage.hint === job.message || stage.hint === `Last run ${job.status}: ${job.message}`);
   const showHint = Boolean(stage.hint) && !repeatsJobMessage;

@@ -7,14 +7,11 @@ import accuracyPreset from "../../data/presets/accuracy.json";
 export const BUILTIN_PRESETS = [balancedPreset, koreanPreset, accuracyPreset] as Array<{ id: string; name: string; description: string; builtin: boolean; updated_at: string; retrieval: RetrievalProfile }>;
 
 
-export type Strategy = "vector" | "lexical" | "hybrid";
-export type LexicalRanker = "ts_rank_cd" | "bm25";
 export type SuiteId = "sec-en" | "sec-ko" | "dart-en" | "dart-ko" | "sec-en_v2_astra" | "sec-ko_v2_astra" | "sec-mixed_v2_astra";
 
 export type RetrievalProfile = components["schemas"]["RetrievalProfile"];
 export type CustomRetrievalProfile = components["schemas"]["CustomRetrievalProfile"];
 
-export type ReviewEngine = "openai" | "local";
 export type CorpusScope = "auto" | "sec" | "dart";
 export type RetrievalPreset = "balanced" | "korean" | "accuracy" | "custom";
 
@@ -23,13 +20,6 @@ export interface ExperimentDefaults {
   golden_revision_id: number | null;
   mode: "quick" | "matrix";
 
-}
-
-export interface WorkflowBudget {
-  max_iterations: number;
-  max_input_tokens: number;
-  max_output_tokens: number;
-  max_wall_clock_s: number;
 }
 
 export type PromptPolicy = components["schemas"]["PromptPolicy"];
@@ -190,8 +180,6 @@ export interface Readiness {
   };
 }
 
-export type UsageModel = components["schemas"]["UsageModelResource"];
-
 export type ProviderUsage = components["schemas"]["UsageResponse"];
 
 /** Browser selection intent; resolved IDs are pinned once a target is published. */
@@ -255,7 +243,6 @@ export type SnapshotComparison = components["schemas"]["SnapshotComparisonRespon
 
 /** One selectable corpus manifest as reported by `/admin/corpus`. */
 export type ManifestSummary = components["schemas"]["ManifestResource"];
-export type ProcessingSelection = components["schemas"]["ProcessingSelectionResource"];
 export type CorpusDocument = components["schemas"]["CorpusDocumentResource"];
 export type CorpusSnapshot = components["schemas"]["CorpusSnapshotResource"];
 export type CorpusOperationRequest = components["schemas"]["CorpusOperationRequest"];
@@ -281,8 +268,6 @@ export interface CorpusCounts {
 export type DocumentEmbeddingStatus = "complete" | "partial" | "missing";
 
 export type AdminDocument = components["schemas"]["AdminDocumentResource"];
-
-export type DocumentFacetValue = components["schemas"]["DocumentFacetValue"];
 
 export type DocumentFacets = components["schemas"]["DocumentFacetsResponse"];
 

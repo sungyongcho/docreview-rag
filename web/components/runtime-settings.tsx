@@ -39,7 +39,7 @@ export function RuntimeSettings({ readiness, live }: { readiness: Readiness | nu
 
 /** Request browser permission only when the user enables completion notifications. */
 export function DesktopJobNotifications() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { notify } = useNotifications();
   const [desktopNotifications, setDesktopNotifications] = useState(false);
   useEffect(() => setDesktopNotifications(desktopJobNotificationsEnabled()), []);
@@ -63,5 +63,4 @@ export function DesktopJobNotifications() {
 
   return <section className="surface job-notifications"><div className="surface-title"><h2>{t("Job notifications")}</h2></div><div className="job-notifications-row"><div className="job-notifications-state"><span className="helper">{t("Desktop job notifications")}</span><strong>{t(desktopNotifications ? "Enabled" : typeof Notification !== "undefined" && Notification.permission === "denied" ? "Blocked by browser" : "Disabled")}</strong></div><button className="button" type="button" onClick={() => void toggleDesktopNotifications()}>{desktopNotifications ? t("Disable desktop job notifications") : t("Enable desktop job notifications")}</button></div></section>;
 }
-function formatSeconds(value: number, locale: "ko" | "en"): string { if (value <= 0) return locale === "ko" ? "지금" : "now"; const hours = Math.floor(value / 3600); const minutes = Math.floor(value % 3600 / 60); const seconds = value % 60; if (locale === "ko") return hours ? `${hours}시간 ${minutes}분` : minutes ? `${minutes}분 ${seconds}초` : `${seconds}초`; return hours ? `${hours}h ${minutes}m` : minutes ? `${minutes}m ${seconds}s` : `${seconds}s`; }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="setting-metric"><span>{label}</span><strong>{value}</strong></div>; }

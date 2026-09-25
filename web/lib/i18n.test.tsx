@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
-import { I18nProvider, LanguageSwitch, LOCALE_KEY, localizedDocumentationPath, preferredLocale, translate, useI18n } from "./i18n";
+import { I18nProvider, LanguageSwitch, LOCALE_KEY, preferredLocale, translate, useI18n } from "./i18n";
+import { localizedDocumentationRoute } from "./documentation-registry.mjs";
 import { KO } from "./messages-ko";
 import { HELP_SCREEN_TITLES, HELP_TOPICS } from "./help-content";
 import { ANSWER_MODEL_HINT, STAGE_COPY, failureMessage } from "./pipeline";
@@ -178,11 +179,11 @@ describe("Korean and English UI", () => {
   });
 
   it("keeps document identity and deployment prefix during language changes", () => {
-    expect(localizedDocumentationPath("/docreview-rag/docs/en/cli/", "ko")).toBe("/docreview-rag/docs/ko/cli/");
-    expect(localizedDocumentationPath("/docs", "en")).toBe("/docs/en/");
-    expect(localizedDocumentationPath("/docs/en/settings/", "ko", "#step-10")).toBe("/docs/ko/settings/#step-10");
+    expect(localizedDocumentationRoute("/docreview-rag/docs/en/cli/", "ko")).toBe("/docreview-rag/docs/ko/cli/");
+    expect(localizedDocumentationRoute("/docs", "en")).toBe("/docs/en/");
+    expect(localizedDocumentationRoute("/docs/en/settings/", "ko", "#step-10")).toBe("/docs/ko/settings/#step-10");
     expect(preferredLocale("/docs/en/settings/", "ko")).toBe("en");
-    expect(localizedDocumentationPath("/documents/", "en")).toBeNull();
+    expect(localizedDocumentationRoute("/documents/", "en")).toBeNull();
     expect(preferredLocale("/docs/ko/", "en")).toBe("ko");
     expect(preferredLocale("/docs/", "en")).toBe("en");
     expect(preferredLocale("/docs/", "invalid", "en-US")).toBe("en");
