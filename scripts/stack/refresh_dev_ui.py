@@ -31,7 +31,7 @@ def inspect_dev(container: str) -> RunningDev:
     )
     record = json.loads(result.stdout)[0]
     environment = dict(entry.split("=", 1) for entry in record["Config"]["Env"])
-    mode = environment.get("MODE", environment.get("DOCREVIEW_ENVIRONMENT"))
+    mode = environment.get("MODE")
     if mode != "dev" or environment.get("DOCREVIEW_ADMIN_MODE") != "live":
         raise ValueError("UI refresh requires a DEV container with live administrator mode.")
     if not record["State"]["Running"]:

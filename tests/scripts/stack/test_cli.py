@@ -80,7 +80,7 @@ def test_environment_reset_only_removes_runtime_and_never_starts(monkeypatch, tm
     reset = Mock(return_value=0)
     monkeypatch.setattr(fresh, "start_fresh", reset)
     assert cli.main(["prod", "reset", "environment", "--local", "--all-modes"], root=tmp_path) == 0
-    reset.assert_called_once_with(tmp_path, no_start=True, runtime_only=True)
+    reset.assert_called_once_with(tmp_path)
 
 
 def test_data_reset_checks_actual_mode_and_stays_stopped(monkeypatch, tmp_path):

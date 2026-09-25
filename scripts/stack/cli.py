@@ -135,11 +135,7 @@ def dispatch(mode: str, args: argparse.Namespace, root: Path) -> int:
                 )
             from scripts.stack.fresh import start_fresh, status
 
-            return (
-                status(root, "start-fresh")
-                if args.status
-                else start_fresh(root, no_start=True, runtime_only=True)
-            )
+            return status(root, "start-fresh") if args.status else start_fresh(root)
         if args.all_modes:
             raise ValueError("--all-modes applies only to reset environment.")
         if mode != "dev":

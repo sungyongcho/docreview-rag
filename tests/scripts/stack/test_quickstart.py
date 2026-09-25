@@ -292,39 +292,6 @@ def test_configuration_rechecks_after_an_external_edit(configured, monkeypatch):
     assert setup.configure(configured)["DB_PORT"] == "38432"
 
 
-@pytest.mark.parametrize(
-    "outcome,expected", [("cancelled", 0), ("incomplete", 1), ("succeeded", 0)]
-)
-def test_host_clean_start_waits_for_verified_reset_before_starting(
-    configured, monkeypatch, capsys, outcome, expected
-):
-    """Cancellation and partial reset stop before startup; success reaches the exact web step."""
-    calls = []
-    monkeypatch.setattr(setup.subprocess, "check_output", lambda *a, **k: "2.39.0")
-    monkeypatch.setattr(setup, "ensure_database", lambda *a, **k: calls.append("db"))
-
-    def reset(root, **options):
-        """Return the reset's explicit state after recording its caller intent."""
-        assert root == configured
-        assert options == {"keep_sources": True, "sample": False, "restart_planned": True}
-        calls.append("reset")
-        return outcome
-
-    monkeypatch.setattr(setup, "recreate_schema", reset)
-    monkeypatch.setattr(setup, "start_ready", lambda *a, **k: calls.append("ready"))
-    assert setup.quickstart(configured, reset=True, keep_sources=True) == expected
-    output = capsys.readouterr().out
-    if outcome == "succeeded":
-        assert calls == ["db", "reset", "ready"]
-        assert "/docs/en/quickstart-dev/#qs-web-1" in output
-        assert "/docs/ko/quickstart-dev/#qs-web-1" in output
-        assert output.isascii()
-        assert "\x1b" not in output
-    else:
-        assert calls == ["db", "reset"]
-        assert "Service ready:" not in output
-
-
 def test_startup_failure_diagnoses_and_restarts_once(configured, monkeypatch):
     """Recovery preserves volumes and runs only after an explicit restart choice."""
     from unittest.mock import Mock
@@ -346,7 +313,7 @@ def test_startup_failure_diagnoses_and_restarts_once(configured, monkeypatch):
     monkeypatch.setattr(setup, "wait_ready", ready)
     setup.start_ready(configured, setup.validate_configuration(configured))
     assert calls == [["up", "--build", "-d"], ["down"], ["up", "--build", "-d"]]
-    diagnosis.assert_called_once_with(configured, "http://127.0.0.1:38010", details=True)
+    diagnosis.assert_called_once_with("http://127.0.0.1:38010", details=True)
     ready.assert_called_once()
 
 
@@ -371,36 +338,15 @@ def test_configuration_cancellation_stops_before_database_work(
 
     forbidden = Mock(side_effect=AssertionError("cancellation must stop setup"))
     monkeypatch.setattr("builtins.input", reply)
-    for name in ("ensure_database", "recreate_schema", "start_ready", "handoff"):
+    for name in ("ensure_database", "start_ready", "handoff"):
         monkeypatch.setattr(setup, name, forbidden)
     with pytest.raises(setup.SetupCancelledError):
-        setup.quickstart(configured, reset=True)
+        setup.quickstart(configured)
     forbidden.assert_not_called()
     assert (configured / ".env").read_bytes() == before
     output = capsys.readouterr().out
     for secret in ("private-invalid-contact", "test-openai", "test-dart"):
         assert secret not in output
-
-
-def test_startup_failure_after_reset_cannot_repeat_deletion_or_print_ready(configured, monkeypatch):
-    """A verified reset is performed once even when the following startup remains blocked."""
-    from unittest.mock import Mock
-
-    monkeypatch.setattr(setup.subprocess, "check_output", lambda *a, **k: "2.39.0")
-    monkeypatch.setattr(setup, "ensure_database", Mock())
-    reset = Mock(return_value="succeeded")
-    startup = Mock(side_effect=RuntimeError("fixture readiness failed"))
-    handoff = Mock()
-    monkeypatch.setattr(setup, "recreate_schema", reset)
-    monkeypatch.setattr(setup, "start_ready", startup)
-    monkeypatch.setattr(setup, "handoff", handoff)
-    with pytest.raises(RuntimeError, match="fixture readiness failed"):
-        setup.quickstart(configured, reset=True)
-    reset.assert_called_once_with(
-        configured, keep_sources=False, sample=False, restart_planned=True
-    )
-    startup.assert_called_once()
-    handoff.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", ["command", "readiness"])
@@ -450,17 +396,14 @@ def test_second_database_failure_stops_before_reset(configured, monkeypatch):
     database = Mock(side_effect=setup.subprocess.CalledProcessError(1, ["docker", "compose"]))
     confirm = Mock(return_value=True)
     launch = Mock(return_value=0)
-    reset = Mock()
     monkeypatch.setattr(setup, "ensure_database", database)
     monkeypatch.setattr(setup, "confirm", confirm)
     monkeypatch.setattr(setup, "run", launch)
-    monkeypatch.setattr(setup, "recreate_schema", reset)
     with pytest.raises(setup.subprocess.CalledProcessError):
-        setup.quickstart(configured, reset=True)
+        setup.quickstart(configured)
     assert database.call_count == 2
     confirm.assert_called_once()
     launch.assert_called_once_with("dev", ["down"], root=configured)
-    reset.assert_not_called()
 
 
 def test_second_schema_failure_cannot_reset_or_start_services(configured, monkeypatch):
@@ -475,7 +418,6 @@ def test_second_schema_failure_cannot_reset_or_start_services(configured, monkey
     monkeypatch.setattr(setup, "ensure_database", database)
     monkeypatch.setattr(setup, "prepare_schema", prepare)
     monkeypatch.setattr(setup, "confirm", confirm)
-    monkeypatch.setattr(setup, "recreate_schema", forbidden)
     monkeypatch.setattr(setup, "start_ready", forbidden)
     with pytest.raises(RuntimeError, match="Schema is still blocked"):
         setup.quickstart(configured)

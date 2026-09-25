@@ -167,11 +167,8 @@ def test_permission_preview_offers_exact_owner_fix_before_one_retry(
     apply.assert_not_called()
 
 
-@pytest.mark.parametrize("restart_planned", [False, True])
-def test_successful_reset_reports_the_callers_restart_intent(
-    tmp_path, monkeypatch, capsys, restart_planned
-):
-    """The host caller may plan a later restart, but recreation itself only stops the API."""
+def test_successful_reset_leaves_the_api_stopped(tmp_path, monkeypatch, capsys):
+    """Recreation only stops the API and points to an explicit restart."""
     target = {"port": "12345", "apps": ["fixture-app"], "volume": "fixture", "docker": ["docker"]}
     operation = AsyncMock(side_effect=[{"documents": 1}, {"documents": 0}])
     stop = Mock()
@@ -180,18 +177,14 @@ def test_successful_reset_reports_the_callers_restart_intent(
     monkeypatch.setattr(command, "recreate", operation)
     monkeypatch.setattr(command.subprocess, "run", stop)
     monkeypatch.setattr("builtins.input", lambda _: "Y")
-    assert command.run(tmp_path, keep_sources=True, restart_planned=restart_planned) == "succeeded"
+    assert command.run(tmp_path, keep_sources=True) == "succeeded"
     assert operation.await_count == 2
     stop.assert_called_once_with(
         ["docker", "stop", "fixture-app"], env={}, check=True, stdout=command.subprocess.DEVNULL
     )
     output = capsys.readouterr().out
-    if restart_planned:
-        assert "Guided setup will now rebuild/start DEV and verify readiness" in output
-        assert "not restarted automatically" not in output
-    else:
-        assert "not restarted automatically" in output
-        assert "Run rag-dev start" in output
+    assert "not restarted automatically" in output
+    assert "Run rag-dev start" in output
 
 
 @pytest.mark.parametrize("owner_repairs", [False, True])
@@ -414,7 +407,7 @@ def test_permission_failure_after_stop_restores_sources_and_explains_recovery(
     monkeypatch.setattr(command.SourceReset, "stage", fail_after_staging)
     monkeypatch.setattr("builtins.input", lambda _: "Y")
     with pytest.raises(ValueError, match="filesystem permissions") as caught:
-        command.run(tmp_path, restart_planned=True)
+        command.run(tmp_path)
     assert "[Errno" not in str(caught.value)
     assert source.read_text() == "preserve original bytes"
     assert not (tmp_path / "data/.schema-recreate-journal").exists()

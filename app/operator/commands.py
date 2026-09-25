@@ -1,4 +1,4 @@
-"""Fixed local-checkout command registry shared by the API and README."""
+"""Fixed local-checkout command registry used by the local operator API."""
 
 from __future__ import annotations
 
@@ -225,19 +225,3 @@ COMMANDS: MappingProxyType[str, OperatorCommand] = MappingProxyType(
         )
     }
 )
-
-
-def render_commands_markdown() -> str:
-    """Render the README command table from the executable registry."""
-    lines = [
-        "| ID | Target | Command | Purpose | Confirmation |",
-        "|---|---|---|---|---|",
-    ]
-    for command in COMMANDS.values():
-        argv = " ".join(command.argv).replace("|", "\\|")
-        confirmation = "required" if command.confirmation else "no"
-        lines.append(
-            f"| `{command.command_id}` | {command.target.capitalize()} | `{argv}` | "
-            f"{command.description} | {confirmation} |"
-        )
-    return "\n".join(lines)

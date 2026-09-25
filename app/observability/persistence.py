@@ -350,33 +350,3 @@ async def persist_run_records(
     session.add_all(traces)
     await session.flush()
     return run
-
-
-async def persist_run_report(
-    session: AsyncSession,
-    report: RunReport,
-    *,
-    secret_values: Iterable[str] = (),
-) -> Run:
-    """Flush one run and its traces without committing the transaction.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Caller-owned transaction and flush boundary.
-    report : RunReport
-        Strict workflow result to persist.
-    secret_values : Iterable[str]
-        Additional credentials removed before ORM construction.
-
-    Returns
-    -------
-    Run
-        Flushed run record.
-
-    Notes
-    -----
-    The caller retains commit and rollback ownership.
-    """
-    run, traces = report_to_records(report, secret_values=secret_values)
-    return await persist_run_records(session, run, traces)

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Run, Trace
 from app.observability.persistence import (
     REDACTED,
-    persist_run_report,
+    persist_run_records,
     records_to_report,
     redact_sensitive_text,
     report_to_records,
@@ -154,7 +154,9 @@ def test_persistence_flushes_without_committing_or_live_services():
             self.flushed = True
 
     session = RecordingSession()
-    persisted = asyncio.run(persist_run_report(cast(AsyncSession, session), run_report()))
+    persisted = asyncio.run(
+        persist_run_records(cast(AsyncSession, session), *report_to_records(run_report()))
+    )
 
     assert persisted is session.added[0]
     assert isinstance(persisted, Run)

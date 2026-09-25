@@ -71,23 +71,6 @@ docker compose --project-directory . -f docker/docker-compose.yml logs -f app
 - `./data`를 `/app/data`에 bind mount해 corpus와 eval artifact 보존
 - loopback live operator는 공개 서비스용 IP rate limit과 일일 비용 상한을 적용하지 않음
 
-## Next 개발 모드
-
-backend container를 실행한 뒤 Next dev server를 별도로 시작합니다.
-
-```bash
-docker compose --project-directory . -f docker/docker-compose.yml up --build -d app
-
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 \
-  scripts/stack/operator_web.sh
-```
-
-Next 개발 URL:
-
-```text
-http://127.0.0.1:3000/docreview-rag/
-```
-
 로컬 Compose는 root `.env`의 `OPENAI_API_KEY_LOCAL`,
 `OPENAI_API_KEY_PROD`, `MODE`, `DART_API_KEY`, `SEC_USER_AGENT`와 선택적
 `EMBEDDING_PROVIDER`를 app에 전달합니다. 로컬 모델 키(`LOCAL_LLM_*`)는 dev overlay
@@ -225,9 +208,5 @@ docker compose --project-directory . -f docker/docker-compose.yml down -v
 deploy/gcp/deploy_all.sh all   # setup → vm → image → backend → origin
 ```
 
-프로덕션 실관리 접속은 비활성화되어 있습니다(`deploy/gcp/operator_tunnel.sh`는
-항상 종료). 관리 작업은 로컬 DEV 환경에서 실행합니다:
-
-```bash
-scripts/stack/operator_web.sh
-```
+프로덕션 실관리 접속은 비활성화되어 있습니다. 관리 작업은 로컬 DEV 환경에서
+실행합니다.

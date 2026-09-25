@@ -111,7 +111,7 @@ class LocalDatabase:
         from scripts.stack.__main__ import compose_command, compose_environment
 
         self.root = root
-        self.docker = docker_inventory(root, extreme=False)["docker"]
+        self.docker = docker_inventory(root)["docker"]
         self.command = self.docker + compose_command(root, "prod", [])[1:]
         self.environment = compose_environment(
             "prod", load_local_environment(root / ".env", mode="prod")

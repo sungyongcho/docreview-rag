@@ -14,10 +14,10 @@ from app.api.admin_runtime import RuntimeAdminApiServices
 from app.api.runtime import RuntimeApiServices
 from app.config import get_settings
 from app.db.models import Base
-from app.observability.persistence import REDACTED, persist_run_report
+from app.observability.persistence import REDACTED
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.live_postgres import live_postgres_unavailable
-from tests.observability.support import run_report, step_trace
+from tests.observability.support import persist_run_report, run_report, step_trace
 
 SECRET = "sk-live-test-secret-123456"
 

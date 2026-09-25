@@ -489,13 +489,14 @@ class RuntimeCorpusAdminService:
 
     def _redact(self, text: str) -> str:
         """Remove configured server credentials and recognizable secret syntax."""
-        safe = text
-        for secret in (self._settings.openai_api_key, self._settings.dart_api_key):
-            if secret is not None:
-                value = secret.get_secret_value()
-                if value:
-                    safe = safe.replace(value, "[REDACTED]")
-        return redact_sensitive_text(safe)
+        return redact_sensitive_text(
+            text,
+            secret_values=(
+                secret.get_secret_value()
+                for secret in (self._settings.openai_api_key, self._settings.dart_api_key)
+                if secret is not None and secret.get_secret_value()
+            ),
+        )
 
     async def _schema_state(self) -> tuple[SchemaStatus, str, set[str]]:
         """Inspect compatibility and table presence without creating schema objects."""

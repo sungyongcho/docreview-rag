@@ -423,10 +423,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     return ExitCode.OK
 
 
-def entrypoint() -> None:
-    """Run the installed console script without printing a Python traceback."""
-    raise SystemExit(main())
-
-
 if __name__ == "__main__":
-    entrypoint()
+    raise SystemExit(main())

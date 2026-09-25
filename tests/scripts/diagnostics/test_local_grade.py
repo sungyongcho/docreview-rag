@@ -57,7 +57,6 @@ def test_summary_reads_timings_thinking_and_json_validity():
         "done_reason": "stop",
     }
     run = summarize_run(
-        schema="bounded",
         think=True,
         num_predict=300,
         prompt_chars=9_000,
@@ -69,7 +68,6 @@ def test_summary_reads_timings_thinking_and_json_validity():
     assert run.json_valid is True
     assert (run.grades, run.max_reason_chars) == (1, 7)
     empty = summarize_run(
-        schema="current",
         think=True,
         num_predict=600,
         prompt_chars=9_000,
@@ -84,8 +82,8 @@ def test_summary_reads_timings_thinking_and_json_validity():
     assert empty.json_valid is False
     assert empty.content_chars == 0
     table = render_markdown([run, empty])
-    assert table.splitlines()[0].startswith("| schema |")
-    assert "| current | True | 600 |" in table
+    assert table.splitlines()[0].startswith("| think |")
+    assert any(line.startswith("| True | 600 |") for line in table.splitlines())
 
 
 def test_placement_mirrors_the_inventory_rule():

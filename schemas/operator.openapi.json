@@ -1,21 +1,6 @@
 {
   "components": {
     "schemas": {
-      "BrowserClearedRequest": {
-        "additionalProperties": false,
-        "description": "Identify the exact reset acknowledged by the browser after storage deletion.",
-        "properties": {
-          "operation_id": {
-            "title": "Operation Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "operation_id"
-        ],
-        "title": "BrowserClearedRequest",
-        "type": "object"
-      },
       "CommandResource": {
         "additionalProperties": false,
         "description": "Public command metadata without an editable argv surface.",
@@ -281,28 +266,10 @@
         "title": "ValidationError",
         "type": "object"
       },
-      "WipePreviewRequest": {
-        "additionalProperties": false,
-        "description": "Select the explicit reset mode; ordinary browser requests remain unchanged.",
-        "properties": {
-          "extreme": {
-            "default": false,
-            "title": "Extreme",
-            "type": "boolean"
-          }
-        },
-        "title": "WipePreviewRequest",
-        "type": "object"
-      },
       "WipeStartRequest": {
         "additionalProperties": false,
         "description": "Bind destructive execution to one verified preview and exact confirmation.",
         "properties": {
-          "backup_confirmed": {
-            "default": false,
-            "title": "Backup Confirmed",
-            "type": "boolean"
-          },
           "confirmation": {
             "title": "Confirmation",
             "type": "string"
@@ -569,43 +536,6 @@
         "summary": "Start Wipe"
       }
     },
-    "/wipe/browser-cleared": {
-      "post": {
-        "description": "Record a same-operation browser acknowledgement through existing local auth.",
-        "operationId": "browser_cleared_wipe_browser_cleared_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BrowserClearedRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Browser Cleared"
-      }
-    },
     "/wipe/capability": {
       "get": {
         "description": "Verify all preview prerequisites without acquiring a hold or issuing a token.",
@@ -631,23 +561,6 @@
       "post": {
         "description": "Inspect a local-only reset without changing runtime data.",
         "operationId": "wipe_preview_wipe_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/WipePreviewRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "content": {
@@ -656,16 +569,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Wipe Preview"

@@ -17,7 +17,6 @@ from dotenv import dotenv_values, set_key
 
 from app.db.bootstrap import SchemaDriftError
 from scripts.diagnostics.ollama import diagnose
-from scripts.schema.recreate import run as recreate_schema
 from scripts.schema.status import prepare_schema
 from scripts.stack.__main__ import compose_command, compose_environment, run
 from scripts.stack.environment import load_local_environment
@@ -279,7 +278,7 @@ def start_ready(
         except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError) as error:
             print(f"Startup/readiness blocked: {error}", flush=True)
             print("Read-only diagnostics follow; no model will be loaded or invoked.")
-            diagnose(root, origin, details=True)
+            diagnose(origin, details=True)
             print(
                 "Recovery in this checkout: rag-dev compose down && rag-dev compose up --build -d"
             )
@@ -314,16 +313,8 @@ def handoff(bindings: dict[str, str], *, mode: str = "dev") -> None:
     print("No filings were downloaded and no embedding or answer requests were made.")
 
 
-def _prepare(
-    root: Path,
-    *,
-    mode: str = "dev",
-    reset: bool = False,
-    keep_sources: bool = False,
-    sample: bool = False,
-    timeout: float = 180,
-) -> int:
-    """Guide one local setup, optionally previewing and confirming a host-side clean start."""
+def _prepare(root: Path, *, mode: str = "dev", timeout: float = 180) -> int:
+    """Guide one local setup without replacing existing data."""
     step(1, 5, "Prerequisites", "Check Docker Compose; this step does not change services or data.")
     version = subprocess.check_output(
         ["docker", "compose", "version", "--short"], text=True
@@ -355,45 +346,26 @@ def _prepare(
         if run(mode, ["down"], root=root):
             raise RuntimeError("Stopping this checkout failed; no retry was submitted.") from None
         ensure_database(root, bindings, mode=mode)
-    step(
-        4,
-        5,
-        "Reset preview" if reset else "Schema",
-        "Preview ORM data and selected source scope; deletion requires uppercase Y."
-        if reset
-        else "Inspect compatibility; create schema only in an empty database.",
-    )
-    if reset:
-        outcome = recreate_schema(
-            root, keep_sources=keep_sources, sample=sample, restart_planned=True
-        )
-        if outcome != "succeeded":
-            write_receipt(root, "reset", status=outcome)
-            return 0 if outcome == "cancelled" else 1
-    else:
-        for attempt in range(2):
-            url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{bindings['DB_PORT']}/filing"
-            try:
-                created = asyncio.run(prepare_schema(url))
-                break
-            except (SchemaDriftError, ValueError) as error:
-                print(f"Schema preparation blocked: {error}. Existing data was preserved.")
-                print(
-                    "Inspect: .venv/bin/python -m scripts.schema check\n"
-                    "Preserve this DB: rag-dev schema recover --return-stage index\n"
-                    "A separately confirmed destructive choice is rag-dev schema recreate."
-                )
-                if attempt or not confirm(
-                    "After fixing DB_PORT or compatibility, retry this step?"
-                ):
-                    raise RuntimeError(
-                        "Schema is still blocked; no automatic reset was submitted."
-                    ) from None
-                bindings = configure(root, mode=mode)
-                ensure_database(root, bindings, mode=mode)
-        print(
-            "Empty database schema created." if created else "Existing schema and data preserved."
-        )
+    step(4, 5, "Schema", "Inspect compatibility; create schema only in an empty database.")
+    for attempt in range(2):
+        url = f"postgresql+asyncpg://filing:filing@127.0.0.1:{bindings['DB_PORT']}/filing"
+        try:
+            created = asyncio.run(prepare_schema(url))
+            break
+        except (SchemaDriftError, ValueError) as error:
+            print(f"Schema preparation blocked: {error}. Existing data was preserved.")
+            print(
+                "Inspect: .venv/bin/python -m scripts.schema check\n"
+                "Preserve this DB: rag-dev schema recover --return-stage index\n"
+                "A separately confirmed destructive choice is rag-dev schema recreate."
+            )
+            if attempt or not confirm("After fixing DB_PORT or compatibility, retry this step?"):
+                raise RuntimeError(
+                    "Schema is still blocked; no automatic reset was submitted."
+                ) from None
+            bindings = configure(root, mode=mode)
+            ensure_database(root, bindings, mode=mode)
+    print("Empty database schema created." if created else "Existing schema and data preserved.")
     step(
         5,
         5,
@@ -404,29 +376,19 @@ def _prepare(
     handoff(bindings, mode=mode)
     write_receipt(
         root,
-        "reset" if reset else "start-quick",
+        "start-quick",
         status="succeeded",
         completed=["configuration", "database", "schema", "readiness"],
     )
     return 0
 
 
-def quickstart(
-    root: Path,
-    *,
-    mode: str = "dev",
-    reset: bool = False,
-    keep_sources: bool = False,
-    sample: bool = False,
-    timeout: float = 180,
-) -> int:
+def quickstart(root: Path, *, mode: str = "dev", timeout: float = 180) -> int:
     """Retain one command receipt across success, cancellation, failure and interruption."""
-    name = "reset" if reset else "start-quick"
+    name = "start-quick"
     write_receipt(root, name, status="running", completed=[])
     try:
-        return _prepare(
-            root, mode=mode, reset=reset, keep_sources=keep_sources, sample=sample, timeout=timeout
-        )
+        return _prepare(root, mode=mode, timeout=timeout)
     except (Exception, KeyboardInterrupt) as error:
         write_receipt(
             root,

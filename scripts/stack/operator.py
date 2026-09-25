@@ -126,7 +126,7 @@ class LocalOperator:
             return {"NEXT_PUBLIC_OPERATOR_BASE_URL": "", "NEXT_PUBLIC_OPERATOR_TOKEN": ""}
 
     def client_connection(self) -> tuple[str, str, str]:
-        """Return verified live connection data even after an extreme reset removes .env."""
+        """Return verified live connection data from the recorded state, without reading .env."""
         with self._locked():
             state = self._read()
             if not state or not self._owned(state) or not self._reachable(state):

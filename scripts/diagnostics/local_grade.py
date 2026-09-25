@@ -22,7 +22,7 @@ import httpx
 import tiktoken
 
 from app.llm.estimate import estimate_prompt_tokens
-from app.llm.schemas import NonBlank, Prompt, RelevanceJudgment, StrictSchema
+from app.llm.schemas import Prompt, RelevanceJudgment
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.workflow.prompts import build_grade_prompt
 from app.workflow.types import DEFAULT_SYSTEM_PROMPT, WorkflowState
@@ -34,31 +34,10 @@ KOREAN_SAMPLE = (
 )
 
 
-class _UnboundedChunkRelevance(StrictSchema):
-    """The grade schema before rationale length was bounded (kept for comparison)."""
-
-    chunk_id: int
-    relevant: bool
-    reason: NonBlank
-
-
-class _UnboundedJudgment(StrictSchema):
-    """Container matching the pre-change grade schema."""
-
-    grades: tuple[_UnboundedChunkRelevance, ...]
-
-
-SCHEMAS: dict[str, type[StrictSchema]] = {
-    "bounded": RelevanceJudgment,
-    "current": _UnboundedJudgment,
-}
-
-
 @dataclass(frozen=True, slots=True)
 class GradeRun:
     """One measured grade call."""
 
-    schema: str
     think: bool
     num_predict: int
     prompt_chars: int
@@ -116,7 +95,6 @@ def classify_placement(size: int | None, size_vram: int | None) -> str:
 
 def summarize_run(
     *,
-    schema: str,
     think: bool,
     num_predict: int,
     prompt_chars: int,
@@ -137,15 +115,13 @@ def summarize_run(
     valid = False
     if content:
         try:
-            parsed = SCHEMAS[schema].model_validate_json(content)
+            rows = RelevanceJudgment.model_validate_json(content).grades
             valid = True
-            rows = list(getattr(parsed, "grades", ()))
             grades = len(rows)
             max_reason = max((len(row.reason) for row in rows), default=0)
         except ValueError:
             valid = False
     return GradeRun(
-        schema=schema,
         think=think,
         num_predict=num_predict,
         prompt_chars=prompt_chars,
@@ -170,13 +146,13 @@ def summarize_run(
 def render_markdown(runs: list[GradeRun]) -> str:
     """Render the grade runs as one Markdown table."""
     lines = [
-        "| schema | think | num_predict | prompt tok | prompt tok/s | out tok | gen tok/s "
+        "| think | num_predict | prompt tok | prompt tok/s | out tok | gen tok/s "
         "| load ms | total s | done | thinking chars | JSON | grades | max reason |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for run in runs:
         lines.append(
-            f"| {run.schema} | {run.think} | {run.num_predict} | {run.prompt_eval_count} "
+            f"| {run.think} | {run.num_predict} | {run.prompt_eval_count} "
             f"| {run.prompt_eval_tps} | {run.eval_count} | {run.eval_tps} | {run.load_ms} "
             f"| {run.total_s} | {run.done_reason} | {run.thinking_chars} | {run.json_valid} "
             f"| {run.grades} | {run.max_reason_chars} |"
@@ -208,7 +184,7 @@ def _chat(
 
 
 def _payload(
-    model: str, prompt: Prompt, *, schema: str, think: bool, num_predict: int, num_ctx: int
+    model: str, prompt: Prompt, *, think: bool, num_predict: int, num_ctx: int
 ) -> dict[str, Any]:
     """Build the ``/api/chat`` request the provider would send, with the chosen knobs."""
     return {
@@ -217,7 +193,7 @@ def _payload(
             {"role": "system", "content": prompt.system},
             {"role": "user", "content": prompt.user},
         ],
-        "format": SCHEMAS[schema].model_json_schema(),
+        "format": RelevanceJudgment.model_json_schema(),
         "stream": False,
         "think": think,
         "options": {"num_predict": num_predict, "num_ctx": num_ctx, "temperature": 0},
@@ -286,7 +262,6 @@ def main() -> int:
     parser.add_argument("--query", default=DEFAULT_QUERY)
     parser.add_argument("--max-context-chars", type=int, default=12_000)
     parser.add_argument("--num-predict", default="600,300", help="comma-separated values")
-    parser.add_argument("--schema", default="current,bounded", help="comma-separated schemas")
     parser.add_argument("--think", default="true,false", help="comma-separated booleans")
     parser.add_argument("--num-ctx", type=int, default=12_600)
     parser.add_argument("--repeat", type=int, default=1)
@@ -334,37 +309,34 @@ def main() -> int:
         thinks = [
             value.strip().lower() == "true" for value in args.think.split(",") if value.strip()
         ]
-        for schema in [value.strip() for value in args.schema.split(",") if value.strip()]:
-            for think in thinks:
-                for num_predict in [
-                    int(value) for value in args.num_predict.split(",") if value.strip()
-                ]:
-                    for _ in range(args.repeat):
-                        payload = _payload(
-                            args.model,
-                            prompt,
-                            schema=schema,
-                            think=think,
-                            num_predict=num_predict,
-                            num_ctx=args.num_ctx,
-                        )
-                        body, elapsed, error = _chat(client, args.ollama_url, payload)
-                        run = summarize_run(
-                            schema=schema,
-                            think=think,
-                            num_predict=num_predict,
-                            prompt_chars=result["prompt"]["chars"],
-                            response=body,
-                            total_s=elapsed,
-                            error=error,
-                        )
-                        runs.append(run)
-                        print(
-                            f"  {schema} think={think} num_predict={num_predict}: "
-                            f"{run.total_s}s out={run.eval_count} valid={run.json_valid} "
-                            f"thinking={run.thinking_chars}",
-                            file=sys.stderr,
-                        )
+        for think in thinks:
+            for num_predict in [
+                int(value) for value in args.num_predict.split(",") if value.strip()
+            ]:
+                for _ in range(args.repeat):
+                    payload = _payload(
+                        args.model,
+                        prompt,
+                        think=think,
+                        num_predict=num_predict,
+                        num_ctx=args.num_ctx,
+                    )
+                    body, elapsed, error = _chat(client, args.ollama_url, payload)
+                    run = summarize_run(
+                        think=think,
+                        num_predict=num_predict,
+                        prompt_chars=result["prompt"]["chars"],
+                        response=body,
+                        total_s=elapsed,
+                        error=error,
+                    )
+                    runs.append(run)
+                    print(
+                        f"  think={think} num_predict={num_predict}: "
+                        f"{run.total_s}s out={run.eval_count} valid={run.json_valid} "
+                        f"thinking={run.thinking_chars}",
+                        file=sys.stderr,
+                    )
         result["runs"] = [asdict(run) for run in runs]
         ps = client.get(f"{args.ollama_url}/api/ps").json()
         loaded = next((m for m in ps.get("models", []) if m.get("name") == args.model), loaded)

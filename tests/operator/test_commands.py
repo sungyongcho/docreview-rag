@@ -2,7 +2,23 @@
 
 from pathlib import Path
 
-from app.operator.commands import COMMANDS, render_commands_markdown
+from app.operator.commands import COMMANDS
+
+
+def _render_commands_markdown() -> str:
+    """Render the archived README command table from the executable registry."""
+    lines = [
+        "| ID | Target | Command | Purpose | Confirmation |",
+        "|---|---|---|---|---|",
+    ]
+    for command in COMMANDS.values():
+        argv = " ".join(command.argv).replace("|", "\\|")
+        confirmation = "required" if command.confirmation else "no"
+        lines.append(
+            f"| `{command.command_id}` | {command.target.capitalize()} | `{argv}` | "
+            f"{command.description} | {confirmation} |"
+        )
+    return "\n".join(lines)
 
 
 def test_command_registry_contains_only_fixed_non_destructive_argv():
@@ -31,14 +47,6 @@ def test_command_registry_contains_only_fixed_non_destructive_argv():
     )
 
 
-def test_markdown_renderer_is_derived_from_the_registry():
-    """Render every executable command into one stable README table."""
-    rendered = render_commands_markdown()
-    assert rendered.count("\n|") == len(COMMANDS) + 1
-    assert "`.venv/bin/python scripts/release/web_build.py`" in rendered
-    assert "`docker compose --project-directory . -f docker/docker-compose.yml stop db`" in rendered
-
-
 def test_readme_command_table_matches_the_executable_registry():
     """Fail when documented buttons drift from the host command registry."""
     readme = Path("docs/README_archive.md").read_text(encoding="utf-8")
@@ -50,4 +58,4 @@ def test_readme_command_table_matches_the_executable_registry():
         )[0]
         .strip()
     )
-    assert documented == render_commands_markdown()
+    assert documented == _render_commands_markdown()

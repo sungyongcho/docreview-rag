@@ -1,8 +1,13 @@
-"""Shared step-trace and run-report builders for the observability tests."""
+"""Shared step-trace, run-report and persistence helpers for the observability tests."""
 
+from collections.abc import Iterable
 from decimal import Decimal
 
-from app.observability.types import StepTrace, build_run_report
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import Run
+from app.observability.persistence import persist_run_records, report_to_records
+from app.observability.types import RunReport, StepTrace, build_run_report
 
 
 def step_trace(**overrides):
@@ -39,3 +44,11 @@ def run_report(*, steps=None, **overrides):
     }
     values.update(overrides)
     return build_run_report(**values)
+
+
+async def persist_run_report(
+    session: AsyncSession, report: RunReport, *, secret_values: Iterable[str] = ()
+) -> Run:
+    """Map one report to secret-safe records and flush them in the caller's transaction."""
+    run, traces = report_to_records(report, secret_values=secret_values)
+    return await persist_run_records(session, run, traces)

@@ -215,7 +215,6 @@ def run(
     *,
     keep_sources: bool = False,
     sample: bool = False,
-    restart_planned: bool = False,
 ) -> Literal["cancelled", "succeeded", "incomplete"]:
     """Require exact interactive approval before stopping the API or changing any table."""
     if not sys.stdin.isatty():
@@ -255,11 +254,7 @@ def run(
         + "Preserved: code, .env, evaluation exports, unrelated tables, "
         "the database volume and host Ollama. Dependent unknown objects cause rollback."
     )
-    print(
-        "The API stops after confirmation. Guided setup rebuilds/starts it after success."
-        if restart_planned
-        else "The local API will stop after confirmation and is not restarted automatically."
-    )
+    print("The local API will stop after confirmation and is not restarted automatically.")
     expires = time.monotonic() + 300
     if not confirm("Confirm this entire irreversible preview?"):
         print("Cancelled; nothing changed.")
@@ -358,11 +353,7 @@ def run(
             else "Downloaded sources and manifest source entries cleared. "
         )
         + "Code, .env, exports, unrelated tables and volume preserved. "
-        + (
-            "Guided setup will now rebuild/start DEV and verify readiness. "
-            if restart_planned
-            else "Run rag-dev start, then re-check Build and repeat data preparation. "
-        )
+        + "Run rag-dev start, then re-check Build and repeat data preparation. "
         + "No paid work was started."
     )
     return "succeeded"

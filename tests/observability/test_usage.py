@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.admin_runtime import RuntimeAdminApiServices
 from app.db.models import Base, OperatorJob, Trace
-from app.observability.persistence import persist_run_report
 from app.observability.usage import (
     USAGE_KEY,
     merge_usage,
@@ -20,7 +19,7 @@ from app.observability.usage import (
     review_usage,
     usage_record,
 )
-from tests.observability.support import run_report, step_trace
+from tests.observability.support import persist_run_report, run_report, step_trace
 
 
 @pytest.mark.parametrize(

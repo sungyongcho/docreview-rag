@@ -68,8 +68,6 @@ class WipeService:
         """Keep confirmation state outside the database being reset."""
         self.root = root.resolve()
         self.busy = busy
-        self._extreme = False
-        self._browser_ack = asyncio.Event()
         self._preview: dict[str, Any] | None = None
         self.lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
@@ -88,7 +86,7 @@ class WipeService:
             raise WipeError("Reset audit path must not be a symbolic link")
         if self._audit.exists():
             recorded = json.loads(self._audit.read_text())
-            self._result = recorded.get("result", recorded)
+            self._result = recorded["result"]
             if recorded.get("lease"):
                 self._lease = tuple(recorded["lease"])
                 self._lease_instance = recorded["lease_instance"]
@@ -273,18 +271,6 @@ class WipeService:
             raise WipeError("Runtime files could not be fully enumerated") from error
 
         names = ["data/corpus", "data/eval_runs", "data/local-settings"]
-        if self._extreme:
-            names += [
-                "build",
-                "dist",
-                "web/.next",
-                "web/out",
-                "web/.tutorial",
-                "web/public/tutorial-assets",
-                ".pytest_cache",
-                ".ruff_cache",
-            ]
-            candidates.extend(self.root.glob(".env*"))
         for name in names:
             directory = self.root / name
             if not directory.exists():
@@ -292,16 +278,12 @@ class WipeService:
             if directory.is_symlink() or directory.resolve() != directory.absolute():
                 raise WipeError(f"Runtime directory contains a symbolic link: {name}")
             for parent, directories, filenames in os.walk(directory, onerror=inaccessible):
-                if self._extreme and (".git" in directories or ".git" in filenames):
-                    raise WipeError("Extreme runtime inventory contains a nested Git repository")
                 if any((Path(parent) / child).is_symlink() for child in directories):
                     raise WipeError(f"Runtime directory contains a symbolic link: {name}")
                 candidates.extend(
                     path
                     for filename in filenames
-                    if self._extreme
-                    or name != "data/corpus"
-                    or Path(filename).suffix in {".html", ".xml", ".zip"}
+                    if name != "data/corpus" or Path(filename).suffix in {".html", ".xml", ".zip"}
                     for path in (Path(parent) / filename,)
                 )
         result = []
@@ -314,8 +296,6 @@ class WipeService:
             if path.is_symlink() or path.resolve() != path.absolute():
                 raise WipeError(f"Runtime path contains a symbolic link: {relative}")
             if not path.is_file():
-                if self._extreme:
-                    raise WipeError(f"Unsupported extreme runtime entry: {relative}")
                 continue
             if not os.access(path.parent, os.W_OK | os.X_OK, effective_ids=True):
                 raise self._permission_error(path, operation="remove")
@@ -395,7 +375,7 @@ except urllib.error.HTTPError as error:
             if argument.startswith("--workers=") and argument != "--workers=1":
                 raise WipeError("Reset requires one application worker")
 
-    async def inspect(self, *, details: bool = True) -> dict[str, Any]:
+    async def inspect(self) -> dict[str, Any]:
         """Reject nonlocal targets and active work before exposing a deletion preview."""
         if self.busy():
             raise WipeError(
@@ -512,15 +492,11 @@ except urllib.error.HTTPError as error:
         ):
             raise WipeError("Development Compose configuration differs from the reset target")
         tables = (
-            (
-                await self._sql(
-                    database["Id"],
-                    "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename",
-                )
-            ).split()
-            if details
-            else []
-        )
+            await self._sql(
+                database["Id"],
+                "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename",
+            )
+        ).split()
         counts = {}
         for table in tables:
             if not table.replace("_", "").isalnum():
@@ -559,7 +535,7 @@ except urllib.error.HTTPError as error:
             raise WipeError("Start the development app before inspecting its request activity")
         else:
             instance = self._lease_instance
-            if details and int(
+            if int(
                 await self._sql(
                     database["Id"],
                     "SELECT count(*) FROM pg_stat_activity WHERE datname='filing' "
@@ -567,10 +543,8 @@ except urllib.error.HTTPError as error:
                 )
             ):
                 raise WipeError("Close other database clients before resetting")
-        tracked = set((await self._run("git", "ls-files", "-z")).split("\0")) if details else set()
-        extra = await self._extreme_targets() if self._extreme else {}
+        tracked = set((await self._run("git", "ls-files", "-z")).split("\0"))
         return {
-            **extra,
             "project": self.root.name,
             "daemon": daemon,
             "compose_sha256": hashlib.sha256(compose_json.encode()).hexdigest(),
@@ -580,124 +554,8 @@ except urllib.error.HTTPError as error:
             "volume": volume,
             "port": port,
             "tables": counts,
-            "files": self._files(tracked) if details else [],
+            "files": self._files(tracked),
         }
-
-    async def _extreme_targets(self) -> dict[str, Any]:
-        """Bind extra containers and cache volumes to this checkout and local daemon."""
-        ids = (
-            await self._run(
-                "docker",
-                "ps",
-                "-aq",
-                "--no-trunc",
-                "--filter",
-                f"label=com.docker.compose.project={self.root.name}",
-            )
-        ).split()
-        containers = []
-        volumes = set()
-        for identity in ids:
-            row = json.loads(await self._run("docker", "inspect", identity))[0]
-            labels = row["Config"]["Labels"]
-            if Path(
-                labels.get("com.docker.compose.project.working_dir", "")
-            ).resolve() != self.root or labels.get("com.docker.compose.service") not in {
-                "db",
-                "app",
-                "web",
-            }:
-                raise WipeError("Extreme reset found an unexpected project container")
-            containers.append(identity)
-            for mount in row["Mounts"]:
-                if mount["Type"] == "volume":
-                    volumes.add(mount["Name"])
-        # Include stopped/unmounted project cache volumes, but never external volumes.
-        volumes.update(
-            (
-                await self._run(
-                    "docker",
-                    "volume",
-                    "ls",
-                    "-q",
-                    "--filter",
-                    f"label=com.docker.compose.project={self.root.name}",
-                )
-            ).split()
-        )
-        for name in volumes:
-            row = json.loads(await self._run("docker", "volume", "inspect", name))[0]
-            labels = row.get("Labels") or {}
-            if (
-                labels.get("com.docker.compose.project") != self.root.name
-                or labels.get("com.docker.compose.volume")
-                not in {"pg_data", "web_next", "web_node_modules"}
-                or row.get("Driver") != "local"
-                or row.get("Options")
-            ):
-                raise WipeError("Extreme reset found a nonlocal or unexpected volume")
-            users = set(
-                (
-                    await self._run(
-                        "docker", "ps", "-aq", "--no-trunc", "--filter", f"volume={name}"
-                    )
-                ).split()
-            )
-            if not users.issubset(containers):
-                raise WipeError("A project volume is also used by an unrelated container")
-        return {"extra_containers": sorted(containers), "extra_volumes": sorted(volumes)}
-
-    def acknowledge_browser(self, operation_id: str, origin: str) -> dict[str, Any]:
-        """Accept browser completion only for the live extreme operation waiting for it."""
-        if (
-            self._result.get("id") != operation_id
-            or not self._result.get("extreme")
-            or self._result.get("status") != "running"
-            or self._result.get("stage") != "awaiting_browser"
-        ):
-            raise WipeError("Browser acknowledgement does not match a waiting extreme reset")
-        self._result.update(browser_cleared=True, browser_origin=origin)
-        self._persist()
-        self._browser_ack.set()
-        return {"acknowledged": True, "id": operation_id}
-
-    async def _execute_extreme(self, target: dict[str, Any]) -> None:
-        """Remove only revalidated preview targets, leaving services stopped and no new config."""
-        self._stage("extreme_stop")
-        if await self._extreme_targets() != {
-            key: target[key] for key in ("extra_containers", "extra_volumes")
-        }:
-            raise WipeError("Extreme Docker targets changed; no local data was deleted")
-        for identity in target["extra_containers"]:
-            await self._run("docker", "stop", identity)
-        # Containers must release cache and database volumes before removal.
-        for identity in target["extra_containers"]:
-            await self._run("docker", "rm", identity)
-        self._stage("extreme_volumes")
-        self._result["removed_volumes"] = []
-        for name in target["extra_volumes"]:
-            await self._run("docker", "volume", "rm", name)
-            self._result["removed_volumes"].append(name)
-            self._persist()
-        self._result["completed"].append("database_removed")
-        self._stage("runtime_files")
-        self._result["removed_files"] = 0
-        for item in target["files"]:
-            self._remove_file(item)
-            self._result["removed_files"] += 1
-            self._persist()
-        tracked = set((await self._run("git", "ls-files", "-z")).split("\0"))
-        if self._files(tracked):
-            raise WipeError("Extreme reset incomplete: runtime files remain")
-        remaining = await self._extreme_targets()
-        if remaining["extra_containers"] or remaining["extra_volumes"]:
-            raise WipeError("Extreme reset incomplete: project Docker resources remain")
-        self._result["completed"].extend(["runtime_files_removed", "extreme_complete"])
-        self._result.update(
-            status="succeeded",
-            stage="complete",
-            message="Previewed local runtime cleared; services remain stopped",
-        )
 
     async def capability(self) -> dict[str, Any]:
         """Verify every preview prerequisite without issuing a token or changing runtime data."""
@@ -744,22 +602,21 @@ except urllib.error.HTTPError as error:
             )
         ).strip()
 
-    async def preview(self, *, extreme: bool = False) -> dict[str, Any]:
+    async def preview(self) -> dict[str, Any]:
         """Issue one confirmation token for the current target, valid for five minutes."""
         async with self.lock:
             if self._task and not self._task.done():
                 raise WipeError("Reset is already running")
             if self._lease is not None:
                 raise WipeError("Release the interrupted reset hold before requesting a preview")
-            self._extreme = extreme
             target = await self.inspect()
             self._preview = {"token": str(uuid4()), "expires": time.time() + 300, "target": target}
             return {
                 **self._preview,
-                "confirmation": f"{'EXTREME' if self._extreme else 'WIPE'} {self.root.name}",
+                "confirmation": f"WIPE {self.root.name}",
                 "preserved": [
                     "Code and Git files",
-                    "External credentials" if self._extreme else ".env and keys",
+                    ".env and keys",
                     "Tutorials and images",
                     "Manifest, golden, and profile sources",
                     "Unrelated files",
@@ -767,18 +624,14 @@ except urllib.error.HTTPError as error:
                 "backup": False,
             }
 
-    async def start(
-        self, token: str, confirmation: str, *, backup_confirmed: bool = False
-    ) -> dict[str, Any]:
+    async def start(self, token: str, confirmation: str) -> dict[str, Any]:
         """Consume an unchanged preview once, then execute the reset asynchronously."""
         async with self.lock:
             preview = self._preview
             if not preview or token != preview["token"] or time.time() > preview["expires"]:
                 raise WipeError("Reset preview is missing or expired")
-            if confirmation != f"{'EXTREME' if self._extreme else 'WIPE'} {self.root.name}":
+            if confirmation != f"WIPE {self.root.name}":
                 raise WipeError("Confirmation text does not match")
-            if self._extreme and not backup_confirmed:
-                raise WipeError("Extreme reset requires the separate backup confirmation")
             self._acquire_operation()
             try:
                 target = await self.inspect()
@@ -795,9 +648,7 @@ except urllib.error.HTTPError as error:
                 "stage": "starting",
                 "completed": [],
                 "message": "Reset started; no backup will be made",
-                "extreme": self._extreme,
             }
-            self._browser_ack.clear()
             try:
                 self._persist()
                 self._task = asyncio.create_task(self._execute(target))
@@ -934,14 +785,6 @@ except urllib.error.HTTPError as error:
     async def _execute(self, target: dict[str, Any]) -> None:
         """Reset one explicit volume and allowlisted files, reporting partial failures."""
         try:
-            if self._extreme:
-                self._stage("awaiting_browser")
-                try:
-                    await asyncio.wait_for(self._browser_ack.wait(), 300)
-                except TimeoutError:
-                    raise WipeError(
-                        "Browser deletion was not acknowledged; local data unchanged"
-                    ) from None
             await self._run(
                 str(self.root / ".venv/bin/python"),
                 "-c",
@@ -975,9 +818,6 @@ except urllib.error.HTTPError as error:
                 or hashlib.sha256(compose_json.encode()).hexdigest() != target["compose_sha256"]
             ):
                 raise WipeError("The verified Compose configuration is unavailable")
-            if self._extreme:
-                await self._execute_extreme(target)
-                return
             self._stage("database_volume")
             await self._run("docker", "stop", target["database_container"])
             await self._run("docker", "rm", target["database_container"])

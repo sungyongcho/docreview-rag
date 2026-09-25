@@ -7,8 +7,8 @@ packages. Schema preparation lives in `scripts.schema.status`; Quick Start calls
 | Package | Entry points and ownership |
 |---|---|
 | `schema` | `python -m scripts.schema check\|prepare\|recover\|recreate`; `status.py` owns inspection/preparation, `recovery.py` isolated recovery, `recreate.py` confirmed recreation, `sources.py` source journals |
-| `stack` | `python -m scripts.stack dev\|prod [COMPOSE_ARGS...]`; `environment.py` validates bindings, `operator.py` manages host Operations, `commands.py` implements `reset` and `corpus` |
-| `stack` setup | `bash scripts/stack/quickstart.sh` bootstraps the locked Python environment then runs `python -m scripts.stack.cli MODE start`; `scripts/stack/operator_web.sh` configures the SSH-tunnel web UI |
+| `stack` | `python -m scripts.stack dev\|prod [COMPOSE_ARGS...]`; `environment.py` validates bindings, `operator.py` manages host Operations, `commands.py` implements `corpus` and reset status |
+| `stack` setup | `bash scripts/stack/quickstart.sh` bootstraps the locked Python environment then runs `python -m scripts.stack.cli MODE start` |
 | `diagnostics` | `python -m scripts.diagnostics.ollama` checks model connectivity; `python -m scripts.diagnostics.readiness` measures health/readiness during ingestion; `python -m scripts.diagnostics.local_grade` runs the explicit local-model benchmark |
 | `release` | `python -m scripts.release.api_schema [--check]`, `python -m scripts.release.web_build`, `python -m scripts.release.container_startup IMAGE PORT`, `bash scripts/release/clean_checkout.sh` |
 | `deploy` | `FIREBASE_PROJECT_ID=<project-id> scripts/deploy/firebase.sh` builds, stages and publishes Firebase Hosting in one command |
