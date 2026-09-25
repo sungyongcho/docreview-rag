@@ -74,49 +74,43 @@ class Settings(DotenvFirstSettings):
     bm25_k1: float = Field(default=DEFAULT_BM25_K1, gt=0, allow_inf_nan=False)
     bm25_b: float = Field(default=DEFAULT_BM25_B, ge=0, le=1, allow_inf_nan=False)
     bm25_idf: BM25Idf = DEFAULT_BM25_IDF
-    # The review workflow stays fail-closed (typed 503) until a model is named. Pricing
-    # is required with the model because the provider budget cannot estimate cost
-    # without it, and a guessed price would silently misreport spend.
+    # The review workflow stays fail-closed (typed 503) until a model is named. The
+    # model policy supplies the price, so the provider budget never estimates cost from a
+    # guessed or manually configured value.
     review_model: str | None = None
     review_max_input_tokens: int = Field(default=60_000, gt=0)
     review_max_output_tokens: int = Field(default=4_000, gt=0)
     review_max_cost_usd: Decimal = Field(default=Decimal("0.50"), ge=0)
-    review_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
-    review_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     local_llm_base_url: str | None = Field(
         default=DEFAULT_LOCAL_BASE_URL,
-        validation_alias=AliasChoices("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"),
+        validation_alias="LOCAL_LLM_BASE_URL",
     )
     local_llm_source: Literal["environment", "dotenv", "default"] = Field(
         default="default", validation_alias="local_llm_source", exclude=True
     )
     local_llm_protocol: Literal["auto", "openai_responses", "ollama"] = Field(
         default="auto",
-        validation_alias=AliasChoices("LOCAL_LLM_PROTOCOL", "DOCREVIEW_LOCAL_LLM_PROTOCOL"),
+        validation_alias="LOCAL_LLM_PROTOCOL",
     )
     local_llm_api_key: SecretStr | None = Field(
         default=None,
-        validation_alias=AliasChoices("LOCAL_LLM_API_KEY", "DOCREVIEW_LOCAL_LLM_API_KEY"),
+        validation_alias="LOCAL_LLM_API_KEY",
     )
     local_llm_max_input_tokens: int = Field(
         default=12_000,
         gt=0,
-        validation_alias=AliasChoices(
-            "LOCAL_LLM_MAX_INPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_INPUT_TOKENS"
-        ),
+        validation_alias="LOCAL_LLM_MAX_INPUT_TOKENS",
     )
     local_llm_max_output_tokens: int = Field(
         default=600,
         gt=0,
-        validation_alias=AliasChoices(
-            "LOCAL_LLM_MAX_OUTPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_OUTPUT_TOKENS"
-        ),
+        validation_alias="LOCAL_LLM_MAX_OUTPUT_TOKENS",
     )
     local_llm_timeout_s: float = Field(
         default=DEFAULT_LOCAL_TIMEOUT_S,
         gt=0,
         le=600,
-        validation_alias=AliasChoices("LOCAL_LLM_TIMEOUT_S", "DOCREVIEW_LOCAL_LLM_TIMEOUT_S"),
+        validation_alias="LOCAL_LLM_TIMEOUT_S",
     )
 
     @field_validator("embed_dim", mode="before")
@@ -201,13 +195,8 @@ class Settings(DotenvFirstSettings):
 
     @model_validator(mode="after")
     def require_review_configuration(self) -> Self:
-        """Require the key and both prices whenever a review model is configured."""
+        """Require the key and a policy-approved model whenever a review model is configured."""
         if self.review_model is None:
-            if (
-                self.review_input_price_per_million_usd is not None
-                or self.review_output_price_per_million_usd is not None
-            ):
-                raise ValueError("manual review pricing was removed; model policy owns prices")
             return self
         if not self.review_model.strip():
             raise ValueError("REVIEW_MODEL must not be blank when set")
@@ -216,11 +205,6 @@ class Settings(DotenvFirstSettings):
                 "The MODE-selected OpenAI key slot is required when REVIEW_MODEL is set"
             )
         resolve_openai_model("review", self.review_model)
-        if (
-            self.review_input_price_per_million_usd is not None
-            or self.review_output_price_per_million_usd is not None
-        ):
-            raise ValueError("manual review pricing was removed; model policy owns prices")
         return self
 
 

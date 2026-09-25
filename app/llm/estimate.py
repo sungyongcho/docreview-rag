@@ -69,13 +69,3 @@ def estimate_prompt_tokens(prompt: Prompt, *, model_name: str) -> int | None:
     system = len(encoding.encode(prompt.system, disallowed_special=()))
     user = len(encoding.encode(prompt.user, disallowed_special=()))
     return system + user + FRAMING_TOKENS
-
-
-def exceeds_allowance(projected: int, allowance: int) -> bool:
-    """Return whether the projection does not fit the remaining allowance.
-
-    The comparison uses the configured allowance as-is: estimation uncertainty is not
-    turned into extra budget. The fallback encoding undercounts rather than overcounts,
-    so a projection that slips through still meets the post-hoc usage check.
-    """
-    return projected > allowance

@@ -388,31 +388,6 @@ class LocalConnectionManager:
         self._selected_server_id = server.id
         self._active = candidate
 
-    async def connect(self, base_url: str, protocol: LocalProtocol = "auto") -> dict[str, Any]:
-        """Verify a candidate, then persist and activate it without replacing on failure."""
-        self._require_enabled()
-        async with self._lock:
-            normalized = validate_base_url(base_url)
-            server = next(
-                (
-                    item
-                    for item in (self._default_server(), *self._servers)
-                    if item.base_url == normalized and item.protocol == protocol
-                ),
-                None,
-            )
-            servers = self._servers
-            if server is None:
-                name = "Saved server"
-                index = 2
-                while any(item.name.casefold() == name.casefold() for item in servers):
-                    name = f"Saved server {index}"
-                    index += 1
-                server = LocalServer(str(uuid4()), name, normalized, protocol)
-                servers = (*servers, server)
-            await self._activate(server, servers)
-        return await self.state()
-
     async def add_server(
         self, name: str, base_url: str, protocol: LocalProtocol = "auto"
     ) -> dict[str, Any]:

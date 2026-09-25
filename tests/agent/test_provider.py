@@ -124,8 +124,8 @@ def test_provider_turn_rejects_duplicate_call_ids():
         turn(tool_calls=(duplicate, duplicate))
 
 
-def test_openai_adapter_wires_base_url_and_disables_hidden_sdk_retries(monkeypatch):
-    """Send traffic to the configured endpoint, retries off, and record it as provenance."""
+def test_openai_adapter_disables_hidden_sdk_retries_and_records_the_client_url(monkeypatch):
+    """Build the owned client with retries off and record its resolved URL as provenance."""
     captured = {}
 
     class FakeClient:
@@ -140,18 +140,11 @@ def test_openai_adapter_wires_base_url_and_disables_hidden_sdk_retries(monkeypat
     module = sys.modules[OpenAIToolProvider.__module__]
     monkeypatch.setattr(module, "AsyncOpenAI", FakeClient)
 
-    provider = OpenAIToolProvider(
-        model_name="gpt-5.6-terra",
-        api_key="sk-test",
-        base_url="https://gateway.example/v1",
-    )
+    provider = OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
 
     assert captured["max_retries"] == 0
-    assert captured["base_url"] == "https://gateway.example/v1"
-    assert provider.api_url == "https://gateway.example/v1/responses"
-
-    OpenAIToolProvider(model_name="gpt-5.6-terra", api_key="sk-test")
-    assert captured["base_url"] is None
+    assert "base_url" not in captured
+    assert provider.api_url == "https://api.openai.com/v1/responses"
 
 
 def test_openai_adapter_closes_only_the_client_it_owns(monkeypatch):

@@ -46,7 +46,9 @@ def connection_app(tmp_path, environment="dev", admin_mode="live", admin_cors_or
     return create_release_app(settings, services=runtime), manager
 
 
-def test_connection_routes_save_disconnect_reset_and_preserve_failed_candidate(tmp_path) -> None:
+def test_connection_routes_save_disconnect_restore_default_and_preserve_failed_candidate(
+    tmp_path,
+) -> None:
     """The web receives one stable contract for every successful connection action."""
     app, manager = connection_app(tmp_path)
     with TestClient(app) as client:
@@ -62,21 +64,25 @@ def test_connection_routes_save_disconnect_reset_and_preserve_failed_candidate(t
             "servers",
             "selected_server_id",
         }
-        saved = client.post("/admin/local-llm/connection", json={"base_url": "http://working"})
+        saved = client.post(
+            "/admin/local-llm/servers", json={"name": "Working", "base_url": "http://working"}
+        )
         assert saved.status_code == 200
         assert saved.json()["source"] == "saved"
         assert saved.json()["local"]["reason"] == "no_answer_models"
         old = manager.current
-        failure = client.post("/admin/local-llm/connection", json={"base_url": "http://offline"})
+        failure = client.post(
+            "/admin/local-llm/servers", json={"name": "Offline", "base_url": "http://offline"}
+        )
         assert failure.status_code == 503
         assert "private-address" not in failure.text
         assert manager.current is old
         disabled = client.post("/admin/local-llm/disconnect")
         assert disabled.status_code == 200
         assert disabled.json()["source"] == "disabled"
-        reset = client.post("/admin/local-llm/reset")
-        assert reset.status_code == 200
-        assert reset.json()["source"] == "default"
+        restored = client.post("/admin/local-llm/select", json={"server_id": "default"})
+        assert restored.status_code == 200
+        assert restored.json()["source"] == "default"
 
 
 def test_public_header_hides_capabilities_and_blocks_admin_reads_and_changes(tmp_path) -> None:
@@ -151,9 +157,7 @@ def test_legacy_review_limits_cannot_bypass_public_controls(tmp_path, field, val
     assert response.json()["error"]["code"] == "capability_disabled"
 
 
-@pytest.mark.parametrize(
-    "action", ["connection", "disconnect", "reset", "servers", "select", "diagnostics"]
-)
+@pytest.mark.parametrize("action", ["disconnect", "servers", "select", "diagnostics"])
 @pytest.mark.parametrize("origin", ["https://unrelated.example", "null", "http://localhost:9001"])
 def test_browser_origin_blocks_every_local_connection_mutation(tmp_path, action, origin) -> None:
     """Simple cross-origin requests are rejected before changing active or saved settings."""
@@ -161,7 +165,7 @@ def test_browser_origin_blocks_every_local_connection_mutation(tmp_path, action,
     with TestClient(app, base_url="http://app:8000") as client:
         assert (
             client.post(
-                "/admin/local-llm/connection", json={"base_url": "http://working"}
+                "/admin/local-llm/servers", json={"name": "Working", "base_url": "http://working"}
             ).status_code
             == 200
         )
@@ -227,10 +231,8 @@ def test_forwarded_host_alone_cannot_authorize_a_browser_origin(tmp_path) -> Non
     assert manager.current is previous
 
 
-def test_named_server_and_diagnostic_routes_preserve_existing_clients_and_selection(
-    tmp_path,
-) -> None:
-    """Named routes preserve legacy saves and the safe metadata contract."""
+def test_named_server_and_diagnostic_routes_preserve_the_selection(tmp_path) -> None:
+    """Named server routes keep the selection and the safe metadata contract."""
     app, manager = connection_app(tmp_path)
     with TestClient(app) as client:
         added = client.post(
@@ -262,8 +264,6 @@ def test_named_server_and_diagnostic_routes_preserve_existing_clients_and_select
             client.post("/admin/local-llm/select", json={"server_id": "default"}).status_code == 200
         )
         assert manager.current.source == "default"
-        saved = client.post("/admin/local-llm/connection", json={"base_url": "http://legacy"})
-        assert saved.status_code == 200 and len(saved.json()["servers"]) == 3
 
 
 @pytest.mark.parametrize(

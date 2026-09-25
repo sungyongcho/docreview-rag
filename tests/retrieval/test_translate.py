@@ -7,7 +7,6 @@ from typing import Any, cast
 from pydantic import ValidationError
 import pytest
 
-from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.retrieval.language import QueryLanguage
 from app.retrieval.translate import (
@@ -16,6 +15,7 @@ from app.retrieval.translate import (
     route_query,
     translate_query,
 )
+from tests.llm.support import DeterministicLLMProvider
 
 KOREAN_QUERY = "AMD는 TSMC와 관련하여 어떤 7nm 공급 위험을 밝혔습니까?"
 ENGLISH_QUERY = "What specific 7 nm supply risk did AMD identify involving TSMC?"

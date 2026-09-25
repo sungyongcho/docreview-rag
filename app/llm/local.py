@@ -8,7 +8,6 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
-from app.llm.estimate import estimate_prompt_tokens
 from app.llm.provider import Clock, LLMProvider, RawProviderResponse, strict_response_format
 from app.llm.schemas import LocalModelTiming, Prompt, ProviderBudget
 
@@ -54,10 +53,6 @@ class LocalLLMProvider(LLMProvider):
         #: window changes, which cost 10-12 s per call on CPU; a fixed window avoids that.
         self._context_window = context_window
 
-    def _projected_input_tokens(self, prompt: Prompt) -> int | None:
-        """Project the prompt before the call; local models use the shared fallback encoding."""
-        return estimate_prompt_tokens(prompt, model_name=self.model_name)
-
     async def aclose(self) -> None:
         """Close only the HTTP client owned by this provider."""
         if self._owned_client is not None:
@@ -70,8 +65,6 @@ class LocalLLMProvider(LLMProvider):
         budget: ProviderBudget,
     ) -> RawProviderResponse:
         """Call the configured local protocol and require authoritative token usage."""
-        if self._client is None:
-            raise RuntimeError("local provider client is closed")
         return (
             await self._openai_request(prompt, schema, budget)
             if self.protocol == "openai_responses"

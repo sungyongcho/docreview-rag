@@ -14,7 +14,7 @@ from app.llm.schemas import Prompt, ProviderBudget, StrictSchema
 from app.retrieval.embeddings import EmbeddingProvider, get_embedding_provider
 from app.retrieval.hybrid import DEFAULT_RRF_K, fuse_ranked_lists
 from app.retrieval.service import retrieve
-from app.retrieval.types import ChunkHit, RetrievalFilters
+from app.retrieval.types import ChunkHit
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,7 +120,6 @@ def make_decomposed_retriever(
     embedding_provider: EmbeddingProvider | None = None,
     candidate_k: int | None = None,
     rrf_k: int = DEFAULT_RRF_K,
-    filters: RetrievalFilters | None = None,
 ) -> Retriever:
     """Return an M3-compatible ``Retriever`` that decomposes before retrieving.
 
@@ -141,8 +140,6 @@ def make_decomposed_retriever(
         Optional retrieval candidate depth.
     rrf_k : int
         Reciprocal-rank constant for sub-question fusion.
-    filters : RetrievalFilters | None
-        Optional immutable filing restrictions shared across sub-questions.
 
     Returns
     -------
@@ -167,7 +164,6 @@ def make_decomposed_retriever(
                 provider=provider,
                 k=k,
                 candidate_k=candidate_k,
-                filters=filters,
                 rrf_k=rrf_k,
             )
             return result.hits

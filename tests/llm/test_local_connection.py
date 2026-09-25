@@ -37,7 +37,7 @@ def test_saved_connection_restart_disconnect_and_reset(tmp_path) -> None:
     async def exercise() -> None:
         """Use the same on-disk configuration across independent runtime instances."""
         assert (await manager.state())["source"] == "environment"
-        saved = await manager.connect("http://replacement:11435")
+        saved = await manager.add_server("Replacement", "http://replacement:11435")
         assert saved["source"] == "saved"
         assert saved["local"]["enabled"]
         restarted = LocalConnectionManager(
@@ -66,11 +66,11 @@ def test_failed_probe_and_failed_save_keep_the_existing_revision(tmp_path, monke
 
     async def exercise() -> None:
         """Compare both runtime identity and persisted bytes around failed updates."""
-        await manager.connect("http://working")
+        await manager.add_server("Working", "http://working")
         old = manager.current
         contents = path.read_bytes()
         with pytest.raises(LocalConnectionError, match="could not be reached"):
-            await manager.connect("http://offline")
+            await manager.add_server("Offline", "http://offline")
         assert manager.current is old
         assert path.read_bytes() == contents
 
@@ -80,7 +80,7 @@ def test_failed_probe_and_failed_save_keep_the_existing_revision(tmp_path, monke
 
         monkeypatch.setattr(connections.os, "replace", fail_replace)
         with pytest.raises(LocalConnectionError, match="Could not save"):
-            await manager.connect("http://replacement")
+            await manager.add_server("Replacement", "http://replacement")
         assert manager.current is old
         assert path.read_bytes() == contents
         assert list(tmp_path.iterdir()) == [path]
@@ -107,7 +107,7 @@ def test_empty_server_is_a_valid_connection_and_changed_url_does_not_get_secret(
     async def exercise() -> None:
         """Probe the initial endpoint, then save a distinct server with no installed models."""
         await manager.state()
-        result = await manager.connect("http://empty")
+        result = await manager.add_server("Empty", "http://empty")
         assert result["source"] == "saved"
         assert result["local"]["reason"] == "no_answer_models"
         assert not result["local"]["enabled"]
@@ -137,7 +137,7 @@ def test_corrupt_file_fails_closed_and_prod_does_not_read_or_probe(tmp_path, mon
     )
     assert asyncio.run(manager.public_state()) == {"enabled": False, "reason": "disabled_in_prod"}
     with pytest.raises(LocalConnectionError, match="disabled in production"):
-        asyncio.run(manager.connect("http://other"))
+        asyncio.run(manager.add_server("Other", "http://other"))
 
 
 def test_late_old_readiness_cannot_overwrite_new_connection(tmp_path) -> None:
@@ -162,7 +162,7 @@ def test_late_old_readiness_cannot_overwrite_new_connection(tmp_path) -> None:
         """Switch servers while an existing readiness request is waiting."""
         pending = asyncio.create_task(manager.state())
         await started.wait()
-        await manager.connect("http://replacement/v1")
+        await manager.add_server("Replacement", "http://replacement/v1")
         release.set()
         state = await pending
         assert state["base_url"] == "http://replacement/v1"
@@ -253,7 +253,7 @@ def test_unreadable_settings_and_unwritable_directory_report_ownership(tmp_path)
     tmp_path.chmod(0o500)
     try:
         with pytest.raises(LocalConnectionError, match="not writable"):
-            asyncio.run(manager.connect("http://working"))
+            asyncio.run(manager.add_server("Working", "http://working"))
         assert manager.current is initial
         assert path.read_bytes() == original
     finally:
@@ -429,7 +429,7 @@ def test_saved_connection_is_readable_by_the_configured_host_group(tmp_path) -> 
 
     path = tmp_path / "local-settings/local-llm.json"
     manager = LocalConnectionManager(path=path, transport=httpx.MockTransport(metadata_server))
-    asyncio.run(manager.connect("http://replacement:11435"))
+    asyncio.run(manager.add_server("Replacement", "http://replacement:11435"))
     assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert json.loads(path.read_text())["selected_server_id"]
 

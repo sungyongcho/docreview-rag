@@ -125,8 +125,7 @@ def test_local_endpoint_default_and_dotenv_provenance(tmp_path, monkeypatch):
     from app.config import Settings
     from app.release.config import ReleaseSettings
 
-    for key in ("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"):
-        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("LOCAL_LLM_BASE_URL", raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text("LOCAL_LLM_BASE_URL=http://dotenv:11434\n")
     for settings_type in (Settings, ReleaseSettings):

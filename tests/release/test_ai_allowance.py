@@ -188,13 +188,12 @@ def _fake_openai():
     from app.workflow.gate import RoutingClassification
 
     response = SimpleNamespace(
-        output_parsed=RoutingClassification(
+        output_text=RoutingClassification(
             intent="service_help",
             reason="A service question.",
             requested_issuers=(),
             target_scope="unclear",
-        ),
-        output_text="",
+        ).model_dump_json(),
         usage=SimpleNamespace(input_tokens=20, output_tokens=20),
         id="fake",
     )

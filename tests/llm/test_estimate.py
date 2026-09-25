@@ -1,4 +1,4 @@
-"""Pre-flight prompt projection: encodings, framing, the allowance boundary and offline fallback."""
+"""Pre-flight prompt projection: encodings, framing and offline fallback."""
 
 import tiktoken
 
@@ -6,7 +6,6 @@ import app.llm.estimate as estimate
 from app.llm.estimate import (
     FRAMING_TOKENS,
     estimate_prompt_tokens,
-    exceeds_allowance,
     prompt_encoding,
 )
 from app.llm.schemas import Prompt
@@ -79,11 +78,3 @@ def test_recognized_models_reach_the_same_guarded_loader_as_unknown_ones(monkeyp
     assert estimate_prompt_tokens(prompt, model_name="text-embedding-3-large") is None
     assert estimate_prompt_tokens(prompt, model_name="gemma4:e4b") is None
     assert loads == ["cl100k_base", "o200k_base"]
-
-
-def test_projection_is_refused_only_when_it_exceeds_the_allowance():
-    """A projection equal to the allowance is sent; one token more is refused."""
-    assert exceeds_allowance(1_000, 1_000) is False
-    assert exceeds_allowance(1_001, 1_000) is True
-    assert exceeds_allowance(0, 0) is False
-    assert exceeds_allowance(1, 0) is True

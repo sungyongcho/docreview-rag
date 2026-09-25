@@ -10,6 +10,7 @@ from openai.types.responses import ResponseInputParam, ToolParam
 from pydantic.functional_validators import model_validator
 
 from app.agent.types import ToolCall
+from app.llm.provider import openai_usage
 from app.llm.schemas import NonNegativeInt, StrictSchema, TokenPricing
 from app.openai_models import ReasoningEffort, resolve_openai_model
 
@@ -167,32 +168,22 @@ class OpenAIToolProvider(ToolCallingProvider):
         model_name: str,
         client: AsyncOpenAI | None = None,
         api_key: str | None = None,
-        base_url: str | None = None,
     ) -> None:
         selection = resolve_openai_model("agent", model_name)
-        if base_url is not None and not base_url.strip():
-            raise ValueError("base_url must not be blank")
         self.model_name = selection.model
         self.reasoning_effort: ReasoningEffort | None = selection.reasoning_effort
-        self.pricing = TokenPricing(
-            input_per_million_usd=selection.pricing.input_per_million_usd,
-            output_per_million_usd=selection.pricing.output_per_million_usd,
-            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
-            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
-        )
+        self.pricing = selection.pricing
         if client is None:
-            owned = AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+            owned = AsyncOpenAI(api_key=api_key, max_retries=0)
             self._owned_client: AsyncOpenAI | None = owned
             self._client: AsyncOpenAI = owned
         else:
             self._owned_client = None
             self._client = client
-        # Recorded provenance mirrors where requests actually go: the explicit
-        # base_url, the owned client's resolved URL (env overrides included), or
-        # the SDK default when a caller injected an opaque client.
-        if base_url is not None:
-            resolved = base_url
-        elif client is None:
+        # Recorded provenance mirrors where requests actually go: the owned
+        # client's resolved URL (env overrides included), or the SDK default when
+        # a caller injected an opaque client.
+        if client is None:
             resolved = str(self._client.base_url)
         else:
             resolved = str(getattr(client, "base_url", "") or DEFAULT_BASE_URL)
@@ -238,7 +229,8 @@ class OpenAIToolProvider(ToolCallingProvider):
         Raises
         ------
         ValueError
-            If the response omits authoritative token usage.
+            If the response omits authoritative token usage or carries invalid
+            usage details.
 
         Notes
         -----
@@ -256,21 +248,13 @@ class OpenAIToolProvider(ToolCallingProvider):
             reasoning={"effort": self.reasoning_effort},
             store=False,
         )
-        usage = getattr(response, "usage", None)
-        input_tokens = getattr(usage, "input_tokens", None)
-        output_tokens = getattr(usage, "output_tokens", None)
-        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
-            raise ValueError("OpenAI response did not include token usage")
-        input_details = getattr(usage, "input_tokens_details", None)
-        output_details = getattr(usage, "output_tokens_details", None)
-        cached_input_tokens = getattr(input_details, "cached_tokens", 0)
-        cache_write_input_tokens = getattr(input_details, "cache_write_tokens", 0)
-        reasoning_tokens = getattr(output_details, "reasoning_tokens", 0)
-        if not all(
-            isinstance(value, int)
-            for value in (cached_input_tokens, cache_write_input_tokens, reasoning_tokens)
-        ):
-            raise ValueError("OpenAI response included invalid token usage details")
+        (
+            input_tokens,
+            output_tokens,
+            cached_input_tokens,
+            cache_write_input_tokens,
+            reasoning_tokens,
+        ) = openai_usage(response)
         output_text = getattr(response, "output_text", "")
         return ProviderTurn(
             output_text=output_text if isinstance(output_text, str) else "",

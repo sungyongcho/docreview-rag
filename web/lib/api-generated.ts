@@ -569,11 +569,7 @@ export interface paths {
          */
         get: operations["local_connection_state_admin_local_llm_connection_get"];
         put?: never;
-        /**
-         * Connect Local Llm
-         * @description Verify and save a replacement endpoint, leaving the old one active on failure.
-         */
-        post: operations["connect_local_llm_admin_local_llm_connection_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -634,26 +630,6 @@ export interface paths {
          * @description Load one installed model without generating an answer or changing connection settings.
          */
         post: operations["prepare_local_model_admin_local_llm_prepare_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/local-llm/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset Local Llm
-         * @description Restore the endpoint selected by environment, dotenv, or startup defaults.
-         */
-        post: operations["reset_local_llm_admin_local_llm_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2906,20 +2882,6 @@ export interface components {
             visible: number;
         };
         JsonValue: unknown;
-        /**
-         * LocalConnectionRequest
-         * @description A candidate endpoint entered in the developer connection settings.
-         */
-        LocalConnectionRequest: {
-            /** Base Url */
-            base_url: string;
-            /**
-             * Protocol
-             * @default auto
-             * @enum {string}
-             */
-            protocol: "auto" | "ollama" | "openai_responses";
-        };
         /**
          * LocalConnectionResponse
          * @description Private settings state and safe model metadata for the developer UI.
@@ -5866,48 +5828,6 @@ export interface operations {
             };
         };
     };
-    connect_local_llm_admin_local_llm_connection_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LocalConnectionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LocalConnectionResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     diagnose_local_server_admin_local_llm_diagnostics_post: {
         parameters: {
             query?: never;
@@ -6000,44 +5920,6 @@ export interface operations {
                 "application/json": components["schemas"]["LocalModelPrepareRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LocalConnectionResponse"];
-                };
-            };
-            /** @description Request validation failed. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal server error. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    reset_local_llm_admin_local_llm_reset_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

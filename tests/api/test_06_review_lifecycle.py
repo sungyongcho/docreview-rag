@@ -18,7 +18,7 @@ from app.api.runtime import RuntimeApiServices, SessionFactory, build_runtime_se
 from app.api.schemas import IngestRequest, ReviewRequest
 from app.config import Settings, get_settings
 from app.ingestion.seed import SeedResult
-from app.llm.provider import DeterministicLLMProvider, OpenAILLMProvider
+from app.llm.provider import OpenAILLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.main import create_app
 from app.observability.types import build_run_report
@@ -28,6 +28,7 @@ from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.types import NodeError, initial_state
 from tests.ingestion.seed.support import sample_batch
 from tests.ingestion.support import filing_document
+from tests.llm.support import DeterministicLLMProvider
 
 
 class FakeTransaction:
@@ -137,8 +138,8 @@ def test_runtime_http_bridges_m2_retrieval_into_m4_review_and_persistence(
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, session_factory),
-        llm_provider=llm_provider,
-        provider_budget=provider_budget(),
+        llm_providers={"openai": llm_provider},
+        provider_budgets={"openai": provider_budget()},
         retrieval_service=retrieval_service,
         workflow_service=workflow_service,
         run_persister=run_persister,
@@ -316,8 +317,8 @@ def test_review_translation_respects_the_preset_and_actual_corpus_language(
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
-        llm_provider=provider,
-        provider_budget=provider_budget(),
+        llm_providers={"openai": provider},
+        provider_budgets={"openai": provider_budget()},
         workflow_service=workflow_service,
         run_persister=run_persister,
         query_routing_enabled=True,
@@ -393,10 +394,10 @@ def test_build_runtime_services_composes_from_settings():
     assert services._lexical_ranker == "bm25"
     assert services._route_by_language is True
     assert services._bm25_k1 == 1.4
-    assert isinstance(services._llm_provider, OpenAILLMProvider)
-    assert services._llm_provider.model_name == "gpt-5.6-terra"
-    assert services._provider_budget is not None
-    assert services._provider_budget.pricing.output_per_million_usd == Decimal("12.0")
+    assert isinstance(services._llm_providers["openai"], OpenAILLMProvider)
+    assert services._llm_providers["openai"].model_name == "gpt-5.6-terra"
+    assert "openai" in services._provider_budgets
+    assert services._provider_budgets["openai"].pricing.output_per_million_usd == Decimal("12.0")
     assert "sk-review-test-key" in services._secret_values
     assert services._corpus_root == settings.corpus_dir
 
@@ -445,8 +446,8 @@ def test_runtime_maps_provider_exceptions_to_nonsecret_503():
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, session_factory),
-        llm_provider=DeterministicLLMProvider(()),
-        provider_budget=provider_budget(),
+        llm_providers={"openai": DeterministicLLMProvider(())},
+        provider_budgets={"openai": provider_budget()},
         workflow_service=unavailable_workflow,
     )
 
@@ -489,8 +490,8 @@ def test_runtime_redacts_explicit_secrets_before_persisting_and_returning():
     services = RuntimeApiServices(
         embedding_provider=DeterministicEmbeddingProvider(),
         session_factory=cast(SessionFactory, FakeSession),
-        llm_provider=DeterministicLLMProvider(()),
-        provider_budget=provider_budget(),
+        llm_providers={"openai": DeterministicLLMProvider(())},
+        provider_budgets={"openai": provider_budget()},
         workflow_service=workflow_service,
         run_persister=run_persister,
         secret_values=(secret,),

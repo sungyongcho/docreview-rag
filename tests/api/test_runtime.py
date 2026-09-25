@@ -106,7 +106,7 @@ def test_request_pins_endpoint_and_provider_across_connection_changes(tmp_path) 
         async with services._request_connection(request.session_profile):
             first, _ = await services._engine(request)
             assert first._base_url == "http://first/v1"
-            await manager.connect("http://second/v1")
+            await manager.add_server("Second", "http://second/v1")
             later, _ = await services._engine(request)
             assert later is first
             assert later.model_name == "answer"

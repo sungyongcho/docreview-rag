@@ -74,14 +74,10 @@ def probe_url(
     except ValueError:
         return {"status": "unreachable", "reason": "invalid_url"}
     resolved = resolve_local_protocol(root, protocol)
-    initial = os.environ.get(
-        "LOCAL_LLM_BASE_URL", os.environ.get("DOCREVIEW_LOCAL_LLM_BASE_URL", "")
-    )
+    initial = os.environ.get("LOCAL_LLM_BASE_URL", "")
     api_key = None
     if initial.strip().rstrip("/") == root:
-        api_key = os.environ.get("LOCAL_LLM_API_KEY") or os.environ.get(
-            "DOCREVIEW_LOCAL_LLM_API_KEY"
-        )
+        api_key = os.environ.get("LOCAL_LLM_API_KEY")
     headers = {"authorization": f"Bearer {api_key}"} if api_key else {}
     path = (
         "/api/tags" if resolved == "ollama" else "/models" if root.endswith("/v1") else "/v1/models"

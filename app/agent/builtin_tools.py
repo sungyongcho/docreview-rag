@@ -12,7 +12,6 @@ from app.agent.tools import Tool, ToolError
 from app.agent.types import AgentCitation
 from app.db.models import Chunk
 from app.retrieval.embeddings import EmbeddingIdentity, EmbeddingProvider, get_embedding_provider
-from app.retrieval.hybrid import DEFAULT_RRF_K
 from app.retrieval.service import retrieve
 from app.retrieval.types import ChunkHit, RetrievalFilters
 
@@ -156,8 +155,6 @@ def build_default_registry(
     session_factory: SessionFactory,
     *,
     embedding_provider: EmbeddingProvider | None = None,
-    candidate_k: int | None = None,
-    rrf_k: int = DEFAULT_RRF_K,
     search_k: int = DEFAULT_SEARCH_K,
 ) -> ToolRegistry:
     """Register the built-in filing tools over a per-call session factory.
@@ -171,10 +168,6 @@ def build_default_registry(
         in its own task) cannot interleave reads on shared state.
     embedding_provider : EmbeddingProvider | None
         Optional explicit query embedding provider.
-    candidate_k : int | None
-        Optional shared candidate depth for retrieval tools.
-    rrf_k : int
-        Positive reciprocal-rank-fusion constant.
     search_k : int
         Hit count ``search_filings`` uses when the caller omits ``k``.
 
@@ -205,13 +198,11 @@ def build_default_registry(
                 params.query,
                 provider=embedding_provider,
                 k=params.k or search_k,
-                candidate_k=candidate_k,
                 filters=RetrievalFilters(
                     issuers=params.issuers or (),
                     fiscal_years=params.fiscal_years or (),
                     forms=params.forms or (),
                 ),
-                rrf_k=rrf_k,
             )
             return {"hits": [_hit_payload(hit) for hit in result.hits]}
 
@@ -245,12 +236,10 @@ def build_default_registry(
                     params.query,
                     provider=provider,
                     k=params.k or 3,
-                    candidate_k=candidate_k,
                     filters=RetrievalFilters(
                         issuers=(params.issuer,),
                         fiscal_years=(fiscal_year,),
                     ),
-                    rrf_k=rrf_k,
                 )
                 years.append(
                     {

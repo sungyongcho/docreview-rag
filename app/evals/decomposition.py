@@ -212,7 +212,7 @@ def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, Provider
     """
     from app.config import get_settings
     from app.llm.provider import OpenAILLMProvider
-    from app.llm.schemas import ProviderBudget, TokenPricing
+    from app.llm.schemas import ProviderBudget
     from app.openai_models import resolve_openai_model
 
     settings = get_settings()
@@ -226,12 +226,7 @@ def decomposition_boundary(model_name: str) -> tuple[OpenAILLMProvider, Provider
         max_input_tokens=DECOMPOSITION_MAX_INPUT_TOKENS,
         max_output_tokens=DECOMPOSITION_MAX_OUTPUT_TOKENS,
         max_cost_usd=Decimal("0.05"),
-        pricing=TokenPricing(
-            input_per_million_usd=selection.pricing.input_per_million_usd,
-            output_per_million_usd=selection.pricing.output_per_million_usd,
-            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
-            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
-        ),
+        pricing=selection.pricing,
     )
     return provider, budget
 

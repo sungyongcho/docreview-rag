@@ -16,9 +16,7 @@ def clean_model_environment(monkeypatch):
         "MODE",
         "DOCREVIEW_ENVIRONMENT",
         "LOCAL_LLM_BASE_URL",
-        "DOCREVIEW_LOCAL_LLM_BASE_URL",
         "LOCAL_LLM_API_KEY",
-        "DOCREVIEW_LOCAL_LLM_API_KEY",
     ):
         monkeypatch.delenv(key, raising=False)
 

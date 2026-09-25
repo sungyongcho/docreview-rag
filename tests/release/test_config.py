@@ -86,12 +86,6 @@ def test_provider_budget_uses_explicit_caps_and_policy_prices() -> None:
     assert budget.pricing.estimate(1_200, 300) == Decimal("0.0006")
 
 
-def test_manual_release_prices_are_rejected() -> None:
-    """Fail rather than silently diverging from the model policy price."""
-    with pytest.raises(ValidationError, match="policy owns prices"):
-        ReleaseSettings(_env_file=None, openai_input_per_million_usd=Decimal("0.40"))
-
-
 @pytest.mark.parametrize(
     "values",
     [

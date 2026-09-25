@@ -9,7 +9,6 @@ import pytest
 from app.api.review_profile import ServerBM25
 from app.api.runtime import RuntimeApiServices
 from app.corpus_admin import CorpusStatus, RuntimeCorpusAdminService
-from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import RawProviderResponse
 from app.release.app import build_runtime_services, create_release_app
 from app.release.config import ReleaseSettings
@@ -19,6 +18,7 @@ from app.retrieval.embeddings import (
     EmbeddingClient,
     OpenAIEmbeddingProvider,
 )
+from tests.llm.support import DeterministicLLMProvider
 
 
 def test_release_app_is_canned_healthy_and_nonsecret(monkeypatch, tmp_path) -> None:
@@ -235,8 +235,8 @@ def test_runtime_without_key_keeps_review_fail_closed(monkeypatch, tmp_path) -> 
 
     services = build_runtime_services(ReleaseSettings(mode="runtime", _env_file=None))
 
-    assert services._llm_provider is None
-    assert services._provider_budget is None
+    assert "openai" not in services._llm_providers
+    assert "openai" not in services._provider_budgets
 
 
 def test_runtime_composition_serves_the_configured_bm25_settings(monkeypatch, tmp_path) -> None:

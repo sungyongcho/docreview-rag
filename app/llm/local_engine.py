@@ -1,18 +1,17 @@
-"""One assembly path for the optional local model engine.
+"""Protocol resolution and the zero-cost budget for the optional local model engine.
 
-The runtime API and the release app both build the same provider from their own
-settings objects. Keeping protocol resolution and the zero-cost budget here stops the
-two paths from drifting, which is how the release path came to borrow the OpenAI token
-limits while the runtime path used the local ones.
+The runtime API and the release app both resolve the local wire protocol and build the
+local budget here from their own settings objects, which stops the two paths from
+drifting, as when the release path once borrowed the OpenAI token limits while the
+runtime path used the local ones.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-from app.llm.local import LocalLlmProtocol, LocalLLMProvider
+from app.llm.local import LocalLlmProtocol
 from app.llm.schemas import ProviderBudget, TokenPricing
-from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
 
 ConfiguredLocalProtocol = LocalLlmProtocol | str
 
@@ -53,29 +52,4 @@ def local_provider_budget(*, max_input_tokens: int, max_output_tokens: int) -> P
             input_per_million_usd=Decimal("0"),
             output_per_million_usd=Decimal("0"),
         ),
-    )
-
-
-def build_local_provider(
-    *,
-    base_url: str,
-    model_name: str,
-    protocol: ConfiguredLocalProtocol,
-    api_key: str | None,
-    timeout_s: float = DEFAULT_LOCAL_TIMEOUT_S,
-    context_window: int | None = None,
-) -> LocalLLMProvider:
-    """Assemble the local provider with the protocol resolved from the endpoint.
-
-    ``context_window`` is the configured input plus output allowance; passing it keeps
-    the Ollama window identical across the calls of one run instead of shrinking with
-    the remaining budget.
-    """
-    return LocalLLMProvider(
-        base_url=base_url,
-        model_name=model_name,
-        protocol=resolve_local_protocol(base_url, protocol),
-        api_key=api_key,
-        timeout_s=timeout_s,
-        context_window=context_window,
     )

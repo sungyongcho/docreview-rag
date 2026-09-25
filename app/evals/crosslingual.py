@@ -845,7 +845,6 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
     keeps every paid boundary in this command sourced the same way.
     """
     from app.llm.provider import OpenAILLMProvider
-    from app.llm.schemas import TokenPricing
     from app.openai_models import resolve_openai_model
 
     selection = resolve_openai_model("translation", model_name)
@@ -858,12 +857,7 @@ def translation_boundary(model_name: str, settings: Settings) -> tuple[LLMProvid
         max_input_tokens=TRANSLATION_MAX_INPUT_TOKENS,
         max_output_tokens=TRANSLATION_MAX_OUTPUT_TOKENS,
         max_cost_usd=Decimal("0.05"),
-        pricing=TokenPricing(
-            input_per_million_usd=selection.pricing.input_per_million_usd,
-            output_per_million_usd=selection.pricing.output_per_million_usd,
-            cached_input_per_million_usd=selection.pricing.cached_input_per_million_usd,
-            cache_write_input_per_million_usd=(selection.pricing.cache_write_input_per_million_usd),
-        ),
+        pricing=selection.pricing,
     )
     return provider, budget
 

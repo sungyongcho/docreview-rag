@@ -4,17 +4,19 @@ import asyncio
 
 import pytest
 
-from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import RawProviderResponse
 from app.observability.persistence import report_to_records
 from app.observability.types import Budget
+from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.workflow.runner import run_workflow
 from app.workflow.types import WorkflowRequest
+from tests.llm.support import DeterministicLLMProvider
 from tests.workflow.support import (
     hit as _hit,
     pricing as _pricing,
     provider_budget as _provider_budget,
     report_of,
+    retrieval_result,
     retriever_returning,
 )
 
@@ -159,7 +161,7 @@ def test_zero_budget_refuses_before_retrieval():
     async def retriever(query, k, filters):
         nonlocal calls
         calls += 1
-        return [_hit()]
+        return retrieval_result([_hit()])
 
     zero = Budget(
         max_iterations=0,
@@ -519,18 +521,27 @@ def test_observer_sees_a_node_that_committed_a_provider_failure():
 def test_a_retriever_breaking_the_hit_contract_raises_instead_of_reporting_an_outage():
     """Raise for a broken retrieval contract rather than report a retrieval outage."""
 
-    async def retriever(query, k, filters):
+    async def bare_hits(query, k, filters):
         return [{"chunk_id": 1, "body": "not a ChunkHit"}]
 
-    with pytest.raises(TypeError, match="ChunkHit"):
-        asyncio.run(
-            run_workflow(
-                _request(),
-                retriever=retriever,
-                provider=_provider([]),
-                clock=SequenceClock(),
-            )
+    async def malformed_hits(query, k, filters):
+        return RetrievalResult.model_construct(
+            hits=({"chunk_id": 1, "body": "not a ChunkHit"},),
+            candidates=(),
+            score_stage="rrf",
+            component_rankings=ComponentRankings(vector=(), lexical=()),
         )
+
+    for retriever, message in ((bare_hits, "RetrievalResult"), (malformed_hits, "ChunkHit")):
+        with pytest.raises(TypeError, match=message):
+            asyncio.run(
+                run_workflow(
+                    _request(),
+                    retriever=retriever,
+                    provider=_provider([]),
+                    clock=SequenceClock(),
+                )
+            )
 
 
 def test_workflow_emits_started_and_completed_stages_around_real_node_work() -> None:

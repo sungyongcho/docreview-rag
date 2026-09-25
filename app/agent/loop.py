@@ -1,6 +1,6 @@
 """Hand-rolled Thought → Tool → Observation loop with fail-closed budgets."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from decimal import Decimal
 import functools
 import time
@@ -23,8 +23,6 @@ from app.agent.types import (
     ToolCall,
 )
 from app.llm.provider import strict_json_loads, strict_response_format, validation_errors
-
-type WallClock = Callable[[], float]
 
 # The Responses API rejects max_output_tokens below 16, so a smaller remaining
 # allowance can only buy a failed request: the run is out of budget, and saying
@@ -239,8 +237,6 @@ async def run_agent(
     registry: ToolRegistry,
     provider: ToolCallingProvider,
     budget: AgentBudget | None = None,
-    instructions: str | None = None,
-    wall_clock: WallClock = time.perf_counter,
 ) -> AgentResult:
     """Run the agent loop until final_answer, a budget stop, or a provider failure.
 
@@ -254,10 +250,6 @@ async def run_agent(
         Injected deterministic or OpenAI turn provider.
     budget : AgentBudget | None
         Optional cumulative turn and token limits.
-    instructions : str | None
-        Optional complete system prompt; the registry-generated prompt is the default.
-    wall_clock : WallClock
-        Monotonic seconds clock used for request latency and end-to-end duration.
 
     Returns
     -------
@@ -267,7 +259,7 @@ async def run_agent(
     Raises
     ------
     ValueError
-        If the question is blank or the wall clock moves backwards.
+        If the question is blank.
     TypeError
         If registry, provider, or budget does not satisfy its declared contract.
 
@@ -292,7 +284,7 @@ async def run_agent(
     limits = budget or AgentBudget()
     if not isinstance(limits, AgentBudget):
         raise TypeError("budget must be an AgentBudget")
-    system_prompt = instructions or build_instructions(registry)
+    system_prompt = build_instructions(registry)
 
     tool_specs = [*registry.specs(), final_answer_spec()]
     input_items: list[dict[str, Any]] = [{"role": "user", "content": question}]
@@ -305,14 +297,11 @@ async def run_agent(
     total_cache_write_input = 0
     total_reasoning = 0
     total_cost = Decimal("0")
-    started = wall_clock()
+    started = time.perf_counter()
 
     def elapsed() -> float:
-        """Seconds since the run began, refusing a clock that went backwards."""
-        seconds = wall_clock() - started
-        if seconds < 0:
-            raise ValueError("agent wall clock must be monotonic")
-        return seconds
+        """Seconds since the run began on the monotonic performance counter."""
+        return time.perf_counter() - started
 
     def finish(
         status: AgentStatus,
@@ -368,7 +357,7 @@ async def run_agent(
                 failure="token budget or cost budget exhausted before the run could finish",
             )
         _compact_exchanges(input_items, exchange_ends)
-        request_started = wall_clock()
+        request_started = time.perf_counter()
         try:
             turn = await provider.turn(
                 system_prompt,
@@ -381,9 +370,7 @@ async def run_agent(
                 "provider_error",
                 failure=safe_runtime_error(error, "provider request"),
             )
-        request_ms = (wall_clock() - request_started) * 1000.0
-        if request_ms < 0:
-            raise ValueError("agent wall clock must be monotonic")
+        request_ms = (time.perf_counter() - request_started) * 1000.0
         total_input += turn.input_tokens
         total_output += turn.output_tokens
         total_cached_input += turn.cached_input_tokens

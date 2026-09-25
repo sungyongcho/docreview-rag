@@ -557,7 +557,6 @@ class ConversationDecision(StrictSchema):
 def deterministic_decision(
     query: str,
     *,
-    has_issuer_alias: bool = False,
     prior_filing_query: str | None = None,
     scope_index: ManifestScopeIndex | None = None,
     anchor_issuer: str | None = None,
@@ -624,11 +623,4 @@ def deterministic_decision(
                     rationale="A unique selected issuer anchors the covered finance question.",
                     target_scope="context",
                 )
-    elif has_issuer_alias and FILING_CUES.search(query):
-        return ConversationDecision(
-            intent="document_review",
-            source="deterministic",
-            matched_rule="issuer_and_filing_cue",
-            rationale="The query combines a known issuer with filing-review language.",
-        )
     return None

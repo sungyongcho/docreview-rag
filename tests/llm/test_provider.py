@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from app.llm.provider import (
-    DeterministicLLMProvider,
     LLMProvider,
     OpenAILLMProvider,
     strict_response_format,
@@ -25,6 +24,7 @@ from app.llm.schemas import (
     SchemaRejected,
     TokenPricing,
 )
+from tests.llm.support import DeterministicLLMProvider
 
 
 class TickClock:
@@ -295,11 +295,6 @@ class FakeResponses:
         self.calls.append(kwargs)
         return self.response
 
-    async def parse(self, **kwargs):
-        """Record the arguments and return the staged response."""
-        self.calls.append(kwargs)
-        return self.response
-
 
 class FakeClient:
     """Expose the responses surface the OpenAI adapter calls."""
@@ -310,10 +305,8 @@ class FakeClient:
 
 def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_client():
     """Send exactly one schema-bound request through an injected client."""
-    parsed = AnswerDecision.model_validate_json(valid_output(), strict=True)
     response = SimpleNamespace(
         id="resp-123",
-        output_parsed=parsed,
         output_text=valid_output(),
         output=(),
         usage=SimpleNamespace(input_tokens=30, output_tokens=12),
@@ -332,11 +325,9 @@ def test_openai_adapter_sends_one_schema_bound_request_with_injected_offline_cli
     assert result.metadata.request_ids == ("resp-123",)
     assert len(client.responses.calls) == 1
     call = dict(client.responses.calls[0])
-    # The schema may be bound as the M4.1 SDK-parsed text_format or as the M4.4
-    # strict text.format payload; either stage must bind exactly one mechanism.
-    mechanisms = [key for key in ("text_format", "text") if key in call]
-    assert len(mechanisms) == 1
-    call.pop(mechanisms[0])
+    # The schema is bound only as the strict text.format payload.
+    assert call.pop("text") == {"format": strict_response_format(AnswerDecision)}
+    assert "text_format" not in call
     assert call == {
         "model": "gpt-5.6-terra",
         "instructions": "Return one strict evidence decision.",
@@ -352,7 +343,6 @@ def test_openai_adapter_maps_structured_refusal_without_network_or_retry():
     refusal = SimpleNamespace(type="refusal", refusal="Request refused by the model.")
     response = SimpleNamespace(
         id="resp-refused",
-        output_parsed=None,
         output_text="",
         output=(SimpleNamespace(content=(refusal,)),),
         usage=SimpleNamespace(input_tokens=8, output_tokens=0),
@@ -376,7 +366,6 @@ def test_openai_adapter_rejects_missing_usage_as_typed_provider_error():
     """Reject a response carrying no usage as a typed provider error."""
     response = SimpleNamespace(
         id="resp-no-usage",
-        output_parsed=None,
         output_text=valid_output(),
         output=(),
         usage=None,
@@ -449,32 +438,6 @@ def test_strict_format_strips_defaults_and_requires_every_field():
 def test_strict_format_is_deterministic_between_calls():
     """Produce the same strict format on every call."""
     assert strict_response_format(AnswerDecision) == strict_response_format(AnswerDecision)
-
-
-def test_legacy_flag_keeps_the_sdk_parsed_path():
-    """Keep the SDK parsed path reachable behind the legacy flag."""
-    parsed = AnswerDecision.model_validate_json(valid_output(), strict=True)
-    response = SimpleNamespace(
-        id="resp-legacy",
-        output_parsed=parsed,
-        output_text=valid_output(),
-        output=(),
-        usage=SimpleNamespace(input_tokens=30, output_tokens=12),
-    )
-    client = FakeClient(response)
-    provider = OpenAILLMProvider(
-        model_name="gpt-5.6-terra",
-        client=client,
-        structured_output=False,
-        clock=TickClock(),
-    )
-
-    result = asyncio.run(provider.complete(prompt(), AnswerDecision, budget()))
-
-    assert result.status == "ok"
-    call = client.responses.calls[0]
-    assert call["text_format"] is AnswerDecision
-    assert "text" not in call
 
 
 def test_repair_loop_still_guards_the_strict_path():

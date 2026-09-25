@@ -1,16 +1,11 @@
 """Protocol resolution and budget construction for the optional local engine."""
 
-import asyncio
 from decimal import Decimal
 
 import pytest
 
-from app.llm.local_engine import (
-    DEFAULT_LOCAL_TIMEOUT_S,
-    build_local_provider,
-    local_provider_budget,
-    resolve_local_protocol,
-)
+from app.llm.local_engine import local_provider_budget, resolve_local_protocol
+from app.settings_sources import DEFAULT_LOCAL_TIMEOUT_S
 
 
 @pytest.mark.parametrize(
@@ -42,55 +37,6 @@ def test_local_budget_is_priced_at_zero_and_keeps_its_own_token_limits() -> None
     assert budget.pricing.output_per_million_usd == Decimal("0")
 
 
-def test_provider_carries_the_configured_timeout_and_refuses_a_nonpositive_one() -> None:
-    """A CPU-hosted model needs a caller-chosen deadline, and zero is not one."""
-    provider = build_local_provider(
-        base_url="http://ollama:11434",
-        model_name="gemma4:e4b",
-        protocol="auto",
-        api_key=None,
-        timeout_s=45.0,
-    )
-    try:
-        assert provider.protocol == "ollama"
-        assert provider.api_url == "local://ollama"
-    finally:
-        asyncio.run(provider.aclose())
-
-    with pytest.raises(ValueError, match="timeout must be positive"):
-        build_local_provider(
-            base_url="http://ollama:11434",
-            model_name="gemma4:e4b",
-            protocol="auto",
-            api_key=None,
-            timeout_s=0,
-        )
-
-
 def test_default_timeout_leaves_room_for_a_slow_first_token() -> None:
     """30 seconds was not enough for structured output on a CPU host; the default is not that."""
     assert DEFAULT_LOCAL_TIMEOUT_S >= 120.0
-
-
-def test_provider_carries_the_configured_context_window_and_refuses_a_nonpositive_one() -> None:
-    """The builder forwards the run-wide window and rejects a window that cannot hold a prompt."""
-    provider = build_local_provider(
-        base_url="http://ollama:11434",
-        model_name="gemma4:e4b",
-        protocol="auto",
-        api_key=None,
-        context_window=12_600,
-    )
-    try:
-        assert provider._context_window == 12_600
-    finally:
-        asyncio.run(provider.aclose())
-
-    with pytest.raises(ValueError, match="context window must be positive"):
-        build_local_provider(
-            base_url="http://ollama:11434",
-            model_name="gemma4:e4b",
-            protocol="auto",
-            api_key=None,
-            context_window=0,
-        )

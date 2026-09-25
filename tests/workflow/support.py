@@ -6,6 +6,7 @@ from typing import Any
 
 from app.llm.schemas import ProviderBudget, ProviderMetadata, ProviderResult, TokenPricing
 from app.observability.types import RunReport
+from app.retrieval.service import ComponentRankings, RetrievalResult
 from app.retrieval.types import ChunkHit
 
 SOURCE_SHA256 = "a" * 64
@@ -92,13 +93,23 @@ def report_of(result: RunReport) -> Any:
     return result.report
 
 
+def retrieval_result(hits: Sequence[ChunkHit]) -> RetrievalResult:
+    """Wrap canned hits in the retrieval envelope the workflow runner requires."""
+    return RetrievalResult(
+        hits=tuple(hits),
+        candidates=tuple(hits),
+        score_stage="rrf",
+        component_rankings=ComponentRankings(vector=(), lexical=()),
+    )
+
+
 def retriever_returning(hits: Sequence[ChunkHit], *, expect_k: int = 15):
     """Build a retriever that asserts the over-fetched depth and returns the hits."""
 
-    async def retrieve(query: str, k: int, filters) -> Sequence[ChunkHit]:
+    async def retrieve(query: str, k: int, filters) -> RetrievalResult:
         """Return the canned hits for one workflow retrieval."""
         assert k == expect_k
         assert filters.doc_ids == ()
-        return hits
+        return retrieval_result(hits)
 
     return retrieve

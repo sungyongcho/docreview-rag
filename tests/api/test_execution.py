@@ -7,9 +7,9 @@ import pytest
 
 from app.api.runtime import RuntimeApiServices
 from app.api.schemas import ReviewRequest, RunResponse
-from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import ProviderBudget, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
+from tests.llm.support import DeterministicLLMProvider
 
 
 def test_effective_budget_exposes_the_limiting_source_and_chat_exclusion():

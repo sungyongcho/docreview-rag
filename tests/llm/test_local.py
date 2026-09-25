@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 
 import httpx
+import pytest
 
 from app.llm.local import LocalLLMProvider
 from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
@@ -220,3 +221,52 @@ def test_ollama_keeps_the_configured_window_when_the_remaining_budget_shrinks() 
     assert isinstance(options, dict)
     assert options["num_ctx"] == 12_600
     assert options["num_predict"] == 50
+
+
+def test_provider_carries_the_configured_timeout_and_refuses_a_nonpositive_one() -> None:
+    """A CPU-hosted model needs a caller-chosen deadline, and zero is not one."""
+    provider = LocalLLMProvider(
+        base_url="http://ollama:11434",
+        model_name="gemma4:e4b",
+        protocol="ollama",
+        api_key=None,
+        timeout_s=45.0,
+    )
+    try:
+        assert provider.protocol == "ollama"
+        assert provider.api_url == "local://ollama"
+    finally:
+        asyncio.run(provider.aclose())
+
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        LocalLLMProvider(
+            base_url="http://ollama:11434",
+            model_name="gemma4:e4b",
+            protocol="ollama",
+            api_key=None,
+            timeout_s=0,
+        )
+
+
+def test_provider_carries_the_configured_context_window_and_refuses_a_nonpositive_one() -> None:
+    """The provider keeps the run-wide window and rejects a window that cannot hold a prompt."""
+    provider = LocalLLMProvider(
+        base_url="http://ollama:11434",
+        model_name="gemma4:e4b",
+        protocol="ollama",
+        api_key=None,
+        context_window=12_600,
+    )
+    try:
+        assert provider._context_window == 12_600
+    finally:
+        asyncio.run(provider.aclose())
+
+    with pytest.raises(ValueError, match="context window must be positive"):
+        LocalLLMProvider(
+            base_url="http://ollama:11434",
+            model_name="gemma4:e4b",
+            protocol="ollama",
+            api_key=None,
+            context_window=0,
+        )

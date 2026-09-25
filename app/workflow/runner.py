@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 import time
 
 from pydantic import BaseModel
@@ -44,10 +44,7 @@ from app.workflow.types import (
 
 type Clock = Callable[[], float]
 type NodeObserver = Callable[[WorkflowNode, WorkflowState], Awaitable[None]]
-type Retriever = Callable[
-    [str, int, RetrievalFilters],
-    Awaitable[RetrievalResult | Sequence[ChunkHit]],
-]
+type Retriever = Callable[[str, int, RetrievalFilters], Awaitable[RetrievalResult]]
 
 
 def _elapsed(clock: Clock, started: float) -> float:
@@ -185,13 +182,11 @@ def _committed_failure(
     )
 
 
-def _result_hits(result: RetrievalResult | Sequence[ChunkHit]) -> tuple[ChunkHit, ...]:
-    """Accept either a retrieval result or a plain hit sequence from a retriever."""
-    if isinstance(result, RetrievalResult):
-        return result.hits
-    if isinstance(result, str | bytes | bytearray) or not isinstance(result, Sequence):
-        raise TypeError("retriever must return RetrievalResult or a sequence of ChunkHit")
-    return tuple(result)
+def _result_hits(result: RetrievalResult) -> tuple[ChunkHit, ...]:
+    """Return the hits of the retrieval result a retriever must produce."""
+    if not isinstance(result, RetrievalResult):
+        raise TypeError("retriever must return RetrievalResult")
+    return result.hits
 
 
 async def run_workflow(

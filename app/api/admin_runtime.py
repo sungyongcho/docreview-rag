@@ -173,7 +173,7 @@ class RuntimeAdminApiServices:
 
     async def update_local_connection(
         self,
-        action: Literal["connect", "disconnect", "reset", "add", "select"],
+        action: Literal["disconnect", "add", "select"],
         base_url: str = "",
         protocol: LocalProtocol = "auto",
         *,
@@ -183,15 +183,11 @@ class RuntimeAdminApiServices:
         """Apply one explicit configuration action and translate safe persistence failures."""
         connection = self._local_connection()
         try:
-            if action == "connect":
-                return await connection.connect(base_url, protocol)
             if action == "disconnect":
                 return await connection.disconnect()
             if action == "add":
                 return await connection.add_server(name, base_url, protocol)
-            if action == "select":
-                return await connection.select_server(server_id)
-            return await connection.reset()
+            return await connection.select_server(server_id)
         except LocalConnectionError as error:
             raise unavailable(error.code, str(error)) from error
 

@@ -13,6 +13,7 @@ from tests.workflow.support import (
     hit as _hit,
     provider_budget as _provider_budget,
     report_of,
+    retrieval_result,
 )
 
 LIVE_ENABLED = os.getenv("RUN_OPENAI_WORKFLOW_LIVE") == "1"
@@ -30,7 +31,7 @@ def test_opt_in_live_openai_workflow_smoke():
     assert LIVE_KEY is not None
 
     async def retriever(query, k, filters):
-        return [_hit(1, body="Revenue increased by ten percent.")]
+        return retrieval_result([_hit(1, body="Revenue increased by ten percent.")])
 
     request = WorkflowRequest(
         run_id="run-live-smoke",

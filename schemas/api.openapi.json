@@ -4130,33 +4130,6 @@
         "type": "object"
       },
       "JsonValue": {},
-      "LocalConnectionRequest": {
-        "additionalProperties": false,
-        "description": "A candidate endpoint entered in the developer connection settings.",
-        "properties": {
-          "base_url": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Base Url",
-            "type": "string"
-          },
-          "protocol": {
-            "default": "auto",
-            "enum": [
-              "auto",
-              "ollama",
-              "openai_responses"
-            ],
-            "title": "Protocol",
-            "type": "string"
-          }
-        },
-        "required": [
-          "base_url"
-        ],
-        "title": "LocalConnectionRequest",
-        "type": "object"
-      },
       "LocalConnectionResponse": {
         "additionalProperties": false,
         "description": "Private settings state and safe model metadata for the developer UI.",
@@ -10180,56 +10153,6 @@
         "tags": [
           "admin"
         ]
-      },
-      "post": {
-        "description": "Verify and save a replacement endpoint, leaving the old one active on failure.",
-        "operationId": "connect_local_llm_admin_local_llm_connection_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LocalConnectionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocalConnectionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Connect Local Llm",
-        "tags": [
-          "admin"
-        ]
       }
     },
     "/admin/local-llm/diagnostics": {
@@ -10373,48 +10296,6 @@
           }
         },
         "summary": "Prepare Local Model",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
-    "/admin/local-llm/reset": {
-      "post": {
-        "description": "Restore the endpoint selected by environment, dotenv, or startup defaults.",
-        "operationId": "reset_local_llm_admin_local_llm_reset_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LocalConnectionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Request validation failed."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal server error."
-          }
-        },
-        "summary": "Reset Local Llm",
         "tags": [
           "admin"
         ]

@@ -70,12 +70,12 @@ from app.ingestion.seed import (
 )
 from app.llm.local import LocalLLMProvider
 from app.llm.local_connection import LocalConnectionManager
-from app.llm.local_engine import build_local_provider
+from app.llm.local_engine import resolve_local_protocol
 from app.llm.local_inventory import LocalModelInventory
 from app.llm.local_runtime import build_local_runtime
 from app.llm.openai_limits import OpenAILimitsManager
 from app.llm.provider import LLMProvider
-from app.llm.schemas import Prompt, ProviderBudget, TokenPricing
+from app.llm.schemas import Prompt, ProviderBudget
 from app.observability.persistence import (
     persist_run_records,
     record_to_step,
@@ -256,9 +256,10 @@ class RuntimeApiServices(ApiServices):
     """Compose API resources over one session per synchronous request.
 
     Retrieval defaults to the deterministic provider unless one is injected. Review is
-    fail-closed until an LLM provider and its explicit budget are injected; construction
-    never creates the process database engine or starts a paid call. Use
-    :func:`build_runtime_services` to compose from validated settings.
+    fail-closed until the provider and budget registries carry an engine's provider and
+    its explicit budget; construction never creates the process database engine or
+    starts a paid call. Use :func:`build_runtime_services` to compose from validated
+    settings.
     """
 
     def __init__(
@@ -267,8 +268,6 @@ class RuntimeApiServices(ApiServices):
         session_factory: SessionFactory = _default_session_factory,
         database_engine: AsyncEngine | None = None,
         embedding_provider: EmbeddingProvider,
-        llm_provider: LLMProvider | None = None,
-        provider_budget: ProviderBudget | None = None,
         llm_providers: dict[str, LLMProvider] | None = None,
         provider_budgets: dict[str, ProviderBudget] | None = None,
         local_inventory: LocalModelInventory | None = None,
@@ -294,16 +293,12 @@ class RuntimeApiServices(ApiServices):
         allow_custom_prompt_policy: bool = True,
         allow_snapshot_query: bool = True,
     ) -> None:
-        if (llm_provider is None) != (provider_budget is None):
-            raise ValueError("llm_provider and provider_budget must be configured together")
         if (llm_providers is None) != (provider_budgets is None):
             raise ValueError("llm provider and budget registries must be configured together")
         self.corpus_access = CorpusAccess()
         self._session_factory = session_factory
         self._database_engine = database_engine
         self._embedding_provider = embedding_provider
-        self._llm_provider = llm_provider
-        self._provider_budget = provider_budget
         self._llm_providers = dict(llm_providers or {})
         self._provider_budgets = dict(provider_budgets or {})
         self._local_inventory = local_inventory
@@ -318,9 +313,6 @@ class RuntimeApiServices(ApiServices):
             local_inventory is not None or local_connection is not None and local_connection.enabled
         ) and "local" not in self._provider_budgets:
             raise ValueError("local discovery requires an explicit local provider budget")
-        if llm_provider is not None and provider_budget is not None:
-            self._llm_providers.setdefault("openai", llm_provider)
-            self._provider_budgets.setdefault("openai", provider_budget)
         self._retrieval_service = retrieval_service
         self._workflow_service = workflow_service
         self._run_persister = run_persister
@@ -1164,10 +1156,10 @@ class RuntimeApiServices(ApiServices):
             if context is not None and context.provider is not None:
                 return context.provider, budget
             assert profile.local_model is not None
-            provider = build_local_provider(
+            provider = LocalLLMProvider(
                 base_url=inventory.base_url,
                 model_name=profile.local_model,
-                protocol=inventory.protocol,
+                protocol=resolve_local_protocol(inventory.base_url, inventory.protocol),
                 api_key=inventory.api_key,
                 timeout_s=self._local_timeout_s,
                 context_window=budget.max_input_tokens + budget.max_output_tokens,
@@ -1730,7 +1722,7 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
     -------
     RuntimeApiServices
         Fully configured service boundary; review stays fail-closed (typed 503)
-        until ``REVIEW_MODEL`` and its pricing are configured.
+        until ``REVIEW_MODEL`` and the MODE-selected key slot are configured.
     """
     configured = settings if settings is not None else get_settings()
     llm_provider: LLMProvider | None = None
@@ -1754,14 +1746,7 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
             max_input_tokens=configured.review_max_input_tokens,
             max_output_tokens=configured.review_max_output_tokens,
             max_cost_usd=configured.review_max_cost_usd,
-            pricing=TokenPricing(
-                input_per_million_usd=selection.pricing.input_per_million_usd,
-                output_per_million_usd=selection.pricing.output_per_million_usd,
-                cached_input_per_million_usd=(selection.pricing.cached_input_per_million_usd),
-                cache_write_input_per_million_usd=(
-                    selection.pricing.cache_write_input_per_million_usd
-                ),
-            ),
+            pricing=selection.pricing,
         )
         providers["openai"] = llm_provider
         budgets["openai"] = provider_budget
@@ -1794,8 +1779,6 @@ def build_runtime_services(settings: Settings | None = None) -> RuntimeApiServic
     )
     return RuntimeApiServices(
         embedding_provider=get_embedding_provider(configured),
-        llm_provider=llm_provider,
-        provider_budget=provider_budget,
         llm_providers=providers,
         provider_budgets=budgets,
         local_connection=local_connection,

@@ -34,7 +34,6 @@ from app.api.admin_schemas import (
     JobHistoryRequest,
     JobHistoryResultResource,
     JobHistorySummaryResource,
-    LocalConnectionRequest,
     LocalConnectionResponse,
     LocalDiagnosticsRequest,
     LocalDiagnosticsResponse,
@@ -539,16 +538,6 @@ async def local_connection_state(services: AdminServices) -> dict[str, Any]:
         return await services.local_connection_state()
 
 
-@router.post("/local-llm/connection", response_model=LocalConnectionResponse)
-async def connect_local_llm(
-    request: LocalConnectionRequest,
-    services: AdminServices,
-) -> dict[str, Any]:
-    """Verify and save a replacement endpoint, leaving the old one active on failure."""
-    async with translate_runtime_errors():
-        return await services.update_local_connection("connect", request.base_url, request.protocol)
-
-
 @router.post("/local-llm/disconnect", response_model=LocalConnectionResponse)
 async def disconnect_local_llm(services: AdminServices) -> dict[str, Any]:
     """Save explicit disconnection so environment defaults cannot reactivate it."""
@@ -594,13 +583,6 @@ async def diagnose_local_server(
         return await services.diagnose_local_connection(
             server_id=request.server_id, base_url=request.base_url, protocol=request.protocol
         )
-
-
-@router.post("/local-llm/reset", response_model=LocalConnectionResponse)
-async def reset_local_llm(services: AdminServices) -> dict[str, Any]:
-    """Restore the endpoint selected by environment, dotenv, or startup defaults."""
-    async with translate_runtime_errors():
-        return await services.update_local_connection("reset")
 
 
 @router.get("/openai/limits", response_model=OpenAILimitsResponse)

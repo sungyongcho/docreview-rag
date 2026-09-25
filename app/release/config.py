@@ -16,7 +16,7 @@ from pydantic import (
 )
 from pydantic_settings import SettingsConfigDict
 
-from app.llm.schemas import ProviderBudget, TokenPricing
+from app.llm.schemas import ProviderBudget
 from app.openai_models import resolve_openai_model
 from app.settings_sources import (
     DEFAULT_LOCAL_BASE_URL,
@@ -80,44 +80,38 @@ class ReleaseSettings(DotenvFirstSettings):
     openai_max_cost_usd: Decimal = Field(default=Decimal("0.005"), gt=0, le=1)
     public_allowance_path: Path = Path("data/runtime/public-ai-limits.sqlite3")
     public_daily_cost_usd: Decimal = Field(default=Decimal("0.10"), gt=0, le=100)
-    openai_input_per_million_usd: Decimal | None = Field(default=None, ge=0)
-    openai_output_per_million_usd: Decimal | None = Field(default=None, ge=0)
     local_llm_base_url: str | None = Field(
         default=DEFAULT_LOCAL_BASE_URL,
-        validation_alias=AliasChoices("LOCAL_LLM_BASE_URL", "DOCREVIEW_LOCAL_LLM_BASE_URL"),
+        validation_alias="LOCAL_LLM_BASE_URL",
     )
     local_llm_source: Literal["environment", "dotenv", "default"] = Field(
         default="default", validation_alias="local_llm_source", exclude=True
     )
     local_llm_protocol: Literal["auto", "openai_responses", "ollama"] = Field(
         default="auto",
-        validation_alias=AliasChoices("LOCAL_LLM_PROTOCOL", "DOCREVIEW_LOCAL_LLM_PROTOCOL"),
+        validation_alias="LOCAL_LLM_PROTOCOL",
     )
     local_llm_api_key: SecretStr | None = Field(
         default=None,
-        validation_alias=AliasChoices("LOCAL_LLM_API_KEY", "DOCREVIEW_LOCAL_LLM_API_KEY"),
+        validation_alias="LOCAL_LLM_API_KEY",
     )
-    # These carry explicit aliases because `env_prefix` alone would only accept the
+    # These carry an explicit bare alias because `env_prefix` alone would only accept the
     # prefixed spelling, while Compose forwards the bare `LOCAL_LLM_*` names.
     local_llm_max_input_tokens: int = Field(
         default=12_000,
         gt=0,
-        validation_alias=AliasChoices(
-            "LOCAL_LLM_MAX_INPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_INPUT_TOKENS"
-        ),
+        validation_alias="LOCAL_LLM_MAX_INPUT_TOKENS",
     )
     local_llm_max_output_tokens: int = Field(
         default=600,
         gt=0,
-        validation_alias=AliasChoices(
-            "LOCAL_LLM_MAX_OUTPUT_TOKENS", "DOCREVIEW_LOCAL_LLM_MAX_OUTPUT_TOKENS"
-        ),
+        validation_alias="LOCAL_LLM_MAX_OUTPUT_TOKENS",
     )
     local_llm_timeout_s: float = Field(
         default=DEFAULT_LOCAL_TIMEOUT_S,
         gt=0,
         le=600,
-        validation_alias=AliasChoices("LOCAL_LLM_TIMEOUT_S", "DOCREVIEW_LOCAL_LLM_TIMEOUT_S"),
+        validation_alias="LOCAL_LLM_TIMEOUT_S",
     )
 
     @field_validator(
@@ -182,11 +176,6 @@ class ReleaseSettings(DotenvFirstSettings):
         resolve_openai_model("review", self.openai_model)
         if self.environment == "prod" and self.openai_model != "gpt-5.6-luna":
             raise ValueError("production text calls require gpt-5.6-luna")
-        if (
-            self.openai_input_per_million_usd is not None
-            or self.openai_output_per_million_usd is not None
-        ):
-            raise ValueError("manual OpenAI pricing was removed; model policy owns prices")
         if self.admin_mode == "live" and self.mode != "runtime":
             raise ValueError("live corpus administration requires DOCREVIEW_MODE=runtime")
         if self.admin_mode == "live" and not _loopback_host(self.host):
@@ -231,12 +220,5 @@ class ReleaseSettings(DotenvFirstSettings):
             max_input_tokens=self.openai_max_input_tokens,
             max_output_tokens=self.openai_max_output_tokens,
             max_cost_usd=self.openai_max_cost_usd,
-            pricing=TokenPricing(
-                input_per_million_usd=selection.pricing.input_per_million_usd,
-                output_per_million_usd=selection.pricing.output_per_million_usd,
-                cached_input_per_million_usd=(selection.pricing.cached_input_per_million_usd),
-                cache_write_input_per_million_usd=(
-                    selection.pricing.cache_write_input_per_million_usd
-                ),
-            ),
+            pricing=selection.pricing,
         )

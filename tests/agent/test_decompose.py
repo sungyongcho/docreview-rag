@@ -13,10 +13,10 @@ from app.agent.decompose import (
     decompose_query,
     make_decomposed_retriever,
 )
-from app.llm.provider import DeterministicLLMProvider
 from app.llm.schemas import ProviderBudget, RawProviderResponse, TokenPricing
 from app.retrieval.embeddings import DeterministicEmbeddingProvider
 from tests.agent.support import FakeSessionFactory, hit
+from tests.llm.support import DeterministicLLMProvider
 
 
 def budget():
