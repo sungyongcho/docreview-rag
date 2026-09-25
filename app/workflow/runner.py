@@ -6,15 +6,7 @@ from collections.abc import Awaitable, Callable, Sequence
 import time
 
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import (
-    DEFAULT_BM25_B,
-    DEFAULT_BM25_IDF,
-    DEFAULT_BM25_K1,
-    BM25Idf,
-    LexicalRanker,
-)
 from app.llm.provider import LLMProvider
 from app.llm.schemas import (
     AnswerDecision,
@@ -35,10 +27,7 @@ from app.observability.types import (
     validate_elapsed_seconds,
 )
 from app.release.ai_allowance import AIAllowanceError
-from app.retrieval.embeddings import EmbeddingProvider as RetrievalEmbeddingProvider
-from app.retrieval.hybrid import DEFAULT_RRF_K
-from app.retrieval.rerank import RerankProvider
-from app.retrieval.service import RetrievalResult, retrieve
+from app.retrieval.service import RetrievalResult
 from app.retrieval.types import ChunkHit, RetrievalFilters
 from app.workflow.nodes import check_node, grade_node, report_node, retrieve_node
 from app.workflow.prompts import build_check_prompt, build_grade_prompt
@@ -59,87 +48,6 @@ type Retriever = Callable[
     [str, int, RetrievalFilters],
     Awaitable[RetrievalResult | Sequence[ChunkHit]],
 ]
-
-
-def make_session_retriever(
-    session: AsyncSession,
-    *,
-    provider: RetrievalEmbeddingProvider | None = None,
-    candidate_k: int | None = None,
-    rrf_k: int = DEFAULT_RRF_K,
-    reranker: RerankProvider | None = None,
-    route_by_language: bool = False,
-    lexical_ranker: LexicalRanker = "ts_rank_cd",
-    bm25_k1: float = DEFAULT_BM25_K1,
-    bm25_b: float = DEFAULT_BM25_B,
-    bm25_idf: BM25Idf = DEFAULT_BM25_IDF,
-) -> Retriever:
-    """Close the retrieval service over one caller-owned database session.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Session reused for every retrieval in the workflow run.
-    provider : RetrievalEmbeddingProvider | None
-        Optional vector embedding provider.
-    candidate_k : int | None
-        Optional candidate-pool override, widened to the over-fetched ``k`` when it is
-        smaller. The workflow asks for ``k * evidence_overfetch`` hits, so a pool sized
-        for the request's own ``k`` would otherwise be rejected outright.
-    rrf_k : int
-        Reciprocal-rank-fusion constant.
-    reranker : RerankProvider | None
-        Optional second-stage scorer for the fused candidate list.
-    route_by_language : bool
-        Skip the English lexical component for a Korean query, matching the configured
-        retrieval settings. Passed explicitly so a run cannot pick up a query path its
-        recorded configuration does not name.
-    lexical_ranker : LexicalRanker
-        Explicit lexical algorithm, matching the configured retrieval settings.
-    bm25_k1 : float
-        BM25 term-frequency saturation, used only by the BM25 lexical ranker.
-    bm25_b : float
-        BM25 length normalization, used only by the BM25 lexical ranker.
-    bm25_idf : BM25Idf
-        BM25 inverse-document-frequency variant.
-
-    Returns
-    -------
-    Retriever
-        Async callable matching the workflow retrieval boundary.
-
-    Notes
-    -----
-    Session and provider ownership remain with the caller. The retrieval service uses
-    the bound session sequentially and concurrent use of it is unsafe, so one retriever
-    serves one run at a time; concurrent runs need one retriever and session each.
-    Every ranking parameter is forwarded, so a run retrieves with the same
-    configuration the evaluation arms measured.
-    """
-
-    async def retrieve_for_workflow(
-        query: str,
-        k: int,
-        filters: RetrievalFilters,
-    ) -> RetrievalResult:
-        """Retrieve through the bound session for one workflow node."""
-        return await retrieve(
-            session,
-            query,
-            provider=provider,
-            k=k,
-            candidate_k=None if candidate_k is None else max(candidate_k, k),
-            filters=filters,
-            rrf_k=rrf_k,
-            reranker=reranker,
-            route_by_language=route_by_language,
-            lexical_ranker=lexical_ranker,
-            bm25_k1=bm25_k1,
-            bm25_b=bm25_b,
-            bm25_idf=bm25_idf,
-        )
-
-    return retrieve_for_workflow
 
 
 def _elapsed(clock: Clock, started: float) -> float:

@@ -5,9 +5,9 @@ from decimal import Decimal
 import pytest
 
 from app.openai_models import (
+    _ALLOWED,
+    _DEFAULTS,
     OpenAIModelPolicyError,
-    allowed_openai_models,
-    default_openai_model,
     openai_policy_snapshot,
     resolve_openai_model,
 )
@@ -35,8 +35,8 @@ def test_policy_rejects_models_outside_the_role_allowlist(model):
 
 def test_translation_allows_only_luna_and_terra_and_snapshot_is_public():
     """Expose a deterministic non-secret policy snapshot for both UIs."""
-    assert allowed_openai_models("translation") == ("gpt-5.6-luna", "gpt-5.6-terra")
-    assert default_openai_model("review") == "gpt-5.6-luna"
+    assert _ALLOWED["translation"] == ("gpt-5.6-luna", "gpt-5.6-terra")
+    assert _DEFAULTS["review"] == "gpt-5.6-luna"
     snapshot = openai_policy_snapshot()
     assert snapshot["revision"] == "2026-09-10"
     assert snapshot["roles"]["embedding"]["dimensions"] == 384

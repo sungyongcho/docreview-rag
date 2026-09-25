@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-import json
 from types import MappingProxyType
 from typing import Literal
 
@@ -93,16 +92,6 @@ _REASONING: MappingProxyType[OpenAIModelRole, ReasoningEffort | None] = MappingP
 )
 
 
-def default_openai_model(role: OpenAIModelRole) -> str:
-    """Return the policy default for one role."""
-    return _DEFAULTS[role]
-
-
-def allowed_openai_models(role: OpenAIModelRole) -> tuple[str, ...]:
-    """Return exact model identifiers admitted for one role."""
-    return _ALLOWED[role]
-
-
 def resolve_openai_model(
     role: OpenAIModelRole,
     model: str | None = None,
@@ -141,12 +130,3 @@ def openai_policy_snapshot() -> dict[str, object]:
             "dimensions": selection.dimensions,
         }
     return {"revision": POLICY_REVISION, "roles": roles}
-
-
-def main() -> None:
-    """Print the public policy snapshot without loading settings or clients."""
-    print(json.dumps(openai_policy_snapshot(), ensure_ascii=False, sort_keys=True))
-
-
-if __name__ == "__main__":
-    main()

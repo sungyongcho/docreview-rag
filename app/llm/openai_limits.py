@@ -71,11 +71,6 @@ class OpenAILimitsManager:
         if enabled:
             self._load()
 
-    @property
-    def ceiling(self) -> ProviderBudget:
-        """Return the deploy-time cap that bounds every saved value."""
-        return self._ceiling
-
     def effective(self) -> ProviderBudget:
         """Return the budget one OpenAI call may spend right now."""
         return self._effective

@@ -518,13 +518,6 @@ class ConversationTurn(StrictSchema):
         return self
 
 
-class IntentClassification(StrictSchema):
-    """Strict classifier output for an input the deterministic gate cannot decide."""
-
-    intent: ConversationIntent
-    reason: NonBlank
-
-
 class RoutingClassification(StrictSchema):
     """Extract the request's domain and explicit targets without asserting corpus coverage."""
 
