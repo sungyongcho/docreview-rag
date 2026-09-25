@@ -1,7 +1,7 @@
 """Table chunking and source-citation tests."""
 
 from app.ingestion.parser import Block
-from app.ingestion.tables import table_to_markdown
+from app.ingestion.tables import structured_table
 from tests.ingestion.chunk.support import build_filing, markdown_cells
 
 
@@ -28,7 +28,7 @@ def test_each_renderable_source_table_has_complete_fragment_coverage(C, corpus, 
         renderable = sum(
             section.status == "parsed"
             and block.kind == "table"
-            and bool(table_to_markdown(block.html))
+            and bool(structured_table(block.html).render())
             for section in filing.sections
             for block in section.blocks
         )

@@ -187,8 +187,6 @@ async def _run_cli(
     target and the canonical budget arm, and that arm is recorded in the artifact. The
     engine is disposed on every exit path.
     """
-    if args.candidate_k < args.k:
-        raise ValueError("candidate_k must be at least k")
     updates: dict[str, Any] = {"embedding_provider": args.provider}
     if args.bm25_k1 is not None:
         updates["bm25_k1"] = args.bm25_k1

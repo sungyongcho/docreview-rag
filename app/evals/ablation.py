@@ -26,8 +26,6 @@ from app.retrieval.hybrid import DEFAULT_RRF_K
 
 type ExperimentEvaluator = Callable[["ExperimentConfig"], Awaitable[RetrievalEvaluation]]
 
-DEFAULT_LEXICAL_RANKERS: tuple[LexicalRanker, ...] = LEXICAL_RANKERS
-
 
 def experiment_name(
     target_tokens: int,
@@ -237,7 +235,7 @@ def experiment_matrix(
     *,
     target_tokens: Sequence[int] = (1024, 2048),
     strategies: Sequence[RetrievalStrategy] = ("lexical", "vector", "hybrid"),
-    lexical_rankers: Sequence[LexicalRanker] = DEFAULT_LEXICAL_RANKERS,
+    lexical_rankers: Sequence[LexicalRanker] = LEXICAL_RANKERS,
     bm25_k1: float = DEFAULT_BM25_K1,
     bm25_b: float = DEFAULT_BM25_B,
     bm25_idf: BM25Idf = DEFAULT_BM25_IDF,

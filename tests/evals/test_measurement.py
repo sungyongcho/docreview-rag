@@ -46,7 +46,6 @@ def test_200_query_budget_measures_exact_boundary_without_storing_fake_results()
             retriever,
             k=5,
             query_count=QUERY_BUDGET_COUNT,
-            budget_seconds=QUERY_BUDGET_SECONDS,
             clock=_stepping_clock(450_000_000),
         )
     )
@@ -69,7 +68,6 @@ def test_query_budget_fails_only_after_the_explicit_limit():
             ["q"],
             retriever,
             query_count=200,
-            budget_seconds=90.0,
             clock=_stepping_clock(450_000_001),
         )
     )

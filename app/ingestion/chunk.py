@@ -176,7 +176,7 @@ def _source_span(blocks: list[Block], source_length: int | None = None) -> tuple
 def section_units(
     section: Section,
     config: ChunkConfig,
-    context_header: Callable[[str | None], str] | None = None,
+    context_header: Callable[[str | None], str],
 ) -> list[Unit]:
     """Group blocks without crossing source groups, headings, or tables.
 
@@ -291,9 +291,7 @@ def section_units(
 
         if pending and not budget.accepts(
             compose_index_text(
-                context_header(" · ".join(narrative_headings) or None)
-                if context_header
-                else " · ".join(narrative_headings),
+                context_header(" · ".join(narrative_headings) or None),
                 "\n\n".join([*(item.text for item in pending), text]),
             ),
             target=True,

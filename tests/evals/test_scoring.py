@@ -6,17 +6,13 @@ import pytest
 
 from app.evals.scoring import (
     COVERAGE_THRESHOLD,
-    hit_rate_at_k,
-    mrr,
-    recall_at_k,
     score_case,
     score_suite,
     span_coverage,
 )
 from app.evals.types import GoldenSpan
 from app.retrieval.types import ChunkHit
-
-SOURCE_SHA256 = "a" * 64
+from tests.evals.support import SOURCE_SHA256
 
 
 def golden(**changes: Any) -> GoldenSpan:
@@ -217,9 +213,6 @@ def test_suite_metrics_are_macro_averages_with_deterministic_case_order():
 
     suite = score_suite(results)
 
-    assert recall_at_k(results) == pytest.approx(0.5)
-    assert hit_rate_at_k(results) == pytest.approx(2 / 3)
-    assert mrr(results) == pytest.approx(0.5)
     assert suite.recall_at_k == pytest.approx(0.5)
     assert suite.hit_rate_at_k == pytest.approx(2 / 3)
     assert suite.mrr == pytest.approx(0.5)
@@ -246,11 +239,10 @@ def test_case_validation_rejects_blank_ids_empty_or_duplicate_gold():
         score_case("q1", [golden(), golden()], [hit()], 1)
 
 
-@pytest.mark.parametrize("aggregate", [score_suite, recall_at_k, hit_rate_at_k, mrr])
-def test_empty_suite_is_rejected(aggregate):
+def test_empty_suite_is_rejected():
     """Refuse to average an empty suite instead of returning zero."""
     with pytest.raises(ValueError, match="must not be empty"):
-        aggregate([])
+        score_suite([])
 
 
 def test_suite_rejects_duplicate_case_ids_or_mixed_k():

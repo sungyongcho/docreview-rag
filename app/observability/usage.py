@@ -97,7 +97,6 @@ def provider_identity(
         local = True if selected in {"sbert", "deterministic", "local"} else inferred_local
     slots = {
         "dev": "OPENAI_API_KEY_LOCAL",
-        "local": "OPENAI_API_KEY_LOCAL",
         "prod": "OPENAI_API_KEY_PROD",
         "OPENAI_API_KEY_LOCAL": "OPENAI_API_KEY_LOCAL",
         "OPENAI_API_KEY_PROD": "OPENAI_API_KEY_PROD",
@@ -276,7 +275,7 @@ def review_usage(
     for call in calls:
         if not isinstance(call, dict):
             raise ValueError("Persisted model usage call is not an object")
-        model = str(call.get("model", call.get("model_name", "unknown")))
+        model = str(call.get("model", "unknown"))
         role = str(call.get("node", "unknown"))
         matched = next(
             (
@@ -291,14 +290,9 @@ def review_usage(
         )
         if matched is not None:
             available.remove(matched)
-        identity = call.get("provider_identity", call)
         identity = {
             **base_identity,
-            **{
-                key: identity[key]
-                for key in ("provider", "local", "credential_slot")
-                if key in identity
-            },
+            **{key: call[key] for key in ("provider", "local", "credential_slot") if key in call},
         }
         resolved = provider_identity(
             api_url=call.get("api_url", matched.api_url if matched is not None else None),

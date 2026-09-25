@@ -11,10 +11,10 @@ def test_corpus_chunks_fit_complete_input_limits(chunks_by_doc):
         assert all(len(chunk.content) <= 32768 for chunk in chunks)
 
 
-def test_corpus_chunk_identities_are_deterministic(chunks_by_doc, corpus, chunker):
+def test_corpus_chunk_identities_are_deterministic(chunks_by_doc, corpus, C):
     """Rebuilding unchanged sources reproduces every stable identity and body."""
     for doc_id, (filing, _raw) in corpus.items():
-        actual = chunker(filing)
+        actual = C.chunk_filing(filing)
         expected = chunks_by_doc[doc_id]
         assert [(chunk.stable_key, chunk.body) for chunk in actual] == [
             (chunk.stable_key, chunk.body) for chunk in expected

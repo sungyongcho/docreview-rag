@@ -9,6 +9,7 @@ from app.evals.loader import (
     DEFAULT_MANIFEST_PATH,
     REPO_ROOT,
     load_golden_cases,
+    normalized_question,
 )
 from app.evals.types import GoldenCase
 from app.retrieval.language import contains_hangul
@@ -61,11 +62,6 @@ class BilingualSuite:
         raise ValueError(f"unsupported suite language: {language}")
 
 
-def _normalized(question: str) -> str:
-    """Casefold one question and collapse its whitespace for identity comparison."""
-    return " ".join(question.casefold().split())
-
-
 def validate_twin_cases(
     en_cases: Sequence[GoldenCase],
     ko_cases: Sequence[GoldenCase],
@@ -95,7 +91,7 @@ def validate_twin_cases(
                 raise TwinCaseError(f"{case_id} twins disagree about {field}")
         # Checked before the script rules: a copied-across question is the likely
         # authoring slip, and reporting it as "no Hangul" would name the symptom.
-        if _normalized(english.question) == _normalized(korean.question):
+        if normalized_question(english.question) == normalized_question(korean.question):
             raise TwinCaseError(f"{case_id} twins share one untranslated question")
         if contains_hangul(english.question):
             raise TwinCaseError(f"{case_id} English question contains Hangul")

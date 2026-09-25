@@ -249,8 +249,6 @@ def parse_dart_filing(source: FilingSource) -> tuple[ParsedFiling, dict[str, Any
         warnings=warnings,
         profile_used="static",
         segment_type="dart_part",
-        n_blocks=len(elements),
-        n_chars=total_chars,
     )
     return filing, {"segmentation": {"kind": "dart_section_1", "parts": list(DART_PARTS)}}
 

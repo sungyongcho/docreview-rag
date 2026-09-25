@@ -1,4 +1,4 @@
-"""Optional async reranking behind a dependency-free provider boundary."""
+"""Async reranking behind a dependency-free provider boundary."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -32,26 +32,26 @@ async def rerank_hits(
     query: str,
     hits: Sequence[ChunkHit],
     *,
-    provider: RerankProvider | None = None,
+    provider: RerankProvider,
     top_k: int = 5,
 ) -> list[ChunkHit]:
-    """Optionally rescore candidates and return deterministic top-k hits.
+    """Rescore candidates through a provider and return deterministic top-k hits.
 
     Parameters
     ----------
     query : str
-        Nonblank query passed to the optional provider.
+        Nonblank query passed to the provider.
     hits : Sequence[ChunkHit]
         Candidate evidence in retrieval order.
-    provider : RerankProvider | None
-        Optional external scoring boundary.
+    provider : RerankProvider
+        External scoring boundary.
     top_k : int
         Maximum number of reranked hits to return.
 
     Returns
     -------
     list[ChunkHit]
-        Deterministically ordered original or provider-rescored evidence.
+        Deterministically ordered provider-rescored evidence.
 
     Raises
     ------
@@ -61,8 +61,8 @@ async def rerank_hits(
 
     Notes
     -----
-    Without a provider, existing shared ordering is preserved. With a provider, all
-    scores are validated before top-k selection and the immutable inputs are not changed.
+    All provider scores are validated before top-k selection, and the immutable inputs
+    are not changed.
     """
     if not isinstance(query, str) or not query.strip():
         raise ValueError("rerank query must be nonempty")
@@ -70,8 +70,6 @@ async def rerank_hits(
         raise ValueError("rerank top_k must not be negative")
     if top_k == 0 or not hits:
         return []
-    if provider is None:
-        return sort_hits(hits)[:top_k]
 
     scores = _scores(
         await provider.score(query, [hit.index_text for hit in hits]),

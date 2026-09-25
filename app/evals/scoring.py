@@ -167,21 +167,6 @@ def _macro(scores: tuple[CaseScore, ...], value: Callable[[CaseScore], float]) -
     return sum(value(result) for result in scores) / len(scores)
 
 
-def recall_at_k(case_scores: Sequence[CaseScore]) -> float:
-    """Return macro recall across a nonempty suite of positive cases."""
-    return _macro(_validated_scores(case_scores), lambda result: result.recall_at_k)
-
-
-def hit_rate_at_k(case_scores: Sequence[CaseScore]) -> float:
-    """Return the fraction of positive cases with at least one relevant top-k hit."""
-    return _macro(_validated_scores(case_scores), lambda result: result.hit_at_k)
-
-
-def mrr(case_scores: Sequence[CaseScore]) -> float:
-    """Return mean reciprocal rank of the first relevant top-k hit per case."""
-    return _macro(_validated_scores(case_scores), lambda result: result.reciprocal_rank)
-
-
 def score_suite(case_scores: Sequence[CaseScore]) -> SuiteScore:
     """Aggregate one nonempty, single-k suite in deterministic case-id order."""
     scores = _validated_scores(case_scores)

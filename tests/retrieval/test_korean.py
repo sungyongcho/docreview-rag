@@ -16,26 +16,26 @@ from app.retrieval.types import RetrievalFilters
 
 def test_hangul_runs_become_overlapping_bigrams():
     """Split a Hangul run into overlapping bigrams so inflection cannot hide a term."""
-    assert tokenize_korean_text("삼성전자", grams=2) == "삼성 성전 전자"
+    assert tokenize_korean_text("삼성전자") == "삼성 성전 전자"
 
 
 def test_short_hangul_run_stays_whole():
     """Keep a run shorter than the gram size as one token."""
     assert hangul_ngrams("칩", 2) == ["칩"]
-    assert tokenize_korean_text("칩 설계", grams=2) == "칩 설계"
+    assert tokenize_korean_text("칩 설계") == "칩 설계"
 
 
 def test_particles_still_share_the_stem_grams():
     """The agglutinative variants a whitespace index separates now share grams."""
-    subject = set(tokenize_korean_text("삼성전자는", grams=2).split())
-    other = set(tokenize_korean_text("삼성전자가", grams=2).split())
+    subject = set(tokenize_korean_text("삼성전자는").split())
+    other = set(tokenize_korean_text("삼성전자가").split())
 
     assert {"삼성", "성전", "전자"} <= subject & other
 
 
 def test_latin_words_numbers_and_joined_figures_stay_whole():
     """Leave Latin words, numbers, and joined figures untouched."""
-    tokens = tokenize_korean_text("HBM 매출 300,870,903원 (58.1%)", grams=2).split()
+    tokens = tokenize_korean_text("HBM 매출 300,870,903원 (58.1%)").split()
 
     assert "hbm" in tokens
     assert "300,870,903" in tokens
@@ -44,13 +44,7 @@ def test_latin_words_numbers_and_joined_figures_stay_whole():
 
 def test_mixed_script_text_keeps_document_order():
     """Emit mixed-script tokens in the order the text carries them."""
-    assert tokenize_korean_text("DRAM 시장", grams=2) == "dram 시장"
-
-
-def test_grams_must_be_positive():
-    """Reject a nonpositive gram size."""
-    with pytest.raises(ValueError, match="positive"):
-        tokenize_korean_text("삼성", grams=0)
+    assert tokenize_korean_text("DRAM 시장") == "dram 시장"
 
 
 def test_contract_constants_are_pinned():

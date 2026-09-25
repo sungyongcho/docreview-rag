@@ -148,7 +148,8 @@ def to_grid(table: Tag) -> Grid:
 
     A centered spanning cell is a label written over several columns, so its text is
     copied to every column it covers that carries content elsewhere in the table.
-    Layout-only spacer columns stay empty and are still removed by :func:`drop_empty`.
+    Layout-only spacer columns stay empty and are removed later, when the table is
+    structured.
     """
     placed: Grid = []
     # Centered spans, resolved after the content columns of the table are known.
@@ -213,20 +214,6 @@ def to_grid(table: Tag) -> Grid:
             placed[row_i][c] = text
 
     return placed
-
-
-def drop_empty(grid: Grid) -> Grid:
-    """Remove rows and columns that contain no non-empty values.
-
-    Ragged input is tolerated: the width is taken from the widest row and missing
-    cells read as empty.
-    """
-    rows = [r for r in grid if any(c.strip() for c in r)]
-    if not rows:
-        return []
-    width = max(len(r) for r in rows)
-    keep = [j for j in range(width) if any(j < len(r) and r[j].strip() for r in rows)]
-    return [[r[j] if j < len(r) else "" for j in keep] for r in rows]
 
 
 def merge_unit_columns(
@@ -423,58 +410,6 @@ def split_header(grid: Grid) -> tuple[Grid, Grid]:
     return [row[:] for row in grid[:n]], [row[:] for row in grid[n:]]
 
 
-def to_markdown(grid: Grid) -> str:
-    """Serialize a collapsed grid as a markdown table.
-
-    Parameters
-    ----------
-    grid
-        Collapsed table grid after span expansion and cleanup.
-
-    Returns
-    -------
-    str
-        Markdown table serialization, or ``""`` when no rows remain.
-
-    Notes
-    -----
-    Multi-row headers (``"Year Ended"`` over ``"Jan 28, 2024"``) are merged per column
-    so the date context is preserved in chunk text.
-
-    When :func:`split_header` infers no header the header row is left blank rather than
-    promoted from the first row. A cover-page or checkbox table has no column titles to
-    promote, and presenting its first row as labels states something the filing does not.
-    """
-
-    def _cell(text: str) -> str:
-        """Escape one cell so a pipe or newline cannot add a column or a row."""
-        # Escape backslashes before pipes so an escaped pipe cannot lose its backslash.
-        raw = text.replace("\\", "\\\\").replace("|", "\\|")
-        return " ".join(raw.split())
-
-    if not grid:
-        return ""
-
-    header, body = split_header(grid)
-    # Width comes from every row: a row wider than the header must not be truncated.
-    cols = max((len(r) for r in grid), default=0)
-    if not cols:
-        return ""
-
-    head = [
-        _cell(" ".join(r[j] for r in header if j < len(r) and r[j].strip())) for j in range(cols)
-    ]
-
-    def _row(row: list[str]) -> str:
-        """Render one padded, pipe-delimited row at the table's full width."""
-        return "| " + " | ".join(_cell(row[j]) if j < len(row) else "" for j in range(cols)) + " |"
-
-    lines = [_row(head), "| " + " | ".join("---" for _ in range(cols)) + " |"]
-    lines += [_row(row) for row in body]
-
-    return "\n".join(lines)
-
-
 def _table_node(table: str | Tag | None) -> Tag | None:
     """Return the table element of a node or fragment, or ``None``."""
     if table is None:
@@ -491,32 +426,6 @@ def _table_node(table: str | Tag | None) -> Tag | None:
 def is_unit_caption(text: str) -> bool:
     """Whether the stripped text is exactly one DART unit annotation."""
     return bool(UNIT_CAPTION_RE.match(text.strip()))
-
-
-def render_table(table: str | Tag | None) -> tuple[list[str], str]:
-    """Render one table into ``(captions, markdown)`` from a single parse.
-
-    ``markdown`` is exactly what :func:`table_to_markdown` returns: when the table
-    has data rows its unit captions stay prepended inline. ``captions`` is non-empty
-    only for a caption-only table, which renders no markdown of its own. A chunker
-    that needs both answers per table can therefore call this once instead of
-    running the parse pipeline twice.
-    """
-    node = _table_node(table)
-    if node is None:
-        return [], ""
-    captions, grid = split_unit_captions(drop_empty(to_grid(node)))
-    grid = drop_empty(grid)
-    if not grid:
-        # A caption-only table: nothing renders, so the annotations travel out
-        # for the caller to attach to the table that follows.
-        return captions, ""
-    markdown = to_markdown(merge_unit_columns(grid))
-    if not markdown:
-        return [], ""
-    if captions:
-        markdown = "\n".join([*captions, markdown])
-    return [], markdown
 
 
 @dataclass(frozen=True, slots=True)
@@ -581,7 +490,12 @@ class StructuredTable:
 
 
 def structured_table(table: str | Tag | None) -> StructuredTable:
-    """Retain source cell relationships while applying the existing table transforms."""
+    """Retain source cell relationships while applying the existing table transforms.
+
+    Numbers are passed through verbatim: ``(1,234)`` remains parenthesized rather
+    than becoming ``-1234``. The citation has to match what a reader sees in the
+    filing, and normalizing here would be irreversible.
+    """
     node = _table_node(table)
     if node is None:
         return StructuredTable((), (), ())
@@ -646,29 +560,3 @@ def structured_table(table: str | Tag | None) -> StructuredTable:
     )
     header_count = len(split_header(compact)[0])
     return StructuredTable(tuple(captions), rows[:header_count], rows[header_count:], caption_cells)
-
-
-def table_to_markdown(table: str | Tag | None) -> str:
-    """Convert an HTML table into markdown text.
-
-    Parameters
-    ----------
-    table
-        Parsed table node, or a raw HTML fragment possibly containing a table.
-        ``None`` and empty input return an empty string. Passing the parsed node
-        avoids re-parsing a fragment that has already been parsed.
-
-    Returns
-    -------
-    str
-        Empty string when no table or no content remains, otherwise markdown
-        text generated from the table.
-
-    Notes
-    -----
-    Numbers are passed through verbatim: ``(1,234)`` remains parenthesized rather
-    than becoming ``-1234``. The citation has to match what a reader sees in the
-    filing, and normalizing here would be irreversible; query-side normalization
-    should be handled outside this function.
-    """
-    return render_table(table)[1]

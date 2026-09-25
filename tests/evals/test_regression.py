@@ -69,17 +69,13 @@ def test_configurable_tolerance_includes_the_exact_drop_boundary():
     assert exceeded.regressed_metrics == ("recall_at_k",)
 
 
-def test_tolerances_accept_a_partial_metric_mapping():
-    """Apply a mapping that names only some gated metrics."""
-    result = compare_against_baseline(metrics(), metrics(mrr=0.59), tolerances={"mrr": 0.01})
+def test_tolerances_accept_a_partial_metric_set():
+    """Apply tolerances that name only some gated metrics."""
+    result = compare_against_baseline(
+        metrics(), metrics(mrr=0.59), tolerances=RegressionTolerances(mrr=0.01)
+    )
 
     assert result.passed
-
-
-def test_tolerances_reject_metrics_without_an_explicit_direction():
-    """Reject a tolerance for a metric with no declared better direction."""
-    with pytest.raises(ValueError, match="unsupported metric tolerances: latency_ms"):
-        compare_against_baseline(metrics(), metrics(), tolerances={"latency_ms": 10.0})
 
 
 def test_only_explicit_quality_metrics_are_compared():

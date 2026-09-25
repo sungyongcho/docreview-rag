@@ -10,6 +10,7 @@ from app.evals.regression import (
     MetricName,
     RegressionTolerances,
 )
+from app.evals.reporting import markdown_table
 from app.evals.retrieval_eval import RetrievalEvaluation
 
 DEFAULT_MIN_RECALL_RATIO: Final[float] = 0.85
@@ -177,17 +178,21 @@ def parity_markdown(assessment: ParityAssessment) -> str:
     verdict = "PASS" if assessment.passed else "FAIL"
     native = assessment.native_language.upper()
     foreign = "KO" if native == "EN" else "EN"
-    lines = [
-        f"| Metric | EN | KO | Delta ({native}-{foreign}) | Ratio ({foreign}/{native}) |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for result in assessment.metrics:
-        ratio = "undefined" if result.ratio is None else f"{result.ratio:.6f}"
-        lines.append(
-            f"| {result.metric} | {result.en:.6f} | {result.ko:.6f} | "
-            f"{result.delta:.6f} | {ratio} |"
-        )
-    lines.append("")
+    table = markdown_table(
+        ["Metric", "EN", "KO", f"Delta ({native}-{foreign})", f"Ratio ({foreign}/{native})"],
+        ["left", "right", "right", "right", "right"],
+        [
+            [
+                result.metric,
+                f"{result.en:.6f}",
+                f"{result.ko:.6f}",
+                f"{result.delta:.6f}",
+                "undefined" if result.ratio is None else f"{result.ratio:.6f}",
+            ]
+            for result in assessment.metrics
+        ],
+    )
+    lines = [table, ""]
     lines.append(
         f"{verdict} — {assessment.suite}, k={assessment.k}, "
         f"{assessment.case_count} scored cases, "

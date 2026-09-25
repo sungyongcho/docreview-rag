@@ -10,7 +10,7 @@ import pytest
 
 from app.ingestion.chunk import ChunkConfig, chunk_filing
 from app.ingestion.parser import Block
-from app.ingestion.tables import render_table, structured_table
+from app.ingestion.tables import structured_table
 from app.ingestion.tokens import MAX_INPUT_CHARACTERS, count_tokens
 from tests.ingestion.chunk.support import build_filing
 
@@ -105,7 +105,6 @@ def test_merged_cells_keep_source_relationships_and_numeric_rendering():
     <tr><td rowspan="2">Revenue</td><td>$</td><td>(1,234)</td></tr>
     <tr><td>$</td><td>567</td></tr></table>"""
     table = structured_table(html)
-    assert table.render() == render_table(html)[1]
     assert "$ (1,234)" in table.render()
     assert len(table.headers) == 2
     assert any(
@@ -245,7 +244,6 @@ def test_exact_five_samsung_tables_and_nvda_fit_complete_input_budgets(tmp_path,
                 if block.kind != "table":
                     continue
                 table = structured_table(block.html)
-                assert table.render() == render_table(block.html)[1]
                 if count_tokens(table.render()) <= 8192:
                     continue
                 span = (block.source_pos, block.end_pos)

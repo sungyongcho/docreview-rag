@@ -316,7 +316,7 @@ async def persist_evaluation(
     evaluation: RetrievalEvaluation,
     *,
     raw_artifact_path: str | Path,
-    tolerances: RegressionTolerances | Mapping[str, float] | None = None,
+    tolerances: RegressionTolerances | None = None,
 ) -> PersistedEvaluation:
     """Persist one run and compare it with the latest matching baseline.
 
@@ -328,7 +328,7 @@ async def persist_evaluation(
         Completed run whose canonical suite, configuration, and metrics are persisted.
     raw_artifact_path : str | Path
         Path recorded as the reviewable raw evidence for the new row.
-    tolerances : RegressionTolerances | Mapping[str, float] | None, optional
+    tolerances : RegressionTolerances | None, optional
         Accepted absolute drops for quality metrics, or zero tolerance when omitted.
 
     Returns
@@ -339,7 +339,7 @@ async def persist_evaluation(
     Raises
     ------
     ValueError
-        If persisted metadata, metrics, or regression tolerances violate their contracts.
+        If persisted metadata or metrics violate their contracts.
     RuntimeError
         If the inserted result is not assigned a database identity.
 

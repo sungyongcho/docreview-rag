@@ -96,7 +96,7 @@ def compare_against_baseline(
     baseline: Mapping[str, float],
     current: Mapping[str, float],
     *,
-    tolerances: RegressionTolerances | Mapping[str, float] | None = None,
+    tolerances: RegressionTolerances | None = None,
 ) -> BaselineComparison:
     """Compare current values with an explicit higher-is-better metric baseline.
 
@@ -108,7 +108,7 @@ def compare_against_baseline(
     current : Mapping[str, float]
         Fresh metric values compared against the baseline.
 
-    tolerances : RegressionTolerances | Mapping[str, float] | None
+    tolerances : RegressionTolerances | None
         Accepted absolute drop per metric; ``None`` means zero tolerance.
 
     Returns
@@ -119,8 +119,8 @@ def compare_against_baseline(
     Raises
     ------
     ValueError
-        If either side is not a mapping, a supported metric is missing or out
-        of range, or a tolerance names an unsupported metric.
+        If either side is not a mapping, or a supported metric is missing or out
+        of range.
 
     Notes
     -----
@@ -131,20 +131,7 @@ def compare_against_baseline(
     """
     if not isinstance(baseline, Mapping) or not isinstance(current, Mapping):
         raise ValueError("baseline and current metrics must be mappings")
-    if tolerances is None:
-        limits = RegressionTolerances()
-    elif isinstance(tolerances, RegressionTolerances):
-        limits = tolerances
-    else:
-        if not isinstance(tolerances, Mapping) or not all(
-            isinstance(metric, str) for metric in tolerances
-        ):
-            raise ValueError("tolerances must map supported metric names to numbers")
-        unknown = set(tolerances) - set(HIGHER_IS_BETTER_METRICS)
-        if unknown:
-            names = ", ".join(sorted(unknown))
-            raise ValueError(f"unsupported metric tolerances: {names}")
-        limits = RegressionTolerances(**tolerances)
+    limits = tolerances if tolerances is not None else RegressionTolerances()
     comparisons: list[MetricComparison] = []
     for metric in HIGHER_IS_BETTER_METRICS:
         baseline_value = _gated_metric_value(baseline, metric, "baseline")

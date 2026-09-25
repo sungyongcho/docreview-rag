@@ -71,9 +71,6 @@ class ParsedFiling:
     warnings: list[str] = field(default_factory=list)
     profile_used: str = "saved"  # bootstrap | saved | relearned
     segment_type: str = ""
-    # Validation measurements kept here so the CLI does not parse the filing twice.
-    n_blocks: int = 0
-    n_chars: int = 0  # total document text length, used as the coverage denominator
 
 
 HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")

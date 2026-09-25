@@ -402,17 +402,13 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         )
 
 
-def get_embedding_provider(
-    settings: Settings | None = None, *, client: EmbeddingClient | None = None
-) -> EmbeddingProvider:
+def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvider:
     """Build the configured provider without work at module import time.
 
     Parameters
     ----------
     settings : Settings | None
         Validated settings, or ``None`` to load cached application settings.
-    client : EmbeddingClient | None
-        Optional SDK-compatible client for the OpenAI provider.
 
     Returns
     -------
@@ -433,7 +429,6 @@ def get_embedding_provider(
     return OpenAIEmbeddingProvider(
         model=configured.embedding_model,
         dimensions=configured.embed_dim,
-        client=client,
         api_key=api_key,
         credential_slot=configured.openai_key_slot,
     )
@@ -463,13 +458,11 @@ class EmbeddingBackfillResult:
     batches: int
 
 
-def matching_embedding(
-    identity: EmbeddingIdentity, *, chunk: type[Chunk] = Chunk
-) -> ColumnElement[bool]:
+def matching_embedding(identity: EmbeddingIdentity) -> ColumnElement[bool]:
     """Bind reusable vectors to the current input hash and exact configuration."""
     return and_(
-        ChunkEmbedding.chunk_id == chunk.id,
-        ChunkEmbedding.input_sha256 == chunk.index_text_sha256,
+        ChunkEmbedding.chunk_id == Chunk.id,
+        ChunkEmbedding.input_sha256 == Chunk.index_text_sha256,
         ChunkEmbedding.provider == identity.provider,
         ChunkEmbedding.model == identity.model,
         ChunkEmbedding.dimensions == identity.dimensions,

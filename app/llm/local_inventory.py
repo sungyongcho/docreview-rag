@@ -255,16 +255,16 @@ class LocalModelInventory:
             )
             if row is None:
                 return {"reason": "model_not_loaded"}
-            size, vram = row.get("size"), row.get("size_vram")
-            if type(size) is not int or size <= 0 or type(vram) is not int or vram < 0:
+            placement = _placement(row)
+            if placement is None:
                 return {"reason": "ollama_memory_fields_unavailable"}
             return {
                 "source": "ollama_api_ps",
                 "model": row["name"],
                 "digest": _text(row.get("digest")),
-                "size_bytes": size,
-                "vram_bytes": vram,
-                "placement": "cpu" if vram == 0 else "gpu" if vram >= size else "mixed",
+                "size_bytes": row["size"],
+                "vram_bytes": row["size_vram"],
+                "placement": placement,
                 "checked_at": datetime.now(UTC).isoformat(),
                 "reason": None,
             }

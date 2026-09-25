@@ -874,8 +874,6 @@ def parse_filing(source: FilingSource) -> tuple[ParsedFiling, dict]:
         source=source,
         source_length=len(raw),
         source_sha256=source_digest(raw),
-        n_blocks=len(blocks),
-        n_chars=sum(len(b.get_text(" ", strip=True)) for b in blocks),
     )
 
     profile = load_profile(issuer, year)

@@ -53,7 +53,7 @@ def hangul_ngrams(run: str, grams: int) -> list[str]:
     return [run[i : i + grams] for i in range(len(run) - grams + 1)]
 
 
-def tokenize_korean_text(text: str, *, grams: int = KOREAN_LEXICAL_GRAMS) -> str:
+def tokenize_korean_text(text: str) -> str:
     """Return space-joined lexical tokens for Korean-corpus indexing and querying.
 
     Hangul runs become overlapping character n-grams; latin words and numbers stay
@@ -65,17 +65,17 @@ def tokenize_korean_text(text: str, *, grams: int = KOREAN_LEXICAL_GRAMS) -> str
     ----------
     text : str
         Raw text in its natural form; the caller never pre-tokenizes.
-    grams : int
-        N-gram width for Hangul runs. The measured default is the contract for
-        stored rows: changing it invalidates every stored ``lexical_text``.
+
+    Notes
+    -----
+    Hangul runs use the ``KOREAN_LEXICAL_GRAMS`` n-gram width. That width is the
+    contract for stored rows: changing it invalidates every stored ``lexical_text``.
     """
-    if grams < 1:
-        raise ValueError("grams must be positive")
     tokens: list[str] = []
     for match in _LEXICAL_RUN_RE.finditer(text):
         run = match.group()
         if _HANGUL_RUN_RE.fullmatch(run):
-            tokens.extend(hangul_ngrams(run, grams))
+            tokens.extend(hangul_ngrams(run, KOREAN_LEXICAL_GRAMS))
         else:
             tokens.append(run.lower())
     return " ".join(tokens)

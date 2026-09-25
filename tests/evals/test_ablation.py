@@ -11,8 +11,7 @@ from app.evals.identity import ARM_NAME
 from app.evals.retrieval_eval import evaluate_retriever
 from app.evals.types import GoldenCase, GoldenSpan
 from app.retrieval.types import ChunkHit
-
-SOURCE_SHA256 = "a" * 64
+from tests.evals.support import SOURCE_SHA256
 
 
 def golden_case() -> GoldenCase:

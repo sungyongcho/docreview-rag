@@ -57,9 +57,8 @@ export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 # ===== VM-side values (from .env; validated only where they are consumed) =====
 # build_image.sh pushes this reference; deploy_backend.sh passes it to the VM.
 export DOCREVIEW_IMAGE="${DOCREVIEW_IMAGE:-${ARTIFACT_REGISTRY}/docreview:latest}"
-# DEPLOY_POSTGRES_PASSWORD is the production database password; the legacy
-# POSTGRES_PASSWORD name is still accepted for an existing .env.
-export POSTGRES_PASSWORD="${DEPLOY_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-}}"
+# DEPLOY_POSTGRES_PASSWORD is the production database password.
+export POSTGRES_PASSWORD="${DEPLOY_POSTGRES_PASSWORD:-}"
 
 _mask_len() {
   local s="${1:-}"

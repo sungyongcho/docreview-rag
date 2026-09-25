@@ -3,7 +3,7 @@
 import asyncio
 from collections import OrderedDict, deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time as datetime_time, timedelta
 from decimal import Decimal
 import math
@@ -25,16 +25,11 @@ class RateLimitDecision:
     day_reset_seconds: int
 
 
-@dataclass(slots=True)
-class _ClientWindow:
-    """One client's request timestamps and when it was last seen."""
-
-    timestamps: deque[float] = field(default_factory=deque)
-    last_seen: float = 0.0
-
-
 class InProcessRateLimiter:
     """Enforce rolling minute/day limits with bounded LRU client state.
+
+    Each tracked client maps to its deque of request timestamps; the mapping's
+    insertion order is the least-recently-seen order used for eviction.
 
     This limiter intentionally targets one process. Multiple workers or replicas each own
     independent counters and require an external shared limiter before public scale-out.
@@ -56,13 +51,8 @@ class InProcessRateLimiter:
         self._per_day = per_day
         self._max_clients = max_clients
         self._clock = clock
-        self._clients: OrderedDict[str, _ClientWindow] = OrderedDict()
+        self._clients: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = asyncio.Lock()
-
-    @property
-    def client_count(self) -> int:
-        """Return the current bounded state size for diagnostics and tests."""
-        return len(self._clients)
 
     async def check(self, client_key: str) -> RateLimitDecision:
         """Atomically consume one request slot or return a retry decision."""
@@ -77,30 +67,25 @@ class InProcessRateLimiter:
             if window is None:
                 if len(self._clients) >= self._max_clients:
                     self._clients.popitem(last=False)
-                window = _ClientWindow()
+                window = deque()
             self._clients[client_key] = window
-            window.last_seen = float(now)
 
             day_cutoff = now - DAY_SECONDS
-            while window.timestamps and window.timestamps[0] <= day_cutoff:
-                window.timestamps.popleft()
+            while window and window[0] <= day_cutoff:
+                window.popleft()
 
             minute_cutoff = now - MINUTE_SECONDS
-            minute_count = sum(timestamp > minute_cutoff for timestamp in window.timestamps)
-            day_count = len(window.timestamps)
+            minute_count = sum(timestamp > minute_cutoff for timestamp in window)
+            day_count = len(window)
             minute_start = next(
-                (timestamp for timestamp in window.timestamps if timestamp > minute_cutoff), None
+                (timestamp for timestamp in window if timestamp > minute_cutoff), None
             )
             minute_reset = (
                 max(1, math.ceil(minute_start + MINUTE_SECONDS - now))
                 if minute_start is not None
                 else 0
             )
-            day_reset = (
-                max(1, math.ceil(window.timestamps[0] + DAY_SECONDS - now))
-                if window.timestamps
-                else 0
-            )
+            day_reset = max(1, math.ceil(window[0] + DAY_SECONDS - now)) if window else 0
 
             if minute_count >= self._per_minute:
                 return RateLimitDecision(
@@ -121,9 +106,9 @@ class InProcessRateLimiter:
                     day_reset_seconds=day_reset,
                 )
 
-            window.timestamps.append(float(now))
-            minute_reset = max(1, math.ceil(window.timestamps[-1] + MINUTE_SECONDS - now))
-            day_reset = max(1, math.ceil(window.timestamps[0] + DAY_SECONDS - now))
+            window.append(float(now))
+            minute_reset = max(1, math.ceil(window[-1] + MINUTE_SECONDS - now))
+            day_reset = max(1, math.ceil(window[0] + DAY_SECONDS - now))
             return RateLimitDecision(
                 allowed=True,
                 retry_after_seconds=0,
@@ -140,7 +125,7 @@ class InProcessRateLimiter:
             raise ValueError("clock must return a finite nonnegative value")
         async with self._lock:
             window = self._clients.get(client_key)
-            timestamps = () if window is None else tuple(window.timestamps)
+            timestamps = () if window is None else tuple(window)
             minute_values = tuple(value for value in timestamps if value > now - MINUTE_SECONDS)
             day_values = tuple(value for value in timestamps if value > now - DAY_SECONDS)
             minute = len(minute_values)

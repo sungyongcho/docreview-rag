@@ -62,46 +62,6 @@ def read_strict_json(path: str | Path, *, error: type[Exception]) -> object:
     return payload
 
 
-def encode_json_document(payload: object, *, sort_keys: bool = True) -> str:
-    """Encode one reviewable JSON document with exactly one terminal newline.
-
-    Parameters
-    ----------
-    payload : object
-        JSON-compatible value to serialize.
-    sort_keys : bool
-        Sort object keys, which every generated artifact wants and a
-        human-authored file whose field order is part of its review does not.
-
-    Returns
-    -------
-    str
-        Two-space indented, non-ASCII-preserving JSON text.
-
-    Raises
-    ------
-    ValueError
-        If the payload contains a non-finite number.
-    TypeError
-        If the payload contains a value JSON cannot encode.
-
-    Notes
-    -----
-    Every evaluation file narrows through this encoder, so two runs that recorded
-    the same evidence produce byte-identical bytes whatever wrote them.
-    """
-    return (
-        json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=sort_keys,
-        )
-        + "\n"
-    )
-
-
 def utc_text(value: datetime) -> str:
     """Format a timezone-aware datetime as a UTC ``Z`` timestamp.
 
@@ -151,5 +111,6 @@ def write_json_artifact(path: str | Path, payload: dict[str, object]) -> Path:
     if artifact_path.suffix != JSON_SUFFIX:
         raise ValueError("evaluation artifact path must end in .json")
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_text(encode_json_document(payload), encoding="utf-8")
+    text = json.dumps(payload, allow_nan=False, ensure_ascii=False, indent=2, sort_keys=True)
+    artifact_path.write_text(text + "\n", encoding="utf-8")
     return artifact_path

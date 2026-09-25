@@ -6,7 +6,7 @@ mapping before delegating every aggregate calculation to ``score_suite``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import get_args
 
@@ -109,42 +109,6 @@ def _validated_pairs(
     return pairs
 
 
-def _grouped(
-    pairs: Sequence[tuple[GoldenCase, CaseScore]],
-    groups: Sequence[str],
-    key: Callable[[GoldenCase], str],
-) -> tuple[GroupScore, ...]:
-    """Aggregate pairs for each declared group in declaration order.
-
-    Parameters
-    ----------
-    pairs : Sequence[tuple[GoldenCase, CaseScore]]
-        Validated positive case-score pairs.
-    groups : Sequence[str]
-        Taxonomy values in required output order.
-    key : Callable[[GoldenCase], str]
-        Taxonomy value selector, such as the category.
-
-    Returns
-    -------
-    tuple[GroupScore, ...]
-        Nonempty group aggregates in ``groups`` order.
-
-    Notes
-    -----
-    ``score_suite`` remains the single implementation of macro averaging. The
-    repeated scan is retained because the fixed taxonomy has at most five groups and
-    a one-pass bucket benchmark saved only microseconds while increasing peak memory.
-    """
-    results: list[GroupScore] = []
-    for group in groups:
-        members = [score for case, score in pairs if key(case) == group]
-        if not members:
-            continue
-        results.append(GroupScore(group=group, suite=score_suite(members)))
-    return tuple(results)
-
-
 def breakdown_by_category(
     cases: Sequence[GoldenCase],
     scores: Sequence[CaseScore],
@@ -167,6 +131,17 @@ def breakdown_by_category(
     ------
     ValueError
         If case-score pairing is incomplete or inconsistent.
+
+    Notes
+    -----
+    ``score_suite`` remains the single implementation of macro averaging. The
+    repeated scan is retained because the fixed taxonomy has at most five groups and
+    a one-pass bucket benchmark saved only microseconds while increasing peak memory.
     """
     pairs = _validated_pairs(cases, scores)
-    return _grouped(pairs, get_args(GoldenCategory), lambda case: case.category)
+    results: list[GroupScore] = []
+    for group in get_args(GoldenCategory):
+        members = [score for case, score in pairs if case.category == group]
+        if members:
+            results.append(GroupScore(group=group, suite=score_suite(members)))
+    return tuple(results)

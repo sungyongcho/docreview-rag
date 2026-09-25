@@ -191,7 +191,7 @@ def test_openai_provider_rejects_incomplete_duplicate_or_wrong_dimension_data(
 
 
 def test_openai_sdk_import_is_lazy_for_direct_and_factory_paths():
-    """Import the module and use injected clients without loading the OpenAI SDK."""
+    """Import the module and use an injected client without loading the OpenAI SDK."""
     script = """
 import builtins
 import sys
@@ -221,14 +221,6 @@ class Client:
 
 client = Client()
 OpenAIEmbeddingProvider(client=client)
-get_embedding_provider(
-    Settings(
-        _env_file=None,
-        embedding_provider="openai",
-        OPENAI_API_KEY_LOCAL="injected-key",
-    ),
-    client=client,
-)
 
 builtins.__import__ = real_import
 created = []

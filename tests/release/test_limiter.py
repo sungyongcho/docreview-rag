@@ -87,7 +87,9 @@ def test_client_state_is_bounded_by_lru_eviction() -> None:
     asyncio.run(limiter.check("two"))
     asyncio.run(limiter.check("three"))
 
-    assert limiter.client_count == 2
+    assert asyncio.run(limiter.peek("one")).remaining_minute == 1
+    assert asyncio.run(limiter.peek("two")).remaining_minute == 0
+    assert asyncio.run(limiter.peek("three")).remaining_minute == 0
 
 
 def test_concurrent_requests_consume_slots_atomically() -> None:
